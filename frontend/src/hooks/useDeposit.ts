@@ -1,8 +1,11 @@
-import { useState } from 'react'
+/**
+ * @deprecated Use useDepositFlow instead for production-ready deposit handling
+ * This hook is kept for backward compatibility only
+ */
 import { useWriteContract, useWaitForTransactionReceipt } from 'wagmi'
 import { parseEther } from 'viem'
 import { OVFL_ABI } from '../abi/ovfl'
-import { OVFL_ADDRESS } from '../wagmi'
+import { OVFL_ADDRESS } from '../lib/config/wagmi'
 
 interface DepositParams {
   market: `0x${string}`
@@ -11,24 +14,20 @@ interface DepositParams {
 }
 
 export function useDeposit() {
-  const [txHash, setTxHash] = useState<`0x${string}` | undefined>()
-
-  const { writeContract, isPending: isWritePending, error: writeError } = useWriteContract()
+  const { writeContract, data: hash, isPending: isWritePending, error: writeError } = useWriteContract()
 
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({
-    hash: txHash,
+    hash,
   })
 
   const deposit = async ({ market, ptAmount, minToUser }: DepositParams) => {
     try {
-      const hash = await writeContract({
+      await writeContract({
         address: OVFL_ADDRESS,
         abi: OVFL_ABI,
         functionName: 'deposit',
         args: [market, parseEther(ptAmount), parseEther(minToUser)],
       })
-      // Note: writeContract doesn't return hash directly in wagmi v2
-      // You'd typically use the onSuccess callback or watch the data
     } catch (err) {
       console.error('Deposit failed:', err)
     }
@@ -39,7 +38,6 @@ export function useDeposit() {
     isLoading: isWritePending || isConfirming,
     isSuccess,
     error: writeError,
-    txHash,
+    txHash: hash,
   }
 }
-

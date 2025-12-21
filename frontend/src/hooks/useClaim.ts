@@ -1,8 +1,7 @@
-import { useState } from 'react'
 import { useWriteContract, useWaitForTransactionReceipt } from 'wagmi'
 import { parseEther } from 'viem'
 import { OVFL_ABI } from '../abi/ovfl'
-import { OVFL_ADDRESS } from '../wagmi'
+import { OVFL_ADDRESS } from '../lib/config/wagmi'
 
 interface ClaimParams {
   ptToken: `0x${string}`
@@ -10,12 +9,10 @@ interface ClaimParams {
 }
 
 export function useClaim() {
-  const [txHash, setTxHash] = useState<`0x${string}` | undefined>()
-
-  const { writeContract, isPending: isWritePending, error: writeError } = useWriteContract()
+  const { writeContract, data: hash, isPending: isWritePending, error: writeError } = useWriteContract()
 
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({
-    hash: txHash,
+    hash,
   })
 
   const claim = async ({ ptToken, amount }: ClaimParams) => {
@@ -36,7 +33,6 @@ export function useClaim() {
     isLoading: isWritePending || isConfirming,
     isSuccess,
     error: writeError,
-    txHash,
+    txHash: hash,
   }
 }
-

@@ -1,7 +1,7 @@
 import { useReadContract } from 'wagmi'
 import { parseEther, formatEther } from 'viem'
 import { OVFL_ABI } from '../abi/ovfl'
-import { OVFL_ADDRESS } from '../wagmi'
+import { OVFL_ADDRESS } from '../lib/config/wagmi'
 
 interface Preview {
   toUser: string

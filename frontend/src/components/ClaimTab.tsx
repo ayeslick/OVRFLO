@@ -3,9 +3,7 @@ import { useAccount } from 'wagmi'
 import { motion } from 'framer-motion'
 import ActionButton from './ActionButton'
 import { useClaim } from '../hooks/useClaim'
-import { EXAMPLE_MARKETS } from '../wagmi'
-
-type Market = typeof EXAMPLE_MARKETS[number]
+import { EXAMPLE_MARKETS, type Market } from '../lib/config/wagmi'
 
 export default function ClaimTab() {
   const { address } = useAccount()

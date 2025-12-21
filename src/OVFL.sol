@@ -137,6 +137,22 @@ contract OVFL is ReentrancyGuard {
     /// @param amount The amount swept
     event ExcessSwept(address indexed ptToken, address indexed to, uint256 amount);
 
+    /// @notice Emitted when a new market series is approved
+    /// @param market The Pendle market address
+    /// @param ptToken The PT token address
+    /// @param ovflToken The corresponding ovfl token address
+    /// @param underlying The underlying asset for fee payment
+    /// @param expiry The PT maturity timestamp
+    /// @param feeBps Fee in basis points
+    event SeriesApproved(
+        address indexed market,
+        address ptToken,
+        address ovflToken,
+        address underlying,
+        uint256 expiry,
+        uint16 feeBps
+    );
+
     /*//////////////////////////////////////////////////////////////
                                 MODIFIERS
     //////////////////////////////////////////////////////////////*/
@@ -204,6 +220,8 @@ contract OVFL is ReentrancyGuard {
         ptToMarket[pt] = market;
 
         IERC20(ovflToken).approve(address(sablierLL), type(uint256).max);
+
+        emit SeriesApproved(market, pt, ovflToken, underlying, expiry, feeBps);
     }
 
     /// @notice Sets the deposit limit for a market
@@ -261,11 +279,14 @@ contract OVFL is ReentrancyGuard {
         require(ptAmount >= minPtAmount, "OVFL: amount < min PT");
         require(block.timestamp < info.expiryCached, "OVFL: matured");
 
-        uint256 currentDeposited = marketTotalDeposited[market];
-        uint256 limit = marketDepositLimits[market];
-        
-        if (limit > 0) {
-            require(currentDeposited + ptAmount <= limit, "OVFL: deposit limit exceeded");
+        {
+            uint256 currentDeposited = marketTotalDeposited[market];
+            uint256 limit = marketDepositLimits[market];
+            
+            if (limit > 0) {
+                require(currentDeposited + ptAmount <= limit, "OVFL: deposit limit exceeded");
+            }
+            marketTotalDeposited[market] = currentDeposited + ptAmount;
         }
 
         IERC20(info.ptToken).safeTransferFrom(msg.sender, address(this), ptAmount);
@@ -302,8 +323,6 @@ contract OVFL is ReentrancyGuard {
             broker: ISablierV2LockupLinear.Broker({account: address(0), fee: 0})
         });
         streamId = sablierLL.createWithDurations(p);
-
-        marketTotalDeposited[market] = currentDeposited + ptAmount;
 
         emit Deposited(msg.sender, market, ptAmount, toUser, toStream, streamId);
     }

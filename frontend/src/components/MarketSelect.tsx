@@ -1,14 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { EXAMPLE_MARKETS } from '../wagmi'
-
-interface Market {
-  address: string
-  name: string
-  underlying: string
-  expiry: number
-  ptToken: string
-}
+import { EXAMPLE_MARKETS, type Market } from '../lib/config/wagmi'
 
 interface MarketSelectProps {
   selectedMarket: Market | null
