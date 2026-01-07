@@ -51,6 +51,14 @@ Pendle PTs trade at a discount to their face value. When you buy a PT at 95% of 
 │                           OVFL Protocol                              │
 ├──────────────────────────────────────────────────────────────────────┤
 │                                                                      │
+│   ┌─────────────┐                                                    │
+│   │ OVFLFactory │ (access controlled deployment)                     │
+│   │             │                                                    │
+│   │ - DEPLOYER  │                                                    │
+│   │   _ROLE     │                                                    │
+│   └──────┬──────┘                                                    │
+│          │ deploys atomically                                        │
+│          ▼                                                           │
 │   ┌─────────────┐      configures      ┌─────────────────────────┐   │
 │   │   Admin     │─────────────────────▶│         OVFL            │   │
 │   │             │                      │                         │   │
@@ -78,6 +86,14 @@ Pendle PTs trade at a discount to their face value. When you buy a PT at 95% of 
 ```
 
 ## Contracts
+
+### OVFLFactory.sol
+
+Factory contract for deploying complete OVFL vault systems. Access controlled via `DEPLOYER_ROLE`.
+
+| Function | Description |
+|----------|-------------|
+| `deploy(treasury, underlying, name, symbol)` | Deploy Admin + OVFL + OVFLETH atomically |
 
 ### OVFL.sol
 
@@ -147,6 +163,32 @@ Streams are managed by [Sablier V2](https://sablier.com). Users can:
 
 ## Admin Flows
 
+### Deploying via Factory (Recommended)
+
+```solidity
+// 1. Deploy factory (one-time)
+OVFLFactory factory = new OVFLFactory(owner);
+
+// 2. Grant deployer role if needed
+factory.grantRole(factory.DEPLOYER_ROLE(), deployer);
+
+// 3. Deploy complete vault system atomically
+(address adminContract, address ovfl, address ovflToken) = factory.deploy(
+    treasury,
+    WETH,
+    "OVFL Wrapped ETH",
+    "ovflETH"
+);
+```
+
+The factory:
+- Deploys Admin with factory as temporary admin
+- Deploys OVFL with Admin as controller
+- Links Admin to OVFL
+- Deploys OVFLETH for the underlying (ownership transferred to OVFL)
+- Grants `ADMIN_ROLE` to the deployer
+- Renounces factory's admin role
+
 ### Onboarding a New Market
 
 ```
@@ -204,6 +246,7 @@ Day 1+: Execute market (if oracle ready)
 
 ### Access Control
 
+- **OVFLFactory**: Uses `DEPLOYER_ROLE` for authorized vault deployments
 - **OVFL**: Controlled by Admin contract
 - **Admin**: Uses OpenZeppelin AccessControl with `ADMIN_ROLE`
 - **OVFLETH**: Owned by OVFL (mint/burn restricted)
@@ -226,9 +269,9 @@ Day 1+: Execute market (if oracle ready)
 
 ## Deployments
 
-| Network | OVFL | Admin |
-|---------|------|-------|
-| Mainnet | TBD | TBD |
+| Network | OVFLFactory | OVFL | Admin |
+|---------|-------------|------|-------|
+| Mainnet | TBD | TBD | TBD |
 
 ## Development
 
