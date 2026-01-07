@@ -5,7 +5,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {PRBMath} from "prb-math/PRBMath.sol";
-import {OVFLETH} from "./OVFLETH.sol";
+import {OVFLToken} from "./OVFLToken.sol";
 import {IPendleOracle} from "../interfaces/IPendleOracle.sol";
 import {ISablierV2LockupLinear} from "../interfaces/ISablierV2LockupLinear.sol";
 
@@ -307,7 +307,7 @@ contract OVFL is ReentrancyGuard {
             emit FeeTaken(msg.sender, info.underlying, feeAmount);
         }
 
-        OVFLETH ovflToken = OVFLETH(info.ovflToken);
+        OVFLToken ovflToken = OVFLToken(info.ovflToken);
         ovflToken.mint(msg.sender, toUser);
         ovflToken.mint(address(this), toStream);
 
@@ -348,7 +348,7 @@ contract OVFL is ReentrancyGuard {
         require(currentDeposited >= amount, "OVFL: deposit accounting");
         marketTotalDeposited[market] = currentDeposited - amount;
 
-        OVFLETH(info.ovflToken).burn(msg.sender, amount);
+        OVFLToken(info.ovflToken).burn(msg.sender, amount);
         IERC20(ptToken).safeTransfer(msg.sender, amount);
 
         emit Claimed(msg.sender, market, ptToken, info.ovflToken, amount, amount);

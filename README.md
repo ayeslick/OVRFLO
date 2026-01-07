@@ -70,7 +70,7 @@ Pendle PTs trade at a discount to their face value. When you buy a PT at 95% of 
 │         │ deploys                                  │ mints/burns     │
 │         ▼                                          ▼                 │
 │   ┌─────────────┐                          ┌─────────────┐           │
-│   │  OVFLETH    │◀─────────────────────────│  OVFLETH    │           │
+│   │  OVFLToken  │◀─────────────────────────│  OVFLToken  │           │
 │   │  (per       │      ownership           │  tokens     │           │
 │   │  underlying)│      transferred         │             │           │
 │   └─────────────┘                          └─────────────┘           │
@@ -93,7 +93,7 @@ Factory contract for deploying complete OVFL vault systems. Access controlled vi
 
 | Function | Description |
 |----------|-------------|
-| `deploy(treasury, underlying, name, symbol)` | Deploy Admin + OVFL + OVFLETH atomically |
+| `deploy(treasury, underlying, name, symbol)` | Deploy Admin + OVFL + OVFLToken atomically |
 
 ### OVFL.sol
 
@@ -120,7 +120,7 @@ Timelocked administrative contract for market onboarding.
 | `setMarketDepositLimit(market, limit)` | Set deposit cap for a market |
 | `setMinPtAmount(newMin)` | Set minimum deposit amount |
 
-### OVFLETH.sol
+### OVFLToken.sol
 
 ERC20 wrapper token deployed per underlying asset. Owned by OVFL contract.
 
@@ -185,7 +185,7 @@ The factory:
 - Deploys Admin with factory as temporary admin
 - Deploys OVFL with Admin as controller
 - Links Admin to OVFL
-- Deploys OVFLETH for the underlying (ownership transferred to OVFL)
+- Deploys OVFLToken for the underlying (ownership transferred to OVFL)
 - Grants `ADMIN_ROLE` to the deployer
 - Renounces factory's admin role
 
@@ -249,7 +249,7 @@ Day 1+: Execute market (if oracle ready)
 - **OVFLFactory**: Uses `DEPLOYER_ROLE` for authorized vault deployments
 - **OVFL**: Controlled by Admin contract
 - **Admin**: Uses OpenZeppelin AccessControl with `ADMIN_ROLE`
-- **OVFLETH**: Owned by OVFL (mint/burn restricted)
+- **OVFLToken**: Owned by OVFL (mint/burn restricted)
 
 ### Safeguards
 

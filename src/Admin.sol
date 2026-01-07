@@ -4,7 +4,7 @@ pragma solidity ^0.8.20;
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 
 import {OVFL} from "./OVFL.sol";
-import {OVFLETH} from "./OVFLETH.sol";
+import {OVFLToken} from "./OVFLToken.sol";
 import {IPendleMarket} from "../interfaces/IPendleMarket.sol";
 import {IPendleOracle} from "../interfaces/IPendleOracle.sol";
 
@@ -59,7 +59,7 @@ contract Admin is AccessControl {
         require(underlying != address(0), "Admin: zero address");
         require(underlyingToOvfl[underlying] == address(0), "Admin: already approved");
 
-        OVFLETH token = new OVFLETH(name, symbol);
+        OVFLToken token = new OVFLToken(name, symbol);
         token.transferOwnership(address(ovfl));
         underlyingToOvfl[underlying] = address(token);
         emit UnderlyingApproved(underlying, address(token));

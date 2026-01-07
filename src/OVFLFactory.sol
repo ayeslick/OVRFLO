@@ -7,7 +7,7 @@ import {OVFL} from "./OVFL.sol";
 
 /// @title OVFLFactory
 /// @notice Factory contract for deploying complete OVFL vault systems
-/// @dev Atomically deploys Admin + OVFL + OVFLETH in a single transaction
+/// @dev Atomically deploys Admin + OVFL + OVFLToken in a single transaction
 contract OVFLFactory is AccessControl {
     bytes32 public constant DEPLOYER_ROLE = keccak256("DEPLOYER_ROLE");
 
@@ -28,11 +28,11 @@ contract OVFLFactory is AccessControl {
     /// @notice Deploys a complete OVFL vault system
     /// @param treasury The treasury address for fee collection
     /// @param underlying The underlying asset address (e.g., WETH)
-    /// @param tokenName The name for the OVFLETH token
-    /// @param tokenSymbol The symbol for the OVFLETH token
+    /// @param tokenName The name for the OVFLToken
+    /// @param tokenSymbol The symbol for the OVFLToken
     /// @return adminContract The deployed Admin contract address
     /// @return ovfl The deployed OVFL contract address
-    /// @return ovflToken The deployed OVFLETH token address
+    /// @return ovflToken The deployed OVFLToken address
     function deploy(
         address treasury,
         address underlying,
@@ -51,7 +51,7 @@ contract OVFLFactory is AccessControl {
         // 3. Link Admin to OVFL (required before approveUnderlying)
         admin.setOVFL(address(vault));
 
-        // 4. Approve underlying and deploy OVFLETH (ownership transferred to OVFL)
+        // 4. Approve underlying and deploy OVFLToken (ownership transferred to OVFL)
         admin.approveUnderlying(underlying, tokenName, tokenSymbol);
         ovflToken = admin.underlyingToOvfl(underlying);
 
