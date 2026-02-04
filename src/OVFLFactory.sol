@@ -24,7 +24,7 @@ contract OVFLFactory is AccessControl {
         _grantRole(DEFAULT_ADMIN_ROLE, owner);
         _grantRole(DEPLOYER_ROLE, owner);
     }
-
+ 
     /// @notice Deploys a complete OVFL vault system
     /// @param treasury The treasury address for fee collection
     /// @param underlying The underlying asset address (e.g., WETH)
@@ -48,8 +48,8 @@ contract OVFLFactory is AccessControl {
         // 2. Deploy OVFL with Admin as adminContract
         OVFL vault = new OVFL(address(admin), treasury);
 
-        // 3. Link Admin to OVFL (required before approveUnderlying)
-        admin.setOVFL(address(vault));
+        // // 3. Link Admin to OVFL (required before approveUnderlying)
+        admin.setOVFL(address(vault)); 
 
         // 4. Approve underlying and deploy OVFLToken (ownership transferred to OVFL)
         admin.approveUnderlying(underlying, tokenName, tokenSymbol);
@@ -64,4 +64,7 @@ contract OVFLFactory is AccessControl {
         emit VaultDeployed(msg.sender, address(vault), address(admin), treasury, underlying, ovflToken);
         return (address(admin), address(vault), ovflToken);
     }
+
+    // create a view function to see deployed vaults and their admin contracts. Should be able use a vault address 
+
 }

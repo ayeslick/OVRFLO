@@ -33,7 +33,7 @@ contract OVFL is ReentrancyGuard {
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Minimum PT amount required for deposits
-    uint256 public minPtAmount = 0.01 ether;
+    uint256 public immutable MIN_PT_AMOUNT = 1e6;
 
     /// @notice Treasury address that receives protocol fees
     address private immutable TREASURY_ADDR;
@@ -231,23 +231,13 @@ contract OVFL is ReentrancyGuard {
         marketDepositLimits[market] = limit;
     }
 
-    /// @notice Sets the minimum PT amount for deposits
-    /// @param newMin The new minimum amount
-    function setMinPtAmount(uint256 newMin) external onlyAdmin {
-        minPtAmount = newMin;
-    }
-
     /// @notice Sweeps excess PT tokens accidentally sent to the contract
     /// @dev Only sweeps tokens above the tracked deposit amount
     /// @param ptToken The PT token address to sweep
     /// @param to The recipient address
     function sweepExcessPt(address ptToken, address to) external onlyAdmin {
-        address market = ptToMarket[ptToken];
-        require(market != address(0), "OVFL: unknown PT");
-        require(to != address(0), "OVFL: zero address");
-
         uint256 balance = IERC20(ptToken).balanceOf(address(this));
-        uint256 deposited = marketTotalDeposited[market];
+        uint256 deposited = marketTotalDeposited[ptToMarket[ptToken]];
         uint256 excess = balance > deposited ? balance - deposited : 0;
 
         require(excess > 0, "OVFL: no excess");
@@ -274,10 +264,10 @@ contract OVFL is ReentrancyGuard {
         nonReentrant
         returns (uint256 toUser, uint256 toStream, uint256 streamId)
     {
-        SeriesInfo memory info = series[market];
+        SeriesInfo memory info = series[market]; 
         require(info.approved, "OVFL: market not approved");
-        require(ptAmount >= minPtAmount, "OVFL: amount < min PT");
-        require(block.timestamp < info.expiryCached, "OVFL: matured");
+        require(ptAmount >= MIN_PT_AMOUNT, "OVFL: amount < min PT");
+        require(block.timestamp < info.expiryCached, "OVFL: matured"); 
 
         {
             uint256 currentDeposited = marketTotalDeposited[market];

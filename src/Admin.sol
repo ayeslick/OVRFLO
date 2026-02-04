@@ -59,7 +59,7 @@ contract Admin is AccessControl {
         require(underlying != address(0), "Admin: zero address");
         require(underlyingToOvfl[underlying] == address(0), "Admin: already approved");
 
-        OVFLToken token = new OVFLToken(name, symbol);
+        OVFLToken token = new OVFLToken(name, symbol); 
         token.transferOwnership(address(ovfl));
         underlyingToOvfl[underlying] = address(token);
         emit UnderlyingApproved(underlying, address(token));
@@ -133,11 +133,6 @@ contract Admin is AccessControl {
         require(approved, "Admin: market not approved");
         ovfl.setMarketDepositLimit(market, limit);
         emit MarketDepositLimitSet(market, limit);
-    }
-
-    function setMinPtAmount(uint256 newMin) external onlyRole(ADMIN_ROLE) {
-        ovfl.setMinPtAmount(newMin);
-        emit MinPtAmountSet(newMin);
     }
 
     function sweepExcessPt(address ptToken, address to) external onlyRole(ADMIN_ROLE) {
