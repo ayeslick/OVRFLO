@@ -147,6 +147,18 @@ contract OVRFLOFactory {
         OVRFLO(vault).sweepExcessPt(ptToken, to);
     }
 
+    /// @notice Disable deposits for a market series on a vault
+    function disableSeries(address vault, address market) external onlyOwner {
+        _requireKnownVault(vault);
+        OVRFLO(vault).disableSeries(market);
+    }
+
+    /// @notice Re-enable a previously configured market series on a vault
+    function enableSeries(address vault, address market) external onlyOwner {
+        _requireKnownVault(vault);
+        OVRFLO(vault).enableSeries(market);
+    }
+
     /// @notice Increase Pendle oracle cardinality for a market (must be done before series approval)
     function prepareOracle(address market, uint32 twapDuration) external onlyOwner {
         (bool increaseCardinalityRequired, uint16 cardinalityRequired,) =

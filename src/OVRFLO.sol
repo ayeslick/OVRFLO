@@ -153,6 +153,19 @@ contract OVRFLO is ReentrancyGuard {
         uint16 feeBps
     );
 
+    /// @notice Emitted when a market series is disabled
+    /// @param market The Pendle market address
+    event SeriesDisabled(address indexed market);
+
+    /// @notice Emitted when a market series is re-enabled
+    /// @param market The Pendle market address
+    event SeriesEnabled(address indexed market);
+
+    /// @notice Emitted when a market deposit limit is updated
+    /// @param market The Pendle market address
+    /// @param limit The new deposit limit (0 = unlimited)
+    event MarketDepositLimitSet(address indexed market, uint256 limit);
+
     /*//////////////////////////////////////////////////////////////
                                 MODIFIERS
     //////////////////////////////////////////////////////////////*/
@@ -229,6 +242,23 @@ contract OVRFLO is ReentrancyGuard {
     /// @param limit The maximum total PT deposits (0 = unlimited)
     function setMarketDepositLimit(address market, uint256 limit) external onlyAdmin {
         marketDepositLimits[market] = limit;
+        emit MarketDepositLimitSet(market, limit);
+    }
+
+    /// @notice Disable deposits for a market series
+    /// @param market The market address to disable
+    function disableSeries(address market) external onlyAdmin {
+        require(series[market].ptToken != address(0), "OVRFLO: series not configured");
+        series[market].approved = false;
+        emit SeriesDisabled(market);
+    }
+
+    /// @notice Re-enable a previously configured market series
+    /// @param market The market address to enable
+    function enableSeries(address market) external onlyAdmin {
+        require(series[market].ptToken != address(0), "OVRFLO: series not configured");
+        series[market].approved = true;
+        emit SeriesEnabled(market);
     }
 
     /// @notice Sweeps excess PT tokens accidentally sent to the contract
@@ -328,6 +358,7 @@ contract OVRFLO is ReentrancyGuard {
 
         SeriesInfo memory info = series[market];
         require(info.approved, "OVRFLO: market not approved");
+        require(ptToken == info.ptToken, "OVRFLO: PT mismatch");
         require(block.timestamp >= info.expiryCached, "OVRFLO: not matured");
         require(amount > 0, "OVRFLO: amount is zero");
 
