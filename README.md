@@ -1,19 +1,19 @@
 # OVERFLOW
 
-**OVFL enables access to bond yield before maturity.**
+**OVRFLO enables access to bond yield before maturity.**
 
 A wrapper protocol for [Pendle](https://pendle.finance) Principal Tokens (PTs) that immediately returns a user's contributed principal while streaming the embedded discount over the PT's remaining maturity.
 
 ## How It Works
 
-Pendle PTs trade at a discount to their face value. When you buy a PT at 95% of face value, you're locking in a 5% yield—but you only receive it at maturity. **OVFL unlocks that value immediately.**
+Pendle PTs trade at a discount to their face value. When you buy a PT at 95% of face value, you're locking in a 5% yield—but you only receive it at maturity. **OVRFLO unlocks that value immediately.**
 
 ### Example
 
 1. User deposits **100 PT-stETH** (currently trading at 95% of face value)
-2. User immediately receives **95 ovflETH** (their principal)
-3. User receives a **Sablier stream** that vests **5 ovflETH** linearly until PT maturity
-4. After maturity, user can burn **100 ovflETH** to claim **100 PT-stETH** (now worth 100 stETH)
+2. User immediately receives **95 ovrfloETH** (their principal)
+3. User receives a **Sablier stream** that vests **5 ovrfloETH** linearly until PT maturity
+4. After maturity, user can burn **100 ovrfloETH** to claim **100 PT-stETH** (now worth 100 stETH)
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -24,21 +24,21 @@ Pendle PTs trade at a discount to their face value. When you buy a PT at 95% of 
 │                          │                                      │
 │                          ▼                                      │
 │   ┌──────────────────────────────────────────────┐              │
-│   │              OVFL Contract                   │              │
+│   │             OVRFLO Contract                  │              │
 │   │                                              │              │
 │   │  1. Query Pendle Oracle for TWAP rate        │              │
 │   │  2. Calculate split: 95 immediate / 5 stream │              │
 │   │  3. Collect fee (if any) in underlying       │              │
-│   │  4. Mint ovflTokens                          │              │
+│   │  4. Mint ovrfloTokens                        │              │
 │   │  5. Create Sablier stream                    │              │
 │   └──────────────────────────────────────────────┘              │
 │                          │                                      │
 │            ┌─────────────┴─────────────┐                        │
 │            ▼                           ▼                        │
 │   ┌─────────────────┐         ┌─────────────────┐               │
-│   │  95 ovflETH     │         │  Sablier Stream │               │
-│   │  (immediate)    │         │  5 ovflETH over │               │
-│   │                 │         │  remaining time │               │
+│   │  95 ovrfloETH   │         │  Sablier Stream │               │
+│   │  (immediate)    │         │  5 ovrfloETH    │               │
+│   │                 │         │  over remaining  │               │
 │   └─────────────────┘         └─────────────────┘               │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
@@ -48,32 +48,32 @@ Pendle PTs trade at a discount to their face value. When you buy a PT at 95% of 
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
-│                           OVFL Protocol                              │
+│                          OVRFLO Protocol                             │
 ├──────────────────────────────────────────────────────────────────────┤
 │                                                                      │
-│   ┌─────────────┐                                                    │
-│   │ OVFLFactory │ (access controlled deployment)                     │
-│   │             │                                                    │
-│   │ - DEPLOYER  │                                                    │
-│   │   _ROLE     │                                                    │
-│   └──────┬──────┘                                                    │
-│          │ deploys atomically                                        │
-│          ▼                                                           │
-│   ┌─────────────┐      configures      ┌─────────────────────────┐   │
-│   │   Admin     │─────────────────────▶│         OVFL            │   │
-│   │             │                      │                         │   │
-│   │ - Timelock  │                      │ - deposit()             │   │
-│   │ - Market    │                      │ - claim()               │   │
-│   │   onboard   │                      │ - Series management     │   │
-│   └─────────────┘                      └───────────┬─────────────┘   │
-│         │                                          │                 │
-│         │ deploys                                  │ mints/burns     │
-│         ▼                                          ▼                 │
-│   ┌─────────────┐                          ┌─────────────┐           │
-│   │  OVFLToken  │◀─────────────────────────│  OVFLToken  │           │
-│   │  (per       │      ownership           │  tokens     │           │
-│   │  underlying)│      transferred         │             │           │
-│   └─────────────┘                          └─────────────┘           │
+│   ┌───────────────┐                                                  │
+│   │   Timelocked  │                                                  │
+│   │   Multisig    │ (verification + authorization)                   │
+│   └───────┬───────┘                                                  │
+│           │ owns                                                     │
+│           ▼                                                          │
+│   ┌───────────────┐     deploys + is admin of     ┌──────────────┐   │
+│   │ OVRFLOFactory │─────────────────────────────▶│    OVRFLO    │   │
+│   │               │                              │              │   │
+│   │ - configure   │                              │ - deposit()  │   │
+│   │   Deployment  │                              │ - claim()    │   │
+│   │ - deploy()    │                              │ - series     │   │
+│   │ - setSeries   │                              │   management │   │
+│   │   Approved    │                              └──────┬───────┘   │
+│   │ - prepare     │                                     │           │
+│   │   Oracle      │      deploys                        │ mints/    │
+│   └───────┬───────┘                                     │ burns     │
+│           │                                             ▼           │
+│           │            ┌─────────────┐          ┌─────────────┐     │
+│           └───────────▶│ OVRFLOToken │◀─────────│ OVRFLOToken │     │
+│                        │ (per        │ ownership│  tokens     │     │
+│                        │ underlying) │ transfer │             │     │
+│                        └─────────────┘          └─────────────┘     │
 │                                                                      │
 │   External Dependencies:                                             │
 │   ┌─────────────┐              ┌─────────────┐                       │
@@ -87,70 +87,65 @@ Pendle PTs trade at a discount to their face value. When you buy a PT at 95% of 
 
 ## Contracts
 
-### OVFLFactory.sol
+### OVRFLOFactory.sol
 
-Factory contract for deploying complete OVFL vault systems. Access controlled via `DEPLOYER_ROLE`.
+Factory and admin hub for deploying and managing OVRFLO vault systems. Owned by a timelocked multisig.
 
 | Function | Description |
 |----------|-------------|
-| `deploy(treasury, underlying, name, symbol)` | Deploy Admin + OVFL + OVFLToken atomically |
+| `configureDeployment(treasury, underlying)` | Stage deployment parameters |
+| `deploy()` | Execute deployment from stored config |
+| `cancelDeployment()` | Cancel a pending deployment |
+| `setSeriesApproved(vault, ...)` | Approve a market series on a vault |
+| `setMarketDepositLimit(vault, market, limit)` | Set deposit cap for a market |
+| `sweepExcessPt(vault, ptToken, to)` | Sweep excess PT from a vault |
+| `prepareOracle(market, twapDuration)` | Increase oracle cardinality if needed |
+| `transferVaultAdmin(vault, newAdmin)` | Migrate a vault to a new factory |
+| `transferOwnership(newOwner)` | Transfer factory ownership |
 
-### OVFL.sol
+### OVRFLO.sol
 
 The core vault contract handling deposits and claims.
 
 | Function | Description |
 |----------|-------------|
-| `deposit(market, ptAmount, minToUser)` | Deposit PT to receive ovflTokens + stream |
-| `claim(ptToken, amount)` | Burn ovflTokens to claim PT after maturity |
+| `deposit(market, ptAmount, minToUser)` | Deposit PT to receive ovrfloTokens + stream |
+| `claim(ptToken, amount)` | Burn ovrfloTokens to claim PT after maturity |
 | `previewDeposit(market, ptAmount)` | Preview deposit outcome including fees |
 | `previewRate(market)` | Get current PT-to-SY TWAP rate |
 | `claimablePt(ptToken)` | Check claimable PT balance |
 
-### Admin.sol
+### OVRFLOToken.sol
 
-Timelocked administrative contract for market onboarding.
-
-| Function | Description |
-|----------|-------------|
-| `approveUnderlying(underlying, name, symbol)` | Deploy new ovflToken for an underlying |
-| `queueAddMarket(market, twap, underlying, fee)` | Queue market with 24h timelock |
-| `executeAddMarket(market)` | Execute queued market approval |
-| `cancelPendingMarket(market)` | Cancel queued market |
-| `setMarketDepositLimit(market, limit)` | Set deposit cap for a market |
-| `setMinPtAmount(newMin)` | Set minimum deposit amount |
-
-### OVFLToken.sol
-
-ERC20 wrapper token deployed per underlying asset. Owned by OVFL contract.
+ERC20 wrapper token deployed per underlying asset. Owned by OVRFLO contract.
 
 ## User Flows
 
 ### Depositing
 
-1. **Approve** PT token for OVFL contract
+1. **Approve** PT token for OVRFLO contract
 2. **Approve** underlying token for fee (if applicable)
 3. **Call** `deposit(market, ptAmount, minToUser)`
-4. **Receive** ovflTokens immediately + Sablier stream ID
+4. **Receive** ovrfloTokens immediately + Sablier stream ID
 
 ```solidity
 // Example deposit
-IERC20(ptToken).approve(ovfl, ptAmount);
-IERC20(underlying).approve(ovfl, expectedFee);
+IERC20(ptToken).approve(ovrflo, ptAmount);
+IERC20(underlying).approve(ovrflo, expectedFee);
 
 (uint256 toUser, uint256 toStream, uint256 streamId) = 
-    ovfl.deposit(market, ptAmount, minToUser);
+    ovrflo.deposit(market, ptAmount, minToUser);
 ```
 
 ### Claiming (After Maturity)
 
 1. **Wait** until PT maturity
-2. **Call** `claim(ptToken, amount)` with ovflToken balance
+2. **Call** `claim(ptToken, amount)` with ovrfloToken balance
 3. **Receive** PT tokens 1:1
 
 ```solidity
 // Example claim
-ovfl.claim(ptToken, amount);
+ovrflo.claim(ptToken, amount);
 // User now has PT tokens to redeem on Pendle
 ```
 
@@ -158,107 +153,76 @@ ovfl.claim(ptToken, amount);
 
 Streams are managed by [Sablier V2](https://sablier.com). Users can:
 - View stream status on Sablier UI
-- Withdraw vested ovflTokens anytime
+- Withdraw vested ovrfloTokens anytime
 - Transfer stream NFT to another address
 
 ## Admin Flows
 
-### Deploying via Factory (Recommended)
+All admin operations are initiated by the timelocked multisig and routed through the factory.
+
+### Deploying a Vault
 
 ```solidity
-// 1. Deploy factory (one-time)
-OVFLFactory factory = new OVFLFactory(owner);
+// 1. Deploy factory (one-time, multisig is owner)
+OVRFLOFactory factory = new OVRFLOFactory(multisig);
 
-// 2. Grant deployer role if needed
-factory.grantRole(factory.DEPLOYER_ROLE(), deployer);
+// 2. Multisig stages deployment config
+factory.configureDeployment(treasury, WETH);
 
-// 3. Deploy complete vault system atomically
-(address adminContract, address ovfl, address ovflToken) = factory.deploy(
-    treasury,
-    WETH,
-    "OVFL Wrapped ETH",
-    "ovflETH"
-);
+// 3. Multisig executes deployment
+(address vault, address ovrfloToken) = factory.deploy();
 ```
 
 The factory:
-- Deploys Admin with factory as temporary admin
-- Deploys OVFL with Admin as controller
-- Links Admin to OVFL
-- Deploys OVFLToken for the underlying (ownership transferred to OVFL)
-- Grants `ADMIN_ROLE` to the deployer
-- Renounces factory's admin role
+- Deploys OVRFLO with factory as `adminContract`
+- Deploys OVRFLOToken (name/symbol derived from underlying)
+- Transfers OVRFLOToken ownership to OVRFLO
+- Registers the vault in its registry
 
 ### Onboarding a New Market
 
+```solidity
+// 1. Prepare oracle cardinality (if needed)
+factory.prepareOracle(market, twapDuration);
+
+// 2. Approve series on the vault
+factory.setSeriesApproved(
+    vault,
+    market,
+    ptToken,
+    underlying,
+    ovrfloToken,
+    twapDuration,
+    expiry,
+    feeBps
+);
 ```
-Day 0: Queue market
-        │
-        │  24 hour timelock
-        ▼
-Day 1+: Execute market (if oracle ready)
-```
 
-1. **Approve underlying** (one-time per underlying asset)
-   ```solidity
-   admin.approveUnderlying(WETH, "OVFL Wrapped ETH", "ovflETH");
-   ```
-
-2. **Queue market** (starts 24h timelock)
-   ```solidity
-   admin.queueAddMarket(
-       market,      // Pendle market address
-       900,         // 15 min TWAP
-       WETH,        // underlying
-       50           // 0.5% fee
-   );
-   ```
-
-3. **Execute market** (after timelock + oracle ready)
-   ```solidity
-   admin.executeAddMarket(market);
-   ```
-
-### Oracle Requirements
-
-- TWAP duration: 15-30 minutes
-- Oracle must have sufficient cardinality (auto-increased during queue)
-- Oldest observation must satisfy TWAP duration before execution
-
-## Parameters
-
-| Parameter | Value | Description |
-|-----------|-------|-------------|
-| `TIMELOCK_DELAY` | 24 hours | Delay before market activation |
-| `MIN_TWAP_DURATION` | 15 minutes | Minimum oracle TWAP window |
-| `MAX_TWAP_DURATION` | 30 minutes | Maximum oracle TWAP window |
-| `FEE_MAX_BPS` | 100 (1%) | Maximum fee in basis points |
-| `minPtAmount` | 0.01 ether | Minimum deposit (adjustable) |
+Market verification (TWAP bounds, fee caps, oracle readiness) is handled off-chain by the multisig before submitting transactions.
 
 ## Fee Structure
 
 - Fees are charged on the **immediate** portion (`toUser`), not the streamed portion
 - Paid in the **underlying** token (e.g., WETH for PT-stETH)
 - Sent directly to treasury address
-- Maximum fee: 1% (100 bps)
 
 ## Security
 
 ### Access Control
 
-- **OVFLFactory**: Uses `DEPLOYER_ROLE` for authorized vault deployments
-- **OVFL**: Controlled by Admin contract
-- **Admin**: Uses OpenZeppelin AccessControl with `ADMIN_ROLE`
-- **OVFLToken**: Owned by OVFL (mint/burn restricted)
+- **OVRFLOFactory**: Owned by timelocked multisig, serves as `adminContract` for all deployed vaults
+- **OVRFLO**: Controlled by factory (admin functions gated by `onlyAdmin` modifier)
+- **OVRFLOToken**: Owned by OVRFLO (mint/burn restricted)
 
 ### Safeguards
 
 - **Reentrancy**: All state-changing functions use `nonReentrant`
-- **Timelock**: 24-hour delay on market additions
-- **Oracle**: TWAP pricing (15-30 min) prevents manipulation
+- **Multisig + Timelock**: All admin operations require multisig consensus and timelock delay
+- **Oracle**: TWAP pricing prevents manipulation
 - **Slippage**: `minToUser` parameter protects depositors
 - **Deposit limits**: Per-market caps available
 - **Sweep**: Only excess PT (above tracked deposits) can be recovered
+- **Upgradeability**: Factory can transfer vault admin to a new factory via `transferVaultAdmin`
 
 ### External Dependencies
 
@@ -269,9 +233,9 @@ Day 1+: Execute market (if oracle ready)
 
 ## Deployments
 
-| Network | OVFLFactory | OVFL | Admin |
-|---------|-------------|------|-------|
-| Mainnet | TBD | TBD | TBD |
+| Network | OVRFLOFactory | OVRFLO |
+|---------|---------------|--------|
+| Mainnet | TBD | TBD |
 
 ## Development
 
@@ -294,7 +258,7 @@ forge test
 ### Deploy
 
 ```bash
-forge script script/OVFL.s.sol --rpc-url <RPC_URL> --broadcast
+forge script script/OVRFLO.s.sol --rpc-url <RPC_URL> --broadcast
 ```
 
 ## Integration Guide
@@ -306,11 +270,11 @@ Use preview functions before deposits:
 ```solidity
 // Get full deposit preview
 (uint256 toUser, uint256 toStream, uint256 fee, uint256 rate) = 
-    ovfl.previewDeposit(market, ptAmount);
+    ovrflo.previewDeposit(market, ptAmount);
 
 // Display to user:
-// - Immediate: toUser ovflTokens
-// - Streamed: toStream ovflTokens over remaining time
+// - Immediate: toUser ovrfloTokens
+// - Streamed: toStream ovrfloTokens over remaining time
 // - Fee: fee underlying tokens
 // - Rate: rate / 1e18 = PT value as % of face
 ```
@@ -319,12 +283,12 @@ Use preview functions before deposits:
 
 ```solidity
 // Check if market is active
-(bool approved, , , uint256 expiry, , , ) = ovfl.series(market);
+(bool approved, , , uint256 expiry, , , ) = ovrflo.series(market);
 require(approved && block.timestamp < expiry, "Market not active");
 
 // Check deposit room
-uint256 limit = ovfl.marketDepositLimits(market);
-uint256 deposited = ovfl.marketTotalDeposited(market);
+uint256 limit = ovrflo.marketDepositLimits(market);
+uint256 deposited = ovrflo.marketTotalDeposited(market);
 uint256 available = limit == 0 ? type(uint256).max : limit - deposited;
 ```
 
