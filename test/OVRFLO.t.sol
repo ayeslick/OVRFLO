@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.20;
 
-import {Test, console} from "forge-std/Test.sol";
-import {OVFL} from "../src/OVFL.sol";
-import {OVFLFactory} from "../src/OVFLFactory.sol";
+import {Test} from "forge-std/Test.sol";
+import {OVRFLO} from "../src/OVRFLO.sol";
+import {OVRFLOFactory} from "../src/OVRFLOFactory.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IPendleMarket} from "../interfaces/IPendleMarket.sol";
 
-contract OVFLTest is Test {
-    OVFLFactory public factory;
-    OVFL public ovfl;
+contract OVRFLOTest is Test {
+    OVRFLOFactory public factory;
+    OVRFLO public ovrflo;
 
     address public constant PENDLE_ORACLE = 0x9a9Fa8338dd5E5B2188006f1Cd2Ef26d921650C2;
     address public constant PENDLE_MARKET = 0xC374f7eC85F8C7DE3207a10bB1978bA104bdA3B2;
@@ -23,18 +23,18 @@ contract OVFLTest is Test {
 
     uint32 public constant TWAP_DURATION = 30 minutes;
 
-    address public ovflToken;
+    address public ovrfloToken;
 
     function setUp() public {
         vm.startPrank(MULTISIG);
 
-        factory = new OVFLFactory(MULTISIG);
+        factory = new OVRFLOFactory(MULTISIG);
 
         factory.configureDeployment(TREASURY, WSTETH);
         (address vault, address token) = factory.deploy();
 
-        ovfl = OVFL(vault);
-        ovflToken = token;
+        ovrflo = OVRFLO(vault);
+        ovrfloToken = token;
 
         factory.prepareOracle(PENDLE_MARKET, TWAP_DURATION);
 
@@ -45,7 +45,7 @@ contract OVFLTest is Test {
             PENDLE_MARKET,
             PENDLE_PT,
             WSTETH,
-            ovflToken,
+            ovrfloToken,
             TWAP_DURATION,
             expiry,
             100 // 1% fee
@@ -64,14 +64,14 @@ contract OVFLTest is Test {
 
         vm.startPrank(user);
 
-        IERC20(PENDLE_PT).approve(address(ovfl), ptAmount);
-        IERC20(WSTETH).approve(address(ovfl), feeAmount);
+        IERC20(PENDLE_PT).approve(address(ovrflo), ptAmount);
+        IERC20(WSTETH).approve(address(ovrflo), feeAmount);
 
         uint256 userPtBalanceBefore = IERC20(PENDLE_PT).balanceOf(user);
 
-        (uint256 expectedToUser, uint256 expectedToStream,) = ovfl.previewStream(PENDLE_MARKET, ptAmount);
+        (uint256 expectedToUser, uint256 expectedToStream,) = ovrflo.previewStream(PENDLE_MARKET, ptAmount);
 
-        (uint256 actualToUser, uint256 actualToStream, uint256 streamId) = ovfl.deposit(PENDLE_MARKET, ptAmount, 0);
+        (uint256 actualToUser, uint256 actualToStream, uint256 streamId) = ovrflo.deposit(PENDLE_MARKET, ptAmount, 0);
 
         vm.stopPrank();
 
@@ -79,7 +79,7 @@ contract OVFLTest is Test {
         assertEq(actualToStream, expectedToStream, "toStream should match preview");
 
         assertEq(IERC20(PENDLE_PT).balanceOf(user), userPtBalanceBefore - ptAmount, "User PT balance should decrease");
-        assertEq(IERC20(PENDLE_PT).balanceOf(address(ovfl)), ptAmount, "Vault should receive PT tokens");
+        assertEq(IERC20(PENDLE_PT).balanceOf(address(ovrflo)), ptAmount, "Vault should receive PT tokens");
 
         assertGt(streamId, 0, "Stream ID should be created");
     }

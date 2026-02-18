@@ -2,10 +2,10 @@
 pragma solidity ^0.8.20;
 
 import {Script, console} from "forge-std/Script.sol";
-import {OVFLFactory} from "../src/OVFLFactory.sol";
+import {OVRFLOFactory} from "../src/OVRFLOFactory.sol";
 
-contract OVFLScript is Script {
-    OVFLFactory public factory;
+contract OVRFLOScript is Script {
+    OVRFLOFactory public factory;
 
     function setUp() public {}
 
@@ -14,9 +14,9 @@ contract OVFLScript is Script {
 
         vm.startBroadcast();
 
-        factory = new OVFLFactory(multisig);
+        factory = new OVRFLOFactory(multisig);
 
-        console.log("OVFLFactory deployed to:", address(factory));
+        console.log("OVRFLOFactory deployed to:", address(factory));
         console.log("Owner (multisig):", multisig);
 
         vm.stopBroadcast();

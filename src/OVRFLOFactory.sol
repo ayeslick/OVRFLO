@@ -2,16 +2,16 @@
 pragma solidity ^0.8.20;
 
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
-import {OVFL} from "./OVFL.sol";
-import {OVFLToken} from "./OVFLToken.sol";
+import {OVRFLO} from "./OVRFLO.sol";
+import {OVRFLOToken} from "./OVRFLOToken.sol";
 import {IPendleMarket} from "../interfaces/IPendleMarket.sol";
 import {IPendleOracle} from "../interfaces/IPendleOracle.sol";
 
-/// @title OVFLFactory
-/// @notice Factory and admin hub for deploying and managing OVFL vault systems
-/// @dev Owned by a timelocked multisig. Deploys OVFL + OVFLToken and serves as
+/// @title OVRFLOFactory
+/// @notice Factory and admin hub for deploying and managing OVRFLO vault systems
+/// @dev Owned by a timelocked multisig. Deploys OVRFLO + OVRFLOToken and serves as
 ///      the adminContract for every vault it creates.
-contract OVFLFactory {
+contract OVRFLOFactory {
     /*//////////////////////////////////////////////////////////////
                                 STORAGE
     //////////////////////////////////////////////////////////////*/
@@ -29,7 +29,7 @@ contract OVFLFactory {
     struct VaultInfo {
         address treasury;
         address underlying;
-        address ovflToken;
+        address ovrfloToken;
     }
 
     DeploymentConfig public pendingDeployment;
@@ -43,7 +43,7 @@ contract OVFLFactory {
 
     event DeploymentConfigured(address indexed treasury, address indexed underlying);
     event DeploymentCancelled();
-    event VaultDeployed(address indexed ovfl, address indexed ovflToken, address treasury, address underlying);
+    event VaultDeployed(address indexed ovrflo, address indexed ovrfloToken, address treasury, address underlying);
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
 
     /*//////////////////////////////////////////////////////////////
@@ -51,7 +51,7 @@ contract OVFLFactory {
     //////////////////////////////////////////////////////////////*/
 
     modifier onlyOwner() {
-        require(msg.sender == owner, "OVFLFactory: not owner");
+        require(msg.sender == owner, "OVRFLOFactory: not owner");
         _;
     }
 
@@ -60,7 +60,7 @@ contract OVFLFactory {
     //////////////////////////////////////////////////////////////*/
 
     constructor(address _owner) {
-        require(_owner != address(0), "OVFLFactory: owner zero");
+        require(_owner != address(0), "OVRFLOFactory: owner zero");
         owner = _owner;
     }
 
@@ -72,8 +72,8 @@ contract OVFLFactory {
     /// @param treasury The treasury address for fee collection
     /// @param underlying The underlying asset address (e.g., WETH)
     function configureDeployment(address treasury, address underlying) external onlyOwner {
-        require(treasury != address(0), "OVFLFactory: treasury zero");
-        require(underlying != address(0), "OVFLFactory: underlying zero");
+        require(treasury != address(0), "OVRFLOFactory: treasury zero");
+        require(underlying != address(0), "OVRFLOFactory: underlying zero");
 
         pendingDeployment = DeploymentConfig({treasury: treasury, pending: true, underlying: underlying});
 
@@ -82,38 +82,38 @@ contract OVFLFactory {
 
     /// @notice Cancel a pending deployment
     function cancelDeployment() external onlyOwner {
-        require(pendingDeployment.pending, "OVFLFactory: nothing pending");
+        require(pendingDeployment.pending, "OVRFLOFactory: nothing pending");
         delete pendingDeployment;
         emit DeploymentCancelled();
     }
 
     /// @notice Execute deployment from stored config
-    /// @return vault The deployed OVFL contract address
-    /// @return ovflToken The deployed OVFLToken address
-    function deploy() external onlyOwner returns (address vault, address ovflToken) {
-        require(pendingDeployment.pending, "OVFLFactory: nothing pending");
+    /// @return vault The deployed OVRFLO contract address
+    /// @return ovrfloToken The deployed OVRFLOToken address
+    function deploy() external onlyOwner returns (address vault, address ovrfloToken) {
+        require(pendingDeployment.pending, "OVRFLOFactory: nothing pending");
 
         DeploymentConfig memory config = pendingDeployment;
 
         delete pendingDeployment;
 
-        OVFL v = new OVFL(address(this), config.treasury);
+        OVRFLO v = new OVRFLO(address(this), config.treasury);
 
         string memory tokenName = IERC20Metadata(config.underlying).name();
         string memory tokenSymbol = IERC20Metadata(config.underlying).symbol();
-        OVFLToken token = new OVFLToken(
+        OVRFLOToken token = new OVRFLOToken(
             string(abi.encodePacked("OVRFLO ", tokenName)),
             string(abi.encodePacked("ovrflo", tokenSymbol))
         );
         token.transferOwnership(address(v));
 
         vault = address(v);
-        ovflToken = address(token);
+        ovrfloToken = address(token);
 
         vaultCount += 1;
-        vaultInfo[vault] = VaultInfo({treasury: config.treasury, underlying: config.underlying, ovflToken: ovflToken});
+        vaultInfo[vault] = VaultInfo({treasury: config.treasury, underlying: config.underlying, ovrfloToken: ovrfloToken});
 
-        emit VaultDeployed(vault, ovflToken, config.treasury, config.underlying);
+        emit VaultDeployed(vault, ovrfloToken, config.treasury, config.underlying);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -126,25 +126,25 @@ contract OVFLFactory {
         address market,
         address pt,
         address underlying,
-        address ovflToken,
+        address ovrfloToken,
         uint32 twapDuration,
         uint256 expiry,
         uint16 feeBps
     ) external onlyOwner {
         _requireKnownVault(vault);
-        OVFL(vault).setSeriesApproved(market, pt, underlying, ovflToken, twapDuration, expiry, feeBps);
+        OVRFLO(vault).setSeriesApproved(market, pt, underlying, ovrfloToken, twapDuration, expiry, feeBps);
     }
 
     /// @notice Set the deposit limit for a market on a vault
     function setMarketDepositLimit(address vault, address market, uint256 limit) external onlyOwner {
         _requireKnownVault(vault);
-        OVFL(vault).setMarketDepositLimit(market, limit);
+        OVRFLO(vault).setMarketDepositLimit(market, limit);
     }
 
     /// @notice Sweep excess PT tokens from a vault
     function sweepExcessPt(address vault, address ptToken, address to) external onlyOwner {
         _requireKnownVault(vault);
-        OVFL(vault).sweepExcessPt(ptToken, to);
+        OVRFLO(vault).sweepExcessPt(ptToken, to);
     }
 
     /// @notice Increase Pendle oracle cardinality for a market (must be done before series approval)
@@ -163,14 +163,14 @@ contract OVFLFactory {
     /// @notice Transfer admin of a specific vault to a new address (e.g., a new factory)
     function transferVaultAdmin(address vault, address newAdmin) external onlyOwner {
         _requireKnownVault(vault);
-        require(newAdmin != address(0), "OVFLFactory: newAdmin zero");
-        OVFL(vault).setAdminContract(newAdmin);
+        require(newAdmin != address(0), "OVRFLOFactory: newAdmin zero");
+        OVRFLO(vault).setAdminContract(newAdmin);
         delete vaultInfo[vault];
     }
 
     /// @notice Transfer factory ownership to a new address
     function transferOwnership(address newOwner) external onlyOwner {
-        require(newOwner != address(0), "OVFLFactory: newOwner zero");
+        require(newOwner != address(0), "OVRFLOFactory: newOwner zero");
         emit OwnershipTransferred(owner, newOwner);
         owner = newOwner;
     }
@@ -188,6 +188,6 @@ contract OVFLFactory {
     //////////////////////////////////////////////////////////////*/
 
     function _requireKnownVault(address vault) internal view {
-        require(vaultInfo[vault].treasury != address(0), "OVFLFactory: unknown vault");
+        require(vaultInfo[vault].treasury != address(0), "OVRFLOFactory: unknown vault");
     }
 }

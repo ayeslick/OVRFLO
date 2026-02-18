@@ -3,11 +3,11 @@ pragma solidity ^0.8.20;
 
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
-contract OVFLToken is ERC20 {
+contract OVRFLOToken is ERC20 {
     address public owner;
 
     modifier onlyOwner() {
-        require(msg.sender == owner, "ovfl: not owner");
+        require(msg.sender == owner, "ovrflo: not owner");
         _;
     }
 
@@ -16,7 +16,7 @@ contract OVFLToken is ERC20 {
     }
 
     function transferOwnership(address newOwner) external onlyOwner {
-        require(newOwner != address(0), "ovfl: new owner is zero address");
+        require(newOwner != address(0), "ovrflo: new owner is zero address");
         owner = newOwner;
     }
 

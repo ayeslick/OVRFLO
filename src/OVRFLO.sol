@@ -5,17 +5,17 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {PRBMath} from "prb-math/PRBMath.sol";
-import {OVFLToken} from "./OVFLToken.sol";
+import {OVRFLOToken} from "./OVRFLOToken.sol";
 import {IPendleOracle} from "../interfaces/IPendleOracle.sol";
 import {ISablierV2LockupLinear} from "../interfaces/ISablierV2LockupLinear.sol";
 
-/// @title OVFL
+/// @title OVRFLO
 /// @notice A wrapper for Pendle Principal Tokens (PTs) that returns principal immediately and streams the discount
 /// @dev Users deposit PT tokens pre-maturity and receive:
-///      1. Immediate ovflTokens equal to PT's current market value (based on TWAP)
+///      1. Immediate ovrfloTokens equal to PT's current market value (based on TWAP)
 ///      2. A Sablier stream that vests the remaining discount until PT maturity
-///      After maturity, users can burn ovflTokens 1:1 to claim the underlying PT tokens.
-contract OVFL is ReentrancyGuard {
+///      After maturity, users can burn ovrfloTokens 1:1 to claim the underlying PT tokens.
+contract OVRFLO is ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     /*//////////////////////////////////////////////////////////////
@@ -57,7 +57,7 @@ contract OVFL is ReentrancyGuard {
     /// @param feeBps Fee in basis points charged on immediate minting
     /// @param expiryCached Cached PT maturity timestamp
     /// @param ptToken Address of the Pendle PT token
-    /// @param ovflToken Address of the corresponding ovfl token
+    /// @param ovrfloToken Address of the corresponding ovrflo token
     /// @param underlying Address of the underlying asset for fee payment
     struct SeriesInfo {
         bool approved;
@@ -65,7 +65,7 @@ contract OVFL is ReentrancyGuard {
         uint16 feeBps;
         uint256 expiryCached;
         address ptToken;
-        address ovflToken;
+        address ovrfloToken;
         address underlying;
     }
 
@@ -93,8 +93,8 @@ contract OVFL is ReentrancyGuard {
     /// @param user The depositor's address
     /// @param market The Pendle market address
     /// @param ptAmount Total PT tokens deposited
-    /// @param toUser Amount of ovflTokens minted immediately
-    /// @param toStream Amount of ovflTokens sent to Sablier stream
+    /// @param toUser Amount of ovrfloTokens minted immediately
+    /// @param toStream Amount of ovrfloTokens sent to Sablier stream
     /// @param streamId The Sablier stream ID
     event Deposited(
         address indexed user,
@@ -115,14 +115,14 @@ contract OVFL is ReentrancyGuard {
     /// @param user The claimer's address
     /// @param market The Pendle market address
     /// @param ptToken The PT token address
-    /// @param ovflToken The ovfl token burned
-    /// @param burnedAmount Amount of ovflTokens burned
+    /// @param ovrfloToken The ovrflo token burned
+    /// @param burnedAmount Amount of ovrfloTokens burned
     /// @param ptOut Amount of PT tokens received
     event Claimed(
         address indexed user,
         address indexed market,
         address indexed ptToken,
-        address ovflToken,
+        address ovrfloToken,
         uint256 burnedAmount,
         uint256 ptOut
     );
@@ -140,14 +140,14 @@ contract OVFL is ReentrancyGuard {
     /// @notice Emitted when a new market series is approved
     /// @param market The Pendle market address
     /// @param ptToken The PT token address
-    /// @param ovflToken The corresponding ovfl token address
+    /// @param ovrfloToken The corresponding ovrflo token address
     /// @param underlying The underlying asset for fee payment
     /// @param expiry The PT maturity timestamp
     /// @param feeBps Fee in basis points
     event SeriesApproved(
         address indexed market,
         address ptToken,
-        address ovflToken,
+        address ovrfloToken,
         address underlying,
         uint256 expiry,
         uint16 feeBps
@@ -159,7 +159,7 @@ contract OVFL is ReentrancyGuard {
 
     /// @notice Restricts function access to the admin contract
     modifier onlyAdmin() {
-        require(msg.sender == adminContract, "OVFL: not admin");
+        require(msg.sender == adminContract, "OVRFLO: not admin");
         _;
     }
 
@@ -167,12 +167,12 @@ contract OVFL is ReentrancyGuard {
                               CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Initializes the OVFL contract
+    /// @notice Initializes the OVRFLO contract
     /// @param admin The admin contract address
     /// @param treasury The treasury address for fee collection
     constructor(address admin, address treasury) {
-        require(admin != address(0), "OVFL: admin is zero address");
-        require(treasury != address(0), "OVFL: treasury is zero address");
+        require(admin != address(0), "OVRFLO: admin is zero address");
+        require(treasury != address(0), "OVRFLO: treasury is zero address");
 
         adminContract = admin;
         TREASURY_ADDR = treasury;
@@ -185,17 +185,17 @@ contract OVFL is ReentrancyGuard {
     /// @notice Updates the admin contract address
     /// @param newAdminContract The new admin contract address
     function setAdminContract(address newAdminContract) external onlyAdmin {
-        require(newAdminContract != address(0), "OVFL: admin contract is zero address");
+        require(newAdminContract != address(0), "OVRFLO: admin contract is zero address");
         adminContract = newAdminContract;
         emit AdminContractUpdated(newAdminContract);
     }
 
     /// @notice Approves a new market series for deposits
-    /// @dev Also approves Sablier to spend ovflToken for stream creation
+    /// @dev Also approves Sablier to spend ovrfloToken for stream creation
     /// @param market The Pendle market address
     /// @param pt The PT token address
     /// @param underlying The underlying asset address for fee payment
-    /// @param ovflToken The ovfl token address for this series
+    /// @param ovrfloToken The ovrflo token address for this series
     /// @param twapDuration TWAP duration in seconds
     /// @param expiry PT maturity timestamp
     /// @param feeBps Fee in basis points
@@ -203,7 +203,7 @@ contract OVFL is ReentrancyGuard {
         address market,
         address pt,
         address underlying,
-        address ovflToken,
+        address ovrfloToken,
         uint32 twapDuration,
         uint256 expiry,
         uint16 feeBps
@@ -214,14 +214,14 @@ contract OVFL is ReentrancyGuard {
         info.feeBps = feeBps;
         info.expiryCached = expiry;
         info.ptToken = pt;
-        info.ovflToken = ovflToken;
+        info.ovrfloToken = ovrfloToken;
         info.underlying = underlying;
 
         ptToMarket[pt] = market;
 
-        IERC20(ovflToken).approve(address(sablierLL), type(uint256).max);
+        IERC20(ovrfloToken).approve(address(sablierLL), type(uint256).max);
 
-        emit SeriesApproved(market, pt, ovflToken, underlying, expiry, feeBps);
+        emit SeriesApproved(market, pt, ovrfloToken, underlying, expiry, feeBps);
     }
 
     /// @notice Sets the deposit limit for a market
@@ -240,7 +240,7 @@ contract OVFL is ReentrancyGuard {
         uint256 deposited = marketTotalDeposited[ptToMarket[ptToken]];
         uint256 excess = balance > deposited ? balance - deposited : 0;
 
-        require(excess > 0, "OVFL: no excess");
+        require(excess > 0, "OVRFLO: no excess");
         IERC20(ptToken).safeTransfer(to, excess);
         emit ExcessSwept(ptToken, to, excess);
     }
@@ -249,15 +249,15 @@ contract OVFL is ReentrancyGuard {
                             USER FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Deposits PT tokens to receive ovflTokens immediately and a stream for the discount
+    /// @notice Deposits PT tokens to receive ovrfloTokens immediately and a stream for the discount
     /// @dev User must approve both PT token and underlying (for fee) before calling.
     ///      The rate determines the split: if PT is at 95% of face value, user gets 95% immediately
     ///      and 5% is streamed via Sablier until maturity.
     /// @param market The Pendle market address
     /// @param ptAmount Amount of PT tokens to deposit
-    /// @param minToUser Minimum ovflTokens to receive immediately (slippage protection)
-    /// @return toUser Amount of ovflTokens minted immediately to caller
-    /// @return toStream Amount of ovflTokens streamed until maturity via Sablier
+    /// @param minToUser Minimum ovrfloTokens to receive immediately (slippage protection)
+    /// @return toUser Amount of ovrfloTokens minted immediately to caller
+    /// @return toStream Amount of ovrfloTokens streamed until maturity via Sablier
     /// @return streamId The Sablier stream ID for tracking
     function deposit(address market, uint256 ptAmount, uint256 minToUser)
         external
@@ -265,16 +265,16 @@ contract OVFL is ReentrancyGuard {
         returns (uint256 toUser, uint256 toStream, uint256 streamId)
     {
         SeriesInfo memory info = series[market]; 
-        require(info.approved, "OVFL: market not approved");
-        require(ptAmount >= MIN_PT_AMOUNT, "OVFL: amount < min PT");
-        require(block.timestamp < info.expiryCached, "OVFL: matured"); 
+        require(info.approved, "OVRFLO: market not approved");
+        require(ptAmount >= MIN_PT_AMOUNT, "OVRFLO: amount < min PT");
+        require(block.timestamp < info.expiryCached, "OVRFLO: matured"); 
 
         {
             uint256 currentDeposited = marketTotalDeposited[market];
             uint256 limit = marketDepositLimits[market];
             
             if (limit > 0) {
-                require(currentDeposited + ptAmount <= limit, "OVFL: deposit limit exceeded");
+                require(currentDeposited + ptAmount <= limit, "OVRFLO: deposit limit exceeded");
             }
             marketTotalDeposited[market] = currentDeposited + ptAmount;
         }
@@ -287,8 +287,8 @@ contract OVFL is ReentrancyGuard {
         if (toUser > ptAmount) toUser = ptAmount;
         toStream = ptAmount - toUser;
 
-        require(toStream > 0, "OVFL: nothing to stream");
-        require(toUser >= minToUser, "OVFL: slippage");
+        require(toStream > 0, "OVRFLO: nothing to stream");
+        require(toUser >= minToUser, "OVRFLO: slippage");
 
         uint256 feeAmount = info.feeBps == 0 ? 0 : PRBMath.mulDiv(toUser, info.feeBps, BASIS_POINTS);
 
@@ -297,16 +297,16 @@ contract OVFL is ReentrancyGuard {
             emit FeeTaken(msg.sender, info.underlying, feeAmount);
         }
 
-        OVFLToken ovflToken = OVFLToken(info.ovflToken);
-        ovflToken.mint(msg.sender, toUser);
-        ovflToken.mint(address(this), toStream);
+        OVRFLOToken ovrfloToken = OVRFLOToken(info.ovrfloToken);
+        ovrfloToken.mint(msg.sender, toUser);
+        ovrfloToken.mint(address(this), toStream);
 
         uint256 duration = info.expiryCached - block.timestamp;
         ISablierV2LockupLinear.CreateWithDurations memory p = ISablierV2LockupLinear.CreateWithDurations({
             sender: address(this),
             recipient: msg.sender,
             totalAmount: uint128(toStream),
-            asset: IERC20(info.ovflToken),
+            asset: IERC20(info.ovrfloToken),
             cancelable: false,
             transferable: true,
             durations: ISablierV2LockupLinear.Durations({cliff: 0, total: uint40(duration)}),
@@ -317,31 +317,31 @@ contract OVFL is ReentrancyGuard {
         emit Deposited(msg.sender, market, ptAmount, toUser, toStream, streamId);
     }
 
-    /// @notice Burns ovflTokens to claim PT tokens after maturity
-    /// @dev Only callable after market maturity. Redemption is 1:1 (1 ovflToken = 1 PT).
-    ///      User must have sufficient ovflToken balance which gets burned.
+    /// @notice Burns ovrfloTokens to claim PT tokens after maturity
+    /// @dev Only callable after market maturity. Redemption is 1:1 (1 ovrfloToken = 1 PT).
+    ///      User must have sufficient ovrfloToken balance which gets burned.
     /// @param ptToken The PT token address to claim
-    /// @param amount Amount of ovflTokens to burn (receives equal amount of PT)
+    /// @param amount Amount of ovrfloTokens to burn (receives equal amount of PT)
     function claim(address ptToken, uint256 amount) external nonReentrant {
         address market = ptToMarket[ptToken];
-        require(market != address(0), "OVFL: unknown PT");
+        require(market != address(0), "OVRFLO: unknown PT");
 
         SeriesInfo memory info = series[market];
-        require(info.approved, "OVFL: market not approved");
-        require(block.timestamp >= info.expiryCached, "OVFL: not matured");
-        require(amount > 0, "OVFL: amount is zero");
+        require(info.approved, "OVRFLO: market not approved");
+        require(block.timestamp >= info.expiryCached, "OVRFLO: not matured");
+        require(amount > 0, "OVRFLO: amount is zero");
 
         uint256 vaultBalance = IERC20(ptToken).balanceOf(address(this));
-        require(amount <= vaultBalance, "OVFL: insufficient PT reserves");
+        require(amount <= vaultBalance, "OVRFLO: insufficient PT reserves");
 
         uint256 currentDeposited = marketTotalDeposited[market];
-        require(currentDeposited >= amount, "OVFL: deposit accounting");
+        require(currentDeposited >= amount, "OVRFLO: deposit accounting");
         marketTotalDeposited[market] = currentDeposited - amount;
 
-        OVFLToken(info.ovflToken).burn(msg.sender, amount);
+        OVRFLOToken(info.ovrfloToken).burn(msg.sender, amount);
         IERC20(ptToken).safeTransfer(msg.sender, amount);
 
-        emit Claimed(msg.sender, market, ptToken, info.ovflToken, amount, amount);
+        emit Claimed(msg.sender, market, ptToken, info.ovrfloToken, amount, amount);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -352,7 +352,7 @@ contract OVFL is ReentrancyGuard {
     /// @param ptToken The PT token address
     /// @return The contract's PT token balance
     function claimablePt(address ptToken) external view returns (uint256) {
-        require(ptToMarket[ptToken] != address(0), "OVFL: unknown PT");
+        require(ptToMarket[ptToken] != address(0), "OVRFLO: unknown PT");
         return IERC20(ptToken).balanceOf(address(this));
     }
 
@@ -361,7 +361,7 @@ contract OVFL is ReentrancyGuard {
     /// @return rateE18 The rate in 1e18 scale (e.g., 0.95e18 = PT at 95% of SY value)
     function previewRate(address market) external view returns (uint256 rateE18) {
         SeriesInfo memory info = series[market];
-        require(info.approved, "OVFL: market not approved");
+        require(info.approved, "OVRFLO: market not approved");
         rateE18 = pendleOracle.getPtToSyRate(market, info.twapDurationFixed);
     }
 
@@ -377,7 +377,7 @@ contract OVFL is ReentrancyGuard {
         returns (uint256 toUser, uint256 toStream, uint256 rateE18)
     {
         SeriesInfo memory info = series[market];
-        require(info.approved, "OVFL: market not approved");
+        require(info.approved, "OVRFLO: market not approved");
         rateE18 = pendleOracle.getPtToSyRate(market, info.twapDurationFixed);
         toUser = PRBMath.mulDiv(ptAmount, rateE18, WAD);
         if (toUser > ptAmount) toUser = ptAmount;
@@ -387,8 +387,8 @@ contract OVFL is ReentrancyGuard {
     /// @notice Full deposit preview including fee calculation
     /// @param market The Pendle market address
     /// @param ptAmount Amount of PT tokens to deposit
-    /// @return toUser Amount of ovflTokens minted immediately
-    /// @return toStream Amount of ovflTokens streamed until maturity
+    /// @return toUser Amount of ovrfloTokens minted immediately
+    /// @return toStream Amount of ovrfloTokens streamed until maturity
     /// @return feeAmount Fee amount in underlying tokens user must pay
     /// @return rateE18 The PT-to-SY TWAP rate used (1e18 scale)
     function previewDeposit(address market, uint256 ptAmount)
@@ -397,7 +397,7 @@ contract OVFL is ReentrancyGuard {
         returns (uint256 toUser, uint256 toStream, uint256 feeAmount, uint256 rateE18)
     {
         SeriesInfo memory info = series[market];
-        require(info.approved, "OVFL: market not approved");
+        require(info.approved, "OVRFLO: market not approved");
         rateE18 = pendleOracle.getPtToSyRate(market, info.twapDurationFixed);
         toUser = PRBMath.mulDiv(ptAmount, rateE18, WAD);
         if (toUser > ptAmount) toUser = ptAmount;
