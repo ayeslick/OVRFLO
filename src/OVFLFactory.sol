@@ -2,6 +2,7 @@
 pragma solidity ^0.8.20;
 
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
+import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {Admin} from "./Admin.sol";
 import {OVFL} from "./OVFL.sol";
 
@@ -39,16 +40,12 @@ contract OVFLFactory is AccessControl {
     /// @notice Deploys a complete OVFL vault system
     /// @param treasury The treasury address for fee collection
     /// @param underlying The underlying asset address (e.g., WETH)
-    /// @param tokenName The name for the OVFLToken
-    /// @param tokenSymbol The symbol for the OVFLToken
     /// @return adminContract The deployed Admin contract address
     /// @return ovfl The deployed OVFL contract address
     /// @return ovflToken The deployed OVFLToken address
     function deploy(
         address treasury,
-        address underlying,
-        string calldata tokenName,
-        string calldata tokenSymbol
+        address underlying
     ) external onlyRole(DEPLOYER_ROLE) returns (address adminContract, address ovfl, address ovflToken) {
         require(treasury != address(0), "OVFLFactory: treasury zero");
         require(underlying != address(0), "OVFLFactory: underlying zero");
@@ -63,7 +60,11 @@ contract OVFLFactory is AccessControl {
         admin.setOVFL(address(vault)); 
 
         // 4. Approve underlying and deploy OVFLToken (ownership transferred to OVFL)
-        admin.approveUnderlying(underlying, tokenName, tokenSymbol);
+        string memory tokenName = IERC20Metadata(underlying).name();
+        string memory tokenSymbol = IERC20Metadata(underlying).symbol();
+        string memory ovflName = string(abi.encodePacked("OVRFLO ", tokenName));
+        string memory ovflSymbol = string(abi.encodePacked("ovrflo", tokenSymbol));
+        admin.approveUnderlying(underlying, ovflName, ovflSymbol);
         ovflToken = admin.underlyingToOvfl(underlying);
 
         // 5. Transfer admin role to deployer
@@ -85,7 +86,7 @@ contract OVFLFactory is AccessControl {
         return (address(admin), address(vault), ovflToken);
     }
 
-    function vaultsLength() external view returns (uint256) {
+    function vaults() external view returns (uint256) {
         return vaultCount;
     }
 
