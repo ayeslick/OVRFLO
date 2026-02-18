@@ -22,6 +22,7 @@ contract OVFLFactory {
 
     struct DeploymentConfig {
         address treasury;
+        bool pending;
         address underlying;
     }
 
@@ -32,10 +33,8 @@ contract OVFLFactory {
     }
 
     DeploymentConfig public pendingDeployment;
-    bool public deploymentPending;
 
     uint256 public vaultCount;
-    mapping(uint256 => address) public vaultAt;
     mapping(address => VaultInfo) public vaultInfo;
 
     /*//////////////////////////////////////////////////////////////
@@ -76,17 +75,15 @@ contract OVFLFactory {
         require(treasury != address(0), "OVFLFactory: treasury zero");
         require(underlying != address(0), "OVFLFactory: underlying zero");
 
-        pendingDeployment = DeploymentConfig({treasury: treasury, underlying: underlying});
-        deploymentPending = true;
+        pendingDeployment = DeploymentConfig({treasury: treasury, pending: true, underlying: underlying});
 
         emit DeploymentConfigured(treasury, underlying);
     }
 
     /// @notice Cancel a pending deployment
     function cancelDeployment() external onlyOwner {
-        require(deploymentPending, "OVFLFactory: nothing pending");
+        require(pendingDeployment.pending, "OVFLFactory: nothing pending");
         delete pendingDeployment;
-        deploymentPending = false;
         emit DeploymentCancelled();
     }
 
@@ -94,12 +91,11 @@ contract OVFLFactory {
     /// @return vault The deployed OVFL contract address
     /// @return ovflToken The deployed OVFLToken address
     function deploy() external onlyOwner returns (address vault, address ovflToken) {
-        require(deploymentPending, "OVFLFactory: nothing pending");
+        require(pendingDeployment.pending, "OVFLFactory: nothing pending");
 
         DeploymentConfig memory config = pendingDeployment;
 
         delete pendingDeployment;
-        deploymentPending = false;
 
         OVFL v = new OVFL(address(this), config.treasury);
 
@@ -114,9 +110,7 @@ contract OVFLFactory {
         vault = address(v);
         ovflToken = address(token);
 
-        uint256 idx = vaultCount;
-        vaultCount = idx + 1;
-        vaultAt[idx] = vault;
+        vaultCount += 1;
         vaultInfo[vault] = VaultInfo({treasury: config.treasury, underlying: config.underlying, ovflToken: ovflToken});
 
         emit VaultDeployed(vault, ovflToken, config.treasury, config.underlying);
@@ -171,6 +165,7 @@ contract OVFLFactory {
         _requireKnownVault(vault);
         require(newAdmin != address(0), "OVFLFactory: newAdmin zero");
         OVFL(vault).setAdminContract(newAdmin);
+        delete vaultInfo[vault];
     }
 
     /// @notice Transfer factory ownership to a new address

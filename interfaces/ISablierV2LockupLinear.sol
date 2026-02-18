@@ -11,7 +11,7 @@ interface ISablierV2LockupLinear {
 
     struct Broker {
         address account;
-        uint256 fee; // UD60x18 formatted
+        uint256 fee; // UD60x18 formatted 
     }
 
     struct CreateWithDurations {
