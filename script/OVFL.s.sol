@@ -2,25 +2,22 @@
 pragma solidity ^0.8.20;
 
 import {Script, console} from "forge-std/Script.sol";
-import {OVFL} from "../src/OVFL.sol";
+import {OVFLFactory} from "../src/OVFLFactory.sol";
 
 contract OVFLScript is Script {
-    OVFL public ovfl;
+    OVFLFactory public factory;
 
     function setUp() public {}
 
     function run() public {
+        address multisig = vm.envAddress("MULTISIG_ADDRESS");
+
         vm.startBroadcast();
 
-        // Get the deployer address
-        address deployer = vm.addr(vm.envUint("PRIVATE_KEY"));
-        
-        // Deploy OVFL with deployer as admin and treasury
-        ovfl = new OVFL(deployer, deployer);
+        factory = new OVFLFactory(multisig);
 
-        console.log("OVFL deployed to:", address(ovfl));
-        console.log("Admin:", deployer);
-        console.log("Treasury:", deployer);
+        console.log("OVFLFactory deployed to:", address(factory));
+        console.log("Owner (multisig):", multisig);
 
         vm.stopBroadcast();
     }
