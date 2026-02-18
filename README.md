@@ -1,6 +1,6 @@
 # OVERFLOW
 
-**OVRFLO enables access to bond yield before maturity.**
+**OVRFLO makes Fixed Yield Collateral.**
 
 A wrapper protocol for [Pendle](https://pendle.finance) Principal Tokens (PTs) that immediately returns a user's contributed principal while streaming the embedded discount over the PT's remaining maturity.
 
