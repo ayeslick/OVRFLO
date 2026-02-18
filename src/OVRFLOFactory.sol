@@ -45,6 +45,7 @@ contract OVRFLOFactory {
     event DeploymentCancelled();
     event VaultDeployed(address indexed ovrflo, address indexed ovrfloToken, address treasury, address underlying);
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
+    event VaultAdminTransferred(address indexed vault, address indexed newAdmin);
 
     /*//////////////////////////////////////////////////////////////
                                MODIFIERS
@@ -178,6 +179,7 @@ contract OVRFLOFactory {
         require(newAdmin != address(0), "OVRFLOFactory: newAdmin zero");
         OVRFLO(vault).setAdminContract(newAdmin);
         delete vaultInfo[vault];
+        emit VaultAdminTransferred(vault, newAdmin);
     }
 
     /// @notice Transfer factory ownership to a new address

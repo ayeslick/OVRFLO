@@ -99,6 +99,8 @@ Factory and admin hub for deploying and managing OVRFLO vault systems. Owned by 
 | `setSeriesApproved(vault, ...)` | Approve a market series on a vault |
 | `setMarketDepositLimit(vault, market, limit)` | Set deposit cap for a market |
 | `sweepExcessPt(vault, ptToken, to)` | Sweep excess PT from a vault |
+| `disableSeries(vault, market)` | Disable deposits for a market series |
+| `enableSeries(vault, market)` | Re-enable a previously disabled series |
 | `prepareOracle(market, twapDuration)` | Increase oracle cardinality if needed |
 | `transferVaultAdmin(vault, newAdmin)` | Migrate a vault to a new factory |
 | `transferOwnership(newOwner)` | Transfer factory ownership |
@@ -111,7 +113,11 @@ The core vault contract handling deposits and claims.
 |----------|-------------|
 | `deposit(market, ptAmount, minToUser)` | Deposit PT to receive ovrfloTokens + stream |
 | `claim(ptToken, amount)` | Burn ovrfloTokens to claim PT after maturity |
+| `disableSeries(market)` | Disable deposits for a market (admin) |
+| `enableSeries(market)` | Re-enable a disabled market (admin) |
+| `setMarketDepositLimit(market, limit)` | Set deposit cap for a market (admin) |
 | `previewDeposit(market, ptAmount)` | Preview deposit outcome including fees |
+| `previewStream(market, ptAmount)` | Preview immediate vs streamed split |
 | `previewRate(market)` | Get current PT-to-SY TWAP rate |
 | `claimablePt(ptToken)` | Check claimable PT balance |
 
@@ -138,6 +144,8 @@ IERC20(underlying).approve(ovrflo, expectedFee);
 ```
 
 ### Claiming (After Maturity)
+
+Claims always work for matured PTs regardless of whether the series is currently enabled or disabled. Disabling a series only prevents new deposits—it never blocks redemptions.
 
 1. **Wait** until PT maturity
 2. **Call** `claim(ptToken, amount)` with ovrfloToken balance
@@ -220,7 +228,9 @@ Market verification (TWAP bounds, fee caps, oracle readiness) is handled off-cha
 - **Multisig + Timelock**: All admin operations require multisig consensus and timelock delay
 - **Oracle**: TWAP pricing prevents manipulation
 - **Slippage**: `minToUser` parameter protects depositors
+- **Series control**: Markets can be disabled/re-enabled; disabling blocks new deposits but never blocks claims
 - **Deposit limits**: Per-market caps available
+- **Transparency**: `TREASURY_ADDR` is publicly readable on-chain
 - **Sweep**: Only excess PT (above tracked deposits) can be recovered
 - **Upgradeability**: Factory can transfer vault admin to a new factory via `transferVaultAdmin`
 

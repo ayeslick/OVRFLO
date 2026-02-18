@@ -36,7 +36,7 @@ contract OVRFLO is ReentrancyGuard {
     uint256 public immutable MIN_PT_AMOUNT = 1e6;
 
     /// @notice Treasury address that receives protocol fees
-    address private immutable TREASURY_ADDR;
+    address public immutable TREASURY_ADDR;
 
     /// @notice Admin contract address with permission to configure markets
     address public adminContract;
@@ -357,7 +357,6 @@ contract OVRFLO is ReentrancyGuard {
         require(market != address(0), "OVRFLO: unknown PT");
 
         SeriesInfo memory info = series[market];
-        require(info.approved, "OVRFLO: market not approved");
         require(ptToken == info.ptToken, "OVRFLO: PT mismatch");
         require(block.timestamp >= info.expiryCached, "OVRFLO: not matured");
         require(amount > 0, "OVRFLO: amount is zero");
