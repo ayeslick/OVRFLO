@@ -214,10 +214,7 @@ contract OVRFLO is ReentrancyGuard {
         uint16 feeBps
     ) external onlyAdmin {
         SeriesInfo storage info = series[market];
-        require(
-            info.ptToken == address(0) || marketTotalDeposited[market] == 0,
-            "OVRFLO: series has outstanding deposits"
-        );
+        require(info.ptToken == address(0), "OVRFLO: series already configured");
         info.approved = true;
         info.twapDurationFixed = twapDuration;
         info.feeBps = feeBps;
