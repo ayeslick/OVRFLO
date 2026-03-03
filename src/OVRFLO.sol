@@ -45,7 +45,8 @@ contract OVRFLO is ReentrancyGuard {
     IPendleOracle public immutable pendleOracle = IPendleOracle(0x9a9Fa8338dd5E5B2188006f1Cd2Ef26d921650C2);
 
     /// @notice Sablier V2 Lockup Linear contract for streaming
-    ISablierV2LockupLinear public immutable sablierLL = ISablierV2LockupLinear(0x3962f6585946823440d274aD7C719B02b49DE51E);
+    ISablierV2LockupLinear public immutable sablierLL =
+        ISablierV2LockupLinear(0x3962f6585946823440d274aD7C719B02b49DE51E);
 
     /*//////////////////////////////////////////////////////////////
                                 STRUCTS
@@ -145,12 +146,7 @@ contract OVRFLO is ReentrancyGuard {
     /// @param expiry The PT maturity timestamp
     /// @param feeBps Fee in basis points
     event SeriesApproved(
-        address indexed market,
-        address ptToken,
-        address ovrfloToken,
-        address underlying,
-        uint256 expiry,
-        uint16 feeBps
+        address indexed market, address ptToken, address ovrfloToken, address underlying, uint256 expiry, uint16 feeBps
     );
 
     /// @notice Emitted when a market deposit limit is updated
@@ -271,15 +267,15 @@ contract OVRFLO is ReentrancyGuard {
         nonReentrant
         returns (uint256 toUser, uint256 toStream, uint256 streamId)
     {
-        SeriesInfo memory info = series[market]; 
+        SeriesInfo memory info = series[market];
         require(info.approved, "OVRFLO: market not approved");
         require(ptAmount >= MIN_PT_AMOUNT, "OVRFLO: amount < min PT");
-        require(block.timestamp < info.expiryCached, "OVRFLO: matured"); 
+        require(block.timestamp < info.expiryCached, "OVRFLO: matured");
 
         {
             uint256 currentDeposited = marketTotalDeposited[market];
             uint256 limit = marketDepositLimits[market];
-            
+
             if (limit > 0) {
                 require(currentDeposited + ptAmount <= limit, "OVRFLO: deposit limit exceeded");
             }

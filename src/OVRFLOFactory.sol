@@ -8,9 +8,9 @@ import {IPendleMarket} from "../interfaces/IPendleMarket.sol";
 import {IPendleOracle} from "../interfaces/IPendleOracle.sol";
 
 /// @title OVRFLOFactory
-/// @notice Factory and admin hub for deploying and managing OVRFLO vault systems
+/// @notice Factory and admin hub for deploying and managing OVRFLO systems
 /// @dev Owned by a timelocked multisig. Deploys OVRFLO + OVRFLOToken and serves as
-///      the adminContract for every vault it creates.
+///      the adminContract for every OVRFLO it creates.
 contract OVRFLOFactory {
     /*//////////////////////////////////////////////////////////////
                                 STORAGE
@@ -20,13 +20,15 @@ contract OVRFLOFactory {
 
     IPendleOracle public constant PENDLE_ORACLE = IPendleOracle(0x9a9Fa8338dd5E5B2188006f1Cd2Ef26d921650C2);
 
+    uint256 public constant FEE_MAX_BPS = 100;
+
     struct DeploymentConfig {
         address treasury;
         bool pending;
         address underlying;
     }
 
-    struct VaultInfo {
+    struct OvrfloInfo {
         address treasury;
         address underlying;
         address ovrfloToken;
@@ -34,8 +36,13 @@ contract OVRFLOFactory {
 
     DeploymentConfig public pendingDeployment;
 
-    uint256 public vaultCount;
-    mapping(address => VaultInfo) public vaultInfo;
+    uint256 public ovrfloCount;
+    mapping(uint256 => address) public ovrflos;
+    mapping(address => OvrfloInfo) public ovrfloInfo;
+
+    mapping(address ovrflo => uint256) public approvedMarketCount;
+    mapping(address ovrflo => mapping(uint256 index => address)) public approvedMarketAt;
+    mapping(address ovrflo => mapping(address market => bool)) public isMarketApproved;
 
     /*//////////////////////////////////////////////////////////////
                                 EVENTS
@@ -43,9 +50,9 @@ contract OVRFLOFactory {
 
     event DeploymentConfigured(address indexed treasury, address indexed underlying);
     event DeploymentCancelled();
-    event VaultDeployed(address indexed ovrflo, address indexed ovrfloToken, address treasury, address underlying);
+    event OvrfloDeployed(address indexed ovrflo, address indexed ovrfloToken, address treasury, address underlying);
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
-    event VaultAdminTransferred(address indexed vault, address indexed newAdmin);
+    event OvrfloAdminTransferred(address indexed ovrflo, address indexed newAdmin);
 
     /*//////////////////////////////////////////////////////////////
                                MODIFIERS
@@ -89,9 +96,9 @@ contract OVRFLOFactory {
     }
 
     /// @notice Execute deployment from stored config
-    /// @return vault The deployed OVRFLO contract address
+    /// @return ovrflo The deployed OVRFLO contract address
     /// @return ovrfloToken The deployed OVRFLOToken address
-    function deploy() external onlyOwner returns (address vault, address ovrfloToken) {
+    function deploy() external onlyOwner returns (address ovrflo, address ovrfloToken) {
         require(pendingDeployment.pending, "OVRFLOFactory: nothing pending");
 
         DeploymentConfig memory config = pendingDeployment;
@@ -103,52 +110,60 @@ contract OVRFLOFactory {
         string memory tokenName = IERC20Metadata(config.underlying).name();
         string memory tokenSymbol = IERC20Metadata(config.underlying).symbol();
         OVRFLOToken token = new OVRFLOToken(
-            string(abi.encodePacked("OVRFLO ", tokenName)),
-            string(abi.encodePacked("ovrflo", tokenSymbol))
+            string(abi.encodePacked("OVRFLO ", tokenName)), string(abi.encodePacked("ovrflo", tokenSymbol))
         );
         token.transferOwnership(address(v));
 
-        vault = address(v);
+        ovrflo = address(v);
         ovrfloToken = address(token);
 
-        vaultCount += 1;
-        vaultInfo[vault] = VaultInfo({treasury: config.treasury, underlying: config.underlying, ovrfloToken: ovrfloToken});
+        ovrflos[ovrfloCount] = ovrflo;
+        ovrfloCount += 1;
+        ovrfloInfo[ovrflo] =
+            OvrfloInfo({treasury: config.treasury, underlying: config.underlying, ovrfloToken: ovrfloToken});
 
-        emit VaultDeployed(vault, ovrfloToken, config.treasury, config.underlying);
+        emit OvrfloDeployed(ovrflo, ovrfloToken, config.treasury, config.underlying);
     }
 
     /*//////////////////////////////////////////////////////////////
-                     ADMIN FORWARDING (PER-VAULT)
+                     ADMIN FORWARDING (PER-OVRFLO)
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Approve a market series on a vault
-    function setSeriesApproved(
-        address vault,
-        address market,
-        address pt,
-        address underlying,
-        address ovrfloToken,
-        uint32 twapDuration,
-        uint256 expiry,
-        uint16 feeBps
-    ) external onlyOwner {
-        _requireKnownVault(vault);
-        OVRFLO(vault).setSeriesApproved(market, pt, underlying, ovrfloToken, twapDuration, expiry, feeBps);
+    /// @notice Add a PT maturity to an OVRFLO (reads pt/expiry from Pendle market automatically)
+    /// @param ovrflo The OVRFLO contract address
+    /// @param market The Pendle market address
+    /// @param twapDuration TWAP duration in seconds
+    /// @param feeBps Fee in basis points (max FEE_MAX_BPS)
+    function addMarket(address ovrflo, address market, uint32 twapDuration, uint16 feeBps) external onlyOwner {
+        _requireKnownOvrflo(ovrflo);
+        require(feeBps <= FEE_MAX_BPS, "OVRFLOFactory: fee too high");
+
+        OvrfloInfo memory info = ovrfloInfo[ovrflo];
+        (, address pt,) = IPendleMarket(market).readTokens();
+        uint256 expiry = IPendleMarket(market).expiry();
+
+        OVRFLO(ovrflo).setSeriesApproved(market, pt, info.underlying, info.ovrfloToken, twapDuration, expiry, feeBps);
+
+        if (!isMarketApproved[ovrflo][market]) {
+            isMarketApproved[ovrflo][market] = true;
+            approvedMarketAt[ovrflo][approvedMarketCount[ovrflo]] = market;
+            approvedMarketCount[ovrflo]++;
+        }
     }
 
-    /// @notice Set the deposit limit for a market on a vault
-    function setMarketDepositLimit(address vault, address market, uint256 limit) external onlyOwner {
-        _requireKnownVault(vault);
-        OVRFLO(vault).setMarketDepositLimit(market, limit);
+    /// @notice Set the deposit limit for a market on an OVRFLO
+    function setMarketDepositLimit(address ovrflo, address market, uint256 limit) external onlyOwner {
+        _requireKnownOvrflo(ovrflo);
+        OVRFLO(ovrflo).setMarketDepositLimit(market, limit);
     }
 
-    /// @notice Sweep excess PT tokens from a vault
-    function sweepExcessPt(address vault, address ptToken, address to) external onlyOwner {
-        _requireKnownVault(vault);
-        OVRFLO(vault).sweepExcessPt(ptToken, to);
+    /// @notice Sweep excess PT tokens from an OVRFLO
+    function sweepExcessPt(address ovrflo, address ptToken, address to) external onlyOwner {
+        _requireKnownOvrflo(ovrflo);
+        OVRFLO(ovrflo).sweepExcessPt(ptToken, to);
     }
 
-    /// @notice Increase Pendle oracle cardinality for a market (must be done before series approval)
+    /// @notice Increase Pendle oracle cardinality for a market (must be done before addMarket)
     function prepareOracle(address market, uint32 twapDuration) external onlyOwner {
         (bool increaseCardinalityRequired, uint16 cardinalityRequired,) =
             PENDLE_ORACLE.getOracleState(market, twapDuration);
@@ -161,13 +176,13 @@ contract OVRFLOFactory {
                             UPGRADEABILITY
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Transfer admin of a specific vault to a new address (e.g., a new factory)
-    function transferVaultAdmin(address vault, address newAdmin) external onlyOwner {
-        _requireKnownVault(vault);
+    /// @notice Transfer admin of a specific OVRFLO to a new address (e.g., a new factory)
+    function transferOvrfloAdmin(address ovrflo, address newAdmin) external onlyOwner {
+        _requireKnownOvrflo(ovrflo);
         require(newAdmin != address(0), "OVRFLOFactory: newAdmin zero");
-        OVRFLO(vault).setAdminContract(newAdmin);
-        delete vaultInfo[vault];
-        emit VaultAdminTransferred(vault, newAdmin);
+        OVRFLO(ovrflo).setAdminContract(newAdmin);
+        delete ovrfloInfo[ovrflo];
+        emit OvrfloAdminTransferred(ovrflo, newAdmin);
     }
 
     /// @notice Transfer factory ownership to a new address
@@ -181,15 +196,19 @@ contract OVRFLOFactory {
                             VIEW FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    function getVaultInfo(address vault) external view returns (VaultInfo memory) {
-        return vaultInfo[vault];
+    function getOvrfloInfo(address ovrflo) external view returns (OvrfloInfo memory) {
+        return ovrfloInfo[ovrflo];
+    }
+
+    function getApprovedMarket(address ovrflo, uint256 index) external view returns (address) {
+        return approvedMarketAt[ovrflo][index];
     }
 
     /*//////////////////////////////////////////////////////////////
                               INTERNALS
     //////////////////////////////////////////////////////////////*/
 
-    function _requireKnownVault(address vault) internal view {
-        require(vaultInfo[vault].treasury != address(0), "OVRFLOFactory: unknown vault");
+    function _requireKnownOvrflo(address ovrflo) internal view {
+        require(ovrfloInfo[ovrflo].treasury != address(0), "OVRFLOFactory: unknown ovrflo");
     }
 }

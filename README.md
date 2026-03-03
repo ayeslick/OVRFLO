@@ -63,17 +63,16 @@ Pendle PTs trade at a discount to their face value. When you buy a PT at 95% of 
 │   │ - configure   │                              │ - deposit()  │   │
 │   │   Deployment  │                              │ - claim()    │   │
 │   │ - deploy()    │                              │ - series     │   │
-│   │ - setSeries   │                              │   management │   │
-│   │   Approved    │                              └──────┬───────┘   │
-│   │ - prepare     │                                     │           │
-│   │   Oracle      │      deploys                        │ mints/    │
-│   └───────┬───────┘                                     │ burns     │
-│           │                                             ▼           │
-│           │            ┌─────────────┐          ┌─────────────┐     │
-│           └───────────▶│ OVRFLOToken │◀─────────│ OVRFLOToken │     │
-│                        │ (per        │ ownership│  tokens     │     │
-│                        │ underlying) │ transfer │             │     │
-│                        └─────────────┘          └─────────────┘     │
+│   │ - addMarket() │                              │   management │   │
+│   │ - prepare     │                              └──────┬───────┘   │
+│   │   Oracle      │      deploys                        │           │
+│   └───────┬───────┘                                     │ mints/    │
+│           │                                             │ burns     │
+│           │            ┌─────────────┐          ┌───────▼───────┐   │
+│           └───────────▶│ OVRFLOToken │◀─────────│  OVRFLOToken  │   │
+│                        │ (per        │ ownership│   tokens      │   │
+│                        │ underlying) │ transfer │               │   │
+│                        └─────────────┘          └───────────────┘   │
 │                                                                      │
 │   External Dependencies:                                             │
 │   ┌─────────────┐              ┌─────────────┐                       │
@@ -89,23 +88,23 @@ Pendle PTs trade at a discount to their face value. When you buy a PT at 95% of 
 
 ### OVRFLOFactory.sol
 
-Factory and admin hub for deploying and managing OVRFLO vault systems. Owned by a timelocked multisig.
+Factory and admin hub for deploying and managing OVRFLO systems. Owned by a timelocked multisig.
 
 | Function | Description |
 |----------|-------------|
 | `configureDeployment(treasury, underlying)` | Stage deployment parameters |
-| `deploy()` | Execute deployment from stored config |
+| `deploy()` | Deploy OVRFLO + OVRFLOToken from stored config |
 | `cancelDeployment()` | Cancel a pending deployment |
-| `setSeriesApproved(vault, ...)` | Approve a market series on a vault |
-| `setMarketDepositLimit(vault, market, limit)` | Set deposit cap for a market |
-| `sweepExcessPt(vault, ptToken, to)` | Sweep excess PT from a vault |
+| `addMarket(ovrflo, market, twapDuration, feeBps)` | Add a PT maturity (auto-reads pt/expiry/underlying/ovrfloToken) |
+| `setMarketDepositLimit(ovrflo, market, limit)` | Set deposit cap for a market |
+| `sweepExcessPt(ovrflo, ptToken, to)` | Sweep excess PT from an OVRFLO |
 | `prepareOracle(market, twapDuration)` | Increase oracle cardinality if needed |
-| `transferVaultAdmin(vault, newAdmin)` | Migrate a vault to a new factory |
+| `transferOvrfloAdmin(ovrflo, newAdmin)` | Migrate an OVRFLO to a new factory |
 | `transferOwnership(newOwner)` | Transfer factory ownership |
 
 ### OVRFLO.sol
 
-The core vault contract handling deposits and claims.
+The core contract handling deposits and claims.
 
 | Function | Description |
 |----------|-------------|
@@ -135,7 +134,7 @@ ERC20 wrapper token deployed per underlying asset. Owned by OVRFLO contract.
 IERC20(ptToken).approve(ovrflo, ptAmount);
 IERC20(underlying).approve(ovrflo, expectedFee);
 
-(uint256 toUser, uint256 toStream, uint256 streamId) = 
+(uint256 toUser, uint256 toStream, uint256 streamId) =
     ovrflo.deposit(market, ptAmount, minToUser);
 ```
 
@@ -164,7 +163,7 @@ Streams are managed by [Sablier V2](https://sablier.com). Users can:
 
 All admin operations are initiated by the timelocked multisig and routed through the factory.
 
-### Deploying a Vault
+### Deploying an OVRFLO
 
 ```solidity
 // 1. Deploy factory (one-time, multisig is owner)
@@ -174,14 +173,14 @@ OVRFLOFactory factory = new OVRFLOFactory(multisig);
 factory.configureDeployment(treasury, WETH);
 
 // 3. Multisig executes deployment
-(address vault, address ovrfloToken) = factory.deploy();
+(address ovrflo, address ovrfloToken) = factory.deploy();
 ```
 
 The factory:
 - Deploys OVRFLO with factory as `adminContract`
 - Deploys OVRFLOToken (name/symbol derived from underlying)
 - Transfers OVRFLOToken ownership to OVRFLO
-- Registers the vault in its registry
+- Registers the OVRFLO in its registry (`ovrflos[]` mapping)
 
 ### Onboarding a New Market
 
@@ -189,32 +188,24 @@ The factory:
 // 1. Prepare oracle cardinality (if needed)
 factory.prepareOracle(market, twapDuration);
 
-// 2. Approve series on the vault
-factory.setSeriesApproved(
-    vault,
-    market,
-    ptToken,
-    underlying,
-    ovrfloToken,
-    twapDuration,
-    expiry,
-    feeBps
-);
+// 2. Add market — factory reads pt, expiry, underlying, ovrfloToken automatically
+factory.addMarket(ovrflo, market, twapDuration, feeBps);
 ```
 
-Market verification (TWAP bounds, fee caps, oracle readiness) is handled off-chain by the multisig before submitting transactions.
+`addMarket` reads PT address and expiry directly from the Pendle market contract and pulls underlying + ovrfloToken from stored OVRFLO info. Fee is capped at `FEE_MAX_BPS` (100 bps = 1%).
 
 ## Fee Structure
 
 - Fees are charged on the **immediate** portion (`toUser`), not the streamed portion
 - Paid in the **underlying** token (e.g., WETH for PT-stETH)
 - Sent directly to treasury address
+- Maximum fee enforced at 1% (`FEE_MAX_BPS = 100`)
 
 ## Security
 
 ### Access Control
 
-- **OVRFLOFactory**: Owned by timelocked multisig, serves as `adminContract` for all deployed vaults
+- **OVRFLOFactory**: Owned by timelocked multisig, serves as `adminContract` for all deployed OVRFLOs
 - **OVRFLO**: Controlled by factory (admin functions gated by `onlyAdmin` modifier)
 - **OVRFLOToken**: Owned by OVRFLO (mint/burn restricted)
 
@@ -222,12 +213,13 @@ Market verification (TWAP bounds, fee caps, oracle readiness) is handled off-cha
 
 - **Reentrancy**: All state-changing functions use `nonReentrant`
 - **Multisig + Timelock**: All admin operations require multisig consensus and timelock delay
+- **Fee cap**: Maximum fee enforced at 1% (`FEE_MAX_BPS = 100`)
 - **Oracle**: TWAP pricing prevents manipulation
 - **Slippage**: `minToUser` parameter protects depositors
 - **Deposit limits**: Per-market caps available (set limit to freeze or block new deposits)
 - **Transparency**: `TREASURY_ADDR` is publicly readable on-chain
 - **Sweep**: Only excess PT (above tracked deposits) can be recovered
-- **Upgradeability**: Factory can transfer vault admin to a new factory via `transferVaultAdmin`
+- **Upgradeability**: Factory can transfer OVRFLO admin to a new factory via `transferOvrfloAdmin`
 
 ### External Dependencies
 
@@ -274,7 +266,7 @@ Use preview functions before deposits:
 
 ```solidity
 // Get full deposit preview
-(uint256 toUser, uint256 toStream, uint256 fee, uint256 rate) = 
+(uint256 toUser, uint256 toStream, uint256 fee, uint256 rate) =
     ovrflo.previewDeposit(market, ptAmount);
 
 // Display to user:

@@ -5,7 +5,6 @@ import {Test} from "forge-std/Test.sol";
 import {OVRFLO} from "../src/OVRFLO.sol";
 import {OVRFLOFactory} from "../src/OVRFLOFactory.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {IPendleMarket} from "../interfaces/IPendleMarket.sol";
 
 contract OVRFLOTest is Test {
     OVRFLOFactory public factory;
@@ -31,25 +30,14 @@ contract OVRFLOTest is Test {
         factory = new OVRFLOFactory(MULTISIG);
 
         factory.configureDeployment(TREASURY, WSTETH);
-        (address vault, address token) = factory.deploy();
+        (address ovrfloAddr, address token) = factory.deploy();
 
-        ovrflo = OVRFLO(vault);
+        ovrflo = OVRFLO(ovrfloAddr);
         ovrfloToken = token;
 
         factory.prepareOracle(PENDLE_MARKET, TWAP_DURATION);
 
-        uint256 expiry = IPendleMarket(PENDLE_MARKET).expiry();
-
-        factory.setSeriesApproved(
-            vault,
-            PENDLE_MARKET,
-            PENDLE_PT,
-            WSTETH,
-            ovrfloToken,
-            TWAP_DURATION,
-            expiry,
-            100 // 1% fee
-        );
+        factory.addMarket(ovrfloAddr, PENDLE_MARKET, TWAP_DURATION, 100);
 
         vm.stopPrank();
     }
@@ -79,7 +67,7 @@ contract OVRFLOTest is Test {
         assertEq(actualToStream, expectedToStream, "toStream should match preview");
 
         assertEq(IERC20(PENDLE_PT).balanceOf(user), userPtBalanceBefore - ptAmount, "User PT balance should decrease");
-        assertEq(IERC20(PENDLE_PT).balanceOf(address(ovrflo)), ptAmount, "Vault should receive PT tokens");
+        assertEq(IERC20(PENDLE_PT).balanceOf(address(ovrflo)), ptAmount, "OVRFLO should receive PT tokens");
 
         assertGt(streamId, 0, "Stream ID should be created");
     }
