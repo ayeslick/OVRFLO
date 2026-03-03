@@ -46,7 +46,7 @@ contract OVRFLO is ReentrancyGuard {
 
     /// @notice Sablier V2 Lockup Linear contract for streaming
     ISablierV2LockupLinear public immutable sablierLL =
-        ISablierV2LockupLinear(0x3962f6585946823440d274aD7C719B02b49DE51E);
+        ISablierV2LockupLinear(0xAFb979d9afAd1aD27C5eFf4E27226E3AB9e5dCC9);
 
     /*//////////////////////////////////////////////////////////////
                                 STRUCTS

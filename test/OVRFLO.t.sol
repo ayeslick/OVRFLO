@@ -14,6 +14,7 @@ contract OVRFLOTest is Test {
     address public constant PENDLE_MARKET = 0xC374f7eC85F8C7DE3207a10bB1978bA104bdA3B2;
     address public constant PENDLE_SY = 0xcbC72d92b2dc8187414F6734718563898740C0BC;
     address public constant PENDLE_PT = 0xf99985822fb361117FCf3768D34a6353E6022F5F;
+    address public constant SABLIER_LL = 0xAFb979d9afAd1aD27C5eFf4E27226E3AB9e5dCC9;
 
     address public constant WSTETH = 0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0;
 

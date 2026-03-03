@@ -7,6 +7,11 @@ broadcast
 /broadcast/*/31337/
 /broadcast/**/dry-run/
 broadcast/*
+web/npm-debug.log*
+web/yarn-debug.log*
+web/yarn-error.log*
+web/pnpm-debug.log*
+web/coverage/
 
 # Docs
 docs/
@@ -16,6 +21,17 @@ plans/
 .env
 .github/*
 .DS_Store
+.vscode
+web/node_modules/
+web/.env.example
+web/.next/
+web/out/
+web/build/
+web/.env*
+web/*.tsbuildinfo
+web/.pem
+web/.vercel
+web/.postcss-cache/
 
 # Agents
 .claude/*
@@ -25,5 +41,6 @@ GUIDELINES.md
 BASE_SECURITY.md
 CLAUDE.md 
 AGENTS.md
-
-.beads/*
+.beads/
+.cursor/
+.claude/
