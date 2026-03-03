@@ -153,14 +153,6 @@ contract OVRFLO is ReentrancyGuard {
         uint16 feeBps
     );
 
-    /// @notice Emitted when a market series is disabled
-    /// @param market The Pendle market address
-    event SeriesDisabled(address indexed market);
-
-    /// @notice Emitted when a market series is re-enabled
-    /// @param market The Pendle market address
-    event SeriesEnabled(address indexed market);
-
     /// @notice Emitted when a market deposit limit is updated
     /// @param market The Pendle market address
     /// @param limit The new deposit limit (0 = unlimited)
@@ -222,6 +214,10 @@ contract OVRFLO is ReentrancyGuard {
         uint16 feeBps
     ) external onlyAdmin {
         SeriesInfo storage info = series[market];
+        require(
+            info.ptToken == address(0) || marketTotalDeposited[market] == 0,
+            "OVRFLO: series has outstanding deposits"
+        );
         info.approved = true;
         info.twapDurationFixed = twapDuration;
         info.feeBps = feeBps;
@@ -243,22 +239,6 @@ contract OVRFLO is ReentrancyGuard {
     function setMarketDepositLimit(address market, uint256 limit) external onlyAdmin {
         marketDepositLimits[market] = limit;
         emit MarketDepositLimitSet(market, limit);
-    }
-
-    /// @notice Disable deposits for a market series
-    /// @param market The market address to disable
-    function disableSeries(address market) external onlyAdmin {
-        require(series[market].ptToken != address(0), "OVRFLO: series not configured");
-        series[market].approved = false;
-        emit SeriesDisabled(market);
-    }
-
-    /// @notice Re-enable a previously configured market series
-    /// @param market The market address to enable
-    function enableSeries(address market) external onlyAdmin {
-        require(series[market].ptToken != address(0), "OVRFLO: series not configured");
-        series[market].approved = true;
-        emit SeriesEnabled(market);
     }
 
     /// @notice Sweeps excess PT tokens accidentally sent to the contract
