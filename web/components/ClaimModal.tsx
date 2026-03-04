@@ -1,12 +1,18 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useAccount, useReadContract, useWriteContract } from "wagmi";
+import { useState, useEffect, useCallback } from "react";
+import {
+  useAccount,
+  useReadContract,
+  useWriteContract,
+  useWaitForTransactionReceipt,
+} from "wagmi";
 import { formatUnits, parseUnits, type Address } from "viem";
 import { CHAIN_ID } from "@/lib/constants";
 import { ovrfloAbi, erc20Abi } from "@/lib/contracts";
+import { useTokenDecimals, getDecimals } from "@/hooks/useTokenMeta";
 import type { OvrfloEntry } from "@/hooks/useOvrflos";
-import type { MarketInfo } from "@/hooks/useApprovedMarkets";
+import type { MarketInfo } from "@/hooks/useAllMarkets";
 
 interface Props {
   open: boolean;
@@ -19,22 +25,52 @@ interface MatureMarket extends MarketInfo {
   ovrfloEntry: OvrfloEntry;
 }
 
+type TxPhase = "idle" | "claiming" | "waiting" | "success" | "error";
+
 export function ClaimModal({ open, onClose, ovrflos, allMarkets }: Props) {
   const { address, chainId } = useAccount();
   const [selected, setSelected] = useState<MatureMarket>();
   const [amountStr, setAmountStr] = useState("");
-  const [txState, setTxState] = useState<"idle" | "claiming" | "success" | "error">("idle");
+  const [txPhase, setTxPhase] = useState<TxPhase>("idle");
+  const [txHash, setTxHash] = useState<`0x${string}`>();
   const [errorMsg, setErrorMsg] = useState("");
   const { writeContractAsync } = useWriteContract();
+
+  const { isSuccess: receiptConfirmed, isError: receiptFailed } =
+    useWaitForTransactionReceipt({
+      hash: txHash,
+      query: { enabled: !!txHash },
+    });
+
+  const decMap = useTokenDecimals([
+    selected?.ovrfloToken,
+    selected?.ptToken,
+  ]);
+  const ovrfloDecimals = getDecimals(decMap, selected?.ovrfloToken);
+  const ptDecimals = getDecimals(decMap, selected?.ptToken);
 
   useEffect(() => {
     if (open) {
       setSelected(undefined);
       setAmountStr("");
-      setTxState("idle");
+      setTxPhase("idle");
+      setTxHash(undefined);
       setErrorMsg("");
     }
   }, [open]);
+
+  useEffect(() => {
+    if (!txHash) return;
+    if (receiptConfirmed && txPhase === "waiting") {
+      setTxPhase("success");
+      setTxHash(undefined);
+    }
+    if (receiptFailed) {
+      setTxPhase("error");
+      setErrorMsg("Transaction failed on-chain.");
+      setTxHash(undefined);
+    }
+  }, [receiptConfirmed, receiptFailed, txPhase, txHash]);
 
   const now = BigInt(Math.floor(Date.now() / 1000));
   const matureMarkets: MatureMarket[] = allMarkets
@@ -65,26 +101,44 @@ export function ClaimModal({ open, onClose, ovrflos, allMarkets }: Props) {
 
   const wrongChain = chainId !== CHAIN_ID;
   const claimAmount = amountStr
-    ? (() => { try { return parseUnits(amountStr, 18); } catch { return 0n; } })()
+    ? (() => {
+        try {
+          return parseUnits(amountStr, ovrfloDecimals);
+        } catch {
+          return 0n;
+        }
+      })()
     : 0n;
+  const isBusy = txPhase === "claiming" || txPhase === "waiting";
 
-  async function handleClaim() {
+  // WEB-009 fix: MAX caps to min(wallet balance, claimable PT)
+  const maxClaimable =
+    ovrfloBalance !== undefined && claimablePt !== undefined
+      ? ovrfloBalance < claimablePt
+        ? ovrfloBalance
+        : claimablePt
+      : undefined;
+
+  const handleClaim = useCallback(async () => {
     if (!selected || claimAmount === 0n) return;
-    setTxState("claiming");
+    setTxPhase("claiming");
     setErrorMsg("");
     try {
-      await writeContractAsync({
+      const hash = await writeContractAsync({
         address: selected.ovrflo as Address,
         abi: ovrfloAbi,
         functionName: "claim",
         args: [selected.ptToken as Address, claimAmount],
       });
-      setTxState("success");
+      setTxHash(hash);
+      setTxPhase("waiting");
     } catch (e: unknown) {
-      setTxState("error");
-      setErrorMsg(e instanceof Error ? e.message.slice(0, 120) : "Claim failed");
+      setTxPhase("error");
+      setErrorMsg(
+        e instanceof Error ? e.message.slice(0, 120) : "Claim failed"
+      );
     }
-  }
+  }, [selected, claimAmount, writeContractAsync]);
 
   if (!open) return null;
 
@@ -92,8 +146,13 @@ export function ClaimModal({ open, onClose, ovrflos, allMarkets }: Props) {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
       <div className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-xl w-full max-w-md p-6 relative">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-bold text-[var(--color-heading)]">Claim</h3>
-          <button onClick={onClose} className="text-[var(--color-muted)] hover:text-[var(--color-heading)]">
+          <h3 className="text-lg font-bold text-[var(--color-heading)]">
+            Claim
+          </h3>
+          <button
+            onClick={onClose}
+            className="text-[var(--color-muted)] hover:text-[var(--color-heading)]"
+          >
             ✕
           </button>
         </div>
@@ -103,7 +162,9 @@ export function ClaimModal({ open, onClose, ovrflos, allMarkets }: Props) {
         </label>
 
         {matureMarkets.length === 0 && (
-          <p className="text-sm text-[var(--color-muted)] py-4">No mature markets available.</p>
+          <p className="text-sm text-[var(--color-muted)] py-4">
+            No mature markets available.
+          </p>
         )}
 
         {!selected && matureMarkets.length > 0 && (
@@ -118,7 +179,8 @@ export function ClaimModal({ open, onClose, ovrflos, allMarkets }: Props) {
                   {m.ptToken.slice(0, 6)}...{m.ptToken.slice(-4)}
                 </span>
                 <span className="text-xs text-[var(--color-muted)] ml-2">
-                  Expired: {new Date(Number(m.expiry) * 1000).toLocaleDateString()}
+                  Expired:{" "}
+                  {new Date(Number(m.expiry) * 1000).toLocaleDateString()}
                 </span>
               </button>
             ))}
@@ -128,7 +190,10 @@ export function ClaimModal({ open, onClose, ovrflos, allMarkets }: Props) {
         {selected && (
           <div className="flex flex-col gap-3">
             <button
-              onClick={() => { setSelected(undefined); setAmountStr(""); }}
+              onClick={() => {
+                setSelected(undefined);
+                setAmountStr("");
+              }}
               className="text-sm text-[var(--color-accent)]"
             >
               ← Back
@@ -136,20 +201,28 @@ export function ClaimModal({ open, onClose, ovrflos, allMarkets }: Props) {
 
             <div className="text-sm space-y-1">
               <div className="flex justify-between">
-                <span className="text-[var(--color-muted)]">OVRFLO Balance</span>
+                <span className="text-[var(--color-muted)]">
+                  OVRFLO Balance
+                </span>
                 <span className="mono text-[var(--color-heading)]">
-                  {ovrfloBalance !== undefined ? formatUnits(ovrfloBalance, 18) : "..."}
+                  {ovrfloBalance !== undefined
+                    ? formatUnits(ovrfloBalance, ovrfloDecimals)
+                    : "..."}
                 </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-[var(--color-muted)]">PT reserves</span>
                 <span className="mono text-[var(--color-heading)]">
-                  {claimablePt !== undefined ? formatUnits(claimablePt, 18) : "..."}
+                  {claimablePt !== undefined
+                    ? formatUnits(claimablePt, ptDecimals)
+                    : "..."}
                 </span>
               </div>
             </div>
 
-            <label className="text-sm text-[var(--color-muted)]">Amount to claim</label>
+            <label className="text-sm text-[var(--color-muted)]">
+              Amount to claim
+            </label>
             <div className="flex gap-2 items-center">
               <input
                 type="text"
@@ -160,7 +233,8 @@ export function ClaimModal({ open, onClose, ovrflos, allMarkets }: Props) {
               />
               <button
                 onClick={() => {
-                  if (ovrfloBalance !== undefined) setAmountStr(formatUnits(ovrfloBalance, 18));
+                  if (maxClaimable !== undefined)
+                    setAmountStr(formatUnits(maxClaimable, ovrfloDecimals));
                 }}
                 className="text-xs px-2 py-1 bg-[var(--color-border)] text-[var(--color-heading)] rounded"
               >
@@ -168,25 +242,45 @@ export function ClaimModal({ open, onClose, ovrflos, allMarkets }: Props) {
               </button>
             </div>
 
-            {txState === "success" ? (
-              <p className="text-green-400 text-sm text-center py-2">Claim successful!</p>
+            {txPhase === "waiting" && (
+              <p className="text-yellow-400 text-sm text-center py-1">
+                Waiting for on-chain confirmation...
+              </p>
+            )}
+
+            {txPhase === "success" ? (
+              <p className="text-green-400 text-sm text-center py-2">
+                Claim confirmed!
+              </p>
             ) : (
               <button
                 onClick={handleClaim}
-                disabled={wrongChain || txState === "claiming" || claimAmount === 0n}
+                disabled={wrongChain || isBusy || claimAmount === 0n}
                 className="w-full py-2 rounded-lg bg-[var(--color-accent)] text-[var(--color-bg)] font-semibold disabled:opacity-40"
               >
-                {txState === "claiming" ? "Claiming..." : "Claim"}
+                {txPhase === "claiming"
+                  ? "Submitting..."
+                  : txPhase === "waiting"
+                    ? "Confirming..."
+                    : "Claim"}
               </button>
             )}
 
             {wrongChain && (
-              <p className="text-red-400 text-sm">Switch to chain {CHAIN_ID} first.</p>
+              <p className="text-red-400 text-sm">
+                Switch to chain {CHAIN_ID} first.
+              </p>
             )}
-            {txState === "error" && (
+            {txPhase === "error" && (
               <div className="text-red-400 text-xs break-all">
                 {errorMsg}
-                <button onClick={() => setTxState("idle")} className="ml-2 underline">
+                <button
+                  onClick={() => {
+                    setTxPhase("idle");
+                    setTxHash(undefined);
+                  }}
+                  className="ml-2 underline"
+                >
                   Retry
                 </button>
               </div>

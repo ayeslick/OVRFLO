@@ -14,14 +14,14 @@
 body {
   background-color: var(--color-bg);
   color: var(--color-body);
-  font-family: "Geist", ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
 }
 
 h1, h2, h3, h4 {
   color: var(--color-heading);
-  font-family: "Fraunces", serif;
+  font-family: var(--font-heading), serif;
 }
 
 code, .mono {
-  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-family: var(--font-mono), ui-monospace, monospace;
 }

@@ -156,7 +156,7 @@ ovrflo.claim(ptToken, amount);
 
 Streams are managed by [Sablier V2](https://sablier.com). Users can:
 - View stream status on Sablier UI
-- Withdraw vested ovrfloTokens anytime
+- Withdraw vested ovrfloTokens anytime (`withdraw` is `payable` — requires an ETH fee via `calculateMinFeeWei(streamId)`)
 - Transfer stream NFT to another address
 
 ## Admin Flows
@@ -226,7 +226,7 @@ factory.addMarket(ovrflo, market, twapDuration, feeBps);
 | Dependency | Address (Mainnet) | Purpose |
 |------------|-------------------|---------|
 | Pendle Oracle | `0x9a9Fa8338dd5E5B2188006f1Cd2Ef26d921650C2` | PT-to-SY TWAP rates |
-| Sablier V2 LL | `0x3962f6585946823440d274aD7C719B02b49DE51E` | Token streaming |
+| Sablier V2 LL | `0xAFb979d9afAd1aD27C5eFf4E27226E3AB9e5dCC9` | Token streaming |
 
 ## Deployments
 

@@ -32,10 +32,11 @@ web/*.tsbuildinfo
 web/.pem
 web/.vercel
 web/.postcss-cache/
+web/reviews/
 
 # Agents
-.claude/*
-.factory/*
+.claude/
+.factory/
 4626_Security.md
 GUIDELINES.md
 BASE_SECURITY.md

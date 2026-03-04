@@ -41,11 +41,23 @@ query GetUserStreams($user: String!, $senders: [String!]!) {
 }
 `;
 
+export class SablierIndexerError extends Error {
+  constructor(
+    message: string,
+    public readonly status?: number,
+    public readonly graphqlErrors?: Array<{ message: string }>
+  ) {
+    super(message);
+    this.name = "SablierIndexerError";
+  }
+}
+
 export async function fetchUserStreams(
   userAddress: string,
   ovrfloAddresses: string[]
 ): Promise<SablierStream[]> {
   if (!ovrfloAddresses.length) return [];
+
   const res = await fetch(SABLIER_ENVIO_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -57,6 +69,23 @@ export async function fetchUserStreams(
       },
     }),
   });
+
+  if (!res.ok) {
+    throw new SablierIndexerError(
+      `Sablier indexer returned ${res.status}`,
+      res.status
+    );
+  }
+
   const json = await res.json();
+
+  if (json?.errors?.length) {
+    throw new SablierIndexerError(
+      `Sablier GraphQL error: ${json.errors[0].message}`,
+      undefined,
+      json.errors
+    );
+  }
+
   return json?.data?.Stream ?? [];
 }

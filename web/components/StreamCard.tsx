@@ -1,8 +1,14 @@
 "use client";
 
-import { useState } from "react";
-import { useAccount, useReadContract, useWriteContract, useBalance } from "wagmi";
-import { formatUnits, type Address } from "viem";
+import { useState, useEffect, useCallback } from "react";
+import {
+  useAccount,
+  useReadContract,
+  useWriteContract,
+  useWaitForTransactionReceipt,
+  useBalance,
+} from "wagmi";
+import { formatUnits, formatEther, type Address } from "viem";
 import { SABLIER_LOCKUP, CHAIN_ID } from "@/lib/constants";
 import { sablierLockupAbi } from "@/lib/contracts";
 import type { SablierStream } from "@/lib/sablier";
@@ -12,9 +18,12 @@ interface Props {
   ptName?: string;
 }
 
+type TxPhase = "idle" | "submitting" | "waiting" | "success" | "error";
+
 export function StreamCard({ stream, ptName }: Props) {
   const { address, chainId } = useAccount();
-  const [busy, setBusy] = useState(false);
+  const [txPhase, setTxPhase] = useState<TxPhase>("idle");
+  const [txHash, setTxHash] = useState<`0x${string}`>();
   const [error, setError] = useState<string>();
 
   const tokenId = BigInt(stream.tokenId);
@@ -36,6 +45,25 @@ export function StreamCard({ stream, ptName }: Props) {
   const { data: ethBalance } = useBalance({ address });
 
   const { writeContractAsync } = useWriteContract();
+
+  const { isSuccess: receiptConfirmed, isError: receiptFailed } =
+    useWaitForTransactionReceipt({
+      hash: txHash,
+      query: { enabled: !!txHash },
+    });
+
+  useEffect(() => {
+    if (!txHash) return;
+    if (receiptConfirmed && txPhase === "waiting") {
+      setTxPhase("success");
+      setTxHash(undefined);
+    }
+    if (receiptFailed) {
+      setTxPhase("error");
+      setError("Transaction failed on-chain.");
+      setTxHash(undefined);
+    }
+  }, [receiptConfirmed, receiptFailed, txPhase, txHash]);
 
   const now = Date.now() / 1000;
   const start = Number(stream.startTime);
@@ -60,27 +88,32 @@ export function StreamCard({ stream, ptName }: Props) {
     withdrawable &&
     withdrawable > 0n &&
     !feeInsufficient &&
-    !busy;
+    txPhase === "idle";
 
-  async function handleWithdraw() {
+  const handleWithdraw = useCallback(async () => {
     if (!address || !withdrawable || minFee === undefined) return;
-    setBusy(true);
+    setTxPhase("submitting");
     setError(undefined);
     try {
-      await writeContractAsync({
+      const hash = await writeContractAsync({
         address: SABLIER_LOCKUP as Address,
         abi: sablierLockupAbi,
         functionName: "withdrawMax",
         args: [tokenId, address],
         value: minFee,
       });
+      setTxHash(hash);
+      setTxPhase("waiting");
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : "Withdraw failed";
-      if (!msg.includes("User rejected")) setError(msg.slice(0, 120));
-    } finally {
-      setBusy(false);
+      if (!msg.includes("User rejected")) {
+        setTxPhase("error");
+        setError(msg.slice(0, 120));
+      } else {
+        setTxPhase("idle");
+      }
     }
-  }
+  }, [address, withdrawable, minFee, tokenId, writeContractAsync]);
 
   const label = ptName ?? stream.asset.symbol;
 
@@ -93,14 +126,15 @@ export function StreamCard({ stream, ptName }: Props) {
         <span className="text-sm text-[var(--color-muted)]">{label}</span>
       </div>
 
-      {/* Progress bar */}
       <div className="w-full h-2 bg-[var(--color-border)] rounded-full mb-2">
         <div
           className="h-2 bg-[var(--color-accent)] rounded-full transition-all"
           style={{ width: `${Math.min(pct, 100)}%` }}
         />
       </div>
-      <div className="text-xs text-[var(--color-muted)] mb-3">{pct}% vested</div>
+      <div className="text-xs text-[var(--color-muted)] mb-3">
+        {pct}% vested
+      </div>
 
       <div className="flex items-center justify-between">
         <div>
@@ -114,9 +148,15 @@ export function StreamCard({ stream, ptName }: Props) {
           <div className="text-xs text-[var(--color-muted)]">
             Ends: {new Date(end * 1000).toLocaleDateString()}
           </div>
+          {minFee !== undefined && minFee > 0n && (
+            <div className="text-xs text-[var(--color-muted)] mt-1">
+              Withdraw fee: {formatEther(minFee)} ETH
+            </div>
+          )}
           {feeInsufficient && (
             <div className="text-xs text-red-400 mt-1">
-              Insufficient ETH for withdraw fee
+              Insufficient ETH for withdraw fee (need{" "}
+              {minFee ? formatEther(minFee) : "?"} ETH)
             </div>
           )}
         </div>
@@ -125,11 +165,29 @@ export function StreamCard({ stream, ptName }: Props) {
           disabled={!canWithdraw}
           className="px-4 py-2 rounded-lg bg-[var(--color-accent)] text-[var(--color-bg)] font-semibold text-sm disabled:opacity-40 disabled:cursor-not-allowed hover:brightness-110 transition"
         >
-          {busy ? "..." : "Withdraw"}
+          {txPhase === "submitting"
+            ? "Submitting..."
+            : txPhase === "waiting"
+              ? "Confirming..."
+              : txPhase === "success"
+                ? "Done"
+                : "Withdraw"}
         </button>
       </div>
       {error && (
-        <div className="text-xs text-red-400 mt-2 break-all">{error}</div>
+        <div className="text-xs text-red-400 mt-2 break-all">
+          {error}
+          <button
+            onClick={() => {
+              setTxPhase("idle");
+              setTxHash(undefined);
+              setError(undefined);
+            }}
+            className="ml-2 underline"
+          >
+            Retry
+          </button>
+        </div>
       )}
     </div>
   );

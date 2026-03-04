@@ -5,7 +5,7 @@ import { useUserStreams } from "@/hooks/useStreams";
 import { StreamCard } from "./StreamCard";
 import type { SablierStream } from "@/lib/sablier";
 import type { OvrfloEntry } from "@/hooks/useOvrflos";
-import type { MarketInfo } from "@/hooks/useApprovedMarkets";
+import type { MarketInfo } from "@/hooks/useAllMarkets";
 
 interface Props {
   ovrflos: OvrfloEntry[];

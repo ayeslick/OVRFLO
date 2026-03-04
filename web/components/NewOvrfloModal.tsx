@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   useAccount,
   useReadContract,
@@ -10,9 +10,10 @@ import {
 import { formatUnits, parseUnits, type Address } from "viem";
 import { CHAIN_ID } from "@/lib/constants";
 import { ovrfloAbi, erc20Abi } from "@/lib/contracts";
+import { useTokenDecimals, getDecimals } from "@/hooks/useTokenMeta";
 import { SlippageSettings } from "./SlippageSettings";
 import type { OvrfloEntry } from "@/hooks/useOvrflos";
-import type { MarketInfo } from "@/hooks/useApprovedMarkets";
+import type { MarketInfo } from "@/hooks/useAllMarkets";
 
 interface Props {
   open: boolean;
@@ -22,6 +23,16 @@ interface Props {
 }
 
 type Step = "underlying" | "maturity" | "amount";
+type TxPhase =
+  | "idle"
+  | "approving-pt"
+  | "waiting-pt-approval"
+  | "approving-underlying"
+  | "waiting-underlying-approval"
+  | "creating"
+  | "waiting-deposit"
+  | "success"
+  | "error";
 
 export function NewOvrfloModal({ open, onClose, ovrflos, allMarkets }: Props) {
   const { address, chainId } = useAccount();
@@ -30,12 +41,27 @@ export function NewOvrfloModal({ open, onClose, ovrflos, allMarkets }: Props) {
   const [selectedMarket, setSelectedMarket] = useState<MarketInfo>();
   const [amountStr, setAmountStr] = useState("");
   const [slippageBps, setSlippageBps] = useState(50);
-  const [txState, setTxState] = useState<
-    "idle" | "approving-pt" | "approving-underlying" | "creating" | "success" | "error"
-  >("idle");
+  const [txPhase, setTxPhase] = useState<TxPhase>("idle");
+  const [txHash, setTxHash] = useState<`0x${string}`>();
   const [errorMsg, setErrorMsg] = useState("");
 
   const { writeContractAsync } = useWriteContract();
+
+  const { isSuccess: receiptConfirmed, isError: receiptFailed } =
+    useWaitForTransactionReceipt({
+      hash: txHash,
+      query: { enabled: !!txHash },
+    });
+
+  // Token decimals for all relevant tokens
+  const decMap = useTokenDecimals([
+    selectedMarket?.ptToken,
+    selectedMarket?.underlying,
+    selectedMarket?.ovrfloToken,
+  ]);
+
+  const ptDecimals = getDecimals(decMap, selectedMarket?.ptToken);
+  const underlyingDecimals = getDecimals(decMap, selectedMarket?.underlying);
 
   useEffect(() => {
     if (open) {
@@ -43,10 +69,30 @@ export function NewOvrfloModal({ open, onClose, ovrflos, allMarkets }: Props) {
       setSelectedOvrflo(undefined);
       setSelectedMarket(undefined);
       setAmountStr("");
-      setTxState("idle");
+      setTxPhase("idle");
+      setTxHash(undefined);
       setErrorMsg("");
     }
   }, [open]);
+
+  // Advance state on receipt confirmation
+  useEffect(() => {
+    if (!txHash) return;
+    if (receiptConfirmed) {
+      if (txPhase === "waiting-pt-approval" || txPhase === "waiting-underlying-approval") {
+        setTxPhase("idle");
+        setTxHash(undefined);
+      } else if (txPhase === "waiting-deposit") {
+        setTxPhase("success");
+        setTxHash(undefined);
+      }
+    }
+    if (receiptFailed) {
+      setTxPhase("error");
+      setErrorMsg("Transaction failed on-chain.");
+      setTxHash(undefined);
+    }
+  }, [receiptConfirmed, receiptFailed, txPhase, txHash]);
 
   const marketsForOvrflo = selectedOvrflo
     ? allMarkets.filter(
@@ -60,7 +106,7 @@ export function NewOvrfloModal({ open, onClose, ovrflos, allMarkets }: Props) {
     amountStr && selectedMarket
       ? (() => {
           try {
-            return parseUnits(amountStr, 18);
+            return parseUnits(amountStr, ptDecimals);
           } catch {
             return 0n;
           }
@@ -112,7 +158,8 @@ export function NewOvrfloModal({ open, onClose, ovrflos, allMarkets }: Props) {
     query: { enabled: !!selectedMarket },
   });
 
-  const needsPtApproval = ptAllowance !== undefined && ptAmount > 0n && ptAllowance < ptAmount;
+  const needsPtApproval =
+    ptAllowance !== undefined && ptAmount > 0n && ptAllowance < ptAmount;
   const feeAmount = preview ? preview[2] : 0n;
   const needsUnderlyingApproval =
     underlyingAllowance !== undefined &&
@@ -121,63 +168,68 @@ export function NewOvrfloModal({ open, onClose, ovrflos, allMarkets }: Props) {
 
   const toUser = preview ? preview[0] : 0n;
   const toStream = preview ? preview[1] : 0n;
-  const minToUser = toUser > 0n ? (toUser * (10000n - BigInt(slippageBps))) / 10000n : 0n;
+  const minToUser =
+    toUser > 0n ? (toUser * (10000n - BigInt(slippageBps))) / 10000n : 0n;
 
   const wrongChain = chainId !== CHAIN_ID;
+  const isBusy = txPhase !== "idle" && txPhase !== "success" && txPhase !== "error";
 
-  async function handleApprovePt() {
+  const handleApprovePt = useCallback(async () => {
     if (!selectedMarket || !selectedOvrflo) return;
-    setTxState("approving-pt");
+    setTxPhase("approving-pt");
     setErrorMsg("");
     try {
-      await writeContractAsync({
+      const hash = await writeContractAsync({
         address: selectedMarket.ptToken as Address,
         abi: erc20Abi,
         functionName: "approve",
         args: [selectedOvrflo.address as Address, ptAmount],
       });
-      setTxState("idle");
+      setTxHash(hash);
+      setTxPhase("waiting-pt-approval");
     } catch (e: unknown) {
-      setTxState("error");
+      setTxPhase("error");
       setErrorMsg(e instanceof Error ? e.message.slice(0, 120) : "Approval failed");
     }
-  }
+  }, [selectedMarket, selectedOvrflo, ptAmount, writeContractAsync]);
 
-  async function handleApproveUnderlying() {
+  const handleApproveUnderlying = useCallback(async () => {
     if (!selectedMarket || !selectedOvrflo || !feeAmount) return;
-    setTxState("approving-underlying");
+    setTxPhase("approving-underlying");
     setErrorMsg("");
     try {
-      await writeContractAsync({
+      const hash = await writeContractAsync({
         address: selectedMarket.underlying as Address,
         abi: erc20Abi,
         functionName: "approve",
         args: [selectedOvrflo.address as Address, feeAmount],
       });
-      setTxState("idle");
+      setTxHash(hash);
+      setTxPhase("waiting-underlying-approval");
     } catch (e: unknown) {
-      setTxState("error");
+      setTxPhase("error");
       setErrorMsg(e instanceof Error ? e.message.slice(0, 120) : "Approval failed");
     }
-  }
+  }, [selectedMarket, selectedOvrflo, feeAmount, writeContractAsync]);
 
-  async function handleDeposit() {
+  const handleDeposit = useCallback(async () => {
     if (!selectedOvrflo || !selectedMarket) return;
-    setTxState("creating");
+    setTxPhase("creating");
     setErrorMsg("");
     try {
-      await writeContractAsync({
+      const hash = await writeContractAsync({
         address: selectedOvrflo.address as Address,
         abi: ovrfloAbi,
         functionName: "deposit",
         args: [selectedMarket.market, ptAmount, minToUser],
       });
-      setTxState("success");
+      setTxHash(hash);
+      setTxPhase("waiting-deposit");
     } catch (e: unknown) {
-      setTxState("error");
+      setTxPhase("error");
       setErrorMsg(e instanceof Error ? e.message.slice(0, 120) : "Deposit failed");
     }
-  }
+  }, [selectedOvrflo, selectedMarket, ptAmount, minToUser, writeContractAsync]);
 
   if (!open) return null;
 
@@ -189,21 +241,31 @@ export function NewOvrfloModal({ open, onClose, ovrflos, allMarkets }: Props) {
             New OVRFLO
           </h3>
           <div className="flex items-center gap-3">
-            <SlippageSettings slippageBps={slippageBps} onChange={setSlippageBps} />
-            <button onClick={onClose} className="text-[var(--color-muted)] hover:text-[var(--color-heading)]">
+            <SlippageSettings
+              slippageBps={slippageBps}
+              onChange={setSlippageBps}
+            />
+            <button
+              onClick={onClose}
+              className="text-[var(--color-muted)] hover:text-[var(--color-heading)]"
+            >
               ✕
             </button>
           </div>
         </div>
 
-        {/* Step 1: Select underlying */}
         {step === "underlying" && (
           <div className="flex flex-col gap-2">
-            <label className="text-sm text-[var(--color-muted)]">Select Underlying</label>
+            <label className="text-sm text-[var(--color-muted)]">
+              Select Underlying
+            </label>
             {ovrflos.map((o) => (
               <button
                 key={o.address}
-                onClick={() => { setSelectedOvrflo(o); setStep("maturity"); }}
+                onClick={() => {
+                  setSelectedOvrflo(o);
+                  setStep("maturity");
+                }}
                 className="text-left px-4 py-3 rounded-lg border border-[var(--color-border)] hover:border-[var(--color-accent)] transition-colors text-[var(--color-heading)]"
               >
                 {o.underlying.slice(0, 6)}...{o.underlying.slice(-4)}
@@ -212,47 +274,62 @@ export function NewOvrfloModal({ open, onClose, ovrflos, allMarkets }: Props) {
           </div>
         )}
 
-        {/* Step 2: Select maturity */}
         {step === "maturity" && selectedOvrflo && (
           <div className="flex flex-col gap-2">
             <button
-              onClick={() => { setStep("underlying"); setSelectedOvrflo(undefined); }}
+              onClick={() => {
+                setStep("underlying");
+                setSelectedOvrflo(undefined);
+              }}
               className="text-sm text-[var(--color-accent)] mb-2"
             >
               ← Back
             </button>
-            <label className="text-sm text-[var(--color-muted)]">Select Maturity</label>
+            <label className="text-sm text-[var(--color-muted)]">
+              Select Maturity
+            </label>
             {marketsForOvrflo.length === 0 && (
-              <p className="text-sm text-[var(--color-muted)]">No active markets.</p>
+              <p className="text-sm text-[var(--color-muted)]">
+                No active markets.
+              </p>
             )}
             {marketsForOvrflo.map((m) => (
               <button
                 key={m.market}
-                onClick={() => { setSelectedMarket(m); setStep("amount"); }}
+                onClick={() => {
+                  setSelectedMarket(m);
+                  setStep("amount");
+                }}
                 className="text-left px-4 py-3 rounded-lg border border-[var(--color-border)] hover:border-[var(--color-accent)] transition-colors"
               >
                 <span className="text-[var(--color-heading)]">
                   {m.ptToken.slice(0, 6)}...{m.ptToken.slice(-4)}
                 </span>
                 <span className="text-xs text-[var(--color-muted)] ml-2">
-                  Expires: {new Date(Number(m.expiry) * 1000).toLocaleDateString()}
+                  Expires:{" "}
+                  {new Date(Number(m.expiry) * 1000).toLocaleDateString()}
                 </span>
               </button>
             ))}
           </div>
         )}
 
-        {/* Step 3: Amount + Preview + Execute */}
         {step === "amount" && selectedOvrflo && selectedMarket && (
           <div className="flex flex-col gap-3">
             <button
-              onClick={() => { setStep("maturity"); setSelectedMarket(undefined); setAmountStr(""); }}
+              onClick={() => {
+                setStep("maturity");
+                setSelectedMarket(undefined);
+                setAmountStr("");
+              }}
               className="text-sm text-[var(--color-accent)] mb-1"
             >
               ← Back
             </button>
 
-            <label className="text-sm text-[var(--color-muted)]">Amount (PT)</label>
+            <label className="text-sm text-[var(--color-muted)]">
+              Amount (PT)
+            </label>
             <div className="flex gap-2 items-center">
               <input
                 type="text"
@@ -263,92 +340,136 @@ export function NewOvrfloModal({ open, onClose, ovrflos, allMarkets }: Props) {
               />
               {ptBalance !== undefined && (
                 <span className="text-xs text-[var(--color-muted)]">
-                  Bal: {formatUnits(ptBalance, 18)}
+                  Bal: {formatUnits(ptBalance, ptDecimals)}
                 </span>
               )}
             </div>
 
-            {/* Preview */}
             {preview && ptAmount > 0n && (
               <div className="border-t border-[var(--color-border)] pt-3 text-sm space-y-1">
                 <div className="flex justify-between">
                   <span className="text-[var(--color-muted)]">Immediate</span>
-                  <span className="mono text-[var(--color-heading)]">{formatUnits(toUser, 18)}</span>
+                  <span className="mono text-[var(--color-heading)]">
+                    {formatUnits(toUser, ptDecimals)}
+                  </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-[var(--color-muted)]">Streamed</span>
-                  <span className="mono text-[var(--color-heading)]">{formatUnits(toStream, 18)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-[var(--color-muted)]">Fee ({underlyingSymbol ?? ""})</span>
-                  <span className="mono text-[var(--color-heading)]">{formatUnits(feeAmount, 18)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-[var(--color-muted)]">Min received ({slippageBps / 100}%)</span>
-                  <span className="mono text-[var(--color-heading)]">{formatUnits(minToUser, 18)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-[var(--color-muted)]">Stream ends</span>
-                  <span className="text-[var(--color-heading)]">
-                    {new Date(Number(selectedMarket.expiry) * 1000).toLocaleDateString()}
+                  <span className="mono text-[var(--color-heading)]">
+                    {formatUnits(toStream, ptDecimals)}
                   </span>
                 </div>
-                {selectedMarket.expiry - BigInt(Math.floor(Date.now() / 1000)) < 86400n && (
-                  <div className="text-yellow-400 text-xs">⚠ Market matures soon (&lt; 24h)</div>
+                <div className="flex justify-between">
+                  <span className="text-[var(--color-muted)]">
+                    Fee ({underlyingSymbol ?? ""})
+                  </span>
+                  <span className="mono text-[var(--color-heading)]">
+                    {formatUnits(feeAmount, underlyingDecimals)}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-[var(--color-muted)]">
+                    Min received ({slippageBps / 100}%)
+                  </span>
+                  <span className="mono text-[var(--color-heading)]">
+                    {formatUnits(minToUser, ptDecimals)}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-[var(--color-muted)]">
+                    Stream ends
+                  </span>
+                  <span className="text-[var(--color-heading)]">
+                    {new Date(
+                      Number(selectedMarket.expiry) * 1000
+                    ).toLocaleDateString()}
+                  </span>
+                </div>
+                {selectedMarket.expiry -
+                  BigInt(Math.floor(Date.now() / 1000)) <
+                  86400n && (
+                  <div className="text-yellow-400 text-xs">
+                    ⚠ Market matures soon (&lt; 24h)
+                  </div>
                 )}
               </div>
             )}
 
-            {/* Action buttons */}
             <div className="flex flex-col gap-2 mt-2">
               {wrongChain && (
-                <p className="text-red-400 text-sm">Switch to chain {CHAIN_ID} first.</p>
+                <p className="text-red-400 text-sm">
+                  Switch to chain {CHAIN_ID} first.
+                </p>
               )}
 
-              {txState === "success" ? (
+              {txPhase === "success" ? (
                 <p className="text-green-400 text-sm text-center py-2">
-                  Deposit successful! Stream will appear shortly.
+                  Deposit confirmed! Stream will appear shortly.
                 </p>
               ) : (
                 <>
+                  {(txPhase === "waiting-pt-approval" ||
+                    txPhase === "waiting-underlying-approval" ||
+                    txPhase === "waiting-deposit") && (
+                    <p className="text-yellow-400 text-sm text-center py-1">
+                      Waiting for on-chain confirmation...
+                    </p>
+                  )}
+
                   {needsPtApproval && (
                     <button
                       onClick={handleApprovePt}
-                      disabled={wrongChain || txState !== "idle"}
+                      disabled={wrongChain || isBusy}
                       className="w-full py-2 rounded-lg bg-[var(--color-accent)] text-[var(--color-bg)] font-semibold disabled:opacity-40"
                     >
-                      {txState === "approving-pt" ? "Approving PT..." : "Approve PT"}
+                      {txPhase === "approving-pt"
+                        ? "Submitting PT Approval..."
+                        : txPhase === "waiting-pt-approval"
+                          ? "Confirming..."
+                          : "Approve PT"}
                     </button>
                   )}
 
                   {!needsPtApproval && needsUnderlyingApproval && (
                     <button
                       onClick={handleApproveUnderlying}
-                      disabled={wrongChain || txState !== "idle"}
+                      disabled={wrongChain || isBusy}
                       className="w-full py-2 rounded-lg bg-[var(--color-accent)] text-[var(--color-bg)] font-semibold disabled:opacity-40"
                     >
-                      {txState === "approving-underlying"
-                        ? `Approving ${underlyingSymbol ?? ""}...`
-                        : `Approve ${underlyingSymbol ?? ""}`}
+                      {txPhase === "approving-underlying"
+                        ? `Submitting ${underlyingSymbol ?? ""} Approval...`
+                        : txPhase === "waiting-underlying-approval"
+                          ? "Confirming..."
+                          : `Approve ${underlyingSymbol ?? ""}`}
                     </button>
                   )}
 
                   {!needsPtApproval && !needsUnderlyingApproval && (
                     <button
                       onClick={handleDeposit}
-                      disabled={wrongChain || txState !== "idle" || ptAmount === 0n}
+                      disabled={wrongChain || isBusy || ptAmount === 0n}
                       className="w-full py-2 rounded-lg bg-[var(--color-accent)] text-[var(--color-bg)] font-semibold disabled:opacity-40"
                     >
-                      {txState === "creating" ? "Creating..." : "Create OVRFLO"}
+                      {txPhase === "creating"
+                        ? "Submitting..."
+                        : txPhase === "waiting-deposit"
+                          ? "Confirming..."
+                          : "Create OVRFLO"}
                     </button>
                   )}
                 </>
               )}
 
-              {txState === "error" && (
+              {txPhase === "error" && (
                 <div className="text-red-400 text-xs break-all">
                   {errorMsg}
-                  <button onClick={() => setTxState("idle")} className="ml-2 underline">
+                  <button
+                    onClick={() => {
+                      setTxPhase("idle");
+                      setTxHash(undefined);
+                    }}
+                    className="ml-2 underline"
+                  >
                     Retry
                   </button>
                 </div>
