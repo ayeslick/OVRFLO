@@ -36,8 +36,6 @@ contract OVRFLOTest is Test {
         ovrflo = OVRFLO(ovrfloAddr);
         ovrfloToken = token;
 
-        factory.prepareOracle(PENDLE_MARKET, TWAP_DURATION);
-
         factory.addMarket(ovrfloAddr, PENDLE_MARKET, TWAP_DURATION, 100);
 
         vm.stopPrank();

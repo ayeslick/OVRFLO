@@ -10,7 +10,11 @@ import {
 import { formatUnits, parseUnits, type Address } from "viem";
 import { CHAIN_ID } from "@/lib/constants";
 import { ovrfloAbi, erc20Abi } from "@/lib/contracts";
+import { parseUserError } from "@/lib/tx-errors";
 import { useTokenDecimals, getDecimals } from "@/hooks/useTokenMeta";
+import { useTokenSymbols, getTokenSymbol } from "@/hooks/useTokenLabels";
+import { useUsdPrices, getTokenUsd, formatUsdValue } from "@/hooks/useUsdPrices";
+import { WalletActionCta } from "./WalletActionCta";
 import type { OvrfloEntry } from "@/hooks/useOvrflos";
 import type { MarketInfo } from "@/hooks/useAllMarkets";
 
@@ -43,6 +47,14 @@ export function ClaimModal({ open, onClose, ovrflos, allMarkets }: Props) {
     });
 
   const decMap = useTokenDecimals([
+    selected?.ovrfloToken,
+    selected?.ptToken,
+  ]);
+  const symbolMap = useTokenSymbols([
+    ...allMarkets.map((market) => market.ptToken),
+    ...ovrflos.map((ovrflo) => ovrflo.ovrfloToken),
+  ]);
+  const { data: usdPrices } = useUsdPrices([
     selected?.ovrfloToken,
     selected?.ptToken,
   ]);
@@ -118,9 +130,14 @@ export function ClaimModal({ open, onClose, ovrflos, allMarkets }: Props) {
         ? ovrfloBalance
         : claimablePt
       : undefined;
+  const claimTooHigh =
+    maxClaimable !== undefined && claimAmount > 0n && claimAmount > maxClaimable;
+  const ptSymbol = getTokenSymbol(symbolMap, selected?.ptToken, undefined);
+  const ovrfloUsd = getTokenUsd(usdPrices?.tokenUsd, selected?.ovrfloToken);
+  const ptUsd = getTokenUsd(usdPrices?.tokenUsd, selected?.ptToken);
 
   const handleClaim = useCallback(async () => {
-    if (!selected || claimAmount === 0n) return;
+    if (!selected || claimAmount === 0n || claimTooHigh) return;
     setTxPhase("claiming");
     setErrorMsg("");
     try {
@@ -132,13 +149,11 @@ export function ClaimModal({ open, onClose, ovrflos, allMarkets }: Props) {
       });
       setTxHash(hash);
       setTxPhase("waiting");
-    } catch (e: unknown) {
+    } catch (error: unknown) {
       setTxPhase("error");
-      setErrorMsg(
-        e instanceof Error ? e.message.slice(0, 120) : "Claim failed"
-      );
+      setErrorMsg(parseUserError(error, "Claim failed"));
     }
-  }, [selected, claimAmount, writeContractAsync]);
+  }, [selected, claimAmount, claimTooHigh, writeContractAsync]);
 
   if (!open) return null;
 
@@ -152,6 +167,7 @@ export function ClaimModal({ open, onClose, ovrflos, allMarkets }: Props) {
           <button
             onClick={onClose}
             className="text-[var(--color-muted)] hover:text-[var(--color-heading)]"
+            aria-label="Close claim modal"
           >
             ✕
           </button>
@@ -175,13 +191,12 @@ export function ClaimModal({ open, onClose, ovrflos, allMarkets }: Props) {
                 onClick={() => setSelected(m)}
                 className="text-left px-4 py-3 rounded-lg border border-[var(--color-border)] hover:border-[var(--color-accent)] transition-colors"
               >
-                <span className="text-[var(--color-heading)]">
-                  {m.ptToken.slice(0, 6)}...{m.ptToken.slice(-4)}
-                </span>
-                <span className="text-xs text-[var(--color-muted)] ml-2">
-                  Expired:{" "}
-                  {new Date(Number(m.expiry) * 1000).toLocaleDateString()}
-                </span>
+                <div className="text-[var(--color-heading)] font-semibold">
+                  {getTokenSymbol(symbolMap, m.ptToken, `${m.ptToken.slice(0, 6)}...${m.ptToken.slice(-4)}`)}
+                </div>
+                <div className="text-xs text-[var(--color-muted)]">
+                  Matured: {new Date(Number(m.expiry) * 1000).toLocaleDateString()}
+                </div>
               </button>
             ))}
           </div>
@@ -206,7 +221,7 @@ export function ClaimModal({ open, onClose, ovrflos, allMarkets }: Props) {
                 </span>
                 <span className="mono text-[var(--color-heading)]">
                   {ovrfloBalance !== undefined
-                    ? formatUnits(ovrfloBalance, ovrfloDecimals)
+                    ? `${formatUnits(ovrfloBalance, ovrfloDecimals)}${ovrfloUsd !== undefined ? ` (${formatUsdValue(ovrfloBalance, ovrfloDecimals, ovrfloUsd)})` : ""}`
                     : "..."}
                 </span>
               </div>
@@ -214,20 +229,23 @@ export function ClaimModal({ open, onClose, ovrflos, allMarkets }: Props) {
                 <span className="text-[var(--color-muted)]">PT reserves</span>
                 <span className="mono text-[var(--color-heading)]">
                   {claimablePt !== undefined
-                    ? formatUnits(claimablePt, ptDecimals)
+                    ? `${formatUnits(claimablePt, ptDecimals)}${ptUsd !== undefined ? ` (${formatUsdValue(claimablePt, ptDecimals, ptUsd)})` : ""}`
                     : "..."}
                 </span>
               </div>
             </div>
 
             <label className="text-sm text-[var(--color-muted)]">
-              Amount to claim
+              Amount to claim ({ptSymbol})
             </label>
             <div className="flex gap-2 items-center">
               <input
                 type="text"
                 value={amountStr}
-                onChange={(e) => setAmountStr(e.target.value)}
+                onChange={(e) => {
+                  setAmountStr(e.target.value);
+                  setErrorMsg("");
+                }}
                 placeholder="0.0"
                 className="flex-1 bg-[var(--color-bg)] border border-[var(--color-border)] rounded-lg px-3 py-2 text-[var(--color-heading)] mono"
               />
@@ -242,20 +260,43 @@ export function ClaimModal({ open, onClose, ovrflos, allMarkets }: Props) {
               </button>
             </div>
 
+            {claimTooHigh && (
+              <p className="text-red-400 text-xs">
+                Amount exceeds claimable maximum of{" "}
+                {maxClaimable !== undefined
+                  ? formatUnits(maxClaimable, ovrfloDecimals)
+                  : "0"}.
+              </p>
+            )}
+
             {txPhase === "waiting" && (
               <p className="text-yellow-400 text-sm text-center py-1">
                 Waiting for on-chain confirmation...
               </p>
             )}
 
-            {txPhase === "success" ? (
+            {!address ? (
+              <>
+                <p className="text-sm text-[var(--color-muted)]">
+                  Connect your wallet to continue.
+                </p>
+                <WalletActionCta />
+              </>
+            ) : wrongChain ? (
+              <>
+                <p className="text-red-400 text-sm">
+                  Switch to chain {CHAIN_ID} to continue.
+                </p>
+                <WalletActionCta />
+              </>
+            ) : txPhase === "success" ? (
               <p className="text-green-400 text-sm text-center py-2">
                 Claim confirmed!
               </p>
             ) : (
               <button
                 onClick={handleClaim}
-                disabled={wrongChain || isBusy || claimAmount === 0n}
+                disabled={isBusy || claimAmount === 0n || claimTooHigh}
                 className="w-full py-2 rounded-lg bg-[var(--color-accent)] text-[var(--color-bg)] font-semibold disabled:opacity-40"
               >
                 {txPhase === "claiming"
@@ -264,12 +305,6 @@ export function ClaimModal({ open, onClose, ovrflos, allMarkets }: Props) {
                     ? "Confirming..."
                     : "Claim"}
               </button>
-            )}
-
-            {wrongChain && (
-              <p className="text-red-400 text-sm">
-                Switch to chain {CHAIN_ID} first.
-              </p>
             )}
             {txPhase === "error" && (
               <div className="text-red-400 text-xs break-all">

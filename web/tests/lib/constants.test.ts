@@ -24,6 +24,12 @@ describe("constants (T-WEB-011)", () => {
     expect(SABLIER_ENVIO_URL).toMatch(/^https:\/\//);
   });
 
+  it("T-WEB-011: RPC_URL is defined from env", async () => {
+    const { RPC_URL } = await import("@/lib/constants");
+    expect(RPC_URL).toBeTruthy();
+    expect(RPC_URL).toMatch(/^https?:\/\//);
+  });
+
   it("T-WEB-011: OVRFLO_FACTORY is defined from env", async () => {
     const { OVRFLO_FACTORY } = await import("@/lib/constants");
     expect(OVRFLO_FACTORY).toBeTruthy();

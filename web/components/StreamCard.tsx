@@ -11,6 +11,9 @@ import {
 import { formatUnits, formatEther, type Address } from "viem";
 import { SABLIER_LOCKUP, CHAIN_ID } from "@/lib/constants";
 import { sablierLockupAbi } from "@/lib/contracts";
+import { parseUserError } from "@/lib/tx-errors";
+import { useUsdPrices, getTokenUsd, formatUsdValue } from "@/hooks/useUsdPrices";
+import { WalletActionCta } from "./WalletActionCta";
 import type { SablierStream } from "@/lib/sablier";
 
 interface Props {
@@ -25,6 +28,7 @@ export function StreamCard({ stream, ptName }: Props) {
   const [txPhase, setTxPhase] = useState<TxPhase>("idle");
   const [txHash, setTxHash] = useState<`0x${string}`>();
   const [error, setError] = useState<string>();
+  const { data: usdPrices } = useUsdPrices([stream.asset.address as `0x${string}`]);
 
   const tokenId = BigInt(stream.tokenId);
 
@@ -76,6 +80,9 @@ export function StreamCard({ stream, ptName }: Props) {
   const withdrawableStr = withdrawable
     ? formatUnits(withdrawable, decimals)
     : "...";
+  const tokenUsd = getTokenUsd(usdPrices?.tokenUsd, stream.asset.address as `0x${string}`);
+  const withdrawableUsd = withdrawable ? formatUsdValue(withdrawable, decimals, tokenUsd) : undefined;
+  const withdrawFeeUsd = minFee && usdPrices?.nativeUsd ? formatUsdValue(minFee, 18, usdPrices.nativeUsd) : undefined;
 
   const feeInsufficient =
     minFee !== undefined &&
@@ -108,7 +115,7 @@ export function StreamCard({ stream, ptName }: Props) {
       const msg = e instanceof Error ? e.message : "Withdraw failed";
       if (!msg.includes("User rejected")) {
         setTxPhase("error");
-        setError(msg.slice(0, 120));
+        setError(parseUserError(e, "Withdraw failed"));
       } else {
         setTxPhase("idle");
       }
@@ -144,13 +151,14 @@ export function StreamCard({ stream, ptName }: Props) {
               {withdrawableStr}
             </span>{" "}
             {stream.asset.symbol}
+            {withdrawableUsd ? ` (${withdrawableUsd})` : ""}
           </div>
           <div className="text-xs text-[var(--color-muted)]">
             Ends: {new Date(end * 1000).toLocaleDateString()}
           </div>
           {minFee !== undefined && minFee > 0n && (
             <div className="text-xs text-[var(--color-muted)] mt-1">
-              Withdraw fee: {formatEther(minFee)} ETH
+              Withdraw fee: {formatEther(minFee)} ETH{withdrawFeeUsd ? ` (${withdrawFeeUsd})` : ""}
             </div>
           )}
           {feeInsufficient && (
@@ -174,6 +182,11 @@ export function StreamCard({ stream, ptName }: Props) {
                 : "Withdraw"}
         </button>
       </div>
+      {address && chainId !== CHAIN_ID && (
+        <div className="mt-3">
+          <WalletActionCta />
+        </div>
+      )}
       {error && (
         <div className="text-xs text-red-400 mt-2 break-all">
           {error}

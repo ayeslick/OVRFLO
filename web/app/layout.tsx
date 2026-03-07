@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { headers } from "next/headers";
 import { cookieToInitialState } from "wagmi";
 import { wagmiConfig } from "@/lib/wagmi-config";
@@ -9,6 +9,26 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "OVRFLO",
   description: "Pendle PT stream management",
+  metadataBase: new URL("https://overflow.finance"),
+  openGraph: {
+    title: "OVRFLO",
+    description: "Pendle PT stream management",
+    url: "https://overflow.finance",
+    siteName: "OVRFLO",
+    images: ["/opengraph-image"],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "OVRFLO",
+    description: "Pendle PT stream management",
+    images: ["/opengraph-image"],
+  },
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  themeColor: "#0b1221",
 };
 
 export default async function RootLayout({

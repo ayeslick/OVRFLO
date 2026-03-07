@@ -4,6 +4,7 @@ import { type ReactNode, useState, useEffect, useRef } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { WagmiProvider, type State } from "wagmi";
 import { wagmiAdapter, wagmiConfig } from "./wagmi-config";
+import { resolvedAppKitNetwork } from "./chain-config";
 
 export function Providers({
   children,
@@ -29,19 +30,17 @@ export function Providers({
     }
     appKitInit.current = true;
     import("@reown/appkit/react").then(({ createAppKit }) => {
-      import("@reown/appkit/networks").then(({ mainnet }) => {
-        createAppKit({
-          adapters: [wagmiAdapter],
-          projectId,
-          networks: [mainnet],
-          defaultNetwork: mainnet,
-          metadata: {
-            name: "OVRFLO",
-            description: "Pendle PT stream management",
-            url: "https://overflow.finance",
-            icons: [],
-          },
-        });
+      createAppKit({
+        adapters: [wagmiAdapter],
+        projectId,
+        networks: [resolvedAppKitNetwork],
+        defaultNetwork: resolvedAppKitNetwork,
+        metadata: {
+          name: "OVRFLO",
+          description: "Pendle PT stream management",
+          url: "https://overflow.finance",
+          icons: [],
+        },
       });
     });
   }, []);

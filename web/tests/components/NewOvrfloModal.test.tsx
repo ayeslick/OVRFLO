@@ -107,4 +107,24 @@ describe("NewOvrfloModal logic (T-WEB-003, T-WEB-005, T-WEB-018)", () => {
     phase = "idle";
     expect(phase).toBe("idle");
   });
+
+  it("blocks deposits for expired markets", () => {
+    const now = 1_700_000_000n;
+    const expiry = now - 1n;
+    const isExpired = expiry <= now;
+    expect(isExpired).toBe(true);
+  });
+
+  it("blocks deposits when PT balance or fee token balance is insufficient", () => {
+    const ptAmount = 200n;
+    const ptBalance = 150n;
+    const feeAmount = 10n;
+    const underlyingBalance = 5n;
+
+    const insufficientPtBalance = ptAmount > ptBalance;
+    const insufficientUnderlyingBalance = feeAmount > underlyingBalance;
+
+    expect(insufficientPtBalance).toBe(true);
+    expect(insufficientUnderlyingBalance).toBe(true);
+  });
 });

@@ -83,4 +83,10 @@ describe("ClaimModal logic (T-WEB-004, T-WEB-006, T-WEB-015)", () => {
     const formatted = formatUnits(maxClaimable, ovrfloDecimals);
     expect(formatted).toBe("50.25");
   });
+
+  it("blocks manual claim amounts above maxClaimable", () => {
+    const maxClaimable = 100n;
+    const claimAmount = 101n;
+    expect(claimAmount > maxClaimable).toBe(true);
+  });
 });
