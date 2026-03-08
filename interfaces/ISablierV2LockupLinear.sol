@@ -26,5 +26,7 @@ interface ISablierV2LockupLinear {
     }
 
     function createWithDurations(CreateWithDurations calldata params) external returns (uint256 streamId);
+
+    function withdrawableAmountOf(uint256 streamId) external view returns (uint128 withdrawableAmount);
 }
 

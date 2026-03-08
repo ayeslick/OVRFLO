@@ -25,6 +25,7 @@ contract MockERC20Metadata is ERC20 {
     }
 }
 
+/// @dev Fast deterministic protocol unit coverage; real Pendle oracle/PT/Sablier integration lives in test/fork/OVRFLOMainnetFork.t.sol.
 contract OVRFLOProtocolTest is Test {
     event Deposited(
         address indexed user,

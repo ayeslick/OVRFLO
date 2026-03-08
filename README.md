@@ -252,6 +252,36 @@ forge build
 forge test
 ```
 
+### Fork Tests (factory/safety onboarding)
+
+- Set `MAINNET_RPC_URL` to an archive-capable Ethereum mainnet RPC.
+- The fork harness pins block `24609670` inside `test/fork/OVRFLOForkBase.t.sol` for deterministic runs.
+- `foundry.toml` exposes the `mainnet` RPC alias from `MAINNET_RPC_URL` for local fork utilities.
+
+```bash
+MAINNET_RPC_URL=https://your-archive-mainnet-rpc \
+forge test --match-path test/fork/OVRFLOFactoryMainnetFork.t.sol -vv
+```
+
+### Frontend (web)
+
+The checked-in frontend launch config is pinned to Ethereum mainnet. Copy
+`web/.env.example` to `web/.env.local` and set:
+
+- `NEXT_PUBLIC_CHAIN_ID=1`
+- `NEXT_PUBLIC_OVRFLO_FACTORY` to the deployed mainnet factory address
+- `NEXT_PUBLIC_REOWN_PROJECT_ID` to your Reown / WalletConnect project ID
+
+`NEXT_PUBLIC_RPC_URL` is optional. Set it only if you want the web app to use a
+custom mainnet RPC endpoint; otherwise wagmi/AppKit use the default transport.
+
+```bash
+cd web
+cp .env.example .env.local
+npm test
+npm run build
+```
+
 ### Deploy
 
 ```bash
