@@ -15,13 +15,13 @@ contract OVRFLOTokenTest is Test {
 
     function setUp() public {
         vm.prank(OWNER);
-        token = new OVRFLOToken("OVRFLO Wrapped Ether", "ovrfloWETH", 6);
+        token = new OVRFLOToken("OVRFLO Wrapped Ether", "ovrfloWETH");
     }
 
     function test_Constructor_SetsMetadataOwnerAndDecimals() public view {
         assertEq(token.name(), "OVRFLO Wrapped Ether");
         assertEq(token.symbol(), "ovrfloWETH");
-        assertEq(token.decimals(), 6);
+        assertEq(token.decimals(), 18);
         assertEq(token.owner(), OWNER);
     }
 

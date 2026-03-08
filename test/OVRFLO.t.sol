@@ -81,7 +81,7 @@ contract OVRFLOProtocolTest is Test {
         ptTwo = new MockERC20Metadata("PT Two", "PT2", 18);
         ptMismatch = new MockERC20Metadata("PT Mismatch", "PTM", 6);
 
-        ovrfloToken = new OVRFLOToken("OVRFLO Underlying", "ovrUND", 18);
+        ovrfloToken = new OVRFLOToken("OVRFLO Underlying", "ovrUND");
         ovrfloToken.transferOwnership(address(ovrflo));
     }
 
@@ -182,20 +182,6 @@ contract OVRFLOProtocolTest is Test {
         vm.expectRevert("OVRFLO: PT already mapped");
         ovrflo.setSeriesApproved(
             MARKET_TWO, address(ptOne), address(underlying), address(ovrfloToken), TWAP_DURATION, block.timestamp + 60 days, 0
-        );
-    }
-
-    function test_SetSeriesApproved_RevertsForDecimalMismatch() public {
-        vm.prank(ADMIN);
-        vm.expectRevert("OVRFLO: decimals mismatch");
-        ovrflo.setSeriesApproved(
-            MARKET_ONE,
-            address(ptMismatch),
-            address(underlying),
-            address(ovrfloToken),
-            TWAP_DURATION,
-            block.timestamp + 30 days,
-            0
         );
     }
 

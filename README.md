@@ -118,7 +118,7 @@ The core contract handling deposits and claims.
 
 ### OVRFLOToken.sol
 
-ERC20 wrapper token deployed per underlying asset. Owned by OVRFLO contract and configured to use that asset's decimals.
+ERC20 wrapper token deployed per underlying asset. Owned by OVRFLO contract, with name/symbol derived from the configured underlying and fixed 18-decimal deploy-time semantics.
 
 ## User Flows
 
@@ -178,7 +178,7 @@ factory.configureDeployment(treasury, WETH);
 
 The factory:
 - Deploys OVRFLO with factory as `adminContract`
-- Deploys OVRFLOToken (name/symbol derived from underlying)
+- Deploys OVRFLOToken (name/symbol derived from underlying, fixed 18 decimals)
 - Transfers OVRFLOToken ownership to OVRFLO
 - Registers the OVRFLO in its registry (`ovrflos[]` mapping)
 
@@ -192,7 +192,7 @@ factory.prepareOracle(market, twapDuration);
 factory.addMarket(ovrflo, market, twapDuration, feeBps);
 ```
 
-`addMarket` reads PT address and expiry directly from the Pendle market contract, rejects duplicate PT mappings, and requires `twapDuration >= 15 minutes` plus a ready Pendle oracle window before approval. Fee is capped at `FEE_MAX_BPS` (100 bps = 1%).
+`addMarket` reads PT address and expiry directly from the Pendle market contract, rejects duplicate PT mappings, and uses the already-deployed shared OVRFLO token with fixed 18 decimals. It also requires `twapDuration >= 15 minutes` plus a ready Pendle oracle window before approval. Fee is capped at `FEE_MAX_BPS` (100 bps = 1%).
 
 ## Fee Structure
 

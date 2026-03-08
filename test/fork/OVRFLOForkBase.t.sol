@@ -36,7 +36,9 @@ abstract contract OVRFLOForkBase is Test {
 
         vm.startPrank(OWNER);
         factory.configureDeployment(TREASURY, WSTETH);
-        (address ovrfloAddr, address tokenAddr) = factory.deploy();
+        address tokenAddr;
+        address ovrfloAddr;
+        (ovrfloAddr, tokenAddr) = factory.deploy();
         vm.stopPrank();
 
         ovrflo = OVRFLO(ovrfloAddr);

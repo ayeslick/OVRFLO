@@ -69,9 +69,17 @@ contract OVRFLOSafetyTest is Test {
     address internal constant PENDLE_ORACLE = 0x9a9Fa8338dd5E5B2188006f1Cd2Ef26d921650C2;
     uint32 internal constant MIN_TWAP_DURATION = 15 minutes;
 
-    function test_Deploy_SetsOvrfloTokenDecimalsToUnderlyingDecimals() public {
-        (, , address token) = _deploySystem(6);
-        assertEq(OVRFLOToken(token).decimals(), 6);
+    function test_Deploy_UsesFixed18OvrfloTokenDecimals() public {
+        (OVRFLOFactory factory, OVRFLO ovrflo, address token) = _deploySystem(6);
+
+        assertTrue(token != address(0));
+
+        OVRFLOToken ovrfloToken = OVRFLOToken(token);
+        assertEq(ovrfloToken.owner(), address(ovrflo));
+        assertEq(ovrfloToken.decimals(), 18);
+
+        OVRFLOFactory.OvrfloInfo memory info = factory.getOvrfloInfo(address(ovrflo));
+        assertEq(info.ovrfloToken, token);
     }
 
     function test_AddMarket_RevertsWhenOracleIsNotReady() public {
@@ -121,18 +129,21 @@ contract OVRFLOSafetyTest is Test {
         factory.addMarket(address(ovrflo), address(market2), MIN_TWAP_DURATION, 0);
     }
 
-    function test_AddMarket_RevertsWhenPtDecimalsMismatchOvrfloToken() public {
-        (OVRFLOFactory factory, OVRFLO ovrflo, address token) = _deploySystem(6);
+    function test_AddMarket_UsesFixed18DecimalsInsteadOfUnderlyingDecimals() public {
+        (OVRFLOFactory factory, OVRFLO ovrflo,) = _deploySystem(6);
         MockPrincipalToken pt = new MockPrincipalToken(address(0xAAA5), 18);
         MockPendleMarket market = new MockPendleMarket(address(0xAAA5), address(pt), block.timestamp + 30 days);
 
         _mockOracleState(address(market), MIN_TWAP_DURATION, false, 0, true);
 
-        assertEq(OVRFLOToken(token).decimals(), 6);
-
         vm.prank(MULTISIG);
-        vm.expectRevert("OVRFLO: decimals mismatch");
         factory.addMarket(address(ovrflo), address(market), MIN_TWAP_DURATION, 0);
+
+        OVRFLOFactory.OvrfloInfo memory info = factory.getOvrfloInfo(address(ovrflo));
+        OVRFLOToken token = OVRFLOToken(info.ovrfloToken);
+
+        assertEq(token.decimals(), 18);
+        assertEq(token.owner(), address(ovrflo));
     }
 
     function _deploySystem(uint8 underlyingDecimals)

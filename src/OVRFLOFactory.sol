@@ -110,10 +110,8 @@ contract OVRFLOFactory {
 
         string memory tokenName = IERC20Metadata(config.underlying).name();
         string memory tokenSymbol = IERC20Metadata(config.underlying).symbol();
-        uint8 tokenDecimals = IERC20Metadata(config.underlying).decimals();
-        OVRFLOToken token = new OVRFLOToken(
-            string(abi.encodePacked("OVRFLO ", tokenName)), string(abi.encodePacked("ovrflo", tokenSymbol)), tokenDecimals
-        );
+        OVRFLOToken token =
+            new OVRFLOToken(string(abi.encodePacked("OVRFLO ", tokenName)), string(abi.encodePacked("ovrflo", tokenSymbol)));
         token.transferOwnership(address(v));
 
         ovrflo = address(v);

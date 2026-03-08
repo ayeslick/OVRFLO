@@ -64,6 +64,7 @@ contract OVRFLOFactoryMainnetForkTest is OVRFLOForkBase {
         assertEq(storedPt, pt);
         assertEq(storedToken, address(token));
         assertEq(storedUnderlying, WSTETH);
+        assertEq(token.decimals(), 18);
         assertEq(ovrflo.ptToMarket(pt), PRIMARY_MARKET);
         assertTrue(factory.isMarketApproved(address(ovrflo), PRIMARY_MARKET));
         assertEq(factory.approvedMarketCount(address(ovrflo)), 1);

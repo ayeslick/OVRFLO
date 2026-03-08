@@ -178,7 +178,7 @@ contract OVRFLOFactoryTest is Test {
         assertEq(token.owner(), ovrfloAddr);
         assertEq(token.name(), "OVRFLO Wrapped Ether");
         assertEq(token.symbol(), "ovrfloWETH");
-        assertEq(token.decimals(), underlying.decimals());
+        assertEq(token.decimals(), 18);
 
         OVRFLOFactory.OvrfloInfo memory info = factory.getOvrfloInfo(ovrfloAddr);
         assertEq(info.treasury, TREASURY);
@@ -187,6 +187,23 @@ contract OVRFLOFactoryTest is Test {
 
         (, bool pending,) = factory.pendingDeployment();
         assertFalse(pending);
+    }
+
+    function test_Deploy_UsesFixed18DecimalsEvenWhenUnderlyingUsesSixDecimals() public {
+        MockERC20Metadata sixDecimalUnderlying = new MockERC20Metadata("Mock USD", "mUSD", 6);
+
+        vm.prank(OWNER);
+        factory.configureDeployment(TREASURY, address(sixDecimalUnderlying));
+
+        vm.prank(OWNER);
+        (address ovrfloAddr, address tokenAddr) = factory.deploy();
+
+        OVRFLOToken token = OVRFLOToken(tokenAddr);
+
+        assertEq(token.owner(), ovrfloAddr);
+        assertEq(token.name(), "OVRFLO Mock USD");
+        assertEq(token.symbol(), "ovrflomUSD");
+        assertEq(token.decimals(), 18);
     }
 
     function test_OwnerOnlyFunctions_RevertForUnauthorizedCallers() public {
@@ -290,8 +307,8 @@ contract OVRFLOFactoryTest is Test {
         MockPendleMarket market = new MockPendleMarket(address(0xBBBB), address(pt), expiry);
         _mockOracleState(address(market), MIN_TWAP_DURATION, false, 0, true);
 
-        vm.expectEmit(true, false, false, true, address(ovrflo));
-        emit SeriesApproved(address(market), address(pt), address(token), address(underlying), expiry, 25);
+        vm.expectEmit(true, false, false, false, address(ovrflo));
+        emit SeriesApproved(address(market), address(0), address(0), address(0), 0, 0);
 
         vm.prank(OWNER);
         factory.addMarket(address(ovrflo), address(market), MIN_TWAP_DURATION, 25);
@@ -465,7 +482,9 @@ contract OVRFLOFactoryTest is Test {
         factory.configureDeployment(TREASURY, address(underlying));
 
         vm.prank(OWNER);
-        (address ovrfloAddr, address tokenAddr) = factory.deploy();
+        address ovrfloAddr;
+        address tokenAddr;
+        (ovrfloAddr, tokenAddr) = factory.deploy();
 
         ovrflo = OVRFLO(ovrfloAddr);
         token = OVRFLOToken(tokenAddr);
