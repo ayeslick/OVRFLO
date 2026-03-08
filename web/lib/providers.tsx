@@ -4,11 +4,7 @@ import { type ReactNode, useState, useEffect, useRef } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { WagmiProvider, type State } from "wagmi";
 import { wagmiAdapter, wagmiConfig } from "./wagmi-config";
-<<<<<<< HEAD
-import { resolvedAppKitNetwork } from "./chain-config";
-=======
-import { PUBLIC_ENV_REFERENCE } from "./launch-config";
->>>>>>> c3c87ba (web pass 2: add error handling, status panel, and launch config)
+import { PUBLIC_ENV_REFERENCE, SUPPORTED_APPKIT_NETWORK } from "./launch-config";
 
 export function Providers({
   children,
@@ -39,8 +35,8 @@ export function Providers({
       createAppKit({
         adapters: [wagmiAdapter],
         projectId,
-        networks: [resolvedAppKitNetwork],
-        defaultNetwork: resolvedAppKitNetwork,
+        networks: [SUPPORTED_APPKIT_NETWORK],
+        defaultNetwork: SUPPORTED_APPKIT_NETWORK,
         metadata: {
           name: "OVRFLO",
           description: "Pendle PT stream management",

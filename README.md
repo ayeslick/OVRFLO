@@ -64,8 +64,8 @@ Pendle PTs trade at a discount to their face value. When you buy a PT at 95% of 
 │   │   Deployment  │                              │ - claim()    │   │
 │   │ - deploy()    │                              │ - series     │   │
 │   │ - addMarket() │                              │   management │   │
-│   │   (incl.      │                              └──────┬───────┘   │
-│   │   oracle prep)│      deploys                        │           │
+│   │ - prepare     │                              └──────┬───────┘   │
+│   │   Oracle      │      deploys                        │           │
 │   └───────┬───────┘                                     │ mints/    │
 │           │                                             │ burns     │
 │           │            ┌─────────────┐          ┌───────▼───────┐   │
@@ -95,9 +95,10 @@ Factory and admin hub for deploying and managing OVRFLO systems. Owned by a time
 | `configureDeployment(treasury, underlying)` | Stage deployment parameters |
 | `deploy()` | Deploy OVRFLO + OVRFLOToken from stored config |
 | `cancelDeployment()` | Cancel a pending deployment |
-| `addMarket(ovrflo, market, twapDuration, feeBps)` | Add a PT maturity; requests oracle prep and reverts if cardinality must be increased, then retry once ready |
+| `addMarket(ovrflo, market, twapDuration, feeBps)` | Add a PT maturity (auto-reads pt/expiry/underlying/ovrfloToken) |
 | `setMarketDepositLimit(ovrflo, market, limit)` | Set deposit cap for a market |
 | `sweepExcessPt(ovrflo, ptToken, to)` | Sweep excess PT from an OVRFLO |
+| `prepareOracle(market, twapDuration)` | Increase oracle cardinality if needed |
 | `transferOvrfloAdmin(ovrflo, newAdmin)` | Migrate an OVRFLO to a new factory |
 | `transferOwnership(newOwner)` | Transfer factory ownership |
 
@@ -184,12 +185,14 @@ The factory:
 ### Onboarding a New Market
 
 ```solidity
-// Add market. If oracle cardinality must be increased, this call requests it and reverts.
-// Retry addMarket after the Pendle oracle window is ready.
+// 1. Prepare oracle cardinality (if needed). twapDuration must be >= 15 minutes.
+factory.prepareOracle(market, twapDuration);
+
+// 2. Add market after cardinality is sufficient and the oracle's oldest observation is ready
 factory.addMarket(ovrflo, market, twapDuration, feeBps);
 ```
 
-`addMarket` reads PT address and expiry directly from the Pendle market contract, rejects duplicate PT mappings, and requires `twapDuration >= 15 minutes` plus a ready Pendle oracle window before approval. If Pendle reports insufficient oracle cardinality, the call first requests the higher cardinality and reverts with `OVRFLOFactory: oracle cardinality`; once observations are available and the oldest observation is ready, retry the same `addMarket` call. Fee is capped at `FEE_MAX_BPS` (100 bps = 1%).
+`addMarket` reads PT address and expiry directly from the Pendle market contract, rejects duplicate PT mappings, and requires `twapDuration >= 15 minutes` plus a ready Pendle oracle window before approval. Fee is capped at `FEE_MAX_BPS` (100 bps = 1%).
 
 ## Fee Structure
 
@@ -247,6 +250,25 @@ forge build
 
 ```bash
 forge test
+```
+
+### Frontend (web)
+
+The checked-in frontend launch config is pinned to Ethereum mainnet. Copy
+`web/.env.example` to `web/.env.local` and set:
+
+- `NEXT_PUBLIC_CHAIN_ID=1`
+- `NEXT_PUBLIC_OVRFLO_FACTORY` to the deployed mainnet factory address
+- `NEXT_PUBLIC_REOWN_PROJECT_ID` to your Reown / WalletConnect project ID
+
+`NEXT_PUBLIC_RPC_URL` is optional. Set it only if you want the web app to use a
+custom mainnet RPC endpoint; otherwise wagmi/AppKit use the default transport.
+
+```bash
+cd web
+cp .env.example .env.local
+npm test
+npm run build
 ```
 
 ### Deploy

@@ -2,15 +2,11 @@
 
 import { useAccount } from "wagmi";
 import { useUserStreams } from "@/hooks/useStreams";
-<<<<<<< HEAD
 import { useTokenSymbols, getTokenSymbol } from "@/hooks/useTokenLabels";
-import { parseStreamError } from "@/lib/tx-errors";
-=======
 import { CHAIN_NAME, SABLIER_ENVIO_URL } from "@/lib/constants";
 import { getErrorMessage } from "@/lib/errors";
-import { StatusPanel } from "./StatusPanel";
->>>>>>> c3c87ba (web pass 2: add error handling, status panel, and launch config)
 import { StreamCard } from "./StreamCard";
+import { StatusPanel } from "./StatusPanel";
 import { WalletActionCta } from "./WalletActionCta";
 import type { SablierStream } from "@/lib/sablier";
 import type { OvrfloEntry } from "@/hooks/useOvrflos";
@@ -24,12 +20,8 @@ interface Props {
 export function StreamList({ ovrflos, allMarkets }: Props) {
   const { address } = useAccount();
   const ovrfloAddrs = ovrflos.map((o) => o.address);
-<<<<<<< HEAD
-  const { data: streams, isLoading, error, refetch } = useUserStreams(address, ovrfloAddrs);
   const ptSymbols = useTokenSymbols(allMarkets.map((market) => market.ptToken));
-=======
   const { data: streams, isLoading, error } = useUserStreams(address, ovrfloAddrs);
->>>>>>> c3c87ba (web pass 2: add error handling, status panel, and launch config)
 
   if (!address) {
     return (
@@ -52,44 +44,20 @@ export function StreamList({ ovrflos, allMarkets }: Props) {
 
   if (error) {
     return (
-<<<<<<< HEAD
-      <div className="text-center py-12 space-y-3">
-        <p className="text-red-400">{parseStreamError(error)}</p>
-        <button
-          onClick={() => void refetch()}
-          className="px-4 py-2 rounded-lg border border-[var(--color-border)] text-[var(--color-heading)] font-semibold text-sm hover:border-[var(--color-accent)] transition"
-        >
-          Retry
-        </button>
-      </div>
-    );
-  }
-
-  if (ovrfloAddrs.length === 0) {
-    return (
-      <p className="text-[var(--color-muted)] text-center py-12">
-        No OVRFLO contracts are configured yet.
-      </p>
-=======
       <StatusPanel
         title="Unable to load your streams"
         description={`The Sablier indexer at ${SABLIER_ENVIO_URL} did not return stream data for ${CHAIN_NAME}. Confirm the indexer is healthy and that the app is pointed at the intended mainnet deployment.`}
         details={[getErrorMessage(error)]}
       />
->>>>>>> c3c87ba (web pass 2: add error handling, status panel, and launch config)
     );
   }
 
   if (!streams || streams.length === 0) {
     return (
       <p className="text-[var(--color-muted)] text-center py-12">
-<<<<<<< HEAD
-        No active streams yet.
-=======
         {ovrflos.length === 0
           ? "No OVRFLO markets are currently available from the configured factory."
           : "No active OVRFLO streams found for this wallet yet."}
->>>>>>> c3c87ba (web pass 2: add error handling, status panel, and launch config)
       </p>
     );
   }
@@ -108,7 +76,9 @@ export function StreamList({ ovrflos, allMarkets }: Props) {
     );
     if (!market) return undefined;
     const symbol = getTokenSymbol(ptSymbols, market.ptToken, undefined);
-    return symbol ? `${symbol} · ${new Date(Number(market.expiry) * 1000).toLocaleDateString()}` : undefined;
+    return symbol
+      ? `${symbol} · ${new Date(Number(market.expiry) * 1000).toLocaleDateString()}`
+      : undefined;
   }
 
   return (

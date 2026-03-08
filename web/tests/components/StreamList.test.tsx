@@ -1,39 +1,23 @@
-<<<<<<< HEAD
-import { describe, it, expect, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
-
-const useAccountMock = vi.fn();
-const useUserStreamsMock = vi.fn();
-const useReadContractsMock = vi.fn();
-
-vi.mock("wagmi", () => ({
-  useAccount: () => useAccountMock(),
-  useReadContracts: (...args: unknown[]) => useReadContractsMock(...args),
-=======
 import { render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const useAccountMock = vi.fn();
 const useUserStreamsMock = vi.fn();
+const useTokenSymbolsMock = vi.fn();
 
 vi.mock("wagmi", () => ({
   useAccount: () => useAccountMock(),
->>>>>>> c3c87ba (web pass 2: add error handling, status panel, and launch config)
 }));
 
 vi.mock("@/hooks/useStreams", () => ({
   useUserStreams: (...args: unknown[]) => useUserStreamsMock(...args),
 }));
 
-<<<<<<< HEAD
-const { StreamList } = await import("@/components/StreamList");
+vi.mock("@/hooks/useTokenLabels", () => ({
+  useTokenSymbols: (...args: unknown[]) => useTokenSymbolsMock(...args),
+  getTokenSymbol: () => undefined,
+}));
 
-describe("StreamList", () => {
-  it("renders indexer error state distinctly from empty state", () => {
-    useAccountMock.mockReturnValue({
-      address: "0x0000000000000000000000000000000000000001",
-    });
-=======
 vi.mock("@/components/StreamCard", () => ({
   StreamCard: () => <div>stream-card</div>,
 }));
@@ -51,6 +35,7 @@ beforeEach(() => {
   useAccountMock.mockReturnValue({
     address: "0x0000000000000000000000000000000000000005",
   });
+  useTokenSymbolsMock.mockReturnValue({});
   useUserStreamsMock.mockReturnValue({
     data: [],
     isLoading: false,
@@ -60,23 +45,10 @@ beforeEach(() => {
 
 describe("StreamList", () => {
   it("renders an actionable indexer error instead of an empty state", () => {
->>>>>>> c3c87ba (web pass 2: add error handling, status panel, and launch config)
     useUserStreamsMock.mockReturnValue({
       data: undefined,
       isLoading: false,
       error: new Error("Sablier indexer returned 502"),
-<<<<<<< HEAD
-      refetch: vi.fn(),
-    });
-    useReadContractsMock.mockReturnValue({ data: undefined });
-
-    render(<StreamList ovrflos={[]} allMarkets={[]} />);
-
-    expect(screen.getByText(/unable to load stream data/i)).toBeInTheDocument();
-    expect(screen.queryByText(/no active streams yet/i)).not.toBeInTheDocument();
-  });
-});
-=======
     });
 
     render(<StreamList ovrflos={[ovrflo]} allMarkets={[]} />);
@@ -93,4 +65,3 @@ describe("StreamList", () => {
     ).toBeInTheDocument();
   });
 });
->>>>>>> c3c87ba (web pass 2: add error handling, status panel, and launch config)

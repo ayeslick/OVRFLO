@@ -12,23 +12,6 @@ export const PENDLE_ORACLE = MAINNET_DEPENDENCIES.pendleOracle;
 export const SABLIER_LOCKUP = MAINNET_DEPENDENCIES.sablierLockup;
 export const SABLIER_ENVIO_URL = MAINNET_DEPENDENCIES.sablierIndexerUrl;
 
-<<<<<<< HEAD
-function isAddress(value: string): value is `0x${string}` {
-  return /^0x[a-fA-F0-9]{40}$/.test(value);
-=======
-const _factory = process.env.NEXT_PUBLIC_OVRFLO_FACTORY;
-if (!_factory) {
-  throw new Error(
-    `${PUBLIC_ENV_REFERENCE.factory} is not set. Copy web/.env.example to .env.local and point it at the deployed mainnet factory.`
-  );
-}
-if (!isAddress(_factory)) {
-  throw new Error(
-    `${PUBLIC_ENV_REFERENCE.factory} must be a 0x-prefixed address. Received \"${_factory}\".`
-  );
->>>>>>> c3c87ba (web pass 2: add error handling, status panel, and launch config)
-}
-
 export function parseFactoryAddresses(
   factoriesEnv: string | undefined,
   factoryEnv: string | undefined
@@ -36,7 +19,7 @@ export function parseFactoryAddresses(
   const raw = factoriesEnv ?? factoryEnv;
   if (!raw) {
     throw new Error(
-      "NEXT_PUBLIC_OVRFLO_FACTORIES or NEXT_PUBLIC_OVRFLO_FACTORY must be set. Add it to .env.local."
+      `${PUBLIC_ENV_REFERENCE.factory} is not set. Copy web/.env.example to .env.local and point it at the deployed mainnet factory. To provide multiple factories intentionally, use ${PUBLIC_ENV_REFERENCE.factories}.`
     );
   }
 
@@ -47,11 +30,11 @@ export function parseFactoryAddresses(
 
   if (parsed.length === 0) {
     throw new Error(
-      "No OVRFLO factory addresses were provided. Set NEXT_PUBLIC_OVRFLO_FACTORIES or NEXT_PUBLIC_OVRFLO_FACTORY."
+      `No OVRFLO factory addresses were provided. Set ${PUBLIC_ENV_REFERENCE.factory} or ${PUBLIC_ENV_REFERENCE.factories}.`
     );
   }
 
-  if (!parsed.every(isAddress)) {
+  if (!parsed.every((value): value is `0x${string}` => isAddress(value))) {
     throw new Error(
       `Invalid factory address list: "${raw}". Use comma-separated 0x addresses.`
     );
@@ -73,16 +56,6 @@ if (!rawChainId) {
   );
 }
 
-<<<<<<< HEAD
-const _rpcUrl = process.env.NEXT_PUBLIC_RPC_URL;
-if (!_rpcUrl) {
-  throw new Error("NEXT_PUBLIC_RPC_URL is not set. Add it to .env.local.");
-}
-export const RPC_URL = _rpcUrl;
-
-export const SABLIER_ENVIO_URL =
-  "https://indexer.hyperindex.xyz/53b7e25/v1/graphql" as const;
-=======
 const _chainId = Number(rawChainId);
 if (!Number.isInteger(_chainId) || _chainId <= 0) {
   throw new Error(
@@ -94,4 +67,3 @@ if (_chainId !== CHAIN_ID) {
     `OVRFLO web currently supports ${CHAIN_NAME} only because the contract and indexer dependencies are pinned to mainnet. Set ${PUBLIC_ENV_REFERENCE.chainId}=${CHAIN_ID}.`
   );
 }
->>>>>>> c3c87ba (web pass 2: add error handling, status panel, and launch config)

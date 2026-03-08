@@ -41,10 +41,11 @@ describe("constants (T-WEB-011)", () => {
     expect(PENDLE_ORACLE).toMatch(/^0x[a-fA-F0-9]{40}$/);
   });
 
-  it("T-WEB-011: RPC_URL is defined from env", async () => {
-    const { RPC_URL } = await import("@/lib/constants");
-    expect(RPC_URL).toBeTruthy();
-    expect(RPC_URL).toMatch(/^https?:\/\//);
+  it("T-WEB-011: NEXT_PUBLIC_RPC_URL is optional", async () => {
+    delete process.env.NEXT_PUBLIC_RPC_URL;
+
+    const { OVRFLO_FACTORY } = await importFreshConstants();
+    expect(OVRFLO_FACTORY).toBe(DEFAULT_ENV.NEXT_PUBLIC_OVRFLO_FACTORY);
   });
 
   it("T-WEB-011: OVRFLO_FACTORY is defined from env", async () => {
@@ -62,6 +63,8 @@ describe("constants (T-WEB-011)", () => {
   it("T-WEB-011: rejects an invalid factory address", async () => {
     vi.stubEnv("NEXT_PUBLIC_OVRFLO_FACTORY", "not-an-address");
 
-    await expect(importFreshConstants()).rejects.toThrow("0x-prefixed address");
+    await expect(importFreshConstants()).rejects.toThrow(
+      "Invalid factory address list"
+    );
   });
 });
