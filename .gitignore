@@ -16,6 +16,7 @@ web/coverage/
 # Docs
 docs/
 plans/
+foundry.toml
 
 # Dotenv file
 .env
