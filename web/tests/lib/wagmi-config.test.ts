@@ -10,11 +10,13 @@ import { describe, it, expect } from "vitest";
 describe("wagmi-config (T-WEB-007, T-WEB-014)", () => {
   it("T-WEB-014: wagmi config exports are defined", async () => {
     // This validates the module loads without runtime error
-    const { wagmiAdapter, wagmiConfig } = await import(
+    const { wagmiAdapter, wagmiConfig, SUPPORTED_CHAINS } = await import(
       "@/lib/wagmi-config"
     );
     expect(wagmiAdapter).toBeDefined();
     expect(wagmiConfig).toBeDefined();
+    expect(SUPPORTED_CHAINS).toHaveLength(1);
+    expect(SUPPORTED_CHAINS[0].id).toBe(1);
   });
 
   it("T-WEB-007: wagmi config source does not contain 'as any'", async () => {
