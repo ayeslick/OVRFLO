@@ -118,7 +118,7 @@ The core contract handling deposits and claims.
 
 ### OVRFLOToken.sol
 
-ERC20 wrapper token deployed per underlying asset. Owned by OVRFLO contract.
+ERC20 wrapper token deployed per underlying asset. Owned by OVRFLO contract and configured to use that asset's decimals.
 
 ## User Flows
 
@@ -185,14 +185,14 @@ The factory:
 ### Onboarding a New Market
 
 ```solidity
-// 1. Prepare oracle cardinality (if needed)
+// 1. Prepare oracle cardinality (if needed). twapDuration must be >= 15 minutes.
 factory.prepareOracle(market, twapDuration);
 
-// 2. Add market — factory reads pt, expiry, underlying, ovrfloToken automatically
+// 2. Add market after cardinality is sufficient and the oracle's oldest observation is ready
 factory.addMarket(ovrflo, market, twapDuration, feeBps);
 ```
 
-`addMarket` reads PT address and expiry directly from the Pendle market contract and pulls underlying + ovrfloToken from stored OVRFLO info. Fee is capped at `FEE_MAX_BPS` (100 bps = 1%).
+`addMarket` reads PT address and expiry directly from the Pendle market contract, rejects duplicate PT mappings, and requires `twapDuration >= 15 minutes` plus a ready Pendle oracle window before approval. Fee is capped at `FEE_MAX_BPS` (100 bps = 1%).
 
 ## Fee Structure
 
