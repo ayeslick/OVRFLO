@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import { useReadContracts } from "wagmi";
 import { OVRFLO_FACTORY } from "@/lib/constants";
 import { ovrfloFactoryAbi, ovrfloAbi } from "@/lib/contracts";
+import { getReadContractsError } from "@/lib/errors";
 import type { OvrfloEntry } from "./useOvrflos";
 
 export interface MarketInfo {
@@ -21,6 +22,7 @@ export interface MarketInfo {
 export function useAllMarkets(ovrflos: OvrfloEntry[]): {
   markets: MarketInfo[];
   isLoading: boolean;
+  error?: Error;
 } {
   // Step 1: Batch all market-count reads into one useReadContracts call.
   const countContracts = useMemo(
@@ -37,6 +39,7 @@ export function useAllMarkets(ovrflos: OvrfloEntry[]): {
   const {
     data: countResults,
     isLoading: countsLoading,
+    error: countsError,
   } = useReadContracts({
     contracts: countContracts,
     query: { enabled: countContracts.length > 0 },
@@ -70,6 +73,7 @@ export function useAllMarkets(ovrflos: OvrfloEntry[]): {
   const {
     data: addrResults,
     isLoading: addrsLoading,
+    error: addrsError,
   } = useReadContracts({
     contracts: addressContracts,
     query: { enabled: addressContracts.length > 0 },
@@ -106,10 +110,31 @@ export function useAllMarkets(ovrflos: OvrfloEntry[]): {
   const {
     data: seriesResults,
     isLoading: seriesLoading,
+    error: seriesError,
   } = useReadContracts({
     contracts: seriesContracts,
     query: { enabled: seriesContracts.length > 0 },
   });
+
+  const error = useMemo(
+    () =>
+      getReadContractsError(
+        countsError,
+        countResults,
+        "Unable to read approved market counts from the configured factory."
+      ) ??
+      getReadContractsError(
+        addrsError,
+        addrResults,
+        "Unable to read approved market addresses from the configured factory."
+      ) ??
+      getReadContractsError(
+        seriesError,
+        seriesResults,
+        "Unable to read approved market metadata from the configured OVRFLO contract."
+      ),
+    [countsError, countResults, addrsError, addrResults, seriesError, seriesResults]
+  );
 
   // Step 4: Post-process into MarketInfo[].
   const markets = useMemo(() => {
@@ -147,5 +172,6 @@ export function useAllMarkets(ovrflos: OvrfloEntry[]): {
   return {
     markets,
     isLoading: countsLoading || addrsLoading || seriesLoading,
+    error,
   };
 }

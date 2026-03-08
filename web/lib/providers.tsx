@@ -4,7 +4,11 @@ import { type ReactNode, useState, useEffect, useRef } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { WagmiProvider, type State } from "wagmi";
 import { wagmiAdapter, wagmiConfig } from "./wagmi-config";
+<<<<<<< HEAD
 import { resolvedAppKitNetwork } from "./chain-config";
+=======
+import { PUBLIC_ENV_REFERENCE } from "./launch-config";
+>>>>>>> c3c87ba (web pass 2: add error handling, status panel, and launch config)
 
 export function Providers({
   children,
@@ -25,7 +29,9 @@ export function Providers({
     if (appKitInit.current) return;
     const projectId = process.env.NEXT_PUBLIC_REOWN_PROJECT_ID ?? "";
     if (!projectId) {
-      console.warn("NEXT_PUBLIC_REOWN_PROJECT_ID missing — wallet modal disabled");
+      console.warn(
+        `${PUBLIC_ENV_REFERENCE.reownProjectId} missing — wallet modal disabled`
+      );
       return;
     }
     appKitInit.current = true;

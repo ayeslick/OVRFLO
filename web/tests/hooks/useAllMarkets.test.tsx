@@ -121,4 +121,20 @@ describe("useAllMarkets (T-WEB-001, T-WEB-002)", () => {
     expect(result.current.markets[1].ovrflo).toBe(ovrfloB.address);
     expect(result.current.markets[1].expiry).toBe(1800000000n);
   });
+
+  it("surfaces read failures instead of silently returning empty markets", () => {
+    const ovrfloA = makeOvrflo("0x000000000000000000000000000000000000000A");
+
+    useReadContractsMock
+      .mockReturnValueOnce({
+        data: [{ status: "failure", error: new Error("factory read failed") }],
+        isLoading: false,
+      })
+      .mockReturnValueOnce({ data: [], isLoading: false })
+      .mockReturnValueOnce({ data: [], isLoading: false });
+
+    const { result } = renderHook(() => useAllMarkets([ovrfloA]));
+
+    expect(result.current.error?.message).toContain("factory read failed");
+  });
 });

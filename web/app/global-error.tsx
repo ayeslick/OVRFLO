@@ -1,11 +1,17 @@
 "use client";
 
+import { getErrorMessage, isFrontendConfigError } from "@/lib/errors";
+
 export default function GlobalError({
+  error,
   reset,
 }: {
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  const configError = isFrontendConfigError(error);
+  const message = getErrorMessage(error, "The application encountered an unrecoverable error.");
+
   return (
     <html lang="en">
       <body
@@ -22,11 +28,17 @@ export default function GlobalError({
       >
         <div style={{ textAlign: "center", padding: "2rem" }}>
           <h2 style={{ color: "#ffffff", fontSize: "1.5rem", marginBottom: "0.5rem" }}>
-            Critical error
+            {configError ? "Frontend configuration error" : "Critical error"}
           </h2>
           <p style={{ color: "#5a7da8", marginBottom: "1.5rem" }}>
-            The application encountered an unrecoverable error.
+            {configError ? message : "The application encountered an unrecoverable error."}
           </p>
+          {configError ? (
+            <p style={{ color: "#5a7da8", marginBottom: "1.5rem", maxWidth: "32rem" }}>
+              Review web/.env.example and ensure the deployed mainnet factory
+              address, chain ID, and Reown project ID are configured.
+            </p>
+          ) : null}
           <button
             onClick={reset}
             style={{
