@@ -138,13 +138,9 @@ contract OVRFLOFactory {
     /// @param feeBps Fee in basis points (max FEE_MAX_BPS)
     function addMarket(address ovrflo, address market, uint32 twapDuration, uint16 feeBps) external onlyOwner {
         _requireKnownOvrflo(ovrflo);
-        require(twapDuration >= MIN_TWAP_DURATION, "OVRFLOFactory: twap too short");
         require(feeBps <= FEE_MAX_BPS, "OVRFLOFactory: fee too high");
 
-        (bool increaseCardinalityRequired,, bool oldestObservationSatisfied) =
-            PENDLE_ORACLE.getOracleState(market, twapDuration);
-        require(!increaseCardinalityRequired, "OVRFLOFactory: oracle cardinality");
-        require(oldestObservationSatisfied, "OVRFLOFactory: oracle not ready");
+        _prepareOracle(market, twapDuration);
 
         OvrfloInfo memory info = ovrfloInfo[ovrflo];
         (, address pt,) = IPendleMarket(market).readTokens();
@@ -152,11 +148,9 @@ contract OVRFLOFactory {
 
         OVRFLO(ovrflo).setSeriesApproved(market, pt, info.underlying, info.ovrfloToken, twapDuration, expiry, feeBps);
 
-        if (!isMarketApproved[ovrflo][market]) {
-            isMarketApproved[ovrflo][market] = true;
-            approvedMarketAt[ovrflo][approvedMarketCount[ovrflo]] = market;
-            approvedMarketCount[ovrflo]++;
-        }
+        isMarketApproved[ovrflo][market] = true;
+        approvedMarketAt[ovrflo][approvedMarketCount[ovrflo]] = market;
+        approvedMarketCount[ovrflo]++;
     }
 
     /// @notice Set the deposit limit for a market on an OVRFLO
@@ -171,14 +165,15 @@ contract OVRFLOFactory {
         OVRFLO(ovrflo).sweepExcessPt(ptToken, to);
     }
 
-    /// @notice Increase Pendle oracle cardinality for a market (must be done before addMarket)
-    function prepareOracle(address market, uint32 twapDuration) external onlyOwner {
+    function _prepareOracle(address market, uint32 twapDuration) private {
         require(twapDuration >= MIN_TWAP_DURATION, "OVRFLOFactory: twap too short");
-        (bool increaseCardinalityRequired, uint16 cardinalityRequired,) =
+        (bool increaseCardinalityRequired, uint16 cardinalityRequired, bool oldestObservationSatisfied) =
             PENDLE_ORACLE.getOracleState(market, twapDuration);
         if (increaseCardinalityRequired) {
             IPendleMarket(market).increaseObservationsCardinalityNext(cardinalityRequired);
+            revert("OVRFLOFactory: oracle cardinality");
         }
+        require(oldestObservationSatisfied, "OVRFLOFactory: oracle not ready");
     }
 
     /*//////////////////////////////////////////////////////////////

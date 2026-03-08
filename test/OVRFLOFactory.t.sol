@@ -209,10 +209,6 @@ contract OVRFLOFactoryTest is Test {
 
         vm.prank(STRANGER);
         vm.expectRevert("OVRFLOFactory: not owner");
-        factory.prepareOracle(address(market), MIN_TWAP_DURATION);
-
-        vm.prank(STRANGER);
-        vm.expectRevert("OVRFLOFactory: not owner");
         factory.addMarket(address(ovrflo), address(market), MIN_TWAP_DURATION, 0);
 
         vm.prank(STRANGER);
@@ -232,32 +228,22 @@ contract OVRFLOFactoryTest is Test {
         factory.transferOwnership(NEW_OWNER);
     }
 
-    function test_PrepareOracle_RevertsForShortDurationAndIncreasesCardinalityWhenRequired() public {
-        vm.prank(OWNER);
-        vm.expectRevert("OVRFLOFactory: twap too short");
-        factory.prepareOracle(address(0xBEEF), MIN_TWAP_DURATION - 1);
-
+    function test_AddMarket_PreparesOracleWithinAddMarketFlow() public {
+        (OVRFLO ovrflo,) = _deployConfiguredSystem();
         uint256 expiry = block.timestamp + 30 days;
         MockPrincipalToken pt = new MockPrincipalToken(address(0xAAAA), 18, expiry);
         MockPendleMarket market = new MockPendleMarket(address(0xBBBB), address(pt), expiry);
         _mockOracleState(address(market), MIN_TWAP_DURATION, true, 9, false);
 
         vm.prank(OWNER);
-        factory.prepareOracle(address(market), MIN_TWAP_DURATION);
-
-        assertEq(market.lastCardinality(), 9);
-    }
-
-    function test_PrepareOracle_DoesNothingWhenCardinalityAlreadySufficient() public {
-        uint256 expiry = block.timestamp + 30 days;
-        MockPrincipalToken pt = new MockPrincipalToken(address(0xAAAA), 18, expiry);
-        MockPendleMarket market = new MockPendleMarket(address(0xBBBB), address(pt), expiry);
-        _mockOracleState(address(market), MIN_TWAP_DURATION, false, 0, true);
-
-        vm.prank(OWNER);
-        factory.prepareOracle(address(market), MIN_TWAP_DURATION);
+        vm.expectCall(address(market), abi.encodeWithSelector(IPendleMarket.increaseObservationsCardinalityNext.selector, uint16(9)));
+        vm.expectRevert("OVRFLOFactory: oracle cardinality");
+        factory.addMarket(address(ovrflo), address(market), MIN_TWAP_DURATION, 0);
 
         assertEq(market.lastCardinality(), 0);
+        assertEq(factory.approvedMarketCount(address(ovrflo)), 0);
+        assertFalse(factory.isMarketApproved(address(ovrflo), address(market)));
+        assertEq(ovrflo.ptToMarket(address(pt)), address(0));
     }
 
     function test_AddMarket_RevertsForUnknownOvrfloOrInvalidConfig() public {
@@ -284,13 +270,17 @@ contract OVRFLOFactoryTest is Test {
 
         _mockOracleState(address(market), MIN_TWAP_DURATION, true, 5, true);
         vm.prank(OWNER);
+        vm.expectCall(address(market), abi.encodeWithSelector(IPendleMarket.increaseObservationsCardinalityNext.selector, uint16(5)));
         vm.expectRevert("OVRFLOFactory: oracle cardinality");
         factory.addMarket(address(ovrflo), address(market), MIN_TWAP_DURATION, 0);
+        assertEq(market.lastCardinality(), 0);
+        assertEq(factory.approvedMarketCount(address(ovrflo)), 0);
 
         _mockOracleState(address(market), MIN_TWAP_DURATION, false, 0, false);
         vm.prank(OWNER);
         vm.expectRevert("OVRFLOFactory: oracle not ready");
         factory.addMarket(address(ovrflo), address(market), MIN_TWAP_DURATION, 0);
+        assertEq(market.lastCardinality(), 0);
     }
 
     function test_AddMarket_OnboardsMarketUpdatesRegistryAndEmitsSeriesEvent() public {
@@ -320,6 +310,26 @@ contract OVRFLOFactoryTest is Test {
         assertTrue(factory.isMarketApproved(address(ovrflo), address(market)));
         assertEq(factory.approvedMarketCount(address(ovrflo)), 1);
         assertEq(factory.getApprovedMarket(address(ovrflo), 0), address(market));
+        assertEq(market.lastCardinality(), 0);
+    }
+
+    function test_AddMarket_DoesNotDuplicateBookkeepingForSameMarket() public {
+        (OVRFLO ovrflo,) = _deployConfiguredSystem();
+        uint256 expiry = block.timestamp + 30 days;
+        MockPrincipalToken pt = new MockPrincipalToken(address(0xAAAA), 18, expiry);
+        MockPendleMarket market = new MockPendleMarket(address(0xBBBB), address(pt), expiry);
+        _mockOracleState(address(market), MIN_TWAP_DURATION, false, 0, true);
+
+        vm.prank(OWNER);
+        factory.addMarket(address(ovrflo), address(market), MIN_TWAP_DURATION, 0);
+
+        vm.prank(OWNER);
+        vm.expectRevert("OVRFLO: series already configured");
+        factory.addMarket(address(ovrflo), address(market), MIN_TWAP_DURATION, 0);
+
+        assertEq(factory.approvedMarketCount(address(ovrflo)), 1);
+        assertEq(factory.getApprovedMarket(address(ovrflo), 0), address(market));
+        assertTrue(factory.isMarketApproved(address(ovrflo), address(market)));
     }
 
     function test_AddMarket_AllowsSharedTokenAcrossMaturities() public {

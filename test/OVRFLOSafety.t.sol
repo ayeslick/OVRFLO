@@ -74,26 +74,6 @@ contract OVRFLOSafetyTest is Test {
         assertEq(OVRFLOToken(token).decimals(), 6);
     }
 
-    function test_PrepareOracle_RevertsForShortDuration() public {
-        (OVRFLOFactory factory,,) = _deploySystem(18);
-        vm.prank(MULTISIG);
-        vm.expectRevert("OVRFLOFactory: twap too short");
-        factory.prepareOracle(address(0xBEEF), MIN_TWAP_DURATION - 1);
-    }
-
-    function test_PrepareOracle_IncreasesCardinalityWhenRequired() public {
-        (OVRFLOFactory factory,,) = _deploySystem(18);
-        MockPrincipalToken pt = new MockPrincipalToken(address(0xAAA1), 18);
-        MockPendleMarket market = new MockPendleMarket(address(0xAAA1), address(pt), block.timestamp + 30 days);
-
-        _mockOracleState(address(market), MIN_TWAP_DURATION, true, 9, false);
-
-        vm.prank(MULTISIG);
-        factory.prepareOracle(address(market), MIN_TWAP_DURATION);
-
-        assertEq(market.lastCardinality(), 9);
-    }
-
     function test_AddMarket_RevertsWhenOracleIsNotReady() public {
         (OVRFLOFactory factory, OVRFLO ovrflo,) = _deploySystem(18);
         MockPrincipalToken pt = new MockPrincipalToken(address(0xAAA2), 18);
@@ -104,6 +84,22 @@ contract OVRFLOSafetyTest is Test {
         vm.prank(MULTISIG);
         vm.expectRevert("OVRFLOFactory: oracle not ready");
         factory.addMarket(address(ovrflo), address(market), MIN_TWAP_DURATION, 0);
+    }
+
+    function test_AddMarket_RevertsWhenOracleNeedsPreparationWithinRefactoredFlow() public {
+        (OVRFLOFactory factory, OVRFLO ovrflo,) = _deploySystem(18);
+        MockPrincipalToken pt = new MockPrincipalToken(address(0xAAA1), 18);
+        MockPendleMarket market = new MockPendleMarket(address(0xAAA1), address(pt), block.timestamp + 30 days);
+
+        _mockOracleState(address(market), MIN_TWAP_DURATION, true, 9, false);
+
+        vm.prank(MULTISIG);
+        vm.expectCall(address(market), abi.encodeWithSelector(IPendleMarket.increaseObservationsCardinalityNext.selector, uint16(9)));
+        vm.expectRevert("OVRFLOFactory: oracle cardinality");
+        factory.addMarket(address(ovrflo), address(market), MIN_TWAP_DURATION, 0);
+
+        assertEq(market.lastCardinality(), 0);
+        assertFalse(factory.isMarketApproved(address(ovrflo), address(market)));
     }
 
     function test_AddMarket_RevertsWhenPtAlreadyMapped() public {
