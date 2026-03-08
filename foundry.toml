@@ -7,6 +7,9 @@ remappings = [
     "prb-math/=lib/prb-math/contracts/"
 ]
 
+[rpc_endpoints]
+mainnet = "${MAINNET_RPC_URL}"
+
 [etherscan]
 unknown_chain = { key = "${TENDERLY_ACCESS_KEY}", chain = 73571, url = "https://virtual.mainnet.us-east.rpc.tenderly.co/db666ddf-0cbc-413c-9f73-fcb2d925db62/verify/etherscan" }
 
