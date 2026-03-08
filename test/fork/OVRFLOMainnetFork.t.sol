@@ -93,8 +93,9 @@ contract OVRFLOMainnetForkTest is OVRFLOForkBase {
     {
         (factory, ovrflo, token) = _deployConfiguredSystem();
 
+        _prepareOracleOffchain(PRIMARY_MARKET, PROTOCOL_TWAP_DURATION);
+
         vm.startPrank(OWNER);
-        factory.prepareOracle(PRIMARY_MARKET, PROTOCOL_TWAP_DURATION);
         factory.addMarket(address(ovrflo), PRIMARY_MARKET, PROTOCOL_TWAP_DURATION, feeBps);
         vm.stopPrank();
     }
