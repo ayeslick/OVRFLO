@@ -5,7 +5,6 @@ import {Test} from "forge-std/Test.sol";
 import {OVRFLO} from "../../src/OVRFLO.sol";
 import {OVRFLOFactory} from "../../src/OVRFLOFactory.sol";
 import {OVRFLOToken} from "../../src/OVRFLOToken.sol";
-import {IPendleMarket} from "../../interfaces/IPendleMarket.sol";
 import {IPendleOracle} from "../../interfaces/IPendleOracle.sol";
 
 abstract contract OVRFLOForkBase is Test {
@@ -36,19 +35,15 @@ abstract contract OVRFLOForkBase is Test {
 
         vm.startPrank(OWNER);
         factory.configureDeployment(TREASURY, WSTETH);
-        address tokenAddr;
-        address ovrfloAddr;
-        (ovrfloAddr, tokenAddr) = factory.deploy();
+        (address ovrfloAddr, address tokenAddr) = factory.deploy();
         vm.stopPrank();
 
         ovrflo = OVRFLO(ovrfloAddr);
         token = OVRFLOToken(tokenAddr);
     }
 
-    function _prepareOracleOffchain(address market, uint32 twapDuration) internal {
-        (bool increaseCardinalityRequired, uint16 cardinalityRequired,) = ORACLE.getOracleState(market, twapDuration);
-        if (increaseCardinalityRequired) {
-            IPendleMarket(market).increaseObservationsCardinalityNext(cardinalityRequired);
-        }
+    function _prepareOracle(OVRFLOFactory factory, address market) internal {
+        vm.prank(OWNER);
+        factory.prepareOracle(market, MIN_TWAP_DURATION);
     }
 }

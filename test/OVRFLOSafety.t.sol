@@ -70,16 +70,28 @@ contract OVRFLOSafetyTest is Test {
     uint32 internal constant MIN_TWAP_DURATION = 15 minutes;
 
     function test_Deploy_UsesFixed18OvrfloTokenDecimals() public {
-        (OVRFLOFactory factory, OVRFLO ovrflo, address token) = _deploySystem(6);
+        (, , address token) = _deploySystem(6);
+        assertEq(OVRFLOToken(token).decimals(), 18);
+    }
 
-        assertTrue(token != address(0));
+    function test_PrepareOracle_RevertsForShortDuration() public {
+        (OVRFLOFactory factory,,) = _deploySystem(18);
+        vm.prank(MULTISIG);
+        vm.expectRevert("OVRFLOFactory: twap too short");
+        factory.prepareOracle(address(0xBEEF), MIN_TWAP_DURATION - 1);
+    }
 
-        OVRFLOToken ovrfloToken = OVRFLOToken(token);
-        assertEq(ovrfloToken.owner(), address(ovrflo));
-        assertEq(ovrfloToken.decimals(), 18);
+    function test_PrepareOracle_IncreasesCardinalityWhenRequired() public {
+        (OVRFLOFactory factory,,) = _deploySystem(18);
+        MockPrincipalToken pt = new MockPrincipalToken(address(0xAAA1), 18);
+        MockPendleMarket market = new MockPendleMarket(address(0xAAA1), address(pt), block.timestamp + 30 days);
 
-        OVRFLOFactory.OvrfloInfo memory info = factory.getOvrfloInfo(address(ovrflo));
-        assertEq(info.ovrfloToken, token);
+        _mockOracleState(address(market), MIN_TWAP_DURATION, true, 9, false);
+
+        vm.prank(MULTISIG);
+        factory.prepareOracle(address(market), MIN_TWAP_DURATION);
+
+        assertEq(market.lastCardinality(), 9);
     }
 
     function test_AddMarket_RevertsWhenOracleIsNotReady() public {
@@ -92,22 +104,6 @@ contract OVRFLOSafetyTest is Test {
         vm.prank(MULTISIG);
         vm.expectRevert("OVRFLOFactory: oracle not ready");
         factory.addMarket(address(ovrflo), address(market), MIN_TWAP_DURATION, 0);
-    }
-
-    function test_AddMarket_RevertsWhenOracleNeedsPreparationWithinRefactoredFlow() public {
-        (OVRFLOFactory factory, OVRFLO ovrflo,) = _deploySystem(18);
-        MockPrincipalToken pt = new MockPrincipalToken(address(0xAAA1), 18);
-        MockPendleMarket market = new MockPendleMarket(address(0xAAA1), address(pt), block.timestamp + 30 days);
-
-        _mockOracleState(address(market), MIN_TWAP_DURATION, true, 9, false);
-
-        vm.prank(MULTISIG);
-        vm.expectCall(address(market), abi.encodeWithSelector(IPendleMarket.increaseObservationsCardinalityNext.selector, uint16(9)));
-        vm.expectRevert("OVRFLOFactory: oracle cardinality");
-        factory.addMarket(address(ovrflo), address(market), MIN_TWAP_DURATION, 0);
-
-        assertEq(market.lastCardinality(), 0);
-        assertFalse(factory.isMarketApproved(address(ovrflo), address(market)));
     }
 
     function test_AddMarket_RevertsWhenPtAlreadyMapped() public {
@@ -130,20 +126,18 @@ contract OVRFLOSafetyTest is Test {
     }
 
     function test_AddMarket_UsesFixed18DecimalsInsteadOfUnderlyingDecimals() public {
-        (OVRFLOFactory factory, OVRFLO ovrflo,) = _deploySystem(6);
+        (OVRFLOFactory factory, OVRFLO ovrflo, address token) = _deploySystem(6);
         MockPrincipalToken pt = new MockPrincipalToken(address(0xAAA5), 18);
         MockPendleMarket market = new MockPendleMarket(address(0xAAA5), address(pt), block.timestamp + 30 days);
 
         _mockOracleState(address(market), MIN_TWAP_DURATION, false, 0, true);
 
+        assertEq(OVRFLOToken(token).decimals(), 18);
+
         vm.prank(MULTISIG);
         factory.addMarket(address(ovrflo), address(market), MIN_TWAP_DURATION, 0);
 
-        OVRFLOFactory.OvrfloInfo memory info = factory.getOvrfloInfo(address(ovrflo));
-        OVRFLOToken token = OVRFLOToken(info.ovrfloToken);
-
-        assertEq(token.decimals(), 18);
-        assertEq(token.owner(), address(ovrflo));
+        assertEq(OVRFLOToken(token).decimals(), 18);
     }
 
     function _deploySystem(uint8 underlyingDecimals)

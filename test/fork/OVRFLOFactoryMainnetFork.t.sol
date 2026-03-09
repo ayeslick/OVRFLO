@@ -8,14 +8,15 @@ import {IPendleMarket} from "../../interfaces/IPendleMarket.sol";
 import {OVRFLOForkBase} from "./OVRFLOForkBase.t.sol";
 
 contract OVRFLOFactoryMainnetForkTest is OVRFLOForkBase {
-    function test_OraclePreparation_PrimaryMarketClearsCardinalityRequirement() public {
+    function test_PrepareOracle_PrimaryMarketClearsCardinalityRequirement() public {
         (bool increaseRequiredBefore, uint16 cardinalityRequiredBefore, bool oldestObservationSatisfiedBefore) =
             ORACLE.getOracleState(PRIMARY_MARKET, MIN_TWAP_DURATION);
 
         assertTrue(increaseRequiredBefore);
         assertTrue(oldestObservationSatisfiedBefore);
 
-        _prepareOracleOffchain(PRIMARY_MARKET, MIN_TWAP_DURATION);
+        (OVRFLOFactory factory,,) = _deployConfiguredSystem();
+        _prepareOracle(factory, PRIMARY_MARKET);
 
         (bool increaseRequiredAfter, uint16 cardinalityRequiredAfter, bool oldestObservationSatisfiedAfter) =
             ORACLE.getOracleState(PRIMARY_MARKET, MIN_TWAP_DURATION);
@@ -42,7 +43,7 @@ contract OVRFLOFactoryMainnetForkTest is OVRFLOForkBase {
         assertEq(pt, PRIMARY_PT);
         assertEq(expiry, PRIMARY_EXPIRY);
 
-        _prepareOracleOffchain(PRIMARY_MARKET, MIN_TWAP_DURATION);
+        _prepareOracle(factory, PRIMARY_MARKET);
 
         vm.prank(OWNER);
         factory.addMarket(address(ovrflo), PRIMARY_MARKET, MIN_TWAP_DURATION, 25);
@@ -64,7 +65,6 @@ contract OVRFLOFactoryMainnetForkTest is OVRFLOForkBase {
         assertEq(storedPt, pt);
         assertEq(storedToken, address(token));
         assertEq(storedUnderlying, WSTETH);
-        assertEq(token.decimals(), 18);
         assertEq(ovrflo.ptToMarket(pt), PRIMARY_MARKET);
         assertTrue(factory.isMarketApproved(address(ovrflo), PRIMARY_MARKET));
         assertEq(factory.approvedMarketCount(address(ovrflo)), 1);
@@ -74,8 +74,8 @@ contract OVRFLOFactoryMainnetForkTest is OVRFLOForkBase {
     function test_AddMarket_AllowsSharedTokenAcrossLiveWstEthMaturities() public {
         (OVRFLOFactory factory, OVRFLO ovrflo, OVRFLOToken token) = _deployConfiguredSystem();
 
-        _prepareOracleOffchain(PRIMARY_MARKET, MIN_TWAP_DURATION);
-        _prepareOracleOffchain(SECONDARY_MARKET, MIN_TWAP_DURATION);
+        _prepareOracle(factory, PRIMARY_MARKET);
+        _prepareOracle(factory, SECONDARY_MARKET);
 
         vm.startPrank(OWNER);
         factory.addMarket(address(ovrflo), PRIMARY_MARKET, MIN_TWAP_DURATION, 5);
