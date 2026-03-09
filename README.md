@@ -95,10 +95,10 @@ Factory and admin hub for deploying and managing OVRFLO systems. Owned by a time
 | `configureDeployment(treasury, underlying)` | Stage deployment parameters |
 | `deploy()` | Deploy OVRFLO + OVRFLOToken from stored config |
 | `cancelDeployment()` | Cancel a pending deployment |
-| `addMarket(ovrflo, market, twapDuration, feeBps)` | Add a PT maturity (auto-reads pt/expiry/underlying/ovrfloToken) |
+| `addMarket(ovrflo, market, twapDuration, feeBps)` | Add a PT maturity using the stored OVRFLO underlying + shared `ovrfloToken`; requires an exact underlying match and ready oracle |
 | `setMarketDepositLimit(ovrflo, market, limit)` | Set deposit cap for a market |
 | `sweepExcessPt(ovrflo, ptToken, to)` | Sweep excess PT from an OVRFLO |
-| `prepareOracle(market, twapDuration)` | Increase oracle cardinality if needed |
+| `prepareOracle(market, twapDuration)` | Separate oracle-preparation step before `addMarket(...)` when cardinality must be increased |
 | `transferOvrfloAdmin(ovrflo, newAdmin)` | Migrate an OVRFLO to a new factory |
 | `transferOwnership(newOwner)` | Transfer factory ownership |
 
@@ -118,7 +118,7 @@ The core contract handling deposits and claims.
 
 ### OVRFLOToken.sol
 
-ERC20 wrapper token deployed per underlying asset. Owned by OVRFLO contract and configured to use that asset's decimals.
+ERC20 wrapper token deployed per OVRFLO/underlying. Owned by the OVRFLO contract, with name/symbol derived from the configured underlying and the standard ERC20 fixed 18 decimals (no separate decimals-initialization flow).
 
 ## User Flows
 
@@ -178,21 +178,23 @@ factory.configureDeployment(treasury, WETH);
 
 The factory:
 - Deploys OVRFLO with factory as `adminContract`
-- Deploys OVRFLOToken (name/symbol derived from underlying)
+- Deploys OVRFLOToken (name/symbol derived from underlying, standard ERC20 18 decimals)
 - Transfers OVRFLOToken ownership to OVRFLO
 - Registers the OVRFLO in its registry (`ovrflos[]` mapping)
 
 ### Onboarding a New Market
 
 ```solidity
-// 1. Prepare oracle cardinality (if needed). twapDuration must be >= 15 minutes.
+// 1. If Pendle reports more observations are needed, prepare the oracle first
+//    in a separate successful transaction. twapDuration must be >= 15 minutes.
 factory.prepareOracle(market, twapDuration);
 
-// 2. Add market after cardinality is sufficient and the oracle's oldest observation is ready
+// 2. Add market only after cardinality is sufficient and the oracle's
+//    oldest observation already satisfies the requested TWAP window.
 factory.addMarket(ovrflo, market, twapDuration, feeBps);
 ```
 
-`addMarket` reads PT address and expiry directly from the Pendle market contract, rejects duplicate PT mappings, and requires `twapDuration >= 15 minutes` plus a ready Pendle oracle window before approval. Fee is capped at `FEE_MAX_BPS` (100 bps = 1%).
+`addMarket` reads the PT address and expiry from the Pendle market, but reuses the already stored `ovrfloInfo[ovrflo].underlying` and `ovrfloInfo[ovrflo].ovrfloToken`. It requires the market's exact SY underlying asset address to match that stored underlying, rejects duplicate PT mappings, and requires the Pendle oracle to already be ready rather than preparing it inline. After success, the factory still records the market in its approved-market enumeration. Fee is capped at `FEE_MAX_BPS` (100 bps = 1%).
 
 ## Fee Structure
 
