@@ -6,6 +6,7 @@ import {OVRFLO} from "./OVRFLO.sol";
 import {OVRFLOToken} from "./OVRFLOToken.sol";
 import {IPendleMarket} from "../interfaces/IPendleMarket.sol";
 import {IPendleOracle} from "../interfaces/IPendleOracle.sol";
+import {IStandardizedYield} from "../interfaces/IStandardizedYield.sol";
 
 /// @title OVRFLOFactory
 /// @notice Factory and admin hub for deploying and managing OVRFLO systems
@@ -110,10 +111,8 @@ contract OVRFLOFactory {
 
         string memory tokenName = IERC20Metadata(config.underlying).name();
         string memory tokenSymbol = IERC20Metadata(config.underlying).symbol();
-        uint8 tokenDecimals = IERC20Metadata(config.underlying).decimals();
-        OVRFLOToken token = new OVRFLOToken(
-            string(abi.encodePacked("OVRFLO ", tokenName)), string(abi.encodePacked("ovrflo", tokenSymbol)), tokenDecimals
-        );
+        OVRFLOToken token =
+            new OVRFLOToken(string(abi.encodePacked("OVRFLO ", tokenName)), string(abi.encodePacked("ovrflo", tokenSymbol)));
         token.transferOwnership(address(v));
 
         ovrflo = address(v);
@@ -147,7 +146,9 @@ contract OVRFLOFactory {
         require(oldestObservationSatisfied, "OVRFLOFactory: oracle not ready");
 
         OvrfloInfo memory info = ovrfloInfo[ovrflo];
-        (, address pt,) = IPendleMarket(market).readTokens();
+        (address sy, address pt,) = IPendleMarket(market).readTokens();
+        (, address assetAddress,) = IStandardizedYield(sy).assetInfo();
+        require(assetAddress == info.underlying, "OVRFLOFactory: underlying mismatch");
         uint256 expiry = IPendleMarket(market).expiry();
 
         OVRFLO(ovrflo).setSeriesApproved(market, pt, info.underlying, info.ovrfloToken, twapDuration, expiry, feeBps);
