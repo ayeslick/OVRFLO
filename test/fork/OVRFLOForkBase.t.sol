@@ -10,6 +10,7 @@ import {IPendleOracle} from "../../interfaces/IPendleOracle.sol";
 abstract contract OVRFLOForkBase is Test {
     address internal constant OWNER = address(0x123);
     address internal constant TREASURY = address(0x456);
+    address internal constant STETH = 0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84;
     address internal constant WSTETH = 0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0;
     address internal constant WSTETH_SY = 0xcbC72d92b2dc8187414F6734718563898740C0BC;
     address internal constant PRIMARY_MARKET = 0xcFD848b9f6fEf552204014ac67901223AD6bf679;
@@ -34,7 +35,7 @@ abstract contract OVRFLOForkBase is Test {
         factory = new OVRFLOFactory(OWNER);
 
         vm.startPrank(OWNER);
-        factory.configureDeployment(TREASURY, WSTETH);
+        factory.configureDeployment(TREASURY, STETH);
         (address ovrfloAddr, address tokenAddr) = factory.deploy();
         vm.stopPrank();
 

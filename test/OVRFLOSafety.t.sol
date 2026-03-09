@@ -108,12 +108,17 @@ contract OVRFLOSafetyTest is Test {
 
     function test_AddMarket_RevertsWhenPtAlreadyMapped() public {
         (OVRFLOFactory factory, OVRFLO ovrflo,) = _deploySystem(18);
-        MockPrincipalToken pt = new MockPrincipalToken(address(0xAAA3), 18);
-        MockPendleMarket market1 = new MockPendleMarket(address(0xAAA3), address(pt), block.timestamp + 30 days);
-        MockPendleMarket market2 = new MockPendleMarket(address(0xAAA4), address(pt), block.timestamp + 60 days);
+        address sy1 = address(0xAAA3);
+        address sy2 = address(0xAAA4);
+        MockPrincipalToken pt = new MockPrincipalToken(sy1, 18);
+        MockPendleMarket market1 = new MockPendleMarket(sy1, address(pt), block.timestamp + 30 days);
+        MockPendleMarket market2 = new MockPendleMarket(sy2, address(pt), block.timestamp + 60 days);
+        OVRFLOFactory.OvrfloInfo memory info = factory.getOvrfloInfo(address(ovrflo));
 
         _mockOracleState(address(market1), MIN_TWAP_DURATION, false, 0, true);
         _mockOracleState(address(market2), MIN_TWAP_DURATION, false, 0, true);
+        _mockSyAssetInfo(sy1, info.underlying);
+        _mockSyAssetInfo(sy2, info.underlying);
 
         vm.prank(MULTISIG);
         factory.addMarket(address(ovrflo), address(market1), MIN_TWAP_DURATION, 0);
@@ -127,10 +132,13 @@ contract OVRFLOSafetyTest is Test {
 
     function test_AddMarket_UsesFixed18DecimalsInsteadOfUnderlyingDecimals() public {
         (OVRFLOFactory factory, OVRFLO ovrflo, address token) = _deploySystem(6);
-        MockPrincipalToken pt = new MockPrincipalToken(address(0xAAA5), 18);
-        MockPendleMarket market = new MockPendleMarket(address(0xAAA5), address(pt), block.timestamp + 30 days);
+        address sy = address(0xAAA5);
+        MockPrincipalToken pt = new MockPrincipalToken(sy, 18);
+        MockPendleMarket market = new MockPendleMarket(sy, address(pt), block.timestamp + 30 days);
+        OVRFLOFactory.OvrfloInfo memory info = factory.getOvrfloInfo(address(ovrflo));
 
         _mockOracleState(address(market), MIN_TWAP_DURATION, false, 0, true);
+        _mockSyAssetInfo(sy, info.underlying);
 
         assertEq(OVRFLOToken(token).decimals(), 18);
 
@@ -164,5 +172,9 @@ contract OVRFLOSafetyTest is Test {
             abi.encodeWithSignature("getOracleState(address,uint32)", market, twapDuration),
             abi.encode(increaseRequired, cardinality, oldestSatisfied)
         );
+    }
+
+    function _mockSyAssetInfo(address sy, address assetAddress) internal {
+        vm.mockCall(sy, abi.encodeWithSignature("assetInfo()"), abi.encode(uint8(0), assetAddress, uint8(18)));
     }
 }

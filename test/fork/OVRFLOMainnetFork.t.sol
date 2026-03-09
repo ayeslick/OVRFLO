@@ -50,7 +50,7 @@ contract OVRFLOMainnetForkTest is OVRFLOForkBase {
         assertEq(toStream, expectedToStream);
         assertGt(streamId, 0);
         assertEq(IERC20(PRIMARY_PT).balanceOf(address(ovrflo)), PT_AMOUNT);
-        assertEq(IERC20(WSTETH).balanceOf(TREASURY), feeAmount);
+        assertApproxEqAbs(IERC20(STETH).balanceOf(TREASURY), feeAmount, 1);
         assertEq(token.balanceOf(USER), toUser);
         assertEq(token.balanceOf(address(ovrflo)), 0);
         assertEq(token.balanceOf(address(ovrflo.sablierLL())), toStream);
@@ -102,12 +102,18 @@ contract OVRFLOMainnetForkTest is OVRFLOForkBase {
     function _seedBalancesAndApprovals(OVRFLO ovrflo, uint256 ptAmount, uint256 feeAmount) internal {
         deal(PRIMARY_PT, USER, ptAmount);
         if (feeAmount > 0) {
-            deal(WSTETH, USER, feeAmount);
+            uint256 stEthMintAmount = feeAmount + 1 ether;
+            vm.deal(USER, stEthMintAmount);
+
+            vm.prank(USER);
+            (bool success,) = payable(STETH).call{value: stEthMintAmount}(abi.encodeWithSignature("submit(address)", address(0)));
+            assertTrue(success);
+            assertGe(IERC20(STETH).balanceOf(USER), feeAmount);
         }
 
         vm.startPrank(USER);
         IERC20(PRIMARY_PT).approve(address(ovrflo), ptAmount);
-        IERC20(WSTETH).approve(address(ovrflo), feeAmount);
+        IERC20(STETH).approve(address(ovrflo), feeAmount);
         vm.stopPrank();
     }
 }

@@ -5,6 +5,7 @@ import {OVRFLO} from "../../src/OVRFLO.sol";
 import {OVRFLOFactory} from "../../src/OVRFLOFactory.sol";
 import {OVRFLOToken} from "../../src/OVRFLOToken.sol";
 import {IPendleMarket} from "../../interfaces/IPendleMarket.sol";
+import {IStandardizedYield} from "../../interfaces/IStandardizedYield.sol";
 import {OVRFLOForkBase} from "./OVRFLOForkBase.t.sol";
 
 contract OVRFLOFactoryMainnetForkTest is OVRFLOForkBase {
@@ -37,10 +38,12 @@ contract OVRFLOFactoryMainnetForkTest is OVRFLOForkBase {
     function test_AddMarket_OnboardsPrimaryMarketUsingLiveMetadata() public {
         (OVRFLOFactory factory, OVRFLO ovrflo, OVRFLOToken token) = _deployConfiguredSystem();
         (address sy, address pt,) = IPendleMarket(PRIMARY_MARKET).readTokens();
+        (, address assetAddress,) = IStandardizedYield(sy).assetInfo();
         uint256 expiry = IPendleMarket(PRIMARY_MARKET).expiry();
 
         assertEq(sy, WSTETH_SY);
         assertEq(pt, PRIMARY_PT);
+        assertEq(assetAddress, STETH);
         assertEq(expiry, PRIMARY_EXPIRY);
 
         _prepareOracle(factory, PRIMARY_MARKET);
@@ -64,7 +67,7 @@ contract OVRFLOFactoryMainnetForkTest is OVRFLOForkBase {
         assertEq(storedExpiry, expiry);
         assertEq(storedPt, pt);
         assertEq(storedToken, address(token));
-        assertEq(storedUnderlying, WSTETH);
+        assertEq(storedUnderlying, STETH);
         assertEq(ovrflo.ptToMarket(pt), PRIMARY_MARKET);
         assertTrue(factory.isMarketApproved(address(ovrflo), PRIMARY_MARKET));
         assertEq(factory.approvedMarketCount(address(ovrflo)), 1);
@@ -73,6 +76,13 @@ contract OVRFLOFactoryMainnetForkTest is OVRFLOForkBase {
 
     function test_AddMarket_AllowsSharedTokenAcrossLiveWstEthMaturities() public {
         (OVRFLOFactory factory, OVRFLO ovrflo, OVRFLOToken token) = _deployConfiguredSystem();
+        (address primarySy,,) = IPendleMarket(PRIMARY_MARKET).readTokens();
+        (address secondarySy,,) = IPendleMarket(SECONDARY_MARKET).readTokens();
+        (, address primaryAsset,) = IStandardizedYield(primarySy).assetInfo();
+        (, address secondaryAsset,) = IStandardizedYield(secondarySy).assetInfo();
+
+        assertEq(primaryAsset, STETH);
+        assertEq(secondaryAsset, STETH);
 
         _prepareOracle(factory, PRIMARY_MARKET);
         _prepareOracle(factory, SECONDARY_MARKET);
