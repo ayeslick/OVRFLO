@@ -153,11 +153,9 @@ contract OVRFLOFactory {
 
         OVRFLO(ovrflo).setSeriesApproved(market, pt, info.underlying, info.ovrfloToken, twapDuration, expiry, feeBps);
 
-        if (!isMarketApproved[ovrflo][market]) {
-            isMarketApproved[ovrflo][market] = true;
-            approvedMarketAt[ovrflo][approvedMarketCount[ovrflo]] = market;
-            approvedMarketCount[ovrflo]++;
-        }
+        isMarketApproved[ovrflo][market] = true;
+        approvedMarketAt[ovrflo][approvedMarketCount[ovrflo]] = market;
+        approvedMarketCount[ovrflo]++;
     }
 
     /// @notice Set the deposit limit for a market on an OVRFLO
