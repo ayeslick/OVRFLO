@@ -277,6 +277,27 @@ contract OVRFLOFactoryTest is Test {
         assertEq(market.lastCardinality(), 0);
     }
 
+    function test_PrepareOracle_SucceedsBeforeAddMarketStillRevertsWhenOldestObservationIsNotReady() public {
+        (OVRFLO ovrflo,) = _deployConfiguredSystem();
+        uint256 expiry = block.timestamp + 30 days;
+        address sy = address(0xBBBB);
+        MockPrincipalToken pt = new MockPrincipalToken(sy, 18, expiry);
+        MockPendleMarket market = new MockPendleMarket(sy, address(pt), expiry);
+
+        _mockOracleState(address(market), MIN_TWAP_DURATION, true, 9, false);
+
+        vm.prank(OWNER);
+        factory.prepareOracle(address(market), MIN_TWAP_DURATION);
+
+        assertEq(market.lastCardinality(), 9);
+
+        _mockOracleState(address(market), MIN_TWAP_DURATION, false, 0, false);
+
+        vm.prank(OWNER);
+        vm.expectRevert("OVRFLOFactory: oracle not ready");
+        factory.addMarket(address(ovrflo), address(market), MIN_TWAP_DURATION, 0);
+    }
+
     function test_AddMarket_RevertsForUnknownOvrfloOrInvalidConfig() public {
         vm.prank(OWNER);
         vm.expectRevert("OVRFLOFactory: unknown ovrflo");

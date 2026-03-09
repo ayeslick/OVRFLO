@@ -81,7 +81,7 @@ contract OVRFLOProtocolTest is Test {
         ptTwo = new MockERC20Metadata("PT Two", "PT2", 18);
         ptMismatch = new MockERC20Metadata("PT Mismatch", "PTM", 6);
 
-        ovrfloToken = new OVRFLOToken("OVRFLO Underlying", "ovrUND", 18);
+        ovrfloToken = new OVRFLOToken("OVRFLO Underlying", "ovrUND");
         ovrfloToken.transferOwnership(address(ovrflo));
     }
 
@@ -315,6 +315,28 @@ contract OVRFLOProtocolTest is Test {
         ovrflo.deposit(MARKET_ONE, 10 ether, 0);
     }
 
+    function test_Deposit_SucceedsAtExactDepositLimitBoundary() public {
+        uint256 expiry = block.timestamp + 30 days;
+        _approveSeries(MARKET_ONE, ptOne, expiry, 0);
+
+        vm.prank(ADMIN);
+        ovrflo.setMarketDepositLimit(MARKET_ONE, 15 ether);
+
+        _deposit(MARKET_ONE, ptOne, 10 ether, 0.8e18, 0, expiry, 11);
+
+        (uint256 toUser, uint256 toStream,,) = _seedPreviewAndBalances(MARKET_ONE, ptOne, 5 ether, 0.8e18, 0);
+        _mockSablier(user, uint128(toStream), expiry - block.timestamp, 12);
+
+        vm.prank(user);
+        (uint256 actualToUser, uint256 actualToStream, uint256 streamId) = ovrflo.deposit(MARKET_ONE, 5 ether, toUser);
+
+        assertEq(actualToUser, toUser);
+        assertEq(actualToStream, toStream);
+        assertEq(streamId, 12);
+        assertEq(ovrflo.marketTotalDeposited(MARKET_ONE), 15 ether);
+        assertEq(ptOne.balanceOf(address(ovrflo)), 15 ether);
+    }
+
     function test_Deposit_RevertsWhenDepositLimitExceeded() public {
         uint256 expiry = block.timestamp + 30 days;
         _approveSeries(MARKET_ONE, ptOne, expiry, 0);
@@ -349,6 +371,29 @@ contract OVRFLOProtocolTest is Test {
         assertEq(ptOne.balanceOf(user), 10 ether);
         assertEq(ptOne.balanceOf(address(ovrflo)), 0);
         assertEq(ovrflo.marketTotalDeposited(MARKET_ONE), 0);
+    }
+
+    function test_Claim_AllowsPartialRedemptionAndPreservesAccounting() public {
+        uint256 expiry = block.timestamp + 30 days;
+        _approveSeries(MARKET_ONE, ptOne, expiry, 0);
+        (uint256 toUser, uint256 toStream) = _deposit(MARKET_ONE, ptOne, 10 ether, 0.8e18, 0, expiry, 12);
+        uint256 claimAmount = 4 ether;
+
+        vm.prank(address(ovrflo));
+        ovrfloToken.transfer(user, toStream);
+
+        vm.warp(expiry);
+
+        vm.expectEmit(address(ovrflo));
+        emit Claimed(user, MARKET_ONE, address(ptOne), address(ovrfloToken), claimAmount, claimAmount);
+
+        vm.prank(user);
+        ovrflo.claim(address(ptOne), claimAmount);
+
+        assertEq(ovrfloToken.balanceOf(user), toUser + toStream - claimAmount);
+        assertEq(ptOne.balanceOf(user), claimAmount);
+        assertEq(ptOne.balanceOf(address(ovrflo)), 10 ether - claimAmount);
+        assertEq(ovrflo.marketTotalDeposited(MARKET_ONE), 10 ether - claimAmount);
     }
 
     function test_Claim_PreservesSharedTokenBehaviorAcrossMaturities() public {
