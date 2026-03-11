@@ -125,53 +125,68 @@ export function StreamCard({ stream, ptName }: Props) {
   const label = ptName ?? stream.asset.symbol;
 
   return (
-    <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] p-4 hover:border-[var(--color-border-hover)] transition-colors">
-      <div className="flex items-center justify-between mb-2">
-        <span className="text-[var(--color-heading)] font-semibold">
-          OVRFLO #{stream.tokenId}
-        </span>
-        <span className="text-sm text-[var(--color-muted)]">{label}</span>
+    <article className="nb-panel p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="nb-kicker text-[var(--color-border)]">OVRFLO #{stream.tokenId}</p>
+          <h3 className="mt-2 text-xl text-[var(--color-ink)]">{label}</h3>
+        </div>
+        <span className="nb-chip nb-kicker">{pct}% vested</span>
       </div>
 
-      <div className="w-full h-2 bg-[var(--color-border)] rounded-full mb-2">
+      <div className="mt-6 grid gap-4 lg:grid-cols-[88px_minmax(0,1fr)] lg:items-start">
+        <div className="flex h-[88px] w-[88px] items-center justify-center border-2 border-[var(--color-ink)] bg-[var(--color-accent)] text-center text-xs font-bold uppercase tracking-[0.05em] text-[var(--color-ink)] shadow-[var(--shadow-hard-sm)]">
+          Live
+          <br />
+          Flow
+        </div>
+
+        <div>
+          <p className="nb-kicker text-[var(--color-border)]">Withdrawable now</p>
+          <p className="mono mt-2 text-3xl font-bold uppercase tracking-[0.05em] text-[var(--color-ink)] sm:text-[2rem]">
+            {withdrawableStr} {stream.asset.symbol}
+            {withdrawableUsd ? ` · ${withdrawableUsd}` : ""}
+          </p>
+          <p className="mt-2 text-sm text-[var(--color-ink)]/75">Ends {new Date(end * 1000).toLocaleDateString()}</p>
+        </div>
+      </div>
+
+      <div className="mt-5 overflow-hidden rounded-[8px] border-2 border-[var(--color-border)] bg-[repeating-linear-gradient(90deg,var(--color-surface-muted)_0_18px,var(--color-surface)_18px_36px)]">
         <div
-          className="h-2 bg-[var(--color-accent)] rounded-full transition-all"
+          className="h-4 border-r-2 border-[var(--color-ink)] bg-[var(--color-accent)]"
           style={{ width: `${Math.min(pct, 100)}%` }}
         />
       </div>
-      <div className="text-xs text-[var(--color-muted)] mb-3">
-        {pct}% vested
+
+      <div className="mt-5 grid gap-3 text-sm text-[var(--color-ink)] sm:grid-cols-3">
+        <div className="rounded-[8px] border-2 border-[var(--color-border)] bg-[var(--color-surface-muted)] px-4 py-3 shadow-[var(--shadow-hard-sm)]">
+          <div className="nb-kicker text-[var(--color-border)]">Asset</div>
+          <div className="mt-2 font-semibold uppercase tracking-[0.05em]">{stream.asset.symbol}</div>
+        </div>
+        <div className="rounded-[8px] border-2 border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 shadow-[var(--shadow-hard-sm)]">
+          <div className="nb-kicker text-[var(--color-border)]">Withdraw fee</div>
+          <div className="mt-2 font-semibold uppercase tracking-[0.05em]">
+            {minFee !== undefined && minFee > 0n
+              ? `${formatEther(minFee)} ETH${withdrawFeeUsd ? ` · ${withdrawFeeUsd}` : ""}`
+              : "0 ETH"}
+          </div>
+        </div>
+        <div className="rounded-[8px] border-2 border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 shadow-[var(--shadow-hard-sm)]">
+          <div className="nb-kicker text-[var(--color-border)]">Status</div>
+          <div className="mt-2 font-semibold uppercase tracking-[0.05em]">
+            {txPhase === "success" ? "Claimed" : txPhase === "waiting" ? "Confirming" : "Ready"}
+          </div>
+        </div>
       </div>
 
-      <div className="flex items-center justify-between">
-        <div>
-          <div className="text-sm">
-            Withdrawable:{" "}
-            <span className="mono text-[var(--color-heading)]">
-              {withdrawableStr}
-            </span>{" "}
-            {stream.asset.symbol}
-            {withdrawableUsd ? ` (${withdrawableUsd})` : ""}
-          </div>
-          <div className="text-xs text-[var(--color-muted)]">
-            Ends: {new Date(end * 1000).toLocaleDateString()}
-          </div>
-          {minFee !== undefined && minFee > 0n && (
-            <div className="text-xs text-[var(--color-muted)] mt-1">
-              Withdraw fee: {formatEther(minFee)} ETH{withdrawFeeUsd ? ` (${withdrawFeeUsd})` : ""}
-            </div>
-          )}
-          {feeInsufficient && (
-            <div className="text-xs text-red-400 mt-1">
-              Insufficient ETH for withdraw fee (need{" "}
-              {minFee ? formatEther(minFee) : "?"} ETH)
-            </div>
-          )}
-        </div>
+      <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-sm text-[var(--color-ink)]/75">
+          Claimable flows stay modular and use the same hard-edged system as preview mode.
+        </p>
         <button
           onClick={handleWithdraw}
           disabled={!canWithdraw}
-          className="px-4 py-2 rounded-lg bg-[var(--color-accent)] text-[var(--color-bg)] font-semibold text-sm disabled:opacity-40 disabled:cursor-not-allowed hover:brightness-110 transition"
+          className="nb-button w-full sm:w-auto"
         >
           {txPhase === "submitting"
             ? "Submitting..."
@@ -182,13 +197,21 @@ export function StreamCard({ stream, ptName }: Props) {
                 : "Withdraw"}
         </button>
       </div>
-      {address && chainId !== CHAIN_ID && (
-        <div className="mt-3">
+
+      {feeInsufficient ? (
+        <div className="nb-status nb-status-warning mt-4 text-sm leading-6">
+          Insufficient ETH for the withdraw fee. Need {minFee ? formatEther(minFee) : "?"} ETH.
+        </div>
+      ) : null}
+
+      {address && chainId !== CHAIN_ID ? (
+        <div className="mt-4">
           <WalletActionCta />
         </div>
-      )}
-      {error && (
-        <div className="text-xs text-red-400 mt-2 break-all">
+      ) : null}
+
+      {error ? (
+        <div className="nb-status nb-status-error mt-4 break-all text-sm leading-6">
           {error}
           <button
             onClick={() => {
@@ -196,12 +219,12 @@ export function StreamCard({ stream, ptName }: Props) {
               setTxHash(undefined);
               setError(undefined);
             }}
-            className="ml-2 underline"
+            className="nb-link ml-2 inline-block text-[#8e2340]"
           >
             Retry
           </button>
         </div>
-      )}
-    </div>
+      ) : null}
+    </article>
   );
 }

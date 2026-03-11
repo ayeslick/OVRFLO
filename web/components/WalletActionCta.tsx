@@ -13,7 +13,7 @@ export function WalletActionCta({ className }: Props) {
 
   if (!address) {
     return (
-      <div className={className}>
+      <div className={className ?? "nb-wallet-shell"}>
         <appkit-button />
       </div>
     );
@@ -25,7 +25,7 @@ export function WalletActionCta({ className }: Props) {
     <button
       onClick={() => void switchChainAsync({ chainId: CHAIN_ID })}
       disabled={isPending}
-      className={className ?? "w-full py-2 rounded-lg bg-[var(--color-accent)] text-[var(--color-bg)] font-semibold disabled:opacity-40"}
+      className={className ?? "nb-button w-full"}
     >
       {isPending ? "Switching..." : `Switch to chain ${CHAIN_ID}`}
     </button>

@@ -22,14 +22,14 @@ export function SlippageSettings({ slippageBps, onChange }: Props) {
     <div className="relative">
       <button
         onClick={() => setOpen(!open)}
-        className="text-[var(--color-muted)] hover:text-[var(--color-accent)] transition-colors"
-        title="Slippage settings"
+        className="nb-button nb-button-secondary min-h-11 px-3 py-2 text-[0.6875rem]"
+        aria-label="Adjust slippage settings"
       >
-        ⚙
+        Slippage {slippageBps / 100}%
       </button>
       {open && (
-        <div className="absolute right-0 top-8 z-10 bg-[var(--color-card)] border border-[var(--color-border)] rounded-lg p-3 w-48">
-          <label className="text-xs text-[var(--color-muted)] mb-1 block">
+        <div className="absolute right-0 top-14 z-10 w-56 rounded-[8px] border-2 border-[var(--color-border)] bg-[var(--color-surface)] p-4 text-[var(--color-ink)] shadow-[var(--shadow-hard-sm)]">
+          <label className="nb-kicker mb-2 block text-[var(--color-border)]">
             Slippage (%)
           </label>
           <div className="flex gap-2">
@@ -37,16 +37,16 @@ export function SlippageSettings({ slippageBps, onChange }: Props) {
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              className="flex-1 bg-[var(--color-bg)] border border-[var(--color-border)] rounded px-2 py-1 text-sm text-[var(--color-heading)] mono"
+              className="nb-input mono min-h-11 flex-1 px-3 py-2 text-sm"
             />
             <button
               onClick={apply}
-              className="text-xs px-2 py-1 bg-[var(--color-accent)] text-[var(--color-bg)] rounded font-semibold"
+              className="nb-button min-h-11 px-3 py-2 text-[0.6875rem]"
             >
               Set
             </button>
           </div>
-          <div className="text-xs text-[var(--color-muted)] mt-1">
+          <div className="mt-2 text-xs text-[var(--color-ink)]/70">
             Range: 0.1% - 5%
           </div>
         </div>

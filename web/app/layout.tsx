@@ -3,7 +3,7 @@ import { headers } from "next/headers";
 import { cookieToInitialState } from "wagmi";
 import { wagmiConfig } from "@/lib/wagmi-config";
 import { Providers } from "@/lib/providers";
-import { fraunces, geist, jetbrainsMono } from "@/lib/fonts";
+import { outfit } from "@/lib/fonts";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -40,11 +40,8 @@ export default async function RootLayout({
   const initialState = cookieToInitialState(wagmiConfig, hdrs.get("cookie"));
 
   return (
-    <html
-      lang="en"
-      className={`${fraunces.variable} ${geist.variable} ${jetbrainsMono.variable}`}
-    >
-      <body className="min-h-screen flex flex-col">
+    <html lang="en" className={outfit.variable}>
+      <body className="flex min-h-screen flex-col bg-[var(--color-bg)]">
         <Providers initialState={initialState}>{children}</Providers>
       </body>
     </html>

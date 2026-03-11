@@ -5,8 +5,6 @@ import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
 contract OVRFLOToken is ERC20 {
     address public owner;
-    uint8 private immutable TOKEN_DECIMALS;
-
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
 
     modifier onlyOwner() {
@@ -14,13 +12,8 @@ contract OVRFLOToken is ERC20 {
         _;
     }
 
-    constructor(string memory name_, string memory symbol_, uint8 decimals_) ERC20(name_, symbol_) {
+    constructor(string memory name_, string memory symbol_) ERC20(name_, symbol_) {
         owner = msg.sender;
-        TOKEN_DECIMALS = decimals_;
-    }
-
-    function decimals() public view override returns (uint8) {
-        return TOKEN_DECIMALS;
     }
 
     function transferOwnership(address newOwner) external onlyOwner {

@@ -1,12 +1,8 @@
 "use client";
 
 import { useAccount } from "wagmi";
-<<<<<<< HEAD
-import { CHAIN_ID } from "@/lib/constants";
-import { WalletActionCta } from "./WalletActionCta";
-=======
 import { CHAIN_ID, CHAIN_NAME } from "@/lib/constants";
->>>>>>> c3c87ba (web pass 2: add error handling, status panel, and launch config)
+import { WalletActionCta } from "./WalletActionCta";
 
 export function WrongNetworkBanner() {
   const { chainId, isConnected } = useAccount();
@@ -14,16 +10,14 @@ export function WrongNetworkBanner() {
   if (!isConnected || chainId === CHAIN_ID) return null;
 
   return (
-<<<<<<< HEAD
-    <div className="bg-red-900/60 text-red-200 py-3 text-sm">
-      <div className="max-w-3xl mx-auto px-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <span>Wrong network. Please switch to chain {CHAIN_ID}.</span>
-        <WalletActionCta className="px-3 py-1.5 rounded-lg bg-red-200 text-red-950 font-semibold disabled:opacity-40" />
+    <div className="fixed inset-x-0 top-[88px] z-40 px-4 sm:px-6 lg:px-8">
+      <div className="mx-auto flex max-w-7xl flex-col gap-3 border-2 border-[#b13a57] bg-[#fff1f4] px-4 py-3 text-sm text-[var(--color-ink)] shadow-[var(--shadow-hard-sm)] sm:flex-row sm:items-center sm:justify-between">
+        <span className="leading-6">
+          OVRFLO web supports {CHAIN_NAME} only. Please switch your wallet to
+          chain {CHAIN_ID}.
+        </span>
+        <WalletActionCta />
       </div>
-=======
-    <div className="bg-red-900/60 text-red-200 text-center py-2 text-sm">
-      OVRFLO web supports {CHAIN_NAME} only. Please switch your wallet to chain {CHAIN_ID}.
->>>>>>> c3c87ba (web pass 2: add error handling, status panel, and launch config)
     </div>
   );
 }

@@ -2,26 +2,283 @@
 
 @theme {
   --color-bg: #0b1221;
-  --color-card: #0f1829;
-  --color-border: #1a2a45;
-  --color-border-hover: #264270;
+  --color-surface: #ffffff;
+  --color-surface-muted: #a3c0e8;
   --color-accent: #5dc0f5;
+  --color-border: #3d5f88;
+  --color-ink: #0b1221;
   --color-heading: #ffffff;
-  --color-body: #a3c0e8;
-  --color-muted: #5a7da8;
+  --color-body: #ffffff;
+  --color-muted: #a3c0e8;
+}
+
+:root {
+  --radius-card: 8px;
+  --radius-control: 6px;
+  --shadow-hard-sm: 4px 4px 0 0 var(--color-ink);
+  --shadow-hard-lg: 8px 8px 0 0 var(--color-border);
+}
+
+html {
+  background: var(--color-bg);
+  scroll-behavior: smooth;
+  scroll-padding-top: 8rem;
 }
 
 body {
-  background-color: var(--color-bg);
+  background: var(--color-bg);
   color: var(--color-body);
   font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+  font-weight: 400;
 }
 
-h1, h2, h3, h4 {
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.mono {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+}
+
+::selection {
+  background: var(--color-accent);
+  color: var(--color-ink);
+}
+
+a,
+button,
+input,
+select,
+textarea {
+  transition-duration: 140ms;
+  transition-timing-function: ease;
+  transition-property: transform, box-shadow, background-color, color, border-color, opacity;
+}
+
+button,
+[type="button"],
+[type="submit"] {
+  cursor: pointer;
+}
+
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[tabindex]:focus-visible {
+  outline: 3px solid var(--color-accent);
+  outline-offset: 3px;
+}
+
+.nb-kicker {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.nb-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface-muted);
+  color: var(--color-ink);
+  padding: 0.375rem 0.625rem;
+  box-shadow: var(--shadow-hard-sm);
+}
+
+.nb-panel {
+  border: 2px solid var(--color-border);
+  border-radius: var(--radius-card);
+  background: var(--color-surface);
+  color: var(--color-ink);
+  box-shadow: var(--shadow-hard-lg);
+}
+
+.nb-panel-dark {
+  border: 2px solid var(--color-border);
+  border-radius: var(--radius-card);
+  background: var(--color-bg);
   color: var(--color-heading);
-  font-family: var(--font-heading), serif;
+  box-shadow: var(--shadow-hard-lg);
 }
 
-code, .mono {
-  font-family: var(--font-mono), ui-monospace, monospace;
+.nb-button {
+  display: inline-flex;
+  min-height: 48px;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border: 2px solid var(--color-ink);
+  border-radius: var(--radius-card);
+  background: var(--color-accent);
+  color: var(--color-ink);
+  padding: 0.75rem 1rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  box-shadow: var(--shadow-hard-sm);
+}
+
+.nb-button:hover,
+.nb-select-card:hover,
+.nb-icon-button:hover {
+  transform: translate(-2px, -2px);
+}
+
+.nb-button:active,
+.nb-select-card:active,
+.nb-icon-button:active {
+  transform: translate(4px, 4px);
+  box-shadow: none;
+}
+
+.nb-button:disabled,
+.nb-select-card:disabled,
+.nb-icon-button:disabled {
+  transform: none;
+  box-shadow: none;
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.nb-button-secondary {
+  background: var(--color-surface);
+  color: var(--color-ink);
+}
+
+.nb-button-dark {
+  border-color: var(--color-border);
+  background: var(--color-bg);
+  color: var(--color-heading);
+  box-shadow: 4px 4px 0 0 var(--color-accent);
+}
+
+.nb-icon-button {
+  display: inline-flex;
+  height: 44px;
+  width: 44px;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--color-ink);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  color: var(--color-ink);
+  box-shadow: var(--shadow-hard-sm);
+}
+
+.nb-link {
+  padding-bottom: 0.125rem;
+  border-bottom: 2px solid transparent;
+  color: var(--color-muted);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+
+.nb-link:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.nb-input {
+  min-height: 48px;
+  width: 100%;
+  border: 2px solid var(--color-border);
+  border-radius: var(--radius-card);
+  background: var(--color-surface);
+  color: var(--color-ink);
+  padding: 0.75rem 0.875rem;
+}
+
+.nb-select-card {
+  width: 100%;
+  border: 2px solid var(--color-border);
+  border-radius: var(--radius-card);
+  background: var(--color-surface);
+  color: var(--color-ink);
+  padding: 1rem;
+  text-align: left;
+  box-shadow: var(--shadow-hard-sm);
+}
+
+.nb-status {
+  border: 2px solid var(--color-border);
+  border-radius: var(--radius-card);
+  padding: 1rem;
+  box-shadow: var(--shadow-hard-sm);
+}
+
+.nb-status-info {
+  background: var(--color-surface-muted);
+  color: var(--color-ink);
+}
+
+.nb-status-warning {
+  background: #fff4d6;
+  border-color: #c78100;
+  color: var(--color-ink);
+}
+
+.nb-status-success {
+  background: #e8fff7;
+  border-color: #009c73;
+  color: var(--color-ink);
+}
+
+.nb-status-error {
+  background: #fff1f4;
+  border-color: #b13a57;
+  color: var(--color-ink);
+}
+
+.nb-wallet-shell {
+  display: inline-flex;
+  min-height: 48px;
+  min-width: 132px;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--color-border);
+  border-radius: var(--radius-card);
+  background: var(--color-surface);
+  padding: 0.25rem;
+  box-shadow: var(--shadow-hard-sm);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  .nb-button:hover,
+  .nb-select-card:hover,
+  .nb-icon-button:hover,
+  .nb-button:active,
+  .nb-select-card:active,
+  .nb-icon-button:active {
+    transform: none;
+  }
 }

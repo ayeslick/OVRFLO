@@ -2,12 +2,7 @@
 
 import { cookieStorage, createStorage, http } from "wagmi";
 import { WagmiAdapter } from "@reown/appkit-adapter-wagmi";
-<<<<<<< HEAD
-import { RPC_URL } from "./constants";
-import { resolvedWagmiChain } from "./chain-config";
-=======
-import { SUPPORTED_CHAIN } from "./launch-config";
->>>>>>> c3c87ba (web pass 2: add error handling, status panel, and launch config)
+import { OPTIONAL_RPC_URL, SUPPORTED_CHAIN } from "./launch-config";
 
 const projectId = process.env.NEXT_PUBLIC_REOWN_PROJECT_ID ?? "";
 
@@ -20,15 +15,11 @@ export const wagmiAdapter = new WagmiAdapter({
   storage,
   ssr: true,
   projectId,
-<<<<<<< HEAD
-  networks: [resolvedWagmiChain],
-  transports: {
-    [resolvedWagmiChain.id]: http(RPC_URL),
-=======
   networks: [...SUPPORTED_CHAINS],
   transports: {
-    [SUPPORTED_CHAIN.id]: http(),
->>>>>>> c3c87ba (web pass 2: add error handling, status panel, and launch config)
+    [SUPPORTED_CHAIN.id]: OPTIONAL_RPC_URL
+      ? http(OPTIONAL_RPC_URL)
+      : http(),
   },
 });
 

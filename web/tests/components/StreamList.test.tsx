@@ -1,41 +1,30 @@
-<<<<<<< HEAD
-import { describe, it, expect, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
-
-const useAccountMock = vi.fn();
-const useUserStreamsMock = vi.fn();
-const useReadContractsMock = vi.fn();
-
-vi.mock("wagmi", () => ({
-  useAccount: () => useAccountMock(),
-  useReadContracts: (...args: unknown[]) => useReadContractsMock(...args),
-=======
 import { render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { SablierStream } from "@/lib/sablier";
 
 const useAccountMock = vi.fn();
 const useUserStreamsMock = vi.fn();
+const useTokenSymbolsMock = vi.fn();
 
 vi.mock("wagmi", () => ({
   useAccount: () => useAccountMock(),
->>>>>>> c3c87ba (web pass 2: add error handling, status panel, and launch config)
 }));
 
 vi.mock("@/hooks/useStreams", () => ({
   useUserStreams: (...args: unknown[]) => useUserStreamsMock(...args),
 }));
 
-<<<<<<< HEAD
-const { StreamList } = await import("@/components/StreamList");
+vi.mock("@/hooks/useTokenLabels", () => ({
+  useTokenSymbols: (...args: unknown[]) => useTokenSymbolsMock(...args),
+  getTokenSymbol: () => undefined,
+}));
 
-describe("StreamList", () => {
-  it("renders indexer error state distinctly from empty state", () => {
-    useAccountMock.mockReturnValue({
-      address: "0x0000000000000000000000000000000000000001",
-    });
-=======
 vi.mock("@/components/StreamCard", () => ({
   StreamCard: () => <div>stream-card</div>,
+}));
+
+vi.mock("@/components/PreviewStreamCard", () => ({
+  PreviewStreamCard: ({ label }: { label: string }) => <div>{label}</div>,
 }));
 
 const { StreamList } = await import("@/components/StreamList");
@@ -51,6 +40,7 @@ beforeEach(() => {
   useAccountMock.mockReturnValue({
     address: "0x0000000000000000000000000000000000000005",
   });
+  useTokenSymbolsMock.mockReturnValue({});
   useUserStreamsMock.mockReturnValue({
     data: [],
     isLoading: false,
@@ -59,24 +49,62 @@ beforeEach(() => {
 });
 
 describe("StreamList", () => {
+  it("renders preview streams without requiring a connected wallet", () => {
+    useAccountMock.mockReturnValue({ address: undefined });
+
+    const previewStream: SablierStream = {
+      id: "mock-stream-101",
+      tokenId: "101",
+      depositAmount: "0",
+      withdrawnAmount: "0",
+      startTime: "1738368000",
+      endTime: "1790726400",
+      canceled: false,
+      depleted: false,
+      intactAmount: "0",
+      asset: {
+        symbol: "OVRUSDC",
+        decimals: 18,
+        address: "0x0000000000000000000000000000000000000004",
+      },
+      sender: "0x0000000000000000000000000000000000000001",
+    };
+
+    render(
+      <StreamList
+        ovrflos={[ovrflo]}
+        allMarkets={[]}
+        preview={{
+          streams: [previewStream],
+          streamCards: {
+            "mock-stream-101": {
+              badge: "Income stream",
+              seriesLabel: "PT-sUSDe Sep 2026",
+              metricLabel: "Available now",
+              metricValue: "24,480 OVRUSDC · $24.5K",
+              metricContext: "PT-sUSDe Sep 2026 · 62% matured",
+              depositedValue: "$125K deposited",
+              maturityLabel: "Ends 30 Sep 2026",
+              feeLabel: "0.0009 ETH execution fee",
+              progressPct: 62,
+              claimable: true,
+            },
+          },
+        }}
+      />
+    );
+
+    expect(screen.getByText("PT-sUSDe Sep 2026")).toBeInTheDocument();
+    expect(
+      screen.queryByText(/Connect wallet to view your streams/i)
+    ).not.toBeInTheDocument();
+  });
+
   it("renders an actionable indexer error instead of an empty state", () => {
->>>>>>> c3c87ba (web pass 2: add error handling, status panel, and launch config)
     useUserStreamsMock.mockReturnValue({
       data: undefined,
       isLoading: false,
       error: new Error("Sablier indexer returned 502"),
-<<<<<<< HEAD
-      refetch: vi.fn(),
-    });
-    useReadContractsMock.mockReturnValue({ data: undefined });
-
-    render(<StreamList ovrflos={[]} allMarkets={[]} />);
-
-    expect(screen.getByText(/unable to load stream data/i)).toBeInTheDocument();
-    expect(screen.queryByText(/no active streams yet/i)).not.toBeInTheDocument();
-  });
-});
-=======
     });
 
     render(<StreamList ovrflos={[ovrflo]} allMarkets={[]} />);
@@ -93,4 +121,3 @@ describe("StreamList", () => {
     ).toBeInTheDocument();
   });
 });
->>>>>>> c3c87ba (web pass 2: add error handling, status panel, and launch config)

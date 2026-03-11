@@ -270,15 +270,18 @@ export function NewOvrfloModal({ open, onClose, ovrflos, allMarkets }: Props) {
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-      <div className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-xl w-full max-w-md p-6 relative">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-bold text-[var(--color-heading)]">New OVRFLO</h3>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(11,18,33,0.8)] p-4">
+      <div className="nb-panel relative w-full max-w-xl p-6 sm:p-7">
+        <div className="mb-5 flex items-center justify-between gap-3">
+          <div>
+            <p className="nb-kicker text-[var(--color-border)]">Create sleeve</p>
+            <h3 className="mt-2 text-xl text-[var(--color-ink)]">New OVRFLO</h3>
+          </div>
           <div className="flex items-center gap-3">
             <SlippageSettings slippageBps={slippageBps} onChange={setSlippageBps} />
             <button
               onClick={onClose}
-              className="text-[var(--color-muted)] hover:text-[var(--color-heading)]"
+              className="nb-icon-button"
               aria-label="Close new OVRFLO modal"
             >
               ✕
@@ -287,8 +290,8 @@ export function NewOvrfloModal({ open, onClose, ovrflos, allMarkets }: Props) {
         </div>
 
         {step === "underlying" && (
-          <div className="flex flex-col gap-2">
-            <label className="text-sm text-[var(--color-muted)]">Select Underlying</label>
+          <div className="flex flex-col gap-3">
+            <label className="nb-kicker text-[var(--color-border)]">Select underlying</label>
             {ovrflos.map((ovrflo) => {
               const symbol = getTokenSymbol(symbolMap, ovrflo.underlying, formatAddress(ovrflo.underlying));
               return (
@@ -298,10 +301,10 @@ export function NewOvrfloModal({ open, onClose, ovrflos, allMarkets }: Props) {
                     setSelectedOvrflo(ovrflo);
                     setStep("maturity");
                   }}
-                  className="text-left px-4 py-3 rounded-lg border border-[var(--color-border)] hover:border-[var(--color-accent)] transition-colors"
+                  className="nb-select-card"
                 >
-                  <div className="text-[var(--color-heading)] font-semibold">{symbol}</div>
-                  <div className="text-xs text-[var(--color-muted)]">{formatAddress(ovrflo.underlying)}</div>
+                  <div className="font-semibold uppercase tracking-[0.05em] text-[var(--color-ink)]">{symbol}</div>
+                  <div className="mt-2 text-xs text-[var(--color-ink)]/70">{formatAddress(ovrflo.underlying)}</div>
                 </button>
               );
             })}
@@ -309,19 +312,19 @@ export function NewOvrfloModal({ open, onClose, ovrflos, allMarkets }: Props) {
         )}
 
         {step === "maturity" && selectedOvrflo && (
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-3">
             <button
               onClick={() => {
                 setStep("underlying");
                 setSelectedOvrflo(undefined);
               }}
-              className="text-sm text-[var(--color-accent)] mb-2"
+              className="nb-link w-fit text-[var(--color-border)]"
             >
               ← Back
             </button>
-            <label className="text-sm text-[var(--color-muted)]">Select Maturity</label>
+            <label className="nb-kicker text-[var(--color-border)]">Select maturity</label>
             {marketsForOvrflo.length === 0 && (
-              <p className="text-sm text-[var(--color-muted)]">No active markets.</p>
+              <div className="nb-status nb-status-info text-sm leading-6">No active markets.</div>
             )}
             {marketsForOvrflo.map((market) => {
               const symbol = getTokenSymbol(symbolMap, market.ptToken, formatAddress(market.ptToken));
@@ -332,10 +335,10 @@ export function NewOvrfloModal({ open, onClose, ovrflos, allMarkets }: Props) {
                     setSelectedMarket(market);
                     setStep("amount");
                   }}
-                  className="text-left px-4 py-3 rounded-lg border border-[var(--color-border)] hover:border-[var(--color-accent)] transition-colors"
+                  className="nb-select-card"
                 >
-                  <div className="text-[var(--color-heading)] font-semibold">{symbol}</div>
-                  <div className="text-xs text-[var(--color-muted)]">
+                  <div className="font-semibold uppercase tracking-[0.05em] text-[var(--color-ink)]">{symbol}</div>
+                  <div className="mt-2 text-xs text-[var(--color-ink)]/70">
                     Expires: {new Date(Number(market.expiry) * 1000).toLocaleDateString()} · {formatAddress(market.market)}
                   </div>
                 </button>
@@ -345,7 +348,7 @@ export function NewOvrfloModal({ open, onClose, ovrflos, allMarkets }: Props) {
         )}
 
         {step === "amount" && selectedOvrflo && selectedMarket && (
-          <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-4">
             <button
               onClick={() => {
                 setStep("maturity");
@@ -353,25 +356,26 @@ export function NewOvrfloModal({ open, onClose, ovrflos, allMarkets }: Props) {
                 setAmountStr("");
                 setErrorMsg("");
               }}
-              className="text-sm text-[var(--color-accent)] mb-1"
+              className="nb-link w-fit text-[var(--color-border)]"
             >
               ← Back
             </button>
 
-            <div className="text-sm space-y-1">
-              <div className="flex justify-between">
-                <span className="text-[var(--color-muted)]">Underlying</span>
-                <span className="text-[var(--color-heading)]">{getTokenSymbol(symbolMap, selectedOvrflo.underlying, formatAddress(selectedOvrflo.underlying))}</span>
+            <div className="grid gap-3 rounded-[8px] border-2 border-[var(--color-border)] bg-[var(--color-surface-muted)] p-4 text-sm shadow-[var(--shadow-hard-sm)]">
+              <div className="flex justify-between gap-4">
+                <span className="nb-kicker text-[var(--color-border)]">Underlying</span>
+                <span className="font-semibold uppercase tracking-[0.05em] text-[var(--color-ink)]">{getTokenSymbol(symbolMap, selectedOvrflo.underlying, formatAddress(selectedOvrflo.underlying))}</span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-[var(--color-muted)]">Maturity</span>
-                <span className="text-[var(--color-heading)]">{new Date(Number(selectedMarket.expiry) * 1000).toLocaleDateString()}</span>
+              <div className="flex justify-between gap-4">
+                <span className="nb-kicker text-[var(--color-border)]">Maturity</span>
+                <span className="font-semibold uppercase tracking-[0.05em] text-[var(--color-ink)]">{new Date(Number(selectedMarket.expiry) * 1000).toLocaleDateString()}</span>
               </div>
             </div>
 
-            <label className="text-sm text-[var(--color-muted)]">Amount ({ptSymbol})</label>
-            <div className="flex gap-2 items-center">
+            <label htmlFor="new-ovrflo-amount" className="nb-kicker text-[var(--color-border)]">Amount ({ptSymbol})</label>
+            <div className="flex items-center gap-2">
               <input
+                id="new-ovrflo-amount"
                 type="text"
                 value={amountStr}
                 onChange={(event) => {
@@ -379,83 +383,83 @@ export function NewOvrfloModal({ open, onClose, ovrflos, allMarkets }: Props) {
                   setErrorMsg("");
                 }}
                 placeholder="0.0"
-                className="flex-1 bg-[var(--color-bg)] border border-[var(--color-border)] rounded-lg px-3 py-2 text-[var(--color-heading)] mono"
+                className="nb-input mono flex-1"
               />
               {ptBalance !== undefined && (
-                <span className="text-xs text-[var(--color-muted)]">Bal: {formatUnits(ptBalance, ptDecimals)}</span>
+                <span className="text-xs text-[var(--color-ink)]/70">Bal: {formatUnits(ptBalance, ptDecimals)}</span>
               )}
             </div>
-            {inputUsd && <p className="text-xs text-[var(--color-muted)]">≈ {inputUsd}</p>}
+            {inputUsd && <p className="text-xs text-[var(--color-ink)]/70">≈ {inputUsd}</p>}
 
             {preview && ptAmount > 0n && !selectedMarketExpired && (
-              <div className="border-t border-[var(--color-border)] pt-3 text-sm space-y-1">
-                <div className="flex justify-between">
-                  <span className="text-[var(--color-muted)]">Immediate</span>
-                  <span className="mono text-[var(--color-heading)]">
+              <div className="grid gap-2 rounded-[8px] border-2 border-[var(--color-border)] bg-[var(--color-surface)] p-4 text-sm shadow-[var(--shadow-hard-sm)]">
+                <div className="flex justify-between gap-4">
+                  <span className="nb-kicker text-[var(--color-border)]">Immediate</span>
+                  <span className="mono font-semibold uppercase tracking-[0.05em] text-[var(--color-ink)]">
                     {formatUnits(toUser, ptDecimals)}{immediateUsd ? ` (${immediateUsd})` : ""}
                   </span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-[var(--color-muted)]">Streamed</span>
-                  <span className="mono text-[var(--color-heading)]">
+                <div className="flex justify-between gap-4">
+                  <span className="nb-kicker text-[var(--color-border)]">Streamed</span>
+                  <span className="mono font-semibold uppercase tracking-[0.05em] text-[var(--color-ink)]">
                     {formatUnits(toStream, ptDecimals)}{streamedUsd ? ` (${streamedUsd})` : ""}
                   </span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-[var(--color-muted)]">Fee ({underlyingSymbol})</span>
-                  <span className="mono text-[var(--color-heading)]">
+                <div className="flex justify-between gap-4">
+                  <span className="nb-kicker text-[var(--color-border)]">Fee ({underlyingSymbol})</span>
+                  <span className="mono font-semibold uppercase tracking-[0.05em] text-[var(--color-ink)]">
                     {formatUnits(feeAmount, underlyingDecimals)}{feeUsd ? ` (${feeUsd})` : ""}
                   </span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-[var(--color-muted)]">Min received ({slippageBps / 100}%)</span>
-                  <span className="mono text-[var(--color-heading)]">{formatUnits(minToUser, ptDecimals)}</span>
+                <div className="flex justify-between gap-4">
+                  <span className="nb-kicker text-[var(--color-border)]">Min received ({slippageBps / 100}%)</span>
+                  <span className="mono font-semibold uppercase tracking-[0.05em] text-[var(--color-ink)]">{formatUnits(minToUser, ptDecimals)}</span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-[var(--color-muted)]">Stream ends</span>
-                  <span className="text-[var(--color-heading)]">{new Date(Number(selectedMarket.expiry) * 1000).toLocaleDateString()}</span>
+                <div className="flex justify-between gap-4">
+                  <span className="nb-kicker text-[var(--color-border)]">Stream ends</span>
+                  <span className="font-semibold uppercase tracking-[0.05em] text-[var(--color-ink)]">{new Date(Number(selectedMarket.expiry) * 1000).toLocaleDateString()}</span>
                 </div>
                 {selectedMarket.expiry - now < 86400n && (
-                  <div className="text-yellow-400 text-xs">Market matures soon (&lt; 24h)</div>
+                  <div className="nb-status nb-status-warning text-xs">Market matures soon (&lt; 24h)</div>
                 )}
               </div>
             )}
 
-            <div className="flex flex-col gap-2 mt-2">
+            <div className="mt-2 flex flex-col gap-3">
               {!address ? (
                 <>
-                  <p className="text-sm text-[var(--color-muted)]">Connect your wallet to continue.</p>
+                  <div className="nb-status nb-status-info text-sm">Connect your wallet to continue.</div>
                   <WalletActionCta />
                 </>
               ) : wrongChain ? (
                 <>
-                  <p className="text-red-400 text-sm">Switch to chain {CHAIN_ID} to continue.</p>
+                  <div className="nb-status nb-status-error text-sm">Switch to chain {CHAIN_ID} to continue.</div>
                   <WalletActionCta />
                 </>
               ) : selectedMarketExpired ? (
-                <p className="text-red-400 text-sm">This market expired while the modal was open.</p>
+                <div className="nb-status nb-status-error text-sm">This market expired while the modal was open.</div>
               ) : txPhase === "success" ? (
-                <p className="text-green-400 text-sm text-center py-2">Deposit confirmed! Stream will appear shortly.</p>
+                <div className="nb-status nb-status-success text-center text-sm">Deposit confirmed! Stream will appear shortly.</div>
               ) : (
                 <>
                   {(txPhase === "waiting-pt-approval" ||
                     txPhase === "waiting-underlying-approval" ||
                     txPhase === "waiting-deposit") && (
-                    <p className="text-yellow-400 text-sm text-center py-1">Waiting for on-chain confirmation...</p>
+                    <div className="nb-status nb-status-warning text-center text-sm">Waiting for on-chain confirmation...</div>
                   )}
 
                   {insufficientPtBalance && (
-                    <p className="text-red-400 text-xs">Insufficient {ptSymbol} balance for this deposit.</p>
+                    <div className="nb-status nb-status-error text-xs">Insufficient {ptSymbol} balance for this deposit.</div>
                   )}
                   {insufficientUnderlyingBalance && feeAmount > 0n && (
-                    <p className="text-red-400 text-xs">Insufficient {underlyingSymbol} balance to pay the deposit fee.</p>
+                    <div className="nb-status nb-status-error text-xs">Insufficient {underlyingSymbol} balance to pay the deposit fee.</div>
                   )}
 
                   {needsPtApproval ? (
                     <button
                       onClick={handleApprovePt}
                       disabled={!canProceed || isBusy}
-                      className="w-full py-2 rounded-lg bg-[var(--color-accent)] text-[var(--color-bg)] font-semibold disabled:opacity-40"
+                      className="nb-button w-full"
                     >
                       {txPhase === "approving-pt"
                         ? `Submitting ${ptSymbol} approval...`
@@ -467,7 +471,7 @@ export function NewOvrfloModal({ open, onClose, ovrflos, allMarkets }: Props) {
                     <button
                       onClick={handleApproveUnderlying}
                       disabled={!canProceed || isBusy}
-                      className="w-full py-2 rounded-lg bg-[var(--color-accent)] text-[var(--color-bg)] font-semibold disabled:opacity-40"
+                      className="nb-button w-full"
                     >
                       {txPhase === "approving-underlying"
                         ? `Submitting ${underlyingSymbol} approval...`
@@ -479,7 +483,7 @@ export function NewOvrfloModal({ open, onClose, ovrflos, allMarkets }: Props) {
                     <button
                       onClick={handleDeposit}
                       disabled={!canProceed || isBusy}
-                      className="w-full py-2 rounded-lg bg-[var(--color-accent)] text-[var(--color-bg)] font-semibold disabled:opacity-40"
+                      className="nb-button w-full"
                     >
                       {txPhase === "creating"
                         ? "Submitting..."
@@ -492,7 +496,7 @@ export function NewOvrfloModal({ open, onClose, ovrflos, allMarkets }: Props) {
               )}
 
               {txPhase === "error" && (
-                <div className="text-red-400 text-xs break-all">
+                <div className="nb-status nb-status-error break-all text-xs">
                   {errorMsg}
                   <button
                     onClick={() => {
@@ -500,7 +504,7 @@ export function NewOvrfloModal({ open, onClose, ovrflos, allMarkets }: Props) {
                       setTxHash(undefined);
                       setErrorMsg("");
                     }}
-                    className="ml-2 underline"
+                    className="nb-link ml-2 inline-block text-[#8e2340]"
                   >
                     Retry
                   </button>
