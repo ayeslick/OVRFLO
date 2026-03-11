@@ -118,7 +118,7 @@ The core contract handling deposits and claims.
 
 ### OVRFLOToken.sol
 
-ERC20 wrapper token deployed per OVRFLO/underlying. Owned by the OVRFLO contract, with name/symbol derived from the configured underlying and the standard ERC20 fixed 18 decimals (no separate decimals-initialization flow).
+ERC20 wrapper token deployed per OVRFLO/underlying asset. Owned by the OVRFLO contract, with name/symbol derived from the configured underlying and fixed 18-decimal deploy-time semantics.
 
 ## User Flows
 
@@ -178,7 +178,7 @@ factory.configureDeployment(treasury, WETH);
 
 The factory:
 - Deploys OVRFLO with factory as `adminContract`
-- Deploys OVRFLOToken (name/symbol derived from underlying, standard ERC20 18 decimals)
+- Deploys OVRFLOToken (name/symbol derived from underlying, fixed 18-decimal deploy-time semantics)
 - Transfers OVRFLOToken ownership to OVRFLO
 - Registers the OVRFLO in its registry (`ovrflos[]` mapping)
 
@@ -194,7 +194,7 @@ factory.prepareOracle(market, twapDuration);
 factory.addMarket(ovrflo, market, twapDuration, feeBps);
 ```
 
-`addMarket` reads the PT address and expiry from the Pendle market, but reuses the already stored `ovrfloInfo[ovrflo].underlying` and `ovrfloInfo[ovrflo].ovrfloToken`. It requires the market's exact SY underlying asset address to match that stored underlying, rejects duplicate PT mappings, and requires the Pendle oracle to already be ready rather than preparing it inline. After success, the factory still records the market in its approved-market enumeration. Fee is capped at `FEE_MAX_BPS` (100 bps = 1%).
+`addMarket` reads the PT address and expiry directly from the Pendle market contract, reuses the stored `ovrfloInfo[ovrflo].underlying` and shared `ovrfloInfo[ovrflo].ovrfloToken`, requires the market's exact SY underlying asset address to match that stored underlying, rejects duplicate PT mappings, and requires `twapDuration >= 15 minutes` plus a ready Pendle oracle window before approval rather than preparing it inline. After success, the factory still records the market in its approved-market enumeration. Fee is capped at `FEE_MAX_BPS` (100 bps = 1%).
 
 ## Fee Structure
 
@@ -254,6 +254,7 @@ forge build
 forge test
 ```
 
+<<<<<<< HEAD
 ### Fork Tests (factory/safety onboarding)
 
 - Set `MAINNET_RPC_URL` to an archive-capable Ethereum mainnet RPC.
@@ -265,6 +266,8 @@ MAINNET_RPC_URL=https://your-archive-mainnet-rpc \
 forge test --match-path test/fork/OVRFLOFactoryMainnetFork.t.sol -vv
 ```
 
+=======
+>>>>>>> main
 ### Frontend (web)
 
 The checked-in frontend launch config is pinned to Ethereum mainnet. Copy

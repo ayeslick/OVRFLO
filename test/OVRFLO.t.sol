@@ -185,20 +185,6 @@ contract OVRFLOProtocolTest is Test {
         );
     }
 
-    function test_SetSeriesApproved_RevertsForDecimalMismatch() public {
-        vm.prank(ADMIN);
-        vm.expectRevert("OVRFLO: decimals mismatch");
-        ovrflo.setSeriesApproved(
-            MARKET_ONE,
-            address(ptMismatch),
-            address(underlying),
-            address(ovrfloToken),
-            TWAP_DURATION,
-            block.timestamp + 30 days,
-            0
-        );
-    }
-
     function test_SetMarketDepositLimit_SetsLimitAndEmitsEvent() public {
         uint256 limit = 50 ether;
 

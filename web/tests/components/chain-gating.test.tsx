@@ -11,7 +11,7 @@ import { CHAIN_ID } from "@/lib/constants";
 
 describe("Chain gating logic (T-WEB-013)", () => {
   it("T-WEB-013: wrongChain is true when chainId !== CHAIN_ID", () => {
-    const chainId = 42161; // Arbitrum
+    const chainId: number = 42161; // Arbitrum
     const wrongChain = chainId !== CHAIN_ID;
     expect(wrongChain).toBe(true);
   });
