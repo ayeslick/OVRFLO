@@ -1,9 +1,8 @@
 export function Footer() {
   return (
     <footer className="mt-auto border-t-2 border-[var(--color-border)] bg-[var(--color-bg)]">
-      <div className="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">
-        <p className="nb-kicker text-[var(--color-muted)]">OVRFLO · app preview</p>
-        <div className="flex flex-wrap gap-4">
+      <div className="mx-auto flex max-w-7xl justify-center px-4 py-4 sm:px-6 lg:px-8">
+        <div className="flex flex-wrap items-center justify-center gap-4 sm:gap-6">
           <a
             href="https://twitter.com/overflow_fi"
             target="_blank"

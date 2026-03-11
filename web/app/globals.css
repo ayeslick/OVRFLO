@@ -13,8 +13,8 @@
 }
 
 :root {
-  --radius-card: 8px;
-  --radius-control: 6px;
+  --radius-card: 4px;
+  --radius-control: 4px;
   --shadow-hard-sm: 4px 4px 0 0 var(--color-ink);
   --shadow-hard-lg: 8px 8px 0 0 var(--color-border);
 }
@@ -204,6 +204,15 @@ textarea:focus-visible,
   background: var(--color-surface);
   color: var(--color-ink);
   padding: 0.75rem 0.875rem;
+}
+
+.nb-select {
+  appearance: none;
+  padding-right: 2.625rem;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none'%3E%3Cpath d='M3.5 6L8 10.5L12.5 6' stroke='%230b1221' stroke-width='2' stroke-linecap='square'/%3E%3C/svg%3E");
+  background-position: calc(100% - 0.75rem) center;
+  background-repeat: no-repeat;
+  background-size: 0.875rem;
 }
 
 .nb-select-card {

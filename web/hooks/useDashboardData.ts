@@ -9,7 +9,7 @@ interface DashboardDataResult {
 export function useDashboardData(): typeof MOCK_DASHBOARD_DATA & DashboardDataResult {
   return {
     ...MOCK_DASHBOARD_DATA,
-    actionsDisabled: true,
+    actionsDisabled: false,
     isPreview: true,
     launchReadError: undefined,
   };

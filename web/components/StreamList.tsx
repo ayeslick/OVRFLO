@@ -8,7 +8,6 @@ import { getErrorMessage } from "@/lib/errors";
 import { StreamCard } from "./StreamCard";
 import { PreviewStreamCard } from "./PreviewStreamCard";
 import { StatusPanel } from "./StatusPanel";
-import { WalletActionCta } from "./WalletActionCta";
 import type { SablierStream } from "@/lib/sablier";
 import type { OvrfloEntry } from "@/hooks/useOvrflos";
 import type { MarketInfo } from "@/hooks/useAllMarkets";
@@ -29,10 +28,26 @@ export function StreamList({ ovrflos, allMarkets, preview }: Props) {
   const ptSymbols = useTokenSymbols(allMarkets.map((market) => market.ptToken));
   const { data: streams, isLoading, error } = useUserStreams(address, ovrfloAddrs);
 
-  if (preview) {
+  function renderEmptyState() {
     return (
-      <div className="grid gap-4 xl:grid-cols-2">
-        {preview.streams.map((stream) => {
+      <article className="nb-panel-dark flex min-h-48 items-center justify-center p-6 text-center">
+        <p className="text-sm font-semibold uppercase tracking-[0.05em] text-[var(--color-heading)]">
+          No OVRFLOs yet.
+        </p>
+      </article>
+    );
+  }
+
+  if (preview) {
+    const previewStreams = preview.streams.filter((stream) => preview.streamCards[stream.id]);
+
+    if (previewStreams.length === 0) {
+      return renderEmptyState();
+    }
+
+    return (
+      <div className="flex flex-col gap-4">
+        {previewStreams.map((stream) => {
           const previewCard = preview.streamCards[stream.id];
           if (!previewCard) return null;
 
@@ -45,17 +60,6 @@ export function StreamList({ ovrflos, allMarkets, preview }: Props) {
             />
           );
         })}
-      </div>
-    );
-  }
-
-  if (!address) {
-    return (
-      <div className="nb-panel-dark flex min-h-56 flex-col items-center justify-center gap-4 p-6 text-center">
-        <p className="text-sm text-[var(--color-muted)]">Connect wallet to view your active OVRFLO streams.</p>
-        <div className="flex justify-center">
-          <WalletActionCta />
-        </div>
       </div>
     );
   }
@@ -78,16 +82,8 @@ export function StreamList({ ovrflos, allMarkets, preview }: Props) {
     );
   }
 
-  if (!streams || streams.length === 0) {
-    return (
-      <div className="nb-panel-dark flex min-h-56 items-center justify-center p-6 text-center">
-        <p className="max-w-md text-sm leading-6 text-[var(--color-muted)]">
-          {ovrflos.length === 0
-            ? "No OVRFLO markets are currently available from the configured factory."
-            : "No active OVRFLO streams found for this wallet yet."}
-        </p>
-      </div>
-    );
+  if (!address || !streams || streams.length === 0) {
+    return renderEmptyState();
   }
 
   function resolvePtName(stream: SablierStream): string | undefined {
@@ -110,7 +106,7 @@ export function StreamList({ ovrflos, allMarkets, preview }: Props) {
   }
 
   return (
-    <div className="grid gap-4 xl:grid-cols-2">
+    <div className="flex flex-col gap-4">
       {streams.map((s) => (
         <StreamCard key={s.id} stream={s} ptName={resolvePtName(s)} />
       ))}

@@ -8,51 +8,43 @@ interface Props {
 
 export function PreviewStreamCard({ tokenId, label, preview }: Props) {
   return (
-    <article className="nb-panel p-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <p className="nb-kicker text-[var(--color-border)]">OVRFLO #{tokenId}</p>
-          <h3 className="mt-2 text-xl text-[var(--color-ink)]">{label}</h3>
-        </div>
-        <span className="nb-chip nb-kicker">{preview.badge}</span>
-      </div>
-
-      <div className="mt-6 grid gap-4 lg:grid-cols-[88px_minmax(0,1fr)] lg:items-start">
-        <div className="flex h-[88px] w-[88px] items-center justify-center border-2 border-[var(--color-ink)] bg-[var(--color-accent)] text-center text-xs font-bold uppercase tracking-[0.05em] text-[var(--color-ink)] shadow-[var(--shadow-hard-sm)]">
-          PT
-          <br />
-          Flow
+    <article className="nb-panel rounded-[4px] p-4 sm:p-5">
+      <div className="flex flex-col gap-4">
+        <div className="border-b-2 border-[var(--color-border)] pb-3">
+          <h3 className="text-base text-[var(--color-ink)] sm:text-lg">{`OVRFLO #${tokenId} · ${label}`}</h3>
         </div>
 
-        <div>
-          <p className="nb-kicker text-[var(--color-border)]">{preview.metricLabel}</p>
-          <p className="mt-2 text-3xl font-bold uppercase tracking-[0.05em] text-[var(--color-ink)] sm:text-[2rem]">
-            {preview.metricValue}
+        <div className="grid gap-2">
+          <div className="flex items-center justify-between gap-3">
+            <span className="nb-kicker text-[var(--color-border)]">Streamed</span>
+            <span className="mono text-sm font-semibold tracking-[0.05em] text-[var(--color-ink)]">{preview.progressPct}% streamed</span>
+          </div>
+          <div
+            role="progressbar"
+            aria-label={`OVRFLO ${tokenId} streamed progress`}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={preview.progressPct}
+            className="overflow-hidden rounded-[4px] border-2 border-[var(--color-border)] bg-[var(--color-surface-muted)] shadow-[var(--shadow-hard-sm)]"
+          >
+            <div className="h-3 bg-[var(--color-accent)]" style={{ width: `${Math.min(preview.progressPct, 100)}%` }} />
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-3 border-t-2 border-[var(--color-border)] pt-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm text-[var(--color-ink)]">
+            <span className="nb-kicker mr-2 text-[var(--color-border)]">Withdrawable:</span>
+            <span className="mono font-semibold uppercase tracking-[0.05em]">{preview.withdrawableLabel}</span>
           </p>
-          <p className="mt-2 text-sm text-[var(--color-ink)]/75">{preview.metricContext}</p>
+          <button type="button" disabled={!preview.claimable} className="nb-button w-full rounded-[4px] sm:w-auto">
+            {preview.actionLabel ?? "Withdraw"}
+          </button>
         </div>
-      </div>
 
-      <div className="mt-5 overflow-hidden rounded-[8px] border-2 border-[var(--color-border)] bg-[repeating-linear-gradient(90deg,var(--color-surface-muted)_0_18px,var(--color-surface)_18px_36px)]">
-        <div
-          className="h-4 border-r-2 border-[var(--color-ink)] bg-[var(--color-accent)]"
-          style={{ width: `${Math.min(preview.progressPct, 100)}%` }}
-        />
-      </div>
-
-      <div className="mt-5 grid gap-3 text-sm text-[var(--color-ink)] sm:grid-cols-3">
-        <div className="rounded-[8px] border-2 border-[var(--color-border)] bg-[var(--color-surface-muted)] px-4 py-3 shadow-[var(--shadow-hard-sm)]">
-          <div className="nb-kicker text-[var(--color-border)]">Deposited</div>
-          <div className="mt-2 font-semibold uppercase tracking-[0.05em]">{preview.depositedValue}</div>
-        </div>
-        <div className="rounded-[8px] border-2 border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 shadow-[var(--shadow-hard-sm)]">
-          <div className="nb-kicker text-[var(--color-border)]">Maturity</div>
-          <div className="mt-2 font-semibold uppercase tracking-[0.05em]">{preview.maturityLabel}</div>
-        </div>
-        <div className="rounded-[8px] border-2 border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 shadow-[var(--shadow-hard-sm)]">
-          <div className="nb-kicker text-[var(--color-border)]">Withdraw fee</div>
-          <div className="mt-2 font-semibold uppercase tracking-[0.05em]">{preview.feeLabel}</div>
-        </div>
+        <p className="border-t-2 border-[var(--color-border)] pt-3 text-sm text-[var(--color-ink)]">
+          <span className="nb-kicker mr-2 text-[var(--color-border)]">Ends:</span>
+          <span className="font-semibold uppercase tracking-[0.05em]">{preview.endDateLabel}</span>
+        </p>
       </div>
     </article>
   );

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SablierStream } from "@/lib/sablier";
 
@@ -52,32 +52,8 @@ const { Dashboard } = await import("@/components/Dashboard");
 
 beforeEach(() => {
   useDashboardDataMock.mockReturnValue({
-    badge: "OVRFLO preview mode",
-    title: "Split PT into principal now and stream the rest.",
-    subtitle: "Mock subtitle",
-    updatedAt: "Snapshot refreshed",
-    heroStats: [
-      { label: "Portfolio value", value: "$332K", detail: "4 total positions" },
-      { label: "Available to claim", value: "$43.4K", detail: "2 positions ready" },
-      { label: "Average fixed APR", value: "12.8%", detail: "Across active PT maturities" },
-      { label: "Next maturity", value: "30 Sep 2026", detail: "PT-sUSDe Sep 2026" },
-    ],
-    mechanicSteps: [
-      {
-        title: "Deposit PT",
-        body: "Deposit body",
-        value: "100 PT-sUSDe",
-      },
-    ],
-    mechanicExample: {
-      depositPt: "100 PT-sUSDe",
-      principalNow: "61.7 USDC immediate",
-      streamedValue: "37.4 OVRUSDC streamed",
-      fee: "0.9 USDC fee",
-    },
-    insightCards: [
-      { eyebrow: "Preview seam", title: "One mock source powers the full shell.", body: "Body" },
-    ],
+    tokenLabels: {},
+    marketLabels: {},
     ovrflos: [],
     allMarkets: [],
     streams: [
@@ -88,55 +64,37 @@ beforeEach(() => {
     ],
     streamCards: {
       "mock-stream-101": {
-        badge: "Claim ready",
         seriesLabel: "PT-sUSDe Sep 2026",
-        metricLabel: "Available now",
-        metricValue: "24,480 OVRUSDC · $24.5K",
-        metricContext: "62% matured",
-        depositedValue: "$125K deposited",
-        maturityLabel: "Ends 30 Sep 2026",
-        feeLabel: "0.0009 ETH execution fee",
+        withdrawableLabel: "24,480 OVRUSDC",
+        endDateLabel: "30 Sep 2026",
         progressPct: 62,
         claimable: true,
       },
       "mock-stream-102": {
-        badge: "Streaming",
         seriesLabel: "PT-eUSDe Dec 2026",
-        metricLabel: "Available now",
-        metricValue: "18,920 OVRUSDC · $18.9K",
-        metricContext: "44% matured",
-        depositedValue: "$98K deposited",
-        maturityLabel: "Ends 30 Dec 2026",
-        feeLabel: "0.0007 ETH execution fee",
+        withdrawableLabel: "18,920 OVRUSDC",
+        endDateLabel: "30 Dec 2026",
         progressPct: 44,
         claimable: true,
       },
       "mock-stream-201": {
-        badge: "Treasury sleeve",
         seriesLabel: "PT-USDT Mar 2027",
-        metricLabel: "Available now",
-        metricValue: "9,340 OVRUSDT · $9.3K",
-        metricContext: "31% matured",
-        depositedValue: "$63K deposited",
-        maturityLabel: "Ends 31 Mar 2027",
-        feeLabel: "0.0011 ETH execution fee",
+        withdrawableLabel: "9,340 OVRUSDT",
+        endDateLabel: "31 Mar 2027",
         progressPct: 31,
         claimable: false,
       },
       "mock-stream-301": {
-        badge: "Closed",
         seriesLabel: "PT-sUSDe Feb 2025",
-        metricLabel: "Final claim",
-        metricValue: "46,000 OVRUSDC · $46.0K",
-        metricContext: "Settled 02 Mar 2025",
-        depositedValue: "$46K deposited",
-        maturityLabel: "Closed 28 Feb 2025",
-        feeLabel: "0.0000 ETH execution fee",
+        withdrawableLabel: "0 OVRUSDC",
+        endDateLabel: "28 Feb 2025",
         progressPct: 100,
         claimable: false,
-        closed: true,
+        actionLabel: "Closed",
       },
     },
+    createFlows: {},
+    claimFlows: {},
     actionsDisabled: true,
     isPreview: true,
     launchReadError: undefined,
@@ -144,48 +102,28 @@ beforeEach(() => {
 });
 
 describe("Dashboard", () => {
-  it("renders the app-first shell and switches portfolio tabs", () => {
+  it("renders the single-page shell without stats or tabs", () => {
     render(<Dashboard />);
 
-    expect(screen.getByRole("heading", { name: "Portfolio" })).toBeInTheDocument();
-    expect(screen.getByText("Portfolio value")).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: /Active/i })).toHaveAttribute("aria-selected", "true");
-    expect(screen.getByRole("tab", { name: /Claimable/i })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: /Closed/i })).toBeInTheDocument();
-    expect(screen.getByText("stream-list:3")).toBeInTheDocument();
-    expect(screen.queryByText("OVRFLO preview mode")).not.toBeInTheDocument();
-    expect(screen.queryByText("One mock source powers the full shell.")).not.toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: "Deposit PT" })).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "My OVRFLOs" })).toBeInTheDocument();
+    expect(screen.getByText("stream-list:4")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "New OVRFLO" })).toBeDisabled();
-
-    fireEvent.click(screen.getByRole("tab", { name: /Claimable/i }));
-    expect(screen.getByRole("tab", { name: /Claimable/i })).toHaveAttribute("aria-selected", "true");
-    expect(screen.getByText("stream-list:2")).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("tab", { name: /Closed/i }));
-    expect(screen.getByRole("tab", { name: /Closed/i })).toHaveAttribute("aria-selected", "true");
-    expect(screen.getByText("stream-list:1")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Claim" })).toBeDisabled();
+    expect(screen.queryByText("Portfolio value")).not.toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: /Active/i })).not.toBeInTheDocument();
+    expect(screen.queryByText("OVRFLO preview mode")).not.toBeInTheDocument();
   });
 
   it("shows an actionable factory-read error and disables actions", () => {
     useDashboardDataMock.mockReturnValue({
-      badge: "OVRFLO dashboard preview",
-      title: "Premium fixed-income flow, mocked for product preview.",
-      subtitle: "Mock subtitle",
-      updatedAt: "Snapshot refreshed",
-      heroStats: [],
-      mechanicSteps: [],
-      mechanicExample: {
-        depositPt: "0",
-        principalNow: "0",
-        streamedValue: "0",
-        fee: "0",
-      },
-      insightCards: [],
+      tokenLabels: {},
+      marketLabels: {},
       ovrflos: [],
       allMarkets: [],
       streams: [],
       streamCards: {},
+      createFlows: {},
+      claimFlows: {},
       actionsDisabled: true,
       isPreview: false,
       launchReadError: new Error("factory unavailable"),

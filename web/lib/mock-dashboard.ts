@@ -4,127 +4,64 @@ import type { SablierStream } from "@/lib/sablier";
 
 type HexAddress = `0x${string}`;
 
-export interface DashboardHeroStat {
-  label: string;
-  value: string;
-  detail: string;
-}
-
-export interface DashboardInsightCard {
-  eyebrow: string;
-  title: string;
-  body: string;
-}
-
-export interface DashboardMechanicStep {
-  title: string;
-  body: string;
-  value: string;
-}
-
-export interface DashboardMechanicExample {
-  depositPt: string;
-  principalNow: string;
-  streamedValue: string;
-  fee: string;
-}
-
 export interface MockStreamCardData {
-  badge: string;
   seriesLabel: string;
-  metricLabel: string;
-  metricValue: string;
-  metricContext: string;
-  depositedValue: string;
-  maturityLabel: string;
-  feeLabel: string;
+  withdrawableLabel: string;
+  endDateLabel: string;
   progressPct: number;
   claimable: boolean;
-  closed?: boolean;
+  actionLabel?: string;
+}
+
+export interface MockCreateFlowData {
+  ptBalance: string;
+  immediate: string;
+  streamed: string;
+  fee: string;
+  minReceived: string;
+  streamEnds: string;
+  needsPtApproval?: boolean;
+  needsUnderlyingApproval?: boolean;
+  marketMaturesSoon?: boolean;
+}
+
+export interface MockClaimFlowData {
+  ovrfloBalance: string;
+  ptReserves: string;
+  maxAmount: string;
+  receiveAmount: string;
 }
 
 export interface MockDashboardData {
-  badge: string;
-  title: string;
-  subtitle: string;
-  updatedAt: string;
-  heroStats: DashboardHeroStat[];
-  mechanicSteps: DashboardMechanicStep[];
-  mechanicExample: DashboardMechanicExample;
-  insightCards: DashboardInsightCard[];
+  tokenLabels: Record<HexAddress, string>;
+  marketLabels: Record<HexAddress, string>;
   ovrflos: OvrfloEntry[];
   allMarkets: MarketInfo[];
   streams: SablierStream[];
   streamCards: Record<string, MockStreamCardData>;
+  createFlows: Record<HexAddress, MockCreateFlowData>;
+  claimFlows: Record<HexAddress, MockClaimFlowData>;
 }
 
 const addr = (value: string) => value as HexAddress;
 
 export const MOCK_DASHBOARD_DATA: MockDashboardData = {
-  badge: "OVRFLO preview mode",
-  title: "Split PT into principal now and stream the rest.",
-  subtitle:
-    "This dashboard is fully mocked from one centralized preview source so the OVRFLO product flow stays populated while live reads remain paused.",
-  updatedAt: "Snapshot refreshed 10 Mar 2026 · preview mode",
-  heroStats: [
-    {
-      label: "Portfolio value",
-      value: "$332K",
-      detail: "4 total positions",
-    },
-    {
-      label: "Available to claim",
-      value: "$43.4K",
-      detail: "2 positions ready",
-    },
-    {
-      label: "Average fixed APR",
-      value: "12.8%",
-      detail: "Across active PT maturities",
-    },
-    {
-      label: "Next maturity",
-      value: "30 Sep 2026",
-      detail: "PT-sUSDe Sep 2026",
-    },
-  ],
-  mechanicSteps: [
-    {
-      title: "Deposit PT",
-      body: "Choose an approved Pendle maturity and route PT into one OVRFLO sleeve.",
-      value: "100 PT-sUSDe",
-    },
-    {
-      title: "Take principal now",
-      body: "OVRFLO converts part of the deposit into immediate underlying value up front.",
-      value: "61.7 USDC now",
-    },
-    {
-      title: "Stream remaining value",
-      body: "The rest becomes a timed OVR token stream that can be claimed as it vests.",
-      value: "37.4 OVRUSDC over time",
-    },
-  ],
-  mechanicExample: {
-    depositPt: "100 PT-sUSDe Sep 2026",
-    principalNow: "61.7 USDC immediate",
-    streamedValue: "37.4 OVRUSDC streamed",
-    fee: "0.9 USDC fee",
+  tokenLabels: {
+    [addr("0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48")]: "USDC",
+    [addr("0xdAC17F958D2ee523a2206206994597C13D831ec7")]: "USDT",
+    [addr("0x3000000000000000000000000000000000000002")]: "PT-sUSDe",
+    [addr("0x4000000000000000000000000000000000000002")]: "PT-eUSDe",
+    [addr("0x5000000000000000000000000000000000000002")]: "PT-USDT",
+    [addr("0x6000000000000000000000000000000000000002")]: "PT-sUSDe Feb 2025",
+    [addr("0x1000000000000000000000000000000000000003")]: "OVRUSDC",
+    [addr("0x2000000000000000000000000000000000000003")]: "OVRUSDT",
   },
-  insightCards: [
-    {
-      eyebrow: "Preview seam",
-      title: "One mock source powers the full shell.",
-      body:
-        "Factory discovery, approved markets, hero copy, mechanic examples, and stream cards all read from this single checked-in module for maintainable preview mode.",
-    },
-    {
-      eyebrow: "Mainnet stance",
-      title: "Built for one chain and a simple flow.",
-      body:
-        "The UI keeps the launch posture obvious: Ethereum mainnet only, PT-focused onboarding, and clear claim / stream accounting without luxury-dashboard filler.",
-    },
-  ],
+  marketLabels: {
+    [addr("0x3000000000000000000000000000000000000001")]: "PT-sUSDe Sep 2026",
+    [addr("0x4000000000000000000000000000000000000001")]: "PT-eUSDe Dec 2026",
+    [addr("0x5000000000000000000000000000000000000001")]: "PT-USDT Mar 2027",
+    [addr("0x6000000000000000000000000000000000000001")]: "PT-sUSDe Feb 2025",
+  },
   ovrflos: [
     {
       address: addr("0x1000000000000000000000000000000000000001"),
@@ -172,6 +109,17 @@ export const MOCK_DASHBOARD_DATA: MockDashboardData = {
       ptToken: addr("0x5000000000000000000000000000000000000002"),
       ovrfloToken: addr("0x2000000000000000000000000000000000000003"),
       underlying: addr("0xdAC17F958D2ee523a2206206994597C13D831ec7"),
+    },
+    {
+      market: addr("0x6000000000000000000000000000000000000001"),
+      ovrflo: addr("0x1000000000000000000000000000000000000001"),
+      approved: true,
+      twapDuration: 900,
+      feeBps: 75,
+      expiry: 1740700800n,
+      ptToken: addr("0x6000000000000000000000000000000000000002"),
+      ovrfloToken: addr("0x1000000000000000000000000000000000000003"),
+      underlying: addr("0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"),
     },
   ],
   streams: [
@@ -246,53 +194,73 @@ export const MOCK_DASHBOARD_DATA: MockDashboardData = {
   ],
   streamCards: {
     "mock-stream-101": {
-      badge: "Claim ready",
       seriesLabel: "PT-sUSDe Sep 2026",
-      metricLabel: "Available now",
-      metricValue: "24,480 OVRUSDC · $24.5K",
-      metricContext: "62% matured · main sleeve",
-      depositedValue: "$125K deposited",
-      maturityLabel: "Ends 30 Sep 2026",
-      feeLabel: "0.0009 ETH execution fee",
+      withdrawableLabel: "24,480 OVRUSDC",
+      endDateLabel: "30 Sep 2026",
       progressPct: 62,
       claimable: true,
     },
     "mock-stream-102": {
-      badge: "Streaming",
       seriesLabel: "PT-eUSDe Dec 2026",
-      metricLabel: "Available now",
-      metricValue: "18,920 OVRUSDC · $18.9K",
-      metricContext: "44% matured · ladder two",
-      depositedValue: "$98K deposited",
-      maturityLabel: "Ends 30 Dec 2026",
-      feeLabel: "0.0007 ETH execution fee",
+      withdrawableLabel: "18,920 OVRUSDC",
+      endDateLabel: "30 Dec 2026",
       progressPct: 44,
       claimable: true,
     },
     "mock-stream-201": {
-      badge: "Treasury sleeve",
       seriesLabel: "PT-USDT Mar 2027",
-      metricLabel: "Available now",
-      metricValue: "9,340 OVRUSDT · $9.3K",
-      metricContext: "31% matured · long sleeve",
-      depositedValue: "$63K deposited",
-      maturityLabel: "Ends 31 Mar 2027",
-      feeLabel: "0.0011 ETH execution fee",
+      withdrawableLabel: "9,340 OVRUSDT",
+      endDateLabel: "31 Mar 2027",
       progressPct: 31,
-      claimable: false,
+      claimable: true,
     },
     "mock-stream-301": {
-      badge: "Closed",
       seriesLabel: "PT-sUSDe Feb 2025",
-      metricLabel: "Final claim",
-      metricValue: "46,000 OVRUSDC · $46.0K",
-      metricContext: "Settled 02 Mar 2025",
-      depositedValue: "$46K deposited",
-      maturityLabel: "Closed 28 Feb 2025",
-      feeLabel: "0.0000 ETH execution fee",
+      withdrawableLabel: "0 OVRUSDC",
+      endDateLabel: "28 Feb 2025",
       progressPct: 100,
       claimable: false,
-      closed: true,
+      actionLabel: "Closed",
+    },
+  },
+  createFlows: {
+    [addr("0x3000000000000000000000000000000000000001")]: {
+      ptBalance: "125 PT-sUSDe",
+      immediate: "61.7 USDC",
+      streamed: "37.4 OVRUSDC",
+      fee: "0.9 USDC",
+      minReceived: "61.39 USDC",
+      streamEnds: "30 Sep 2026",
+      needsPtApproval: true,
+      needsUnderlyingApproval: true,
+    },
+    [addr("0x4000000000000000000000000000000000000001")]: {
+      ptBalance: "98 PT-eUSDe",
+      immediate: "47.8 USDC",
+      streamed: "29.6 OVRUSDC",
+      fee: "0.7 USDC",
+      minReceived: "47.56 USDC",
+      streamEnds: "30 Dec 2026",
+      needsPtApproval: true,
+      needsUnderlyingApproval: false,
+    },
+    [addr("0x5000000000000000000000000000000000000001")]: {
+      ptBalance: "63 PT-USDT",
+      immediate: "31.4 USDT",
+      streamed: "20.1 OVRUSDT",
+      fee: "0.6 USDT",
+      minReceived: "31.24 USDT",
+      streamEnds: "31 Mar 2027",
+      needsPtApproval: false,
+      needsUnderlyingApproval: true,
+    },
+  },
+  claimFlows: {
+    [addr("0x6000000000000000000000000000000000000001")]: {
+      ovrfloBalance: "12,400 OVRUSDC",
+      ptReserves: "18,100 PT-sUSDe",
+      maxAmount: "12,400",
+      receiveAmount: "12,400 PT-sUSDe Feb 2025",
     },
   },
 };

@@ -78,14 +78,9 @@ describe("StreamList", () => {
           streams: [previewStream],
           streamCards: {
             "mock-stream-101": {
-              badge: "Income stream",
               seriesLabel: "PT-sUSDe Sep 2026",
-              metricLabel: "Available now",
-              metricValue: "24,480 OVRUSDC · $24.5K",
-              metricContext: "PT-sUSDe Sep 2026 · 62% matured",
-              depositedValue: "$125K deposited",
-              maturityLabel: "Ends 30 Sep 2026",
-              feeLabel: "0.0009 ETH execution fee",
+              withdrawableLabel: "24,480 OVRUSDC",
+              endDateLabel: "30 Sep 2026",
               progressPct: 62,
               claimable: true,
             },
@@ -113,11 +108,9 @@ describe("StreamList", () => {
     expect(screen.getByText(/Sablier indexer returned 502/i)).toBeInTheDocument();
   });
 
-  it("distinguishes an empty factory from an empty wallet stream list", () => {
+  it("shows the simplified empty state when there are no OVRFLOs", () => {
     render(<StreamList ovrflos={[]} allMarkets={[]} />);
 
-    expect(
-      screen.getByText(/No OVRFLO markets are currently available from the configured factory/i)
-    ).toBeInTheDocument();
+    expect(screen.getByText("No OVRFLOs yet.")).toBeInTheDocument();
   });
 });
