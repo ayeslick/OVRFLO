@@ -1,7 +1,4 @@
 import type { Metadata, Viewport } from "next";
-import { headers } from "next/headers";
-import { cookieToInitialState } from "wagmi";
-import { wagmiConfig } from "@/lib/wagmi-config";
 import { Providers } from "@/lib/providers";
 import { outfit } from "@/lib/fonts";
 import "./globals.css";
@@ -23,6 +20,9 @@ export const metadata: Metadata = {
     description: "Pendle PT stream management",
     images: ["/opengraph-image"],
   },
+  other: {
+    "generator": "Perplexity Computer (https://www.perplexity.ai/computer)",
+  },
 };
 
 export const viewport: Viewport = {
@@ -31,18 +31,15 @@ export const viewport: Viewport = {
   themeColor: "#0b1221",
 };
 
-export default async function RootLayout({
+export default function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const hdrs = await headers();
-  const initialState = cookieToInitialState(wagmiConfig, hdrs.get("cookie"));
-
   return (
     <html lang="en" className={outfit.variable}>
       <body className="flex min-h-screen flex-col bg-[var(--color-bg)]">
-        <Providers initialState={initialState}>{children}</Providers>
+        <Providers>{children}</Providers>
       </body>
     </html>
   );

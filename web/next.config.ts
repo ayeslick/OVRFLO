@@ -32,9 +32,10 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  output: "export",
   reactStrictMode: true,
-  async headers() {
-    return [{ source: "/(.*)", headers: securityHeaders }];
+  images: {
+    unoptimized: true,
   },
 };
 

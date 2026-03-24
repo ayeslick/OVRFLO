@@ -17,10 +17,11 @@ export function WalletActionCta({ className }: Props) {
       <button
         type="button"
         onClick={() => void appKitModal?.open({ view: "Connect", namespace: "eip155" })}
-        className={className ?? "nb-button w-full rounded-[4px]"}
+        className={className ?? "nb-button nb-button-dark w-full"}
         aria-label="Connect wallet"
+        data-testid="button-connect-wallet"
       >
-        Connect wallet
+        Connect Wallet
       </button>
     );
   }
@@ -32,8 +33,9 @@ export function WalletActionCta({ className }: Props) {
       type="button"
       onClick={() => void switchChainAsync({ chainId: CHAIN_ID })}
       disabled={isPending}
-      className={className ?? "nb-button w-full rounded-[4px]"}
+      className={className ?? "nb-button nb-button-dark w-full"}
       aria-label={`Switch wallet network to ${CHAIN_NAME}`}
+      data-testid="button-switch-network"
     >
       {isPending ? "Switching..." : `Switch to ${CHAIN_NAME}`}
     </button>

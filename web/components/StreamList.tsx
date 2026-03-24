@@ -30,11 +30,21 @@ export function StreamList({ ovrflos, allMarkets, preview }: Props) {
 
   function renderEmptyState() {
     return (
-      <article className="nb-panel-dark flex min-h-48 items-center justify-center p-6 text-center">
-        <p className="text-sm font-semibold uppercase tracking-[0.05em] text-[var(--color-heading)]">
-          No OVRFLOs yet.
+      <div className="nb-empty-card" data-testid="empty-streams">
+        {/* Wave icon */}
+        <div className="mb-4 flex h-16 w-16 items-center justify-center border-2 border-dashed border-[#5dc0f5]">
+          <svg viewBox="0 0 32 32" className="h-8 w-8 text-[#5dc0f5]" fill="none">
+            <path d="M4 16c2-4 4-4 6 0s4 4 6 0 4-4 6 0 4 4 6 0" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
+            <path d="M4 22c2-4 4-4 6 0s4 4 6 0 4-4 6 0 4 4 6 0" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" opacity="0.5" />
+          </svg>
+        </div>
+        <h3 className="text-base font-bold uppercase tracking-widest text-white">
+          Create Your Next OVRFLO
+        </h3>
+        <p className="mt-2 text-sm text-[#a3c0e8]">
+          Unlock immediate principal from any PT market in one click.
         </p>
-      </article>
+      </div>
     );
   }
 
@@ -46,8 +56,8 @@ export function StreamList({ ovrflos, allMarkets, preview }: Props) {
     }
 
     return (
-      <div className="flex flex-col gap-4">
-        {previewStreams.map((stream) => {
+      <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3" data-testid="stream-grid">
+        {previewStreams.map((stream, i) => {
           const previewCard = preview.streamCards[stream.id];
           if (!previewCard) return null;
 
@@ -57,17 +67,35 @@ export function StreamList({ ovrflos, allMarkets, preview }: Props) {
               tokenId={stream.tokenId}
               label={previewCard.seriesLabel}
               preview={previewCard}
+              index={i}
             />
           );
         })}
+        {renderEmptyState()}
       </div>
     );
   }
 
   if (isLoading) {
     return (
-      <div className="nb-panel-dark flex min-h-56 items-center justify-center p-6 text-center">
-        <p className="nb-kicker text-[var(--color-muted)]">Loading streams...</p>
+      <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3" data-testid="stream-grid-skeleton">
+        {[1, 2, 3].map((i) => (
+          <div
+            key={i}
+            className="nb-stream-card animate-pulse p-6"
+          >
+            <div className="mb-4 flex items-center gap-3">
+              <div className="h-7 w-7 bg-[#5dc0f5]/30" />
+              <div className="h-5 w-32 bg-black/10" />
+            </div>
+            <div className="mb-4 h-5 w-full bg-[#0b1221]" />
+            <div className="mb-4 grid grid-cols-2 gap-0">
+              <div className="h-16 bg-[#f0f4f8]" />
+              <div className="h-16 bg-[#5dc0f5]/10" />
+            </div>
+            <div className="h-12 w-full bg-black/80" />
+          </div>
+        ))}
       </div>
     );
   }
@@ -101,15 +129,16 @@ export function StreamList({ ovrflos, allMarkets, preview }: Props) {
     if (!market) return undefined;
     const symbol = getTokenSymbol(ptSymbols, market.ptToken, undefined);
     return symbol
-      ? `${symbol} · ${new Date(Number(market.expiry) * 1000).toLocaleDateString()}`
+      ? `${symbol} · ${new Date(Number(market.expiry) * 1000).toLocaleDateString("en-US", { month: "short", year: "numeric" })}`
       : undefined;
   }
 
   return (
-    <div className="flex flex-col gap-4">
-      {streams.map((s) => (
-        <StreamCard key={s.id} stream={s} ptName={resolvePtName(s)} />
+    <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3" data-testid="stream-grid">
+      {streams.map((s, i) => (
+        <StreamCard key={s.id} stream={s} ptName={resolvePtName(s)} index={i} />
       ))}
+      {renderEmptyState()}
     </div>
   );
 }

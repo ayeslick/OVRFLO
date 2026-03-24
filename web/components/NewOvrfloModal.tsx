@@ -45,7 +45,13 @@ function formatAddress(address?: `0x${string}`) {
 }
 
 function formatDate(value?: bigint) {
-  return value ? new Date(Number(value) * 1000).toLocaleDateString() : "--";
+  return value
+    ? new Date(Number(value) * 1000).toLocaleDateString("en-US", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+      })
+    : "--";
 }
 
 function lookupLabel(
@@ -82,7 +88,7 @@ export function NewOvrfloModal({ open, onClose, ovrflos, allMarkets, preview }: 
   });
 
   const symbolMap = useTokenSymbols(
-    previewMode ? [] : [...ovrflos.map((ovrflo) => ovrflo.underlying), ...allMarkets.map((market) => market.ptToken)],
+    previewMode ? [] : [...ovrflos.map((o) => o.underlying), ...allMarkets.map((m) => m.ptToken)],
   );
   const decMap = useTokenDecimals(previewMode ? [] : [selectedMarket?.ptToken, selectedMarket?.underlying, selectedMarket?.ovrfloToken]);
   const now = BigInt(Math.floor(Date.now() / 1000));
@@ -250,12 +256,7 @@ export function NewOvrfloModal({ open, onClose, ovrflos, allMarkets, preview }: 
   const handleApprovePt = useCallback(async () => {
     if (!selectedOvrflo || !resolvedPtToken || !canProceed) return;
     setErrorMsg("");
-
-    if (previewMode) {
-      setPreviewPtApproved(true);
-      return;
-    }
-
+    if (previewMode) { setPreviewPtApproved(true); return; }
     setTxPhase("approving-pt");
     try {
       const hash = await writeContractAsync({
@@ -275,12 +276,7 @@ export function NewOvrfloModal({ open, onClose, ovrflos, allMarkets, preview }: 
   const handleApproveUnderlying = useCallback(async () => {
     if (!selectedOvrflo || !resolvedUnderlying || !canProceed || feeAmount <= 0n) return;
     setErrorMsg("");
-
-    if (previewMode) {
-      setPreviewUnderlyingApproved(true);
-      return;
-    }
-
+    if (previewMode) { setPreviewUnderlyingApproved(true); return; }
     setTxPhase("approving-underlying");
     try {
       const hash = await writeContractAsync({
@@ -300,12 +296,7 @@ export function NewOvrfloModal({ open, onClose, ovrflos, allMarkets, preview }: 
   const handleDeposit = useCallback(async () => {
     if (!selectedOvrflo || !selectedMarket || !canProceed) return;
     setErrorMsg("");
-
-    if (previewMode) {
-      setTxPhase("success");
-      return;
-    }
-
+    if (previewMode) { setTxPhase("success"); return; }
     setTxPhase("creating");
     try {
       const hash = await writeContractAsync({
@@ -325,235 +316,267 @@ export function NewOvrfloModal({ open, onClose, ovrflos, allMarkets, preview }: 
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--color-bg)] p-4">
-      <div className="nb-panel relative w-full max-w-xl rounded-[4px] p-6 sm:p-7">
-        <div className="mb-5 flex items-center justify-between gap-3">
-          <h3 className="text-xl text-[var(--color-ink)]">New OVRFLO</h3>
-          <div className="flex items-center gap-3">
+    <div className="nb-modal-overlay" data-testid="modal-new-ovrflo">
+      <div className="nb-modal">
+        {/* Modal Header */}
+        <div className="nb-modal-header">
+          <h3 className="text-lg font-bold uppercase tracking-wide text-black">New OVRFLO</h3>
+          <div className="flex items-center gap-2">
             <SlippageSettings slippageBps={slippageBps} onChange={setSlippageBps} />
-            <button type="button" onClick={onClose} className="nb-icon-button" aria-label="Close new OVRFLO modal">
+            <button
+              type="button"
+              onClick={onClose}
+              className="nb-icon-button h-9 w-9 text-sm"
+              aria-label="Close new OVRFLO modal"
+              data-testid="button-close-new-ovrflo"
+            >
               ✕
             </button>
           </div>
         </div>
 
-        {step === "underlying" ? (
-          <div className="flex flex-col gap-4">
-            <div className="space-y-2">
-              <label htmlFor="new-ovrflo-underlying" className="nb-kicker block text-[var(--color-border)]">
-                Underlying
-              </label>
-              <select
-                id="new-ovrflo-underlying"
-                value={selectedOvrflo?.address ?? ""}
-                onChange={(event) => {
-                  const next = ovrflos.find((ovrflo) => ovrflo.address === event.target.value);
-                  setSelectedOvrflo(next);
-                }}
-                className="nb-input nb-select min-h-12 w-full"
-              >
-                <option value="">Select underlying</option>
-                {ovrflos.map((ovrflo) => (
-                  <option key={ovrflo.address} value={ovrflo.address}>
-                    {lookupLabel(
-                      preview?.tokenLabels,
-                      ovrflo.underlying,
-                      getTokenSymbol(symbolMap, ovrflo.underlying, formatAddress(ovrflo.underlying)),
-                    )}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <button type="button" disabled={!selectedOvrflo} onClick={() => setStep("maturity")} className="nb-button w-full">
-              Continue
-            </button>
-          </div>
-        ) : (
-          <div className="flex flex-col gap-4">
-            <button
-              type="button"
-              onClick={() => {
-                setStep("underlying");
-                setSelectedMarket(undefined);
-                setAmountStr("");
-                setErrorMsg("");
-              }}
-              className="nb-link w-fit text-[var(--color-border)]"
-            >
-              ← {underlyingLabel}
-            </button>
-
-            <div className="space-y-2">
-              <label htmlFor="new-ovrflo-maturity" className="nb-kicker block text-[var(--color-border)]">
-                Maturity
-              </label>
-              <select
-                id="new-ovrflo-maturity"
-                value={selectedMarket?.market ?? ""}
-                onChange={(event) => {
-                  const next = marketsForOvrflo.find((market) => market.market === event.target.value);
-                  setSelectedMarket(next);
-                  setAmountStr("");
-                  setUnlimitedApproval(false);
-                  setPreviewPtApproved(false);
-                  setPreviewUnderlyingApproved(false);
-                  setTxPhase("idle");
-                  setTxHash(undefined);
-                  setErrorMsg("");
-                }}
-                className="nb-input nb-select min-h-12 w-full"
-              >
-                <option value="">Select maturity</option>
-                {marketsForOvrflo.map((market) => (
-                  <option key={market.market} value={market.market}>
-                    {lookupLabel(preview?.marketLabels, market.market, `${getTokenSymbol(symbolMap, market.ptToken, "PT")} ${formatDate(market.expiry)}`)}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {selectedMarket ? (
-              <>
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between gap-3">
-                    <label htmlFor="new-ovrflo-amount" className="nb-kicker text-[var(--color-border)]">
-                      Amount (PT)
-                    </label>
-                    <span className="text-xs text-[var(--color-ink)]/70">Balance: {previewFlow?.ptBalance ?? (ptBalance !== undefined ? `${formatUnits(ptBalance, ptDecimals)} ${ptSymbol}` : "--")}</span>
-                  </div>
-                  <input
-                    id="new-ovrflo-amount"
-                    type="text"
-                    inputMode="decimal"
-                    value={amountStr}
-                    onChange={(event) => {
-                      setAmountStr(sanitizeAmount(event.target.value));
-                      setErrorMsg("");
-                    }}
-                    placeholder="0.0"
-                    className="nb-input mono w-full"
-                  />
-                </div>
-
-                <div className="grid gap-2 rounded-[4px] border-2 border-[var(--color-border)] bg-[var(--color-surface)] p-4 text-sm shadow-[var(--shadow-hard-sm)]">
-                  <div className="flex justify-between gap-4">
-                    <span className="nb-kicker text-[var(--color-border)]">Immediate</span>
-                    <span className="mono font-semibold uppercase tracking-[0.05em] text-[var(--color-ink)]">
-                      {previewFlow?.immediate ?? (toUser > 0n ? `${formatUnits(toUser, underlyingDecimals)} ${underlyingLabel}` : "--")}
-                    </span>
-                  </div>
-                  <div className="flex justify-between gap-4">
-                    <span className="nb-kicker text-[var(--color-border)]">Streamed</span>
-                    <span className="mono font-semibold uppercase tracking-[0.05em] text-[var(--color-ink)]">
-                      {previewFlow?.streamed ?? (toStream > 0n ? `${formatUnits(toStream, ovrfloDecimals)} ${ovrfloSymbol}` : "--")}
-                    </span>
-                  </div>
-                  <div className="flex justify-between gap-4">
-                    <span className="nb-kicker text-[var(--color-border)]">Fee</span>
-                    <span className="mono font-semibold uppercase tracking-[0.05em] text-[var(--color-ink)]">
-                      {previewFlow?.fee ?? (feeAmount > 0n ? `${formatUnits(feeAmount, underlyingDecimals)} ${underlyingLabel}` : `0 ${underlyingLabel}`)}
-                    </span>
-                  </div>
-                  <div className="flex justify-between gap-4">
-                    <span className="nb-kicker text-[var(--color-border)]">Min received</span>
-                    <span className="mono font-semibold uppercase tracking-[0.05em] text-[var(--color-ink)]">
-                      {previewFlow?.minReceived ?? (minToUser > 0n ? `${formatUnits(minToUser, underlyingDecimals)} ${underlyingLabel}` : "--")}
-                    </span>
-                  </div>
-                  <div className="flex justify-between gap-4">
-                    <span className="nb-kicker text-[var(--color-border)]">Stream ends</span>
-                    <span className="font-semibold uppercase tracking-[0.05em] text-[var(--color-ink)]">
-                      {previewFlow?.streamEnds ?? formatDate(resolvedExpiry)}
-                    </span>
-                  </div>
-                </div>
-
-                <label className="flex items-center gap-3 text-sm text-[var(--color-ink)]">
-                  <input
-                    type="checkbox"
-                    checked={unlimitedApproval}
-                    onChange={(event) => setUnlimitedApproval(event.target.checked)}
-                    className="h-4 w-4 accent-[var(--color-accent)]"
-                  />
-                  Unlimited approvals
+        {/* Modal Body */}
+        <div className="nb-modal-body">
+          {step === "underlying" ? (
+            <div className="flex flex-col gap-4">
+              <div>
+                <label htmlFor="new-ovrflo-underlying" className="nb-kicker mb-2 block text-black/40">
+                  Select Underlying
                 </label>
-
-                {maturingSoon ? <div className="nb-status nb-status-warning text-xs">Market matures soon (&lt; 24h).</div> : null}
-                {selectedMarketExpired ? <div className="nb-status nb-status-error text-xs">Market expired.</div> : null}
-                {insufficientPtBalance ? <div className="nb-status nb-status-error text-xs">Insufficient PT balance.</div> : null}
-                {insufficientUnderlyingBalance ? <div className="nb-status nb-status-error text-xs">Insufficient {underlyingLabel} balance.</div> : null}
-
-                {!previewMode && !address ? (
-                  <>
-                    <div className="nb-status nb-status-info text-sm">Connect wallet.</div>
-                    <WalletActionCta />
-                  </>
-                ) : wrongChain ? (
-                  <>
-                    <div className="nb-status nb-status-error text-sm">Switch to chain {CHAIN_ID}.</div>
-                    <WalletActionCta />
-                  </>
-                ) : txPhase === "success" ? (
-                  <div className="nb-status nb-status-success text-center text-sm">Created.</div>
-                ) : (
-                  <>
-                    {(txPhase === "waiting-pt-approval" || txPhase === "waiting-underlying-approval" || txPhase === "waiting-deposit") ? (
-                      <div className="nb-status nb-status-warning text-center text-sm">Confirming…</div>
-                    ) : null}
-
-                    {needsPtApproval ? (
-                      <button type="button" onClick={handleApprovePt} disabled={!canProceed || isBusy} className="nb-button w-full">
-                        {txPhase === "approving-pt"
-                          ? "Submitting…"
-                          : txPhase === "waiting-pt-approval"
-                            ? "Confirming…"
-                            : "Approve PT"}
-                      </button>
-                    ) : needsUnderlyingApproval ? (
-                      <button type="button" onClick={handleApproveUnderlying} disabled={!canProceed || isBusy} className="nb-button w-full">
-                        {txPhase === "approving-underlying"
-                          ? "Submitting…"
-                          : txPhase === "waiting-underlying-approval"
-                            ? "Confirming…"
-                            : `Approve ${underlyingLabel}`}
-                      </button>
-                    ) : (
-                      <button type="button" onClick={handleDeposit} disabled={!canProceed || isBusy} className="nb-button w-full">
-                        {txPhase === "creating"
-                          ? "Submitting…"
-                          : txPhase === "waiting-deposit"
-                            ? "Confirming…"
-                            : "Create OVRFLO"}
-                      </button>
-                    )}
-                  </>
-                )}
-
-                {txPhase === "error" ? (
-                  <div className="nb-status nb-status-error break-all text-xs">
-                    {errorMsg}
+                <div className="flex flex-col gap-2">
+                  {ovrflos.map((ovrflo) => (
                     <button
+                      key={ovrflo.address}
                       type="button"
                       onClick={() => {
-                        setTxPhase("idle");
-                        setTxHash(undefined);
+                        setSelectedOvrflo(ovrflo);
+                        setStep("maturity");
+                      }}
+                      className={`flex w-full items-center justify-between border-2 border-[#000] bg-white p-4 text-left text-sm font-bold uppercase tracking-wider text-black shadow-[var(--shadow-hard-sm)] transition-all hover:-translate-x-1 hover:-translate-y-1 hover:shadow-[var(--shadow-hard-md)] ${
+                        selectedOvrflo?.address === ovrflo.address ? "border-[#5dc0f5] bg-[#5dc0f5]/10" : ""
+                      }`}
+                      data-testid={`button-select-underlying-${ovrflo.address}`}
+                    >
+                      <span>
+                        {lookupLabel(
+                          preview?.tokenLabels,
+                          ovrflo.underlying,
+                          getTokenSymbol(symbolMap, ovrflo.underlying, formatAddress(ovrflo.underlying)),
+                        )}
+                      </span>
+                      <svg viewBox="0 0 16 16" className="h-4 w-4" fill="none">
+                        <path d="M6 3.5L10.5 8 6 12.5" stroke="currentColor" strokeWidth="2" strokeLinecap="square" />
+                      </svg>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-4">
+              {/* Back button */}
+              <button
+                type="button"
+                onClick={() => {
+                  setStep("underlying");
+                  setSelectedMarket(undefined);
+                  setAmountStr("");
+                  setErrorMsg("");
+                }}
+                className="flex w-fit items-center gap-1 text-sm font-bold uppercase tracking-wider text-black/40 hover:text-[#5dc0f5]"
+                data-testid="button-back-underlying"
+              >
+                <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none">
+                  <path d="M10 3.5L5.5 8 10 12.5" stroke="currentColor" strokeWidth="2" strokeLinecap="square" />
+                </svg>
+                {underlyingLabel}
+              </button>
+
+              {/* Maturity select */}
+              <div>
+                <label htmlFor="new-ovrflo-maturity" className="nb-kicker mb-2 block text-black/40">
+                  Select Maturity
+                </label>
+                <select
+                  id="new-ovrflo-maturity"
+                  value={selectedMarket?.market ?? ""}
+                  onChange={(event) => {
+                    const next = marketsForOvrflo.find((market) => market.market === event.target.value);
+                    setSelectedMarket(next);
+                    setAmountStr("");
+                    setUnlimitedApproval(false);
+                    setPreviewPtApproved(false);
+                    setPreviewUnderlyingApproved(false);
+                    setTxPhase("idle");
+                    setTxHash(undefined);
+                    setErrorMsg("");
+                  }}
+                  className="nb-input nb-select w-full"
+                  data-testid="select-maturity"
+                >
+                  <option value="">Select maturity</option>
+                  {marketsForOvrflo.map((market) => (
+                    <option key={market.market} value={market.market}>
+                      {lookupLabel(preview?.marketLabels, market.market, `${getTokenSymbol(symbolMap, market.ptToken, "PT")} ${formatDate(market.expiry)}`)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {selectedMarket ? (
+                <>
+                  {/* Amount */}
+                  <div>
+                    <div className="mb-2 flex items-center justify-between">
+                      <label htmlFor="new-ovrflo-amount" className="nb-kicker text-black/40">
+                        Amount (PT)
+                      </label>
+                      <span className="mono text-xs font-semibold text-black/50">
+                        Balance: {previewFlow?.ptBalance ?? (ptBalance !== undefined ? `${formatUnits(ptBalance, ptDecimals)} ${ptSymbol}` : "--")}
+                      </span>
+                    </div>
+                    <input
+                      id="new-ovrflo-amount"
+                      type="text"
+                      inputMode="decimal"
+                      value={amountStr}
+                      onChange={(event) => {
+                        setAmountStr(sanitizeAmount(event.target.value));
                         setErrorMsg("");
                       }}
-                      className="nb-link ml-2 inline-block"
-                    >
-                      Retry
-                    </button>
+                      placeholder="0.0"
+                      className="nb-input mono w-full"
+                      data-testid="input-pt-amount"
+                    />
                   </div>
-                ) : null}
 
-                <div className="text-xs text-[var(--color-ink)]/70">{marketLabel}</div>
-              </>
-            ) : marketsForOvrflo.length === 0 ? (
-              <div className="nb-status nb-status-info text-sm">No maturities.</div>
-            ) : null}
-          </div>
-        )}
+                  {/* Preview section */}
+                  <div className="nb-preview-box">
+                    <p className="nb-kicker mb-3 text-center text-black/40">Preview</p>
+                    <div className="nb-preview-row">
+                      <span className="nb-preview-label">Immediate</span>
+                      <span className="nb-preview-value">
+                        {previewFlow?.immediate ?? (toUser > 0n ? `${formatUnits(toUser, underlyingDecimals)} ${underlyingLabel}` : "--")}
+                      </span>
+                    </div>
+                    <div className="nb-preview-row">
+                      <span className="nb-preview-label">Streamed</span>
+                      <span className="nb-preview-value">
+                        {previewFlow?.streamed ?? (toStream > 0n ? `${formatUnits(toStream, ovrfloDecimals)} ${ovrfloSymbol}` : "--")}
+                      </span>
+                    </div>
+                    <div className="nb-preview-row">
+                      <span className="nb-preview-label">Fee</span>
+                      <span className="nb-preview-value">
+                        {previewFlow?.fee ?? (feeAmount > 0n ? `${formatUnits(feeAmount, underlyingDecimals)} ${underlyingLabel}` : `0 ${underlyingLabel}`)}
+                      </span>
+                    </div>
+                    <div className="nb-preview-row">
+                      <span className="nb-preview-label">Min received</span>
+                      <span className="nb-preview-value">
+                        {previewFlow?.minReceived ?? (minToUser > 0n ? `${formatUnits(minToUser, underlyingDecimals)} ${underlyingLabel}` : "--")}
+                      </span>
+                    </div>
+                    <div className="nb-preview-row">
+                      <span className="nb-preview-label">Stream ends</span>
+                      <span className="text-base font-bold text-black">
+                        {previewFlow?.streamEnds ?? formatDate(resolvedExpiry)}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Unlimited approval opt-in */}
+                  <label className="flex items-center gap-3 text-sm text-black">
+                    <input
+                      type="checkbox"
+                      checked={unlimitedApproval}
+                      onChange={(event) => setUnlimitedApproval(event.target.checked)}
+                      className="h-4 w-4 accent-[#5dc0f5]"
+                      data-testid="checkbox-unlimited-approval"
+                    />
+                    <span className="nb-kicker text-black/60">Unlimited approvals</span>
+                  </label>
+
+                  {/* Warnings */}
+                  {maturingSoon ? <div className="nb-status nb-status-warning text-xs">Market matures soon (&lt; 24h).</div> : null}
+                  {selectedMarketExpired ? <div className="nb-status nb-status-error text-xs">Market expired.</div> : null}
+                  {insufficientPtBalance ? <div className="nb-status nb-status-error text-xs">Insufficient PT balance.</div> : null}
+                  {insufficientUnderlyingBalance ? <div className="nb-status nb-status-error text-xs">Insufficient {underlyingLabel} balance.</div> : null}
+
+                  {/* Action buttons */}
+                  {!previewMode && !address ? (
+                    <>
+                      <div className="nb-status nb-status-info text-sm">Connect wallet to continue.</div>
+                      <WalletActionCta />
+                    </>
+                  ) : wrongChain ? (
+                    <>
+                      <div className="nb-status nb-status-error text-sm">Switch to chain {CHAIN_ID}.</div>
+                      <WalletActionCta />
+                    </>
+                  ) : txPhase === "success" ? (
+                    <div className="nb-status nb-status-success text-center text-sm font-bold">OVRFLO Created.</div>
+                  ) : (
+                    <>
+                      {(txPhase === "waiting-pt-approval" || txPhase === "waiting-underlying-approval" || txPhase === "waiting-deposit") ? (
+                        <div className="nb-status nb-status-warning text-center text-sm">Confirming...</div>
+                      ) : null}
+
+                      {needsPtApproval ? (
+                        <button
+                          type="button"
+                          onClick={handleApprovePt}
+                          disabled={!canProceed || isBusy}
+                          className="nb-button w-full"
+                          data-testid="button-approve-pt"
+                        >
+                          {txPhase === "approving-pt" ? "Submitting..." : txPhase === "waiting-pt-approval" ? "Confirming..." : "Approve PT"}
+                        </button>
+                      ) : needsUnderlyingApproval ? (
+                        <button
+                          type="button"
+                          onClick={handleApproveUnderlying}
+                          disabled={!canProceed || isBusy}
+                          className="nb-button w-full"
+                          data-testid="button-approve-underlying"
+                        >
+                          {txPhase === "approving-underlying" ? "Submitting..." : txPhase === "waiting-underlying-approval" ? "Confirming..." : `Approve ${underlyingLabel}`}
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={handleDeposit}
+                          disabled={!canProceed || isBusy}
+                          className="nb-button nb-button-dark w-full"
+                          data-testid="button-create-ovrflo"
+                        >
+                          {txPhase === "creating" ? "Submitting..." : txPhase === "waiting-deposit" ? "Confirming..." : "Create OVRFLO"}
+                        </button>
+                      )}
+                    </>
+                  )}
+
+                  {/* Error */}
+                  {txPhase === "error" ? (
+                    <div className="nb-status nb-status-error break-all text-xs">
+                      {errorMsg}
+                      <button
+                        type="button"
+                        onClick={() => { setTxPhase("idle"); setTxHash(undefined); setErrorMsg(""); }}
+                        className="nb-link ml-2 inline-block text-[#b13a57]"
+                        data-testid="button-retry-create"
+                      >
+                        Retry
+                      </button>
+                    </div>
+                  ) : null}
+                </>
+              ) : marketsForOvrflo.length === 0 ? (
+                <div className="nb-status nb-status-info text-sm">No active maturities for this underlying.</div>
+              ) : null}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

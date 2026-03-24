@@ -12,22 +12,21 @@ import { formatUnits, formatEther, type Address } from "viem";
 import { SABLIER_LOCKUP, CHAIN_ID, CHAIN_NAME } from "@/lib/constants";
 import { sablierLockupAbi } from "@/lib/contracts";
 import { parseUserError } from "@/lib/tx-errors";
-import { useUsdPrices, getTokenUsd, formatUsdValue } from "@/hooks/useUsdPrices";
 import type { SablierStream } from "@/lib/sablier";
 
 interface Props {
   stream: SablierStream;
   ptName?: string;
+  index: number;
 }
 
 type TxPhase = "idle" | "submitting" | "waiting" | "success" | "error";
 
-export function StreamCard({ stream, ptName }: Props) {
+export function StreamCard({ stream, ptName, index }: Props) {
   const { address, chainId } = useAccount();
   const [txPhase, setTxPhase] = useState<TxPhase>("idle");
   const [txHash, setTxHash] = useState<`0x${string}`>();
   const [error, setError] = useState<string>();
-  const { data: usdPrices } = useUsdPrices([stream.asset.address as `0x${string}`]);
 
   const tokenId = BigInt(stream.tokenId);
 
@@ -46,7 +45,6 @@ export function StreamCard({ stream, ptName }: Props) {
   });
 
   const { data: ethBalance } = useBalance({ address });
-
   const { writeContractAsync } = useWriteContract();
 
   const { isSuccess: receiptConfirmed, isError: receiptFailed } =
@@ -75,10 +73,10 @@ export function StreamCard({ stream, ptName }: Props) {
   const elapsed = Math.max(0, Math.min(now - start, total));
   const pct = total > 0 ? Math.round((elapsed / total) * 1000) / 10 : 0;
   const decimals = stream.asset.decimals;
+  const isFullyVested = pct >= 100;
+  const isDepleted = stream.depleted;
 
   const withdrawableStr = withdrawable ? formatUnits(withdrawable, decimals) : "...";
-  const tokenUsd = getTokenUsd(usdPrices?.tokenUsd, stream.asset.address as `0x${string}`);
-  const withdrawableUsd = withdrawable ? formatUsdValue(withdrawable, decimals, tokenUsd) : undefined;
   const feeInsufficient =
     minFee !== undefined &&
     ethBalance?.value !== undefined &&
@@ -118,6 +116,7 @@ export function StreamCard({ stream, ptName }: Props) {
   }, [address, withdrawable, minFee, tokenId, writeContractAsync]);
 
   const label = ptName ?? stream.asset.symbol;
+  const statusLabel = isDepleted ? "Depleted" : isFullyVested ? "Fully Vested" : "Active";
   const withdrawButtonTitle = !address
     ? "Connect wallet to withdraw"
     : chainId !== CHAIN_ID
@@ -127,66 +126,101 @@ export function StreamCard({ stream, ptName }: Props) {
         : undefined;
 
   return (
-    <article className="nb-panel rounded-[4px] p-4 sm:p-5">
-      <div className="flex flex-col gap-4">
-        <div className="border-b-2 border-[var(--color-border)] pb-3">
-          <h3 className="text-base text-[var(--color-ink)] sm:text-lg">{`OVRFLO #${stream.tokenId} · ${label}`}</h3>
-        </div>
-
-        <div className="grid gap-2">
-          <div className="flex items-center justify-between gap-3">
-            <span className="nb-kicker text-[var(--color-border)]">Streamed</span>
-            <span className="mono text-sm font-semibold tracking-[0.05em] text-[var(--color-ink)]">{pct}% streamed</span>
-          </div>
-          <div
-            role="progressbar"
-            aria-label={`OVRFLO ${stream.tokenId} streamed progress`}
-            aria-valuemin={0}
-            aria-valuemax={100}
-            aria-valuenow={Math.round(Math.min(pct, 100))}
-            className="overflow-hidden rounded-[4px] border-2 border-[var(--color-border)] bg-[var(--color-surface-muted)] shadow-[var(--shadow-hard-sm)]"
-          >
-            <div className="h-3 bg-[var(--color-accent)]" style={{ width: `${Math.min(pct, 100)}%` }} />
+    <article
+      className="nb-stream-card p-5 sm:p-6"
+      data-testid={`card-stream-${stream.tokenId}`}
+    >
+      {/* Top row: Badge + Title + Status */}
+      <div className="mb-4 flex items-start justify-between gap-3">
+        <div className="flex items-center gap-3">
+          {/* Index badge */}
+          <span className="nb-badge nb-badge-cyan mono">
+            {String(index + 1).padStart(2, "0")}
+          </span>
+          <div>
+            <h3 className="text-base font-bold uppercase tracking-wide text-black">
+              OVRFLO #{stream.tokenId}
+            </h3>
+            <p className="nb-kicker mt-0.5 text-black/40">{label}</p>
           </div>
         </div>
-
-        <div className="flex flex-col gap-3 border-t-2 border-[var(--color-border)] pt-3 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-sm text-[var(--color-ink)]">
-            <span className="nb-kicker mr-2 text-[var(--color-border)]">Withdrawable:</span>
-            <span className="mono font-semibold uppercase tracking-[0.05em]">{withdrawableStr} {stream.asset.symbol}</span>
-            {withdrawableUsd ? <span className="ml-2 text-xs text-[var(--color-muted)]">{withdrawableUsd}</span> : null}
-          </p>
-          <button
-            type="button"
-            onClick={handleWithdraw}
-            disabled={!canWithdraw}
-            title={withdrawButtonTitle}
-            className="nb-button w-full rounded-[4px] sm:w-auto"
-          >
-            {txPhase === "submitting"
-              ? "Submitting..."
-              : txPhase === "waiting"
-                ? "Confirming..."
-                : txPhase === "success"
-                  ? "Done"
-                  : "Withdraw"}
-          </button>
-        </div>
-
-        <p className="border-t-2 border-[var(--color-border)] pt-3 text-sm text-[var(--color-ink)]">
-          <span className="nb-kicker mr-2 text-[var(--color-border)]">Ends:</span>
-          <span className="font-semibold uppercase tracking-[0.05em]">{new Date(end * 1000).toLocaleDateString()}</span>
-        </p>
+        <span className={`nb-badge ${isDepleted ? "nb-badge-dark opacity-50" : "nb-badge-active"}`}>
+          {statusLabel}
+        </span>
       </div>
 
+      {/* Streamed % + Progress */}
+      <div className="mb-4">
+        <div className="mb-2 flex items-center justify-between">
+          <span className="nb-kicker text-black/40">Streamed</span>
+          <span className="mono text-sm font-bold text-[#5dc0f5]">{pct}% STREAMED</span>
+        </div>
+        <div
+          role="progressbar"
+          aria-label={`OVRFLO ${stream.tokenId} streamed progress`}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={Math.round(Math.min(pct, 100))}
+          className="nb-progress-track"
+          data-testid={`progress-stream-${stream.tokenId}`}
+        >
+          <div
+            className="nb-progress-fill"
+            style={{ width: `${Math.min(pct, 100)}%` }}
+          />
+        </div>
+      </div>
+
+      {/* Info boxes */}
+      <div className="mb-4 grid grid-cols-2 gap-0">
+        <div className="nb-info-box nb-info-box-principal flex-col items-start gap-1">
+          <span className="nb-preview-label">Withdrawable</span>
+          <span className="mono text-base font-bold text-black">
+            {withdrawableStr}
+          </span>
+        </div>
+        <div className="nb-info-box nb-info-box-streaming flex-col items-start gap-1">
+          <span className="nb-preview-label">Ends</span>
+          <span className="text-base font-bold text-black">
+            {new Date(end * 1000).toLocaleDateString("en-US", {
+              day: "numeric",
+              month: "short",
+              year: "numeric",
+            })}
+          </span>
+        </div>
+      </div>
+
+      {/* Withdraw button */}
+      <button
+        type="button"
+        onClick={handleWithdraw}
+        disabled={!canWithdraw}
+        title={withdrawButtonTitle}
+        className="nb-button nb-button-dark w-full"
+        data-testid={`button-withdraw-${stream.tokenId}`}
+      >
+        {txPhase === "submitting"
+          ? "Submitting..."
+          : txPhase === "waiting"
+            ? "Confirming..."
+            : txPhase === "success"
+              ? "Done"
+              : isDepleted
+                ? "Closed"
+                : "Withdraw"}
+      </button>
+
+      {/* Fee warning */}
       {feeInsufficient ? (
-        <div className="nb-status nb-status-warning mt-4 text-sm leading-6">
+        <div className="nb-status nb-status-warning mt-3 text-xs leading-5">
           Insufficient ETH for the withdraw fee. Need {minFee ? formatEther(minFee) : "?"} ETH.
         </div>
       ) : null}
 
+      {/* Error */}
       {error ? (
-        <div className="nb-status nb-status-error mt-4 break-all text-sm leading-6">
+        <div className="nb-status nb-status-error mt-3 break-all text-xs leading-5">
           {error}
           <button
             onClick={() => {
@@ -194,7 +228,8 @@ export function StreamCard({ stream, ptName }: Props) {
               setTxHash(undefined);
               setError(undefined);
             }}
-            className="nb-link ml-2 inline-block text-[#8e2340]"
+            className="nb-link ml-2 inline-block text-[#b13a57]"
+            data-testid={`button-retry-${stream.tokenId}`}
           >
             Retry
           </button>

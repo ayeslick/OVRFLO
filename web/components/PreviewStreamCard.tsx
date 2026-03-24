@@ -4,48 +4,84 @@ interface Props {
   tokenId: string;
   label: string;
   preview: MockStreamCardData;
+  index: number;
 }
 
-export function PreviewStreamCard({ tokenId, label, preview }: Props) {
+export function PreviewStreamCard({ tokenId, label, preview, index }: Props) {
+  const isDepleted = preview.progressPct >= 100 && !preview.claimable;
+
   return (
-    <article className="nb-panel rounded-[4px] p-4 sm:p-5">
-      <div className="flex flex-col gap-4">
-        <div className="border-b-2 border-[var(--color-border)] pb-3">
-          <h3 className="text-base text-[var(--color-ink)] sm:text-lg">{`OVRFLO #${tokenId} · ${label}`}</h3>
-        </div>
-
-        <div className="grid gap-2">
-          <div className="flex items-center justify-between gap-3">
-            <span className="nb-kicker text-[var(--color-border)]">Streamed</span>
-            <span className="mono text-sm font-semibold tracking-[0.05em] text-[var(--color-ink)]">{preview.progressPct}% streamed</span>
-          </div>
-          <div
-            role="progressbar"
-            aria-label={`OVRFLO ${tokenId} streamed progress`}
-            aria-valuemin={0}
-            aria-valuemax={100}
-            aria-valuenow={preview.progressPct}
-            className="overflow-hidden rounded-[4px] border-2 border-[var(--color-border)] bg-[var(--color-surface-muted)] shadow-[var(--shadow-hard-sm)]"
-          >
-            <div className="h-3 bg-[var(--color-accent)]" style={{ width: `${Math.min(preview.progressPct, 100)}%` }} />
+    <article
+      className="nb-stream-card p-5 sm:p-6"
+      data-testid={`card-preview-stream-${tokenId}`}
+    >
+      {/* Top row: Badge + Title + Status */}
+      <div className="mb-4 flex items-start justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <span className="nb-badge nb-badge-cyan mono">
+            {String(index + 1).padStart(2, "0")}
+          </span>
+          <div>
+            <h3 className="text-base font-bold uppercase tracking-wide text-black">
+              OVRFLO #{tokenId}
+            </h3>
+            <p className="nb-kicker mt-0.5 text-black/40">{label}</p>
           </div>
         </div>
-
-        <div className="flex flex-col gap-3 border-t-2 border-[var(--color-border)] pt-3 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-sm text-[var(--color-ink)]">
-            <span className="nb-kicker mr-2 text-[var(--color-border)]">Withdrawable:</span>
-            <span className="mono font-semibold uppercase tracking-[0.05em]">{preview.withdrawableLabel}</span>
-          </p>
-          <button type="button" disabled={!preview.claimable} className="nb-button w-full rounded-[4px] sm:w-auto">
-            {preview.actionLabel ?? "Withdraw"}
-          </button>
-        </div>
-
-        <p className="border-t-2 border-[var(--color-border)] pt-3 text-sm text-[var(--color-ink)]">
-          <span className="nb-kicker mr-2 text-[var(--color-border)]">Ends:</span>
-          <span className="font-semibold uppercase tracking-[0.05em]">{preview.endDateLabel}</span>
-        </p>
+        <span className={`nb-badge ${isDepleted ? "nb-badge-dark opacity-50" : "nb-badge-active"}`}>
+          {isDepleted ? "Depleted" : preview.progressPct >= 100 ? "Fully Vested" : "Active"}
+        </span>
       </div>
+
+      {/* Progress */}
+      <div className="mb-4">
+        <div className="mb-2 flex items-center justify-between">
+          <span className="nb-kicker text-black/40">Streamed</span>
+          <span className="mono text-sm font-bold text-[#5dc0f5]">
+            {preview.progressPct}% STREAMED
+          </span>
+        </div>
+        <div
+          role="progressbar"
+          aria-label={`OVRFLO ${tokenId} streamed progress`}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={preview.progressPct}
+          className="nb-progress-track"
+          data-testid={`progress-preview-${tokenId}`}
+        >
+          <div
+            className="nb-progress-fill"
+            style={{ width: `${Math.min(preview.progressPct, 100)}%` }}
+          />
+        </div>
+      </div>
+
+      {/* Info boxes */}
+      <div className="mb-4 grid grid-cols-2 gap-0">
+        <div className="nb-info-box nb-info-box-principal flex-col items-start gap-1">
+          <span className="nb-preview-label">Withdrawable</span>
+          <span className="mono text-base font-bold text-black">
+            {preview.withdrawableLabel}
+          </span>
+        </div>
+        <div className="nb-info-box nb-info-box-streaming flex-col items-start gap-1">
+          <span className="nb-preview-label">Ends</span>
+          <span className="text-base font-bold text-black">
+            {preview.endDateLabel}
+          </span>
+        </div>
+      </div>
+
+      {/* Button */}
+      <button
+        type="button"
+        disabled={!preview.claimable}
+        className="nb-button nb-button-dark w-full"
+        data-testid={`button-preview-withdraw-${tokenId}`}
+      >
+        {preview.actionLabel ?? "Withdraw"}
+      </button>
     </article>
   );
 }

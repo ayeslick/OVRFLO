@@ -133,20 +133,14 @@ export function ClaimModal({ open, onClose, ovrflos, allMarkets, preview }: Prop
   const claimAmount =
     amountStr && selected
       ? (() => {
-          try {
-            return parseUnits(amountStr, ovrfloDecimals);
-          } catch {
-            return 0n;
-          }
+          try { return parseUnits(amountStr, ovrfloDecimals); } catch { return 0n; }
         })()
       : 0n;
   const isBusy = txPhase === "claiming" || txPhase === "waiting";
   const previewMaxClaimable = previewFlow ? parsePreviewAmount(previewFlow.maxAmount, ovrfloDecimals) : undefined;
   const liveMaxClaimable =
     ovrfloBalance !== undefined && claimablePt !== undefined
-      ? ovrfloBalance < claimablePt
-        ? ovrfloBalance
-        : claimablePt
+      ? ovrfloBalance < claimablePt ? ovrfloBalance : claimablePt
       : undefined;
   const maxClaimable = previewMode ? previewMaxClaimable : liveMaxClaimable;
   const claimTooHigh = maxClaimable !== undefined && claimAmount > 0n && claimAmount > maxClaimable;
@@ -156,25 +150,16 @@ export function ClaimModal({ open, onClose, ovrflos, allMarkets, preview }: Prop
     getTokenSymbol(symbolMap, selected?.ptToken, formatAddress(selected?.ptToken)),
   );
   const marketLabel = selected
-    ? lookupLabel(preview?.marketLabels, selected.market, `${ptSymbol} ${new Date(Number(selected.expiry) * 1000).toLocaleDateString()}`)
+    ? lookupLabel(preview?.marketLabels, selected.market, `${ptSymbol} ${new Date(Number(selected.expiry) * 1000).toLocaleDateString("en-US", { day: "numeric", month: "short", year: "numeric" })}`)
     : "";
   const receiveLabel = previewMode
-    ? amountStr.trim()
-      ? `${amountStr} ${marketLabel}`
-      : previewFlow?.receiveAmount ?? "--"
-    : claimAmount > 0n
-      ? `${formatUnits(claimAmount, ptDecimals)} ${marketLabel}`
-      : "--";
+    ? amountStr.trim() ? `${amountStr} ${marketLabel}` : previewFlow?.receiveAmount ?? "--"
+    : claimAmount > 0n ? `${formatUnits(claimAmount, ptDecimals)} ${marketLabel}` : "--";
 
   const handleClaim = useCallback(async () => {
     if (!selected || claimAmount === 0n || claimTooHigh) return;
     setErrorMsg("");
-
-    if (previewMode) {
-      setTxPhase("success");
-      return;
-    }
-
+    if (previewMode) { setTxPhase("success"); return; }
     setTxPhase("claiming");
     try {
       const hash = await writeContractAsync({
@@ -194,154 +179,171 @@ export function ClaimModal({ open, onClose, ovrflos, allMarkets, preview }: Prop
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--color-bg)] p-4">
-      <div className="nb-panel relative w-full max-w-xl rounded-[4px] p-6 sm:p-7">
-        <div className="mb-5 flex items-center justify-between gap-3">
-          <h3 className="text-xl text-[var(--color-ink)]">Claim</h3>
-          <button type="button" onClick={onClose} className="nb-icon-button" aria-label="Close claim modal">
+    <div className="nb-modal-overlay" data-testid="modal-claim">
+      <div className="nb-modal">
+        {/* Header */}
+        <div className="nb-modal-header">
+          <h3 className="text-lg font-bold uppercase tracking-wide text-black">Claim</h3>
+          <button
+            type="button"
+            onClick={onClose}
+            className="nb-icon-button h-9 w-9 text-sm"
+            aria-label="Close claim modal"
+            data-testid="button-close-claim"
+          >
             ✕
           </button>
         </div>
 
-        {matureMarkets.length === 0 ? (
-          <div className="nb-status nb-status-info py-4 text-sm">No mature markets.</div>
-        ) : (
-          <div className="flex flex-col gap-4">
-            <div className="space-y-2">
-              <label htmlFor="claim-market" className="nb-kicker block text-[var(--color-border)]">
-                Market
-              </label>
-              <select
-                id="claim-market"
-                value={selected?.market ?? ""}
-                onChange={(event) => {
-                  const next = matureMarkets.find((market) => market.market === event.target.value);
-                  setSelected(next);
-                  setAmountStr("");
-                  setTxPhase("idle");
-                  setTxHash(undefined);
-                  setErrorMsg("");
-                }}
-                className="nb-input nb-select min-h-12 w-full"
-              >
-                {matureMarkets.map((market) => (
-                  <option key={market.market} value={market.market}>
-                    {lookupLabel(
-                      preview?.marketLabels,
-                      market.market,
-                      `${getTokenSymbol(symbolMap, market.ptToken, formatAddress(market.ptToken))} ${new Date(Number(market.expiry) * 1000).toLocaleDateString()}`,
-                    )}
-                  </option>
-                ))}
-              </select>
-            </div>
+        {/* Body */}
+        <div className="nb-modal-body">
+          {matureMarkets.length === 0 ? (
+            <div className="nb-status nb-status-info py-4 text-sm">No mature markets available.</div>
+          ) : (
+            <div className="flex flex-col gap-4">
+              {/* Market select */}
+              <div>
+                <label htmlFor="claim-market" className="nb-kicker mb-2 block text-black/40">
+                  Select Mature Market
+                </label>
+                <select
+                  id="claim-market"
+                  value={selected?.market ?? ""}
+                  onChange={(event) => {
+                    const next = matureMarkets.find((market) => market.market === event.target.value);
+                    setSelected(next);
+                    setAmountStr("");
+                    setTxPhase("idle");
+                    setTxHash(undefined);
+                    setErrorMsg("");
+                  }}
+                  className="nb-input nb-select w-full"
+                  data-testid="select-mature-market"
+                >
+                  {matureMarkets.map((market) => (
+                    <option key={market.market} value={market.market}>
+                      {lookupLabel(
+                        preview?.marketLabels,
+                        market.market,
+                        `${getTokenSymbol(symbolMap, market.ptToken, formatAddress(market.ptToken))} ${new Date(Number(market.expiry) * 1000).toLocaleDateString()}`,
+                      )}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
-            {selected ? (
-              <>
-                <div className="grid gap-2 rounded-[4px] border-2 border-[var(--color-border)] bg-[var(--color-surface)] p-4 text-sm shadow-[var(--shadow-hard-sm)]">
-                  <div className="flex justify-between gap-4">
-                    <span className="nb-kicker text-[var(--color-border)]">OVRFLO Balance</span>
-                    <span className="mono font-semibold uppercase tracking-[0.05em] text-[var(--color-ink)]">
-                      {previewFlow?.ovrfloBalance ?? (ovrfloBalance !== undefined ? formatUnits(ovrfloBalance, ovrfloDecimals) : "--")}
-                    </span>
+              {selected ? (
+                <>
+                  {/* Balance info */}
+                  <div className="nb-preview-box">
+                    <div className="nb-preview-row">
+                      <span className="nb-preview-label">OVRFLO Balance</span>
+                      <span className="nb-preview-value">
+                        {previewFlow?.ovrfloBalance ?? (ovrfloBalance !== undefined ? formatUnits(ovrfloBalance, ovrfloDecimals) : "--")}
+                      </span>
+                    </div>
+                    <div className="nb-preview-row">
+                      <span className="nb-preview-label">PT reserves</span>
+                      <span className="nb-preview-value">
+                        {previewFlow?.ptReserves ?? (claimablePt !== undefined ? formatUnits(claimablePt, ptDecimals) : "--")}
+                      </span>
+                    </div>
                   </div>
-                  <div className="flex justify-between gap-4">
-                    <span className="nb-kicker text-[var(--color-border)]">PT reserves</span>
-                    <span className="mono font-semibold uppercase tracking-[0.05em] text-[var(--color-ink)]">
-                      {previewFlow?.ptReserves ?? (claimablePt !== undefined ? formatUnits(claimablePt, ptDecimals) : "--")}
-                    </span>
-                  </div>
-                </div>
 
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between gap-3">
-                    <label htmlFor="claim-amount" className="nb-kicker text-[var(--color-border)]">
-                      Amount
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (previewFlow) {
-                          setAmountStr(previewFlow.maxAmount);
-                        } else if (maxClaimable !== undefined) {
-                          setAmountStr(formatUnits(maxClaimable, ovrfloDecimals));
-                        }
-                      }}
-                      className="nb-button nb-button-secondary min-h-11 px-3 py-2 text-[0.6875rem]"
-                    >
-                      MAX
-                    </button>
-                  </div>
-                  <input
-                    id="claim-amount"
-                    type="text"
-                    inputMode="decimal"
-                    value={amountStr}
-                    onChange={(event) => {
-                      setAmountStr(sanitizeAmount(event.target.value));
-                      setErrorMsg("");
-                    }}
-                    placeholder="0.0"
-                    className="nb-input mono w-full"
-                  />
-                </div>
-
-                <div className="grid gap-2 rounded-[4px] border-2 border-[var(--color-border)] bg-[var(--color-surface)] p-4 text-sm shadow-[var(--shadow-hard-sm)]">
-                  <div className="flex justify-between gap-4">
-                    <span className="nb-kicker text-[var(--color-border)]">You receive</span>
-                    <span className="mono font-semibold uppercase tracking-[0.05em] text-[var(--color-ink)]">
-                      {receiveLabel}
-                    </span>
-                  </div>
-                </div>
-
-                {claimTooHigh ? <div className="nb-status nb-status-error text-xs">Amount exceeds available balance.</div> : null}
-
-                {!previewMode && !address ? (
-                  <>
-                    <div className="nb-status nb-status-info text-sm">Connect wallet.</div>
-                    <WalletActionCta />
-                  </>
-                ) : wrongChain ? (
-                  <>
-                    <div className="nb-status nb-status-error text-sm">Switch to chain {CHAIN_ID}.</div>
-                    <WalletActionCta />
-                  </>
-                ) : txPhase === "success" ? (
-                  <div className="nb-status nb-status-success text-center text-sm">Claimed.</div>
-                ) : (
-                  <>
-                    {txPhase === "waiting" ? <div className="nb-status nb-status-warning text-center text-sm">Confirming…</div> : null}
-                    <button type="button" onClick={handleClaim} disabled={isBusy || claimAmount === 0n || claimTooHigh} className="nb-button w-full">
-                      {txPhase === "claiming"
-                        ? "Submitting…"
-                        : txPhase === "waiting"
-                          ? "Confirming…"
-                          : "Claim"}
-                    </button>
-                  </>
-                )}
-
-                {txPhase === "error" ? (
-                  <div className="nb-status nb-status-error break-all text-xs">
-                    {errorMsg}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setTxPhase("idle");
-                        setTxHash(undefined);
+                  {/* Amount to claim */}
+                  <div>
+                    <div className="mb-2 flex items-center justify-between">
+                      <label htmlFor="claim-amount" className="nb-kicker text-black/40">
+                        Amount to claim
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (previewFlow) {
+                            setAmountStr(previewFlow.maxAmount);
+                          } else if (maxClaimable !== undefined) {
+                            setAmountStr(formatUnits(maxClaimable, ovrfloDecimals));
+                          }
+                        }}
+                        className="nb-button px-3 py-1.5 text-[10px]"
+                        style={{ minHeight: "32px" }}
+                        data-testid="button-max-claim"
+                      >
+                        MAX
+                      </button>
+                    </div>
+                    <input
+                      id="claim-amount"
+                      type="text"
+                      inputMode="decimal"
+                      value={amountStr}
+                      onChange={(event) => {
+                        setAmountStr(sanitizeAmount(event.target.value));
                         setErrorMsg("");
                       }}
-                      className="nb-link ml-2 inline-block"
-                    >
-                      Retry
-                    </button>
+                      placeholder="0.0"
+                      className="nb-input mono w-full"
+                      data-testid="input-claim-amount"
+                    />
                   </div>
-                ) : null}
-              </>
-            ) : null}
-          </div>
-        )}
+
+                  {/* You receive */}
+                  <div className="nb-preview-box">
+                    <div className="nb-preview-row">
+                      <span className="nb-preview-label">You receive</span>
+                      <span className="nb-preview-value">{receiveLabel}</span>
+                    </div>
+                  </div>
+
+                  {claimTooHigh ? <div className="nb-status nb-status-error text-xs">Amount exceeds available balance.</div> : null}
+
+                  {/* Actions */}
+                  {!previewMode && !address ? (
+                    <>
+                      <div className="nb-status nb-status-info text-sm">Connect wallet to continue.</div>
+                      <WalletActionCta />
+                    </>
+                  ) : wrongChain ? (
+                    <>
+                      <div className="nb-status nb-status-error text-sm">Switch to chain {CHAIN_ID}.</div>
+                      <WalletActionCta />
+                    </>
+                  ) : txPhase === "success" ? (
+                    <div className="nb-status nb-status-success text-center text-sm font-bold">Claimed.</div>
+                  ) : (
+                    <>
+                      {txPhase === "waiting" ? <div className="nb-status nb-status-warning text-center text-sm">Confirming...</div> : null}
+                      <button
+                        type="button"
+                        onClick={handleClaim}
+                        disabled={isBusy || claimAmount === 0n || claimTooHigh}
+                        className="nb-button nb-button-dark w-full"
+                        data-testid="button-claim-submit"
+                      >
+                        {txPhase === "claiming" ? "Submitting..." : txPhase === "waiting" ? "Confirming..." : "Claim"}
+                      </button>
+                    </>
+                  )}
+
+                  {/* Error */}
+                  {txPhase === "error" ? (
+                    <div className="nb-status nb-status-error break-all text-xs">
+                      {errorMsg}
+                      <button
+                        type="button"
+                        onClick={() => { setTxPhase("idle"); setTxHash(undefined); setErrorMsg(""); }}
+                        className="nb-link ml-2 inline-block text-[#b13a57]"
+                        data-testid="button-retry-claim"
+                      >
+                        Retry
+                      </button>
+                    </div>
+                  ) : null}
+                </>
+              ) : null}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
