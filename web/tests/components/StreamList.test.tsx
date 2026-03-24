@@ -63,7 +63,7 @@ describe("StreamList", () => {
       depleted: false,
       intactAmount: "0",
       asset: {
-        symbol: "OVRUSDC",
+        symbol: "ovrfloUSDC",
         decimals: 18,
         address: "0x0000000000000000000000000000000000000004",
       },
@@ -79,7 +79,7 @@ describe("StreamList", () => {
           streamCards: {
             "mock-stream-101": {
               seriesLabel: "PT-sUSDe Sep 2026",
-              withdrawableLabel: "24,480 OVRUSDC",
+              withdrawableLabel: "24,480 ovrfloUSDC",
               endDateLabel: "30 Sep 2026",
               progressPct: 62,
               claimable: true,

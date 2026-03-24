@@ -28,31 +28,15 @@ export function StreamList({ ovrflos, allMarkets, preview }: Props) {
   const ptSymbols = useTokenSymbols(allMarkets.map((market) => market.ptToken));
   const { data: streams, isLoading, error } = useUserStreams(address, ovrfloAddrs);
 
-  function renderEmptyState() {
-    return (
-      <div className="nb-empty-card" data-testid="empty-streams">
-        {/* Wave icon */}
-        <div className="mb-4 flex h-16 w-16 items-center justify-center border-2 border-dashed border-[#5dc0f5]">
-          <svg viewBox="0 0 32 32" className="h-8 w-8 text-[#5dc0f5]" fill="none">
-            <path d="M4 16c2-4 4-4 6 0s4 4 6 0 4-4 6 0 4 4 6 0" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
-            <path d="M4 22c2-4 4-4 6 0s4 4 6 0 4-4 6 0 4 4 6 0" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" opacity="0.5" />
-          </svg>
-        </div>
-        <h3 className="text-base font-bold uppercase tracking-widest text-white">
-          Create Your Next OVRFLO
-        </h3>
-        <p className="mt-2 text-sm text-[#a3c0e8]">
-          Unlock immediate principal from any PT market in one click.
-        </p>
-      </div>
-    );
-  }
-
   if (preview) {
     const previewStreams = preview.streams.filter((stream) => preview.streamCards[stream.id]);
 
     if (previewStreams.length === 0) {
-      return renderEmptyState();
+      return (
+        <p className="py-12 text-center text-sm text-[#a3c0e8]/60" data-testid="empty-streams">
+          No active streams. Use <span className="font-semibold text-white">+ New OVRFLO</span> to create one.
+        </p>
+      );
     }
 
     return (
@@ -71,7 +55,6 @@ export function StreamList({ ovrflos, allMarkets, preview }: Props) {
             />
           );
         })}
-        {renderEmptyState()}
       </div>
     );
   }
@@ -111,7 +94,11 @@ export function StreamList({ ovrflos, allMarkets, preview }: Props) {
   }
 
   if (!address || !streams || streams.length === 0) {
-    return renderEmptyState();
+    return (
+      <p className="py-12 text-center text-sm text-[#a3c0e8]/60" data-testid="empty-streams">
+        No active streams. Use <span className="font-semibold text-white">+ New OVRFLO</span> to create one.
+      </p>
+    );
   }
 
   function resolvePtName(stream: SablierStream): string | undefined {
@@ -138,7 +125,6 @@ export function StreamList({ ovrflos, allMarkets, preview }: Props) {
       {streams.map((s, i) => (
         <StreamCard key={s.id} stream={s} ptName={resolvePtName(s)} index={i} />
       ))}
-      {renderEmptyState()}
     </div>
   );
 }

@@ -15,7 +15,7 @@ const previewStream = (id: string, tokenId: string): SablierStream => ({
   depleted: false,
   intactAmount: "0",
   asset: {
-    symbol: "OVRUSDC",
+    symbol: "ovrfloUSDC",
     decimals: 18,
     address: "0x0000000000000000000000000000000000000004",
   },
@@ -65,28 +65,28 @@ beforeEach(() => {
     streamCards: {
       "mock-stream-101": {
         seriesLabel: "PT-sUSDe Sep 2026",
-        withdrawableLabel: "24,480 OVRUSDC",
+        withdrawableLabel: "24,480 ovrfloUSDC",
         endDateLabel: "30 Sep 2026",
         progressPct: 62,
         claimable: true,
       },
       "mock-stream-102": {
         seriesLabel: "PT-eUSDe Dec 2026",
-        withdrawableLabel: "18,920 OVRUSDC",
+        withdrawableLabel: "18,920 ovrfloUSDC",
         endDateLabel: "30 Dec 2026",
         progressPct: 44,
         claimable: true,
       },
       "mock-stream-201": {
         seriesLabel: "PT-USDT Mar 2027",
-        withdrawableLabel: "9,340 OVRUSDT",
+        withdrawableLabel: "9,340 ovrfloUSDT",
         endDateLabel: "31 Mar 2027",
         progressPct: 31,
         claimable: false,
       },
       "mock-stream-301": {
         seriesLabel: "PT-sUSDe Feb 2025",
-        withdrawableLabel: "0 OVRUSDC",
+        withdrawableLabel: "0 ovrfloUSDC",
         endDateLabel: "28 Feb 2025",
         progressPct: 100,
         claimable: false,

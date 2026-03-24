@@ -53,8 +53,8 @@ export const MOCK_DASHBOARD_DATA: MockDashboardData = {
     [addr("0x4000000000000000000000000000000000000002")]: "PT-eUSDe",
     [addr("0x5000000000000000000000000000000000000002")]: "PT-USDT",
     [addr("0x6000000000000000000000000000000000000002")]: "PT-sUSDe Feb 2025",
-    [addr("0x1000000000000000000000000000000000000003")]: "OVRUSDC",
-    [addr("0x2000000000000000000000000000000000000003")]: "OVRUSDT",
+    [addr("0x1000000000000000000000000000000000000003")]: "ovrfloUSDC",
+    [addr("0x2000000000000000000000000000000000000003")]: "ovrfloUSDT",
   },
   marketLabels: {
     [addr("0x3000000000000000000000000000000000000001")]: "PT-sUSDe Sep 2026",
@@ -134,7 +134,7 @@ export const MOCK_DASHBOARD_DATA: MockDashboardData = {
       depleted: false,
       intactAmount: "103500000000000000000000",
       asset: {
-        symbol: "OVRUSDC",
+        symbol: "ovrfloUSDC",
         decimals: 18,
         address: "0x1000000000000000000000000000000000000003",
       },
@@ -151,7 +151,7 @@ export const MOCK_DASHBOARD_DATA: MockDashboardData = {
       depleted: false,
       intactAmount: "85800000000000000000000",
       asset: {
-        symbol: "OVRUSDC",
+        symbol: "ovrfloUSDC",
         decimals: 18,
         address: "0x1000000000000000000000000000000000000003",
       },
@@ -168,7 +168,7 @@ export const MOCK_DASHBOARD_DATA: MockDashboardData = {
       depleted: false,
       intactAmount: "54000000000000000000000",
       asset: {
-        symbol: "OVRUSDT",
+        symbol: "ovrfloUSDT",
         decimals: 18,
         address: "0x2000000000000000000000000000000000000003",
       },
@@ -185,7 +185,7 @@ export const MOCK_DASHBOARD_DATA: MockDashboardData = {
       depleted: true,
       intactAmount: "0",
       asset: {
-        symbol: "OVRUSDC",
+        symbol: "ovrfloUSDC",
         decimals: 18,
         address: "0x1000000000000000000000000000000000000003",
       },
@@ -195,28 +195,28 @@ export const MOCK_DASHBOARD_DATA: MockDashboardData = {
   streamCards: {
     "mock-stream-101": {
       seriesLabel: "PT-sUSDe Sep 2026",
-      withdrawableLabel: "24,480 OVRUSDC",
+      withdrawableLabel: "24,480 ovrfloUSDC",
       endDateLabel: "30 Sep 2026",
       progressPct: 62,
       claimable: true,
     },
     "mock-stream-102": {
       seriesLabel: "PT-eUSDe Dec 2026",
-      withdrawableLabel: "18,920 OVRUSDC",
+      withdrawableLabel: "18,920 ovrfloUSDC",
       endDateLabel: "30 Dec 2026",
       progressPct: 44,
       claimable: true,
     },
     "mock-stream-201": {
       seriesLabel: "PT-USDT Mar 2027",
-      withdrawableLabel: "9,340 OVRUSDT",
+      withdrawableLabel: "9,340 ovrfloUSDT",
       endDateLabel: "31 Mar 2027",
       progressPct: 31,
       claimable: true,
     },
     "mock-stream-301": {
       seriesLabel: "PT-sUSDe Feb 2025",
-      withdrawableLabel: "0 OVRUSDC",
+      withdrawableLabel: "0 ovrfloUSDC",
       endDateLabel: "28 Feb 2025",
       progressPct: 100,
       claimable: false,
@@ -227,7 +227,7 @@ export const MOCK_DASHBOARD_DATA: MockDashboardData = {
     [addr("0x3000000000000000000000000000000000000001")]: {
       ptBalance: "125 PT-sUSDe",
       immediate: "61.7 USDC",
-      streamed: "37.4 OVRUSDC",
+      streamed: "37.4 ovrfloUSDC",
       fee: "0.9 USDC",
       minReceived: "61.39 USDC",
       streamEnds: "30 Sep 2026",
@@ -237,7 +237,7 @@ export const MOCK_DASHBOARD_DATA: MockDashboardData = {
     [addr("0x4000000000000000000000000000000000000001")]: {
       ptBalance: "98 PT-eUSDe",
       immediate: "47.8 USDC",
-      streamed: "29.6 OVRUSDC",
+      streamed: "29.6 ovrfloUSDC",
       fee: "0.7 USDC",
       minReceived: "47.56 USDC",
       streamEnds: "30 Dec 2026",
@@ -247,7 +247,7 @@ export const MOCK_DASHBOARD_DATA: MockDashboardData = {
     [addr("0x5000000000000000000000000000000000000001")]: {
       ptBalance: "63 PT-USDT",
       immediate: "31.4 USDT",
-      streamed: "20.1 OVRUSDT",
+      streamed: "20.1 ovrfloUSDT",
       fee: "0.6 USDT",
       minReceived: "31.24 USDT",
       streamEnds: "31 Mar 2027",
@@ -257,7 +257,7 @@ export const MOCK_DASHBOARD_DATA: MockDashboardData = {
   },
   claimFlows: {
     [addr("0x6000000000000000000000000000000000000001")]: {
-      ovrfloBalance: "12,400 OVRUSDC",
+      ovrfloBalance: "12,400 ovrfloUSDC",
       ptReserves: "18,100 PT-sUSDe",
       maxAmount: "12,400",
       receiveAmount: "12,400 PT-sUSDe Feb 2025",
