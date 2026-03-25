@@ -365,9 +365,37 @@ textarea:focus-visible,
   overflow: hidden;
 }
 
+/* Compact progress bar for table rows */
+.nb-progress-track-sm {
+  height: 10px;
+  background: var(--color-bg);
+  border: 1px solid #000;
+  overflow: hidden;
+}
+
 .nb-progress-fill {
   height: 100%;
   background: var(--color-accent);
+}
+
+/* ─── TABLE ─── */
+.nb-table-row {
+  border-bottom: 1px solid #e5e5e5;
+  border-left: 4px solid transparent;
+}
+
+.nb-table-row:last-child {
+  border-bottom: none;
+}
+
+.nb-table-row:hover {
+  border-left-color: var(--color-accent);
+  background: #f8fbfd;
+}
+
+.nb-table-cell {
+  padding: 0.875rem 1rem;
+  vertical-align: middle;
 }
 
 /* ─── INFO BOX (principal/streaming) ─── */
@@ -490,5 +518,10 @@ textarea:focus-visible,
   .nb-button:active,
   .nb-icon-button:active {
     transform: none;
+  }
+
+  .nb-table-row:hover {
+    border-left-color: transparent;
+    background: transparent;
   }
 }

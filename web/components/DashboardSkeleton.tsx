@@ -13,23 +13,38 @@ export function DashboardSkeleton() {
         </div>
       </div>
 
-      {/* Cards skeleton */}
-      <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
+      {/* Summary bar skeleton */}
+      <div className="grid grid-cols-3 gap-0 border-2 border-black/20 bg-white/90">
         {[1, 2, 3].map((i) => (
           <div
             key={i}
-            className="border-2 border-black/20 border-l-4 border-l-[#5dc0f5]/40 bg-white/90 p-6"
+            className="flex flex-col items-center gap-2 border-r border-black/10 px-4 py-5 last:border-r-0"
           >
-            <div className="mb-4 flex items-center gap-3">
-              <div className="h-7 w-7 bg-[#5dc0f5]/30" />
-              <div className="h-5 w-32 bg-black/10" />
+            <div className="h-3 w-24 bg-black/10" />
+            <div className="h-6 w-16 bg-black/15" />
+          </div>
+        ))}
+      </div>
+
+      {/* Table skeleton */}
+      <div className="overflow-hidden border-2 border-black/20 bg-white/90">
+        <div className="border-b border-black/10 bg-[#f0f4f8] px-4 py-3">
+          <div className="h-3 w-80 bg-black/10" />
+        </div>
+        {[1, 2, 3, 4].map((i) => (
+          <div
+            key={i}
+            className="flex items-center gap-6 border-b border-black/5 px-4 py-4"
+          >
+            <div className="h-7 w-7 bg-[#5dc0f5]/30" />
+            <div className="flex flex-col gap-1">
+              <div className="h-4 w-28 bg-black/10" />
+              <div className="h-2.5 w-20 bg-black/5" />
             </div>
-            <div className="mb-4 h-5 w-full bg-[#0b1221]/20" />
-            <div className="mb-4 grid grid-cols-2 gap-0">
-              <div className="h-16 bg-[#f0f4f8]" />
-              <div className="h-16 bg-[#5dc0f5]/5" />
-            </div>
-            <div className="h-12 w-full bg-black/70" />
+            <div className="h-2.5 w-24 bg-[#0b1221]/20" />
+            <div className="h-4 w-16 bg-black/10" />
+            <div className="h-4 w-16 bg-black/5" />
+            <div className="ml-auto h-9 w-24 bg-black/70" />
           </div>
         ))}
       </div>

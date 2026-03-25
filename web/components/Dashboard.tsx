@@ -30,6 +30,9 @@ export function Dashboard() {
     ? Object.keys(streamCards).length
     : streams?.length ?? 0;
 
+  // Count mature markets that can be claimed (have claimFlow data)
+  const claimableCount = Object.keys(claimFlows).length;
+
   return (
     <>
       <WrongNetworkBanner />
@@ -97,6 +100,7 @@ export function Dashboard() {
           <StreamList
             ovrflos={ovrflos}
             allMarkets={allMarkets}
+            claimableCount={claimableCount}
             preview={isPreview ? { streams, streamCards } : undefined}
           />
         </section>
