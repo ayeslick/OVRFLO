@@ -42,10 +42,14 @@ export function Header() {
           className="flex shrink-0 items-center gap-2 sm:gap-3"
           data-testid="link-home"
         >
-          <span className="flex h-8 w-8 items-center justify-center border-2 border-[#000] bg-[#0b1221] sm:h-10 sm:w-10">
-            <span className="flex h-4 w-4 items-center justify-center border-2 border-[#000] bg-[#5dc0f5] sm:h-5 sm:w-5" />
-          </span>
-          <span className="text-base font-bold uppercase tracking-tight text-black sm:text-lg">OVRFLO</span>
+          <img
+            src="/brand/overflow-icon.jpg"
+            alt=""
+            className="h-8 w-8 rounded-full sm:h-10 sm:w-10"
+            width={40}
+            height={40}
+          />
+          <span className="text-base font-bold uppercase tracking-tight text-black sm:text-lg">OVERFLOW</span>
         </a>
 
         {/* Right side actions */}

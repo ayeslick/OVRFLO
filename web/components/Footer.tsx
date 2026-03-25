@@ -4,10 +4,14 @@ export function Footer() {
       <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4 px-6 py-5 lg:px-8">
         {/* Logo + brand */}
         <div className="flex items-center gap-2.5">
-          <span className="flex h-8 w-8 items-center justify-center border-2 border-[#000] bg-[#0b1221]">
-            <span className="flex h-4 w-4 items-center justify-center border-2 border-[#000] bg-[#5dc0f5]" />
-          </span>
-          <span className="text-sm font-bold uppercase tracking-tight text-black">OVRFLO</span>
+          <img
+            src="/brand/overflow-icon.jpg"
+            alt=""
+            className="h-7 w-7 rounded-full"
+            width={28}
+            height={28}
+          />
+          <span className="text-sm font-bold uppercase tracking-tight text-black">OVERFLOW</span>
         </div>
 
         {/* Links */}
