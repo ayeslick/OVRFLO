@@ -108,15 +108,37 @@ contract OVRFLOFactoryTest is Test {
     function test_ConfigureDeployment_RevertsForUnauthorizedOrZeroInputs() public {
         vm.prank(STRANGER);
         vm.expectRevert("OVRFLOFactory: not owner");
-        factory.configureDeployment(TREASURY, address(underlying));
+        factory.configureDeployment(TREASURY, address(underlying), "Wrapped Ether", "WETH");
 
         vm.prank(OWNER);
         vm.expectRevert("OVRFLOFactory: treasury zero");
-        factory.configureDeployment(address(0), address(underlying));
+        factory.configureDeployment(address(0), address(underlying), "Wrapped Ether", "WETH");
 
         vm.prank(OWNER);
         vm.expectRevert("OVRFLOFactory: underlying zero");
-        factory.configureDeployment(TREASURY, address(0));
+        factory.configureDeployment(TREASURY, address(0), "Wrapped Ether", "WETH");
+    }
+
+    function test_ConfigureDeployment_RevertsForInvalidNameOrSymbol() public {
+        vm.prank(OWNER);
+        vm.expectRevert("OVRFLOFactory: bad name");
+        factory.configureDeployment(TREASURY, address(underlying), "", "WETH");
+
+        vm.prank(OWNER);
+        vm.expectRevert("OVRFLOFactory: bad symbol");
+        factory.configureDeployment(TREASURY, address(underlying), "Wrapped Ether", "");
+
+        string memory tooLongName = "This name is intentionally way too long for the factory to accept it OK";
+        assertGt(bytes(tooLongName).length, 64);
+        vm.prank(OWNER);
+        vm.expectRevert("OVRFLOFactory: bad name");
+        factory.configureDeployment(TREASURY, address(underlying), tooLongName, "WETH");
+
+        string memory tooLongSymbol = "THIS_SYMBOL_IS_DEFINITELY_TOO_LONG";
+        assertGt(bytes(tooLongSymbol).length, 32);
+        vm.prank(OWNER);
+        vm.expectRevert("OVRFLOFactory: bad symbol");
+        factory.configureDeployment(TREASURY, address(underlying), "Wrapped Ether", tooLongSymbol);
     }
 
     function test_ConfigureDeployment_StoresPendingConfigAndEmitsEvent() public {
@@ -124,12 +146,15 @@ contract OVRFLOFactoryTest is Test {
         emit DeploymentConfigured(TREASURY, address(underlying));
 
         vm.prank(OWNER);
-        factory.configureDeployment(TREASURY, address(underlying));
+        factory.configureDeployment(TREASURY, address(underlying), "Wrapped Ether", "WETH");
 
-        (address pendingTreasury, bool pending, address pendingUnderlying) = factory.pendingDeployment();
+        (address pendingTreasury, bool pending, address pendingUnderlying, string memory nameSuffix, string memory symbolSuffix) =
+            factory.pendingDeployment();
         assertEq(pendingTreasury, TREASURY);
         assertTrue(pending);
         assertEq(pendingUnderlying, address(underlying));
+        assertEq(nameSuffix, "Wrapped Ether");
+        assertEq(symbolSuffix, "WETH");
     }
 
     function test_CancelDeployment_RevertsWithoutPendingAndClearsPendingWhenConfigured() public {
@@ -138,7 +163,7 @@ contract OVRFLOFactoryTest is Test {
         factory.cancelDeployment();
 
         vm.prank(OWNER);
-        factory.configureDeployment(TREASURY, address(underlying));
+        factory.configureDeployment(TREASURY, address(underlying), "Wrapped Ether", "WETH");
 
         vm.expectEmit(false, false, false, false, address(factory));
         emit DeploymentCancelled();
@@ -146,10 +171,13 @@ contract OVRFLOFactoryTest is Test {
         vm.prank(OWNER);
         factory.cancelDeployment();
 
-        (address pendingTreasury, bool pending, address pendingUnderlying) = factory.pendingDeployment();
+        (address pendingTreasury, bool pending, address pendingUnderlying, string memory nameSuffix, string memory symbolSuffix) =
+            factory.pendingDeployment();
         assertEq(pendingTreasury, address(0));
         assertFalse(pending);
         assertEq(pendingUnderlying, address(0));
+        assertEq(nameSuffix, "");
+        assertEq(symbolSuffix, "");
     }
 
     function test_Deploy_RevertsWithoutPendingDeployment() public {
@@ -160,7 +188,7 @@ contract OVRFLOFactoryTest is Test {
 
     function test_Deploy_DeploysSystemStoresAccountingAndTransfersTokenOwnership() public {
         vm.prank(OWNER);
-        factory.configureDeployment(TREASURY, address(underlying));
+        factory.configureDeployment(TREASURY, address(underlying), "Wrapped Ether", "WETH");
 
         vm.expectEmit(false, false, false, true, address(factory));
         emit OvrfloDeployed(address(0), address(0), TREASURY, address(underlying));
@@ -185,15 +213,15 @@ contract OVRFLOFactoryTest is Test {
         assertEq(info.underlying, address(underlying));
         assertEq(info.ovrfloToken, tokenAddr);
 
-        (, bool pending,) = factory.pendingDeployment();
+        (, bool pending,,,) = factory.pendingDeployment();
         assertFalse(pending);
     }
 
-    function test_Deploy_UsesFixed18DecimalsEvenWhenUnderlyingUsesSixDecimals() public {
+    function test_Deploy_UsesCallerProvidedNameAndSymbolIgnoringUnderlyingMetadata() public {
         MockERC20Metadata sixDecimalUnderlying = new MockERC20Metadata("Mock USD", "mUSD", 6);
 
         vm.prank(OWNER);
-        factory.configureDeployment(TREASURY, address(sixDecimalUnderlying));
+        factory.configureDeployment(TREASURY, address(sixDecimalUnderlying), "Mock Dollar", "MUSD");
 
         vm.prank(OWNER);
         (address ovrfloAddr, address tokenAddr) = factory.deploy();
@@ -201,8 +229,8 @@ contract OVRFLOFactoryTest is Test {
         OVRFLOToken token = OVRFLOToken(tokenAddr);
 
         assertEq(token.owner(), ovrfloAddr);
-        assertEq(token.name(), "OVRFLO Mock USD");
-        assertEq(token.symbol(), "ovrflomUSD");
+        assertEq(token.name(), "OVRFLO Mock Dollar");
+        assertEq(token.symbol(), "ovrfloMUSD");
         assertEq(token.decimals(), 18);
     }
 
@@ -214,7 +242,7 @@ contract OVRFLOFactoryTest is Test {
 
         vm.prank(STRANGER);
         vm.expectRevert("OVRFLOFactory: not owner");
-        factory.configureDeployment(TREASURY, address(underlying));
+        factory.configureDeployment(TREASURY, address(underlying), "Wrapped Ether", "WETH");
 
         vm.prank(STRANGER);
         vm.expectRevert("OVRFLOFactory: not owner");
@@ -239,10 +267,6 @@ contract OVRFLOFactoryTest is Test {
         vm.prank(STRANGER);
         vm.expectRevert("OVRFLOFactory: not owner");
         factory.sweepExcessPt(address(ovrflo), address(pt), RECIPIENT);
-
-        vm.prank(STRANGER);
-        vm.expectRevert("OVRFLOFactory: not owner");
-        factory.transferOvrfloAdmin(address(ovrflo), NEW_ADMIN);
 
         vm.prank(STRANGER);
         vm.expectRevert("OVRFLOFactory: not owner");
@@ -312,6 +336,15 @@ contract OVRFLOFactoryTest is Test {
         vm.prank(OWNER);
         vm.expectRevert("OVRFLOFactory: fee too high");
         factory.addMarket(address(ovrflo), address(0xBEEF), MIN_TWAP_DURATION, 101);
+    }
+
+    function test_AddMarket_RevertsWhenTwapTooLong() public {
+        (OVRFLO ovrflo,) = _deployConfiguredSystem();
+
+        uint32 tooLong = 30 minutes + 1;
+        vm.prank(OWNER);
+        vm.expectRevert("OVRFLOFactory: twap too long");
+        factory.addMarket(address(ovrflo), address(0xBEEF), tooLong, 0);
     }
 
     function test_AddMarket_RevertsWhenOracleNeedsPreparationOrIsNotReady() public {
@@ -391,6 +424,31 @@ contract OVRFLOFactoryTest is Test {
         assertEq(ovrflo.ptToMarket(address(pt2)), address(market2));
     }
 
+    function test_AddMarket_RevertsWhenSamePtIsMappedAcrossTwoMarkets() public {
+        (OVRFLO ovrflo,) = _deployConfiguredSystem();
+        uint256 firstExpiry = block.timestamp + 30 days;
+        uint256 secondExpiry = block.timestamp + 60 days;
+        address sy1 = address(0xAAA3);
+        address sy2 = address(0xAAA4);
+        MockPrincipalToken pt = new MockPrincipalToken(sy1, 18, firstExpiry);
+        MockPendleMarket market1 = new MockPendleMarket(sy1, address(pt), firstExpiry);
+        MockPendleMarket market2 = new MockPendleMarket(sy2, address(pt), secondExpiry);
+
+        _mockOracleState(address(market1), MIN_TWAP_DURATION, false, 0, true);
+        _mockOracleState(address(market2), MIN_TWAP_DURATION, false, 0, true);
+        _mockSyAssetInfo(sy1, address(underlying));
+        _mockSyAssetInfo(sy2, address(underlying));
+
+        vm.prank(OWNER);
+        factory.addMarket(address(ovrflo), address(market1), MIN_TWAP_DURATION, 0);
+
+        assertEq(ovrflo.ptToMarket(address(pt)), address(market1));
+
+        vm.prank(OWNER);
+        vm.expectRevert("OVRFLO: PT already mapped");
+        factory.addMarket(address(ovrflo), address(market2), MIN_TWAP_DURATION, 0);
+    }
+
     function test_AddMarket_RevertsWhenMarketUnderlyingDiffersFromConfiguredUnderlying() public {
         (OVRFLO ovrflo,) = _deployConfiguredSystem();
         uint256 expiry = block.timestamp + 30 days;
@@ -406,6 +464,18 @@ contract OVRFLOFactoryTest is Test {
 
         assertFalse(factory.isMarketApproved(address(ovrflo), address(market)));
         assertEq(factory.approvedMarketCount(address(ovrflo)), 0);
+    }
+
+    function test_SetMarketDepositLimit_RevertsForUnknownOvrflo() public {
+        vm.prank(OWNER);
+        vm.expectRevert("OVRFLOFactory: unknown ovrflo");
+        factory.setMarketDepositLimit(address(0xDEAD), address(0xBEEF), 1 ether);
+    }
+
+    function test_SweepExcessPt_RevertsForUnknownOvrflo() public {
+        vm.prank(OWNER);
+        vm.expectRevert("OVRFLOFactory: unknown ovrflo");
+        factory.sweepExcessPt(address(0xDEAD), address(0xBEEF), RECIPIENT);
     }
 
     function test_SetMarketDepositLimit_ForwardsToOvrfloAndEmitsEvent() public {
@@ -448,32 +518,7 @@ contract OVRFLOFactoryTest is Test {
         assertEq(pt.balanceOf(RECIPIENT), 5 ether);
         assertEq(pt.balanceOf(address(ovrflo)), 0);
     }
-
-    function test_TransferOvrfloAdmin_UpdatesAdminClearsFactoryInfoAndEmitsEvent() public {
-        (OVRFLO ovrflo,) = _deployConfiguredSystem();
-
-        vm.prank(OWNER);
-        vm.expectRevert("OVRFLOFactory: newAdmin zero");
-        factory.transferOvrfloAdmin(address(ovrflo), address(0));
-
-        vm.expectEmit(true, true, false, false, address(factory));
-        emit OvrfloAdminTransferred(address(ovrflo), NEW_ADMIN);
-
-        vm.prank(OWNER);
-        factory.transferOvrfloAdmin(address(ovrflo), NEW_ADMIN);
-
-        assertEq(ovrflo.adminContract(), NEW_ADMIN);
-
-        OVRFLOFactory.OvrfloInfo memory info = factory.getOvrfloInfo(address(ovrflo));
-        assertEq(info.treasury, address(0));
-        assertEq(info.underlying, address(0));
-        assertEq(info.ovrfloToken, address(0));
-
-        vm.prank(OWNER);
-        vm.expectRevert("OVRFLOFactory: unknown ovrflo");
-        factory.setMarketDepositLimit(address(ovrflo), address(0xBEEF), 1);
-    }
-
+    
     function test_TransferOwnership_UpdatesOwnerAndAllowsNewOwnerActions() public {
         vm.prank(OWNER);
         vm.expectRevert("OVRFLOFactory: newOwner zero");
@@ -489,15 +534,15 @@ contract OVRFLOFactoryTest is Test {
 
         vm.prank(OWNER);
         vm.expectRevert("OVRFLOFactory: not owner");
-        factory.configureDeployment(TREASURY, address(underlying));
+        factory.configureDeployment(TREASURY, address(underlying), "Wrapped Ether", "WETH");
 
         vm.prank(NEW_OWNER);
-        factory.configureDeployment(TREASURY, address(underlying));
+        factory.configureDeployment(TREASURY, address(underlying), "Wrapped Ether", "WETH");
     }
 
     function _deployConfiguredSystem() internal returns (OVRFLO ovrflo, OVRFLOToken token) {
         vm.prank(OWNER);
-        factory.configureDeployment(TREASURY, address(underlying));
+        factory.configureDeployment(TREASURY, address(underlying), "Wrapped Ether", "WETH");
 
         vm.prank(OWNER);
         (address ovrfloAddr, address tokenAddr) = factory.deploy();

@@ -35,7 +35,7 @@ abstract contract OVRFLOForkBase is Test {
         factory = new OVRFLOFactory(OWNER);
 
         vm.startPrank(OWNER);
-        factory.configureDeployment(TREASURY, STETH);
+        factory.configureDeployment(TREASURY, STETH, "Lido Staked Ether", "STETH");
         (address ovrfloAddr, address tokenAddr) = factory.deploy();
         vm.stopPrank();
 

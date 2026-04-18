@@ -92,7 +92,7 @@ Factory and admin hub for deploying and managing OVRFLO systems. Owned by a time
 
 | Function | Description |
 |----------|-------------|
-| `configureDeployment(treasury, underlying)` | Stage deployment parameters |
+| `configureDeployment(treasury, underlying, nameSuffix, symbolSuffix)` | Stage deployment parameters; factory prepends `OVRFLO ` to the name and `ovrflo` to the symbol |
 | `deploy()` | Deploy OVRFLO + OVRFLOToken from stored config |
 | `cancelDeployment()` | Cancel a pending deployment |
 | `addMarket(ovrflo, market, twapDuration, feeBps)` | Add a PT maturity using the stored OVRFLO underlying + shared `ovrfloToken`; requires an exact underlying match and ready oracle |
@@ -118,7 +118,7 @@ The core contract handling deposits and claims.
 
 ### OVRFLOToken.sol
 
-ERC20 wrapper token deployed per OVRFLO/underlying asset. Owned by the OVRFLO contract, with name/symbol derived from the configured underlying and fixed 18-decimal deploy-time semantics.
+ERC20 wrapper token deployed per OVRFLO/underlying asset. Owned by the OVRFLO contract, with name/symbol provided by the multisig at `configureDeployment` (factory enforces the `OVRFLO ` / `ovrflo` prefixes) and fixed 18-decimal deploy-time semantics.
 
 ## User Flows
 
@@ -169,8 +169,8 @@ All admin operations are initiated by the timelocked multisig and routed through
 // 1. Deploy factory (one-time, multisig is owner)
 OVRFLOFactory factory = new OVRFLOFactory(multisig);
 
-// 2. Multisig stages deployment config
-factory.configureDeployment(treasury, WETH);
+// 2. Multisig stages deployment config (factory builds "OVRFLO Wrapped Ether" / "ovrfloWETH")
+factory.configureDeployment(treasury, WETH, "Wrapped Ether", "WETH");
 
 // 3. Multisig executes deployment
 (address ovrflo, address ovrfloToken) = factory.deploy();
@@ -178,7 +178,7 @@ factory.configureDeployment(treasury, WETH);
 
 The factory:
 - Deploys OVRFLO with factory as `adminContract`
-- Deploys OVRFLOToken (name/symbol derived from underlying, fixed 18-decimal deploy-time semantics)
+- Deploys OVRFLOToken (name/symbol from configured suffixes with `OVRFLO `/`ovrflo` prefixes, fixed 18-decimal deploy-time semantics)
 - Transfers OVRFLOToken ownership to OVRFLO
 - Registers the OVRFLO in its registry (`ovrflos[]` mapping)
 

@@ -93,32 +93,6 @@ contract OVRFLOProtocolTest is Test {
         new OVRFLO(ADMIN, address(0));
     }
 
-    function test_SetAdminContract_UpdatesAdminAndEmitsEvent() public {
-        address newAdmin = makeAddr("newAdmin");
-
-        vm.expectEmit(address(ovrflo));
-        emit AdminContractUpdated(newAdmin);
-
-        vm.prank(ADMIN);
-        ovrflo.setAdminContract(newAdmin);
-
-        assertEq(ovrflo.adminContract(), newAdmin);
-
-        vm.prank(ADMIN);
-        vm.expectRevert("OVRFLO: not admin");
-        ovrflo.setMarketDepositLimit(MARKET_ONE, 1);
-    }
-
-    function test_SetAdminContract_RevertsForNonAdminAndZeroAddress() public {
-        vm.prank(user);
-        vm.expectRevert("OVRFLO: not admin");
-        ovrflo.setAdminContract(user);
-
-        vm.prank(ADMIN);
-        vm.expectRevert("OVRFLO: admin contract is zero address");
-        ovrflo.setAdminContract(address(0));
-    }
-
     function test_SetSeriesApproved_SetsStateApprovesSablierAndEmitsEvent() public {
         uint256 expiry = block.timestamp + 30 days;
 
@@ -465,7 +439,27 @@ contract OVRFLOProtocolTest is Test {
         ovrflo.claimablePt(address(ptTwo));
     }
 
-    function test_PreviewFunctions_ReturnRateSplitAndFee() public {
+    function test_PreviewFunctions_SplitRateAndFee_SubUnitRate() public {
+        uint256 expiry = block.timestamp + 30 days;
+        _approveSeries(MARKET_ONE, ptOne, expiry, FEE_BPS);
+        _mockRate(MARKET_ONE, 0.9e18);
+
+        uint256 rate = ovrflo.previewRate(MARKET_ONE);
+        (uint256 toUser, uint256 toStream, uint256 previewRate_) = ovrflo.previewStream(MARKET_ONE, 10 ether);
+        (uint256 depositToUser, uint256 depositToStream, uint256 feeAmount, uint256 depositRate) =
+            ovrflo.previewDeposit(MARKET_ONE, 10 ether);
+
+        assertEq(rate, 0.9e18);
+        assertEq(previewRate_, 0.9e18);
+        assertEq(depositRate, 0.9e18);
+        assertEq(toUser, 9 ether);
+        assertEq(toStream, 1 ether);
+        assertEq(depositToUser, 9 ether);
+        assertEq(depositToStream, 1 ether);
+        assertEq(feeAmount, 0.09 ether);
+    }
+
+    function test_PreviewFunctions_ClampsToUserWhenRateExceedsUnit() public {
         uint256 expiry = block.timestamp + 30 days;
         _approveSeries(MARKET_ONE, ptOne, expiry, FEE_BPS);
         _mockRate(MARKET_ONE, 1.2e18);

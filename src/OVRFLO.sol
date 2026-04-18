@@ -183,14 +183,6 @@ contract OVRFLO is ReentrancyGuard {
                             ADMIN FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Updates the admin contract address
-    /// @param newAdminContract The new admin contract address
-    function setAdminContract(address newAdminContract) external onlyAdmin {
-        require(newAdminContract != address(0), "OVRFLO: admin contract is zero address");
-        adminContract = newAdminContract;
-        emit AdminContractUpdated(newAdminContract);
-    }
-
     /// @notice Approves a new market series for deposits
     /// @dev Also approves Sablier to spend ovrfloToken for stream creation
     /// @param market The Pendle market address
@@ -266,7 +258,6 @@ contract OVRFLO is ReentrancyGuard {
     /// @return streamId The Sablier stream ID for tracking
     function deposit(address market, uint256 ptAmount, uint256 minToUser)
         external
-        nonReentrant
         returns (uint256 toUser, uint256 toStream, uint256 streamId)
     {
         SeriesInfo memory info = series[market];
@@ -327,12 +318,11 @@ contract OVRFLO is ReentrancyGuard {
     ///      User must have sufficient ovrfloToken balance which gets burned.
     /// @param ptToken The PT token address to claim
     /// @param amount Amount of ovrfloTokens to burn (receives equal amount of PT)
-    function claim(address ptToken, uint256 amount) external nonReentrant {
+    function claim(address ptToken, uint256 amount) external {
         address market = ptToMarket[ptToken];
         require(market != address(0), "OVRFLO: unknown PT");
 
         SeriesInfo memory info = series[market];
-        require(ptToken == info.ptToken, "OVRFLO: PT mismatch");
         require(block.timestamp >= info.expiryCached, "OVRFLO: not matured");
         require(amount > 0, "OVRFLO: amount is zero");
 

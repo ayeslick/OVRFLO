@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {OVRFLO} from "./OVRFLO.sol";
 import {OVRFLOToken} from "./OVRFLOToken.sol";
 import {IPendleMarket} from "../interfaces/IPendleMarket.sol";
@@ -23,11 +22,14 @@ contract OVRFLOFactory {
 
     uint256 public constant FEE_MAX_BPS = 100;
     uint32 public constant MIN_TWAP_DURATION = 15 minutes;
+    uint32 public constant MAX_TWAP_DURATION = 30 minutes;
 
     struct DeploymentConfig {
         address treasury;
         bool pending;
         address underlying;
+        string nameSuffix;
+        string symbolSuffix;
     }
 
     struct OvrfloInfo {
@@ -81,11 +83,26 @@ contract OVRFLOFactory {
     /// @notice Stage deployment parameters (called by multisig)
     /// @param treasury The treasury address for fee collection
     /// @param underlying The underlying asset address (e.g., WETH)
-    function configureDeployment(address treasury, address underlying) external onlyOwner {
+    /// @param nameSuffix Asset-specific portion of the token name (factory prepends "OVRFLO ")
+    /// @param symbolSuffix Asset-specific portion of the token symbol (factory prepends "ovrflo")
+    function configureDeployment(
+        address treasury,
+        address underlying,
+        string calldata nameSuffix,
+        string calldata symbolSuffix
+    ) external onlyOwner {
         require(treasury != address(0), "OVRFLOFactory: treasury zero");
         require(underlying != address(0), "OVRFLOFactory: underlying zero");
+        require(bytes(nameSuffix).length != 0 && bytes(nameSuffix).length <= 64, "OVRFLOFactory: bad name");
+        require(bytes(symbolSuffix).length != 0 && bytes(symbolSuffix).length <= 32, "OVRFLOFactory: bad symbol");
 
-        pendingDeployment = DeploymentConfig({treasury: treasury, pending: true, underlying: underlying});
+        pendingDeployment = DeploymentConfig({
+            treasury: treasury,
+            pending: true,
+            underlying: underlying,
+            nameSuffix: nameSuffix,
+            symbolSuffix: symbolSuffix
+        });
 
         emit DeploymentConfigured(treasury, underlying);
     }
@@ -108,14 +125,14 @@ contract OVRFLOFactory {
         delete pendingDeployment;
 
         OVRFLO v = new OVRFLO(address(this), config.treasury);
-
-        string memory tokenName = IERC20Metadata(config.underlying).name();
-        string memory tokenSymbol = IERC20Metadata(config.underlying).symbol();
-        OVRFLOToken token =
-            new OVRFLOToken(string(abi.encodePacked("OVRFLO ", tokenName)), string(abi.encodePacked("ovrflo", tokenSymbol)));
-        token.transferOwnership(address(v));
-
         ovrflo = address(v);
+
+        OVRFLOToken token = new OVRFLOToken(
+            string(abi.encodePacked("OVRFLO ", config.nameSuffix)),
+            string(abi.encodePacked("ovrflo", config.symbolSuffix))
+        );
+        token.transferOwnership(address(ovrflo));
+
         ovrfloToken = address(token);
 
         ovrflos[ovrfloCount] = ovrflo;
@@ -127,7 +144,7 @@ contract OVRFLOFactory {
     }
 
     /*//////////////////////////////////////////////////////////////
-                     ADMIN FORWARDING (PER-OVRFLO)
+                     MARKET DEPLOYMENT (PER-SERIES)
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Add a PT maturity to an OVRFLO (reads pt/expiry from Pendle market automatically)
@@ -137,6 +154,7 @@ contract OVRFLOFactory {
     /// @param feeBps Fee in basis points (max FEE_MAX_BPS)
     function addMarket(address ovrflo, address market, uint32 twapDuration, uint16 feeBps) external onlyOwner {
         _requireKnownOvrflo(ovrflo);
+        require(twapDuration <= MAX_TWAP_DURATION, "OVRFLOFactory: twap too long");
         require(twapDuration >= MIN_TWAP_DURATION, "OVRFLOFactory: twap too short");
         require(feeBps <= FEE_MAX_BPS, "OVRFLOFactory: fee too high");
 
@@ -183,15 +201,6 @@ contract OVRFLOFactory {
     /*//////////////////////////////////////////////////////////////
                             UPGRADEABILITY
     //////////////////////////////////////////////////////////////*/
-
-    /// @notice Transfer admin of a specific OVRFLO to a new address (e.g., a new factory)
-    function transferOvrfloAdmin(address ovrflo, address newAdmin) external onlyOwner {
-        _requireKnownOvrflo(ovrflo);
-        require(newAdmin != address(0), "OVRFLOFactory: newAdmin zero");
-        OVRFLO(ovrflo).setAdminContract(newAdmin);
-        delete ovrfloInfo[ovrflo];
-        emit OvrfloAdminTransferred(ovrflo, newAdmin);
-    }
 
     /// @notice Transfer factory ownership to a new address
     function transferOwnership(address newOwner) external onlyOwner {
