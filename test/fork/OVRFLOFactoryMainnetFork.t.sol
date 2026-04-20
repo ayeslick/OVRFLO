@@ -32,7 +32,7 @@ contract OVRFLOFactoryMainnetForkTest is OVRFLOForkBase {
 
         vm.prank(OWNER);
         vm.expectRevert("OVRFLOFactory: oracle cardinality");
-        factory.addMarket(address(ovrflo), PRIMARY_MARKET, MIN_TWAP_DURATION, 0);
+        factory.addMarket(address(ovrflo), PRIMARY_MARKET, address(ORACLE), MIN_TWAP_DURATION, 0);
     }
 
     function test_AddMarket_OnboardsPrimaryMarketUsingLiveMetadata() public {
@@ -49,25 +49,30 @@ contract OVRFLOFactoryMainnetForkTest is OVRFLOForkBase {
         _prepareOracle(factory, PRIMARY_MARKET);
 
         vm.prank(OWNER);
-        factory.addMarket(address(ovrflo), PRIMARY_MARKET, MIN_TWAP_DURATION, 25);
+        factory.addMarket(address(ovrflo), PRIMARY_MARKET, address(ORACLE), MIN_TWAP_DURATION, 25);
 
-        (
-            bool approved,
-            uint32 twapDuration,
-            uint16 feeBps,
-            uint256 storedExpiry,
-            address storedPt,
-            address storedToken,
-            address storedUnderlying
-        ) = ovrflo.series(PRIMARY_MARKET);
+        {
+            (
+                bool approved,
+                uint32 twapDuration,
+                uint16 feeBps,
+                uint256 storedExpiry,
+                address storedPt,
+                address storedToken,
+                address storedUnderlying,
+                address storedOracle
+            ) = ovrflo.series(PRIMARY_MARKET);
 
-        assertTrue(approved);
-        assertEq(twapDuration, MIN_TWAP_DURATION);
-        assertEq(feeBps, 25);
-        assertEq(storedExpiry, expiry);
-        assertEq(storedPt, pt);
-        assertEq(storedToken, address(token));
-        assertEq(storedUnderlying, STETH);
+            assertTrue(approved);
+            assertEq(twapDuration, MIN_TWAP_DURATION);
+            assertEq(feeBps, 25);
+            assertEq(storedExpiry, expiry);
+            assertEq(storedPt, pt);
+            assertEq(storedToken, address(token));
+            assertEq(storedUnderlying, STETH);
+            assertEq(storedOracle, address(ORACLE));
+        }
+
         assertEq(ovrflo.ptToMarket(pt), PRIMARY_MARKET);
         assertTrue(factory.isMarketApproved(address(ovrflo), PRIMARY_MARKET));
         assertEq(factory.approvedMarketCount(address(ovrflo)), 1);
@@ -88,12 +93,12 @@ contract OVRFLOFactoryMainnetForkTest is OVRFLOForkBase {
         _prepareOracle(factory, SECONDARY_MARKET);
 
         vm.startPrank(OWNER);
-        factory.addMarket(address(ovrflo), PRIMARY_MARKET, MIN_TWAP_DURATION, 5);
-        factory.addMarket(address(ovrflo), SECONDARY_MARKET, MIN_TWAP_DURATION, 10);
+        factory.addMarket(address(ovrflo), PRIMARY_MARKET, address(ORACLE), MIN_TWAP_DURATION, 5);
+        factory.addMarket(address(ovrflo), SECONDARY_MARKET, address(ORACLE), MIN_TWAP_DURATION, 10);
         vm.stopPrank();
 
-        (, , , uint256 primaryExpiry, address primaryPt, address primaryToken,) = ovrflo.series(PRIMARY_MARKET);
-        (, , , uint256 secondaryExpiry, address secondaryPt, address secondaryToken,) = ovrflo.series(SECONDARY_MARKET);
+        (,,, uint256 primaryExpiry, address primaryPt, address primaryToken,,) = ovrflo.series(PRIMARY_MARKET);
+        (,,, uint256 secondaryExpiry, address secondaryPt, address secondaryToken,,) = ovrflo.series(SECONDARY_MARKET);
 
         assertEq(primaryExpiry, PRIMARY_EXPIRY);
         assertEq(primaryPt, PRIMARY_PT);

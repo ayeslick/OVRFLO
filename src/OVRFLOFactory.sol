@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 import {OVRFLO} from "./OVRFLO.sol";
 import {OVRFLOToken} from "./OVRFLOToken.sol";
 import {IPendleMarket} from "../interfaces/IPendleMarket.sol";
@@ -10,15 +11,12 @@ import {IStandardizedYield} from "../interfaces/IStandardizedYield.sol";
 /// @title OVRFLOFactory
 /// @notice Factory and admin hub for deploying and managing OVRFLO systems
 /// @dev Owned by a timelocked multisig. Deploys OVRFLO + OVRFLOToken and serves as
-///      the adminContract for every OVRFLO it creates.
-contract OVRFLOFactory {
+///      the adminContract for every OVRFLO it creates. Ownership uses the OZ
+///      two-step pattern (`transferOwnership` -> `acceptOwnership`).
+contract OVRFLOFactory is Ownable2Step {
     /*//////////////////////////////////////////////////////////////
                                 STORAGE
     //////////////////////////////////////////////////////////////*/
-
-    address public owner;
-
-    IPendleOracle public constant PENDLE_ORACLE = IPendleOracle(0x9a9Fa8338dd5E5B2188006f1Cd2Ef26d921650C2);
 
     uint256 public constant FEE_MAX_BPS = 100;
     uint32 public constant MIN_TWAP_DURATION = 15 minutes;
@@ -55,17 +53,6 @@ contract OVRFLOFactory {
     event DeploymentConfigured(address indexed treasury, address indexed underlying);
     event DeploymentCancelled();
     event OvrfloDeployed(address indexed ovrflo, address indexed ovrfloToken, address treasury, address underlying);
-    event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
-    event OvrfloAdminTransferred(address indexed ovrflo, address indexed newAdmin);
-
-    /*//////////////////////////////////////////////////////////////
-                               MODIFIERS
-    //////////////////////////////////////////////////////////////*/
-
-    modifier onlyOwner() {
-        require(msg.sender == owner, "OVRFLOFactory: not owner");
-        _;
-    }
 
     /*//////////////////////////////////////////////////////////////
                               CONSTRUCTOR
@@ -73,7 +60,7 @@ contract OVRFLOFactory {
 
     constructor(address _owner) {
         require(_owner != address(0), "OVRFLOFactory: owner zero");
-        owner = _owner;
+        _transferOwnership(_owner);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -150,26 +137,38 @@ contract OVRFLOFactory {
     /// @notice Add a PT maturity to an OVRFLO (reads pt/expiry from Pendle market automatically)
     /// @param ovrflo The OVRFLO contract address
     /// @param market The Pendle market address
+    /// @param oracle Oracle used for PT-to-SY rate lookups (Pendle native or IPendleOracle-compatible wrapper)
     /// @param twapDuration TWAP duration in seconds
     /// @param feeBps Fee in basis points (max FEE_MAX_BPS)
-    function addMarket(address ovrflo, address market, uint32 twapDuration, uint16 feeBps) external onlyOwner {
+    function addMarket(address ovrflo, address market, address oracle, uint32 twapDuration, uint16 feeBps)
+        external
+        onlyOwner
+    {
         _requireKnownOvrflo(ovrflo);
+        require(oracle != address(0), "OVRFLOFactory: oracle zero");
         require(twapDuration <= MAX_TWAP_DURATION, "OVRFLOFactory: twap too long");
         require(twapDuration >= MIN_TWAP_DURATION, "OVRFLOFactory: twap too short");
         require(feeBps <= FEE_MAX_BPS, "OVRFLOFactory: fee too high");
 
-        (bool increaseCardinalityRequired,, bool oldestObservationSatisfied) =
-            PENDLE_ORACLE.getOracleState(market, twapDuration);
-        require(!increaseCardinalityRequired, "OVRFLOFactory: oracle cardinality");
-        require(oldestObservationSatisfied, "OVRFLOFactory: oracle not ready");
+        {
+            (bool increaseCardinalityRequired,, bool oldestObservationSatisfied) =
+                IPendleOracle(oracle).getOracleState(market, twapDuration);
+            require(!increaseCardinalityRequired, "OVRFLOFactory: oracle cardinality");
+            require(oldestObservationSatisfied, "OVRFLOFactory: oracle not ready");
+        }
 
         OvrfloInfo memory info = ovrfloInfo[ovrflo];
-        (address sy, address pt,) = IPendleMarket(market).readTokens();
-        (, address assetAddress,) = IStandardizedYield(sy).assetInfo();
-        require(assetAddress == info.underlying, "OVRFLOFactory: underlying mismatch");
-        uint256 expiry = IPendleMarket(market).expiry();
+        address pt;
+        {
+            address sy;
+            (sy, pt,) = IPendleMarket(market).readTokens();
+            (, address assetAddress,) = IStandardizedYield(sy).assetInfo();
+            require(assetAddress == info.underlying, "OVRFLOFactory: underlying mismatch");
+        }
 
-        OVRFLO(ovrflo).setSeriesApproved(market, pt, info.underlying, info.ovrfloToken, twapDuration, expiry, feeBps);
+        OVRFLO(ovrflo).setSeriesApproved(
+            market, pt, info.underlying, info.ovrfloToken, oracle, twapDuration, IPendleMarket(market).expiry(), feeBps
+        );
 
         isMarketApproved[ovrflo][market] = true;
         approvedMarketAt[ovrflo][approvedMarketCount[ovrflo]] = market;
@@ -189,26 +188,19 @@ contract OVRFLOFactory {
     }
 
     /// @notice Increase Pendle oracle cardinality for a market (must be done before addMarket)
-    function prepareOracle(address market, uint32 twapDuration) external onlyOwner {
+    /// @param market The Pendle market address
+    /// @param oracle Oracle used for readiness/cardinality inspection (IPendleOracle-compatible)
+    /// @param twapDuration TWAP duration in seconds
+    function prepareOracle(address market, address oracle, uint32 twapDuration) external onlyOwner {
+        require(oracle != address(0), "OVRFLOFactory: oracle zero");
         require(twapDuration >= MIN_TWAP_DURATION, "OVRFLOFactory: twap too short");
         (bool increaseCardinalityRequired, uint16 cardinalityRequired,) =
-            PENDLE_ORACLE.getOracleState(market, twapDuration);
+            IPendleOracle(oracle).getOracleState(market, twapDuration);
         if (increaseCardinalityRequired) {
             IPendleMarket(market).increaseObservationsCardinalityNext(cardinalityRequired);
         }
     }
-
-    /*//////////////////////////////////////////////////////////////
-                            UPGRADEABILITY
-    //////////////////////////////////////////////////////////////*/
-
-    /// @notice Transfer factory ownership to a new address
-    function transferOwnership(address newOwner) external onlyOwner {
-        require(newOwner != address(0), "OVRFLOFactory: newOwner zero");
-        emit OwnershipTransferred(owner, newOwner);
-        owner = newOwner;
-    }
-
+ 
     /*//////////////////////////////////////////////////////////////
                             VIEW FUNCTIONS
     //////////////////////////////////////////////////////////////*/

@@ -2,7 +2,6 @@
 pragma solidity ^0.8.20;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {ReentrancyGuard} from "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {PRBMath} from "prb-math/PRBMath.sol";
 import {OVRFLOToken} from "./OVRFLOToken.sol";
@@ -15,7 +14,7 @@ import {ISablierV2LockupLinear} from "../interfaces/ISablierV2LockupLinear.sol";
 ///      1. Immediate ovrfloTokens equal to PT's current market value (based on TWAP)
 ///      2. A Sablier stream that vests the remaining discount until PT maturity
 ///      After maturity, users can burn ovrfloTokens 1:1 to claim the underlying PT tokens.
-contract OVRFLO is ReentrancyGuard {
+contract OVRFLO {
     using SafeERC20 for IERC20;
 
     /*//////////////////////////////////////////////////////////////
@@ -41,9 +40,6 @@ contract OVRFLO is ReentrancyGuard {
     /// @notice Admin contract address with permission to configure markets
     address public adminContract;
 
-    /// @notice Pendle Oracle for PT-to-SY TWAP pricing
-    IPendleOracle public immutable pendleOracle = IPendleOracle(0x9a9Fa8338dd5E5B2188006f1Cd2Ef26d921650C2);
-
     /// @notice Sablier V2 Lockup Linear contract for streaming
     ISablierV2LockupLinear public immutable sablierLL =
         ISablierV2LockupLinear(0xAFb979d9afAd1aD27C5eFf4E27226E3AB9e5dCC9);
@@ -60,6 +56,7 @@ contract OVRFLO is ReentrancyGuard {
     /// @param ptToken Address of the Pendle PT token
     /// @param ovrfloToken Address of the corresponding ovrflo token
     /// @param underlying Address of the underlying asset for fee payment
+    /// @param oracle Oracle used for PT-to-SY rate lookups (Pendle native or IPendleOracle-compatible wrapper)
     struct SeriesInfo {
         bool approved;
         uint32 twapDurationFixed;
@@ -68,6 +65,7 @@ contract OVRFLO is ReentrancyGuard {
         address ptToken;
         address ovrfloToken;
         address underlying;
+        address oracle;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -143,10 +141,19 @@ contract OVRFLO is ReentrancyGuard {
     /// @param ptToken The PT token address
     /// @param ovrfloToken The corresponding ovrflo token address
     /// @param underlying The underlying asset for fee payment
+    /// @param oracle Oracle used for PT-to-SY rate lookups
+    /// @param twapDuration TWAP duration in seconds for oracle queries
     /// @param expiry The PT maturity timestamp
     /// @param feeBps Fee in basis points
     event SeriesApproved(
-        address indexed market, address ptToken, address ovrfloToken, address underlying, uint256 expiry, uint16 feeBps
+        address indexed market,
+        address ptToken,
+        address ovrfloToken,
+        address underlying,
+        address oracle,
+        uint32 twapDuration,
+        uint256 expiry,
+        uint16 feeBps
     );
 
     /// @notice Emitted when a market deposit limit is updated
@@ -189,6 +196,7 @@ contract OVRFLO is ReentrancyGuard {
     /// @param pt The PT token address
     /// @param underlying The underlying asset address for fee payment
     /// @param ovrfloToken The ovrflo token address for this series
+    /// @param oracle Oracle address used for PT-to-SY rate lookups
     /// @param twapDuration TWAP duration in seconds
     /// @param expiry PT maturity timestamp
     /// @param feeBps Fee in basis points
@@ -197,10 +205,13 @@ contract OVRFLO is ReentrancyGuard {
         address pt,
         address underlying,
         address ovrfloToken,
+        address oracle,
         uint32 twapDuration,
         uint256 expiry,
         uint16 feeBps
     ) external onlyAdmin {
+        require(oracle != address(0), "OVRFLO: oracle zero");
+
         SeriesInfo storage info = series[market];
         require(info.ptToken == address(0), "OVRFLO: series already configured");
         require(ptToMarket[pt] == address(0), "OVRFLO: PT already mapped");
@@ -212,12 +223,13 @@ contract OVRFLO is ReentrancyGuard {
         info.ptToken = pt;
         info.ovrfloToken = ovrfloToken;
         info.underlying = underlying;
+        info.oracle = oracle;
 
         ptToMarket[pt] = market;
 
         IERC20(ovrfloToken).approve(address(sablierLL), type(uint256).max);
 
-        emit SeriesApproved(market, pt, ovrfloToken, underlying, expiry, feeBps);
+        emit SeriesApproved(market, pt, ovrfloToken, underlying, oracle, twapDuration, expiry, feeBps);
     }
 
     /// @notice Sets the deposit limit for a market
@@ -277,7 +289,7 @@ contract OVRFLO is ReentrancyGuard {
 
         IERC20(info.ptToken).safeTransferFrom(msg.sender, address(this), ptAmount);
 
-        uint256 rateE18 = pendleOracle.getPtToSyRate(market, info.twapDurationFixed);
+        uint256 rateE18 = IPendleOracle(info.oracle).getPtToSyRate(market, info.twapDurationFixed);
 
         toUser = PRBMath.mulDiv(ptAmount, rateE18, WAD);
         if (toUser > ptAmount) toUser = ptAmount;
@@ -357,7 +369,7 @@ contract OVRFLO is ReentrancyGuard {
     function previewRate(address market) external view returns (uint256 rateE18) {
         SeriesInfo memory info = series[market];
         require(info.approved, "OVRFLO: market not approved");
-        rateE18 = pendleOracle.getPtToSyRate(market, info.twapDurationFixed);
+        rateE18 = IPendleOracle(info.oracle).getPtToSyRate(market, info.twapDurationFixed);
     }
 
     /// @notice Previews the immediate vs streamed split for a deposit
@@ -373,7 +385,7 @@ contract OVRFLO is ReentrancyGuard {
     {
         SeriesInfo memory info = series[market];
         require(info.approved, "OVRFLO: market not approved");
-        rateE18 = pendleOracle.getPtToSyRate(market, info.twapDurationFixed);
+        rateE18 = IPendleOracle(info.oracle).getPtToSyRate(market, info.twapDurationFixed);
         toUser = PRBMath.mulDiv(ptAmount, rateE18, WAD);
         if (toUser > ptAmount) toUser = ptAmount;
         toStream = ptAmount - toUser;
@@ -393,7 +405,7 @@ contract OVRFLO is ReentrancyGuard {
     {
         SeriesInfo memory info = series[market];
         require(info.approved, "OVRFLO: market not approved");
-        rateE18 = pendleOracle.getPtToSyRate(market, info.twapDurationFixed);
+        rateE18 = IPendleOracle(info.oracle).getPtToSyRate(market, info.twapDurationFixed);
         toUser = PRBMath.mulDiv(ptAmount, rateE18, WAD);
         if (toUser > ptAmount) toUser = ptAmount;
         toStream = ptAmount - toUser;

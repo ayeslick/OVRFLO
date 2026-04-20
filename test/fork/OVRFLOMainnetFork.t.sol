@@ -23,7 +23,8 @@ contract OVRFLOMainnetForkTest is OVRFLOForkBase {
         uint256 expectedFee = expectedToUser * FEE_BPS / 10_000;
 
         uint256 rate = ovrflo.previewRate(PRIMARY_MARKET);
-        (uint256 previewToUser, uint256 previewToStream, uint256 previewRate) = ovrflo.previewStream(PRIMARY_MARKET, PT_AMOUNT);
+        (uint256 previewToUser, uint256 previewToStream, uint256 previewRate) =
+            ovrflo.previewStream(PRIMARY_MARKET, PT_AMOUNT);
         (uint256 depositToUser, uint256 depositToStream, uint256 feeAmount, uint256 depositRate) =
             ovrflo.previewDeposit(PRIMARY_MARKET, PT_AMOUNT);
 
@@ -39,7 +40,8 @@ contract OVRFLOMainnetForkTest is OVRFLOForkBase {
 
     function test_Deposit_PrimaryMarketTransfersLivePtAndCreatesRealStream() public {
         (, OVRFLO ovrflo, OVRFLOToken token) = _deployApprovedPrimarySeries(FEE_BPS);
-        (uint256 expectedToUser, uint256 expectedToStream, uint256 feeAmount,) = ovrflo.previewDeposit(PRIMARY_MARKET, PT_AMOUNT);
+        (uint256 expectedToUser, uint256 expectedToStream, uint256 feeAmount,) =
+            ovrflo.previewDeposit(PRIMARY_MARKET, PT_AMOUNT);
 
         _seedBalancesAndApprovals(ovrflo, PT_AMOUNT, feeAmount);
 
@@ -94,8 +96,8 @@ contract OVRFLOMainnetForkTest is OVRFLOForkBase {
         (factory, ovrflo, token) = _deployConfiguredSystem();
 
         vm.startPrank(OWNER);
-        factory.prepareOracle(PRIMARY_MARKET, PROTOCOL_TWAP_DURATION);
-        factory.addMarket(address(ovrflo), PRIMARY_MARKET, PROTOCOL_TWAP_DURATION, feeBps);
+        factory.prepareOracle(PRIMARY_MARKET, address(ORACLE), PROTOCOL_TWAP_DURATION);
+        factory.addMarket(address(ovrflo), PRIMARY_MARKET, address(ORACLE), PROTOCOL_TWAP_DURATION, feeBps);
         vm.stopPrank();
     }
 
@@ -106,7 +108,8 @@ contract OVRFLOMainnetForkTest is OVRFLOForkBase {
             vm.deal(USER, stEthMintAmount);
 
             vm.prank(USER);
-            (bool success,) = payable(STETH).call{value: stEthMintAmount}(abi.encodeWithSignature("submit(address)", address(0)));
+            (bool success,) =
+                payable(STETH).call{value: stEthMintAmount}(abi.encodeWithSignature("submit(address)", address(0)));
             assertTrue(success);
             assertGe(IERC20(STETH).balanceOf(USER), feeAmount);
         }

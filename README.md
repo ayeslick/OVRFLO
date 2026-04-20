@@ -95,12 +95,12 @@ Factory and admin hub for deploying and managing OVRFLO systems. Owned by a time
 | `configureDeployment(treasury, underlying, nameSuffix, symbolSuffix)` | Stage deployment parameters; factory prepends `OVRFLO ` to the name and `ovrflo` to the symbol |
 | `deploy()` | Deploy OVRFLO + OVRFLOToken from stored config |
 | `cancelDeployment()` | Cancel a pending deployment |
-| `addMarket(ovrflo, market, twapDuration, feeBps)` | Add a PT maturity using the stored OVRFLO underlying + shared `ovrfloToken`; requires an exact underlying match and ready oracle |
+| `addMarket(ovrflo, market, oracle, twapDuration, feeBps)` | Add a PT maturity using the stored OVRFLO underlying + shared `ovrfloToken`; requires an exact underlying match and ready oracle |
 | `setMarketDepositLimit(ovrflo, market, limit)` | Set deposit cap for a market |
 | `sweepExcessPt(ovrflo, ptToken, to)` | Sweep excess PT from an OVRFLO |
-| `prepareOracle(market, twapDuration)` | Separate oracle-preparation step before `addMarket(...)` when cardinality must be increased |
-| `transferOvrfloAdmin(ovrflo, newAdmin)` | Migrate an OVRFLO to a new factory |
-| `transferOwnership(newOwner)` | Transfer factory ownership |
+| `prepareOracle(market, oracle, twapDuration)` | Separate oracle-preparation step before `addMarket(...)` when cardinality must be increased |
+| `transferOwnership(newOwner)` | Nominate a new factory owner (two-step; new owner must call `acceptOwnership`) |
+| `acceptOwnership()` | Called by the pending owner to finalize the ownership transfer |
 
 ### OVRFLO.sol
 
@@ -177,7 +177,7 @@ factory.configureDeployment(treasury, WETH, "Wrapped Ether", "WETH");
 ```
 
 The factory:
-- Deploys OVRFLO with factory as `adminContract`
+- Deploys OVRFLO with factory.
 - Deploys OVRFLOToken (name/symbol from configured suffixes with `OVRFLO `/`ovrflo` prefixes, fixed 18-decimal deploy-time semantics)
 - Transfers OVRFLOToken ownership to OVRFLO
 - Registers the OVRFLO in its registry (`ovrflos[]` mapping)
@@ -187,11 +187,11 @@ The factory:
 ```solidity
 // 1. If Pendle reports more observations are needed, prepare the oracle first
 //    in a separate successful transaction. twapDuration must be >= 15 minutes.
-factory.prepareOracle(market, twapDuration);
+factory.prepareOracle(market, oracle, twapDuration);
 
 // 2. Add market only after cardinality is sufficient and the oracle's
 //    oldest observation already satisfies the requested TWAP window.
-factory.addMarket(ovrflo, market, twapDuration, feeBps);
+factory.addMarket(ovrflo, market, oracle, twapDuration, feeBps);
 ```
 
 `addMarket` reads the PT address and expiry directly from the Pendle market contract, reuses the stored `ovrfloInfo[ovrflo].underlying` and shared `ovrfloInfo[ovrflo].ovrfloToken`, requires the market's exact SY underlying asset address to match that stored underlying, rejects duplicate PT mappings, and requires `twapDuration >= 15 minutes` plus a ready Pendle oracle window before approval rather than preparing it inline. After success, the factory still records the market in its approved-market enumeration. Fee is capped at `FEE_MAX_BPS` (100 bps = 1%).
@@ -213,7 +213,6 @@ factory.addMarket(ovrflo, market, twapDuration, feeBps);
 
 ### Safeguards
 
-- **Reentrancy**: All state-changing functions use `nonReentrant`
 - **Multisig + Timelock**: All admin operations require multisig consensus and timelock delay
 - **Fee cap**: Maximum fee enforced at 1% (`FEE_MAX_BPS = 100`)
 - **Oracle**: TWAP pricing prevents manipulation
@@ -221,7 +220,16 @@ factory.addMarket(ovrflo, market, twapDuration, feeBps);
 - **Deposit limits**: Per-market caps available (set limit to freeze or block new deposits)
 - **Transparency**: `TREASURY_ADDR` is publicly readable on-chain
 - **Sweep**: Only excess PT (above tracked deposits) can be recovered
-- **Upgradeability**: Factory can transfer OVRFLO admin to a new factory via `transferOvrfloAdmin`
+- **Two-step factory ownership**: `transferOwnership` only nominates a pending owner; the new owner must call `acceptOwnership` to finalize, preventing fat-fingered transfers to unreachable addresses
+
+### Design Notes
+
+**ovrfloTokens are fungible across series of the same underlying — by design.**
+
+A single `OVRFLOToken` is shared by every PT market that resolves to the same underlying. `PT-stETH-JUN25` and `PT-stETH-DEC25` both mint `ovrfloWETH`, and any holder can burn `ovrfloWETH` against any matured series with sufficient `claimablePt(ptToken)`.
+
+- `ovrfloX` is a claim on PTs, which are a claim on the underlying. Fungibility across maturities is what makes it a single liquid asset and usable as collateral — fragmenting into one token per maturity would defeat the point.
+- Per-series accounting still holds: `series[market]`, `marketTotalDeposited[market]`, and `claimablePt[ptToken]` are tracked independently, fees are charged per deposit, and `OVRFLOFactory.addMarket` enforces an exact underlying match so unrelated assets can never share an `ovrfloToken`.
 
 ### External Dependencies
 
@@ -254,7 +262,6 @@ forge build
 forge test
 ```
 
-<<<<<<< HEAD
 ### Fork Tests (factory/safety onboarding)
 
 - Set `MAINNET_RPC_URL` to an archive-capable Ethereum mainnet RPC.
@@ -266,8 +273,6 @@ MAINNET_RPC_URL=https://your-archive-mainnet-rpc \
 forge test --match-path test/fork/OVRFLOFactoryMainnetFork.t.sol -vv
 ```
 
-=======
->>>>>>> main
 ### Frontend (web)
 
 The checked-in frontend launch config is pinned to Ethereum mainnet. Copy

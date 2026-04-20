@@ -28,10 +28,7 @@ abstract contract OVRFLOForkBase is Test {
         vm.createSelectFork(vm.envString("MAINNET_RPC_URL"), MAINNET_FORK_BLOCK);
     }
 
-    function _deployConfiguredSystem()
-        internal
-        returns (OVRFLOFactory factory, OVRFLO ovrflo, OVRFLOToken token)
-    {
+    function _deployConfiguredSystem() internal returns (OVRFLOFactory factory, OVRFLO ovrflo, OVRFLOToken token) {
         factory = new OVRFLOFactory(OWNER);
 
         vm.startPrank(OWNER);
@@ -45,6 +42,6 @@ abstract contract OVRFLOForkBase is Test {
 
     function _prepareOracle(OVRFLOFactory factory, address market) internal {
         vm.prank(OWNER);
-        factory.prepareOracle(market, MIN_TWAP_DURATION);
+        factory.prepareOracle(market, address(ORACLE), MIN_TWAP_DURATION);
     }
 }

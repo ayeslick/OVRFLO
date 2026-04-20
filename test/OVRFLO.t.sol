@@ -47,7 +47,14 @@ contract OVRFLOProtocolTest is Test {
     event AdminContractUpdated(address indexed adminContract);
     event ExcessSwept(address indexed ptToken, address indexed to, uint256 amount);
     event SeriesApproved(
-        address indexed market, address ptToken, address ovrfloToken, address underlying, uint256 expiry, uint16 feeBps
+        address indexed market,
+        address ptToken,
+        address ovrfloToken,
+        address underlying,
+        address oracle,
+        uint32 twapDuration,
+        uint256 expiry,
+        uint16 feeBps
     );
     event MarketDepositLimitSet(address indexed market, uint256 limit);
 
@@ -97,12 +104,29 @@ contract OVRFLOProtocolTest is Test {
         uint256 expiry = block.timestamp + 30 days;
 
         vm.expectEmit(address(ovrflo));
-        emit SeriesApproved(MARKET_ONE, address(ptOne), address(ovrfloToken), address(underlying), expiry, FEE_BPS);
+        emit SeriesApproved(
+            MARKET_ONE,
+            address(ptOne),
+            address(ovrfloToken),
+            address(underlying),
+            PENDLE_ORACLE,
+            TWAP_DURATION,
+            expiry,
+            FEE_BPS
+        );
 
         _approveSeries(MARKET_ONE, ptOne, expiry, FEE_BPS);
 
-        (bool approved, uint32 twapDuration, uint16 feeBps, uint256 expiryCached, address ptToken, address token, address feeToken)
-        = ovrflo.series(MARKET_ONE);
+        (
+            bool approved,
+            uint32 twapDuration,
+            uint16 feeBps,
+            uint256 expiryCached,
+            address ptToken,
+            address token,
+            address feeToken,
+            address oracle
+        ) = ovrflo.series(MARKET_ONE);
 
         assertTrue(approved);
         assertEq(twapDuration, TWAP_DURATION);
@@ -111,6 +135,7 @@ contract OVRFLOProtocolTest is Test {
         assertEq(ptToken, address(ptOne));
         assertEq(token, address(ovrfloToken));
         assertEq(feeToken, address(underlying));
+        assertEq(oracle, PENDLE_ORACLE);
         assertEq(ovrflo.ptToMarket(address(ptOne)), MARKET_ONE);
         assertEq(ovrfloToken.allowance(address(ovrflo), SABLIER_LL), type(uint256).max);
     }
@@ -122,8 +147,8 @@ contract OVRFLOProtocolTest is Test {
         _approveSeries(MARKET_ONE, ptOne, firstExpiry, FEE_BPS);
         _approveSeries(MARKET_TWO, ptTwo, secondExpiry, 0);
 
-        (, , , uint256 storedFirstExpiry, , address firstToken,) = ovrflo.series(MARKET_ONE);
-        (, , , uint256 storedSecondExpiry, , address secondToken,) = ovrflo.series(MARKET_TWO);
+        (,,, uint256 storedFirstExpiry,, address firstToken,,) = ovrflo.series(MARKET_ONE);
+        (,,, uint256 storedSecondExpiry,, address secondToken,,) = ovrflo.series(MARKET_TWO);
 
         assertEq(firstToken, address(ovrfloToken));
         assertEq(secondToken, address(ovrfloToken));
@@ -136,7 +161,24 @@ contract OVRFLOProtocolTest is Test {
     function test_SetSeriesApproved_RevertsForNonAdmin() public {
         vm.prank(user);
         vm.expectRevert("OVRFLO: not admin");
-        ovrflo.setSeriesApproved(MARKET_ONE, address(ptOne), address(underlying), address(ovrfloToken), TWAP_DURATION, 1, 0);
+        ovrflo.setSeriesApproved(
+            MARKET_ONE, address(ptOne), address(underlying), address(ovrfloToken), PENDLE_ORACLE, TWAP_DURATION, 1, 0
+        );
+    }
+
+    function test_SetSeriesApproved_RevertsForZeroOracle() public {
+        vm.prank(ADMIN);
+        vm.expectRevert("OVRFLO: oracle zero");
+        ovrflo.setSeriesApproved(
+            MARKET_ONE,
+            address(ptOne),
+            address(underlying),
+            address(ovrfloToken),
+            address(0),
+            TWAP_DURATION,
+            block.timestamp + 30 days,
+            0
+        );
     }
 
     function test_SetSeriesApproved_RevertsForDuplicateMarketConfiguration() public {
@@ -145,7 +187,14 @@ contract OVRFLOProtocolTest is Test {
         vm.prank(ADMIN);
         vm.expectRevert("OVRFLO: series already configured");
         ovrflo.setSeriesApproved(
-            MARKET_ONE, address(ptTwo), address(underlying), address(ovrfloToken), TWAP_DURATION, block.timestamp + 60 days, 0
+            MARKET_ONE,
+            address(ptTwo),
+            address(underlying),
+            address(ovrfloToken),
+            PENDLE_ORACLE,
+            TWAP_DURATION,
+            block.timestamp + 60 days,
+            0
         );
     }
 
@@ -155,7 +204,14 @@ contract OVRFLOProtocolTest is Test {
         vm.prank(ADMIN);
         vm.expectRevert("OVRFLO: PT already mapped");
         ovrflo.setSeriesApproved(
-            MARKET_TWO, address(ptOne), address(underlying), address(ovrfloToken), TWAP_DURATION, block.timestamp + 60 days, 0
+            MARKET_TWO,
+            address(ptOne),
+            address(underlying),
+            address(ovrfloToken),
+            PENDLE_ORACLE,
+            TWAP_DURATION,
+            block.timestamp + 60 days,
+            0
         );
     }
 
@@ -208,7 +264,8 @@ contract OVRFLOProtocolTest is Test {
         uint256 expiry = block.timestamp + 30 days;
         _approveSeries(MARKET_ONE, ptOne, expiry, FEE_BPS);
 
-        (uint256 toUser, uint256 toStream, uint256 feeAmount,) = _seedPreviewAndBalances(MARKET_ONE, ptOne, 10 ether, 0.9e18, FEE_BPS);
+        (uint256 toUser, uint256 toStream, uint256 feeAmount,) =
+            _seedPreviewAndBalances(MARKET_ONE, ptOne, 10 ether, 0.9e18, FEE_BPS);
         _mockSablier(user, uint128(toStream), expiry - block.timestamp, 77);
 
         vm.startPrank(user);
@@ -492,13 +549,18 @@ contract OVRFLOProtocolTest is Test {
 
     function _approveSeries(address market, MockERC20Metadata pt, uint256 expiry, uint16 feeBps) internal {
         vm.prank(ADMIN);
-        ovrflo.setSeriesApproved(market, address(pt), address(underlying), address(ovrfloToken), TWAP_DURATION, expiry, feeBps);
+        ovrflo.setSeriesApproved(
+            market, address(pt), address(underlying), address(ovrfloToken), PENDLE_ORACLE, TWAP_DURATION, expiry, feeBps
+        );
     }
 
-    function _seedPreviewAndBalances(address market, MockERC20Metadata pt, uint256 ptAmount, uint256 rateE18, uint16 feeBps)
-        internal
-        returns (uint256 toUser, uint256 toStream, uint256 feeAmount, uint256 rate)
-    {
+    function _seedPreviewAndBalances(
+        address market,
+        MockERC20Metadata pt,
+        uint256 ptAmount,
+        uint256 rateE18,
+        uint16 feeBps
+    ) internal returns (uint256 toUser, uint256 toStream, uint256 feeAmount, uint256 rate) {
         _mockRate(market, rateE18);
         (toUser, toStream, feeAmount, rate) = ovrflo.previewDeposit(market, ptAmount);
         assertEq(rate, rateE18);
