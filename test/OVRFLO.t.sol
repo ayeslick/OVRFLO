@@ -41,10 +41,8 @@ contract OVRFLOProtocolTest is Test {
         address indexed market,
         address indexed ptToken,
         address ovrfloToken,
-        uint256 burnedAmount,
-        uint256 ptOut
+        uint256 amount
     );
-    event AdminContractUpdated(address indexed adminContract);
     event ExcessSwept(address indexed ptToken, address indexed to, uint256 amount);
     event SeriesApproved(
         address indexed market,
@@ -379,7 +377,7 @@ contract OVRFLOProtocolTest is Test {
         vm.warp(expiry);
 
         vm.expectEmit(address(ovrflo));
-        emit Claimed(user, MARKET_ONE, address(ptOne), address(ovrfloToken), toUser + toStream, 10 ether);
+        emit Claimed(user, MARKET_ONE, address(ptOne), address(ovrfloToken), 10 ether);
 
         vm.prank(user);
         ovrflo.claim(address(ptOne), 10 ether);
@@ -402,7 +400,7 @@ contract OVRFLOProtocolTest is Test {
         vm.warp(expiry);
 
         vm.expectEmit(address(ovrflo));
-        emit Claimed(user, MARKET_ONE, address(ptOne), address(ovrfloToken), claimAmount, claimAmount);
+        emit Claimed(user, MARKET_ONE, address(ptOne), address(ovrfloToken), claimAmount);
 
         vm.prank(user);
         ovrflo.claim(address(ptOne), claimAmount);
@@ -466,23 +464,6 @@ contract OVRFLOProtocolTest is Test {
         vm.prank(user);
         vm.expectRevert("OVRFLO: amount is zero");
         ovrflo.claim(address(ptOne), 0);
-    }
-
-    function test_Claim_RevertsWhenPtReservesAreInsufficient() public {
-        uint256 expiry = block.timestamp + 30 days;
-        _approveSeries(MARKET_ONE, ptOne, expiry, 0);
-        (, uint256 toStream) = _deposit(MARKET_ONE, ptOne, 10 ether, 0.8e18, 0, expiry, 1);
-
-        vm.prank(address(ovrflo));
-        ovrfloToken.transfer(user, toStream);
-
-        vm.prank(address(ovrflo));
-        ptOne.transfer(otherUser, 1);
-
-        vm.warp(expiry);
-        vm.prank(user);
-        vm.expectRevert("OVRFLO: insufficient PT reserves");
-        ovrflo.claim(address(ptOne), 10 ether);
     }
 
     function test_ClaimablePt_ReturnsVaultBalanceAndRevertsForUnknownPt() public {

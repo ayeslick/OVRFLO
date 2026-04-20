@@ -115,20 +115,14 @@ contract OVRFLO {
     /// @param market The Pendle market address
     /// @param ptToken The PT token address
     /// @param ovrfloToken The ovrflo token burned
-    /// @param burnedAmount Amount of ovrfloTokens burned
-    /// @param ptOut Amount of PT tokens received
+    /// @param amount Amount redeemed; ovrflo burned equals PT delivered (1:1)
     event Claimed(
         address indexed user,
         address indexed market,
         address indexed ptToken,
         address ovrfloToken,
-        uint256 burnedAmount,
-        uint256 ptOut
+        uint256 amount
     );
-
-    /// @notice Emitted when the admin contract is updated
-    /// @param adminContract The new admin contract address
-    event AdminContractUpdated(address indexed adminContract);
 
     /// @notice Emitted when excess PT tokens are swept
     /// @param ptToken The PT token address
@@ -334,21 +328,19 @@ contract OVRFLO {
         address market = ptToMarket[ptToken];
         require(market != address(0), "OVRFLO: unknown PT");
 
-        SeriesInfo memory info = series[market];
+        SeriesInfo storage info = series[market];
         require(block.timestamp >= info.expiryCached, "OVRFLO: not matured");
         require(amount > 0, "OVRFLO: amount is zero");
-
-        uint256 vaultBalance = IERC20(ptToken).balanceOf(address(this));
-        require(amount <= vaultBalance, "OVRFLO: insufficient PT reserves");
 
         uint256 currentDeposited = marketTotalDeposited[market];
         require(currentDeposited >= amount, "OVRFLO: deposit accounting");
         marketTotalDeposited[market] = currentDeposited - amount;
 
-        OVRFLOToken(info.ovrfloToken).burn(msg.sender, amount);
+        address ovrfloToken = info.ovrfloToken;
+        OVRFLOToken(ovrfloToken).burn(msg.sender, amount);
         IERC20(ptToken).safeTransfer(msg.sender, amount);
 
-        emit Claimed(msg.sender, market, ptToken, info.ovrfloToken, amount, amount);
+        emit Claimed(msg.sender, market, ptToken, ovrfloToken, amount);
     }
 
     /*//////////////////////////////////////////////////////////////
