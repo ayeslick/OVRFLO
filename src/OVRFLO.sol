@@ -381,6 +381,7 @@ contract OVRFLO {
         toUser = PRBMath.mulDiv(ptAmount, rateE18, WAD);
         if (toUser > ptAmount) toUser = ptAmount;
         toStream = ptAmount - toUser;
+        require(toStream > 0, "OVRFLO: nothing to stream");
     }
 
     /// @notice Full deposit preview including fee calculation
@@ -401,6 +402,7 @@ contract OVRFLO {
         toUser = PRBMath.mulDiv(ptAmount, rateE18, WAD);
         if (toUser > ptAmount) toUser = ptAmount;
         toStream = ptAmount - toUser;
+        require(toStream > 0, "OVRFLO: nothing to stream");
         feeAmount = info.feeBps == 0 ? 0 : PRBMath.mulDiv(toUser, info.feeBps, BASIS_POINTS);
     }
 }

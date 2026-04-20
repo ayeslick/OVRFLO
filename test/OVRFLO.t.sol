@@ -323,7 +323,11 @@ contract OVRFLOProtocolTest is Test {
     function test_Deposit_RevertsWhenNothingWouldStream() public {
         uint256 expiry = block.timestamp + 30 days;
         _approveSeries(MARKET_ONE, ptOne, expiry, 0);
-        _seedPreviewAndBalances(MARKET_ONE, ptOne, 10 ether, 1e18, 0);
+        _mockRate(MARKET_ONE, 1e18);
+
+        ptOne.mint(user, 10 ether);
+        vm.prank(user);
+        ptOne.approve(address(ovrflo), 10 ether);
 
         vm.prank(user);
         vm.expectRevert("OVRFLO: nothing to stream");
@@ -497,24 +501,18 @@ contract OVRFLOProtocolTest is Test {
         assertEq(feeAmount, 0.09 ether);
     }
 
-    function test_PreviewFunctions_ClampsToUserWhenRateExceedsUnit() public {
+    function test_PreviewFunctions_RevertsWhenRateExceedsUnit() public {
         uint256 expiry = block.timestamp + 30 days;
         _approveSeries(MARKET_ONE, ptOne, expiry, FEE_BPS);
         _mockRate(MARKET_ONE, 1.2e18);
 
-        uint256 rate = ovrflo.previewRate(MARKET_ONE);
-        (uint256 toUser, uint256 toStream, uint256 previewRate_) = ovrflo.previewStream(MARKET_ONE, 10 ether);
-        (uint256 depositToUser, uint256 depositToStream, uint256 feeAmount, uint256 depositRate) =
-            ovrflo.previewDeposit(MARKET_ONE, 10 ether);
+        assertEq(ovrflo.previewRate(MARKET_ONE), 1.2e18);
 
-        assertEq(rate, 1.2e18);
-        assertEq(previewRate_, 1.2e18);
-        assertEq(depositRate, 1.2e18);
-        assertEq(toUser, 10 ether);
-        assertEq(toStream, 0);
-        assertEq(depositToUser, 10 ether);
-        assertEq(depositToStream, 0);
-        assertEq(feeAmount, 0.1 ether);
+        vm.expectRevert("OVRFLO: nothing to stream");
+        ovrflo.previewStream(MARKET_ONE, 10 ether);
+
+        vm.expectRevert("OVRFLO: nothing to stream");
+        ovrflo.previewDeposit(MARKET_ONE, 10 ether);
     }
 
     function test_PreviewFunctions_RevertForUnapprovedMarket() public {
