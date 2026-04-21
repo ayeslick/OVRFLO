@@ -3,73 +3,191 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { formatUnits } from "viem";
+import { useReadContracts } from "wagmi";
+import { PRICE_API_URL } from "@/lib/config";
+import { ovrfloAbi } from "@/lib/contracts";
+import type { MarketInfo } from "@/hooks/useAllMarkets";
 
-interface PriceResponse {
+export interface UsdPrices {
   nativeUsd?: number;
-  tokenUsd: Map<string, number>;
+  underlyingUsd: Map<string, number>;
+  ptUsd: Map<string, number>;
+  ovrfloUsd: Map<string, number>;
 }
 
-async function fetchUsdPrices(addresses: `0x${string}`[]): Promise<PriceResponse> {
-  const tokenUsd = new Map<string, number>();
+const EMPTY_PRICES: UsdPrices = {
+  underlyingUsd: new Map(),
+  ptUsd: new Map(),
+  ovrfloUsd: new Map(),
+};
 
-  const [nativeRes, tokenRes] = await Promise.all([
-    fetch("https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd"),
+async function safeFetchJson<T>(url: string): Promise<T | undefined> {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return undefined;
+    return (await res.json()) as T;
+  } catch {
+    return undefined;
+  }
+}
+
+async function fetchExternalPrices(
+  addresses: `0x${string}`[]
+): Promise<{ nativeUsd?: number; underlyingUsd: Map<string, number> }> {
+  const underlyingUsd = new Map<string, number>();
+
+  const [nativeJson, tokenJson] = await Promise.all([
+    safeFetchJson<{ ethereum?: { usd?: number } }>(
+      `${PRICE_API_URL}/simple/price?ids=ethereum&vs_currencies=usd`
+    ),
     addresses.length
-      ? fetch(
-          `https://api.coingecko.com/api/v3/simple/token_price/ethereum?contract_addresses=${addresses.join(",")}&vs_currencies=usd`
+      ? safeFetchJson<Record<string, { usd?: number }>>(
+          `${PRICE_API_URL}/simple/token_price/ethereum?contract_addresses=${addresses.join(",")}&vs_currencies=usd`
         )
       : Promise.resolve(undefined),
   ]);
 
-  let nativeUsd: number | undefined;
+  const nativeUsd =
+    typeof nativeJson?.ethereum?.usd === "number"
+      ? nativeJson.ethereum.usd
+      : undefined;
 
-  if (nativeRes.ok) {
-    const json = (await nativeRes.json()) as { ethereum?: { usd?: number } };
-    nativeUsd = json.ethereum?.usd;
-  }
-
-  if (tokenRes && tokenRes.ok) {
-    const json = (await tokenRes.json()) as Record<string, { usd?: number }>;
-    Object.entries(json).forEach(([address, price]) => {
-      if (typeof price.usd === "number") {
-        tokenUsd.set(address.toLowerCase(), price.usd);
+  if (tokenJson) {
+    for (const [addr, entry] of Object.entries(tokenJson)) {
+      if (typeof entry?.usd === "number") {
+        underlyingUsd.set(addr.toLowerCase(), entry.usd);
       }
-    });
+    }
   }
 
-  return { nativeUsd, tokenUsd };
+  return { nativeUsd, underlyingUsd };
 }
 
-export function useUsdPrices(tokens: (`0x${string}` | undefined)[]) {
-  const uniqueTokens = useMemo(
+export interface UseUsdPricesArgs {
+  underlyings: (`0x${string}` | undefined)[];
+  markets: MarketInfo[];
+}
+
+export function useUsdPrices({ underlyings, markets }: UseUsdPricesArgs) {
+  const uniqueUnderlyings = useMemo<`0x${string}`[]>(
     () =>
-      [...new Set(tokens.filter((t): t is `0x${string}` => !!t).map((t) => t.toLowerCase() as `0x${string}`))],
-    [tokens]
+      [
+        ...new Set(
+          underlyings
+            .filter((t): t is `0x${string}` => !!t)
+            .map((t) => t.toLowerCase() as `0x${string}`)
+        ),
+      ],
+    [underlyings]
   );
 
-  return useQuery({
-    queryKey: ["usd-prices", uniqueTokens],
-    queryFn: () => fetchUsdPrices(uniqueTokens),
+  const external = useQuery({
+    queryKey: ["usd-prices-external", PRICE_API_URL, uniqueUnderlyings],
+    queryFn: () => fetchExternalPrices(uniqueUnderlyings),
     staleTime: 5 * 60 * 1000,
-    retry: 1,
+    retry: 0,
   });
+
+  const rateContracts = useMemo(
+    () =>
+      markets.map((m) => ({
+        address: m.ovrflo,
+        abi: ovrfloAbi,
+        functionName: "previewRate" as const,
+        args: [m.market] as const,
+      })),
+    [markets]
+  );
+
+  const { data: rateResults } = useReadContracts({
+    contracts: rateContracts,
+    query: { enabled: rateContracts.length > 0, staleTime: 60_000 },
+  });
+
+  const prices = useMemo<UsdPrices>(() => {
+    const underlyingUsd = external.data?.underlyingUsd ?? EMPTY_PRICES.underlyingUsd;
+    const ptUsd = new Map<string, number>();
+    const ovrfloUsd = new Map<string, number>();
+
+    const nowSec = BigInt(Math.floor(Date.now() / 1000));
+
+    markets.forEach((m, i) => {
+      const undUsd = underlyingUsd.get(m.underlying.toLowerCase());
+      if (undUsd === undefined) return;
+
+      const rateRes = rateResults?.[i];
+      const rateRaw =
+        rateRes && rateRes.status === "success"
+          ? (rateRes.result as bigint)
+          : undefined;
+
+      const rate = rateRaw ?? 10n ** 18n;
+      // previewRate is quoted in PT/ovrflo 1e18 terms: priceUsd(PT) = priceUsd(underlying) * rate / 1e18.
+      const ptPrice = (undUsd * Number(formatUnits(rate, 18)));
+      if (Number.isFinite(ptPrice)) {
+        ptUsd.set(m.market.toLowerCase(), ptPrice);
+      }
+      const matured = m.expiry <= nowSec;
+      const ovrfloPrice = matured ? undUsd : ptPrice;
+      if (Number.isFinite(ovrfloPrice)) {
+        ovrfloUsd.set(m.market.toLowerCase(), ovrfloPrice);
+      }
+    });
+
+    return {
+      nativeUsd: external.data?.nativeUsd,
+      underlyingUsd,
+      ptUsd,
+      ovrfloUsd,
+    };
+  }, [external.data, markets, rateResults]);
+
+  return {
+    data: prices,
+    isLoading: external.isLoading,
+    error: external.error as Error | null,
+  };
 }
 
-export function getTokenUsd(
-  prices: Map<string, number> | undefined,
+export function getUnderlyingUsd(
+  prices: UsdPrices | undefined,
   address: `0x${string}` | undefined
 ) {
   if (!prices || !address) return undefined;
-  return prices.get(address.toLowerCase());
+  return prices.underlyingUsd.get(address.toLowerCase());
 }
 
-export function formatUsdValue(amount: bigint, decimals: number, priceUsd?: number) {
+export function getPtUsdForMarket(
+  prices: UsdPrices | undefined,
+  market: `0x${string}` | undefined
+) {
+  if (!prices || !market) return undefined;
+  return prices.ptUsd.get(market.toLowerCase());
+}
+
+export function getOvrfloUsdForMarket(
+  prices: UsdPrices | undefined,
+  market: `0x${string}` | undefined
+) {
+  if (!prices || !market) return undefined;
+  return prices.ovrfloUsd.get(market.toLowerCase());
+}
+
+export function formatUsdValue(
+  amount: bigint,
+  decimals: number,
+  priceUsd?: number
+) {
   if (priceUsd === undefined) return undefined;
-  const scaled = parseFloat(formatUnits(amount, decimals));
-  if (!Number.isFinite(scaled)) return undefined;
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: 2,
-  }).format(scaled * priceUsd);
+  try {
+    const scaled = parseFloat(formatUnits(amount, decimals));
+    if (!Number.isFinite(scaled)) return undefined;
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: "USD",
+      maximumFractionDigits: 2,
+    }).format(scaled * priceUsd);
+  } catch {
+    return undefined;
+  }
 }

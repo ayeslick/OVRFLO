@@ -1,7 +1,7 @@
 "use client";
 
 import { useReadContracts } from "wagmi";
-import { OVRFLO_FACTORY } from "@/lib/constants";
+import { OVRFLO_FACTORY } from "@/lib/config";
 import { ovrfloFactoryAbi } from "@/lib/contracts";
 
 export interface OvrfloEntry {

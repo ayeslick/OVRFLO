@@ -3,29 +3,28 @@
 import { useCallback, useEffect, useState } from "react";
 import { useAccount, useReadContract, useWaitForTransactionReceipt, useWriteContract } from "wagmi";
 import { formatUnits, maxUint256, parseUnits, type Address } from "viem";
-import { CHAIN_ID } from "@/lib/constants";
+import { CHAIN_ID } from "@/lib/config";
 import { erc20Abi, ovrfloAbi } from "@/lib/contracts";
 import { getDecimals, useTokenDecimals } from "@/hooks/useTokenMeta";
 import { getTokenSymbol, useTokenSymbols } from "@/hooks/useTokenLabels";
+import {
+  formatUsdValue,
+  getOvrfloUsdForMarket,
+  getUnderlyingUsd,
+  type UsdPrices,
+} from "@/hooks/useUsdPrices";
 import { parseUserError } from "@/lib/tx-errors";
 import { SlippageSettings } from "./SlippageSettings";
 import { WalletActionCta } from "./WalletActionCta";
 import type { MarketInfo } from "@/hooks/useAllMarkets";
 import type { OvrfloEntry } from "@/hooks/useOvrflos";
-import type { MockCreateFlowData } from "@/lib/mock-dashboard";
-
-interface CreatePreviewProps {
-  tokenLabels: Record<`0x${string}`, string>;
-  marketLabels: Record<`0x${string}`, string>;
-  createFlows: Record<`0x${string}`, MockCreateFlowData>;
-}
 
 interface Props {
   open: boolean;
   onClose: () => void;
   ovrflos: OvrfloEntry[];
   allMarkets: MarketInfo[];
-  preview?: CreatePreviewProps;
+  prices?: UsdPrices;
 }
 
 type Step = "underlying" | "maturity";
@@ -54,20 +53,11 @@ function formatDate(value?: bigint) {
     : "--";
 }
 
-function lookupLabel(
-  labels: Record<`0x${string}`, string> | undefined,
-  address: `0x${string}` | undefined,
-  fallback: string,
-) {
-  return address ? labels?.[address] ?? fallback : fallback;
-}
-
 function sanitizeAmount(value: string) {
   return value.replace(/[^0-9.]/g, "");
 }
 
-export function NewOvrfloModal({ open, onClose, ovrflos, allMarkets, preview }: Props) {
-  const previewMode = Boolean(preview);
+export function NewOvrfloModal({ open, onClose, ovrflos, allMarkets, prices }: Props) {
   const { address, chainId } = useAccount();
   const [step, setStep] = useState<Step>("underlying");
   const [selectedOvrflo, setSelectedOvrflo] = useState<OvrfloEntry>();
@@ -75,8 +65,6 @@ export function NewOvrfloModal({ open, onClose, ovrflos, allMarkets, preview }: 
   const [amountStr, setAmountStr] = useState("");
   const [slippageBps, setSlippageBps] = useState(50);
   const [unlimitedApproval, setUnlimitedApproval] = useState(false);
-  const [previewPtApproved, setPreviewPtApproved] = useState(false);
-  const [previewUnderlyingApproved, setPreviewUnderlyingApproved] = useState(false);
   const [txPhase, setTxPhase] = useState<TxPhase>("idle");
   const [txHash, setTxHash] = useState<`0x${string}`>();
   const [errorMsg, setErrorMsg] = useState("");
@@ -87,10 +75,15 @@ export function NewOvrfloModal({ open, onClose, ovrflos, allMarkets, preview }: 
     query: { enabled: !!txHash },
   });
 
-  const symbolMap = useTokenSymbols(
-    previewMode ? [] : [...ovrflos.map((o) => o.underlying), ...allMarkets.map((m) => m.ptToken)],
-  );
-  const decMap = useTokenDecimals(previewMode ? [] : [selectedMarket?.ptToken, selectedMarket?.underlying, selectedMarket?.ovrfloToken]);
+  const symbolMap = useTokenSymbols([
+    ...ovrflos.map((o) => o.underlying),
+    ...allMarkets.map((m) => m.ptToken),
+  ]);
+  const decMap = useTokenDecimals([
+    selectedMarket?.ptToken,
+    selectedMarket?.underlying,
+    selectedMarket?.ovrfloToken,
+  ]);
   const now = BigInt(Math.floor(Date.now() / 1000));
 
   useEffect(() => {
@@ -101,8 +94,6 @@ export function NewOvrfloModal({ open, onClose, ovrflos, allMarkets, preview }: 
     setAmountStr("");
     setSlippageBps(50);
     setUnlimitedApproval(false);
-    setPreviewPtApproved(false);
-    setPreviewUnderlyingApproved(false);
     setTxPhase("idle");
     setTxHash(undefined);
     setErrorMsg("");
@@ -126,13 +117,6 @@ export function NewOvrfloModal({ open, onClose, ovrflos, allMarkets, preview }: 
     }
   }, [receiptConfirmed, receiptFailed, txHash, txPhase]);
 
-  useEffect(() => {
-    if (!previewMode) return;
-    setPreviewPtApproved(false);
-    setPreviewUnderlyingApproved(false);
-    setTxPhase((current) => (current === "success" ? "idle" : current));
-  }, [amountStr, previewMode, selectedMarket?.market, unlimitedApproval]);
-
   const marketsForOvrflo = selectedOvrflo
     ? allMarkets.filter(
         (market) => market.ovrflo.toLowerCase() === selectedOvrflo.address.toLowerCase() && market.expiry > now,
@@ -144,7 +128,7 @@ export function NewOvrfloModal({ open, onClose, ovrflos, allMarkets, preview }: 
     abi: ovrfloAbi,
     functionName: "series",
     args: selectedMarket ? [selectedMarket.market] : undefined,
-    query: { enabled: !previewMode && !!selectedOvrflo && !!selectedMarket },
+    query: { enabled: !!selectedOvrflo && !!selectedMarket },
   });
 
   const resolvedExpiry = (seriesData?.[3] as bigint | undefined) ?? selectedMarket?.expiry;
@@ -172,7 +156,7 @@ export function NewOvrfloModal({ open, onClose, ovrflos, allMarkets, preview }: 
     abi: ovrfloAbi,
     functionName: "previewDeposit",
     args: selectedMarket ? [selectedMarket.market, ptAmount] : undefined,
-    query: { enabled: !previewMode && !!selectedOvrflo && !!selectedMarket && ptAmount > 0n && !selectedMarketExpired },
+    query: { enabled: !!selectedOvrflo && !!selectedMarket && ptAmount > 0n && !selectedMarketExpired },
   });
 
   const { data: ptBalance } = useReadContract({
@@ -180,7 +164,7 @@ export function NewOvrfloModal({ open, onClose, ovrflos, allMarkets, preview }: 
     abi: erc20Abi,
     functionName: "balanceOf",
     args: address ? [address] : undefined,
-    query: { enabled: !previewMode && !!address && !!resolvedPtToken },
+    query: { enabled: !!address && !!resolvedPtToken },
   });
 
   const { data: underlyingBalance } = useReadContract({
@@ -188,7 +172,7 @@ export function NewOvrfloModal({ open, onClose, ovrflos, allMarkets, preview }: 
     abi: erc20Abi,
     functionName: "balanceOf",
     args: address ? [address] : undefined,
-    query: { enabled: !previewMode && !!address && !!resolvedUnderlying },
+    query: { enabled: !!address && !!resolvedUnderlying },
   });
 
   const { data: ptAllowance } = useReadContract({
@@ -196,7 +180,7 @@ export function NewOvrfloModal({ open, onClose, ovrflos, allMarkets, preview }: 
     abi: erc20Abi,
     functionName: "allowance",
     args: address && selectedOvrflo ? [address, selectedOvrflo.address as Address] : undefined,
-    query: { enabled: !previewMode && !!address && !!selectedOvrflo && !!resolvedPtToken },
+    query: { enabled: !!address && !!selectedOvrflo && !!resolvedPtToken },
   });
 
   const { data: underlyingAllowance } = useReadContract({
@@ -204,59 +188,85 @@ export function NewOvrfloModal({ open, onClose, ovrflos, allMarkets, preview }: 
     abi: erc20Abi,
     functionName: "allowance",
     args: address && selectedOvrflo ? [address, selectedOvrflo.address as Address] : undefined,
-    query: { enabled: !previewMode && !!address && !!selectedOvrflo && !!resolvedUnderlying },
+    query: { enabled: !!address && !!selectedOvrflo && !!resolvedUnderlying },
   });
 
-  const previewFlow = selectedMarket ? preview?.createFlows[selectedMarket.market] : undefined;
-  const underlyingLabel = lookupLabel(
-    preview?.tokenLabels,
+  const { data: marketTotalDeposited } = useReadContract({
+    address: selectedOvrflo?.address as Address,
+    abi: ovrfloAbi,
+    functionName: "marketTotalDeposited",
+    args: selectedMarket ? [selectedMarket.market] : undefined,
+    query: { enabled: !!selectedOvrflo && !!selectedMarket },
+  });
+
+  const { data: marketDepositLimit } = useReadContract({
+    address: selectedOvrflo?.address as Address,
+    abi: ovrfloAbi,
+    functionName: "marketDepositLimits",
+    args: selectedMarket ? [selectedMarket.market] : undefined,
+    query: { enabled: !!selectedOvrflo && !!selectedMarket },
+  });
+
+  const underlyingLabel = getTokenSymbol(
+    symbolMap,
     resolvedUnderlying ?? selectedOvrflo?.underlying,
-    getTokenSymbol(symbolMap, resolvedUnderlying ?? selectedOvrflo?.underlying, formatAddress(resolvedUnderlying ?? selectedOvrflo?.underlying)),
+    formatAddress(resolvedUnderlying ?? selectedOvrflo?.underlying),
   );
-  const ptSymbol = lookupLabel(
-    preview?.tokenLabels,
-    resolvedPtToken,
-    getTokenSymbol(symbolMap, resolvedPtToken, formatAddress(resolvedPtToken)),
-  );
-  const ovrfloSymbol = lookupLabel(preview?.tokenLabels, resolvedOvrfloToken, formatAddress(resolvedOvrfloToken));
-  const marketLabel = selectedMarket
-    ? lookupLabel(preview?.marketLabels, selectedMarket.market, `${ptSymbol} ${formatDate(resolvedExpiry)}`)
-    : "";
+  const ptSymbol = getTokenSymbol(symbolMap, resolvedPtToken, formatAddress(resolvedPtToken));
+  const ovrfloSymbol = formatAddress(resolvedOvrfloToken);
 
   const toUser = previewDeposit?.[0] ?? 0n;
   const toStream = previewDeposit?.[1] ?? 0n;
   const feeAmount = previewDeposit?.[2] ?? 0n;
   const minToUser = toUser > 0n ? (toUser * (10000n - BigInt(slippageBps))) / 10000n : 0n;
-  const wrongChain = !previewMode && !!address && chainId !== CHAIN_ID;
+
+  const undUsd = getUnderlyingUsd(prices, resolvedUnderlying);
+  const ovrfloUsd = getOvrfloUsdForMarket(prices, selectedMarket?.market);
+  const toUserUsd = formatUsdValue(toUser, underlyingDecimals, undUsd);
+  const toStreamUsd = formatUsdValue(toStream, ovrfloDecimals, ovrfloUsd);
+  const feeUsd = formatUsdValue(feeAmount, underlyingDecimals, undUsd);
+  const wrongChain = !!address && chainId !== CHAIN_ID;
   const isBusy = txPhase !== "idle" && txPhase !== "success" && txPhase !== "error";
-  const insufficientPtBalance = !previewMode && ptBalance !== undefined && ptAmount > ptBalance;
+  const insufficientPtBalance = ptBalance !== undefined && ptAmount > ptBalance;
   const insufficientUnderlyingBalance =
-    !previewMode && underlyingBalance !== undefined && feeAmount > 0n && feeAmount > underlyingBalance;
+    underlyingBalance !== undefined && feeAmount > 0n && feeAmount > underlyingBalance;
+  // Mirrors OVRFLO.sol MIN_PT_AMOUNT (1e6).
+  const MIN_PT_AMOUNT = 1_000_000n;
+  const belowMinPt = ptAmount > 0n && ptAmount < MIN_PT_AMOUNT;
+  const exceedsDepositLimit =
+    marketDepositLimit !== undefined &&
+    marketTotalDeposited !== undefined &&
+    marketDepositLimit > 0n &&
+    marketTotalDeposited + ptAmount > marketDepositLimit;
+  const previewReady = previewDeposit !== undefined && toUser > 0n;
+  const nothingToStream = previewDeposit !== undefined && toStream === 0n;
   const needsPtApproval =
     !selectedMarketExpired &&
-    (previewMode
-      ? Boolean(previewFlow?.needsPtApproval) && !previewPtApproved
-      : ptAllowance !== undefined && ptAmount > 0n && ptAllowance < ptAmount);
+    ptAllowance !== undefined &&
+    ptAmount > 0n &&
+    ptAllowance < ptAmount;
   const needsUnderlyingApproval =
     !selectedMarketExpired &&
     !needsPtApproval &&
-    (previewMode
-      ? Boolean(previewFlow?.needsUnderlyingApproval) && !previewUnderlyingApproved
-      : underlyingAllowance !== undefined && feeAmount > 0n && underlyingAllowance < feeAmount);
+    underlyingAllowance !== undefined &&
+    feeAmount > 0n &&
+    underlyingAllowance < feeAmount;
   const canProceed =
     Boolean(selectedMarket) &&
     ptAmount > 0n &&
     !selectedMarketExpired &&
     !insufficientPtBalance &&
-    !insufficientUnderlyingBalance;
+    !insufficientUnderlyingBalance &&
+    !belowMinPt &&
+    !exceedsDepositLimit &&
+    !nothingToStream &&
+    previewReady;
   const maturingSoon =
-    Boolean(previewFlow?.marketMaturesSoon) ||
-    (!selectedMarketExpired && resolvedExpiry !== undefined && resolvedExpiry - now < 86400n);
+    !selectedMarketExpired && resolvedExpiry !== undefined && resolvedExpiry - now < 86400n;
 
   const handleApprovePt = useCallback(async () => {
     if (!selectedOvrflo || !resolvedPtToken || !canProceed) return;
     setErrorMsg("");
-    if (previewMode) { setPreviewPtApproved(true); return; }
     setTxPhase("approving-pt");
     try {
       const hash = await writeContractAsync({
@@ -271,12 +281,11 @@ export function NewOvrfloModal({ open, onClose, ovrflos, allMarkets, preview }: 
       setTxPhase("error");
       setErrorMsg(parseUserError(error, "PT approval failed"));
     }
-  }, [canProceed, previewMode, ptAmount, resolvedPtToken, selectedOvrflo, unlimitedApproval, writeContractAsync]);
+  }, [canProceed, ptAmount, resolvedPtToken, selectedOvrflo, unlimitedApproval, writeContractAsync]);
 
   const handleApproveUnderlying = useCallback(async () => {
     if (!selectedOvrflo || !resolvedUnderlying || !canProceed || feeAmount <= 0n) return;
     setErrorMsg("");
-    if (previewMode) { setPreviewUnderlyingApproved(true); return; }
     setTxPhase("approving-underlying");
     try {
       const hash = await writeContractAsync({
@@ -291,12 +300,18 @@ export function NewOvrfloModal({ open, onClose, ovrflos, allMarkets, preview }: 
       setTxPhase("error");
       setErrorMsg(parseUserError(error, "Underlying approval failed"));
     }
-  }, [canProceed, feeAmount, previewMode, resolvedUnderlying, selectedOvrflo, unlimitedApproval, writeContractAsync]);
+  }, [canProceed, feeAmount, resolvedUnderlying, selectedOvrflo, unlimitedApproval, writeContractAsync]);
 
   const handleDeposit = useCallback(async () => {
     if (!selectedOvrflo || !selectedMarket || !canProceed) return;
     setErrorMsg("");
-    if (previewMode) { setTxPhase("success"); return; }
+    if (minToUser === 0n) {
+      setTxPhase("error");
+      setErrorMsg(
+        "Preview unavailable; refusing to deposit without a slippage floor. Please try again."
+      );
+      return;
+    }
     setTxPhase("creating");
     try {
       const hash = await writeContractAsync({
@@ -311,7 +326,7 @@ export function NewOvrfloModal({ open, onClose, ovrflos, allMarkets, preview }: 
       setTxPhase("error");
       setErrorMsg(parseUserError(error, "Create failed"));
     }
-  }, [canProceed, minToUser, previewMode, ptAmount, selectedMarket, selectedOvrflo, writeContractAsync]);
+  }, [canProceed, minToUser, ptAmount, selectedMarket, selectedOvrflo, writeContractAsync]);
 
   if (!open) return null;
 
@@ -358,11 +373,7 @@ export function NewOvrfloModal({ open, onClose, ovrflos, allMarkets, preview }: 
                       data-testid={`button-select-underlying-${ovrflo.address}`}
                     >
                       <span>
-                        {lookupLabel(
-                          preview?.tokenLabels,
-                          ovrflo.underlying,
-                          getTokenSymbol(symbolMap, ovrflo.underlying, formatAddress(ovrflo.underlying)),
-                        )}
+                        {getTokenSymbol(symbolMap, ovrflo.underlying, formatAddress(ovrflo.underlying))}
                       </span>
                       <svg viewBox="0 0 16 16" className="h-4 w-4" fill="none">
                         <path d="M6 3.5L10.5 8 6 12.5" stroke="currentColor" strokeWidth="2" strokeLinecap="square" />
@@ -405,8 +416,6 @@ export function NewOvrfloModal({ open, onClose, ovrflos, allMarkets, preview }: 
                     setSelectedMarket(next);
                     setAmountStr("");
                     setUnlimitedApproval(false);
-                    setPreviewPtApproved(false);
-                    setPreviewUnderlyingApproved(false);
                     setTxPhase("idle");
                     setTxHash(undefined);
                     setErrorMsg("");
@@ -417,7 +426,7 @@ export function NewOvrfloModal({ open, onClose, ovrflos, allMarkets, preview }: 
                   <option value="">Select maturity</option>
                   {marketsForOvrflo.map((market) => (
                     <option key={market.market} value={market.market}>
-                      {lookupLabel(preview?.marketLabels, market.market, `${getTokenSymbol(symbolMap, market.ptToken, "PT")} ${formatDate(market.expiry)}`)}
+                      {`${getTokenSymbol(symbolMap, market.ptToken, "PT")} ${formatDate(market.expiry)}`}
                     </option>
                   ))}
                 </select>
@@ -432,7 +441,7 @@ export function NewOvrfloModal({ open, onClose, ovrflos, allMarkets, preview }: 
                         Amount (PT)
                       </label>
                       <span className="mono text-xs font-semibold text-black/50">
-                        Balance: {previewFlow?.ptBalance ?? (ptBalance !== undefined ? `${formatUnits(ptBalance, ptDecimals)} ${ptSymbol}` : "--")}
+                        Balance: {ptBalance !== undefined ? `${formatUnits(ptBalance, ptDecimals)} ${ptSymbol}` : "--"}
                       </span>
                     </div>
                     <input
@@ -455,32 +464,53 @@ export function NewOvrfloModal({ open, onClose, ovrflos, allMarkets, preview }: 
                     <p className="nb-kicker mb-3 text-center text-black/40">Preview</p>
                     <div className="nb-preview-row">
                       <span className="nb-preview-label">Immediate</span>
-                      <span className="nb-preview-value">
-                        {previewFlow?.immediate ?? (toUser > 0n ? `${formatUnits(toUser, underlyingDecimals)} ${underlyingLabel}` : "--")}
+                      <span className="nb-preview-value flex flex-col items-end">
+                        <span>
+                          {toUser > 0n ? `${formatUnits(toUser, underlyingDecimals)} ${underlyingLabel}` : "--"}
+                        </span>
+                        {toUserUsd ? (
+                          <span className="mono text-[10px] font-normal text-black/40" data-testid="usd-immediate">
+                            {toUserUsd}
+                          </span>
+                        ) : null}
                       </span>
                     </div>
                     <div className="nb-preview-row">
                       <span className="nb-preview-label">Streamed</span>
-                      <span className="nb-preview-value">
-                        {previewFlow?.streamed ?? (toStream > 0n ? `${formatUnits(toStream, ovrfloDecimals)} ${ovrfloSymbol}` : "--")}
+                      <span className="nb-preview-value flex flex-col items-end">
+                        <span>
+                          {toStream > 0n ? `${formatUnits(toStream, ovrfloDecimals)} ${ovrfloSymbol}` : "--"}
+                        </span>
+                        {toStreamUsd ? (
+                          <span className="mono text-[10px] font-normal text-black/40" data-testid="usd-streamed">
+                            {toStreamUsd}
+                          </span>
+                        ) : null}
                       </span>
                     </div>
                     <div className="nb-preview-row">
                       <span className="nb-preview-label">Fee</span>
-                      <span className="nb-preview-value">
-                        {previewFlow?.fee ?? (feeAmount > 0n ? `${formatUnits(feeAmount, underlyingDecimals)} ${underlyingLabel}` : `0 ${underlyingLabel}`)}
+                      <span className="nb-preview-value flex flex-col items-end">
+                        <span>
+                          {feeAmount > 0n ? `${formatUnits(feeAmount, underlyingDecimals)} ${underlyingLabel}` : `0 ${underlyingLabel}`}
+                        </span>
+                        {feeUsd ? (
+                          <span className="mono text-[10px] font-normal text-black/40" data-testid="usd-fee">
+                            {feeUsd}
+                          </span>
+                        ) : null}
                       </span>
                     </div>
                     <div className="nb-preview-row">
                       <span className="nb-preview-label">Min received</span>
                       <span className="nb-preview-value">
-                        {previewFlow?.minReceived ?? (minToUser > 0n ? `${formatUnits(minToUser, underlyingDecimals)} ${underlyingLabel}` : "--")}
+                        {minToUser > 0n ? `${formatUnits(minToUser, underlyingDecimals)} ${underlyingLabel}` : "--"}
                       </span>
                     </div>
                     <div className="nb-preview-row">
                       <span className="nb-preview-label">Stream ends</span>
                       <span className="text-base font-bold text-black">
-                        {previewFlow?.streamEnds ?? formatDate(resolvedExpiry)}
+                        {formatDate(resolvedExpiry)}
                       </span>
                     </div>
                   </div>
@@ -502,9 +532,15 @@ export function NewOvrfloModal({ open, onClose, ovrflos, allMarkets, preview }: 
                   {selectedMarketExpired ? <div className="nb-status nb-status-error text-xs">Market expired.</div> : null}
                   {insufficientPtBalance ? <div className="nb-status nb-status-error text-xs">Insufficient PT balance.</div> : null}
                   {insufficientUnderlyingBalance ? <div className="nb-status nb-status-error text-xs">Insufficient {underlyingLabel} balance.</div> : null}
+                  {belowMinPt ? <div className="nb-status nb-status-error text-xs">Amount is below the minimum deposit (1e6 base units).</div> : null}
+                  {exceedsDepositLimit ? <div className="nb-status nb-status-error text-xs">Deposit would exceed this market&apos;s deposit limit.</div> : null}
+                  {nothingToStream ? <div className="nb-status nb-status-error text-xs">Nothing to stream at the current rate. Try a different market or wait for the rate to move.</div> : null}
+                  {ptAmount > 0n && !selectedMarketExpired && previewDeposit === undefined ? (
+                    <div className="nb-status nb-status-warning text-xs">Waiting for on-chain preview...</div>
+                  ) : null}
 
                   {/* Action buttons */}
-                  {!previewMode && !address ? (
+                  {!address ? (
                     <>
                       <div className="nb-status nb-status-info text-sm">Connect wallet to continue.</div>
                       <WalletActionCta />

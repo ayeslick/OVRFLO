@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import { useReadContracts } from "wagmi";
-import { OVRFLO_FACTORY } from "@/lib/constants";
+import { OVRFLO_FACTORY } from "@/lib/config";
 import { ovrfloFactoryAbi, ovrfloAbi } from "@/lib/contracts";
 import { getReadContractsError } from "@/lib/errors";
 import type { OvrfloEntry } from "./useOvrflos";
@@ -17,6 +17,7 @@ export interface MarketInfo {
   ptToken: `0x${string}`;
   ovrfloToken: `0x${string}`;
   underlying: `0x${string}`;
+  oracle: `0x${string}`;
 }
 
 export function useAllMarkets(ovrflos: OvrfloEntry[]): {
@@ -149,7 +150,16 @@ export function useAllMarkets(ovrflos: OvrfloEntry[]): {
         addrIdx++;
         if (!market) continue;
         const s = seriesResults[seriesIdx]?.result as
-          | readonly [boolean, number, number, bigint, `0x${string}`, `0x${string}`, `0x${string}`]
+          | readonly [
+              boolean,
+              number,
+              number,
+              bigint,
+              `0x${string}`,
+              `0x${string}`,
+              `0x${string}`,
+              `0x${string}`,
+            ]
           | undefined;
         seriesIdx++;
         if (!s) continue;
@@ -163,6 +173,7 @@ export function useAllMarkets(ovrflos: OvrfloEntry[]): {
           ptToken: s[4],
           ovrfloToken: s[5],
           underlying: s[6],
+          oracle: s[7],
         });
       }
     });

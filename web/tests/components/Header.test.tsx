@@ -28,8 +28,10 @@ describe("Header", () => {
   it("renders the approved OVERFLOW branding with the landing-page mark", () => {
     render(<Header />);
 
-    expect(screen.getByRole("link", { name: "OVERFLOW" })).toBeInTheDocument();
-    expect(screen.getByAltText("Overflow mark")).toHaveAttribute("src", "/brand/overflow-mark.png");
+    expect(screen.getByRole("link", { name: "OVRFLO" })).toBeInTheDocument();
+    const brandLink = screen.getByTestId("link-home");
+    const brandImg = brandLink.querySelector("img");
+    expect(brandImg).toHaveAttribute("src", "/brand/overflow-icon.jpg");
     expect(screen.getByRole("button", { name: "Connect wallet" })).toBeInTheDocument();
     expect(screen.getByRole("banner").className).not.toContain("shadow-[0_4px_0_0_var(--color-border)]");
     expect(screen.getByText("Connect Wallet")).toBeInTheDocument();

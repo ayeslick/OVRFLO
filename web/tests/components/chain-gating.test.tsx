@@ -7,7 +7,7 @@
  * components to disable buttons when chainId does not match CHAIN_ID.
  */
 import { describe, it, expect } from "vitest";
-import { CHAIN_ID } from "@/lib/constants";
+import { CHAIN_ID } from "@/lib/config";
 
 describe("Chain gating logic (T-WEB-013)", () => {
   it("T-WEB-013: wrongChain is true when chainId !== CHAIN_ID", () => {

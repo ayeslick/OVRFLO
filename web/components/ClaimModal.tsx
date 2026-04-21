@@ -3,28 +3,27 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAccount, useReadContract, useWaitForTransactionReceipt, useWriteContract } from "wagmi";
 import { formatUnits, parseUnits, type Address } from "viem";
-import { CHAIN_ID } from "@/lib/constants";
+import { CHAIN_ID } from "@/lib/config";
 import { erc20Abi, ovrfloAbi } from "@/lib/contracts";
 import { getDecimals, useTokenDecimals } from "@/hooks/useTokenMeta";
 import { getTokenSymbol, useTokenSymbols } from "@/hooks/useTokenLabels";
+import {
+  formatUsdValue,
+  getOvrfloUsdForMarket,
+  getPtUsdForMarket,
+  type UsdPrices,
+} from "@/hooks/useUsdPrices";
 import { parseUserError } from "@/lib/tx-errors";
 import { WalletActionCta } from "./WalletActionCta";
 import type { MarketInfo } from "@/hooks/useAllMarkets";
 import type { OvrfloEntry } from "@/hooks/useOvrflos";
-import type { MockClaimFlowData } from "@/lib/mock-dashboard";
-
-interface ClaimPreviewProps {
-  tokenLabels: Record<`0x${string}`, string>;
-  marketLabels: Record<`0x${string}`, string>;
-  claimFlows: Record<`0x${string}`, MockClaimFlowData>;
-}
 
 interface Props {
   open: boolean;
   onClose: () => void;
   ovrflos: OvrfloEntry[];
   allMarkets: MarketInfo[];
-  preview?: ClaimPreviewProps;
+  prices?: UsdPrices;
 }
 
 interface MatureMarket extends MarketInfo {
@@ -32,14 +31,6 @@ interface MatureMarket extends MarketInfo {
 }
 
 type TxPhase = "idle" | "claiming" | "waiting" | "success" | "error";
-
-function lookupLabel(
-  labels: Record<`0x${string}`, string> | undefined,
-  address: `0x${string}` | undefined,
-  fallback: string,
-) {
-  return address ? labels?.[address] ?? fallback : fallback;
-}
 
 function formatAddress(address?: `0x${string}`) {
   return address ? `${address.slice(0, 6)}...${address.slice(-4)}` : "Token";
@@ -49,16 +40,7 @@ function sanitizeAmount(value: string) {
   return value.replace(/[^0-9.]/g, "");
 }
 
-function parsePreviewAmount(value: string, decimals: number) {
-  try {
-    return parseUnits(value.replace(/,/g, ""), decimals);
-  } catch {
-    return 0n;
-  }
-}
-
-export function ClaimModal({ open, onClose, ovrflos, allMarkets, preview }: Props) {
-  const previewMode = Boolean(preview);
+export function ClaimModal({ open, onClose, ovrflos, allMarkets, prices }: Props) {
   const { address, chainId } = useAccount();
   const [selected, setSelected] = useState<MatureMarket>();
   const [amountStr, setAmountStr] = useState("");
@@ -85,8 +67,11 @@ export function ClaimModal({ open, onClose, ovrflos, allMarkets, preview }: Prop
     [allMarkets, now, ovrflos],
   );
 
-  const symbolMap = useTokenSymbols(previewMode ? [] : [...allMarkets.map((market) => market.ptToken), ...ovrflos.map((ovrflo) => ovrflo.ovrfloToken)]);
-  const decMap = useTokenDecimals(previewMode ? [] : [selected?.ovrfloToken, selected?.ptToken]);
+  const symbolMap = useTokenSymbols([
+    ...allMarkets.map((market) => market.ptToken),
+    ...ovrflos.map((ovrflo) => ovrflo.ovrfloToken),
+  ]);
+  const decMap = useTokenDecimals([selected?.ovrfloToken, selected?.ptToken]);
   const ovrfloDecimals = getDecimals(decMap, selected?.ovrfloToken);
   const ptDecimals = getDecimals(decMap, selected?.ptToken);
 
@@ -117,7 +102,7 @@ export function ClaimModal({ open, onClose, ovrflos, allMarkets, preview }: Prop
     abi: erc20Abi,
     functionName: "balanceOf",
     args: address ? [address] : undefined,
-    query: { enabled: !previewMode && !!address && !!selected },
+    query: { enabled: !!address && !!selected },
   });
 
   const { data: claimablePt } = useReadContract({
@@ -125,11 +110,10 @@ export function ClaimModal({ open, onClose, ovrflos, allMarkets, preview }: Prop
     abi: ovrfloAbi,
     functionName: "claimablePt",
     args: selected ? [selected.ptToken as Address] : undefined,
-    query: { enabled: !previewMode && !!selected },
+    query: { enabled: !!selected },
   });
 
-  const previewFlow = selected ? preview?.claimFlows[selected.market] : undefined;
-  const wrongChain = !previewMode && !!address && chainId !== CHAIN_ID;
+  const wrongChain = !!address && chainId !== CHAIN_ID;
   const claimAmount =
     amountStr && selected
       ? (() => {
@@ -137,29 +121,34 @@ export function ClaimModal({ open, onClose, ovrflos, allMarkets, preview }: Prop
         })()
       : 0n;
   const isBusy = txPhase === "claiming" || txPhase === "waiting";
-  const previewMaxClaimable = previewFlow ? parsePreviewAmount(previewFlow.maxAmount, ovrfloDecimals) : undefined;
-  const liveMaxClaimable =
+  const maxClaimable =
     ovrfloBalance !== undefined && claimablePt !== undefined
       ? ovrfloBalance < claimablePt ? ovrfloBalance : claimablePt
       : undefined;
-  const maxClaimable = previewMode ? previewMaxClaimable : liveMaxClaimable;
   const claimTooHigh = maxClaimable !== undefined && claimAmount > 0n && claimAmount > maxClaimable;
-  const ptSymbol = lookupLabel(
-    preview?.tokenLabels,
-    selected?.ptToken,
-    getTokenSymbol(symbolMap, selected?.ptToken, formatAddress(selected?.ptToken)),
-  );
+  const ptSymbol = getTokenSymbol(symbolMap, selected?.ptToken, formatAddress(selected?.ptToken));
   const marketLabel = selected
-    ? lookupLabel(preview?.marketLabels, selected.market, `${ptSymbol} ${new Date(Number(selected.expiry) * 1000).toLocaleDateString("en-US", { day: "numeric", month: "short", year: "numeric" })}`)
+    ? `${ptSymbol} ${new Date(Number(selected.expiry) * 1000).toLocaleDateString("en-US", { day: "numeric", month: "short", year: "numeric" })}`
     : "";
-  const receiveLabel = previewMode
-    ? amountStr.trim() ? `${amountStr} ${marketLabel}` : previewFlow?.receiveAmount ?? "--"
-    : claimAmount > 0n ? `${formatUnits(claimAmount, ptDecimals)} ${marketLabel}` : "--";
+  const receiveLabel =
+    claimAmount > 0n ? `${formatUnits(claimAmount, ptDecimals)} ${marketLabel}` : "--";
+
+  const ptUsd = getPtUsdForMarket(prices, selected?.market);
+  const ovrfloUsd = getOvrfloUsdForMarket(prices, selected?.market);
+  const ovrfloBalanceUsd =
+    ovrfloBalance !== undefined
+      ? formatUsdValue(ovrfloBalance, ovrfloDecimals, ovrfloUsd)
+      : undefined;
+  const claimablePtUsd =
+    claimablePt !== undefined
+      ? formatUsdValue(claimablePt, ptDecimals, ptUsd)
+      : undefined;
+  const receiveUsd =
+    claimAmount > 0n ? formatUsdValue(claimAmount, ptDecimals, ptUsd) : undefined;
 
   const handleClaim = useCallback(async () => {
     if (!selected || claimAmount === 0n || claimTooHigh) return;
     setErrorMsg("");
-    if (previewMode) { setTxPhase("success"); return; }
     setTxPhase("claiming");
     try {
       const hash = await writeContractAsync({
@@ -174,7 +163,7 @@ export function ClaimModal({ open, onClose, ovrflos, allMarkets, preview }: Prop
       setTxPhase("error");
       setErrorMsg(parseUserError(error, "Claim failed"));
     }
-  }, [claimAmount, claimTooHigh, previewMode, selected, writeContractAsync]);
+  }, [claimAmount, claimTooHigh, selected, writeContractAsync]);
 
   if (!open) return null;
 
@@ -222,11 +211,7 @@ export function ClaimModal({ open, onClose, ovrflos, allMarkets, preview }: Prop
                 >
                   {matureMarkets.map((market) => (
                     <option key={market.market} value={market.market}>
-                      {lookupLabel(
-                        preview?.marketLabels,
-                        market.market,
-                        `${getTokenSymbol(symbolMap, market.ptToken, formatAddress(market.ptToken))} ${new Date(Number(market.expiry) * 1000).toLocaleDateString()}`,
-                      )}
+                      {`${getTokenSymbol(symbolMap, market.ptToken, formatAddress(market.ptToken))} ${new Date(Number(market.expiry) * 1000).toLocaleDateString()}`}
                     </option>
                   ))}
                 </select>
@@ -238,14 +223,28 @@ export function ClaimModal({ open, onClose, ovrflos, allMarkets, preview }: Prop
                   <div className="nb-preview-box">
                     <div className="nb-preview-row">
                       <span className="nb-preview-label">OVRFLO Balance</span>
-                      <span className="nb-preview-value">
-                        {previewFlow?.ovrfloBalance ?? (ovrfloBalance !== undefined ? formatUnits(ovrfloBalance, ovrfloDecimals) : "--")}
+                      <span className="nb-preview-value flex flex-col items-end">
+                        <span>
+                          {ovrfloBalance !== undefined ? formatUnits(ovrfloBalance, ovrfloDecimals) : "--"}
+                        </span>
+                        {ovrfloBalanceUsd ? (
+                          <span className="mono text-[10px] font-normal text-black/40" data-testid="usd-ovrflo-balance">
+                            {ovrfloBalanceUsd}
+                          </span>
+                        ) : null}
                       </span>
                     </div>
                     <div className="nb-preview-row">
-                      <span className="nb-preview-label">PT reserves</span>
-                      <span className="nb-preview-value">
-                        {previewFlow?.ptReserves ?? (claimablePt !== undefined ? formatUnits(claimablePt, ptDecimals) : "--")}
+                      <span className="nb-preview-label">Claimable PT (contract)</span>
+                      <span className="nb-preview-value flex flex-col items-end">
+                        <span>
+                          {claimablePt !== undefined ? formatUnits(claimablePt, ptDecimals) : "--"}
+                        </span>
+                        {claimablePtUsd ? (
+                          <span className="mono text-[10px] font-normal text-black/40" data-testid="usd-claimable-pt">
+                            {claimablePtUsd}
+                          </span>
+                        ) : null}
                       </span>
                     </div>
                   </div>
@@ -259,9 +258,7 @@ export function ClaimModal({ open, onClose, ovrflos, allMarkets, preview }: Prop
                       <button
                         type="button"
                         onClick={() => {
-                          if (previewFlow) {
-                            setAmountStr(previewFlow.maxAmount);
-                          } else if (maxClaimable !== undefined) {
+                          if (maxClaimable !== undefined) {
                             setAmountStr(formatUnits(maxClaimable, ovrfloDecimals));
                           }
                         }}
@@ -291,14 +288,21 @@ export function ClaimModal({ open, onClose, ovrflos, allMarkets, preview }: Prop
                   <div className="nb-preview-box">
                     <div className="nb-preview-row">
                       <span className="nb-preview-label">You receive</span>
-                      <span className="nb-preview-value">{receiveLabel}</span>
+                      <span className="nb-preview-value flex flex-col items-end">
+                        <span>{receiveLabel}</span>
+                        {receiveUsd ? (
+                          <span className="mono text-[10px] font-normal text-black/40" data-testid="usd-receive">
+                            {receiveUsd}
+                          </span>
+                        ) : null}
+                      </span>
                     </div>
                   </div>
 
                   {claimTooHigh ? <div className="nb-status nb-status-error text-xs">Amount exceeds available balance.</div> : null}
 
                   {/* Actions */}
-                  {!previewMode && !address ? (
+                  {!address ? (
                     <>
                       <div className="nb-status nb-status-info text-sm">Connect wallet to continue.</div>
                       <WalletActionCta />

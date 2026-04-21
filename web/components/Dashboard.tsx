@@ -6,32 +6,28 @@ import { StatusPanel } from "@/components/StatusPanel";
 import { StreamList } from "@/components/StreamList";
 import { NewOvrfloModal } from "@/components/NewOvrfloModal";
 import { ClaimModal } from "@/components/ClaimModal";
-import { CHAIN_NAME, OVRFLO_FACTORY } from "@/lib/constants";
+import { NetworkGuard } from "@/components/NetworkGuard";
+import { CHAIN_NAME, OVRFLO_FACTORY } from "@/lib/config";
 import { useDashboardData } from "@/hooks/useDashboardData";
+import { useUsdPrices } from "@/hooks/useUsdPrices";
 
 export function Dashboard() {
   const [newOpen, setNewOpen] = useState(false);
   const [claimOpen, setClaimOpen] = useState(false);
   const {
-    tokenLabels,
-    marketLabels,
     ovrflos,
     allMarkets,
     streams,
-    streamCards,
-    createFlows,
-    claimFlows,
     actionsDisabled,
-    isPreview,
     launchReadError,
   } = useDashboardData();
 
-  const streamCount = isPreview
-    ? Object.keys(streamCards).length
-    : streams?.length ?? 0;
+  const { data: usdPrices } = useUsdPrices({
+    underlyings: ovrflos.map((o) => o.underlying),
+    markets: allMarkets,
+  });
 
-  // Count mature markets that can be claimed (have claimFlow data)
-  const claimableCount = Object.keys(claimFlows).length;
+  const streamCount = streams?.length ?? 0;
 
   return (
     <>
@@ -57,31 +53,33 @@ export function Dashboard() {
             </div>
 
             <div className="flex gap-3">
-              <button
-                type="button"
-                onClick={() => setNewOpen(true)}
-                disabled={actionsDisabled}
-                className="nb-button flex items-center gap-2"
-                data-testid="button-new-ovrflo"
-              >
-                <svg viewBox="0 0 16 16" className="h-4 w-4" fill="none">
-                  <circle cx="8" cy="8" r="7" stroke="currentColor" strokeWidth="1.5" />
-                  <path d="M8 5v6M5 8h6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="square" />
-                </svg>
-                New OVRFLO
-              </button>
-              <button
-                type="button"
-                onClick={() => setClaimOpen(true)}
-                disabled={actionsDisabled}
-                className="nb-button nb-button-secondary flex items-center gap-2"
-                data-testid="button-claim"
-              >
-                <svg viewBox="0 0 16 16" className="h-4 w-4" fill="none">
-                  <path d="M8 3v10M5 10l3 3 3-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="square" />
-                </svg>
-                Claim
-              </button>
+              <NetworkGuard>
+                <button
+                  type="button"
+                  onClick={() => setNewOpen(true)}
+                  disabled={actionsDisabled}
+                  className="nb-button flex items-center gap-2"
+                  data-testid="button-new-ovrflo"
+                >
+                  <svg viewBox="0 0 16 16" className="h-4 w-4" fill="none">
+                    <circle cx="8" cy="8" r="7" stroke="currentColor" strokeWidth="1.5" />
+                    <path d="M8 5v6M5 8h6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="square" />
+                  </svg>
+                  New OVRFLO
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setClaimOpen(true)}
+                  disabled={actionsDisabled}
+                  className="nb-button nb-button-secondary flex items-center gap-2"
+                  data-testid="button-claim"
+                >
+                  <svg viewBox="0 0 16 16" className="h-4 w-4" fill="none">
+                    <path d="M8 3v10M5 10l3 3 3-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="square" />
+                  </svg>
+                  Claim
+                </button>
+              </NetworkGuard>
             </div>
           </div>
         </section>
@@ -97,12 +95,7 @@ export function Dashboard() {
 
         {/* Stream cards */}
         <section aria-label="OVRFLO list" data-testid="section-streams">
-          <StreamList
-            ovrflos={ovrflos}
-            allMarkets={allMarkets}
-            claimableCount={claimableCount}
-            preview={isPreview ? { streams, streamCards } : undefined}
-          />
+          <StreamList ovrflos={ovrflos} allMarkets={allMarkets} />
         </section>
 
         {/* Modals */}
@@ -111,30 +104,14 @@ export function Dashboard() {
           onClose={() => setNewOpen(false)}
           ovrflos={ovrflos}
           allMarkets={allMarkets}
-          preview={
-            isPreview
-              ? {
-                  tokenLabels,
-                  marketLabels,
-                  createFlows,
-                }
-              : undefined
-          }
+          prices={usdPrices}
         />
         <ClaimModal
           open={claimOpen}
           onClose={() => setClaimOpen(false)}
           ovrflos={ovrflos}
           allMarkets={allMarkets}
-          preview={
-            isPreview
-              ? {
-                  tokenLabels,
-                  marketLabels,
-                  claimFlows,
-                }
-              : undefined
-          }
+          prices={usdPrices}
         />
       </main>
     </>

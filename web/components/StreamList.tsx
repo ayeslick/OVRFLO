@@ -3,25 +3,17 @@
 import { useAccount } from "wagmi";
 import { useUserStreams } from "@/hooks/useStreams";
 import { useTokenSymbols, getTokenSymbol } from "@/hooks/useTokenLabels";
-import { CHAIN_NAME, SABLIER_ENVIO_URL } from "@/lib/constants";
+import { CHAIN_NAME } from "@/lib/config";
 import { getErrorMessage } from "@/lib/errors";
-import { SummaryBar } from "./SummaryBar";
 import { StreamTableRow } from "./StreamTableRow";
-import { PreviewStreamTableRow } from "./PreviewStreamTableRow";
 import { StatusPanel } from "./StatusPanel";
 import type { SablierStream } from "@/lib/sablier";
 import type { OvrfloEntry } from "@/hooks/useOvrflos";
 import type { MarketInfo } from "@/hooks/useAllMarkets";
-import type { MockStreamCardData } from "@/lib/mock-dashboard";
 
 interface Props {
   ovrflos: OvrfloEntry[];
   allMarkets: MarketInfo[];
-  claimableCount?: number;
-  preview?: {
-    streams: SablierStream[];
-    streamCards: Record<string, MockStreamCardData>;
-  };
 }
 
 const TABLE_HEADERS = ["#", "Stream", "Streamed", "Withdrawable", "Ends", ""];
@@ -48,33 +40,7 @@ function TableShell({ children }: { children: React.ReactNode }) {
   );
 }
 
-function computePreviewSummary(
-  streams: SablierStream[],
-  streamCards: Record<string, MockStreamCardData>
-) {
-  let totalWithdrawable = 0;
-  let active = 0;
-
-  for (const stream of streams) {
-    const card = streamCards[stream.id];
-    if (!card) continue;
-
-    // Parse withdrawable from label like "24,480 ovrfloUSDC"
-    const numStr = card.withdrawableLabel.split(" ")[0]?.replace(/,/g, "") ?? "0";
-    totalWithdrawable += parseFloat(numStr) || 0;
-
-    if (card.progressPct < 100) active++;
-  }
-
-  // Format with commas
-  const formatted = totalWithdrawable.toLocaleString("en-US", {
-    maximumFractionDigits: 0,
-  });
-
-  return { totalWithdrawable: formatted, activeCount: active };
-}
-
-export function StreamList({ ovrflos, allMarkets, claimableCount = 0, preview }: Props) {
+export function StreamList({ ovrflos, allMarkets }: Props) {
   const { address } = useAccount();
   const ovrfloAddrs = ovrflos.map((o) => o.address);
   const ptSymbols = useTokenSymbols(
@@ -86,54 +52,6 @@ export function StreamList({ ovrflos, allMarkets, claimableCount = 0, preview }:
     error,
   } = useUserStreams(address, ovrfloAddrs);
 
-  // ── Preview mode ──
-  if (preview) {
-    const previewStreams = preview.streams.filter(
-      (stream) => preview.streamCards[stream.id]
-    );
-
-    if (previewStreams.length === 0) {
-      return (
-        <p
-          className="py-12 text-center text-sm text-[#a3c0e8]/60"
-          data-testid="empty-streams"
-        >
-          No active streams. Use{" "}
-          <span className="font-semibold text-white">+ New OVRFLO</span> to
-          create one.
-        </p>
-      );
-    }
-
-    const summary = computePreviewSummary(preview.streams, preview.streamCards);
-
-    return (
-      <div className="flex flex-col gap-5">
-        <SummaryBar
-          totalWithdrawable={summary.totalWithdrawable}
-          activeCount={summary.activeCount}
-          claimableCount={claimableCount}
-        />
-        <TableShell>
-          {previewStreams.map((stream, i) => {
-            const previewCard = preview.streamCards[stream.id];
-            if (!previewCard) return null;
-            return (
-              <PreviewStreamTableRow
-                key={stream.id}
-                tokenId={stream.tokenId}
-                label={previewCard.seriesLabel}
-                preview={previewCard}
-                index={i}
-              />
-            );
-          })}
-        </TableShell>
-      </div>
-    );
-  }
-
-  // ── Loading ──
   if (isLoading) {
     return (
       <div className="flex flex-col gap-5">
@@ -170,18 +88,16 @@ export function StreamList({ ovrflos, allMarkets, claimableCount = 0, preview }:
     );
   }
 
-  // ── Error ──
   if (error) {
     return (
       <StatusPanel
         title="Unable to load your streams"
-        description={`The Sablier indexer at ${SABLIER_ENVIO_URL} did not return stream data for ${CHAIN_NAME}. Confirm the indexer is healthy and that the app is pointed at the intended mainnet deployment.`}
+        description={`On-chain stream scan for ${CHAIN_NAME} did not return data. Confirm the RPC endpoint is reachable and that NEXT_PUBLIC_FACTORY_FROM_BLOCK is set appropriately for this deployment.`}
         details={[getErrorMessage(error)]}
       />
     );
   }
 
-  // ── Empty ──
   if (!address || !streams || streams.length === 0) {
     return (
       <p
@@ -195,7 +111,6 @@ export function StreamList({ ovrflos, allMarkets, claimableCount = 0, preview }:
     );
   }
 
-  // ── Live data ──
   function resolvePtName(stream: SablierStream): string | undefined {
     const assetAddr = stream.asset.address.toLowerCase();
     const endTime = BigInt(stream.endTime);
@@ -215,7 +130,6 @@ export function StreamList({ ovrflos, allMarkets, claimableCount = 0, preview }:
       : undefined;
   }
 
-  // TODO: compute live summary from on-chain data when available
   return (
     <div className="flex flex-col gap-5">
       <TableShell>

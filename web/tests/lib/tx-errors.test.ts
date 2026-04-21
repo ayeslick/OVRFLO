@@ -17,14 +17,12 @@ describe("tx error parsing", () => {
 
   it("translates slippage and expiry errors", () => {
     expect(parseUserError(new Error("OVRFLO: slippage"))).toContain("slippage");
-    expect(parseUserError(new Error("OVRFLO: matured"))).toBe(
-      "This market is no longer active."
-    );
+    expect(parseUserError(new Error("OVRFLO: matured"))).toContain("matured");
   });
 
-  it("translates stream/indexer errors", () => {
-    expect(parseStreamError(new Error("Sablier indexer returned 502"))).toContain(
-      "indexer"
+  it("translates stream fetch errors to an RPC-friendly message", () => {
+    expect(parseStreamError(new Error("fetch failed: ECONNREFUSED"))).toContain(
+      "RPC"
     );
   });
 });

@@ -1,4 +1,5 @@
-import { SABLIER_ENVIO_URL, SABLIER_LOCKUP, CHAIN_ID } from "./constants";
+import type { PublicClient } from "viem";
+import { CHAIN_ID, SABLIER_ENVIO_URL, SABLIER_LOCKUP } from "./config";
 
 export interface SablierStream {
   id: string;
@@ -18,14 +19,24 @@ export interface SablierStream {
   sender: string;
 }
 
+export class StreamScanError extends Error {
+  constructor(message: string, public readonly cause?: unknown) {
+    super(message);
+    this.name = "StreamScanError";
+  }
+}
+
 const GET_USER_STREAMS = `
 query GetUserStreams($user: String!, $senders: [String!]!) {
-  Stream(where: {
-    recipient: {_eq: $user},
-    sender: {_in: $senders},
-    contract: {_eq: "${SABLIER_LOCKUP.toLowerCase()}"},
-    chainId: {_eq: "${CHAIN_ID}"}
-  }, order_by: {tokenId: desc}) {
+  Stream(
+    where: {
+      recipient: { _eq: $user },
+      sender: { _in: $senders },
+      contract: { _eq: "${SABLIER_LOCKUP.toLowerCase()}" },
+      chainId: { _eq: "${CHAIN_ID}" }
+    },
+    order_by: { tokenId: desc }
+  ) {
     id
     tokenId
     depositAmount
@@ -41,51 +52,69 @@ query GetUserStreams($user: String!, $senders: [String!]!) {
 }
 `;
 
-export class SablierIndexerError extends Error {
-  constructor(
-    message: string,
-    public readonly status?: number,
-    public readonly graphqlErrors?: Array<{ message: string }>
-  ) {
-    super(message);
-    this.name = "SablierIndexerError";
-  }
+interface GraphQLResponse<T> {
+  data?: T;
+  errors?: Array<{ message?: string }>;
 }
 
-export async function fetchUserStreams(
-  userAddress: string,
-  ovrfloAddresses: string[]
-): Promise<SablierStream[]> {
+interface StreamsQueryData {
+  Stream: SablierStream[];
+}
+
+export interface FetchUserStreamsArgs {
+  // Accepted for call-site compatibility with the previous on-chain scanner;
+  // the indexer-backed implementation does not use it.
+  publicClient?: PublicClient;
+  user: `0x${string}`;
+  ovrfloAddresses: `0x${string}`[];
+}
+
+export async function fetchUserStreams({
+  user,
+  ovrfloAddresses,
+}: FetchUserStreamsArgs): Promise<SablierStream[]> {
   if (!ovrfloAddresses.length) return [];
 
-  const res = await fetch(SABLIER_ENVIO_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      query: GET_USER_STREAMS,
-      variables: {
-        user: userAddress.toLowerCase(),
-        senders: ovrfloAddresses.map((a) => a.toLowerCase()),
-      },
-    }),
-  });
+  let res: Response;
+  try {
+    res = await fetch(SABLIER_ENVIO_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        query: GET_USER_STREAMS,
+        variables: {
+          user: user.toLowerCase(),
+          senders: ovrfloAddresses.map((a) => a.toLowerCase()),
+        },
+      }),
+    });
+  } catch (err) {
+    throw new StreamScanError(
+      err instanceof Error ? err.message : "Failed to reach Sablier indexer",
+      err
+    );
+  }
 
   if (!res.ok) {
-    throw new SablierIndexerError(
-      `Sablier indexer returned ${res.status}`,
-      res.status
+    throw new StreamScanError(
+      `Sablier indexer returned HTTP ${res.status}`
     );
   }
 
-  const json = await res.json();
-
-  if (json?.errors?.length) {
-    throw new SablierIndexerError(
-      `Sablier GraphQL error: ${json.errors[0].message}`,
-      undefined,
-      json.errors
+  let json: GraphQLResponse<StreamsQueryData>;
+  try {
+    json = (await res.json()) as GraphQLResponse<StreamsQueryData>;
+  } catch (err) {
+    throw new StreamScanError(
+      err instanceof Error ? err.message : "Sablier indexer returned invalid JSON",
+      err
     );
   }
 
-  return json?.data?.Stream ?? [];
+  if (json.errors && json.errors.length > 0) {
+    const first = json.errors[0]?.message ?? "Sablier indexer returned GraphQL errors";
+    throw new StreamScanError(first);
+  }
+
+  return json.data?.Stream ?? [];
 }

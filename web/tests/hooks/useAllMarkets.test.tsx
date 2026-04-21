@@ -100,11 +100,11 @@ describe("useAllMarkets (T-WEB-001, T-WEB-002)", () => {
       .mockReturnValueOnce({
         data: [
           {
-            result: [true, 1800, 50, 1700000000n, "0xPT_A", "0xOT_A", "0xU_A"],
+            result: [true, 1800, 50, 1700000000n, "0xPT_A", "0xOT_A", "0xU_A", "0xOR_A"],
             status: "success",
           },
           {
-            result: [true, 900, 25, 1800000000n, "0xPT_B", "0xOT_B", "0xU_B"],
+            result: [true, 900, 25, 1800000000n, "0xPT_B", "0xOT_B", "0xU_B", "0xOR_B"],
             status: "success",
           },
         ],
@@ -120,6 +120,47 @@ describe("useAllMarkets (T-WEB-001, T-WEB-002)", () => {
     expect(result.current.markets[1].market).toBe(marketB1);
     expect(result.current.markets[1].ovrflo).toBe(ovrfloB.address);
     expect(result.current.markets[1].expiry).toBe(1800000000n);
+  });
+
+  it("T-WEB-002: decodes the 8-field SeriesInfo tuple including oracle", () => {
+    const ovrfloA = makeOvrflo("0x000000000000000000000000000000000000000A");
+    const marketA = "0x00000000000000000000000000000000000000A1" as `0x${string}`;
+    const oracleA = "0x00000000000000000000000000000000000ORACL" as `0x${string}`;
+
+    useReadContractsMock
+      .mockReturnValueOnce({
+        data: [{ result: 1n, status: "success" }],
+        isLoading: false,
+      })
+      .mockReturnValueOnce({
+        data: [{ result: marketA, status: "success" }],
+        isLoading: false,
+      })
+      .mockReturnValueOnce({
+        data: [
+          {
+            result: [
+              true,
+              1800,
+              50,
+              1700000000n,
+              "0xPT_A",
+              "0xOT_A",
+              "0xU_A",
+              oracleA,
+            ],
+            status: "success",
+          },
+        ],
+        isLoading: false,
+      });
+
+    const { result } = renderHook(() => useAllMarkets([ovrfloA]));
+
+    expect(result.current.markets).toHaveLength(1);
+    expect(result.current.markets[0].oracle).toBe(oracleA);
+    expect(result.current.markets[0].underlying).toBe("0xU_A");
+    expect(result.current.markets[0].ovrfloToken).toBe("0xOT_A");
   });
 
   it("surfaces read failures instead of silently returning empty markets", () => {

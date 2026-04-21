@@ -1,7 +1,7 @@
 "use client";
 
 import { useAccount } from "wagmi";
-import { CHAIN_ID, CHAIN_NAME } from "@/lib/constants";
+import { CHAIN_ID, CHAIN_NAME } from "@/lib/config";
 import { WalletActionCta } from "./WalletActionCta";
 
 export function WrongNetworkBanner() {

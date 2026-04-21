@@ -9,7 +9,7 @@ import {
   useBalance,
 } from "wagmi";
 import { formatUnits, formatEther, type Address } from "viem";
-import { SABLIER_LOCKUP, CHAIN_ID, CHAIN_NAME } from "@/lib/constants";
+import { SABLIER_LOCKUP, CHAIN_ID, CHAIN_NAME } from "@/lib/config";
 import { sablierLockupAbi } from "@/lib/contracts";
 import { parseUserError } from "@/lib/tx-errors";
 import type { SablierStream } from "@/lib/sablier";

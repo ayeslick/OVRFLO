@@ -4,7 +4,7 @@ import { type ReactNode, useState, useEffect, useRef } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { WagmiProvider, type State } from "wagmi";
 import { wagmiAdapter, wagmiConfig } from "./wagmi-config";
-import { PUBLIC_ENV_REFERENCE, SUPPORTED_APPKIT_NETWORK } from "./launch-config";
+import { CHAIN, ENV } from "./config";
 
 export function Providers({
   children,
@@ -26,7 +26,7 @@ export function Providers({
     const projectId = process.env.NEXT_PUBLIC_REOWN_PROJECT_ID ?? "";
     if (!projectId) {
       console.warn(
-        `${PUBLIC_ENV_REFERENCE.reownProjectId} missing — wallet modal disabled`
+        `${ENV.reownProjectId} missing — wallet modal disabled`
       );
       return;
     }
@@ -35,8 +35,8 @@ export function Providers({
       createAppKit({
         adapters: [wagmiAdapter],
         projectId,
-        networks: [SUPPORTED_APPKIT_NETWORK],
-        defaultNetwork: SUPPORTED_APPKIT_NETWORK,
+        networks: [CHAIN],
+        defaultNetwork: CHAIN,
         metadata: {
           name: "OVRFLO",
           description: "Pendle PT stream management",

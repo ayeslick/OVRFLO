@@ -2,7 +2,7 @@
 
 import { modal as appKitModal } from "@reown/appkit/react";
 import { useAccount, useSwitchChain } from "wagmi";
-import { CHAIN_ID, CHAIN_NAME } from "@/lib/constants";
+import { CHAIN_ID, CHAIN_NAME } from "@/lib/config";
 
 interface Props {
   className?: string;
