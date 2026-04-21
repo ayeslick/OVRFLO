@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 
-const { parseUserError, parseStreamError } = await import("@/lib/tx-errors");
+const { parseUserError } = await import("@/lib/tx-errors");
 
 describe("tx error parsing", () => {
   it("translates wallet rejection", () => {
@@ -18,11 +18,5 @@ describe("tx error parsing", () => {
   it("translates slippage and expiry errors", () => {
     expect(parseUserError(new Error("OVRFLO: slippage"))).toContain("slippage");
     expect(parseUserError(new Error("OVRFLO: matured"))).toContain("matured");
-  });
-
-  it("translates stream fetch errors to an RPC-friendly message", () => {
-    expect(parseStreamError(new Error("fetch failed: ECONNREFUSED"))).toContain(
-      "RPC"
-    );
   });
 });

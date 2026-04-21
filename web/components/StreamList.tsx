@@ -92,7 +92,7 @@ export function StreamList({ ovrflos, allMarkets }: Props) {
     return (
       <StatusPanel
         title="Unable to load your streams"
-        description={`On-chain stream scan for ${CHAIN_NAME} did not return data. Confirm the RPC endpoint is reachable and that NEXT_PUBLIC_FACTORY_FROM_BLOCK is set appropriately for this deployment.`}
+        description={`Could not load Sablier streams for ${CHAIN_NAME}. Confirm the Sablier indexer is reachable and try again.`}
         details={[getErrorMessage(error)]}
       />
     );

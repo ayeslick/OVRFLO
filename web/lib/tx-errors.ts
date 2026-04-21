@@ -52,14 +52,3 @@ export function parseUserError(error: unknown, fallback = "Transaction failed") 
 
   return raw.length > 160 ? `${raw.slice(0, 157)}...` : raw || fallback;
 }
-
-export function parseStreamError(error: unknown) {
-  const raw = error instanceof Error ? error.message : String(error ?? "Failed to load streams");
-  const message = raw.toLowerCase();
-
-  if (message.includes("http") || message.includes("fetch") || message.includes("network")) {
-    return "Unable to reach the RPC endpoint. Check your connection and try again.";
-  }
-
-  return "Unable to load your streams right now.";
-}

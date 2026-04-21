@@ -52,18 +52,6 @@ describe("config (T-WEB-011)", () => {
     expect(typeof OVRFLO_FACTORY).toBe("string");
   });
 
-  it("T-WEB-011: FACTORY_FROM_BLOCK defaults to 0n when unset", async () => {
-    vi.stubEnv("NEXT_PUBLIC_FACTORY_FROM_BLOCK", "");
-    const { FACTORY_FROM_BLOCK } = await importFreshConfig();
-    expect(FACTORY_FROM_BLOCK).toBe(0n);
-  });
-
-  it("T-WEB-011: FACTORY_FROM_BLOCK parses a provided number", async () => {
-    vi.stubEnv("NEXT_PUBLIC_FACTORY_FROM_BLOCK", "22000000");
-    const { FACTORY_FROM_BLOCK } = await importFreshConfig();
-    expect(FACTORY_FROM_BLOCK).toBe(22_000_000n);
-  });
-
   it("T-WEB-011: rejects non-mainnet NEXT_PUBLIC_CHAIN_ID", async () => {
     vi.stubEnv("NEXT_PUBLIC_CHAIN_ID", "11155111");
     await expect(importFreshConfig()).rejects.toThrow();

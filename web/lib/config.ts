@@ -4,7 +4,6 @@ import { mainnet } from "wagmi/chains";
 export const ENV = {
   chainId: "NEXT_PUBLIC_CHAIN_ID",
   factory: "NEXT_PUBLIC_OVRFLO_FACTORY",
-  factoryFromBlock: "NEXT_PUBLIC_FACTORY_FROM_BLOCK",
   reownProjectId: "NEXT_PUBLIC_REOWN_PROJECT_ID",
   rpcUrl: "NEXT_PUBLIC_RPC_URL",
   priceApiUrl: "NEXT_PUBLIC_PRICE_API_URL",
@@ -61,23 +60,10 @@ function parseChainId(raw: string | undefined): number {
   return parsed;
 }
 
-function parseFromBlock(raw: string | undefined): bigint {
-  if (!raw || !raw.trim()) return 0n;
-  const parsed = BigInt(raw.trim());
-  if (parsed < 0n) {
-    throw new Error(`${ENV.factoryFromBlock} must be a non-negative integer.`);
-  }
-  return parsed;
-}
-
 export const OVRFLO_FACTORY = parseFactory(process.env.NEXT_PUBLIC_OVRFLO_FACTORY);
 
 // Validated for side effect (throws on bad input); value equals CHAIN_ID by construction.
 parseChainId(process.env.NEXT_PUBLIC_CHAIN_ID);
-
-export const FACTORY_FROM_BLOCK = parseFromBlock(
-  process.env.NEXT_PUBLIC_FACTORY_FROM_BLOCK
-);
 
 export const OPTIONAL_RPC_URL =
   process.env.NEXT_PUBLIC_RPC_URL?.trim() || undefined;

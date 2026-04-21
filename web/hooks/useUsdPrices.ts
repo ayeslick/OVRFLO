@@ -9,7 +9,6 @@ import { ovrfloAbi } from "@/lib/contracts";
 import type { MarketInfo } from "@/hooks/useAllMarkets";
 
 export interface UsdPrices {
-  nativeUsd?: number;
   underlyingUsd: Map<string, number>;
   ptUsd: Map<string, number>;
   ovrfloUsd: Map<string, number>;
@@ -33,24 +32,14 @@ async function safeFetchJson<T>(url: string): Promise<T | undefined> {
 
 async function fetchExternalPrices(
   addresses: `0x${string}`[]
-): Promise<{ nativeUsd?: number; underlyingUsd: Map<string, number> }> {
+): Promise<{ underlyingUsd: Map<string, number> }> {
   const underlyingUsd = new Map<string, number>();
 
-  const [nativeJson, tokenJson] = await Promise.all([
-    safeFetchJson<{ ethereum?: { usd?: number } }>(
-      `${PRICE_API_URL}/simple/price?ids=ethereum&vs_currencies=usd`
-    ),
-    addresses.length
-      ? safeFetchJson<Record<string, { usd?: number }>>(
-          `${PRICE_API_URL}/simple/token_price/ethereum?contract_addresses=${addresses.join(",")}&vs_currencies=usd`
-        )
-      : Promise.resolve(undefined),
-  ]);
+  if (!addresses.length) return { underlyingUsd };
 
-  const nativeUsd =
-    typeof nativeJson?.ethereum?.usd === "number"
-      ? nativeJson.ethereum.usd
-      : undefined;
+  const tokenJson = await safeFetchJson<Record<string, { usd?: number }>>(
+    `${PRICE_API_URL}/simple/token_price/ethereum?contract_addresses=${addresses.join(",")}&vs_currencies=usd`
+  );
 
   if (tokenJson) {
     for (const [addr, entry] of Object.entries(tokenJson)) {
@@ -60,7 +49,7 @@ async function fetchExternalPrices(
     }
   }
 
-  return { nativeUsd, underlyingUsd };
+  return { underlyingUsd };
 }
 
 export interface UseUsdPricesArgs {
@@ -135,7 +124,6 @@ export function useUsdPrices({ underlyings, markets }: UseUsdPricesArgs) {
     });
 
     return {
-      nativeUsd: external.data?.nativeUsd,
       underlyingUsd,
       ptUsd,
       ovrfloUsd,

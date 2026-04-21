@@ -82,19 +82,6 @@ export const ovrfloAbi = [
     type: "function",
   },
   {
-    anonymous: false,
-    inputs: [
-      { indexed: true, name: "user", type: "address" },
-      { indexed: true, name: "market", type: "address" },
-      { indexed: false, name: "ptAmount", type: "uint256" },
-      { indexed: false, name: "toUser", type: "uint256" },
-      { indexed: false, name: "toStream", type: "uint256" },
-      { indexed: false, name: "streamId", type: "uint256" },
-    ],
-    name: "Deposited",
-    type: "event",
-  },
-  {
     inputs: [
       { name: "market", type: "address" },
       { name: "ptAmount", type: "uint256" },
