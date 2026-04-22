@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { useAccount, useReadContract, useWaitForTransactionReceipt, useWriteContract } from "wagmi";
+import { useAccount, usePublicClient, useReadContract, useWaitForTransactionReceipt, useWriteContract } from "wagmi";
 import { formatUnits, maxUint256, parseUnits, type Address } from "viem";
 import { CHAIN_ID } from "@/lib/config";
 import { erc20Abi, ovrfloAbi } from "@/lib/contracts";
@@ -14,6 +14,7 @@ import {
   type UsdPrices,
 } from "@/hooks/useUsdPrices";
 import { parseUserError } from "@/lib/tx-errors";
+import { preflight } from "@/lib/preflight";
 import { SlippageSettings } from "./SlippageSettings";
 import { WalletActionCta } from "./WalletActionCta";
 import type { MarketInfo } from "@/hooks/useAllMarkets";
@@ -70,6 +71,7 @@ export function NewOvrfloModal({ open, onClose, ovrflos, allMarkets, prices }: P
   const [errorMsg, setErrorMsg] = useState("");
 
   const { writeContractAsync } = useWriteContract();
+  const publicClient = usePublicClient();
   const { isSuccess: receiptConfirmed, isError: receiptFailed } = useWaitForTransactionReceipt({
     hash: txHash,
     query: { enabled: !!txHash },
@@ -312,21 +314,41 @@ export function NewOvrfloModal({ open, onClose, ovrflos, allMarkets, prices }: P
       );
       return;
     }
+    // R15 preflight — simulate against current form state before asking the
+    // wallet to sign. Surfaces slippage/market-expired/deposit-limit as
+    // kind-aware copy via classifyUserError and short-circuits before any
+    // wallet prompt.
+    if (!publicClient || !address) {
+      setTxPhase("error");
+      setErrorMsg("Wallet not connected.");
+      return;
+    }
     setTxPhase("creating");
-    try {
-      const hash = await writeContractAsync({
+    const sim = await preflight(
+      publicClient,
+      {
         address: selectedOvrflo.address as Address,
         abi: ovrfloAbi,
         functionName: "deposit",
         args: [selectedMarket.market, ptAmount, minToUser],
-      });
+        account: address,
+      },
+      "Create failed"
+    );
+    if (!sim.ok) {
+      setTxPhase("error");
+      setErrorMsg(sim.error.message);
+      return;
+    }
+    try {
+      const hash = await writeContractAsync(sim.request);
       setTxHash(hash);
       setTxPhase("waiting-deposit");
     } catch (error: unknown) {
       setTxPhase("error");
       setErrorMsg(parseUserError(error, "Create failed"));
     }
-  }, [canProceed, minToUser, ptAmount, selectedMarket, selectedOvrflo, writeContractAsync]);
+  }, [address, canProceed, minToUser, ptAmount, publicClient, selectedMarket, selectedOvrflo, writeContractAsync]);
 
   if (!open) return null;
 

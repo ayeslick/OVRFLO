@@ -115,6 +115,52 @@ describe("NewOvrfloModal logic (T-WEB-003, T-WEB-005, T-WEB-018)", () => {
     expect(isExpired).toBe(true);
   });
 
+  it("preflight failure short-circuits writeContractAsync (no wallet prompt)", async () => {
+    // R15 — when preflight returns { ok: false }, the handler must surface
+    // the classified message AND skip calling writeContractAsync, so the
+    // wallet never prompts for a doomed tx. This mirrors the branching
+    // structure in NewOvrfloModal.handleDeposit, ClaimModal.handleClaim,
+    // and StreamTableRow.handleWithdraw.
+    const { preflight } = await import("@/lib/preflight");
+    const failingClient = {
+      simulateContract: async () => {
+        throw new Error("ovrflo: slippage");
+      },
+    } as unknown as import("viem").PublicClient;
+
+    const writeContractAsync = (() => {
+      let called = false;
+      const fn = async () => {
+        called = true;
+        return "0xhash" as const;
+      };
+      return Object.assign(fn, {
+        wasCalled: () => called,
+      });
+    })();
+
+    const sim = await preflight(failingClient, {
+      address: "0x0000000000000000000000000000000000000000",
+      abi: [],
+      functionName: "deposit",
+      args: [],
+    } as unknown as Parameters<typeof preflight>[1]);
+
+    let phase: "idle" | "creating" | "error" | "waiting-deposit" = "creating";
+    let errorMsg = "";
+    if (!sim.ok) {
+      phase = "error";
+      errorMsg = sim.error.message;
+    } else {
+      await writeContractAsync();
+      phase = "waiting-deposit";
+    }
+
+    expect(phase).toBe("error");
+    expect(errorMsg).toMatch(/slippage|price/i);
+    expect(writeContractAsync.wasCalled()).toBe(false);
+  });
+
   it("blocks deposits when PT balance or fee token balance is insufficient", () => {
     const ptAmount = 200n;
     const ptBalance = 150n;

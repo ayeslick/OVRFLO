@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useAccount, useReadContract, useWaitForTransactionReceipt, useWriteContract } from "wagmi";
+import { useAccount, usePublicClient, useReadContract, useWaitForTransactionReceipt, useWriteContract } from "wagmi";
 import { formatUnits, parseUnits, type Address } from "viem";
 import { CHAIN_ID } from "@/lib/config";
 import { erc20Abi, ovrfloAbi } from "@/lib/contracts";
@@ -14,6 +14,7 @@ import {
   type UsdPrices,
 } from "@/hooks/useUsdPrices";
 import { parseUserError } from "@/lib/tx-errors";
+import { preflight } from "@/lib/preflight";
 import { WalletActionCta } from "./WalletActionCta";
 import type { MarketInfo } from "@/hooks/useAllMarkets";
 import type { OvrfloEntry } from "@/hooks/useOvrflos";
@@ -48,6 +49,7 @@ export function ClaimModal({ open, onClose, ovrflos, allMarkets, prices }: Props
   const [txHash, setTxHash] = useState<`0x${string}`>();
   const [errorMsg, setErrorMsg] = useState("");
   const { writeContractAsync } = useWriteContract();
+  const publicClient = usePublicClient();
 
   const { isSuccess: receiptConfirmed, isError: receiptFailed } = useWaitForTransactionReceipt({
     hash: txHash,
@@ -149,21 +151,39 @@ export function ClaimModal({ open, onClose, ovrflos, allMarkets, prices }: Props
   const handleClaim = useCallback(async () => {
     if (!selected || claimAmount === 0n || claimTooHigh) return;
     setErrorMsg("");
+    if (!publicClient || !address) {
+      setTxPhase("error");
+      setErrorMsg("Wallet not connected.");
+      return;
+    }
     setTxPhase("claiming");
-    try {
-      const hash = await writeContractAsync({
+    // R15 preflight — guard against contract reverts (e.g. ovrflo: not
+    // matured, ovrflo: deposit accounting) before the wallet prompts.
+    const sim = await preflight(
+      publicClient,
+      {
         address: selected.ovrflo as Address,
         abi: ovrfloAbi,
         functionName: "claim",
         args: [selected.ptToken as Address, claimAmount],
-      });
+        account: address,
+      },
+      "Claim failed"
+    );
+    if (!sim.ok) {
+      setTxPhase("error");
+      setErrorMsg(sim.error.message);
+      return;
+    }
+    try {
+      const hash = await writeContractAsync(sim.request);
       setTxHash(hash);
       setTxPhase("waiting");
     } catch (error: unknown) {
       setTxPhase("error");
       setErrorMsg(parseUserError(error, "Claim failed"));
     }
-  }, [claimAmount, claimTooHigh, selected, writeContractAsync]);
+  }, [address, claimAmount, claimTooHigh, publicClient, selected, writeContractAsync]);
 
   if (!open) return null;
 
