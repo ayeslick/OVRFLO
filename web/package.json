@@ -13,7 +13,17 @@
     "envio:start": "cd ../tools/envio && pnpm run start",
     "envio:down": "cd ../tools/envio && pnpm run stop",
     "envio:reset": "cd ../tools/envio && pnpm run reset",
-    "envio:logs": "docker logs -f envio-indexer"
+    "envio:logs": "docker logs -f envio-indexer",
+    "anvil:fork": "anvil --fork-url \"$MAINNET_RPC_URL\" --chain-id 1 --fork-block-number 24609670",
+    "deploy:seed:local": "cd .. && ./script/seed-local.sh",
+    "deploy:seed:devnet": "cd .. && forge script script/SeedDevnet.s.sol:SeedDevnet --rpc-url \"$TENDERLY_RPC_URL\" --broadcast --slow",
+    "env:write:local": "cd .. && ./tools/scripts/write-env.sh local",
+    "env:write:devnet": "cd .. && ./tools/scripts/write-env.sh devnet",
+    "ui:dev": "next dev --turbopack",
+    "bootstrap:local": "cd .. && ./tools/scripts/bootstrap-local.sh",
+    "bootstrap:local:clean": "cd .. && ./tools/scripts/bootstrap-clean.sh local",
+    "bootstrap:devnet": "cd .. && ./tools/scripts/bootstrap-devnet.sh",
+    "bootstrap:devnet:clean": "cd .. && ./tools/scripts/bootstrap-clean.sh devnet"
   },
   "dependencies": {
     "@reown/appkit": "^1.7.3",

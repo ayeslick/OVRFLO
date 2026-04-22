@@ -300,30 +300,48 @@ Mainnet / testnet deploys go through the Forge script:
 forge script script/OVRFLO.s.sol --rpc-url <RPC_URL> --broadcast
 ```
 
-### Local seed (anvil fork of mainnet)
+### Local loop (`bootstrap:local`)
 
-For a fork-against-mainnet UI loop, start anvil and run the seed driver:
-
-```bash
-anvil --fork-url "$MAINNET_RPC_URL" --chain-id 1 --fork-block-number 24609670
-./script/seed-local.sh
-```
-
-The driver deploys OVRFLO + OVRFLOFactory + OVRFLOToken, approves the wstETH
-markets, funds anvil account #1 with PT + stETH, and writes
-`deployments/local.json` for the web app to pick up. Overrides:
-`PRIVATE_KEY` (owner/broadcaster), `DEV_WALLET` (funded EOA), `RPC`.
-
-The driver uses `forge create` + `cast send` instead of `forge script
---broadcast`; see the header comment in [`script/seed-local.sh`](script/seed-local.sh)
-for the Foundry bug it works around.
-
-### Devnet seed (Tenderly Virtual Testnet)
+One command from clone to working DeFi UI against a mainnet-forked anvil:
 
 ```bash
-PRIVATE_KEY=0x... DEV_WALLET=0x... \
-  forge script script/SeedDevnet.s.sol --rpc-url "$TENDERLY_RPC_URL" --broadcast --slow
+export MAINNET_RPC_URL=https://eth-mainnet.g.alchemy.com/v2/<key>
+npm --prefix web run bootstrap:local
 ```
+
+This orchestrates (in order):
+
+1. `anvil --fork-url $MAINNET_RPC_URL --chain-id 1 --fork-block-number 24609670`
+   (PID tracked in `.bootstrap.pid`).
+2. `script/seed-local.sh` — deploys OVRFLO + factory + token, approves the
+   wstETH markets, and seeds PT + stETH to anvil account #1. Writes
+   `deployments/local.json`.
+3. `npm run envio:up` — starts the local Sablier indexer under
+   [`tools/envio/`](tools/envio/README.md) (Postgres:5433, Hasura:8080,
+   indexer:8081) via Envio's internal docker stack.
+4. `tools/scripts/write-env.sh local` — renders `web/.env.local` from the
+   deployment artifact.
+5. `npm run dev` — boots `next dev` against the local stack.
+
+Each step is also runnable standalone: `anvil:fork`, `deploy:seed:local`,
+`envio:up`, `env:write:local`, `ui:dev`. Teardown:
+`npm --prefix web run bootstrap:local:clean` kills anvil + envio, wipes
+`web/.env.local` + Envio's Postgres volume.
+
+The seed driver uses `forge create` + `cast send` instead of
+`forge script --broadcast`; see the header comment in
+[`script/seed-local.sh`](script/seed-local.sh) for the Foundry bug it works around.
+
+### Devnet loop (`bootstrap:devnet` — Tenderly Virtual Testnet)
+
+```bash
+export PRIVATE_KEY=0x... DEV_WALLET=0x... TENDERLY_RPC_URL=https://...
+npm --prefix web run bootstrap:devnet
+```
+
+Runs `forge script SeedDevnet.s.sol --broadcast` against the VTN and writes
+`web/.env.devnet`. Devnet uses the hosted Sablier indexer (no local Envio).
+Teardown: `npm --prefix web run bootstrap:devnet:clean`.
 
 ## Integration Guide
 
