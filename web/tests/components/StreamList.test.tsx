@@ -19,6 +19,7 @@ vi.mock("@/hooks/useTokenLabels", () => ({
 }));
 
 const { StreamList } = await import("@/components/StreamList");
+const { StreamScanError } = await import("@/lib/sablier");
 
 const ovrflo = {
   address: "0x0000000000000000000000000000000000000001" as `0x${string}`,
@@ -40,7 +41,7 @@ beforeEach(() => {
 });
 
 describe("StreamList", () => {
-  it("renders an actionable error instead of an empty state", () => {
+  it("renders an actionable error instead of an empty state for generic failures", () => {
     useUserStreamsMock.mockReturnValue({
       data: undefined,
       isLoading: false,
@@ -51,6 +52,22 @@ describe("StreamList", () => {
 
     expect(screen.getByText("Unable to load your streams")).toBeInTheDocument();
     expect(screen.getByText(/Sablier scan failed/i)).toBeInTheDocument();
+  });
+
+  it("renders the indexer-down banner (not an empty state) when fetch throws StreamScanError", () => {
+    useUserStreamsMock.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      error: new StreamScanError("hyperindex returned HTTP 503"),
+    });
+
+    render(<StreamList ovrflos={[ovrflo]} allMarkets={[]} />);
+
+    expect(screen.getByTestId("banner-indexer-down")).toBeInTheDocument();
+    expect(screen.getByText(/Streams temporarily unavailable/i)).toBeInTheDocument();
+    // Anti-regression: classifier must not leak the raw hyperindex error body
+    // into the user-facing copy.
+    expect(screen.queryByText(/HTTP 503/)).not.toBeInTheDocument();
   });
 
   it("shows the simplified empty state when there are no OVRFLOs", () => {

@@ -4,7 +4,7 @@ import { useAccount } from "wagmi";
 import { useUserStreams } from "@/hooks/useStreams";
 import { useTokenSymbols, getTokenSymbol } from "@/hooks/useTokenLabels";
 import { CHAIN_NAME } from "@/lib/config";
-import { getErrorMessage } from "@/lib/errors";
+import { classifyUserError, getErrorMessage } from "@/lib/errors";
 import { StreamTableRow } from "./StreamTableRow";
 import { StatusPanel } from "./StatusPanel";
 import type { SablierStream } from "@/lib/sablier";
@@ -89,6 +89,30 @@ export function StreamList({ ovrflos, allMarkets }: Props) {
   }
 
   if (error) {
+    // Classify so a StreamScanError (indexer down) renders the retry-focused
+    // banner while unexpected errors still surface as the actionable
+    // StatusPanel. We intentionally do NOT fall back to an on-chain log
+    // scan here — Unit 5 removed that path and pattern #1 calls it out
+    // explicitly as banned. The banned-patterns CI in Unit 10 keeps it gone.
+    const classified = classifyUserError(error);
+    if (classified.kind === "indexer-down") {
+      return (
+        <div
+          className="nb-status nb-status-warning"
+          data-testid="banner-indexer-down"
+          role="status"
+        >
+          <p className="nb-kicker text-black/60">Sablier indexer</p>
+          <h3 className="mt-2 text-base font-bold uppercase tracking-wide text-black">
+            Streams temporarily unavailable
+          </h3>
+          <p className="mt-2 text-sm leading-6 text-black/80">
+            {classified.message} If the problem persists, check your network or
+            try again in a minute.
+          </p>
+        </div>
+      );
+    }
     return (
       <StatusPanel
         title="Unable to load your streams"
