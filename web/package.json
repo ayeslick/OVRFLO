@@ -8,7 +8,12 @@
     "start": "next start",
     "lint": "eslint .",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "envio:up": "cd ../tools/envio && pnpm run dev",
+    "envio:start": "cd ../tools/envio && pnpm run start",
+    "envio:down": "cd ../tools/envio && pnpm run stop",
+    "envio:reset": "cd ../tools/envio && pnpm run reset",
+    "envio:logs": "docker logs -f envio-indexer"
   },
   "dependencies": {
     "@reown/appkit": "^1.7.3",
