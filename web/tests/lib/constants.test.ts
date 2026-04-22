@@ -76,4 +76,21 @@ describe("config (T-WEB-011)", () => {
     const { SABLIER_INDEXER_URL } = await importFreshConfig();
     expect(SABLIER_INDEXER_URL).toBe("http://localhost:8080/v1/graphql");
   });
+
+  it("T-WEB-011: PRICE_API_URL reads NEXT_PUBLIC_PRICE_API_URL when set", async () => {
+    vi.stubEnv("NEXT_PUBLIC_PRICE_API_URL", "https://prices.example.com/v1");
+    const { PRICE_API_URL } = await importFreshConfig();
+    expect(PRICE_API_URL).toBe("https://prices.example.com/v1");
+  });
+
+  it("T-WEB-011: ENV map exposes all NEXT_PUBLIC_* keys used in the CSP build", async () => {
+    // Unit 10 note: build-csp.mjs reads rpcUrl / priceApiUrl /
+    // sablierIndexerUrl off process.env. If any of them disappears from
+    // the ENV map the CSP would silently lose origin coverage, so lock
+    // them here.
+    const { ENV } = await importFreshConfig();
+    expect(ENV.rpcUrl).toBe("NEXT_PUBLIC_RPC_URL");
+    expect(ENV.priceApiUrl).toBe("NEXT_PUBLIC_PRICE_API_URL");
+    expect(ENV.sablierIndexerUrl).toBe("NEXT_PUBLIC_SABLIER_INDEXER_URL");
+  });
 });
