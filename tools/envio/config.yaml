@@ -1,0 +1,45 @@
+name: ovrflo-sablier-streams
+description: >
+  Minimal OVRFLO-local Sablier indexer. Tracks SablierV2LockupLinear v1.1
+  (0xAFb979d9afAd1aD27C5eFf4E27226E3AB9e5dCC9) on mainnet/mainnet-fork so
+  the OVRFLO web UI can query LockupStream rows without relying on the
+  hosted Sablier indexer. Devnet + mainnet continue to use the hosted URL;
+  this project is only spun up during `bootstrap:local`.
+
+  Schema fields match the subset of sablier-labs/indexers@v5.0.0 (SHA
+  ff4bede6dc6ca226b795ce7e11065314f32dd4f4) that web/lib/sablier.ts reads.
+  See NOTICE.md for attribution + bump workflow.
+
+ecosystem: evm
+
+# Indexer-wide settings — event handlers are async by default.
+contracts:
+  - name: SablierV2LockupLinear
+    abi_file_path: abi/SablierV2LockupLinear.json
+    handler: src/EventHandlers.ts
+    events:
+      # Signatures match abi/SablierV2LockupLinear.json exactly. Lockup.CreateAmounts
+      # is (deposit, protocolFee, brokerFee); LockupLinear.Range is (start, cliff, end).
+      - event: "CreateLockupLinearStream(uint256 streamId, address funder, address indexed sender, address indexed recipient, (uint128 deposit, uint128 protocolFee, uint128 brokerFee) amounts, address indexed asset, bool cancelable, bool transferable, (uint40 start, uint40 cliff, uint40 end) range, address broker)"
+      - event: "CancelLockupStream(uint256 streamId, address indexed sender, address indexed recipient, address indexed asset, uint128 senderAmount, uint128 recipientAmount)"
+      - event: "WithdrawFromLockupStream(uint256 indexed streamId, address indexed to, address indexed asset, uint128 amount)"
+      - event: "RenounceLockupStream(uint256 indexed streamId)"
+      - event: "Transfer(address indexed from, address indexed to, uint256 indexed tokenId)"
+
+networks:
+  - id: 1
+    # OVRFLO expects a mainnet-forked anvil with `--chain-id 1` to satisfy
+    # web/lib/config.ts's hard-reject on anything else. host.docker.internal
+    # resolves to the host on Docker Desktop; Linux users must pass
+    # `--add-host=host.docker.internal:host-gateway` when running containers.
+    # Override per environment via ENVIO_RPC_URL in tools/envio/.env.
+    rpc_config:
+      url: ${ENVIO_RPC_URL:-http://host.docker.internal:8545}
+    # Near the OVRFLO fork block (MAINNET_FORK_BLOCK = 24_609_670 in
+    # script/lib/OVRFLOTestFixtures.sol). A small margin behind catches
+    # streams created at the exact fork boundary.
+    start_block: 24609500
+    contracts:
+      - name: SablierV2LockupLinear
+        address:
+          - 0xAFb979d9afAd1aD27C5eFf4E27226E3AB9e5dCC9

@@ -1,0 +1,53 @@
+# Minimal subset of sablier-labs/indexers@v5.0.0 streams.graphql, trimmed
+# to the entities + fields web/lib/sablier.ts reads.
+#
+# Upstream source (GPL-3.0):
+# https://github.com/sablier-labs/indexers/blob/ff4bede6dc6ca226b795ce7e11065314f32dd4f4/envio/streams/streams.graphql
+#
+# Keeping field names + types byte-identical with upstream so the UI query
+# works against both this local indexer and Sablier's hosted Envio endpoint.
+
+enum LockupStreamCategory {
+  LockupDynamic
+  LockupLinear
+  LockupTranched
+}
+
+"""
+ERC-20 asset. Hydrated lazily on first observation during a Create handler.
+"""
+type Asset {
+  id: ID!
+  address: String!
+  chainId: BigInt!
+  decimals: BigInt!
+  name: String!
+  symbol: String!
+}
+
+"""
+Lockup stream. Subset of upstream's LockupStream entity — only the fields
+the OVRFLO web UI selects in web/lib/sablier.ts are retained, plus a few
+auxiliary bookkeeping fields that make the handlers tractable.
+"""
+type LockupStream {
+  id: ID!
+  chainId: BigInt!
+  tokenId: BigInt!
+  contract: String!
+  category: LockupStreamCategory!
+  recipient: String!
+  sender: String!
+  funder: String!
+  asset: Asset!
+  cancelable: Boolean!
+  canceled: Boolean!
+  depleted: Boolean!
+  depositAmount: BigInt!
+  intactAmount: BigInt!
+  withdrawnAmount: BigInt!
+  startTime: BigInt!
+  endTime: BigInt!
+  cliffTime: BigInt!
+  transferable: Boolean!
+}
