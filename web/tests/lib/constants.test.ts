@@ -61,4 +61,19 @@ describe("config (T-WEB-011)", () => {
     vi.stubEnv("NEXT_PUBLIC_OVRFLO_FACTORY", "not-an-address");
     await expect(importFreshConfig()).rejects.toThrow();
   });
+
+  it("T-WEB-011: SABLIER_INDEXER_URL falls back to the hosted endpoint when unset", async () => {
+    vi.stubEnv("NEXT_PUBLIC_SABLIER_INDEXER_URL", "");
+    const { SABLIER_INDEXER_URL } = await importFreshConfig();
+    expect(SABLIER_INDEXER_URL).toMatch(/^https:\/\/indexer\.hyperindex\.xyz\//);
+  });
+
+  it("T-WEB-011: SABLIER_INDEXER_URL reads NEXT_PUBLIC_SABLIER_INDEXER_URL when set", async () => {
+    vi.stubEnv(
+      "NEXT_PUBLIC_SABLIER_INDEXER_URL",
+      "http://localhost:8080/v1/graphql"
+    );
+    const { SABLIER_INDEXER_URL } = await importFreshConfig();
+    expect(SABLIER_INDEXER_URL).toBe("http://localhost:8080/v1/graphql");
+  });
 });

@@ -7,6 +7,7 @@ export const ENV = {
   reownProjectId: "NEXT_PUBLIC_REOWN_PROJECT_ID",
   rpcUrl: "NEXT_PUBLIC_RPC_URL",
   priceApiUrl: "NEXT_PUBLIC_PRICE_API_URL",
+  sablierIndexerUrl: "NEXT_PUBLIC_SABLIER_INDEXER_URL",
 } as const;
 
 export const CHAIN = mainnet;
@@ -22,8 +23,16 @@ export const PROTOCOL_DEPS = {
 export const PENDLE_ORACLE = PROTOCOL_DEPS.pendleOracle;
 export const SABLIER_LOCKUP = PROTOCOL_DEPS.sablierLockup;
 
-export const SABLIER_ENVIO_URL =
+// Default is Sablier's hosted Envio endpoint — continues to back devnet + mainnet
+// with zero env changes. Local bootstrap overrides this to
+// http://localhost:8080/v1/graphql so the UI hits the vendored indexer in
+// tools/envio/. See tools/envio/README.md.
+const SABLIER_INDEXER_URL_DEFAULT =
   "https://indexer.hyperindex.xyz/53b7e25/v1/graphql" as const;
+
+export const SABLIER_INDEXER_URL: string =
+  process.env.NEXT_PUBLIC_SABLIER_INDEXER_URL?.trim() ||
+  SABLIER_INDEXER_URL_DEFAULT;
 
 function requireEnv(name: string, value: string | undefined): string {
   if (!value || !value.trim()) {
