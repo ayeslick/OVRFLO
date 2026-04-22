@@ -15,6 +15,7 @@ import {
 } from "@/hooks/useUsdPrices";
 import { parseUserError } from "@/lib/tx-errors";
 import { preflight } from "@/lib/preflight";
+import { ModalErrorBoundary } from "./ModalErrorBoundary";
 import { SlippageSettings } from "./SlippageSettings";
 import { WalletActionCta } from "./WalletActionCta";
 import type { MarketInfo } from "@/hooks/useAllMarkets";
@@ -372,8 +373,13 @@ export function NewOvrfloModal({ open, onClose, ovrflos, allMarkets, prices }: P
           </div>
         </div>
 
-        {/* Modal Body */}
+        {/* Modal Body — wrapped in ModalErrorBoundary (R14) so a
+            useReadContract/useReadContracts throw inside the modal body
+            surfaces as an in-modal "Try again" instead of crashing the
+            dashboard. The header + close button stay outside so the user
+            can always dismiss. */}
         <div className="nb-modal-body">
+          <ModalErrorBoundary>
           {step === "underlying" ? (
             <div className="flex flex-col gap-4">
               <div>
@@ -634,6 +640,7 @@ export function NewOvrfloModal({ open, onClose, ovrflos, allMarkets, prices }: P
               ) : null}
             </div>
           )}
+          </ModalErrorBoundary>
         </div>
       </div>
     </div>

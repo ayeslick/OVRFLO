@@ -15,6 +15,7 @@ import {
 } from "@/hooks/useUsdPrices";
 import { parseUserError } from "@/lib/tx-errors";
 import { preflight } from "@/lib/preflight";
+import { ModalErrorBoundary } from "./ModalErrorBoundary";
 import { WalletActionCta } from "./WalletActionCta";
 import type { MarketInfo } from "@/hooks/useAllMarkets";
 import type { OvrfloEntry } from "@/hooks/useOvrflos";
@@ -204,8 +205,10 @@ export function ClaimModal({ open, onClose, ovrflos, allMarkets, prices }: Props
           </button>
         </div>
 
-        {/* Body */}
+        {/* Body — wrapped in ModalErrorBoundary (R14). See NewOvrfloModal
+            for the rationale. */}
         <div className="nb-modal-body">
+          <ModalErrorBoundary>
           {matureMarkets.length === 0 ? (
             <div className="nb-status nb-status-info py-4 text-sm">No mature markets available.</div>
           ) : (
@@ -367,6 +370,7 @@ export function ClaimModal({ open, onClose, ovrflos, allMarkets, prices }: Props
               ) : null}
             </div>
           )}
+          </ModalErrorBoundary>
         </div>
       </div>
     </div>
