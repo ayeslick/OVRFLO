@@ -6,6 +6,9 @@ remappings = [
     "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
     "prb-math/=lib/prb-math/contracts/"
 ]
+fs_permissions = [
+    { access = "read-write", path = "./deployments" }
+]
 
 [rpc_endpoints]
 mainnet = "${MAINNET_RPC_URL}"
