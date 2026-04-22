@@ -28,8 +28,11 @@ contract SeedDevnet is OVRFLOSeedRunner {
 
         require(block.chainid == 1, "SeedDevnet: Tenderly VTN must alias mainnet chain id");
 
+        address owner = vm.addr(ownerPk);
+        _ensureTenderlyBroadcasterFunded(owner, STETH_SEED_ETH + OWNER_GAS_HEADROOM);
+
         vm.startBroadcast(ownerPk);
-        _runSeed(vm.addr(ownerPk), devWallet, "devnet");
+        _runSeed(owner, devWallet, "devnet");
         vm.stopBroadcast();
     }
 }

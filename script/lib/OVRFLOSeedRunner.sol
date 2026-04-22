@@ -24,6 +24,39 @@ abstract contract OVRFLOSeedRunner is Script, StdCheats, OVRFLOTestFixtures {
     uint256 internal constant PT_SEED_AMOUNT = 1_000 ether;
     uint256 internal constant STETH_SEED_ETH = 10 ether;
 
+    /// @dev Headroom over STETH_SEED_ETH so the owner retains gas-paying
+    ///      ETH after minting stETH. Set generously because on some anvil
+    ///      versions dev accounts inherit their real mainnet balances
+    ///      rather than the nominal 10,000 ETH default.
+    uint256 internal constant OWNER_GAS_HEADROOM = 90 ether;
+
+    /// @notice Fund `owner` on a Tenderly Virtual Testnet via
+    ///         `tenderly_setBalance`. Two writes are required, not one:
+    ///         1. `vm.rpc("tenderly_setBalance", ...)` mutates the live
+    ///            node. Without it, Forge's broadcast phase re-validates
+    ///            each transaction against the node's real balance and
+    ///            rejects tx fees as `lack of funds`.
+    ///         2. `vm.deal` mutates the in-memory simulator. Forge's
+    ///            simulator reads RPC balances lazily and does NOT
+    ///            re-read them after a `*_setBalance` RPC call.
+    ///         Must be called BEFORE `vm.startBroadcast`. No-op when the
+    ///         observed balance already meets the target.
+    ///
+    ///         Anvil (local fork) is not handled here — it is driven by
+    ///         `script/seed-local.sh`, which sidesteps the
+    ///         `eth_getAccountInfo` regression in foundry#11714 that
+    ///         breaks `forge script --broadcast` against forked anvil.
+    function _ensureTenderlyBroadcasterFunded(address owner, uint256 targetBalance) internal {
+        if (owner.balance >= targetBalance) return;
+
+        // tenderly_setBalance params: [[address], hex-encoded quantity]
+        string memory params = string.concat(
+            '[["', vm.toString(owner), '"],"', vm.toString(bytes32(targetBalance)), '"]'
+        );
+        vm.rpc("tenderly_setBalance", params);
+        vm.deal(owner, targetBalance);
+    }
+
     /// @notice Deploy + configure the factory, approve both wstETH
     ///         markets, and seed the dev wallet with PT (via `deal`) and
     ///         stETH (owner submits ETH and transfers the minted shares

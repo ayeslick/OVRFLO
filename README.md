@@ -294,8 +294,35 @@ npm run build
 
 ### Deploy
 
+Mainnet / testnet deploys go through the Forge script:
+
 ```bash
 forge script script/OVRFLO.s.sol --rpc-url <RPC_URL> --broadcast
+```
+
+### Local seed (anvil fork of mainnet)
+
+For a fork-against-mainnet UI loop, start anvil and run the seed driver:
+
+```bash
+anvil --fork-url "$MAINNET_RPC_URL" --chain-id 1 --fork-block-number 24609670
+./script/seed-local.sh
+```
+
+The driver deploys OVRFLO + OVRFLOFactory + OVRFLOToken, approves the wstETH
+markets, funds anvil account #1 with PT + stETH, and writes
+`deployments/local.json` for the web app to pick up. Overrides:
+`PRIVATE_KEY` (owner/broadcaster), `DEV_WALLET` (funded EOA), `RPC`.
+
+The driver uses `forge create` + `cast send` instead of `forge script
+--broadcast`; see the header comment in [`script/seed-local.sh`](script/seed-local.sh)
+for the Foundry bug it works around.
+
+### Devnet seed (Tenderly Virtual Testnet)
+
+```bash
+PRIVATE_KEY=0x... DEV_WALLET=0x... \
+  forge script script/SeedDevnet.s.sol --rpc-url "$TENDERLY_RPC_URL" --broadcast --slow
 ```
 
 ## Integration Guide
