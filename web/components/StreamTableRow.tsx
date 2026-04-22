@@ -323,6 +323,7 @@ export function StreamTableRow({ stream, ptName, index }: Props) {
               <div className="nb-status nb-status-error break-all text-xs leading-5">
                 {error}
                 <button
+                  type="button"
                   onClick={() => {
                     setTxPhase("idle");
                     setTxHash(undefined);

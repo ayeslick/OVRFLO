@@ -15,6 +15,8 @@ import {
 } from "@/hooks/useUsdPrices";
 import { parseUserError } from "@/lib/tx-errors";
 import { preflight } from "@/lib/preflight";
+import { truncateAddress } from "@/lib/format";
+import { useModalA11y } from "@/hooks/useModalA11y";
 import { ModalErrorBoundary } from "./ModalErrorBoundary";
 import { WalletActionCta } from "./WalletActionCta";
 import type { MarketInfo } from "@/hooks/useAllMarkets";
@@ -35,7 +37,7 @@ interface MatureMarket extends MarketInfo {
 type TxPhase = "idle" | "claiming" | "waiting" | "success" | "error";
 
 function formatAddress(address?: `0x${string}`) {
-  return address ? `${address.slice(0, 6)}...${address.slice(-4)}` : "Token";
+  return address ? truncateAddress(address) : "Token";
 }
 
 function sanitizeAmount(value: string) {
@@ -43,6 +45,7 @@ function sanitizeAmount(value: string) {
 }
 
 export function ClaimModal({ open, onClose, ovrflos, allMarkets, prices }: Props) {
+  const dialogRef = useModalA11y({ open, onClose });
   const { address, chainId } = useAccount();
   const [selected, setSelected] = useState<MatureMarket>();
   const [amountStr, setAmountStr] = useState("");
@@ -190,10 +193,16 @@ export function ClaimModal({ open, onClose, ovrflos, allMarkets, prices }: Props
 
   return (
     <div className="nb-modal-overlay" data-testid="modal-claim">
-      <div className="nb-modal">
+      <div
+        ref={dialogRef}
+        className="nb-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="claim-modal-title"
+      >
         {/* Header */}
         <div className="nb-modal-header">
-          <h3 className="text-lg font-bold uppercase tracking-wide text-black">Claim</h3>
+          <h3 id="claim-modal-title" className="text-lg font-bold uppercase tracking-wide text-black">Claim</h3>
           <button
             type="button"
             onClick={onClose}

@@ -53,6 +53,7 @@ export function SlippageSettings({ slippageBps, onChange }: Props) {
               id="slippage-input"
               type="text"
               inputMode="decimal"
+              aria-label="Slippage tolerance in percent"
               value={input}
               onChange={(event) => setInput(event.target.value)}
               className="nb-input mono flex-1 px-3 py-2 text-sm"

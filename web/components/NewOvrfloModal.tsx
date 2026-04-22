@@ -15,6 +15,8 @@ import {
 } from "@/hooks/useUsdPrices";
 import { parseUserError } from "@/lib/tx-errors";
 import { preflight } from "@/lib/preflight";
+import { truncateAddress } from "@/lib/format";
+import { useModalA11y } from "@/hooks/useModalA11y";
 import { ModalErrorBoundary } from "./ModalErrorBoundary";
 import { SlippageSettings } from "./SlippageSettings";
 import { WalletActionCta } from "./WalletActionCta";
@@ -42,7 +44,7 @@ type TxPhase =
   | "error";
 
 function formatAddress(address?: `0x${string}`) {
-  return address ? `${address.slice(0, 6)}...${address.slice(-4)}` : "Token";
+  return address ? truncateAddress(address) : "Token";
 }
 
 function formatDate(value?: bigint) {
@@ -60,6 +62,7 @@ function sanitizeAmount(value: string) {
 }
 
 export function NewOvrfloModal({ open, onClose, ovrflos, allMarkets, prices }: Props) {
+  const dialogRef = useModalA11y({ open, onClose });
   const { address, chainId } = useAccount();
   const [step, setStep] = useState<Step>("underlying");
   const [selectedOvrflo, setSelectedOvrflo] = useState<OvrfloEntry>();
@@ -355,10 +358,16 @@ export function NewOvrfloModal({ open, onClose, ovrflos, allMarkets, prices }: P
 
   return (
     <div className="nb-modal-overlay" data-testid="modal-new-ovrflo">
-      <div className="nb-modal">
+      <div
+        ref={dialogRef}
+        className="nb-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="new-ovrflo-title"
+      >
         {/* Modal Header */}
         <div className="nb-modal-header">
-          <h3 className="text-lg font-bold uppercase tracking-wide text-black">New OVRFLO</h3>
+          <h3 id="new-ovrflo-title" className="text-lg font-bold uppercase tracking-wide text-black">New OVRFLO</h3>
           <div className="flex items-center gap-2">
             <SlippageSettings slippageBps={slippageBps} onChange={setSlippageBps} />
             <button

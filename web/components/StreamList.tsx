@@ -16,20 +16,29 @@ interface Props {
   allMarkets: MarketInfo[];
 }
 
-const TABLE_HEADERS = ["#", "Stream", "Streamed", "Withdrawable", "Ends", ""];
+const TABLE_HEADERS: ReadonlyArray<{ key: string; label: string; srOnly?: boolean }> = [
+  { key: "idx", label: "#" },
+  { key: "stream", label: "Stream" },
+  { key: "streamed", label: "Streamed" },
+  { key: "withdrawable", label: "Withdrawable" },
+  { key: "ends", label: "Ends" },
+  { key: "action", label: "Action", srOnly: true },
+];
 
 function TableShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="overflow-hidden border-2 border-[#000] bg-white shadow-[var(--shadow-hard-sm)]">
       <table className="w-full" data-testid="stream-table">
+        <caption className="sr-only">Your active OVRFLO streams</caption>
         <thead className="hidden sm:table-header-group">
           <tr className="border-b-2 border-[#000] bg-[#f0f4f8]">
             {TABLE_HEADERS.map((h) => (
               <th
-                key={h || "action"}
+                key={h.key}
+                scope="col"
                 className="nb-kicker px-4 py-3 text-left text-black/40"
               >
-                {h}
+                {h.srOnly ? <span className="sr-only">{h.label}</span> : h.label}
               </th>
             ))}
           </tr>
