@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { useAccount, useReadContract, useWaitForTransactionReceipt, useWriteContract } from "wagmi";
+import { useAccount, usePublicClient, useReadContract, useWaitForTransactionReceipt, useWriteContract } from "wagmi";
 import { formatUnits, maxUint256, parseUnits, type Address } from "viem";
 import { CHAIN_ID } from "@/lib/config";
 import { erc20Abi, ovrfloAbi } from "@/lib/contracts";
@@ -14,6 +14,10 @@ import {
   type UsdPrices,
 } from "@/hooks/useUsdPrices";
 import { parseUserError } from "@/lib/tx-errors";
+import { preflight } from "@/lib/preflight";
+import { truncateAddress } from "@/lib/format";
+import { useModalA11y } from "@/hooks/useModalA11y";
+import { ModalErrorBoundary } from "./ModalErrorBoundary";
 import { SlippageSettings } from "./SlippageSettings";
 import { WalletActionCta } from "./WalletActionCta";
 import type { MarketInfo } from "@/hooks/useAllMarkets";
@@ -40,7 +44,7 @@ type TxPhase =
   | "error";
 
 function formatAddress(address?: `0x${string}`) {
-  return address ? `${address.slice(0, 6)}...${address.slice(-4)}` : "Token";
+  return address ? truncateAddress(address) : "Token";
 }
 
 function formatDate(value?: bigint) {
@@ -58,6 +62,7 @@ function sanitizeAmount(value: string) {
 }
 
 export function NewOvrfloModal({ open, onClose, ovrflos, allMarkets, prices }: Props) {
+  const dialogRef = useModalA11y({ open, onClose });
   const { address, chainId } = useAccount();
   const [step, setStep] = useState<Step>("underlying");
   const [selectedOvrflo, setSelectedOvrflo] = useState<OvrfloEntry>();
@@ -70,6 +75,7 @@ export function NewOvrfloModal({ open, onClose, ovrflos, allMarkets, prices }: P
   const [errorMsg, setErrorMsg] = useState("");
 
   const { writeContractAsync } = useWriteContract();
+  const publicClient = usePublicClient();
   const { isSuccess: receiptConfirmed, isError: receiptFailed } = useWaitForTransactionReceipt({
     hash: txHash,
     query: { enabled: !!txHash },
@@ -312,30 +318,56 @@ export function NewOvrfloModal({ open, onClose, ovrflos, allMarkets, prices }: P
       );
       return;
     }
+    // R15 preflight — simulate against current form state before asking the
+    // wallet to sign. Surfaces slippage/market-expired/deposit-limit as
+    // kind-aware copy via classifyUserError and short-circuits before any
+    // wallet prompt.
+    if (!publicClient || !address) {
+      setTxPhase("error");
+      setErrorMsg("Wallet not connected.");
+      return;
+    }
     setTxPhase("creating");
-    try {
-      const hash = await writeContractAsync({
+    const sim = await preflight(
+      publicClient,
+      {
         address: selectedOvrflo.address as Address,
         abi: ovrfloAbi,
         functionName: "deposit",
         args: [selectedMarket.market, ptAmount, minToUser],
-      });
+        account: address,
+      },
+      "Create failed"
+    );
+    if (!sim.ok) {
+      setTxPhase("error");
+      setErrorMsg(sim.error.message);
+      return;
+    }
+    try {
+      const hash = await writeContractAsync(sim.request);
       setTxHash(hash);
       setTxPhase("waiting-deposit");
     } catch (error: unknown) {
       setTxPhase("error");
       setErrorMsg(parseUserError(error, "Create failed"));
     }
-  }, [canProceed, minToUser, ptAmount, selectedMarket, selectedOvrflo, writeContractAsync]);
+  }, [address, canProceed, minToUser, ptAmount, publicClient, selectedMarket, selectedOvrflo, writeContractAsync]);
 
   if (!open) return null;
 
   return (
     <div className="nb-modal-overlay" data-testid="modal-new-ovrflo">
-      <div className="nb-modal">
+      <div
+        ref={dialogRef}
+        className="nb-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="new-ovrflo-title"
+      >
         {/* Modal Header */}
         <div className="nb-modal-header">
-          <h3 className="text-lg font-bold uppercase tracking-wide text-black">New OVRFLO</h3>
+          <h3 id="new-ovrflo-title" className="text-lg font-bold uppercase tracking-wide text-black">New OVRFLO</h3>
           <div className="flex items-center gap-2">
             <SlippageSettings slippageBps={slippageBps} onChange={setSlippageBps} />
             <button
@@ -350,8 +382,13 @@ export function NewOvrfloModal({ open, onClose, ovrflos, allMarkets, prices }: P
           </div>
         </div>
 
-        {/* Modal Body */}
+        {/* Modal Body — wrapped in ModalErrorBoundary (R14) so a
+            useReadContract/useReadContracts throw inside the modal body
+            surfaces as an in-modal "Try again" instead of crashing the
+            dashboard. The header + close button stay outside so the user
+            can always dismiss. */}
         <div className="nb-modal-body">
+          <ModalErrorBoundary>
           {step === "underlying" ? (
             <div className="flex flex-col gap-4">
               <div>
@@ -612,6 +649,7 @@ export function NewOvrfloModal({ open, onClose, ovrflos, allMarkets, prices }: P
               ) : null}
             </div>
           )}
+          </ModalErrorBoundary>
         </div>
       </div>
     </div>

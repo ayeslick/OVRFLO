@@ -27,11 +27,11 @@ foundry.toml
 .DS_Store
 .vscode
 web/node_modules/
-web/.env.example
 web/.next/
 web/out/
 web/build/
 web/.env*
+!web/.env.example
 web/*.tsbuildinfo
 web/.pem
 web/.vercel

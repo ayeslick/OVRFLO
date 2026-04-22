@@ -3,12 +3,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const useAccountMock = vi.fn();
 const useSwitchChainMock = vi.fn();
+const useEnsNameMock = vi.fn();
 const openMock = vi.fn();
 const switchChainAsyncMock = vi.fn();
 
 vi.mock("wagmi", () => ({
   useAccount: () => useAccountMock(),
   useSwitchChain: () => useSwitchChainMock(),
+  useEnsName: (...args: unknown[]) => useEnsNameMock(...args),
 }));
 
 vi.mock("@reown/appkit/react", () => ({
@@ -20,6 +22,8 @@ const { Header } = await import("@/components/Header");
 beforeEach(() => {
   openMock.mockReset();
   switchChainAsyncMock.mockReset();
+  useEnsNameMock.mockReset();
+  useEnsNameMock.mockReturnValue({ data: undefined, isLoading: false });
   useSwitchChainMock.mockReturnValue({ switchChainAsync: switchChainAsyncMock, isPending: false });
   useAccountMock.mockReturnValue({ address: undefined, chainId: undefined });
 });
@@ -55,6 +59,19 @@ describe("Header", () => {
     expect(screen.getByText("0x1234…5678")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /open account for wallet/i }));
     expect(openMock).toHaveBeenCalledWith({ view: "Account" });
+  });
+
+  it("shows the ENS primary name when reverse resolution succeeds", () => {
+    useAccountMock.mockReturnValue({
+      address: "0x1234567890abcdef1234567890abcdef12345678",
+      chainId: 1,
+    });
+    useEnsNameMock.mockReturnValue({ data: "vitalik.eth", isLoading: false });
+
+    render(<Header />);
+
+    expect(screen.getByText("vitalik.eth")).toBeInTheDocument();
+    expect(screen.queryByText("0x1234…5678")).not.toBeInTheDocument();
   });
 
   it("shows a switch-network action when connected to the wrong chain", () => {

@@ -3,22 +3,20 @@
 import { modal as appKitModal } from "@reown/appkit/react";
 import { useAccount, useSwitchChain } from "wagmi";
 import { CHAIN_ID, CHAIN_NAME } from "@/lib/config";
-
-function formatAddress(address: `0x${string}`) {
-  return `${address.slice(0, 6)}…${address.slice(-4)}`;
-}
+import { useAddressLabel } from "@/hooks/useAddressLabel";
 
 export function Header() {
   const { address, chainId } = useAccount();
   const { switchChainAsync, isPending } = useSwitchChain();
   const wrongChain = Boolean(address && chainId !== undefined && chainId !== CHAIN_ID);
+  const { label: addressLabel, ensName } = useAddressLabel(address);
 
   const walletLabel = wrongChain
     ? isPending
       ? "Switching..."
       : "Switch Network"
     : address
-      ? formatAddress(address)
+      ? addressLabel
       : "Connect Wallet";
 
   const handleWalletAction = () => {
@@ -72,8 +70,8 @@ export function Header() {
             type="button"
             onClick={handleWalletAction}
             disabled={isPending}
-            aria-label={wrongChain ? `Switch wallet network to ${CHAIN_NAME}` : address ? `Open account for wallet ${address}` : "Connect wallet"}
-            title={address ?? walletLabel}
+            aria-label={wrongChain ? `Switch wallet network to ${CHAIN_NAME}` : address ? `Open account for wallet ${ensName ?? address}` : "Connect wallet"}
+            title={ensName ? `${ensName} (${address})` : (address ?? walletLabel)}
             className="nb-button nb-button-dark flex items-center gap-1.5 px-3 py-2 sm:gap-2.5 sm:px-4"
             data-testid="button-wallet"
           >

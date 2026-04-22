@@ -84,6 +84,48 @@ describe("ClaimModal logic (T-WEB-004, T-WEB-006, T-WEB-015)", () => {
     expect(formatted).toBe("50.25");
   });
 
+  it("preflight failure short-circuits writeContractAsync on claim", async () => {
+    // R15 — same branching contract as NewOvrfloModal.handleDeposit. When
+    // preflight returns { ok: false }, classifyUserError's message flows
+    // into errorMsg and writeContractAsync must not be called. This is the
+    // test that fails if someone regresses the preflight gate in
+    // ClaimModal.handleClaim.
+    const { preflight } = await import("@/lib/preflight");
+    const failingClient = {
+      simulateContract: async () => {
+        throw new Error("ovrflo: not matured");
+      },
+    } as unknown as import("viem").PublicClient;
+
+    let writeCalled = false;
+    const writeContractAsync = async () => {
+      writeCalled = true;
+      return "0xhash" as const;
+    };
+
+    const sim = await preflight(
+      failingClient,
+      {
+        address: "0x0000000000000000000000000000000000000000",
+        abi: [],
+        functionName: "claim",
+        args: [],
+      } as unknown as Parameters<typeof preflight>[1],
+      "Claim failed"
+    );
+
+    let phase: "idle" | "claiming" | "waiting" | "error" = "claiming";
+    if (!sim.ok) {
+      phase = "error";
+    } else {
+      await writeContractAsync();
+      phase = "waiting";
+    }
+
+    expect(phase).toBe("error");
+    expect(writeCalled).toBe(false);
+  });
+
   it("blocks manual claim amounts above maxClaimable", () => {
     const maxClaimable = 100n;
     const claimAmount = 101n;

@@ -1,0 +1,18 @@
+{
+  "name": "ovrflo-sablier-streams",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Minimal local Sablier LockupLinear v1.1 indexer for the OVRFLO bootstrap:local loop.",
+  "license": "GPL-3.0-or-later",
+  "type": "module",
+  "scripts": {
+    "codegen": "envio codegen",
+    "dev": "envio dev",
+    "start": "envio start",
+    "stop": "envio local stop",
+    "reset": "envio local stop --reset && envio start"
+  },
+  "dependencies": {
+    "envio": "2.32.12"
+  }
+}

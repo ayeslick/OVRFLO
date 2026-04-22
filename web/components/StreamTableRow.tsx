@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   useAccount,
+  usePublicClient,
   useReadContract,
   useWriteContract,
   useWaitForTransactionReceipt,
@@ -12,6 +13,7 @@ import { formatUnits, formatEther, type Address } from "viem";
 import { SABLIER_LOCKUP, CHAIN_ID, CHAIN_NAME } from "@/lib/config";
 import { sablierLockupAbi } from "@/lib/contracts";
 import { parseUserError } from "@/lib/tx-errors";
+import { preflight } from "@/lib/preflight";
 import type { SablierStream } from "@/lib/sablier";
 
 interface Props {
@@ -46,6 +48,7 @@ export function StreamTableRow({ stream, ptName, index }: Props) {
 
   const { data: ethBalance } = useBalance({ address });
   const { writeContractAsync } = useWriteContract();
+  const publicClient = usePublicClient();
 
   const { isSuccess: receiptConfirmed, isError: receiptFailed } =
     useWaitForTransactionReceipt({
@@ -94,16 +97,39 @@ export function StreamTableRow({ stream, ptName, index }: Props) {
 
   const handleWithdraw = useCallback(async () => {
     if (!address || !withdrawable || minFee === undefined) return;
+    if (!publicClient) return;
     setTxPhase("submitting");
     setError(undefined);
-    try {
-      const hash = await writeContractAsync({
+    // R15 preflight — simulate the Sablier withdrawMax call with the exact
+    // msg.value (minFee) we'll send. If the user's ETH balance dropped
+    // below minFee between render and click, or the stream became depleted,
+    // classifyUserError surfaces a targeted message and the wallet never
+    // prompts.
+    const sim = await preflight(
+      publicClient,
+      {
         address: SABLIER_LOCKUP as Address,
         abi: sablierLockupAbi,
         functionName: "withdrawMax",
         args: [tokenId, address],
         value: minFee,
-      });
+        account: address,
+      },
+      "Withdraw failed"
+    );
+    if (!sim.ok) {
+      if (sim.error.kind === "user-rejected") {
+        setTxPhase("idle");
+      } else {
+        setTxPhase("error");
+        setError(sim.error.message);
+      }
+      return;
+    }
+    try {
+      const hash = await writeContractAsync(
+        sim.request as unknown as Parameters<typeof writeContractAsync>[0]
+      );
       setTxHash(hash);
       setTxPhase("waiting");
     } catch (e: unknown) {
@@ -115,7 +141,7 @@ export function StreamTableRow({ stream, ptName, index }: Props) {
         setTxPhase("idle");
       }
     }
-  }, [address, withdrawable, minFee, tokenId, writeContractAsync]);
+  }, [address, withdrawable, minFee, publicClient, tokenId, writeContractAsync]);
 
   const label = ptName ?? stream.asset.symbol;
   const statusLabel = isDepleted
@@ -297,6 +323,7 @@ export function StreamTableRow({ stream, ptName, index }: Props) {
               <div className="nb-status nb-status-error break-all text-xs leading-5">
                 {error}
                 <button
+                  type="button"
                   onClick={() => {
                     setTxPhase("idle");
                     setTxHash(undefined);

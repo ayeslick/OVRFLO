@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useAccount, useReadContract, useWaitForTransactionReceipt, useWriteContract } from "wagmi";
+import { useAccount, usePublicClient, useReadContract, useWaitForTransactionReceipt, useWriteContract } from "wagmi";
 import { formatUnits, parseUnits, type Address } from "viem";
 import { CHAIN_ID } from "@/lib/config";
 import { erc20Abi, ovrfloAbi } from "@/lib/contracts";
@@ -14,6 +14,10 @@ import {
   type UsdPrices,
 } from "@/hooks/useUsdPrices";
 import { parseUserError } from "@/lib/tx-errors";
+import { preflight } from "@/lib/preflight";
+import { truncateAddress } from "@/lib/format";
+import { useModalA11y } from "@/hooks/useModalA11y";
+import { ModalErrorBoundary } from "./ModalErrorBoundary";
 import { WalletActionCta } from "./WalletActionCta";
 import type { MarketInfo } from "@/hooks/useAllMarkets";
 import type { OvrfloEntry } from "@/hooks/useOvrflos";
@@ -33,7 +37,7 @@ interface MatureMarket extends MarketInfo {
 type TxPhase = "idle" | "claiming" | "waiting" | "success" | "error";
 
 function formatAddress(address?: `0x${string}`) {
-  return address ? `${address.slice(0, 6)}...${address.slice(-4)}` : "Token";
+  return address ? truncateAddress(address) : "Token";
 }
 
 function sanitizeAmount(value: string) {
@@ -41,6 +45,7 @@ function sanitizeAmount(value: string) {
 }
 
 export function ClaimModal({ open, onClose, ovrflos, allMarkets, prices }: Props) {
+  const dialogRef = useModalA11y({ open, onClose });
   const { address, chainId } = useAccount();
   const [selected, setSelected] = useState<MatureMarket>();
   const [amountStr, setAmountStr] = useState("");
@@ -48,6 +53,7 @@ export function ClaimModal({ open, onClose, ovrflos, allMarkets, prices }: Props
   const [txHash, setTxHash] = useState<`0x${string}`>();
   const [errorMsg, setErrorMsg] = useState("");
   const { writeContractAsync } = useWriteContract();
+  const publicClient = usePublicClient();
 
   const { isSuccess: receiptConfirmed, isError: receiptFailed } = useWaitForTransactionReceipt({
     hash: txHash,
@@ -149,30 +155,54 @@ export function ClaimModal({ open, onClose, ovrflos, allMarkets, prices }: Props
   const handleClaim = useCallback(async () => {
     if (!selected || claimAmount === 0n || claimTooHigh) return;
     setErrorMsg("");
+    if (!publicClient || !address) {
+      setTxPhase("error");
+      setErrorMsg("Wallet not connected.");
+      return;
+    }
     setTxPhase("claiming");
-    try {
-      const hash = await writeContractAsync({
+    // R15 preflight — guard against contract reverts (e.g. ovrflo: not
+    // matured, ovrflo: deposit accounting) before the wallet prompts.
+    const sim = await preflight(
+      publicClient,
+      {
         address: selected.ovrflo as Address,
         abi: ovrfloAbi,
         functionName: "claim",
         args: [selected.ptToken as Address, claimAmount],
-      });
+        account: address,
+      },
+      "Claim failed"
+    );
+    if (!sim.ok) {
+      setTxPhase("error");
+      setErrorMsg(sim.error.message);
+      return;
+    }
+    try {
+      const hash = await writeContractAsync(sim.request);
       setTxHash(hash);
       setTxPhase("waiting");
     } catch (error: unknown) {
       setTxPhase("error");
       setErrorMsg(parseUserError(error, "Claim failed"));
     }
-  }, [claimAmount, claimTooHigh, selected, writeContractAsync]);
+  }, [address, claimAmount, claimTooHigh, publicClient, selected, writeContractAsync]);
 
   if (!open) return null;
 
   return (
     <div className="nb-modal-overlay" data-testid="modal-claim">
-      <div className="nb-modal">
+      <div
+        ref={dialogRef}
+        className="nb-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="claim-modal-title"
+      >
         {/* Header */}
         <div className="nb-modal-header">
-          <h3 className="text-lg font-bold uppercase tracking-wide text-black">Claim</h3>
+          <h3 id="claim-modal-title" className="text-lg font-bold uppercase tracking-wide text-black">Claim</h3>
           <button
             type="button"
             onClick={onClose}
@@ -184,8 +214,10 @@ export function ClaimModal({ open, onClose, ovrflos, allMarkets, prices }: Props
           </button>
         </div>
 
-        {/* Body */}
+        {/* Body — wrapped in ModalErrorBoundary (R14). See NewOvrfloModal
+            for the rationale. */}
         <div className="nb-modal-body">
+          <ModalErrorBoundary>
           {matureMarkets.length === 0 ? (
             <div className="nb-status nb-status-info py-4 text-sm">No mature markets available.</div>
           ) : (
@@ -347,6 +379,7 @@ export function ClaimModal({ open, onClose, ovrflos, allMarkets, prices }: Props
               ) : null}
             </div>
           )}
+          </ModalErrorBoundary>
         </div>
       </div>
     </div>

@@ -1,5 +1,5 @@
 import type { PublicClient } from "viem";
-import { CHAIN_ID, SABLIER_ENVIO_URL, SABLIER_LOCKUP } from "./config";
+import { CHAIN_ID, SABLIER_INDEXER_URL, SABLIER_LOCKUP } from "./config";
 
 export interface SablierStream {
   id: string;
@@ -26,14 +26,19 @@ export class StreamScanError extends Error {
   }
 }
 
+// Upstream Sablier `LockupStream` entity. `category` filter pins us to
+// LockupLinear so this query stays correct if Sablier's tranched/dynamic
+// variants start landing in the same indexer. `depleted` is derived in
+// TypeScript (not on the upstream schema) from `intactAmount === "0"`.
 const GET_USER_STREAMS = `
 query GetUserStreams($user: String!, $senders: [String!]!) {
-  Stream(
+  LockupStream(
     where: {
       recipient: { _eq: $user },
       sender: { _in: $senders },
       contract: { _eq: "${SABLIER_LOCKUP.toLowerCase()}" },
-      chainId: { _eq: "${CHAIN_ID}" }
+      chainId: { _eq: "${CHAIN_ID}" },
+      category: { _eq: "LockupLinear" }
     },
     order_by: { tokenId: desc }
   ) {
@@ -44,7 +49,6 @@ query GetUserStreams($user: String!, $senders: [String!]!) {
     startTime
     endTime
     canceled
-    depleted
     intactAmount
     asset { symbol decimals address }
     sender
@@ -52,13 +56,17 @@ query GetUserStreams($user: String!, $senders: [String!]!) {
 }
 `;
 
+// Shape returned by the indexer — identical to `SablierStream` minus `depleted`,
+// which is derived below.
+type LockupStreamRow = Omit<SablierStream, "depleted">;
+
 interface GraphQLResponse<T> {
   data?: T;
   errors?: Array<{ message?: string }>;
 }
 
 interface StreamsQueryData {
-  Stream: SablierStream[];
+  LockupStream: LockupStreamRow[];
 }
 
 export interface FetchUserStreamsArgs {
@@ -77,7 +85,7 @@ export async function fetchUserStreams({
 
   let res: Response;
   try {
-    res = await fetch(SABLIER_ENVIO_URL, {
+    res = await fetch(SABLIER_INDEXER_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -116,5 +124,6 @@ export async function fetchUserStreams({
     throw new StreamScanError(first);
   }
 
-  return json.data?.Stream ?? [];
+  const rows = json.data?.LockupStream ?? [];
+  return rows.map((row) => ({ ...row, depleted: row.intactAmount === "0" }));
 }
