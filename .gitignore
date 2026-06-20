@@ -16,11 +16,6 @@ web/yarn-error.log*
 web/pnpm-debug.log*
 web/coverage/
 
-# Docs
-docs/
-plans/
-foundry.toml
-
 # Dotenv file
 .env
 .github/*
@@ -37,6 +32,7 @@ web/.pem
 web/.vercel
 web/.postcss-cache/
 web/reviews/
+node_modules/
 
 # Agents
 .claude/

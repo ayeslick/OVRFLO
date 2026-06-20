@@ -1,0 +1,74 @@
+# OVRFLO Solutions Knowledge Base
+
+Searchable, categorized documentation of non-trivial problems solved in this repo.
+Each file is a single-problem writeup with YAML frontmatter for fast lookup.
+
+Adapted from the [compound-docs](https://github.com/every-marketplace/compound-engineering) skill.
+Because OVRFLO is Solidity + Next.js (not Rails/CORA), the `component` and `module`
+enums have been widened to reflect our stack; everything else matches the upstream schema.
+
+## Categories
+
+- `build-errors/` — compile / bundle / type errors
+- `test-failures/` — Forge/Foundry or Vitest failures, flaky tests
+- `runtime-errors/` — exceptions, crashes, hydration mismatches
+- `performance-issues/` — slow queries, extra RPC calls, memory bloat
+- `security-issues/` — auth, access control, slippage, oracle issues
+- `ui-bugs/` — frontend rendering, data-not-shown, layout
+- `integration-issues/` — Pendle, Sablier, Envio, CoinGecko, wallets
+- `logic-errors/` — business-logic bugs in contracts or client code
+- `developer-experience/` — DX issues: dead code, env layout, dev setup
+- `patterns/` — **required reading**: short, enforceable rules extracted
+  from the writeups above. If you are touching an area a pattern covers,
+  follow it or have a documented reason not to.
+
+## How to add a new entry
+
+1. Pick a category based on the primary `problem_type`.
+2. Use filename pattern: `<kebab-slug>-<Area>-<YYYYMMDD>.md`
+   (e.g. `transferred-sablier-nfts-invisible-WebUI-20260421.md`).
+3. Copy the frontmatter shape from any existing file in this tree.
+4. Write **exact** error messages, **what didn't work**, **root cause**,
+   **working solution**, and **prevention** guidance.
+5. Cross-link related entries under `## Related Issues`.
+
+## Current entries
+
+### Required reading (patterns)
+
+- [patterns/ovrflo-critical-patterns.md](patterns/ovrflo-critical-patterns.md)
+  — enforceable rules distilled from the writeups below. Currently covers:
+  1. ERC-721 current ownership comes from the token, not from derived protocol events.
+  2. Do not use `forge script --broadcast` against an Anvil mainnet fork (foundry#11714); use `forge create` + `cast send` via `script/seed-local.sh`.
+  3. Modal bodies — and only modal bodies — are wrapped in a class-component error boundary with an `onReset` contract (header/close button stay outside).
+
+### Web UI
+
+- [integration-issues/transferred-sablier-nfts-invisible-WebUI-20260421.md](integration-issues/transferred-sablier-nfts-invisible-WebUI-20260421.md) —
+  Streams whose Sablier NFT was transferred to a new wallet never appeared for the new
+  recipient. Fixed by reverting from on-chain `Deposited` log scanning to the Sablier
+  Envio GraphQL indexer.
+- [ui-bugs/usd-prices-not-shown-in-modals-WebUI-20260421.md](ui-bugs/usd-prices-not-shown-in-modals-WebUI-20260421.md) —
+  `useUsdPrices` was implemented but neither the Dashboard nor the Deposit/Claim modals
+  ever rendered dollar values. Fixed by plumbing the `prices` prop through and rendering
+  sublines via `formatUsdValue`.
+- [developer-experience/post-refactor-dead-code-WebUI-20260421.md](developer-experience/post-refactor-dead-code-WebUI-20260421.md) —
+  After the single-factory, indexer-revert and USD-wiring refactors, several files,
+  env vars, ABI entries and helpers were left unreferenced. Removed without regression.
+- [runtime-errors/modal-render-error-crashes-dashboard-WebUI-20260421.md](runtime-errors/modal-render-error-crashes-dashboard-WebUI-20260421.md) —
+  A render-time throw inside `NewOvrfloModal` / `ClaimModal` (e.g. transient
+  `useReadContracts` failure, mid-render wallet disconnect) escaped to
+  `app/error.tsx` and crashed the whole dashboard, wiping in-progress form
+  state. Fixed with a scoped class-component `ModalErrorBoundary` wrapping
+  the modal *body only* (header/close button stay outside) plus an `onReset`
+  contract so "Try again" actually retries.
+
+### Local devnet & seeding
+
+- [integration-issues/anvil-forge-script-broadcast-out-of-funds-LocalSeeding-20260421.md](integration-issues/anvil-forge-script-broadcast-out-of-funds-LocalSeeding-20260421.md) —
+  `forge script --broadcast` fails against Anvil mainnet forks with
+  `OutOfFunds` / `lack of funds (0) for max fee` even when the broadcaster is
+  funded via `vm.deal` / `anvil_setBalance`. Worked around by replacing
+  `script/SeedLocal.s.sol` with a `script/seed-local.sh` bash driver that
+  uses `forge create` + `cast send` + `cast rpc`. Root cause is
+  [foundry-rs/foundry#11714](https://github.com/foundry-rs/foundry/issues/11714).
