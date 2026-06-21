@@ -31,7 +31,7 @@ the lender draws a fixed obligation and the residual returns to the borrower.
 
 The two source specs conflicted on loan semantics, settlement, and provenance; the origin
 document reconciled them into two verbs (sale, loan) over a single loan core, with the
-sale expressed as the degenerate loan where `borrowAmount == grossPrice`. This plan
+sale expressed as the limiting case of a loan where `borrowAmount == grossPrice`. This plan
 implements that reconciled model for the book only.
 
 ---
@@ -67,9 +67,10 @@ implements that reconciled model for the book only.
   matches "series-keyed for v2-compat," keeps one underlying per book, and keeps APR
   bounds / fee / treasury governance scoped to one core. (Confirmed with user.)
 
-- KTD2. Sale is the degenerate loan, but the code keeps two explicit verbs for clarity and
-  custody differences (sale transfers the NFT to the buyer permanently; loan escrows it as
-  collateral). The shared pricing functions are reused; only settlement/custody differ.
+- KTD2. A sale is the limiting case of a loan (`borrowAmount == grossPrice`), but the code
+  keeps two explicit verbs for clarity and custody differences (a sale transfers the NFT to
+  the buyer permanently; a loan escrows it as collateral). The shared pricing functions are
+  reused; only settlement/custody differ.
 
 - KTD3. Taker-targets-a-specific-order-ID; no matching engine. Offers (capital side) and
   listings (asset side) rest; a taker brings the counter-asset and references a resting
@@ -77,9 +78,12 @@ implements that reconciled model for the book only.
   reverts against a dead ID and loses only gas. Auto-matching of crossed orders is a v2
   concern (only meaningful once APR bounds widen).
 
-- KTD4. Everything fixed at origination. `remainingStreamAmount` is read from Sablier once,
-  at fill, to compute `grossPrice`/`obligation`/`fee`/`residual`. Thereafter the `Loan`
-  object is the only source of truth — no re-reading the stream, no re-pricing.
+- KTD4. Everything fixed at origination. `remaining = getDepositedAmount −
+  getWithdrawnAmount` is read from Sablier once, at fill, to compute
+  `grossPrice`/`obligation`/`fee`/`residual`. It is the total un-withdrawn locked amount (not
+  the vested-only `withdrawableAmountOf`), so pre-fill withdrawals by the original recipient
+  are correctly netted out. Thereafter the `Loan` object is the only source of truth — no
+  re-reading the stream, no re-pricing.
 
 - KTD5. Rounding always favors the capital provider. `grossPrice` floors down (taker/lender
   commits less); `obligation` ceils up (lender draws up to it); `residual = remaining −
@@ -99,12 +103,21 @@ implements that reconciled model for the book only.
   most security-critical check; it lives in `StreamPricing` as a `view` (not `pure`)
   function so the deferred pool reuses it verbatim.
 
-- KTD8. Loan servicing uses the origin's collect/claim split. `drawLoan` (permissionless)
-  pulls `min(withdrawable, obligation − drawn)` from Sablier into the book and credits the
-  lender's ledger; `claimLoanDraws` (lender-only) moves the credited `ovrfloToken` out;
-  `closeLoan` (permissionless) returns the residual stream NFT to the borrower once
-  `drawn == obligation`. The book never draws past `obligation`, so the residual is never
-  touched and returns inside the NFT.
+- KTD8. Two servicing functions, with `closeLoan` as the liveness backstop. `claimLoan`
+  (lender-only) is an optional convenience letting the lender draw vested `ovrfloToken` as it
+  streams: `amount = min(withdrawable, obligation − drawn)`, `withdraw(streamId, lender,
+  amount)`, `loan.drawn += amount`. `closeLoan` (permissionless) finalizes the loan: once the
+  stream has vested enough to satisfy the lender in full (`drawn + withdrawable ≥
+  obligation`), it draws the outstanding `obligation − drawn` to the lender, then returns the
+  residual stream NFT to the borrower. Folding the final claim into `closeLoan` means the
+  borrower's residual is never held hostage to the lender choosing to claim — anyone
+  (typically the borrower) can call it. The book never withdraws past `obligation`, so the
+  residual is never touched and returns inside the NFT. Two zero-amount footguns must be
+  guarded, because Sablier `withdraw` reverts on a zero amount: `claimLoan` and `closeLoan`
+  call `withdraw` only when `obligation − drawn > 0`; `closeLoan` still sets `closed` and
+  transfers the NFT unconditionally (so a lender who already drained via `claimLoan` does not
+  brick the residual return). The `closed` flag is written before the external draw/transfer
+  (checks-effects-interactions).
 
 - KTD9. No separate `minStreamSize`. `OVRFLO.MIN_PT_AMOUNT` already bounds stream size at
   origination; the book enforces only `remaining > 0`. (Confirmed with user.)
@@ -138,8 +151,9 @@ flowchart TB
 ### Pricing (origin §2.1, shared & pure)
 
 ```
+remaining     = getDepositedAmount(streamId) − getWithdrawnAmount(streamId)  // un-withdrawn locked amount; refunded == 0 for non-cancelable streams
 factor        = WAD + apr·timeToMaturity·WAD / (YEAR · 10000)   // 1 + apr·t/YEAR in WAD
-grossPrice    = floor(remaining · WAD / factor)                 // floors toward capital provider
+grossPrice    = floor(remaining · WAD / factor)                 // floors toward capital provider; a fill reverts if grossPrice == 0
 fee           = floor(borrowAmount · feeBps / 10000)            // borrower-paid, in underlying
 netToBorrower = borrowAmount − fee
 obligation    = ceil(borrowAmount · factor / WAD)               // OVRFLO the lender side draws
@@ -156,9 +170,8 @@ flowchart TB
   R -->|cancel while unmatched| X[Refund escrow]
   R -->|takeListing / hitOffer| S[Sale settled atomically - NFT to buyer]
   R -->|lendAgainstListing / borrowAgainstOffer| L[Active loan - NFT held as collateral]
-  L -->|drawLoan permissionless, capped at obligation-drawn| L
-  L -->|claimLoanDraws lender-only| L
-  L -->|closeLoan once drawn==obligation| C[Residual NFT returned to borrower]
+  L -->|claimLoan lender-only optional: withdraw vested to lender, capped at obligation-drawn| L
+  L -->|closeLoan permissionless once vested>=obligation: final draw to lender + residual to borrower| C[Loan closed]
 ```
 
 ### Eligibility check (origin §4 — most security-critical)
@@ -172,9 +185,11 @@ Stream st    = sablier.getStream(streamId)
 require(st.sender == core)
 require(st.asset  == s.ovrfloToken)
 require(st.endTime == s.expiryCached)   // pins the exact maturity (cross-market fungible asset)
+require(getCliffTime(streamId) == 0)    // mirrors deposit()'s durations.cliff == 0; rejects cliffed streams
 require(!st.cancelable)
-require(st.transferable)
 require(remaining > 0)
+// transferable is NOT checked here: a non-transferable stream reverts when the book
+// takes custody (transferFrom), so the flow fails anyway — no explicit check needed.
 ```
 
 ---
@@ -183,10 +198,12 @@ require(remaining > 0)
 
 ### Pricing & APR
 
-- R1. The book prices every fill from `remainingStreamAmount` read once at fill, using the
-  order's stored `apr` and `timeToMaturity = seriesMaturity − block.timestamp`.
+- R1. The book prices every fill from `remaining = depositedAmount − withdrawnAmount`, read
+  once at fill, using the order's stored `apr` and `timeToMaturity = seriesMaturity −
+  block.timestamp`.
 - R2. Rounding always favors the capital provider (`grossPrice` floors, `obligation` ceils,
-  `residual` floors); `residual ≥ 0` always holds.
+  `residual` floors); `residual ≥ 0` always holds. A fill reverts when `grossPrice == 0`,
+  preventing a free stream transfer for dust `remaining`.
 - R3. Every order stores its own `apr`, validated at post time against
   `aprMinBps ≤ apr ≤ aprMaxBps`; a post outside the band reverts.
 - R4. Launch bounds `1000/1000` admit only 10%; after the multisig widens the band the same
@@ -197,8 +214,11 @@ require(remaining > 0)
 ### Provenance & eligibility
 
 - R6. A stream is eligible only if `sender == core ∧ asset == series ovrfloToken ∧
-  endTime == series expiry ∧ !cancelable ∧ transferable ∧ remaining > 0`, with the
-  supplied `market` approved in the factory for the book's core.
+  endTime == series expiry ∧ cliffTime == 0 ∧ !cancelable ∧ remaining > 0`, with the supplied
+  `market` approved in the factory for the book's core. The `cliffTime == 0` and `!cancelable`
+  checks mirror the exact stream shape `OVRFLO.deposit` mints (`durations.cliff == 0`,
+  `cancelable == false`), so a stream crafted with a cliff is rejected. Transferability is
+  enforced implicitly at custody-transfer time, not as an explicit eligibility check.
 - R7. Eligibility is reconstructed live from the factory + core + Sablier with no new
   storage on `src/OVRFLO.sol` or `src/OVRFLOFactory.sol`.
 - R8. The eligibility function is reusable by the deferred pool without modification.
@@ -218,14 +238,19 @@ require(remaining > 0)
   `postBorrowListing`/`lendAgainstListing(maxPriceIn)` originate a loan: borrower receives
   `netToBorrower`, fee → treasury, the stream NFT is escrowed as collateral, and a `Loan`
   is created with `obligation` fixed and `drawn = 0`.
-- R13. `borrowAmount ≤ grossPrice` is enforced at origination (choosing the max degenerates
-  to a sale); there is no protocol LTV cap.
-- R14. `drawLoan` is permissionless and draws `min(withdrawable, obligation − drawn)` into
-  the book, incrementing `drawn`; it can never pull past `obligation`.
-- R15. `claimLoanDraws` is lender-only and transfers the lender's credited `ovrfloToken` out
-  of the book.
-- R16. `closeLoan` is permissionless and returns the residual stream NFT to the borrower
-  once `drawn == obligation`; it reverts (or no-ops) before then and cannot double-return.
+- R13. `borrowAmount ≤ grossPrice` is enforced at origination (choosing the max reduces to a
+  sale); there is no protocol LTV cap.
+- R14. `claimLoan` is lender-only and optional; it withdraws `min(withdrawable, obligation −
+  drawn)` from Sablier directly to the lender and increments `drawn`, never past `obligation`.
+  It reverts early when the draw amount is zero (Sablier reverts on zero-amount withdraws).
+- R15. `closeLoan` is permissionless: once `drawn + withdrawable ≥ obligation` it draws any
+  outstanding `obligation − drawn` to the lender (skipping the draw when that amount is zero)
+  and always returns the residual stream NFT to the borrower. The borrower's residual never
+  depends on the lender choosing to claim, and a lender who already fully drained via
+  `claimLoan` does not block the NFT return.
+- R16. `closeLoan` reverts before the loan is closable (`drawn + withdrawable < obligation`),
+  never draws past `obligation`, and cannot double-close (the `closed` flag is set before the
+  external draw/transfer).
 
 ### Custody, cancellation & admin
 
@@ -240,7 +265,9 @@ require(remaining > 0)
   `setFee` requires `feeBps <= MAX_FEE_BPS`; both are `onlyOwner` (multisig).
 - R21. `setTreasury` is `onlyOwner`; 100% of fees route to the current treasury; no bounty.
 - R22. The book is `Ownable2Step`, non-payable on every external function, supports
-  `multicall`, and guards state-mutating functions against reentrancy.
+  `multicall`, and guards state-mutating functions against reentrancy. The `multicall`
+  entrypoint is itself NOT `nonReentrant`, so batching guarded calls (e.g. cancel-and-repost)
+  does not trip the nested guard.
 
 ### Forward-compat & non-goals
 
@@ -255,17 +282,37 @@ require(remaining > 0)
 
 ### U1. Extend the Sablier interface
 
-**Goal:** Give the book the Sablier reads/writes it needs for provenance, draws, and NFT
+**Goal:** Give the book the Sablier reads/writes it needs for provenance, claims, and NFT
 custody.
 **Requirements:** R6, R14, R16, R23.
 **Files:** `interfaces/ISablierV2LockupLinear.sol`.
-**Approach:** Add the metadata getters the eligibility check needs (`getSender`,
-`getAsset`, `getEndTime`, `isCancelable`, `isTransferable` — or a single `getStream`
-returning a struct with those fields plus amounts), plus `withdraw(streamId, to, amount)`
-and `withdrawMultiple(...)`. Keep the existing `createWithDurations` and
-`withdrawableAmountOf`. NFT custody (`transferFrom`, `ownerOf`) is taken via `IERC20`/
-`IERC721` casts of the Sablier address — document whether to add them here or import
-`IERC721` in the book (KTD11).
+**Approach:** Add the following, with signatures verified against
+`tools/envio/abi/SablierV2LockupLinear.json` (the deployed V2 LockupLinear is immutable):
+
+```solidity
+function getSender(uint256 streamId) external view returns (address sender);
+function getAsset(uint256 streamId) external view returns (IERC20 asset);
+function getEndTime(uint256 streamId) external view returns (uint40 endTime);
+function getCliffTime(uint256 streamId) external view returns (uint40 cliffTime);
+function isCancelable(uint256 streamId) external view returns (bool result);
+function getDepositedAmount(uint256 streamId) external view returns (uint128 depositedAmount);
+function getWithdrawnAmount(uint256 streamId) external view returns (uint128 withdrawnAmount);
+function withdraw(uint256 streamId, address to, uint128 amount) external;
+function withdrawMultiple(uint256[] calldata streamIds, address to, uint128[] calldata amounts) external;
+function transferFrom(address from, address to, uint256 tokenId) external; // ERC721 custody
+function ownerOf(uint256 tokenId) external view returns (address);
+```
+
+Keep the existing `createWithDurations` and `withdrawableAmountOf`. Prefer these individual
+getters over `getStream` (which returns a `LockupLinear.Stream` tuple) so the book does not
+couple to the struct layout. `getDepositedAmount`/`getWithdrawnAmount` supply the pricing
+input `remaining = depositedAmount − withdrawnAmount` (the un-withdrawn locked amount) — NOT
+`withdrawableAmountOf`, which is only the vested-but-unwithdrawn slice and would underprice a
+freshly minted stream to near zero. `withdrawMultiple` uses a single shared `to` (verified) — it is
+not used by the book's per-loan `claimLoan` but is kept for the deferred pool's batch claim.
+`isTransferable` is intentionally omitted (the explicit transferability eligibility check was
+dropped — see R6/U3); add it only if a view later needs it. Custody uses `transferFrom`
+(not `safeTransferFrom`), so the book needs no `IERC721Receiver` (KTD11).
 **Patterns to follow:** existing minimal-interface style in `interfaces/`.
 **Test scenarios:** Test expectation: none for the interface itself (no behavior) — exercised by U11's fork test reading real stream fields. Compilation must succeed against the deployed Sablier ABI.
 **Verification:** `forge build` succeeds; U3/U11 consume the new selectors against a real stream.
@@ -283,12 +330,15 @@ consistently with `src/OVRFLO.sol`.
 constants.
 **Test scenarios:**
 - Happy path: known `(remaining, apr, t)` → expected `grossPrice`/`obligation`/`fee`.
-- `borrowAmount = grossPrice` degeneracy → `obligation == remaining`, `residual == 0`.
+- Boundary case `borrowAmount = grossPrice` → `obligation == remaining`, `residual == 0`.
 - Rounding direction: `grossPrice` never rounds up; `obligation` never rounds down;
   `residual ≥ 0` for all `borrowAmount ≤ grossPrice` (fuzz).
 - `apr = 0` → `grossPrice == remaining`, `obligation == borrowAmount`.
-- Dust amounts near `remaining = 1` and large `t` near `APR_MAX_CEILING` bound — no
-  overflow, no `grossPrice` collapse to 0 for sane inputs.
+- Dust amounts near `remaining = 1` and large `t` near `APR_MAX_CEILING` — no overflow. Note
+  `grossPrice` legitimately floors to 0 for tiny `remaining` at `apr > 0`; the fill path
+  guards this with `require(grossPrice > 0)` (exercised in U5–U8) rather than a minimum size.
+- `remaining` is computed as `deposited − withdrawn`, so a stream with prior withdrawals
+  prices off the un-withdrawn balance, not the original deposit.
 - `fee` floors; `fee == 0` when `feeBps == 0`.
 **Verification:** unit + fuzz tests pass; invariant `residual ≥ 0` never violated.
 
@@ -305,8 +355,10 @@ factory/core/Sablier views (KTD7).
 **Patterns to follow:** factory views `isMarketApproved`, `ovrfloInfo`; core `series(market)`.
 **Test scenarios:**
 - Eligible stream → returns correct maturity/ovrfloToken/remaining.
-- Reject: wrong `sender`, wrong `asset`, `endTime != expiry`, `cancelable == true`,
-  `transferable == false`, `remaining == 0`, unapproved market, core not in registry.
+- Reject: wrong `sender`, wrong `asset`, `endTime != expiry`, `cliffTime != 0`,
+  `cancelable == true`, `remaining == 0`, unapproved market, core not in registry.
+- Non-transferable stream is not an eligibility rejection here — verify the list/borrow flow
+  reverts at the custody `transferFrom` instead (covered in U6/U8).
 - Two maturities under one core: a stream for maturity A is rejected when `market` is the
   approved market for maturity B (endTime mismatch).
 **Verification:** every rejection path reverts with its own reason; happy path returns.
@@ -317,7 +369,8 @@ factory/core/Sablier views (KTD7).
 **Requirements:** R20, R21, R22, R23, KTD1, KTD6, KTD10.
 **Files:** `src/OVRFLOBook.sol` (new); `test/OVRFLOBook.t.sol` (new, with mocks).
 **Approach:** `Ownable2Step` + `ReentrancyGuard` + `multicall` (OZ `Multicall` or minimal
-self-`delegatecall`; non-payable). Immutables: `factory`, `core`, `ovrfloToken`,
+self-`delegatecall`; non-payable, and the `multicall` entrypoint itself is NOT `nonReentrant`
+so batched guarded calls don't trip the nested guard). Immutables: `factory`, `core`, `ovrfloToken`,
 `underlying`, `sablier`, `APR_MAX_CEILING`, `MAX_FEE_BPS`. Mutable admin: `aprMinBps`,
 `aprMaxBps`, `feeBps`, `treasury`. Storage: `Loan` struct (`borrower`, `streamId`,
 `uint128 obligation`, `uint128 drawn`, `lender`, credited-balance) and offer/listing
@@ -355,6 +408,7 @@ decrement capacity.
 - `minNetOut` slippage reverts when price moved (e.g., time decay).
 - Partial fills against a multi-capacity offer; `cancelOffer` returns the remainder.
 - Cancel-vs-hit race: hitting a cancelled/consumed `offerId` reverts (dead id).
+- A dust stream that prices to `grossPrice == 0` reverts (no free NFT transfer).
 - Ineligible stream reverts (delegates to U3).
 **Verification:** sale-via-offer settlement + slippage + dead-id tests pass.
 
@@ -373,6 +427,7 @@ drawn while resting (R11).
 **Test scenarios:**
 - `listStream` rejects ineligible stream / out-of-band apr; escrows the NFT.
 - `takeListing` settles; `maxPriceIn` slippage reverts when price moved.
+- A dust stream that prices to `grossPrice == 0` reverts (no free NFT transfer).
 - `cancelListing` returns the exact NFT; resting stream shows zero withdrawals.
 - Cancel-vs-take race reverts against a dead listing id.
 **Verification:** sale-via-listing + slippage + no-draw-while-resting tests pass.
@@ -417,28 +472,38 @@ msg.sender`.
 - `cancelBorrowListing` returns the NFT; cancel-vs-lend race reverts (dead id).
 **Verification:** loan origination via listing + slippage tests pass.
 
-### U9. Loan servicing — draw / claim / close
+### U9. Loan servicing — claim / close
 
-**Goal:** `drawLoan` / `claimLoanDraws` / `closeLoan`.
+**Goal:** `claimLoan` / `closeLoan`.
 **Requirements:** R14, R15, R16, R19.
 **Files:** `src/OVRFLOBook.sol` (extend); `test/OVRFLOBook.t.sol` (extend).
-**Approach:** `drawLoan(loanId)` (permissionless): `amount = min(withdrawableAmountOf,
-obligation − drawn)`; `sablier.withdraw(streamId, address(this), amount)`;
-`loan.drawn += amount`; credit the lender's ledger. `claimLoanDraws(loanId)` (lender-only):
-transfer the lender's credited `ovrfloToken` out, zero the credit. `closeLoan(loanId)`
-(permissionless): require `drawn == obligation`, transfer the residual stream NFT to
-`loan.borrower`, mark the loan closed (idempotency guard). No early repayment (R19).
-**Patterns to follow:** `withdrawableAmountOf` usage; SafeERC20 out-transfers.
+**Approach:** `claimLoan(loanId)` (lender-only, optional): `amount =
+min(withdrawableAmountOf(streamId), obligation − drawn)`; require `amount > 0` (Sablier
+reverts on zero-amount withdraws); `sablier.withdraw(streamId, loan.lender, amount)` sends
+straight to the lender (the book is the Sablier recipient, so Sablier permits `to !=
+recipient` when the book is the caller); `loan.drawn += amount`. `closeLoan(loanId)`
+(permissionless): require the loan is closable (`drawn + withdrawableAmountOf(streamId) ≥
+obligation`); set `loan.closed` first (CEI); then if `obligation − drawn > 0` draw exactly
+that to `loan.lender` and set `drawn = obligation`; always transfer the residual stream NFT
+to `loan.borrower`. No early repayment (R19).
+**Patterns to follow:** `withdrawableAmountOf`/`withdraw` usage; NFT custody via `IERC721`.
 **Test scenarios:**
-- Draw caps at `obligation − drawn`; never exceeds `obligation` even when withdrawable is
-  larger (residual never stolen).
-- Multiple partial draws accumulate to `obligation`; further `drawLoan` is a no-op/0.
-- `claimLoanDraws` only by lender; moves exactly the credited balance; non-lender reverts.
-- `closeLoan` before `drawn == obligation` reverts; after, returns the exact NFT; second
-  `closeLoan` reverts (no double-return).
-- Permissionless `drawLoan`/`closeLoan` callable by a third party.
-- Integration: after close, borrower can withdraw the residual directly from Sablier.
-**Verification:** servicing lifecycle + cap invariant + idempotency tests pass.
+- `claimLoan` caps at `obligation − drawn`; never exceeds `obligation` even when withdrawable
+  is larger (residual never stolen); funds land with the lender; non-lender reverts.
+- Multiple partial `claimLoan` calls accumulate; a `claimLoan` after `drawn == obligation`
+  reverts (zero-amount), not a silent no-op.
+- `closeLoan` reverts while not yet closable (`drawn + withdrawable < obligation`).
+- `closeLoan` once closable pays the lender exactly `obligation − drawn`, sets `drawn ==
+  obligation`, and returns the exact residual NFT to the borrower — even if the lender never
+  called `claimLoan` (liveness: borrower or any third party can finalize).
+- Lender already fully drained via `claimLoan` (`drawn == obligation`): `closeLoan` still
+  succeeds — it skips the zero-amount draw and returns the NFT (no brick).
+- Pre-custody withdrawals: the original recipient withdraws a slice before listing/borrowing;
+  pricing uses `deposited − withdrawn` and `closeLoan` stays reachable by maturity.
+- `closeLoan` is permissionless; a second `closeLoan` reverts (no double-return).
+- Integration: after close, the borrower holds the NFT and withdraws the residual directly
+  from Sablier.
+**Verification:** servicing lifecycle + cap invariant + liveness + zero-amount + idempotency tests pass.
 
 ### U10. Views
 
@@ -462,12 +527,14 @@ settlement math so a UI preview equals execution.
 `test/fork/OVRFLOForkBase.t.sol`.
 **Approach:** Use `OVRFLO.deposit` on a real Pendle market to mint a real Sablier stream,
 deploy the book against the real factory/core/Sablier, then exercise: list → take (sale);
-borrow → draw across real vesting → close → residual return; eligibility rejection of a
-foreign stream.
+borrow → claim across real vesting → close → residual return; eligibility rejection of a
+foreign stream. Also confirms Sablier permits the book (recipient) to `withdraw` to the
+lender.
 **Patterns to follow:** `OVRFLOForkBase`, `OVRFLOTestFixtures`, `MAINNET_FORK_BLOCK`.
 **Test scenarios:**
 - Real stream sold end-to-end; buyer ends up owning the NFT and can withdraw to maturity.
-- Real loan: draw partials as the stream vests, `closeLoan` after full draw returns residual.
+- Real loan: claim some partials as the stream vests, then `closeLoan` (called by the
+  borrower) draws the remainder to the lender and returns the residual.
 - A stream not minted by the registered core is rejected by eligibility.
 **Verification:** fork suite passes against `MAINNET_RPC_URL`.
 
@@ -503,9 +570,10 @@ transfer ownership to the multisig (`Ownable2Step`), set launch bounds `1000/100
 - The extended `interfaces/ISablierV2LockupLinear.sol` must match the deployed Sablier V2
   LockupLinear ABI exactly (struct layout for `getStream`, `withdraw` signature). Mitigation:
   validate against the live contract in U11 before relying on it elsewhere.
-- `withdraw` recipient semantics: confirm Sablier lets the current NFT owner (the book)
-  withdraw to an arbitrary address, so `drawLoan` can collect into the book. Mitigation:
-  fork-test early (U9/U11); fall back to withdraw-to-owner if needed.
+- `withdraw` recipient semantics: Sablier permits the stream recipient (the book) to call
+  `withdraw(streamId, to, amount)` with `to = lender` — verified against the vendored ABI and
+  re-confirmed in U11's fork test, so `claimLoan` and the final draw inside `closeLoan` pay
+  the lender directly with no escrow hop.
 - Reentrancy across Sablier + ERC20 + ERC721 in one settlement. Mitigation: `ReentrancyGuard`
   on all state-mutating externals; checks-effects-interactions ordering.
 - `multicall` + non-payable interaction with `delegatecall`. Mitigation: keep every external
@@ -537,6 +605,9 @@ transfer ownership to the multisig (`Ownable2Step`), set launch bounds `1000/100
   `FEE_MAX_BPS = 100`, `Ownable2Step`).
 - Sablier interface to extend: `interfaces/ISablierV2LockupLinear.sol`
   (`createWithDurations`, `withdrawableAmountOf`).
+- Verified Sablier ABI: `tools/envio/abi/SablierV2LockupLinear.json` — exact signatures for
+  `withdraw`/`withdrawMultiple`/`getEndTime`/`getCliffTime`/`getSender`/`getAsset`/
+  `isCancelable`/`transferFrom`/`ownerOf` used in U1.
 - Fork scaffolding: `test/fork/OVRFLOForkBase.t.sol`, `script/lib/OVRFLOTestFixtures.sol`.
 - Required reading: `docs/solutions/patterns/ovrflo-critical-patterns.md` (NFT current
   ownership via `ownerOf`/indexer, not mint-time events; no `forge script --broadcast`
