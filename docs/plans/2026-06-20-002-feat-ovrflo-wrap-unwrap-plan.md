@@ -9,10 +9,12 @@ origin: docs/brainstorms/2026-06-20-ovrflo-wrap-unwrap-requirements.md
 
 ## Summary
 
-Add two permissionless, exactly-1:1 functions to the OVRFLO core: `wrap(market, amount)`
-pulls the series underlying and mints an equal amount of `ovrfloToken` to the caller;
-`unwrap(market, amount)` burns `ovrfloToken` from the caller and returns an equal amount of
-underlying from a single on-contract reserve. No Sablier stream, no fee. `unwrap` is bounded
+Add two permissionless, exactly-1:1 functions to the OVRFLO core: `wrap(amount)`
+pulls the underlying and mints an equal amount of `ovrfloToken` to the caller;
+`unwrap(amount)` burns `ovrfloToken` from the caller and returns an equal amount of
+underlying from a single on-contract reserve. The core resolves its `(underlying, ovrfloToken)`
+pair by reading `ovrfloInfo(address(this))` on its `adminContract` (the factory), so neither
+function needs a `market` argument. No Sablier stream, no fee. `unwrap` is bounded
 by the reserve and reverts when it cannot be covered. This gives `ovrfloToken` holders a
 stream-independent exit to underlying and lets the protocol mint `ovrfloToken` from underlying
 to seed swap pools (see origin: `docs/brainstorms/2026-06-20-ovrflo-wrap-unwrap-requirements.md`).
@@ -60,20 +62,26 @@ intrinsically bounded by the wrap reserve, and that bound is the central design 
 
 ## Key Technical Decisions
 
-- KTD1. **Lives on the core, keyed by market.** `wrap(market, amount)` and
-  `unwrap(market, amount)` resolve `(underlying, ovrfloToken)` from `series[market]` and require
-  `series[market].approved`. This mirrors `deposit`'s signature and reuses existing per-series
-  storage with no new registry. (Confirmed with user.)
+- KTD1. **Lives on the core; pair read from the admin/factory, no market arg.** `wrap(amount)`
+  and `unwrap(amount)` resolve `(underlying, ovrfloToken)` by reading
+  `ovrfloInfo(address(this))` on `adminContract` (the factory that deployed the core), via a
+  minimal local interface to avoid importing `OVRFLOFactory` (which imports `OVRFLO` → circular).
+  This needs no new core storage for the pair and no `market` argument. It is safe because
+  `adminContract` is set once in the constructor (`src/OVRFLO.sol:179`) with **no setter**
+  anywhere — it is permanently the deploying factory, and `ovrfloInfo[core]` is populated at
+  `deploy()` (`src/OVRFLOFactory.sol:127-128`). Reading from the trusted admin matches the
+  project's "trust what the multisig/admin already validates" stance. (Confirmed with user.)
+  Assumption: if an admin-migration path is ever added, the new admin must also implement
+  `ovrfloInfo(address) returns (address treasury, address underlying, address ovrfloToken)`.
 
 - KTD2. **Single reserve counter per core.** A single `uint256 wrappedUnderlying` tracks the
   reserve. This is correct because the factory guarantees exactly one `(underlying, ovrfloToken)`
   pair per core: `deploy()` creates one `OVRFLOToken` and `OvrfloInfo` carries one `underlying`
-  (`src/OVRFLOFactory.sol:117-128`), stamped onto every market by `setSeriesApproved`
-  (`src/OVRFLOFactory.sol:166-170`). Every approved market therefore shares the same underlying
-  and ovrfloToken, so one logical reserve suffices.
+  (`src/OVRFLOFactory.sol:117-128`). Reading that single pair from the admin (KTD1) means one
+  logical reserve suffices.
 
-- KTD3. **Exactly 1:1, no fee.** `wrap(market, amount)`: pull `amount` underlying from caller,
-  mint `amount` ovrfloToken to caller, `wrappedUnderlying += amount`. `unwrap(market, amount)`:
+- KTD3. **Exactly 1:1, no fee.** `wrap(amount)`: pull `amount` underlying from caller,
+  mint `amount` ovrfloToken to caller, `wrappedUnderlying += amount`. `unwrap(amount)`:
   `require(wrappedUnderlying >= amount)`, `wrappedUnderlying -= amount`, burn `amount` ovrfloToken
   from caller, transfer `amount` underlying to caller. No bps fee on either path (origin D2).
 
@@ -138,17 +146,20 @@ invariant:     supply(ovrfloToken) == Σ marketTotalDeposited + wrappedUnderlyin
 
 ## Requirements
 
-- R1. `wrap(market, amount)` requires `series[market].approved` and `amount > 0`; pulls exactly
-  `amount` underlying via `SafeERC20`, mints exactly `amount` ovrfloToken to the caller, and
-  increments `wrappedUnderlying` by `amount`. Emits `Wrapped`.
-- R2. `unwrap(market, amount)` requires `series[market].approved` and `amount > 0`; requires
-  `wrappedUnderlying >= amount`; decrements the reserve and burns `amount` ovrfloToken from the
-  caller before transferring `amount` underlying to the caller (CEI). Emits `Unwrapped`.
+- R1. `wrap(amount)` requires `amount > 0`; resolves `(underlying, ovrfloToken)` from
+  `adminContract.ovrfloInfo(address(this))`; pulls exactly `amount` underlying via `SafeERC20`,
+  mints exactly `amount` ovrfloToken to the caller, and increments `wrappedUnderlying` by
+  `amount`. Emits `Wrapped`.
+- R2. `unwrap(amount)` requires `amount > 0` and `wrappedUnderlying >= amount`; resolves the pair
+  from `adminContract.ovrfloInfo(address(this))`; decrements the reserve and burns `amount`
+  ovrfloToken from the caller before transferring `amount` underlying to the caller (CEI). Emits
+  `Unwrapped`.
 - R3. `unwrap` reverts (does not partial-fill or queue) when `wrappedUnderlying < amount`.
 - R4. Both functions are permissionless, create no Sablier stream, and charge no fee.
 - R5. `unwrap` capacity derives from the `wrappedUnderlying` counter, never `balanceOf`; a direct
   underlying donation does not change unwrap capacity.
-- R6. `sweepExcessUnderlying(to)` is `onlyAdmin`, transfers only `balanceOf(underlying) −
+- R6. `sweepExcessUnderlying(to)` is `onlyAdmin`, resolves `underlying` from
+  `adminContract.ovrfloInfo(address(this))`, transfers only `balanceOf(underlying) −
   wrappedUnderlying` (reverts when zero), and can never reduce the reserve. Emits an event.
 - R7. The supply invariant `supply(ovrfloToken) == Σ marketTotalDeposited + wrappedUnderlying`
   holds across arbitrary interleavings of `deposit`, `claim`, `wrap`, `unwrap`, and
@@ -166,16 +177,17 @@ invariant:     supply(ovrfloToken) == Σ marketTotalDeposited + wrappedUnderlyin
 **Requirements:** R1, R2, R3, R4, R5, R7, R8.
 **Dependencies:** none.
 **Files:** `src/OVRFLO.sol`; `test/OVRFLOWrapUnwrap.t.sol` (new).
-**Approach:** Add `uint256 public wrappedUnderlying` to storage and `Wrapped(address indexed
-user, address indexed market, uint256 amount)` / `Unwrapped(address indexed user, address indexed
-market, uint256 amount)` events. Implement `wrap`/`unwrap` per KTD3 using the existing
-`SafeERC20`-for-`IERC20` import and `OVRFLOToken(info.ovrfloToken).mint/burn` (owner-gated, the
-core is owner — `src/OVRFLOToken.sol:26-32`). Resolve `(underlying, ovrfloToken)` from
-`series[market]` and require `info.approved`. Strict CEI in `unwrap`: decrement reserve, burn,
-then transfer out.
-**Patterns to follow:** `deposit` parameter/`require` style and `SafeERC20` usage
-(`src/OVRFLO.sol:265-320`); mint/burn calls as in `deposit`/`claim`; event style in the
-constants/events block.
+**Approach:** Add `uint256 public wrappedUnderlying` to storage, a minimal
+`IOvrfloAdmin { function ovrfloInfo(address) external view returns (address treasury, address
+underlying, address ovrfloToken); }` interface, and `Wrapped(address indexed user, uint256
+amount)` / `Unwrapped(address indexed user, uint256 amount)` events. Implement `wrap`/`unwrap`
+per KTD3 using the existing `SafeERC20`-for-`IERC20` import and `OVRFLOToken(ovrfloToken).mint/burn`
+(owner-gated, the core is owner — `src/OVRFLOToken.sol:26-32`). Resolve `(underlying, ovrfloToken)`
+once at the top of each call via `IOvrfloAdmin(adminContract).ovrfloInfo(address(this))`. Strict
+CEI in `unwrap`: decrement reserve, burn, then transfer out.
+**Patterns to follow:** `deposit` `require`/`SafeERC20` style (`src/OVRFLO.sol:265-320`); mint/burn
+calls as in `deposit`/`claim`; event style in the constants/events block; `adminContract` usage
+(`src/OVRFLO.sol:163-166`).
 **Test scenarios:**
 - `wrap` mints exactly `amount` ovrfloToken to caller, pulls exactly `amount` underlying,
   increments `wrappedUnderlying`, emits `Wrapped`.
@@ -184,7 +196,11 @@ constants/events block.
 - Round trip: `wrap` then `unwrap` returns the caller to starting balances; reserve back to prior.
 - `unwrap` reverts when `wrappedUnderlying < amount` (reserve dry / partially funded), with no
   state change (no partial fill).
-- `wrap`/`unwrap` revert on unapproved `market` and on `amount == 0`.
+- `wrap`/`unwrap` revert on `amount == 0`.
+- The pair is sourced from the admin: test fixture sets `adminContract` to a mock factory exposing
+  `ovrfloInfo(core) -> (treasury, underlying, ovrfloToken)`; assert `wrap`/`unwrap` use those
+  exact addresses (the existing unit fixture deploys the core with an EOA admin, so a mock-admin
+  contract is required here).
 - A second party can `unwrap` reserve funded by a different party's `wrap` (shared, first-come).
 - Donation: transferring underlying directly to the core does not raise unwrap capacity beyond
   `wrappedUnderlying` (R5).
@@ -200,10 +216,10 @@ expectations on every path.
 **Requirements:** R6.
 **Dependencies:** U1.
 **Files:** `src/OVRFLO.sol`; `test/OVRFLOWrapUnwrap.t.sol` (extend).
-**Approach:** Mirror `sweepExcessPt` (`src/OVRFLO.sol:241-249`): compute `excess =
-balanceOf(underlying) − wrappedUnderlying`, require `excess > 0`, `safeTransfer` to `to`, emit an
-`ExcessUnderlyingSwept` event. `onlyAdmin`. Takes a `market` (or underlying) to resolve the
-underlying address consistently with KTD1/KTD2.
+**Approach:** Mirror `sweepExcessPt` (`src/OVRFLO.sol:241-249`): resolve `underlying` via
+`IOvrfloAdmin(adminContract).ovrfloInfo(address(this))`, compute `excess = balanceOf(underlying) −
+wrappedUnderlying`, require `excess > 0`, `safeTransfer` to `to`, emit an `ExcessUnderlyingSwept`
+event. `onlyAdmin`. Signature is `sweepExcessUnderlying(address to)` — no `market` needed.
 **Patterns to follow:** `sweepExcessPt` structure and `ExcessSwept` event.
 **Test scenarios:**
 - With no donation, `sweepExcessUnderlying` reverts (`no excess`).
@@ -221,9 +237,10 @@ underlying address consistently with KTD1/KTD2.
 **Files:** `test/OVRFLOWrapUnwrap.invariant.t.sol` (new) or an invariant block in
 `test/OVRFLOWrapUnwrap.t.sol`.
 **Approach:** Foundry invariant/property testing with a handler exercising `deposit`, `claim`
-(post-maturity), `wrap`, `unwrap`, and `sweepExcessUnderlying` against a mock market/oracle and
-mock underlying. Assert after every call: `ovrfloToken.totalSupply() == Σ marketTotalDeposited +
-wrappedUnderlying`, and `wrappedUnderlying <= underlying.balanceOf(core)`.
+(post-maturity), `wrap`, `unwrap`, and `sweepExcessUnderlying` against a mock market/oracle, mock
+underlying, and a mock admin exposing `ovrfloInfo(core)` (so `wrap`/`unwrap` resolve the pair).
+Assert after every call: `ovrfloToken.totalSupply() == Σ marketTotalDeposited + wrappedUnderlying`,
+and `wrappedUnderlying <= underlying.balanceOf(core)`.
 **Patterns to follow:** existing unit-test fixtures in `test/OVRFLO.t.sol`; Foundry
 invariant-handler conventions.
 **Test scenarios:**
@@ -275,8 +292,10 @@ no-`forge script --broadcast`-against-Anvil rule in `docs/solutions/patterns/ovr
 - Governance cap on `wrappedUnderlying` — deferred; supply is fully 1:1 backed so this is
   risk-appetite, not solvency (origin Outstanding Question).
 - Admin pause on `wrap`/`unwrap` — deferred (origin Outstanding Question).
-- Whether `sweepExcessUnderlying` should take a `market` or the `underlying` address directly —
-  resolve in U2 against the final signature; both resolve the same single underlying per KTD2.
+- Admin coupling (KTD1): `wrap`/`unwrap`/`sweepExcessUnderlying` assume `adminContract` exposes
+  `ovrfloInfo(address)`. True and permanent today (no `adminContract` setter). If an
+  admin-migration path is ever introduced, the new admin must preserve that getter — track it
+  with any future migration work.
 
 ---
 
@@ -285,10 +304,11 @@ no-`forge script --broadcast`-against-Anvil rule in `docs/solutions/patterns/ovr
 - Origin requirements: `docs/brainstorms/2026-06-20-ovrflo-wrap-unwrap-requirements.md`.
 - Core: `src/OVRFLO.sol` — `deposit` mint + `marketTotalDeposited` (`:281,303-304`), `claim`
   burn + per-market accounting (`:327-341`), fee→treasury (`:298`), `sweepExcessPt` pattern
-  (`:241-249`), `SeriesInfo` per-series `underlying`/`ovrfloToken` (`:60-69`), no `ReentrancyGuard`.
+  (`:241-249`), `adminContract` set once with no setter (`:41,179`), no `ReentrancyGuard`.
 - Token: `src/OVRFLOToken.sol` — owner-gated `mint`/`burn` (`:26-32`).
-- Factory (one-pair-per-core guarantee): `src/OVRFLOFactory.sol` — `deploy()` (`:107-130`),
-  `OvrfloInfo` (`:35-43`), `setSeriesApproved` forwarding (`:160-170`).
+- Factory (the admin/registry read): `src/OVRFLOFactory.sol` — `OvrfloInfo` struct
+  `(treasury, underlying, ovrfloToken)` (`:33-43`), public `ovrfloInfo` mapping getter (`:43`)
+  and `getOvrfloInfo` (`:208-210`), populated at `deploy()` (`:107-131`).
 - Test scaffolding: `test/OVRFLO.t.sol`, `test/fork/OVRFLOForkBase.t.sol`,
   `script/lib/OVRFLOTestFixtures.sol`.
 - Required reading: `docs/solutions/patterns/ovrflo-critical-patterns.md`.
