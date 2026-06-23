@@ -5,6 +5,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {PRBMath} from "prb-math/PRBMath.sol";
 import {OVRFLOToken} from "./OVRFLOToken.sol";
+import {IOvrfloAdmin} from "../interfaces/IOvrfloAdmin.sol";
 import {IPendleOracle} from "../interfaces/IPendleOracle.sol";
 import {ISablierV2LockupLinear} from "../interfaces/ISablierV2LockupLinear.sol";
 
@@ -39,6 +40,9 @@ contract OVRFLO {
 
     /// @notice Admin contract address with permission to configure markets
     address public adminContract;
+
+    /// @notice Underlying deposited through wrap and reserved for 1:1 unwraps
+    uint256 public wrappedUnderlying;
 
     /// @notice Sablier V2 Lockup Linear contract for streaming
     ISablierV2LockupLinear public immutable sablierLL =
@@ -117,11 +121,7 @@ contract OVRFLO {
     /// @param ovrfloToken The ovrflo token burned
     /// @param amount Amount redeemed; ovrflo burned equals PT delivered (1:1)
     event Claimed(
-        address indexed user,
-        address indexed market,
-        address indexed ptToken,
-        address ovrfloToken,
-        uint256 amount
+        address indexed user, address indexed market, address indexed ptToken, address ovrfloToken, uint256 amount
     );
 
     /// @notice Emitted when excess PT tokens are swept
@@ -129,6 +129,22 @@ contract OVRFLO {
     /// @param to The recipient address
     /// @param amount The amount swept
     event ExcessSwept(address indexed ptToken, address indexed to, uint256 amount);
+
+    /// @notice Emitted when a user wraps underlying into ovrfloToken
+    /// @param user The wrapper's address
+    /// @param amount Amount of underlying wrapped and ovrfloToken minted
+    event Wrapped(address indexed user, uint256 amount);
+
+    /// @notice Emitted when a user unwraps ovrfloToken back to underlying
+    /// @param user The unwrapper's address
+    /// @param amount Amount of ovrfloToken burned and underlying returned
+    event Unwrapped(address indexed user, uint256 amount);
+
+    /// @notice Emitted when excess underlying tokens are swept
+    /// @param underlying The underlying token address
+    /// @param to The recipient address
+    /// @param amount The amount swept
+    event ExcessUnderlyingSwept(address indexed underlying, address indexed to, uint256 amount);
 
     /// @notice Emitted when a new market series is approved
     /// @param market The Pendle market address
@@ -248,9 +264,59 @@ contract OVRFLO {
         emit ExcessSwept(ptToken, to, excess);
     }
 
+    /// @notice Sweeps underlying accidentally sent above the wrap reserve
+    /// @dev Underlying held for wrapped supply is reserved and cannot be swept.
+    /// @param to The recipient address
+    function sweepExcessUnderlying(address to) external onlyAdmin {
+        (, address underlying,) = IOvrfloAdmin(adminContract).ovrfloInfo(address(this));
+        uint256 balance = IERC20(underlying).balanceOf(address(this));
+        uint256 reserve = wrappedUnderlying;
+        uint256 excess = balance > reserve ? balance - reserve : 0;
+
+        require(excess > 0, "OVRFLO: no excess");
+        IERC20(underlying).safeTransfer(to, excess);
+        emit ExcessUnderlyingSwept(underlying, to, excess);
+    }
+
     /*//////////////////////////////////////////////////////////////
                             USER FUNCTIONS
     //////////////////////////////////////////////////////////////*/
+
+    /// @notice Wraps underlying 1:1 into ovrfloToken without fees or streams
+    /// @param amount Amount of underlying to wrap
+    function wrap(uint256 amount) external {
+        require(amount > 0, "OVRFLO: amount is zero");
+
+        (, address underlying, address ovrfloToken) = IOvrfloAdmin(adminContract).ovrfloInfo(address(this));
+
+        uint256 balanceBefore = IERC20(underlying).balanceOf(address(this));
+        IERC20(underlying).safeTransferFrom(msg.sender, address(this), amount);
+        uint256 balanceAfter = IERC20(underlying).balanceOf(address(this));
+        require(
+            balanceAfter >= balanceBefore && balanceAfter - balanceBefore == amount, "OVRFLO: transfer amount mismatch"
+        );
+
+        wrappedUnderlying += amount;
+        OVRFLOToken(ovrfloToken).mint(msg.sender, amount);
+
+        emit Wrapped(msg.sender, amount);
+    }
+
+    /// @notice Unwraps ovrfloToken 1:1 into underlying when the reserve is funded
+    /// @param amount Amount of ovrfloToken to burn
+    function unwrap(uint256 amount) external {
+        require(amount > 0, "OVRFLO: amount is zero");
+
+        (, address underlying, address ovrfloToken) = IOvrfloAdmin(adminContract).ovrfloInfo(address(this));
+        uint256 reserve = wrappedUnderlying;
+        require(reserve >= amount, "OVRFLO: insufficient reserve");
+
+        wrappedUnderlying = reserve - amount;
+        OVRFLOToken(ovrfloToken).burn(msg.sender, amount);
+        IERC20(underlying).safeTransfer(msg.sender, amount);
+
+        emit Unwrapped(msg.sender, amount);
+    }
 
     /// @notice Deposits PT tokens to receive ovrfloTokens immediately and a stream for the discount
     /// @dev User must approve both PT token and underlying (for fee) before calling.

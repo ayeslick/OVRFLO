@@ -162,13 +162,20 @@ contract OVRFLOFactory is Ownable2Step {
         {
             address sy;
             (sy, pt,) = IPendleMarket(market).readTokens();
-            (, address assetAddress,) = IStandardizedYield(sy).assetInfo();
-            require(assetAddress == info.underlying, "OVRFLOFactory: underlying mismatch");
+            require(IStandardizedYield(sy).yieldToken() == info.underlying, "OVRFLOFactory: underlying mismatch");
         }
 
-        OVRFLO(ovrflo).setSeriesApproved(
-            market, pt, info.underlying, info.ovrfloToken, oracle, twapDuration, IPendleMarket(market).expiry(), feeBps
-        );
+        OVRFLO(ovrflo)
+            .setSeriesApproved(
+                market,
+                pt,
+                info.underlying,
+                info.ovrfloToken,
+                oracle,
+                twapDuration,
+                IPendleMarket(market).expiry(),
+                feeBps
+            );
 
         isMarketApproved[ovrflo][market] = true;
         approvedMarketAt[ovrflo][approvedMarketCount[ovrflo]] = market;
@@ -187,6 +194,12 @@ contract OVRFLOFactory is Ownable2Step {
         OVRFLO(ovrflo).sweepExcessPt(ptToken, to);
     }
 
+    /// @notice Sweep excess underlying from an OVRFLO
+    function sweepExcessUnderlying(address ovrflo, address to) external onlyOwner {
+        _requireKnownOvrflo(ovrflo);
+        OVRFLO(ovrflo).sweepExcessUnderlying(to);
+    }
+
     /// @notice Increase Pendle oracle cardinality for a market (must be done before addMarket)
     /// @param market The Pendle market address
     /// @param oracle Oracle used for readiness/cardinality inspection (IPendleOracle-compatible)
@@ -200,7 +213,7 @@ contract OVRFLOFactory is Ownable2Step {
             IPendleMarket(market).increaseObservationsCardinalityNext(cardinalityRequired);
         }
     }
- 
+
     /*//////////////////////////////////////////////////////////////
                             VIEW FUNCTIONS
     //////////////////////////////////////////////////////////////*/

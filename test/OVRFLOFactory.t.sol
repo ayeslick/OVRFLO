@@ -407,7 +407,7 @@ contract OVRFLOFactoryTest is Test {
         MockPrincipalToken pt = new MockPrincipalToken(sy, 18, expiry);
         MockPendleMarket market = new MockPendleMarket(sy, address(pt), expiry);
         _mockOracleState(address(market), MIN_TWAP_DURATION, false, 0, true);
-        _mockSyAssetInfo(sy, address(underlying));
+        _mockSyYieldToken(sy, address(underlying));
 
         vm.expectEmit(true, false, false, true, address(ovrflo));
         emit SeriesApproved(
@@ -460,14 +460,14 @@ contract OVRFLOFactoryTest is Test {
         MockPrincipalToken pt1 = new MockPrincipalToken(sy1, 18, expiry1);
         MockPendleMarket market1 = new MockPendleMarket(sy1, address(pt1), expiry1);
         _mockOracleState(address(market1), MIN_TWAP_DURATION, false, 0, true);
-        _mockSyAssetInfo(sy1, address(underlying));
+        _mockSyYieldToken(sy1, address(underlying));
 
         uint256 expiry2 = block.timestamp + 60 days;
         address sy2 = address(0xDDDD);
         MockPrincipalToken pt2 = new MockPrincipalToken(sy2, 18, expiry2);
         MockPendleMarket market2 = new MockPendleMarket(sy2, address(pt2), expiry2);
         _mockOracleState(address(market2), MIN_TWAP_DURATION, false, 0, true);
-        _mockSyAssetInfo(sy2, address(underlying));
+        _mockSyYieldToken(sy2, address(underlying));
 
         vm.startPrank(OWNER);
         factory.addMarket(address(ovrflo), address(market1), PENDLE_ORACLE, MIN_TWAP_DURATION, 5);
@@ -493,8 +493,8 @@ contract OVRFLOFactoryTest is Test {
 
         _mockOracleState(address(market1), MIN_TWAP_DURATION, false, 0, true);
         _mockOracleState(address(market2), MIN_TWAP_DURATION, false, 0, true);
-        _mockSyAssetInfo(sy1, address(underlying));
-        _mockSyAssetInfo(sy2, address(underlying));
+        _mockSyYieldToken(sy1, address(underlying));
+        _mockSyYieldToken(sy2, address(underlying));
 
         vm.prank(OWNER);
         factory.addMarket(address(ovrflo), address(market1), PENDLE_ORACLE, MIN_TWAP_DURATION, 0);
@@ -513,7 +513,7 @@ contract OVRFLOFactoryTest is Test {
         MockPrincipalToken pt = new MockPrincipalToken(sy, 18, expiry);
         MockPendleMarket market = new MockPendleMarket(sy, address(pt), expiry);
         _mockOracleState(address(market), MIN_TWAP_DURATION, false, 0, true);
-        _mockSyAssetInfo(sy, address(0xCAFE));
+        _mockSyYieldToken(sy, address(0xCAFE));
 
         vm.prank(OWNER);
         vm.expectRevert("OVRFLOFactory: underlying mismatch");
@@ -555,7 +555,7 @@ contract OVRFLOFactoryTest is Test {
         MockPrincipalToken pt = new MockPrincipalToken(sy, 18, expiry);
         MockPendleMarket market = new MockPendleMarket(sy, address(pt), expiry);
         _mockOracleState(address(market), MIN_TWAP_DURATION, false, 0, true);
-        _mockSyAssetInfo(sy, address(underlying));
+        _mockSyYieldToken(sy, address(underlying));
 
         vm.prank(OWNER);
         factory.addMarket(address(ovrflo), address(market), PENDLE_ORACLE, MIN_TWAP_DURATION, 0);
@@ -622,7 +622,7 @@ contract OVRFLOFactoryTest is Test {
         assertEq(factory.owner(), OWNER);
         assertEq(factory.pendingOwner(), NEW_OWNER);
     }
- 
+
     function _deployConfiguredSystem() internal returns (OVRFLO ovrflo, OVRFLOToken token) {
         vm.prank(OWNER);
         factory.configureDeployment(TREASURY, address(underlying), "Wrapped Ether", "WETH");
@@ -648,8 +648,8 @@ contract OVRFLOFactoryTest is Test {
         );
     }
 
-    function _mockSyAssetInfo(address sy, address assetAddress) internal {
-        vm.mockCall(sy, abi.encodeWithSignature("assetInfo()"), abi.encode(uint8(0), assetAddress, uint8(18)));
+    function _mockSyYieldToken(address sy, address yieldToken) internal {
+        vm.mockCall(sy, abi.encodeWithSignature("yieldToken()"), abi.encode(yieldToken));
     }
 
     function _assertSeriesTokenAndUnderlying(

@@ -39,11 +39,13 @@ contract OVRFLOFactoryMainnetForkTest is OVRFLOForkBase {
         (OVRFLOFactory factory, OVRFLO ovrflo, OVRFLOToken token) = _deployConfiguredSystem();
         (address sy, address pt,) = IPendleMarket(PRIMARY_MARKET).readTokens();
         (, address assetAddress,) = IStandardizedYield(sy).assetInfo();
+        address yieldToken = IStandardizedYield(sy).yieldToken();
         uint256 expiry = IPendleMarket(PRIMARY_MARKET).expiry();
 
         assertEq(sy, WSTETH_SY);
         assertEq(pt, PRIMARY_PT);
         assertEq(assetAddress, STETH);
+        assertEq(yieldToken, WSTETH);
         assertEq(expiry, PRIMARY_EXPIRY);
 
         _prepareOracle(factory, PRIMARY_MARKET);
@@ -69,7 +71,7 @@ contract OVRFLOFactoryMainnetForkTest is OVRFLOForkBase {
             assertEq(storedExpiry, expiry);
             assertEq(storedPt, pt);
             assertEq(storedToken, address(token));
-            assertEq(storedUnderlying, STETH);
+            assertEq(storedUnderlying, WSTETH);
             assertEq(storedOracle, address(ORACLE));
         }
 
@@ -83,11 +85,11 @@ contract OVRFLOFactoryMainnetForkTest is OVRFLOForkBase {
         (OVRFLOFactory factory, OVRFLO ovrflo, OVRFLOToken token) = _deployConfiguredSystem();
         (address primarySy,,) = IPendleMarket(PRIMARY_MARKET).readTokens();
         (address secondarySy,,) = IPendleMarket(SECONDARY_MARKET).readTokens();
-        (, address primaryAsset,) = IStandardizedYield(primarySy).assetInfo();
-        (, address secondaryAsset,) = IStandardizedYield(secondarySy).assetInfo();
+        address primaryYieldToken = IStandardizedYield(primarySy).yieldToken();
+        address secondaryYieldToken = IStandardizedYield(secondarySy).yieldToken();
 
-        assertEq(primaryAsset, STETH);
-        assertEq(secondaryAsset, STETH);
+        assertEq(primaryYieldToken, WSTETH);
+        assertEq(secondaryYieldToken, WSTETH);
 
         _prepareOracle(factory, PRIMARY_MARKET);
         _prepareOracle(factory, SECONDARY_MARKET);

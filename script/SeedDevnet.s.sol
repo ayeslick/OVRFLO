@@ -10,9 +10,9 @@ import {OVRFLOSeedRunner} from "./lib/OVRFLOSeedRunner.sol";
 ///
 ///         Required env:
 ///         - PRIVATE_KEY   — hex private key for the deployer/owner.
-///                           Must be pre-funded with >= STETH_SEED_ETH
+///                           Must be pre-funded with >= WSTETH_SEED_ETH
 ///                           plus gas headroom on the VTN.
-///         - DEV_WALLET    — address receiving PT + stETH for UI testing.
+///         - DEV_WALLET    — address receiving PT + wstETH for UI testing.
 ///         - TENDERLY_RPC_URL — passed to `--rpc-url` on the CLI, not
 ///                              read here, but documented for operators.
 ///
@@ -29,7 +29,7 @@ contract SeedDevnet is OVRFLOSeedRunner {
         require(block.chainid == 1, "SeedDevnet: Tenderly VTN must alias mainnet chain id");
 
         address owner = vm.addr(ownerPk);
-        _ensureTenderlyBroadcasterFunded(owner, STETH_SEED_ETH + OWNER_GAS_HEADROOM);
+        _ensureTenderlyBroadcasterFunded(owner, WSTETH_SEED_ETH + OWNER_GAS_HEADROOM);
 
         vm.startBroadcast(ownerPk);
         _runSeed(owner, devWallet, "devnet");

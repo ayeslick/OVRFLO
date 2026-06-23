@@ -31,7 +31,7 @@ abstract contract OVRFLOTestFixtures {
 
     IPendleOracle internal constant ORACLE = IPendleOracle(0x9a9Fa8338dd5E5B2188006f1Cd2Ef26d921650C2);
 
-    /// @notice Deploy the factory + OVRFLO + token configured against stETH.
+    /// @notice Deploy the factory + OVRFLO + token configured against wstETH.
     ///         Caller must already hold the `owner` role on the calling
     ///         context (`vm.startPrank(owner)` in tests, broadcast-as-owner
     ///         in scripts) because `configureDeployment` is onlyOwner.
@@ -40,7 +40,7 @@ abstract contract OVRFLOTestFixtures {
         returns (OVRFLOFactory factory, OVRFLO ovrflo, OVRFLOToken token)
     {
         factory = new OVRFLOFactory(owner);
-        factory.configureDeployment(TREASURY, STETH, "Lido Staked Ether", "STETH");
+        factory.configureDeployment(TREASURY, WSTETH, "Wrapped Staked Ether", "WSTETH");
         (address ovrfloAddr, address tokenAddr) = factory.deploy();
         ovrflo = OVRFLO(ovrfloAddr);
         token = OVRFLOToken(tokenAddr);
