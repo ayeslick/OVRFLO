@@ -60,6 +60,7 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
         address market;
         uint256 streamId;
         uint16 aprBps;
+        uint16 feeBps;
         bool active;
     }
 
@@ -77,6 +78,7 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
         uint256 streamId;
         uint16 aprBps;
         uint128 borrowAmount;
+        uint16 feeBps;
         bool active;
     }
 
@@ -117,7 +119,12 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
         uint256 netToSeller
     );
     event SaleListingPosted(
-        uint256 indexed listingId, address indexed maker, address indexed market, uint256 streamId, uint16 aprBps
+        uint256 indexed listingId,
+        address indexed maker,
+        address indexed market,
+        uint256 streamId,
+        uint16 aprBps,
+        uint16 feeBps
     );
     event SaleListingCancelled(uint256 indexed listingId, address indexed maker, uint256 streamId);
     event SaleListingTaken(
@@ -150,6 +157,7 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
         address indexed market,
         uint256 streamId,
         uint16 aprBps,
+        uint16 feeBps,
         uint128 borrowAmount
     );
     event BorrowListingCancelled(uint256 indexed listingId, address indexed borrower, uint256 streamId);
@@ -305,9 +313,16 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
         sablier.transferFrom(msg.sender, address(this), streamId);
 
         saleListings[listingId] =
-            SaleListing({maker: msg.sender, market: market, streamId: streamId, aprBps: aprBps, active: true});
+            SaleListing({
+                maker: msg.sender,
+                market: market,
+                streamId: streamId,
+                aprBps: aprBps,
+                feeBps: feeBps,
+                active: true
+            });
 
-        emit SaleListingPosted(listingId, msg.sender, market, streamId, aprBps);
+        emit SaleListingPosted(listingId, msg.sender, market, streamId, aprBps, feeBps);
     }
 
     function cancelListing(uint256 listingId) external nonReentrant {
@@ -332,7 +347,7 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
         require(grossPrice > 0, "OVRFLOBook: price zero");
         require(grossPrice <= maxPriceIn, "OVRFLOBook: slippage");
 
-        uint256 feeAmount = StreamPricing.fee(grossPrice, feeBps);
+        uint256 feeAmount = StreamPricing.fee(grossPrice, listing.feeBps);
         uint256 netToSeller = grossPrice - feeAmount;
 
         listing.active = false;
@@ -448,10 +463,11 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
             streamId: streamId,
             aprBps: aprBps,
             borrowAmount: borrowAmount,
+            feeBps: feeBps,
             active: true
         });
 
-        emit BorrowListingPosted(listingId, msg.sender, market, streamId, aprBps, borrowAmount);
+        emit BorrowListingPosted(listingId, msg.sender, market, streamId, aprBps, feeBps, borrowAmount);
     }
 
     function cancelBorrowListing(uint256 listingId) external nonReentrant {
@@ -465,10 +481,13 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
         emit BorrowListingCancelled(listingId, msg.sender, listing.streamId);
     }
 
-    function lendAgainstListing(uint256 listingId, uint128 maxPriceIn) external nonReentrant returns (uint256 loanId) {
+    function lendAgainstListing(uint256 listingId, uint128 minObligationOut)
+        external
+        nonReentrant
+        returns (uint256 loanId)
+    {
         BorrowListing storage listing = borrowListings[listingId];
         require(listing.active, "OVRFLOBook: borrow listing inactive");
-        require(listing.borrowAmount <= maxPriceIn, "OVRFLOBook: slippage");
 
         StreamPricing.Eligibility memory eligibility = _requireEligible(listing.market, listing.streamId);
         uint256 timeToMaturity = _timeToMaturity(eligibility.seriesMaturity);
@@ -476,11 +495,12 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
         require(grossPrice > 0, "OVRFLOBook: price zero");
         require(listing.borrowAmount <= grossPrice, "OVRFLOBook: borrow above price");
 
-        uint256 feeAmount = StreamPricing.fee(listing.borrowAmount, feeBps);
-        uint256 netToBorrower = uint256(listing.borrowAmount) - feeAmount;
         uint128 obligation = StreamPricing.obligationForFill(
             listing.borrowAmount, grossPrice, eligibility.remaining, listing.aprBps, timeToMaturity
         );
+        require(obligation >= minObligationOut, "OVRFLOBook: slippage");
+        uint256 feeAmount = StreamPricing.fee(listing.borrowAmount, listing.feeBps);
+        uint256 netToBorrower = uint256(listing.borrowAmount) - feeAmount;
 
         listing.active = false;
         loanId = _storeLoan(listing.borrower, msg.sender, listing.streamId, obligation);
@@ -629,10 +649,10 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
     function saleListingState(uint256 listingId)
         external
         view
-        returns (address maker, address market, uint256 streamId, uint16 aprBps, bool active)
+        returns (address maker, address market, uint256 streamId, uint16 aprBps, uint16 listingFeeBps, bool active)
     {
         SaleListing storage listing = saleListings[listingId];
-        return (listing.maker, listing.market, listing.streamId, listing.aprBps, listing.active);
+        return (listing.maker, listing.market, listing.streamId, listing.aprBps, listing.feeBps, listing.active);
     }
 
     function lendOfferState(uint256 offerId)
@@ -647,11 +667,26 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
     function borrowListingState(uint256 listingId)
         external
         view
-        returns (address borrower, address market, uint256 streamId, uint16 aprBps, uint128 borrowAmount, bool active)
+        returns (
+            address borrower,
+            address market,
+            uint256 streamId,
+            uint16 aprBps,
+            uint128 borrowAmount,
+            uint16 listingFeeBps,
+            bool active
+        )
     {
         BorrowListing storage listing = borrowListings[listingId];
-        return
-            (listing.borrower, listing.market, listing.streamId, listing.aprBps, listing.borrowAmount, listing.active);
+        return (
+            listing.borrower,
+            listing.market,
+            listing.streamId,
+            listing.aprBps,
+            listing.borrowAmount,
+            listing.feeBps,
+            listing.active
+        );
     }
 
     /*//////////////////////////////////////////////////////////////

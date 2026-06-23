@@ -230,6 +230,23 @@ contract OVRFLOBookTest is Test {
     event FeeSet(uint16 feeBps);
     event TreasurySet(address indexed treasury);
     event OwnershipTransferStarted(address indexed previousOwner, address indexed newOwner);
+    event SaleListingPosted(
+        uint256 indexed listingId,
+        address indexed maker,
+        address indexed market,
+        uint256 streamId,
+        uint16 aprBps,
+        uint16 feeBps
+    );
+    event BorrowListingPosted(
+        uint256 indexed listingId,
+        address indexed borrower,
+        address indexed market,
+        uint256 streamId,
+        uint16 aprBps,
+        uint16 feeBps,
+        uint128 borrowAmount
+    );
 
     OVRFLOBookMockFactory internal factory;
     OVRFLOBookMockCore internal core;
@@ -503,15 +520,23 @@ contract OVRFLOBookTest is Test {
         sablier.approve(address(book), 6);
         vm.expectRevert("OVRFLOBook: apr out of bounds");
         book.listStream(MARKET, 6, 999);
+        vm.stopPrank();
 
+        book.setFee(42);
+
+        vm.expectEmit(true, true, true, true, address(book));
+        emit SaleListingPosted(1, SELLER, MARKET, 6, 1000, 42);
+        vm.startPrank(SELLER);
         uint256 listingId = book.listStream(MARKET, 6, 1000);
         vm.stopPrank();
 
-        (address maker, address market, uint256 streamId, uint16 aprBps, bool active) = book.saleListings(listingId);
+        (address maker, address market, uint256 streamId, uint16 aprBps, uint16 listingFeeBps, bool active) =
+            book.saleListings(listingId);
         assertEq(maker, SELLER);
         assertEq(market, MARKET);
         assertEq(streamId, 6);
         assertEq(aprBps, 1000);
+        assertEq(listingFeeBps, 42);
         assertTrue(active);
         assertEq(sablier.ownerOf(6), address(book));
     }
@@ -523,7 +548,7 @@ contract OVRFLOBookTest is Test {
         vm.prank(SELLER);
         book.cancelListing(listingId);
 
-        (,,,, bool active) = book.saleListings(listingId);
+        (,,,,, bool active) = book.saleListings(listingId);
         assertFalse(active);
         assertEq(sablier.ownerOf(7), SELLER);
         assertEq(sablier.getWithdrawnAmount(7), 0);
@@ -540,12 +565,28 @@ contract OVRFLOBookTest is Test {
         book.takeListing(listingId, 100 ether);
         vm.stopPrank();
 
-        (,,,, bool active) = book.saleListings(listingId);
+        (,,,,, bool active) = book.saleListings(listingId);
         assertFalse(active);
         assertEq(underlying.balanceOf(SELLER), 99 ether);
         assertEq(underlying.balanceOf(TREASURY), 1 ether);
         assertEq(underlying.balanceOf(address(book)), 0);
         assertEq(sablier.ownerOf(8), BUYER);
+    }
+
+    function test_TakeListing_UsesSnapshottedFeeWhenGlobalFeeChanges() public {
+        book.setFee(0);
+        _mintEligibleStream(32, SELLER, 110 ether, 0);
+        uint256 listingId = _listStream(SELLER, 32);
+        book.setFee(100);
+
+        underlying.mint(BUYER, 100 ether);
+        vm.startPrank(BUYER);
+        underlying.approve(address(book), 100 ether);
+        book.takeListing(listingId, 100 ether);
+        vm.stopPrank();
+
+        assertEq(underlying.balanceOf(SELLER), 100 ether);
+        assertEq(underlying.balanceOf(TREASURY), 0);
     }
 
     function test_TakeListing_RespectsSlippageDustAndDeadIds() public {
@@ -680,17 +721,31 @@ contract OVRFLOBookTest is Test {
 
         vm.expectRevert("OVRFLOBook: borrow zero");
         book.postBorrowListing(MARKET, 14, 1000, 0);
+        vm.stopPrank();
 
+        book.setFee(35);
+
+        vm.expectEmit(true, true, true, true, address(book));
+        emit BorrowListingPosted(1, SELLER, MARKET, 14, 1000, 35, 100 ether);
+        vm.startPrank(SELLER);
         uint256 listingId = book.postBorrowListing(MARKET, 14, 1000, 100 ether);
         vm.stopPrank();
 
-        (address borrower, address market, uint256 streamId, uint16 aprBps, uint128 borrowAmount, bool active) =
-            book.borrowListings(listingId);
+        (
+            address borrower,
+            address market,
+            uint256 streamId,
+            uint16 aprBps,
+            uint128 borrowAmount,
+            uint16 listingFeeBps,
+            bool active
+        ) = book.borrowListings(listingId);
         assertEq(borrower, SELLER);
         assertEq(market, MARKET);
         assertEq(streamId, 14);
         assertEq(aprBps, 1000);
         assertEq(borrowAmount, 100 ether);
+        assertEq(listingFeeBps, 35);
         assertTrue(active);
         assertEq(sablier.ownerOf(14), address(book));
     }
@@ -703,7 +758,7 @@ contract OVRFLOBookTest is Test {
         underlying.mint(BUYER, 100 ether);
         vm.startPrank(BUYER);
         underlying.approve(address(book), 100 ether);
-        uint256 loanId = book.lendAgainstListing(listingId, 100 ether);
+        uint256 loanId = book.lendAgainstListing(listingId, 110 ether);
         vm.stopPrank();
 
         (
@@ -726,11 +781,29 @@ contract OVRFLOBookTest is Test {
         assertEq(underlying.balanceOf(SELLER), 99 ether);
         assertEq(underlying.balanceOf(TREASURY), 1 ether);
 
-        (,,,,, bool active) = book.borrowListings(listingId);
+        (,,,,,, bool active) = book.borrowListings(listingId);
         assertFalse(active);
     }
 
-    function test_BorrowListing_CancelAndDeadIdAndSlippage() public {
+    function test_LendAgainstListing_UsesSnapshottedFeeWhenGlobalFeeChanges() public {
+        book.setFee(0);
+        _mintEligibleStream(33, SELLER, 110 ether, 0);
+        uint256 listingId = _postBorrowListing(SELLER, 33, 100 ether);
+        book.setFee(100);
+
+        underlying.mint(BUYER, 100 ether);
+        vm.startPrank(BUYER);
+        underlying.approve(address(book), 100 ether);
+        uint256 loanId = book.lendAgainstListing(listingId, 110 ether);
+        vm.stopPrank();
+
+        (,,, uint128 obligation,,,) = book.loans(loanId);
+        assertEq(obligation, 110 ether);
+        assertEq(underlying.balanceOf(SELLER), 100 ether);
+        assertEq(underlying.balanceOf(TREASURY), 0);
+    }
+
+    function test_BorrowListing_CancelAndDeadIdAndObligationSlippage() public {
         _mintEligibleStream(16, SELLER, 110 ether, 0);
         uint256 listingId = _postBorrowListing(SELLER, 16, 100 ether);
 
@@ -742,14 +815,38 @@ contract OVRFLOBookTest is Test {
         vm.startPrank(BUYER);
         underlying.approve(address(book), 100 ether);
         vm.expectRevert("OVRFLOBook: borrow listing inactive");
-        book.lendAgainstListing(listingId, 100 ether);
+        book.lendAgainstListing(listingId, 0);
         vm.stopPrank();
 
         _mintEligibleStream(17, SELLER, 110 ether, 0);
         uint256 slippageListingId = _postBorrowListing(SELLER, 17, 100 ether);
-        vm.prank(BUYER);
+        vm.startPrank(BUYER);
         vm.expectRevert("OVRFLOBook: slippage");
-        book.lendAgainstListing(slippageListingId, 99 ether);
+        book.lendAgainstListing(slippageListingId, 111 ether);
+        uint256 loanId = book.lendAgainstListing(slippageListingId, 99 ether);
+        vm.stopPrank();
+
+        (,,, uint128 obligation,,,) = book.loans(loanId);
+        assertEq(obligation, 110 ether);
+    }
+
+    function test_LendAgainstListing_RevertsWhenTimeDriftDropsObligationBelowMin() public {
+        _mintEligibleStream(34, SELLER, 110 ether, 0);
+        uint256 listingId = _postBorrowListing(SELLER, 34, 80 ether);
+        (, uint128 preWarpObligation,,,) = book.quote(MARKET, 34, 1000, 80 ether);
+
+        vm.warp(block.timestamp + 180 days);
+
+        underlying.mint(BUYER, 80 ether);
+        vm.startPrank(BUYER);
+        underlying.approve(address(book), 80 ether);
+        vm.expectRevert("OVRFLOBook: slippage");
+        book.lendAgainstListing(listingId, preWarpObligation);
+        uint256 loanId = book.lendAgainstListing(listingId, 0);
+        vm.stopPrank();
+
+        (,,, uint128 loanObligation,,,) = book.loans(loanId);
+        assertLt(loanObligation, preWarpObligation);
     }
 
     function test_ClaimLoan_CapsAtOutstandingAndRequiresLender() public {
@@ -985,12 +1082,19 @@ contract OVRFLOBookTest is Test {
 
         _mintEligibleStream(26, SELLER, 110 ether, 0);
         uint256 saleListingId = _listStream(SELLER, 26);
-        (address listingMaker, address listingMarket, uint256 listingStreamId, uint16 listingApr, bool listingActive) =
-            book.saleListingState(saleListingId);
+        (
+            address listingMaker,
+            address listingMarket,
+            uint256 listingStreamId,
+            uint16 listingApr,
+            uint16 listingFeeBps,
+            bool listingActive
+        ) = book.saleListingState(saleListingId);
         assertEq(listingMaker, SELLER);
         assertEq(listingMarket, MARKET);
         assertEq(listingStreamId, 26);
         assertEq(listingApr, 1000);
+        assertEq(listingFeeBps, 0);
         assertTrue(listingActive);
 
         uint256 lendOfferId = _postLendOffer(BUYER, 100 ether);
@@ -1010,6 +1114,7 @@ contract OVRFLOBookTest is Test {
             uint256 borrowStreamId,
             uint16 borrowApr,
             uint128 borrowAmount,
+            uint16 borrowFeeBps,
             bool borrowActive
         ) = book.borrowListingState(borrowListingId);
         assertEq(borrower, SELLER);
@@ -1017,6 +1122,7 @@ contract OVRFLOBookTest is Test {
         assertEq(borrowStreamId, 27);
         assertEq(borrowApr, 1000);
         assertEq(borrowAmount, 100 ether);
+        assertEq(borrowFeeBps, 0);
         assertTrue(borrowActive);
     }
 
