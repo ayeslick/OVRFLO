@@ -19,9 +19,11 @@ by the reserve and reverts when it cannot be covered. This gives `ovrfloToken` h
 stream-independent exit to underlying and lets the protocol mint `ovrfloToken` from underlying
 to seed swap pools (see origin: `docs/brainstorms/2026-06-20-ovrflo-wrap-unwrap-requirements.md`).
 
-This is a deliberate **core change** to `src/OVRFLO.sol`. It is independent of the Secondary
-Market Book (`docs/plans/2026-06-20-001-feat-ovrflo-secondary-market-book-plan.md`) and shares
-no code with it.
+This is a deliberate **core change** to `src/OVRFLO.sol`, plus one small **additive forwarder**
+on `src/OVRFLOFactory.sol` so the multisig can invoke the `onlyAdmin` sweep (the factory is the
+core's admin, exactly as for `sweepExcessPt`). No existing factory behavior changes. It is
+independent of the Secondary Market Book
+(`docs/plans/2026-06-20-001-feat-ovrflo-secondary-market-book-plan.md`) and shares no code with it.
 
 ---
 
@@ -44,7 +46,9 @@ intrinsically bounded by the wrap reserve, and that bound is the central design 
 **In scope**
 - `wrap` / `unwrap` external functions on `src/OVRFLO.sol`, 1:1, no fee, no stream.
 - A single `wrappedUnderlying` reserve counter and reserve-bounded `unwrap`.
-- `sweepExcessUnderlying` admin recovery of donated underlying above the reserve.
+- `sweepExcessUnderlying` admin recovery of donated underlying above the reserve, plus a thin
+  `sweepExcessUnderlying(ovrflo, to)` forwarder on `src/OVRFLOFactory.sol` (mirrors the existing
+  `sweepExcessPt` forwarder) so the multisig can reach the `onlyAdmin` function.
 - Solvency/peg invariant coverage and a mainnet-fork integration pass.
 
 **Deferred to Follow-Up Work**
@@ -99,10 +103,13 @@ intrinsically bounded by the wrap reserve, and that bound is the central design 
   18). Non-18 underlyings are out of scope; revisit with explicit scaling if ever needed.
 
 - KTD7. **CEI, no new guard.** Follow the core's existing posture: `src/OVRFLO.sol` uses no
-  `ReentrancyGuard` and relies on checks-effects-interactions. `unwrap` decrements the reserve and
-  burns (effects) before transferring underlying out (interaction); `wrap` updates the counter and
-  mints around a single `safeTransferFrom`. wstETH has no transfer hooks, so CEI is sufficient.
-  (Confirmed with user; a guard is a deferred option, see Open Questions.)
+  `ReentrancyGuard` and relies on checks-effects-interactions. `unwrap` is a value **outflow**, so
+  it decrements the reserve and burns (effects) before transferring underlying out (interaction).
+  `wrap` is a value **inflow**, so it pulls the underlying first (`safeTransferFrom`) and only then
+  mints and increments `wrappedUnderlying`; a reentrant call during the pull would observe the
+  pre-wrap counter and balance, which is internally consistent and not exploitable. wstETH has no
+  transfer hooks, so CEI is sufficient. (Confirmed with user; a guard is a deferred option, see
+  Open Questions.)
 
 - KTD8. **Solvency invariant (origin D4, D5).** Wrap-minted ovrfloToken never writes
   `marketTotalDeposited` (`src/OVRFLO.sol:281,337`); ovrfloToken stays fungible. The system is
@@ -114,10 +121,15 @@ intrinsically bounded by the wrap reserve, and that bound is the central design 
   ```
 
   `claim` is bounded per market by `marketTotalDeposited`; `unwrap` is bounded by
-  `wrappedUnderlying`; each reverts when its pool is exhausted. 1:1 `unwrap` is safe pre-maturity
-  because unvested value lives locked in Sablier, so a wallet holder can only `unwrap` already-
-  vested ovrfloToken, which never exceeds current backing. No segregation between wrap-origin and
-  deposit-origin ovrfloToken is added; routing is first-come and value-neutral post-maturity.
+  `wrappedUnderlying`; each reverts when its pool is exhausted. The solvency guarantee for `unwrap`
+  is precisely this reserve bound: it can never pay out more underlying than was wrapped in, so it
+  cannot touch deposit-origin (PT) backing. (Vesting reinforces this rather than causing it —
+  unvested ovrfloToken is held by Sablier, not in wallets, so it cannot be `unwrap`ped until it
+  vests, which means `unwrap` adds no run pressure beyond the reserve already set aside.) Because
+  ovrfloToken is fungible, a deposit-origin holder *may* `unwrap` (consuming reserve) and a
+  wrap-origin holder *may* `claim` post-maturity (consuming PT); this is value-neutral at the 1:1
+  peg and leaves the aggregate invariant intact, so no segregation between wrap-origin and
+  deposit-origin ovrfloToken is added and routing is first-come.
 
 ---
 
@@ -161,6 +173,10 @@ invariant:     supply(ovrfloToken) == Σ marketTotalDeposited + wrappedUnderlyin
 - R6. `sweepExcessUnderlying(to)` is `onlyAdmin`, resolves `underlying` from
   `adminContract.ovrfloInfo(address(this))`, transfers only `balanceOf(underlying) −
   wrappedUnderlying` (reverts when zero), and can never reduce the reserve. Emits an event.
+  Because `onlyAdmin` means `msg.sender == adminContract` (the factory), `OVRFLOFactory` exposes a
+  thin `onlyOwner` forwarder `sweepExcessUnderlying(address ovrflo, address to)` — mirroring
+  `sweepExcessPt` (`src/OVRFLOFactory.sol:185-188`) — so the timelocked multisig can actually
+  invoke it. Without this forwarder the core function would be unreachable.
 - R7. The supply invariant `supply(ovrfloToken) == Σ marketTotalDeposited + wrappedUnderlying`
   holds across arbitrary interleavings of `deposit`, `claim`, `wrap`, `unwrap`, and
   `sweepExcessUnderlying`.
@@ -215,19 +231,30 @@ expectations on every path.
 **Goal:** Recover underlying donated above the reserve without ever touching the reserve.
 **Requirements:** R6.
 **Dependencies:** U1.
-**Files:** `src/OVRFLO.sol`; `test/OVRFLOWrapUnwrap.t.sol` (extend).
-**Approach:** Mirror `sweepExcessPt` (`src/OVRFLO.sol:241-249`): resolve `underlying` via
-`IOvrfloAdmin(adminContract).ovrfloInfo(address(this))`, compute `excess = balanceOf(underlying) −
-wrappedUnderlying`, require `excess > 0`, `safeTransfer` to `to`, emit an `ExcessUnderlyingSwept`
-event. `onlyAdmin`. Signature is `sweepExcessUnderlying(address to)` — no `market` needed.
-**Patterns to follow:** `sweepExcessPt` structure and `ExcessSwept` event.
+**Files:** `src/OVRFLO.sol`; `src/OVRFLOFactory.sol` (additive forwarder); `test/OVRFLOWrapUnwrap.t.sol`
+(extend).
+**Approach:** On the core, mirror `sweepExcessPt` (`src/OVRFLO.sol:241-249`): resolve `underlying`
+via `IOvrfloAdmin(adminContract).ovrfloInfo(address(this))`, compute `excess =
+balanceOf(underlying) − wrappedUnderlying`, require `excess > 0`, `safeTransfer` to `to`, emit an
+`ExcessUnderlyingSwept` event. `onlyAdmin`. Signature is `sweepExcessUnderlying(address to)` — no
+`market` needed. On the factory, add a thin `onlyOwner` forwarder `sweepExcessUnderlying(address
+ovrflo, address to)` that calls `_requireKnownOvrflo(ovrflo)` then
+`OVRFLO(ovrflo).sweepExcessUnderlying(to)` — a direct copy of the existing `sweepExcessPt`
+forwarder (`src/OVRFLOFactory.sol:185-188`), changing only the inner call. This is purely
+additive; no existing factory function changes.
+**Patterns to follow:** core `sweepExcessPt` structure and `ExcessSwept` event; factory
+`sweepExcessPt` forwarder (`_requireKnownOvrflo` + delegate).
 **Test scenarios:**
 - With no donation, `sweepExcessUnderlying` reverts (`no excess`).
 - After a donation, sweeps exactly the donated amount; `wrappedUnderlying` unchanged; reserve
   still fully unwrappable afterward.
-- Non-admin caller reverts.
+- Direct core call by a non-admin reverts (`not admin`); the factory forwarder reverts for a
+  non-owner caller and for an unknown `ovrflo`.
+- End-to-end through the forwarder: owner → `factory.sweepExcessUnderlying(core, to)` recovers the
+  donation (proves the admin path is actually reachable, not just the core internal).
 - Sweep can never push `balanceOf(underlying)` below `wrappedUnderlying`.
-**Verification:** sweep tests pass; reserve invariant preserved across sweep.
+**Verification:** sweep tests pass (core + factory forwarder); reserve invariant preserved across
+sweep.
 
 ### U3. Solvency / peg invariant tests
 
@@ -259,7 +286,8 @@ invariant-handler conventions.
 `test/fork/OVRFLOForkBase.t.sol`.
 **Approach:** Deploy a real core via the factory, approve a real wstETH PT market, then: `wrap`
 real wstETH → `ovrfloToken`; `unwrap` back; assert exact 1:1 and reserve movement; confirm
-`unwrap` reverts when the reserve is insufficient; sweep a simulated donation. Cross-check that a
+`unwrap` reverts when the reserve is insufficient; sweep a simulated donation through the factory
+forwarder (owner → `factory.sweepExcessUnderlying(core, to)` → core). Cross-check that a
 deposit-origin `ovrfloToken` holder can `unwrap` against a reserve funded by an independent
 wrapper (fungibility).
 **Patterns to follow:** `OVRFLOForkBase`, `OVRFLOTestFixtures`, `MAINNET_FORK_BLOCK`; honor the
@@ -268,7 +296,8 @@ no-`forge script --broadcast`-against-Anvil rule in `docs/solutions/patterns/ovr
 - Real wstETH `wrap`/`unwrap` round trip is exactly 1:1.
 - `unwrap` beyond the funded reserve reverts on the real token.
 - Deposit-origin holder unwraps against a wrapper-funded reserve.
-- `sweepExcessUnderlying` recovers a donated wstETH amount, leaving the reserve intact.
+- `sweepExcessUnderlying` via the factory forwarder recovers a donated wstETH amount, leaving the
+  reserve intact.
 **Verification:** fork suite passes against `MAINNET_RPC_URL`.
 
 ---
@@ -306,9 +335,12 @@ no-`forge script --broadcast`-against-Anvil rule in `docs/solutions/patterns/ovr
   burn + per-market accounting (`:327-341`), fee→treasury (`:298`), `sweepExcessPt` pattern
   (`:241-249`), `adminContract` set once with no setter (`:41,179`), no `ReentrancyGuard`.
 - Token: `src/OVRFLOToken.sol` — owner-gated `mint`/`burn` (`:26-32`).
-- Factory (the admin/registry read): `src/OVRFLOFactory.sol` — `OvrfloInfo` struct
-  `(treasury, underlying, ovrfloToken)` (`:33-43`), public `ovrfloInfo` mapping getter (`:43`)
-  and `getOvrfloInfo` (`:208-210`), populated at `deploy()` (`:107-131`).
+- Factory (the admin/registry read, plus the new sweep forwarder): `src/OVRFLOFactory.sol` —
+  `OvrfloInfo` struct `(treasury, underlying, ovrfloToken)` (`:33-37`), public `ovrfloInfo` mapping
+  getter (`:43`) and `getOvrfloInfo` (`:208-210`), populated at `deploy()` (`:107-131`); existing
+  `sweepExcessPt` forwarder (`:185-188`) is the template for the additive `sweepExcessUnderlying`
+  forwarder (U2). The mapping getter flattens to `ovrfloInfo(address) returns (address, address,
+  address)`, matching `IOvrfloAdmin` and the `(treasury, underlying, ovrfloToken)` destructuring.
 - Test scaffolding: `test/OVRFLO.t.sol`, `test/fork/OVRFLOForkBase.t.sol`,
   `script/lib/OVRFLOTestFixtures.sol`.
 - Required reading: `docs/solutions/patterns/ovrflo-critical-patterns.md`.

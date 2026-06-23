@@ -63,6 +63,17 @@ enums have been widened to reflect our stack; everything else matches the upstre
   the modal *body only* (header/close button stay outside) plus an `onReset`
   contract so "Try again" actually retries.
 
+### Security analyses
+
+- [security-issues/flash-loan-wrap-claim-redeem-griefing-WrapUnwrap-20260622.md](security-issues/flash-loan-wrap-claim-redeem-griefing-WrapUnwrap-20260622.md) —
+  Audit note. A flash-loan `wrap → claim → Pendle-redeem` loop could displace a
+  matured series' PT, raising a claim-griefing concern. Reasoned and dismissed:
+  the loop is value-neutral (every leg 1:1, fee-free), self-provisions the
+  `unwrap` exit it displaces, has no profitable variant (no viable PT↔ovrfloToken
+  AMM, Pendle's pool disabled post-expiry, no cross-series swaps), and only costs
+  the attacker gas. Lists the trust assumptions and the conditions that would
+  reopen it.
+
 ### Local devnet & seeding
 
 - [integration-issues/anvil-forge-script-broadcast-out-of-funds-LocalSeeding-20260421.md](integration-issues/anvil-forge-script-broadcast-out-of-funds-LocalSeeding-20260421.md) —
