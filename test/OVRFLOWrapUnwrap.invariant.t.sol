@@ -35,7 +35,7 @@ contract InvariantOvrfloAdmin {
         uint32 twapDuration,
         uint256 expiry
     ) external {
-        ovrflo.setSeriesApproved(market, pt, underlying, ovrfloToken, oracle, twapDuration, expiry, 0);
+        ovrflo.setSeriesApproved(market, pt, oracle, twapDuration, expiry, 0);
     }
 
     function sweepExcessUnderlying(OVRFLO ovrflo, address to) external {

@@ -161,24 +161,13 @@ contract OVRFLOProtocolTest is Test {
     function test_SetSeriesApproved_RevertsForNonAdmin() public {
         vm.prank(user);
         vm.expectRevert("OVRFLO: not admin");
-        ovrflo.setSeriesApproved(
-            MARKET_ONE, address(ptOne), address(underlying), address(ovrfloToken), PENDLE_ORACLE, TWAP_DURATION, 1, 0
-        );
+        ovrflo.setSeriesApproved(MARKET_ONE, address(ptOne), PENDLE_ORACLE, TWAP_DURATION, 1, 0);
     }
 
     function test_SetSeriesApproved_RevertsForZeroOracle() public {
         vm.prank(ADMIN);
         vm.expectRevert("OVRFLO: oracle zero");
-        ovrflo.setSeriesApproved(
-            MARKET_ONE,
-            address(ptOne),
-            address(underlying),
-            address(ovrfloToken),
-            address(0),
-            TWAP_DURATION,
-            block.timestamp + 30 days,
-            0
-        );
+        ovrflo.setSeriesApproved(MARKET_ONE, address(ptOne), address(0), TWAP_DURATION, block.timestamp + 30 days, 0);
     }
 
     function test_SetSeriesApproved_RevertsForDuplicateMarketConfiguration() public {
@@ -187,14 +176,7 @@ contract OVRFLOProtocolTest is Test {
         vm.prank(ADMIN);
         vm.expectRevert("OVRFLO: series already configured");
         ovrflo.setSeriesApproved(
-            MARKET_ONE,
-            address(ptTwo),
-            address(underlying),
-            address(ovrfloToken),
-            PENDLE_ORACLE,
-            TWAP_DURATION,
-            block.timestamp + 60 days,
-            0
+            MARKET_ONE, address(ptTwo), PENDLE_ORACLE, TWAP_DURATION, block.timestamp + 60 days, 0
         );
     }
 
@@ -204,14 +186,7 @@ contract OVRFLOProtocolTest is Test {
         vm.prank(ADMIN);
         vm.expectRevert("OVRFLO: PT already mapped");
         ovrflo.setSeriesApproved(
-            MARKET_TWO,
-            address(ptOne),
-            address(underlying),
-            address(ovrfloToken),
-            PENDLE_ORACLE,
-            TWAP_DURATION,
-            block.timestamp + 60 days,
-            0
+            MARKET_TWO, address(ptOne), PENDLE_ORACLE, TWAP_DURATION, block.timestamp + 60 days, 0
         );
     }
 
@@ -530,9 +505,7 @@ contract OVRFLOProtocolTest is Test {
 
     function _approveSeries(address market, MockERC20Metadata pt, uint256 expiry, uint16 feeBps) internal {
         vm.prank(ADMIN);
-        ovrflo.setSeriesApproved(
-            market, address(pt), address(underlying), address(ovrfloToken), PENDLE_ORACLE, TWAP_DURATION, expiry, feeBps
-        );
+        ovrflo.setSeriesApproved(market, address(pt), PENDLE_ORACLE, TWAP_DURATION, expiry, feeBps);
     }
 
     function _seedPreviewAndBalances(

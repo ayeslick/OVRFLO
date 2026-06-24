@@ -166,16 +166,7 @@ contract OVRFLOFactory is Ownable2Step {
         }
 
         OVRFLO(ovrflo)
-            .setSeriesApproved(
-                market,
-                pt,
-                info.underlying,
-                info.ovrfloToken,
-                oracle,
-                twapDuration,
-                IPendleMarket(market).expiry(),
-                feeBps
-            );
+            .setSeriesApproved(market, pt, oracle, twapDuration, IPendleMarket(market).expiry(), feeBps);
 
         isMarketApproved[ovrflo][market] = true;
         approvedMarketAt[ovrflo][approvedMarketCount[ovrflo]] = market;
