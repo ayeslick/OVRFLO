@@ -121,17 +121,23 @@ contract OVRFLOFactoryTest is Test {
     MockERC20Metadata internal underlying;
 
     function setUp() public {
-        factory = new OVRFLOFactory(OWNER);
+        factory = new OVRFLOFactory(OWNER, PENDLE_ORACLE);
         underlying = new MockERC20Metadata("Wrapped Ether", "WETH", 18);
     }
 
     function test_Constructor_SetsOwner() public view {
         assertEq(factory.owner(), OWNER);
+        assertEq(factory.oracle(), PENDLE_ORACLE);
     }
 
     function test_Constructor_RevertsForZeroOwner() public {
         vm.expectRevert("OVRFLOFactory: owner zero");
-        new OVRFLOFactory(address(0));
+        new OVRFLOFactory(address(0), PENDLE_ORACLE);
+    }
+
+    function test_Constructor_RevertsForZeroOracle() public {
+        vm.expectRevert("OVRFLOFactory: oracle zero");
+        new OVRFLOFactory(OWNER, address(0));
     }
 
     function test_ConfigureDeployment_RevertsForUnauthorizedOrZeroInputs() public {
@@ -276,11 +282,11 @@ contract OVRFLOFactoryTest is Test {
 
         vm.prank(STRANGER);
         vm.expectRevert("Ownable: caller is not the owner");
-        factory.prepareOracle(address(market), PENDLE_ORACLE, MIN_TWAP_DURATION);
+        factory.prepareOracle(address(market), MIN_TWAP_DURATION);
 
         vm.prank(STRANGER);
         vm.expectRevert("Ownable: caller is not the owner");
-        factory.addMarket(address(ovrflo), address(market), PENDLE_ORACLE, MIN_TWAP_DURATION, 0);
+        factory.addMarket(address(ovrflo), address(market), MIN_TWAP_DURATION, 0);
 
         vm.prank(STRANGER);
         vm.expectRevert("Ownable: caller is not the owner");
@@ -298,7 +304,7 @@ contract OVRFLOFactoryTest is Test {
     function test_PrepareOracle_RevertsForShortDurationAndIncreasesCardinalityWhenRequired() public {
         vm.prank(OWNER);
         vm.expectRevert("OVRFLOFactory: twap too short");
-        factory.prepareOracle(address(0xBEEF), PENDLE_ORACLE, MIN_TWAP_DURATION - 1);
+        factory.prepareOracle(address(0xBEEF), MIN_TWAP_DURATION - 1);
 
         uint256 expiry = block.timestamp + 30 days;
         MockPrincipalToken pt = new MockPrincipalToken(address(0xAAAA), 18, expiry);
@@ -306,15 +312,9 @@ contract OVRFLOFactoryTest is Test {
         _mockOracleState(address(market), MIN_TWAP_DURATION, true, 9, false);
 
         vm.prank(OWNER);
-        factory.prepareOracle(address(market), PENDLE_ORACLE, MIN_TWAP_DURATION);
+        factory.prepareOracle(address(market), MIN_TWAP_DURATION);
 
         assertEq(market.lastCardinality(), 9);
-    }
-
-    function test_PrepareOracle_RevertsForZeroOracle() public {
-        vm.prank(OWNER);
-        vm.expectRevert("OVRFLOFactory: oracle zero");
-        factory.prepareOracle(address(0xBEEF), address(0), MIN_TWAP_DURATION);
     }
 
     function test_PrepareOracle_DoesNothingWhenCardinalityAlreadySufficient() public {
@@ -324,7 +324,7 @@ contract OVRFLOFactoryTest is Test {
         _mockOracleState(address(market), MIN_TWAP_DURATION, false, 0, true);
 
         vm.prank(OWNER);
-        factory.prepareOracle(address(market), PENDLE_ORACLE, MIN_TWAP_DURATION);
+        factory.prepareOracle(address(market), MIN_TWAP_DURATION);
 
         assertEq(market.lastCardinality(), 0);
     }
@@ -339,7 +339,7 @@ contract OVRFLOFactoryTest is Test {
         _mockOracleState(address(market), MIN_TWAP_DURATION, true, 9, false);
 
         vm.prank(OWNER);
-        factory.prepareOracle(address(market), PENDLE_ORACLE, MIN_TWAP_DURATION);
+        factory.prepareOracle(address(market), MIN_TWAP_DURATION);
 
         assertEq(market.lastCardinality(), 9);
 
@@ -347,31 +347,23 @@ contract OVRFLOFactoryTest is Test {
 
         vm.prank(OWNER);
         vm.expectRevert("OVRFLOFactory: oracle not ready");
-        factory.addMarket(address(ovrflo), address(market), PENDLE_ORACLE, MIN_TWAP_DURATION, 0);
+        factory.addMarket(address(ovrflo), address(market), MIN_TWAP_DURATION, 0);
     }
 
     function test_AddMarket_RevertsForUnknownOvrfloOrInvalidConfig() public {
         vm.prank(OWNER);
         vm.expectRevert("OVRFLOFactory: unknown ovrflo");
-        factory.addMarket(address(0xDEAD), address(0xBEEF), PENDLE_ORACLE, MIN_TWAP_DURATION, 0);
+        factory.addMarket(address(0xDEAD), address(0xBEEF), MIN_TWAP_DURATION, 0);
 
         (OVRFLO ovrflo,) = _deployConfiguredSystem();
 
         vm.prank(OWNER);
         vm.expectRevert("OVRFLOFactory: twap too short");
-        factory.addMarket(address(ovrflo), address(0xBEEF), PENDLE_ORACLE, MIN_TWAP_DURATION - 1, 0);
+        factory.addMarket(address(ovrflo), address(0xBEEF), MIN_TWAP_DURATION - 1, 0);
 
         vm.prank(OWNER);
         vm.expectRevert("OVRFLOFactory: fee too high");
-        factory.addMarket(address(ovrflo), address(0xBEEF), PENDLE_ORACLE, MIN_TWAP_DURATION, 101);
-    }
-
-    function test_AddMarket_RevertsForZeroOracle() public {
-        (OVRFLO ovrflo,) = _deployConfiguredSystem();
-
-        vm.prank(OWNER);
-        vm.expectRevert("OVRFLOFactory: oracle zero");
-        factory.addMarket(address(ovrflo), address(0xBEEF), address(0), MIN_TWAP_DURATION, 0);
+        factory.addMarket(address(ovrflo), address(0xBEEF), MIN_TWAP_DURATION, 101);
     }
 
     function test_AddMarket_RevertsWhenTwapTooLong() public {
@@ -380,7 +372,7 @@ contract OVRFLOFactoryTest is Test {
         uint32 tooLong = 30 minutes + 1;
         vm.prank(OWNER);
         vm.expectRevert("OVRFLOFactory: twap too long");
-        factory.addMarket(address(ovrflo), address(0xBEEF), PENDLE_ORACLE, tooLong, 0);
+        factory.addMarket(address(ovrflo), address(0xBEEF), tooLong, 0);
     }
 
     function test_AddMarket_RevertsWhenOracleNeedsPreparationOrIsNotReady() public {
@@ -392,12 +384,12 @@ contract OVRFLOFactoryTest is Test {
         _mockOracleState(address(market), MIN_TWAP_DURATION, true, 5, true);
         vm.prank(OWNER);
         vm.expectRevert("OVRFLOFactory: oracle cardinality");
-        factory.addMarket(address(ovrflo), address(market), PENDLE_ORACLE, MIN_TWAP_DURATION, 0);
+        factory.addMarket(address(ovrflo), address(market), MIN_TWAP_DURATION, 0);
 
         _mockOracleState(address(market), MIN_TWAP_DURATION, false, 0, false);
         vm.prank(OWNER);
         vm.expectRevert("OVRFLOFactory: oracle not ready");
-        factory.addMarket(address(ovrflo), address(market), PENDLE_ORACLE, MIN_TWAP_DURATION, 0);
+        factory.addMarket(address(ovrflo), address(market), MIN_TWAP_DURATION, 0);
     }
 
     function test_AddMarket_OnboardsMarketUpdatesRegistryAndEmitsSeriesEvent() public {
@@ -422,7 +414,7 @@ contract OVRFLOFactoryTest is Test {
         );
 
         vm.prank(OWNER);
-        factory.addMarket(address(ovrflo), address(market), PENDLE_ORACLE, MIN_TWAP_DURATION, 25);
+        factory.addMarket(address(ovrflo), address(market), MIN_TWAP_DURATION, 25);
 
         {
             (
@@ -470,8 +462,8 @@ contract OVRFLOFactoryTest is Test {
         _mockSyYieldToken(sy2, address(underlying));
 
         vm.startPrank(OWNER);
-        factory.addMarket(address(ovrflo), address(market1), PENDLE_ORACLE, MIN_TWAP_DURATION, 5);
-        factory.addMarket(address(ovrflo), address(market2), PENDLE_ORACLE, MIN_TWAP_DURATION, 10);
+        factory.addMarket(address(ovrflo), address(market1), MIN_TWAP_DURATION, 5);
+        factory.addMarket(address(ovrflo), address(market2), MIN_TWAP_DURATION, 10);
         vm.stopPrank();
 
         _assertSeriesTokenAndUnderlying(ovrflo, address(market1), address(token), address(underlying));
@@ -497,13 +489,13 @@ contract OVRFLOFactoryTest is Test {
         _mockSyYieldToken(sy2, address(underlying));
 
         vm.prank(OWNER);
-        factory.addMarket(address(ovrflo), address(market1), PENDLE_ORACLE, MIN_TWAP_DURATION, 0);
+        factory.addMarket(address(ovrflo), address(market1), MIN_TWAP_DURATION, 0);
 
         assertEq(ovrflo.ptToMarket(address(pt)), address(market1));
 
         vm.prank(OWNER);
         vm.expectRevert("OVRFLO: PT already mapped");
-        factory.addMarket(address(ovrflo), address(market2), PENDLE_ORACLE, MIN_TWAP_DURATION, 0);
+        factory.addMarket(address(ovrflo), address(market2), MIN_TWAP_DURATION, 0);
     }
 
     function test_AddMarket_RevertsWhenMarketUnderlyingDiffersFromConfiguredUnderlying() public {
@@ -517,7 +509,7 @@ contract OVRFLOFactoryTest is Test {
 
         vm.prank(OWNER);
         vm.expectRevert("OVRFLOFactory: underlying mismatch");
-        factory.addMarket(address(ovrflo), address(market), PENDLE_ORACLE, MIN_TWAP_DURATION, 0);
+        factory.addMarket(address(ovrflo), address(market), MIN_TWAP_DURATION, 0);
 
         assertFalse(factory.isMarketApproved(address(ovrflo), address(market)));
         assertEq(factory.approvedMarketCount(address(ovrflo)), 0);
@@ -558,7 +550,7 @@ contract OVRFLOFactoryTest is Test {
         _mockSyYieldToken(sy, address(underlying));
 
         vm.prank(OWNER);
-        factory.addMarket(address(ovrflo), address(market), PENDLE_ORACLE, MIN_TWAP_DURATION, 0);
+        factory.addMarket(address(ovrflo), address(market), MIN_TWAP_DURATION, 0);
 
         vm.prank(OWNER);
         vm.expectRevert("OVRFLO: no excess");

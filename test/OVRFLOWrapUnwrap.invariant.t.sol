@@ -31,11 +31,10 @@ contract InvariantOvrfloAdmin {
         OVRFLO ovrflo,
         address market,
         address pt,
-        address oracle,
         uint32 twapDuration,
         uint256 expiry
     ) external {
-        ovrflo.setSeriesApproved(market, pt, oracle, twapDuration, expiry, 0);
+        ovrflo.setSeriesApproved(market, pt, twapDuration, expiry, 0);
     }
 
     function sweepExcessUnderlying(OVRFLO ovrflo, address to) external {
@@ -195,11 +194,11 @@ contract OVRFLOWrapUnwrapInvariantTest is Test {
         pt = new InvariantMockERC20("PT", "PT");
         ovrfloToken = new OVRFLOToken("OVRFLO Underlying", "ovrfloUND");
         admin = new InvariantOvrfloAdmin();
-        ovrflo = new OVRFLO(address(admin), TREASURY, address(underlying), address(ovrfloToken));
+        ovrflo = new OVRFLO(address(admin), TREASURY, address(underlying), address(ovrfloToken), ORACLE);
         ovrfloToken.transferOwnership(address(ovrflo));
 
         admin.setInfo(TREASURY, address(underlying), address(ovrfloToken));
-        admin.approveSeries(ovrflo, MARKET, address(pt), ORACLE, TWAP_DURATION, EXPIRY);
+        admin.approveSeries(ovrflo, MARKET, address(pt), TWAP_DURATION, EXPIRY);
 
         vm.mockCall(ORACLE, abi.encodeCall(IPendleOracle.getPtToSyRate, (MARKET, TWAP_DURATION)), abi.encode(RATE_E18));
         vm.mockCall(

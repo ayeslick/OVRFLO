@@ -39,7 +39,7 @@ abstract contract OVRFLOTestFixtures {
         internal
         returns (OVRFLOFactory factory, OVRFLO ovrflo, OVRFLOToken token)
     {
-        factory = new OVRFLOFactory(owner);
+        factory = new OVRFLOFactory(owner, address(ORACLE));
         factory.configureDeployment(TREASURY, WSTETH, "Wrapped Staked Ether", "WSTETH");
         (address ovrfloAddr, address tokenAddr) = factory.deploy();
         ovrflo = OVRFLO(ovrfloAddr);
@@ -51,6 +51,6 @@ abstract contract OVRFLOTestFixtures {
     ///         tests, broadcast in scripts) because `prepareOracle` is
     ///         onlyOwner.
     function _prepareOracleAs(OVRFLOFactory factory, address market) internal {
-        factory.prepareOracle(market, address(ORACLE), MIN_TWAP_DURATION);
+        factory.prepareOracle(market, MIN_TWAP_DURATION);
     }
 }

@@ -32,7 +32,7 @@ contract OVRFLOFactoryMainnetForkTest is OVRFLOForkBase {
 
         vm.prank(OWNER);
         vm.expectRevert("OVRFLOFactory: oracle cardinality");
-        factory.addMarket(address(ovrflo), PRIMARY_MARKET, address(ORACLE), MIN_TWAP_DURATION, 0);
+        factory.addMarket(address(ovrflo), PRIMARY_MARKET, MIN_TWAP_DURATION, 0);
     }
 
     function test_AddMarket_OnboardsPrimaryMarketUsingLiveMetadata() public {
@@ -51,7 +51,7 @@ contract OVRFLOFactoryMainnetForkTest is OVRFLOForkBase {
         _prepareOracle(factory, PRIMARY_MARKET);
 
         vm.prank(OWNER);
-        factory.addMarket(address(ovrflo), PRIMARY_MARKET, address(ORACLE), MIN_TWAP_DURATION, 25);
+        factory.addMarket(address(ovrflo), PRIMARY_MARKET, MIN_TWAP_DURATION, 25);
 
         {
             (
@@ -95,8 +95,8 @@ contract OVRFLOFactoryMainnetForkTest is OVRFLOForkBase {
         _prepareOracle(factory, SECONDARY_MARKET);
 
         vm.startPrank(OWNER);
-        factory.addMarket(address(ovrflo), PRIMARY_MARKET, address(ORACLE), MIN_TWAP_DURATION, 5);
-        factory.addMarket(address(ovrflo), SECONDARY_MARKET, address(ORACLE), MIN_TWAP_DURATION, 10);
+        factory.addMarket(address(ovrflo), PRIMARY_MARKET, MIN_TWAP_DURATION, 5);
+        factory.addMarket(address(ovrflo), SECONDARY_MARKET, MIN_TWAP_DURATION, 10);
         vm.stopPrank();
 
         (,,, uint256 primaryExpiry, address primaryPt, address primaryToken,,) = ovrflo.series(PRIMARY_MARKET);

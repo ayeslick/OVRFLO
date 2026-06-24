@@ -43,6 +43,9 @@ contract OVRFLO {
     /// @notice ovrfloToken minted/burned by this vault (constant per vault)
     address public immutable ovrfloToken;
 
+    /// @notice Pendle TWAP oracle for PT-to-SY rate lookups (constant per vault)
+    address public immutable oracle;
+
     /// @notice Admin contract address with permission to configure markets
     address public adminContract;
 
@@ -63,15 +66,13 @@ contract OVRFLO {
     /// @param feeBps Fee in basis points charged on immediate minting
     /// @param expiryCached Cached PT maturity timestamp
     /// @param ptToken Address of the Pendle PT token
-    /// @param oracle Oracle used for PT-to-SY rate lookups (Pendle native or IPendleOracle-compatible wrapper)
-    /// @dev ovrfloToken and underlying are vault-level immutables, not stored per-series.
+    /// @dev ovrfloToken, underlying, and oracle are vault-level immutables, not stored per-series.
     struct SeriesInfo {
         bool approved;
         uint32 twapDurationFixed;
         uint16 feeBps;
         uint256 expiryCached;
         address ptToken;
-        address oracle;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -192,18 +193,20 @@ contract OVRFLO {
     /// @param treasury The treasury address for fee collection
     /// @param _underlying The underlying asset address (constant per vault)
     /// @param _ovrfloToken The ovrflo token address (constant per vault)
-    constructor(address admin, address treasury, address _underlying, address _ovrfloToken) {
+    constructor(address admin, address treasury, address _underlying, address _ovrfloToken, address _oracle) {
         require(admin != address(0), "OVRFLO: admin is zero address");
         require(treasury != address(0), "OVRFLO: treasury is zero address");
         require(_underlying != address(0), "OVRFLO: underlying is zero address");
         require(_ovrfloToken != address(0), "OVRFLO: ovrfloToken is zero address");
+        require(_oracle != address(0), "OVRFLO: oracle is zero address");
 
         adminContract = admin;
         TREASURY_ADDR = treasury;
         underlying = _underlying;
         ovrfloToken = _ovrfloToken;
+        oracle = _oracle;
 
-        IERC20(_ovrfloToken).approve(address(sablierLL), type(uint256).max);
+        IERC20(ovrfloToken).approve(address(sablierLL), type(uint256).max);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -213,20 +216,16 @@ contract OVRFLO {
     /// @notice Approves a new market series for deposits
     /// @param market The Pendle market address
     /// @param pt The PT token address
-    /// @param oracle Oracle address used for PT-to-SY rate lookups
     /// @param twapDuration TWAP duration in seconds
     /// @param expiry PT maturity timestamp
     /// @param feeBps Fee in basis points
     function setSeriesApproved(
         address market,
         address pt,
-        address oracle,
         uint32 twapDuration,
         uint256 expiry,
         uint16 feeBps
     ) external onlyAdmin {
-        require(oracle != address(0), "OVRFLO: oracle zero");
-
         SeriesInfo storage info = _series[market];
         require(info.ptToken == address(0), "OVRFLO: series already configured");
         require(ptToMarket[pt] == address(0), "OVRFLO: PT already mapped");
@@ -236,7 +235,6 @@ contract OVRFLO {
         info.feeBps = feeBps;
         info.expiryCached = expiry;
         info.ptToken = pt;
-        info.oracle = oracle;
 
         ptToMarket[pt] = market;
 
@@ -344,7 +342,7 @@ contract OVRFLO {
 
         IERC20(info.ptToken).safeTransferFrom(msg.sender, address(this), ptAmount);
 
-        uint256 rateE18 = IPendleOracle(info.oracle).getPtToSyRate(market, info.twapDurationFixed);
+        uint256 rateE18 = IPendleOracle(oracle).getPtToSyRate(market, info.twapDurationFixed);
 
         toUser = PRBMath.mulDiv(ptAmount, rateE18, WAD);
         if (toUser > ptAmount) toUser = ptAmount;
@@ -408,13 +406,13 @@ contract OVRFLO {
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Returns the full series configuration for a market
-    /// @dev ovrfloToken (idx 5) and underlying (idx 6) are synthesized from vault
-    ///      immutables to preserve the 8-tuple ABI consumers depend on.
+    /// @dev ovrfloToken (idx 5), underlying (idx 6), and oracle (idx 7) are synthesized
+    ///      from vault immutables to preserve the 8-tuple ABI consumers depend on.
     function series(address market)
         external
         view
         returns (bool approved, uint32 twapDurationFixed, uint16 feeBps, uint256 expiryCached, address ptToken,
-            address ovrfloToken_, address underlying_, address oracle)
+            address ovrfloToken_, address underlying_, address oracle_)
     {
         SeriesInfo memory s = _series[market];
         return (
@@ -425,7 +423,7 @@ contract OVRFLO {
             s.ptToken,
             ovrfloToken,
             underlying,
-            s.oracle
+            oracle
         );
     }
 
@@ -443,7 +441,7 @@ contract OVRFLO {
     function previewRate(address market) external view returns (uint256 rateE18) {
         SeriesInfo memory info = _series[market];
         require(info.approved, "OVRFLO: market not approved");
-        rateE18 = IPendleOracle(info.oracle).getPtToSyRate(market, info.twapDurationFixed);
+        rateE18 = IPendleOracle(oracle).getPtToSyRate(market, info.twapDurationFixed);
     }
 
     /// @notice Previews the immediate vs streamed split for a deposit
@@ -459,7 +457,7 @@ contract OVRFLO {
     {
         SeriesInfo memory info = _series[market];
         require(info.approved, "OVRFLO: market not approved");
-        rateE18 = IPendleOracle(info.oracle).getPtToSyRate(market, info.twapDurationFixed);
+        rateE18 = IPendleOracle(oracle).getPtToSyRate(market, info.twapDurationFixed);
         toUser = PRBMath.mulDiv(ptAmount, rateE18, WAD);
         if (toUser > ptAmount) toUser = ptAmount;
         toStream = ptAmount - toUser;
@@ -480,7 +478,7 @@ contract OVRFLO {
     {
         SeriesInfo memory info = _series[market];
         require(info.approved, "OVRFLO: market not approved");
-        rateE18 = IPendleOracle(info.oracle).getPtToSyRate(market, info.twapDurationFixed);
+        rateE18 = IPendleOracle(oracle).getPtToSyRate(market, info.twapDurationFixed);
         toUser = PRBMath.mulDiv(ptAmount, rateE18, WAD);
         if (toUser > ptAmount) toUser = ptAmount;
         toStream = ptAmount - toUser;

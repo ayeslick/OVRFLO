@@ -105,8 +105,8 @@ contract OVRFLOWrapUnwrapForkTest is OVRFLOForkBase {
         (factory, ovrflo, token) = _deployConfiguredSystem();
 
         vm.startPrank(OWNER);
-        factory.prepareOracle(PRIMARY_MARKET, address(ORACLE), PROTOCOL_TWAP_DURATION);
-        factory.addMarket(address(ovrflo), PRIMARY_MARKET, address(ORACLE), PROTOCOL_TWAP_DURATION, feeBps);
+        factory.prepareOracle(PRIMARY_MARKET, PROTOCOL_TWAP_DURATION);
+        factory.addMarket(address(ovrflo), PRIMARY_MARKET, PROTOCOL_TWAP_DURATION, feeBps);
         vm.stopPrank();
     }
 

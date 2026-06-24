@@ -73,8 +73,8 @@ abstract contract OVRFLOSeedRunner is Script, StdCheats, OVRFLOTestFixtures {
 
         _prepareOracleAs(factory, PRIMARY_MARKET);
         _prepareOracleAs(factory, SECONDARY_MARKET);
-        factory.addMarket(address(ovrflo), PRIMARY_MARKET, address(ORACLE), MIN_TWAP_DURATION, 25);
-        factory.addMarket(address(ovrflo), SECONDARY_MARKET, address(ORACLE), MIN_TWAP_DURATION, 10);
+        factory.addMarket(address(ovrflo), PRIMARY_MARKET, MIN_TWAP_DURATION, 25);
+        factory.addMarket(address(ovrflo), SECONDARY_MARKET, MIN_TWAP_DURATION, 10);
 
         deal(PRIMARY_PT, devWallet, PT_SEED_AMOUNT);
         deal(SECONDARY_PT, devWallet, PT_SEED_AMOUNT);

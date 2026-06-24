@@ -46,6 +46,9 @@ contract OVRFLOFactory is Ownable2Step {
     mapping(address ovrflo => mapping(uint256 index => address)) public approvedMarketAt;
     mapping(address ovrflo => mapping(address market => bool)) public isMarketApproved;
 
+    /// @notice Pendle TWAP oracle address (singleton, same for all markets)
+    address public immutable oracle;
+
     /*//////////////////////////////////////////////////////////////
                                 EVENTS
     //////////////////////////////////////////////////////////////*/
@@ -58,9 +61,11 @@ contract OVRFLOFactory is Ownable2Step {
                               CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
 
-    constructor(address _owner) {
+    constructor(address _owner, address _oracle) {
         require(_owner != address(0), "OVRFLOFactory: owner zero");
+        require(_oracle != address(0), "OVRFLOFactory: oracle zero");
         _transferOwnership(_owner);
+        oracle = _oracle;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -117,7 +122,7 @@ contract OVRFLOFactory is Ownable2Step {
         );
         ovrfloToken = address(token);
 
-        OVRFLO v = new OVRFLO(address(this), config.treasury, config.underlying, ovrfloToken);
+        OVRFLO v = new OVRFLO(address(this), config.treasury, config.underlying, ovrfloToken, oracle);
         ovrflo = address(v);
 
         token.transferOwnership(ovrflo);
@@ -137,15 +142,13 @@ contract OVRFLOFactory is Ownable2Step {
     /// @notice Add a PT maturity to an OVRFLO (reads pt/expiry from Pendle market automatically)
     /// @param ovrflo The OVRFLO contract address
     /// @param market The Pendle market address
-    /// @param oracle Oracle used for PT-to-SY rate lookups (Pendle native or IPendleOracle-compatible wrapper)
     /// @param twapDuration TWAP duration in seconds
     /// @param feeBps Fee in basis points (max FEE_MAX_BPS)
-    function addMarket(address ovrflo, address market, address oracle, uint32 twapDuration, uint16 feeBps)
+    function addMarket(address ovrflo, address market, uint32 twapDuration, uint16 feeBps)
         external
         onlyOwner
     {
         _requireKnownOvrflo(ovrflo);
-        require(oracle != address(0), "OVRFLOFactory: oracle zero");
         require(twapDuration <= MAX_TWAP_DURATION, "OVRFLOFactory: twap too long");
         require(twapDuration >= MIN_TWAP_DURATION, "OVRFLOFactory: twap too short");
         require(feeBps <= FEE_MAX_BPS, "OVRFLOFactory: fee too high");
@@ -166,8 +169,8 @@ contract OVRFLOFactory is Ownable2Step {
         }
 
         OVRFLO(ovrflo)
-            .setSeriesApproved(market, pt, oracle, twapDuration, IPendleMarket(market).expiry(), feeBps);
-
+            .setSeriesApproved(market, pt, twapDuration, IPendleMarket(market).expiry(), feeBps);
+            
         isMarketApproved[ovrflo][market] = true;
         approvedMarketAt[ovrflo][approvedMarketCount[ovrflo]] = market;
         approvedMarketCount[ovrflo]++;
@@ -193,10 +196,8 @@ contract OVRFLOFactory is Ownable2Step {
 
     /// @notice Increase Pendle oracle cardinality for a market (must be done before addMarket)
     /// @param market The Pendle market address
-    /// @param oracle Oracle used for readiness/cardinality inspection (IPendleOracle-compatible)
     /// @param twapDuration TWAP duration in seconds
-    function prepareOracle(address market, address oracle, uint32 twapDuration) external onlyOwner {
-        require(oracle != address(0), "OVRFLOFactory: oracle zero");
+    function prepareOracle(address market, uint32 twapDuration) external onlyOwner {
         require(twapDuration >= MIN_TWAP_DURATION, "OVRFLOFactory: twap too short");
         (bool increaseCardinalityRequired, uint16 cardinalityRequired,) =
             IPendleOracle(oracle).getOracleState(market, twapDuration);
