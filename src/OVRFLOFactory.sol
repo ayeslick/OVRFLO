@@ -111,16 +111,16 @@ contract OVRFLOFactory is Ownable2Step {
 
         delete pendingDeployment;
 
-        OVRFLO v = new OVRFLO(address(this), config.treasury);
-        ovrflo = address(v);
-
         OVRFLOToken token = new OVRFLOToken(
             string(abi.encodePacked("OVRFLO ", config.nameSuffix)),
             string(abi.encodePacked("ovrflo", config.symbolSuffix))
         );
-        token.transferOwnership(address(ovrflo));
-
         ovrfloToken = address(token);
+
+        OVRFLO v = new OVRFLO(address(this), config.treasury, config.underlying, ovrfloToken);
+        ovrflo = address(v);
+
+        token.transferOwnership(ovrflo);
 
         ovrflos[ovrfloCount] = ovrflo;
         ovrfloCount += 1;

@@ -193,9 +193,9 @@ contract OVRFLOWrapUnwrapInvariantTest is Test {
     function setUp() public {
         underlying = new InvariantMockERC20("Underlying", "UND");
         pt = new InvariantMockERC20("PT", "PT");
-        admin = new InvariantOvrfloAdmin();
-        ovrflo = new OVRFLO(address(admin), TREASURY);
         ovrfloToken = new OVRFLOToken("OVRFLO Underlying", "ovrfloUND");
+        admin = new InvariantOvrfloAdmin();
+        ovrflo = new OVRFLO(address(admin), TREASURY, address(underlying), address(ovrfloToken));
         ovrfloToken.transferOwnership(address(ovrflo));
 
         admin.setInfo(TREASURY, address(underlying), address(ovrfloToken));

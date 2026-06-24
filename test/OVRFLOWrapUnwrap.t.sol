@@ -95,12 +95,10 @@ contract OVRFLOWrapUnwrapTest is Test {
         recipient = makeAddr("recipient");
 
         underlying = new WrapMockERC20("Underlying", "UND");
-        admin = new MockOvrfloAdmin(TREASURY, address(underlying), address(0));
-        ovrflo = new OVRFLO(address(admin), TREASURY);
-
         ovrfloToken = new OVRFLOToken("OVRFLO Underlying", "ovrfloUND");
+        admin = new MockOvrfloAdmin(TREASURY, address(underlying), address(ovrfloToken));
+        ovrflo = new OVRFLO(address(admin), TREASURY, address(underlying), address(ovrfloToken));
         ovrfloToken.transferOwnership(address(ovrflo));
-        admin.setInfo(TREASURY, address(underlying), address(ovrfloToken));
     }
 
     function test_Wrap_MintsOneToOnePullsUnderlyingIncrementsReserveAndEmitsEvent() public {

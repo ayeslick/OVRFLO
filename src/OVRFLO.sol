@@ -38,6 +38,12 @@ contract OVRFLO {
     /// @notice Treasury address that receives protocol fees
     address public immutable TREASURY_ADDR;
 
+    /// @notice Underlying asset for wrap/unwrap and fee payment (constant per vault)
+    address public immutable underlying;
+
+    /// @notice ovrfloToken minted/burned by this vault (constant per vault)
+    address public immutable ovrfloToken;
+
     /// @notice Admin contract address with permission to configure markets
     address public adminContract;
 
@@ -188,12 +194,20 @@ contract OVRFLO {
     /// @notice Initializes the OVRFLO contract
     /// @param admin The admin contract address
     /// @param treasury The treasury address for fee collection
-    constructor(address admin, address treasury) {
+    /// @param _underlying The underlying asset address (constant per vault)
+    /// @param _ovrfloToken The ovrflo token address (constant per vault)
+    constructor(address admin, address treasury, address _underlying, address _ovrfloToken) {
         require(admin != address(0), "OVRFLO: admin is zero address");
         require(treasury != address(0), "OVRFLO: treasury is zero address");
+        require(_underlying != address(0), "OVRFLO: underlying is zero address");
+        require(_ovrfloToken != address(0), "OVRFLO: ovrfloToken is zero address");
 
         adminContract = admin;
         TREASURY_ADDR = treasury;
+        underlying = _underlying;
+        ovrfloToken = _ovrfloToken;
+
+        IERC20(_ovrfloToken).approve(address(sablierLL), type(uint256).max);
     }
 
     /*//////////////////////////////////////////////////////////////

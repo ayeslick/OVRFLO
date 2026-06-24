@@ -76,22 +76,28 @@ contract OVRFLOProtocolTest is Test {
         user = makeAddr("user");
         otherUser = makeAddr("otherUser");
 
-        ovrflo = new OVRFLO(ADMIN, TREASURY);
         underlying = new MockERC20Metadata("Underlying", "UND", 18);
         ptOne = new MockERC20Metadata("PT One", "PT1", 18);
         ptTwo = new MockERC20Metadata("PT Two", "PT2", 18);
         ptMismatch = new MockERC20Metadata("PT Mismatch", "PTM", 6);
 
         ovrfloToken = new OVRFLOToken("OVRFLO Underlying", "ovrUND");
+        ovrflo = new OVRFLO(ADMIN, TREASURY, address(underlying), address(ovrfloToken));
         ovrfloToken.transferOwnership(address(ovrflo));
     }
 
     function test_Constructor_RevertsForZeroAddresses() public {
         vm.expectRevert("OVRFLO: admin is zero address");
-        new OVRFLO(address(0), TREASURY);
+        new OVRFLO(address(0), TREASURY, address(underlying), address(ovrfloToken));
 
         vm.expectRevert("OVRFLO: treasury is zero address");
-        new OVRFLO(ADMIN, address(0));
+        new OVRFLO(ADMIN, address(0), address(underlying), address(ovrfloToken));
+
+        vm.expectRevert("OVRFLO: underlying is zero address");
+        new OVRFLO(ADMIN, TREASURY, address(0), address(ovrfloToken));
+
+        vm.expectRevert("OVRFLO: ovrfloToken is zero address");
+        new OVRFLO(ADMIN, TREASURY, address(underlying), address(0));
     }
 
     function test_SetSeriesApproved_SetsStateApprovesSablierAndEmitsEvent() public {
