@@ -6,8 +6,6 @@ import {OVRFLOBook} from "../src/OVRFLOBook.sol";
 
 contract OVRFLOBookScript is Script {
     address internal constant DEFAULT_SABLIER_LL = 0xAFb979d9afAd1aD27C5eFf4E27226E3AB9e5dCC9;
-    uint256 internal constant DEFAULT_APR_MAX_CEILING_BPS = 5000;
-    uint256 internal constant DEFAULT_MAX_FEE_BPS = 100;
     uint256 internal constant DEFAULT_BOOK_FEE_BPS = 0;
 
     function run() public {
@@ -15,15 +13,12 @@ contract OVRFLOBookScript is Script {
         address core = vm.envAddress("OVRFLO_ADDRESS");
         address multisig = vm.envAddress("MULTISIG_ADDRESS");
         address sablier = vm.envOr("SABLIER_ADDRESS", DEFAULT_SABLIER_LL);
-        uint16 aprMaxCeilingBps =
-            _toUint16(vm.envOr("APR_MAX_CEILING_BPS", DEFAULT_APR_MAX_CEILING_BPS), "APR_MAX_CEILING_BPS");
-        uint16 maxFeeBps = _toUint16(vm.envOr("MAX_FEE_BPS", DEFAULT_MAX_FEE_BPS), "MAX_FEE_BPS");
         uint16 bookFeeBps = _toUint16(vm.envOr("BOOK_FEE_BPS", DEFAULT_BOOK_FEE_BPS), "BOOK_FEE_BPS");
         address bookTreasury = vm.envOr("BOOK_TREASURY", address(0));
 
         vm.startBroadcast();
 
-        OVRFLOBook book = new OVRFLOBook(factory, core, sablier, aprMaxCeilingBps, maxFeeBps);
+        OVRFLOBook book = new OVRFLOBook(factory, core, sablier);
         if (book.aprMinBps() != book.LAUNCH_APR_BPS() || book.aprMaxBps() != book.LAUNCH_APR_BPS()) {
             book.setAprBounds(book.LAUNCH_APR_BPS(), book.LAUNCH_APR_BPS());
         }

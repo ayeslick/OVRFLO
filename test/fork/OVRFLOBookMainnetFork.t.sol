@@ -137,7 +137,7 @@ contract OVRFLOBookMainnetForkTest is OVRFLOForkBase {
     }
 
     function _deployBook(OVRFLOFactory factory, OVRFLO ovrflo) internal returns (OVRFLOBook book) {
-        book = new OVRFLOBook(address(factory), address(ovrflo), address(ovrflo.sablierLL()), 5000, 100);
+        book = new OVRFLOBook(address(factory), address(ovrflo), address(ovrflo.sablierLL()));
     }
 
     function _assertLoanClosedAfterClaim(

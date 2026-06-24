@@ -223,8 +223,6 @@ contract OVRFLOBookTest is Test {
     address internal constant MARKET = address(0x5555);
     address internal constant BUYER = address(0xB0B);
     address internal constant SELLER = address(0xA11CE);
-    uint16 internal constant APR_MAX_CEILING = 5000;
-    uint16 internal constant MAX_FEE_BPS = 100;
 
     event AprBoundsSet(uint16 aprMinBps, uint16 aprMaxBps);
     event FeeSet(uint16 feeBps);
@@ -268,7 +266,7 @@ contract OVRFLOBookTest is Test {
         factory.setMarketApproved(address(core), MARKET, true);
         core.setSeries(MARKET, true, expiry, address(ovrfloToken), address(underlying));
 
-        book = new OVRFLOBook(address(factory), address(core), address(sablier), APR_MAX_CEILING, MAX_FEE_BPS);
+        book = new OVRFLOBook(address(factory), address(core), address(sablier));
     }
 
     function test_Constructor_CachesRegistryInfoAndLaunchSettings() public view {
@@ -277,8 +275,8 @@ contract OVRFLOBookTest is Test {
         assertEq(book.ovrfloToken(), address(ovrfloToken));
         assertEq(book.underlying(), address(underlying));
         assertEq(address(book.sablier()), address(sablier));
-        assertEq(book.APR_MAX_CEILING(), APR_MAX_CEILING);
-        assertEq(book.MAX_FEE_BPS(), MAX_FEE_BPS);
+        assertEq(book.APR_MAX_CEILING(), 10_000);
+        assertEq(book.MAX_FEE_BPS(), 10_000);
         assertEq(book.treasury(), TREASURY);
         assertEq(book.aprMinBps(), book.LAUNCH_APR_BPS());
         assertEq(book.aprMaxBps(), book.LAUNCH_APR_BPS());
@@ -287,19 +285,16 @@ contract OVRFLOBookTest is Test {
 
     function test_Constructor_RevertsForZeroAddressesOrUnregisteredCore() public {
         vm.expectRevert("OVRFLOBook: factory zero");
-        new OVRFLOBook(address(0), address(core), address(sablier), APR_MAX_CEILING, MAX_FEE_BPS);
+        new OVRFLOBook(address(0), address(core), address(sablier));
 
         vm.expectRevert("OVRFLOBook: core zero");
-        new OVRFLOBook(address(factory), address(0), address(sablier), APR_MAX_CEILING, MAX_FEE_BPS);
+        new OVRFLOBook(address(factory), address(0), address(sablier));
 
         vm.expectRevert("OVRFLOBook: sablier zero");
-        new OVRFLOBook(address(factory), address(core), address(0), APR_MAX_CEILING, MAX_FEE_BPS);
-
-        vm.expectRevert("OVRFLOBook: apr ceiling below launch");
-        new OVRFLOBook(address(factory), address(core), address(sablier), 999, MAX_FEE_BPS);
+        new OVRFLOBook(address(factory), address(core), address(0));
 
         vm.expectRevert("OVRFLOBook: unknown core");
-        new OVRFLOBook(address(factory), address(0xDEAD), address(sablier), APR_MAX_CEILING, MAX_FEE_BPS);
+        new OVRFLOBook(address(factory), address(0xDEAD), address(sablier));
     }
 
     function test_Admin_SetAprBounds() public {
@@ -318,17 +313,17 @@ contract OVRFLOBookTest is Test {
         book.setAprBounds(2501, 2500);
 
         vm.expectRevert("OVRFLOBook: apr too high");
-        book.setAprBounds(0, APR_MAX_CEILING + 1);
+        book.setAprBounds(0, 10_001);
     }
 
     function test_Admin_SetFeeAndTreasury() public {
         vm.expectEmit(address(book));
-        emit FeeSet(MAX_FEE_BPS);
-        book.setFee(MAX_FEE_BPS);
-        assertEq(book.feeBps(), MAX_FEE_BPS);
+        emit FeeSet(100);
+        book.setFee(100);
+        assertEq(book.feeBps(), 100);
 
         vm.expectRevert("OVRFLOBook: fee too high");
-        book.setFee(MAX_FEE_BPS + 1);
+        book.setFee(10_001);
 
         vm.expectEmit(true, false, false, true, address(book));
         emit TreasurySet(NEW_TREASURY);
@@ -382,7 +377,7 @@ contract OVRFLOBookTest is Test {
         assertEq(book.feeBps(), 50);
         assertEq(book.treasury(), NEW_TREASURY);
 
-        data[0] = abi.encodeCall(OVRFLOBook.setFee, (MAX_FEE_BPS + 1));
+        data[0] = abi.encodeCall(OVRFLOBook.setFee, (10_001));
         vm.expectRevert("OVRFLOBook: fee too high");
         book.multicall(data);
     }

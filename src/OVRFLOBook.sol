@@ -46,10 +46,10 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
     address public immutable underlying;
     /// @notice Sablier V2 Lockup Linear instance streams are pledged to.
     ISablierV2LockupLinear public immutable sablier;
-    /// @notice Hard ceiling on the maximum APR bound the owner may set.
-    uint16 public immutable APR_MAX_CEILING;
-    /// @notice Hard ceiling on the protocol fee the owner may set.
-    uint16 public immutable MAX_FEE_BPS;
+    /// @notice Hard ceiling on the maximum APR bound the owner may set (100%).
+    uint16 public constant APR_MAX_CEILING = 10_000;
+    /// @notice Hard ceiling on the protocol fee the owner may set (100%).
+    uint16 public constant MAX_FEE_BPS = 10_000;
 
     /*//////////////////////////////////////////////////////////////
                                 STORAGE
@@ -281,13 +281,10 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
     /// @param factory_ The OVRFLOFactory registry address.
     /// @param core_ The OVRFLO core vault this book serves.
     /// @param sablier_ The Sablier V2 Lockup Linear address.
-    /// @param aprMaxCeiling_ Immutable ceiling on the owner-set max APR.
-    /// @param maxFeeBps_ Immutable ceiling on the owner-set protocol fee.
-    constructor(address factory_, address core_, address sablier_, uint16 aprMaxCeiling_, uint16 maxFeeBps_) {
+    constructor(address factory_, address core_, address sablier_) {
         require(factory_ != address(0), "OVRFLOBook: factory zero");
         require(core_ != address(0), "OVRFLOBook: core zero");
         require(sablier_ != address(0), "OVRFLOBook: sablier zero");
-        require(aprMaxCeiling_ >= LAUNCH_APR_BPS, "OVRFLOBook: apr ceiling below launch");
 
         (address treasury_, address underlying_, address ovrfloToken_) =
             IOVRFLOFactoryRegistry(factory_).ovrfloInfo(core_);
@@ -298,8 +295,6 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
         factory = IOVRFLOFactoryRegistry(factory_);
         core = core_;
         sablier = ISablierV2LockupLinear(sablier_);
-        APR_MAX_CEILING = aprMaxCeiling_;
-        MAX_FEE_BPS = maxFeeBps_;
         treasury = treasury_;
         underlying = underlying_;
         ovrfloToken = ovrfloToken_;
