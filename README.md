@@ -2,13 +2,13 @@
 
 **OVRFLO enables Self-Repaying Loans.**
 
-A Pendle-based system that turns Principal Token (PT) deposits into deterministic streaming collateral, then lets users sell or borrow against that collateral. The stream itself repays the loan — no liquidations, no health checks, no oracles at loan time.
+A Lending Platform that turns Principal Token (PT) deposits into deterministic streaming collateral, then lets users sell or borrow against that collateral. The stream itself repays the loan — no liquidations, no health checks, no oracles at loan time.
 
 ## How It Works
 
 OVRFLO operates in two layers:
 
-**Layer 1 — Collateral Creation (Core Vault):** Deposit a Pendle PT and immediately receive ovrfloTokens (your principal at current market value) plus a Sablier stream that vests the remaining discount until PT maturity. The stream is deterministic, non-cancelable, and non-underperforming — it pays exactly what it promises, on schedule.
+**Layer 1 — Collateral Creation (Core Vault):** Deposit a Pendle PT and immediately receive ovrfloTokens (your principal at current market value) plus a Sablier stream that vests the remaining discount until PT maturity. The stream is deterministic and non-cancelable — it pays exactly what it promises, on schedule.
 
 **Layer 2 — The Market (OVRFLOBook):** Use that Sablier stream as collateral. Sell it outright for discounted underlying, or pledge it to borrow underlying and let the stream repay the loan at maturity. Because the stream is deterministic, there are no liquidations, no health factors, and no price oracles needed at loan time.
 
@@ -16,8 +16,8 @@ OVRFLO operates in two layers:
 
 1. User deposits **100 PT-stETH** (currently trading at 95% of face value)
 2. User immediately receives **95 ovrfloETH** (their principal) and a **Sablier stream** vesting **5 ovrfloETH** until PT maturity
-3. User pledges the stream on OVRFLOBook to borrow **4 WETH** against it at a 25% APR
-4. At maturity, the stream has vested **5 ovrfloETH**; the lender draws the owed obligation, and the residual returns to the borrower
+3. User pledges the stream on OVRFLOBook to borrow **4 WETH** against it at a 10% APR
+4. At maturity, the stream has vested **5 ovrfloETH**; the lender draws the owed **4.4 ovrfloETH** obligation, and the **0.6 ovrfloETH** residual returns to the borrower
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
@@ -64,30 +64,30 @@ OVRFLO operates in two layers:
 │   └───┬───────┬───┘                                                      │
 │       │ owns  │ owns                                                     │
 │       ▼       ▼                                                          │
-│   ┌───────────────┐     deploys + admin     ┌──────────────┐             │
-│   │ OVRFLOFactory │────────────────────────▶│    OVRFLO    │             │
-│   │               │                          │  (core vault)│             │
-│   │ - configure   │                          │ - deposit()  │             │
-│   │   Deployment  │                          │ - claim()    │             │
-│   │ - deploy()    │                          │ - wrap()     │             │
-│   │ - addMarket() │                          │ - unwrap()   │             │
-│   │ - prepare     │                          │ - series()   │             │
-│   │   Oracle      │                          └──────┬───────┘             │
-│   └───────┬───────┘                                 │ mints/burns         │
-│           │                                         ▼                     │
-│           │                            ┌──────────────────────┐           │
-│           │                            │     OVRFLOToken      │           │
-│           │                            │  (per underlying)    │           │
-│           │                            └──────────────────────┘           │
-│           │                                                               │
-│           │         ┌──────────────┐    ┌───────────────────┐             │
-│           └────────▶│  OVRFLOBook  │───▶│  StreamPricing    │             │
-│                     │  (lending)   │    │  (pricing library)│             │
-│                     │ - sell       │    │ - factor          │             │
-│                     │ - borrow     │    │ - grossPrice      │             │
-│                     │ - loan svc   │    │ - obligation      │             │
-│                     │ - quote      │    │ - requireEligible │             │
-│                     └──────────────┘    └───────────────────┘             │
+│   ┌───────────────┐     deploys + admin      ┌──────────────┐            │
+│   │ OVRFLOFactory │────────────────────────▶ │   OVRFLO     │            │
+│   │               │                          │  (core vault)│            │
+│   │ - configure   │                          │ - deposit()  │            │
+│   │   Deployment  │                          │ - claim()    │            │
+│   │ - deploy()    │                          │ - wrap()     │            │
+│   │ - addMarket() │                          │ - unwrap()   │            │
+│   │ - prepare     │                          │ - series()   │            │
+│   │   Oracle      │                          └──────┬───────┘            │
+│   └───────┬───────┘                                 │ mints/burns        │
+│           │                                         ▼                    │
+│           │                            ┌──────────────────────┐          │
+│           │                            │     OVRFLOToken      │          │
+│           │                            │  (per underlying)    │          │
+│           │                            └──────────────────────┘          │
+│           │                                                              │
+│           │         ┌──────────────┐    ┌───────────────────┐            │
+│           └────────▶│  OVRFLOBook  │───▶│  StreamPricing    │            │
+│                     │  (lending)   │    │  (pricing library)│            │
+│                     │ - sell       │    │ - factor          │            │
+│                     │ - borrow     │    │ - grossPrice      │            │
+│                     │ - loan svc   │    │ - obligation      │            │
+│                     │ - quote      │    │ - requireEligible │            │
+│                     └──────────────┘    └───────────────────┘            │
 │                                                                          │
 │   External:                                                              │
 │   ┌─────────────┐              ┌─────────────┐                           │
