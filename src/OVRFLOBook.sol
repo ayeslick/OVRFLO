@@ -447,11 +447,11 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
         _requireEligible(market, streamId);
 
         listingId = nextSaleListingId++;
-        sablier.transferFrom(msg.sender, address(this), streamId);
-
         saleListings[listingId] = SaleListing({
             maker: msg.sender, market: market, streamId: streamId, aprBps: aprBps, feeBps: feeBps, active: true
         });
+
+        sablier.transferFrom(msg.sender, address(this), streamId);
 
         emit SaleListingPosted(listingId, msg.sender, market, streamId, aprBps, feeBps);
     }
@@ -626,8 +626,6 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
         require(borrowAmount <= grossPrice, "OVRFLOBook: borrow above price");
 
         listingId = nextBorrowListingId++;
-        sablier.transferFrom(msg.sender, address(this), streamId);
-
         borrowListings[listingId] = BorrowListing({
             borrower: msg.sender,
             market: market,
@@ -637,6 +635,8 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
             feeBps: feeBps,
             active: true
         });
+
+        sablier.transferFrom(msg.sender, address(this), streamId);
 
         emit BorrowListingPosted(listingId, msg.sender, market, streamId, aprBps, feeBps, borrowAmount);
     }
@@ -977,9 +977,7 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
         uint256 balanceBefore = token.balanceOf(to);
         token.safeTransferFrom(from, to, amount);
         uint256 balanceAfter = token.balanceOf(to);
-        require(
-            balanceAfter >= balanceBefore && balanceAfter - balanceBefore == amount, "OVRFLOBook: transfer mismatch"
-        );
+        require(balanceAfter - balanceBefore == amount, "OVRFLOBook: transfer mismatch");
     }
 
     /// @dev Pays `amount` underlying to `to`, skipping the transfer when zero.
