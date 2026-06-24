@@ -123,22 +123,22 @@ contract OVRFLOWrapUnwrapTest is Test {
     function test_Wrap_RevertsWhenUnderlyingTransfersLessThanRequestedAmount() public {
         ShortTransferUnderlying shortUnderlying = new ShortTransferUnderlying();
         OVRFLOToken shortToken = new OVRFLOToken("OVRFLO Short", "ovrfloSUND");
-        shortToken.transferOwnership(address(ovrflo));
-        admin.setInfo(TREASURY, address(shortUnderlying), address(shortToken));
+        OVRFLO shortOvrflo = new OVRFLO(address(admin), TREASURY, address(shortUnderlying), address(shortToken));
+        shortToken.transferOwnership(address(shortOvrflo));
 
         uint256 amount = 10 ether;
         shortUnderlying.mint(user, amount);
 
         vm.startPrank(user);
-        shortUnderlying.approve(address(ovrflo), amount);
+        shortUnderlying.approve(address(shortOvrflo), amount);
         vm.expectRevert("OVRFLO: transfer amount mismatch");
-        ovrflo.wrap(amount);
+        shortOvrflo.wrap(amount);
         vm.stopPrank();
 
         assertEq(shortUnderlying.balanceOf(user), amount);
-        assertEq(shortUnderlying.balanceOf(address(ovrflo)), 0);
+        assertEq(shortUnderlying.balanceOf(address(shortOvrflo)), 0);
         assertEq(shortToken.balanceOf(user), 0);
-        assertEq(ovrflo.wrappedUnderlying(), 0);
+        assertEq(shortOvrflo.wrappedUnderlying(), 0);
     }
 
     function test_Unwrap_BurnsOneToOneReturnsUnderlyingDecrementsReserveAndEmitsEvent() public {
@@ -210,27 +210,6 @@ contract OVRFLOWrapUnwrapTest is Test {
         ovrflo.unwrap(0);
     }
 
-    function test_WrapAndUnwrap_UsePairSourcedFromAdmin() public {
-        WrapMockERC20 alternateUnderlying = new WrapMockERC20("Alternate Underlying", "AUND");
-        OVRFLOToken alternateToken = new OVRFLOToken("OVRFLO Alternate", "ovrfloAUND");
-        alternateToken.transferOwnership(address(ovrflo));
-        admin.setInfo(TREASURY, address(alternateUnderlying), address(alternateToken));
-
-        alternateUnderlying.mint(user, 10 ether);
-
-        vm.startPrank(user);
-        alternateUnderlying.approve(address(ovrflo), 10 ether);
-        ovrflo.wrap(4 ether);
-        ovrflo.unwrap(4 ether);
-        vm.stopPrank();
-
-        assertEq(underlying.balanceOf(address(ovrflo)), 0);
-        assertEq(ovrfloToken.balanceOf(user), 0);
-        assertEq(alternateUnderlying.balanceOf(address(ovrflo)), 0);
-        assertEq(alternateToken.balanceOf(user), 0);
-        assertEq(alternateUnderlying.balanceOf(user), 10 ether);
-    }
-
     function test_Unwrap_AllowsDifferentHolderToConsumeSharedReserve() public {
         _wrap(user, 10 ether);
 
@@ -262,26 +241,27 @@ contract OVRFLOWrapUnwrapTest is Test {
     function test_ReentrantUnderlyingCannotDoubleSpendReserveDuringUnwrap() public {
         ReentrantUnderlying reentrantUnderlying = new ReentrantUnderlying();
         OVRFLOToken reentrantToken = new OVRFLOToken("OVRFLO Reentrant", "ovrfloRUND");
-        reentrantToken.transferOwnership(address(ovrflo));
-        admin.setInfo(TREASURY, address(reentrantUnderlying), address(reentrantToken));
+        OVRFLO reentrantOvrflo =
+            new OVRFLO(address(admin), TREASURY, address(reentrantUnderlying), address(reentrantToken));
+        reentrantToken.transferOwnership(address(reentrantOvrflo));
 
         uint256 amount = 10 ether;
         reentrantUnderlying.mint(user, amount);
         vm.startPrank(user);
-        reentrantUnderlying.approve(address(ovrflo), amount);
-        ovrflo.wrap(amount);
+        reentrantUnderlying.approve(address(reentrantOvrflo), amount);
+        reentrantOvrflo.wrap(amount);
         vm.stopPrank();
 
-        reentrantUnderlying.configureAttack(ovrflo, 1 ether);
+        reentrantUnderlying.configureAttack(reentrantOvrflo, 1 ether);
 
         vm.prank(user);
-        ovrflo.unwrap(amount);
+        reentrantOvrflo.unwrap(amount);
 
         assertTrue(reentrantUnderlying.reentered());
         assertFalse(reentrantUnderlying.reenterSucceeded());
-        assertEq(ovrflo.wrappedUnderlying(), 0);
+        assertEq(reentrantOvrflo.wrappedUnderlying(), 0);
         assertEq(reentrantUnderlying.balanceOf(user), amount);
-        assertEq(reentrantUnderlying.balanceOf(address(ovrflo)), 0);
+        assertEq(reentrantUnderlying.balanceOf(address(reentrantOvrflo)), 0);
         assertEq(reentrantToken.balanceOf(user), 0);
     }
 

@@ -5,7 +5,6 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {PRBMath} from "prb-math/PRBMath.sol";
 import {OVRFLOToken} from "./OVRFLOToken.sol";
-import {IOvrfloAdmin} from "../interfaces/IOvrfloAdmin.sol";
 import {IPendleOracle} from "../interfaces/IPendleOracle.sol";
 import {ISablierV2LockupLinear} from "../interfaces/ISablierV2LockupLinear.sol";
 
@@ -282,7 +281,6 @@ contract OVRFLO {
     /// @dev Underlying held for wrapped supply is reserved and cannot be swept.
     /// @param to The recipient address
     function sweepExcessUnderlying(address to) external onlyAdmin {
-        (, address underlying,) = IOvrfloAdmin(adminContract).ovrfloInfo(address(this));
         uint256 balance = IERC20(underlying).balanceOf(address(this));
         uint256 reserve = wrappedUnderlying;
         uint256 excess = balance > reserve ? balance - reserve : 0;
@@ -301,8 +299,6 @@ contract OVRFLO {
     function wrap(uint256 amount) external {
         require(amount > 0, "OVRFLO: amount is zero");
 
-        (, address underlying, address ovrfloToken) = IOvrfloAdmin(adminContract).ovrfloInfo(address(this));
-
         uint256 balanceBefore = IERC20(underlying).balanceOf(address(this));
         IERC20(underlying).safeTransferFrom(msg.sender, address(this), amount);
         uint256 balanceAfter = IERC20(underlying).balanceOf(address(this));
@@ -319,7 +315,6 @@ contract OVRFLO {
     function unwrap(uint256 amount) external {
         require(amount > 0, "OVRFLO: amount is zero");
 
-        (, address underlying, address ovrfloToken) = IOvrfloAdmin(adminContract).ovrfloInfo(address(this));
         uint256 reserve = wrappedUnderlying;
         require(reserve >= amount, "OVRFLO: insufficient reserve");
 
