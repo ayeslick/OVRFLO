@@ -37,11 +37,7 @@ contract OVRFLOProtocolTest is Test {
     );
     event FeeTaken(address indexed payer, address indexed token, uint256 amount);
     event Claimed(
-        address indexed user,
-        address indexed market,
-        address indexed ptToken,
-        address ovrfloToken,
-        uint256 amount
+        address indexed user, address indexed market, address indexed ptToken, address ovrfloToken, uint256 amount
     );
     event ExcessSwept(address indexed ptToken, address indexed to, uint256 amount);
     event SeriesApproved(

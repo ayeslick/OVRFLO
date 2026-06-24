@@ -73,6 +73,32 @@ enums have been widened to reflect our stack; everything else matches the upstre
   AMM, Pendle's pool disabled post-expiry, no cross-series swaps), and only costs
   the attacker gas. Lists the trust assumptions and the conditions that would
   reopen it.
+- [security-issues/repayloan-equality-rounding-no-brick-OVRFLOBook-20260624.md](security-issues/repayloan-equality-rounding-no-brick-OVRFLOBook-20260624.md) —
+  Audit note. Concern that `bool closes = amount == outstanding;` in
+  `OVRFLOBook.repayLoan` could brick loan closure via a rounding off-by-one.
+  Dismissed: `outstanding` is always an exact integer wei
+  (`obligation - drawn - repaid`), the borrower controls `amount` and can match
+  it exactly on an 18-decimal token, and `obligation <= remaining` (ceiling debt
+  vs. floor price) so the stream-draw close path via permissionless `closeLoan`
+  always eventually succeeds. Documents the rounding invariants future
+  `StreamPricing` edits must preserve.
+
+### Architecture patterns
+
+- [architecture-patterns/ovrflo-wrap-unwrap-reserve-accounting.md](architecture-patterns/ovrflo-wrap-unwrap-reserve-accounting.md) —
+  How the OVRFLO wrap/unwrap reserve is accounted and why deposit-origin
+  ovrfloToken cannot consume the wrap reserve.
+- [architecture-patterns/ovrflobook-entry-teardown-zero-what-matters.md](architecture-patterns/ovrflobook-entry-teardown-zero-what-matters.md) —
+  OVRFLOBook tears down cancelled/filled entries by zeroing only the
+  security-critical fields (`capacity`/`active`) and leaving identity/context
+  fields populated. Post-EIP-3529 a full `delete` costs net gas to zero extra
+  slots, and loans must never be erased (`loanState` history is a feature).
+- [architecture-patterns/ovrflobook-offer-market-active-gate.md](architecture-patterns/ovrflobook-offer-market-active-gate.md) —
+  OVRFLOBook offer posts (`postSaleOffer`/`postLendOffer`) front-load
+  market/series/maturity validation via `_requireMarketActive` so makers fail
+  fast before locking liquidity behind a dead market. The shared checks live in
+  one `StreamPricing.marketActive` helper that `requireEligible` also delegates
+  to — single source of truth, no hot-path gas regression.
 
 ### Local devnet & seeding
 

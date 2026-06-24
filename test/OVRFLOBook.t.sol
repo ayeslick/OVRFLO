@@ -402,9 +402,9 @@ contract OVRFLOBookTest is Test {
         underlying.approve(address(book), 100 ether);
 
         vm.expectRevert("OVRFLOBook: apr out of bounds");
-        book.postOffer(MARKET, 999, 100 ether);
+        book.postSaleOffer(MARKET, 999, 100 ether);
 
-        uint256 offerId = book.postOffer(MARKET, 1000, 100 ether);
+        uint256 offerId = book.postSaleOffer(MARKET, 1000, 100 ether);
         vm.stopPrank();
 
         (address maker, address market, uint16 aprBps, uint128 capacity, bool active) = book.saleOffers(offerId);
@@ -419,14 +419,14 @@ contract OVRFLOBookTest is Test {
 
     function test_HitOffer_SettlesSaleAndConsumesCapacity() public {
         book.setFee(100);
-        uint256 offerId = _postOffer(BUYER, 100 ether);
+        uint256 offerId = _postSaleOffer(BUYER, 100 ether);
         _mintEligibleStream(1, SELLER, 110 ether, 0);
 
         vm.prank(SELLER);
         sablier.approve(address(book), 1);
 
         vm.prank(SELLER);
-        book.hitOffer(offerId, 1, 99 ether);
+        book.sellIntoOffer(offerId, 1, 99 ether);
 
         (,,,, bool active) = book.saleOffers(offerId);
         assertFalse(active);
@@ -437,13 +437,13 @@ contract OVRFLOBookTest is Test {
     }
 
     function test_HitOffer_PricesFromRemainingAfterPriorWithdrawals() public {
-        uint256 offerId = _postOffer(BUYER, 100 ether);
+        uint256 offerId = _postSaleOffer(BUYER, 100 ether);
         _mintEligibleStream(28, SELLER, 150 ether, 40 ether);
 
         vm.prank(SELLER);
         sablier.approve(address(book), 28);
         vm.prank(SELLER);
-        book.hitOffer(offerId, 28, 0);
+        book.sellIntoOffer(offerId, 28, 0);
 
         (,,, uint128 capacity,) = book.saleOffers(offerId);
         assertEq(capacity, 0);
@@ -454,58 +454,58 @@ contract OVRFLOBookTest is Test {
     function test_HitOffer_RespectsSlippageCapacityDeadIdsDustAndMaturity() public {
         book.setFee(100);
 
-        uint256 slippageOfferId = _postOffer(BUYER, 100 ether);
+        uint256 slippageOfferId = _postSaleOffer(BUYER, 100 ether);
         _mintEligibleStream(2, SELLER, 110 ether, 0);
         vm.prank(SELLER);
         sablier.approve(address(book), 2);
         vm.prank(SELLER);
         vm.expectRevert("OVRFLOBook: slippage");
-        book.hitOffer(slippageOfferId, 2, 100 ether);
+        book.sellIntoOffer(slippageOfferId, 2, 100 ether);
 
-        uint256 smallOfferId = _postOffer(BUYER, 50 ether);
+        uint256 smallOfferId = _postSaleOffer(BUYER, 50 ether);
         vm.prank(SELLER);
         vm.expectRevert("OVRFLOBook: insufficient capacity");
-        book.hitOffer(smallOfferId, 2, 0);
+        book.sellIntoOffer(smallOfferId, 2, 0);
 
         vm.prank(BUYER);
-        book.cancelOffer(slippageOfferId);
+        book.cancelSaleOffer(slippageOfferId);
         vm.prank(SELLER);
         vm.expectRevert("OVRFLOBook: offer inactive");
-        book.hitOffer(slippageOfferId, 2, 0);
+        book.sellIntoOffer(slippageOfferId, 2, 0);
 
-        uint256 dustOfferId = _postOffer(BUYER, 1 ether);
+        uint256 dustOfferId = _postSaleOffer(BUYER, 1 ether);
         _mintEligibleStream(3, SELLER, 1, 0);
         vm.prank(SELLER);
         sablier.approve(address(book), 3);
         vm.prank(SELLER);
         vm.expectRevert("OVRFLOBook: price zero");
-        book.hitOffer(dustOfferId, 3, 0);
+        book.sellIntoOffer(dustOfferId, 3, 0);
 
-        uint256 maturedOfferId = _postOffer(BUYER, 100 ether);
+        uint256 maturedOfferId = _postSaleOffer(BUYER, 100 ether);
         _mintEligibleStream(4, SELLER, 110 ether, 0);
         vm.prank(SELLER);
         sablier.approve(address(book), 4);
         vm.warp(expiry);
         vm.prank(SELLER);
         vm.expectRevert();
-        book.hitOffer(maturedOfferId, 4, 0);
+        book.sellIntoOffer(maturedOfferId, 4, 0);
     }
 
     function test_HitOffer_AllowsPartialFillsAndCancelRefundsRemainder() public {
-        uint256 offerId = _postOffer(BUYER, 250 ether);
+        uint256 offerId = _postSaleOffer(BUYER, 250 ether);
         _mintEligibleStream(5, SELLER, 110 ether, 0);
 
         vm.prank(SELLER);
         sablier.approve(address(book), 5);
         vm.prank(SELLER);
-        book.hitOffer(offerId, 5, 0);
+        book.sellIntoOffer(offerId, 5, 0);
 
         (,,, uint128 capacity, bool active) = book.saleOffers(offerId);
         assertEq(capacity, 150 ether);
         assertTrue(active);
 
         vm.prank(BUYER);
-        book.cancelOffer(offerId);
+        book.cancelSaleOffer(offerId);
 
         (,,, capacity, active) = book.saleOffers(offerId);
         assertEq(capacity, 0);
@@ -519,7 +519,7 @@ contract OVRFLOBookTest is Test {
         vm.startPrank(SELLER);
         sablier.approve(address(book), 6);
         vm.expectRevert("OVRFLOBook: apr out of bounds");
-        book.listStream(MARKET, 6, 999);
+        book.postSaleListing(MARKET, 6, 999);
         vm.stopPrank();
 
         book.setFee(42);
@@ -527,7 +527,7 @@ contract OVRFLOBookTest is Test {
         vm.expectEmit(true, true, true, true, address(book));
         emit SaleListingPosted(1, SELLER, MARKET, 6, 1000, 42);
         vm.startPrank(SELLER);
-        uint256 listingId = book.listStream(MARKET, 6, 1000);
+        uint256 listingId = book.postSaleListing(MARKET, 6, 1000);
         vm.stopPrank();
 
         (address maker, address market, uint256 streamId, uint16 aprBps, uint16 listingFeeBps, bool active) =
@@ -543,10 +543,10 @@ contract OVRFLOBookTest is Test {
 
     function test_CancelListing_ReturnsExactNftWithoutDrawing() public {
         _mintEligibleStream(7, SELLER, 110 ether, 0);
-        uint256 listingId = _listStream(SELLER, 7);
+        uint256 listingId = _postSaleListing(SELLER, 7);
 
         vm.prank(SELLER);
-        book.cancelListing(listingId);
+        book.cancelSaleListing(listingId);
 
         (,,,,, bool active) = book.saleListings(listingId);
         assertFalse(active);
@@ -557,12 +557,12 @@ contract OVRFLOBookTest is Test {
     function test_TakeListing_SettlesSale() public {
         book.setFee(100);
         _mintEligibleStream(8, SELLER, 110 ether, 0);
-        uint256 listingId = _listStream(SELLER, 8);
+        uint256 listingId = _postSaleListing(SELLER, 8);
 
         underlying.mint(BUYER, 100 ether);
         vm.startPrank(BUYER);
         underlying.approve(address(book), 100 ether);
-        book.takeListing(listingId, 100 ether);
+        book.buyListing(listingId, 100 ether);
         vm.stopPrank();
 
         (,,,,, bool active) = book.saleListings(listingId);
@@ -576,13 +576,13 @@ contract OVRFLOBookTest is Test {
     function test_TakeListing_UsesSnapshottedFeeWhenGlobalFeeChanges() public {
         book.setFee(0);
         _mintEligibleStream(32, SELLER, 110 ether, 0);
-        uint256 listingId = _listStream(SELLER, 32);
+        uint256 listingId = _postSaleListing(SELLER, 32);
         book.setFee(100);
 
         underlying.mint(BUYER, 100 ether);
         vm.startPrank(BUYER);
         underlying.approve(address(book), 100 ether);
-        book.takeListing(listingId, 100 ether);
+        book.buyListing(listingId, 100 ether);
         vm.stopPrank();
 
         assertEq(underlying.balanceOf(SELLER), 100 ether);
@@ -591,26 +591,26 @@ contract OVRFLOBookTest is Test {
 
     function test_TakeListing_RespectsSlippageDustAndDeadIds() public {
         _mintEligibleStream(9, SELLER, 110 ether, 0);
-        uint256 listingId = _listStream(SELLER, 9);
+        uint256 listingId = _postSaleListing(SELLER, 9);
 
         underlying.mint(BUYER, 200 ether);
         vm.startPrank(BUYER);
         underlying.approve(address(book), 200 ether);
         vm.expectRevert("OVRFLOBook: slippage");
-        book.takeListing(listingId, 99 ether);
+        book.buyListing(listingId, 99 ether);
         vm.stopPrank();
 
         vm.prank(SELLER);
-        book.cancelListing(listingId);
+        book.cancelSaleListing(listingId);
         vm.prank(BUYER);
         vm.expectRevert("OVRFLOBook: listing inactive");
-        book.takeListing(listingId, 100 ether);
+        book.buyListing(listingId, 100 ether);
 
         _mintEligibleStream(10, SELLER, 1, 0);
-        uint256 dustListingId = _listStream(SELLER, 10);
+        uint256 dustListingId = _postSaleListing(SELLER, 10);
         vm.prank(BUYER);
         vm.expectRevert("OVRFLOBook: price zero");
-        book.takeListing(dustListingId, 1);
+        book.buyListing(dustListingId, 1);
     }
 
     function test_BorrowAgainstOffer_OriginatesLoanAndKeepsRemainderCancellable() public {
@@ -699,8 +699,8 @@ contract OVRFLOBookTest is Test {
         book.borrowAgainstOffer(offerId, 12, 100 ether, 0);
 
         _mintEligibleStream(13, SELLER, 110 ether, 0);
-        factory.setMarketApproved(address(core), MARKET, false);
         uint256 ineligibleOfferId = _postLendOffer(BUYER, 100 ether);
+        factory.setMarketApproved(address(core), MARKET, false);
         vm.prank(SELLER);
         sablier.approve(address(book), 13);
         vm.prank(SELLER);
@@ -1071,7 +1071,7 @@ contract OVRFLOBookTest is Test {
     }
 
     function test_OrderStateViewsReflectCurrentState() public {
-        uint256 saleOfferId = _postOffer(BUYER, 100 ether);
+        uint256 saleOfferId = _postSaleOffer(BUYER, 100 ether);
         (address saleMaker, address saleMarket, uint16 saleApr, uint128 saleCapacity, bool saleActive) =
             book.saleOfferState(saleOfferId);
         assertEq(saleMaker, BUYER);
@@ -1081,7 +1081,7 @@ contract OVRFLOBookTest is Test {
         assertTrue(saleActive);
 
         _mintEligibleStream(26, SELLER, 110 ether, 0);
-        uint256 saleListingId = _listStream(SELLER, 26);
+        uint256 saleListingId = _postSaleListing(SELLER, 26);
         (
             address listingMaker,
             address listingMarket,
@@ -1126,11 +1126,11 @@ contract OVRFLOBookTest is Test {
         assertTrue(borrowActive);
     }
 
-    function _postOffer(address maker, uint128 capacity) internal returns (uint256 offerId) {
+    function _postSaleOffer(address maker, uint128 capacity) internal returns (uint256 offerId) {
         underlying.mint(maker, capacity);
         vm.startPrank(maker);
         underlying.approve(address(book), capacity);
-        offerId = book.postOffer(MARKET, 1000, capacity);
+        offerId = book.postSaleOffer(MARKET, 1000, capacity);
         vm.stopPrank();
     }
 
@@ -1161,10 +1161,10 @@ contract OVRFLOBookTest is Test {
         vm.stopPrank();
     }
 
-    function _listStream(address maker, uint256 streamId) internal returns (uint256 listingId) {
+    function _postSaleListing(address maker, uint256 streamId) internal returns (uint256 listingId) {
         vm.startPrank(maker);
         sablier.approve(address(book), streamId);
-        listingId = book.listStream(MARKET, streamId, 1000);
+        listingId = book.postSaleListing(MARKET, streamId, 1000);
         vm.stopPrank();
     }
 

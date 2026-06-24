@@ -292,9 +292,7 @@ contract OVRFLO {
         uint256 balanceBefore = IERC20(underlying).balanceOf(address(this));
         IERC20(underlying).safeTransferFrom(msg.sender, address(this), amount);
         uint256 balanceAfter = IERC20(underlying).balanceOf(address(this));
-        require(
-            balanceAfter >= balanceBefore && balanceAfter - balanceBefore == amount, "OVRFLO: transfer amount mismatch"
-        );
+        require(balanceAfter - balanceBefore == amount, "OVRFLO: transfer amount mismatch");
 
         wrappedUnderlying += amount;
         OVRFLOToken(ovrfloToken).mint(msg.sender, amount);

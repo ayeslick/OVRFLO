@@ -65,3 +65,23 @@ Direct token transfers or donations to the vault do not increase the wrap reserv
 A per-deposit linear vesting stream used by OVRFLO to deliver the discount between a principal token's current value and its face value over time.
 
 Sablier streams belong to the PT deposit path. Wrap and unwrap do not create, modify, or settle streams.
+
+## OVRFLOBook
+
+### Offer
+
+A standing buy-side or lend-side order in the OVRFLOBook secondary market where a maker posts underlying liquidity not bound to a specific stream, fillable by any eligible stream from a chosen market.
+
+Offers carry no stream at creation, so they front-load only market-level validation (market approved, series approved, not matured); full stream eligibility is checked per-fill.
+
+### Listing
+
+A sell-side or borrow-side order in the OVRFLOBook secondary market where a maker escrows a specific Sablier stream, priced at a discount rate until the series maturity.
+
+Listings bind a stream at creation and run full stream eligibility validation at post time.
+
+### Loan
+
+A borrow in the OVRFLOBook backed by a pledged Sablier stream, where the obligation is denominated in the stream's payout asset (ovrfloToken) and the lender recovers by drawing from the stream or by direct repayment.
+
+Total lender recovery is capped at the obligation; the pledged stream is returned to the borrower once the loan closes.
