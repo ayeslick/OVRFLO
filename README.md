@@ -314,20 +314,28 @@ book.repayLoan(loanId, amount);
 
 The PT discount is fixed at deposit -- the oracle splits principal from yield deterministically. What's fixed will overflow: the yield portion vests through a Sablier stream, and the composition of deposit, book sale, and unwrap or swap lets that fixed yield flow out of the PT and into extractable value. Every participant benefits:
 
-1. **Obtain 100 PT** -- either held outright or, if PT flash loans become available, borrowed for the duration of the cycle (pre-maturity, PT trading at 95% of face)
-2. **Deposit 100 PT** -- receive 95 ovrfloToken (immediate) + Sablier stream vesting 5 ovrfloToken
-3. **Exit the 95 ovrfloToken** -- either `unwrap()` for 95 underlying (consumes the wrap reserve) or swap on a DEX for underlying or any other token
-4. **Sell the stream on the book** into a sale offer -- receive ~4.5 underlying (5 face value discounted at the offer maker's APR)
-5. **Buy 100 PT on the Pendle AMM** for ~95 underlying (if flash-loaned, repay the loan)
+**With held PT:**
+1. **Deposit 100 PT** (pre-maturity, PT trading at 95% of face) -- receive 95 ovrfloToken + Sablier stream vesting 5 ovrfloToken
+2. **Exit the 95 ovrfloToken** -- `unwrap()` for 95 underlying or swap on a DEX
+3. **Sell the stream on the book** into a sale offer -- receive ~4.5 underlying
 
-**Net result:** ~4.5 underlying of PT yield captured. With held PT, this is a yield-extraction strategy. With flash loans (not currently available for PT tokens), it requires zero capital.
+**With zero capital (flash-loan underlying, available today):**
+1. **Flash-loan 95 underlying** from Aave, Balancer, etc.
+2. **Swap for 100 PT** on the Pendle AMM (at 0.95 rate)
+3. **Deposit 100 PT** -- receive 95 ovrfloToken + Sablier stream vesting 5 ovrfloToken
+4. **Exit the 95 ovrfloToken** -- `unwrap()` for 95 underlying or swap on a DEX
+5. **Sell the stream on the book** -- receive ~4.5 underlying
+6. **Repay the flash loan** -- return 95 underlying + fee
+
+**Net result:** ~4.5 underlying of PT yield captured. The flash-loan path works today -- you borrow underlying (widely flash-loanable), not PT, and the Pendle AMM swap replaces the PT acquisition.
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
 │                           OVRFLO CYCLE                               │
 ├──────────────────────────────────────────────────────────────────────┤
 │                                                                      │
-│   Obtain 100 PT (held or flash-loaned, at 95% of face)               │
+│   HELD PT:  Start with 100 PT                                        │
+│   ZERO-CAP: Flash-loan 95 underlying → swap for 100 PT on Pendle     │
 │                          │                                           │
 │                          ▼                                           │
 │   ┌──────────────────────────────────────┐                           │
@@ -348,10 +356,11 @@ The PT discount is fixed at deposit -- the oracle splits principal from yield de
 │   └────┬───────┘     └──────┬───────┘                               │
 │        │                    │                                        │
 │        ▼                    ▼                                        │
-│   Buy 100 PT on Pendle AMM ← ~99.5 underlying total                  │
-│        │                    (95 from unwrap/swap + 4.5 from stream)   │
-│        ▼                    │                                        │
-│   Repay if flash-loaned ────┘  Yield: ~4.5 underlying                │
+│   ~99.5 underlying total   (95 + 4.5)                                │
+│        │                                                             │
+│        ▼                    ZERO-CAP PATH:                           │
+│   Repay 95 underly ──────── repay flash loan + fee                   │
+│                             Yield: ~4.5 underlying                   │
 │                                                                      │
 └──────────────────────────────────────────────────────────────────────┘
 ```
@@ -360,12 +369,12 @@ The PT discount is fixed at deposit -- the oracle splits principal from yield de
 
 | Participant | Outcome |
 |-------------|---------|
-| **Extractor** | Captures ~4.5 underlying of PT yield (with held PT, or zero capital if PT flash loans become available) |
+| **Extractor** | Captures ~4.5 underlying of PT yield -- with held PT or zero capital via underlying flash loan |
 | **Wrap reserve funder** | If unwrap is used: reserve drained by 95 underlying, but deposit added 100 PT backing -- can `claim` 100 ovrfloToken for 100 PT at maturity. Economically whole. If swap is used: reserve untouched. |
 | **Book offer maker** | Bought a stream worth 5 ovrfloToken at maturity for ~4.5 underlying today. Fair trade at their chosen APR. |
 | **Protocol** | Remains solvent (E-1 holds: net ovrfloToken supply = net backing). No funds stolen. |
 
-Any PT holder can do this today (deposit, sell stream, unwrap or swap). Flash loans would democratize it by removing the capital requirement, but PT flash loans are not currently available -- Pendle's AMM doesn't offer them, and PT tokens lack the DEX/Aave pool liquidity needed for Balancer, Uniswap, or Aave flash loans. See `docs/audit/rejected-findings-record.md` for the full security analysis of why this is accepted by design.
+Any PT holder can do this today, or use a flash loan on the underlying (available on Aave/Balancer) to execute with zero capital -- swap underlying for PT on the Pendle AMM, run the cycle, repay in underlying. See `docs/audit/rejected-findings-record.md` for the full security analysis of why this is accepted by design.
 
 ## Admin Flows
 
