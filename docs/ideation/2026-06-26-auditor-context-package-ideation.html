@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ideation: Auditor Context Package for OVRFLO</title>
+<link rel="preconnect" href="https://fonts.bunny.net">
+<link rel="stylesheet" href="https://fonts.bunny.net/css?family=inter:400,500,600,700|jetbrains-mono:400,500">
+<style>
+  :root {
+    --bg: #f7f7f5;
+    --surface: #ffffff;
+    --ink: #1c1c1e;
+    --muted: #5f6066;
+    --line: #e3e3df;
+    --accent: #b8420f;
+    --accent-soft: #fbeee6;
+    --accent-text: #8a3008;
+    --ok: #1f7a4d;
+    --ok-soft: #e7f3ec;
+    --warn: #9a6a00;
+    --warn-soft: #f6eed8;
+    --info: #2b5f9e;
+    --info-soft: #e7eef7;
+    --radius: 10px;
+    --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    --sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #18181a; --surface: #212124; --ink: #ececec; --muted: #a2a3a8;
+      --line: #34343a; --accent: #ff7a45; --accent-soft: #2c1d14; --accent-text: #ff9d73;
+      --ok: #5fce96; --ok-soft: #14241b; --warn: #e0b75a; --warn-soft: #2a2212;
+      --info: #7fb0e8; --info-soft: #15212f;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: var(--sans); font-size: 16px; line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  .page { max-width: 920px; margin-inline: auto; padding: 48px 24px 80px; }
+  header.doc { border-bottom: 1px solid var(--line); padding-bottom: 24px; margin-bottom: 32px; }
+  .eyebrow { font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: var(--accent-text); font-weight: 600; }
+  h1 { font-size: 30px; line-height: 1.2; margin: 8px 0 12px; font-weight: 700; letter-spacing: -0.01em; }
+  h2 { font-size: 22px; margin: 44px 0 14px; font-weight: 700; letter-spacing: -0.01em; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+  h3 { font-size: 17px; margin: 0; font-weight: 600; }
+  p { max-width: 72ch; }
+  a { color: var(--accent-text); }
+  code { font-family: var(--mono); font-size: .88em; background: var(--accent-soft); color: var(--accent-text); padding: 1px 5px; border-radius: 5px; }
+  .meta-strip { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 13px; color: var(--muted); margin-top: 14px; }
+  .meta-strip b { color: var(--ink); font-weight: 600; }
+  .stats { display: flex; flex-wrap: wrap; gap: 10px; margin: 24px 0 8px; }
+  .stat { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 16px; }
+  .stat .n { font-size: 20px; font-weight: 700; display: block; }
+  .stat .l { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+  .axes li { margin-bottom: 6px; }
+  .jump { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 18px; margin: 18px 0 28px; }
+  .jump ol { margin: 6px 0 0; padding-left: 20px; }
+  .jump li { margin-bottom: 4px; }
+  article.idea { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 22px 24px; margin-bottom: 22px; }
+  .idea-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  .idchip { font-family: var(--mono); font-size: 12px; font-weight: 600; background: var(--accent-soft); color: var(--accent-text); border: 1px solid var(--line); border-radius: 999px; padding: 2px 10px; white-space: nowrap; }
+  .pills { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0 4px; }
+  .pill { font-size: 12px; font-weight: 600; border-radius: 999px; padding: 3px 11px; border: 1px solid var(--line); background: var(--bg); color: var(--muted); }
+  .pill.axis { background: var(--info-soft); color: var(--info); }
+  .pill.conf-high { background: var(--ok-soft); color: var(--ok); }
+  .pill.conf-med { background: var(--warn-soft); color: var(--warn); }
+  .pill.cx { background: var(--accent-soft); color: var(--accent-text); }
+  dl.fields { margin: 14px 0 0; }
+  dl.fields dt { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); font-weight: 600; margin-top: 14px; }
+  dl.fields dd { margin: 3px 0 0; max-width: 74ch; }
+  .basis { border-left: 3px solid var(--line); padding-left: 12px; }
+  .basis .tag { font-family: var(--mono); font-size: 12px; font-weight: 600; }
+  .basis.direct .tag { color: var(--ok); }
+  .basis.external .tag { color: var(--info); }
+  .basis.reasoned .tag { color: var(--warn); }
+  figure { margin: 18px 0 4px; }
+  figure svg { width: 100%; height: auto; display: block; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
+  figcaption { font-size: 12.5px; color: var(--muted); margin-top: 6px; }
+  table { border-collapse: collapse; width: 100%; margin-top: 12px; font-size: 14px; }
+  th, td { border: 1px solid var(--line); padding: 8px 11px; text-align: left; vertical-align: top; }
+  th { background: var(--bg); font-weight: 600; }
+  td.rej-id { font-family: var(--mono); white-space: nowrap; color: var(--muted); }
+  .gap-row td { background: var(--warn-soft); }
+  footer.composition-signal { margin-top: 56px; padding-top: 18px; border-top: 1px solid var(--line); font-size: 12.5px; color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="page">
+
+<header class="doc">
+  <div class="eyebrow">Ideation &middot; Repo-grounded</div>
+  <h1>Auditor Context Package for OVRFLO</h1>
+  <p>Strongest directions for giving an external smart-contract auditor everything needed to audit OVRFLO &mdash; the mental models for Pendle and Sablier, the internal protocol design, and the security-reasoning scaffolding &mdash; with minimal ramp time and maximal verifiability.</p>
+  <div class="meta-strip">
+    <span><b>Date:</b> <time datetime="2026-06-26">2026-06-26</time></span>
+    <span><b>Topic:</b> auditor-context-package</span>
+    <span><b>Focus:</b> understand Pendle, Sablier, and OVRFLO</span>
+    <span><b>Mode:</b> repo-grounded</span>
+  </div>
+  <div class="stats">
+    <div class="stat"><span class="n">48</span><span class="l">Raw candidates</span></div>
+    <div class="stat"><span class="n">7</span><span class="l">Survivors</span></div>
+    <div class="stat"><span class="n">5</span><span class="l">Axes covered</span></div>
+    <div class="stat"><span class="n">6</span><span class="l">Frames</span></div>
+  </div>
+</header>
+
+<section>
+  <h2>Grounding Context</h2>
+  <p><b>What already exists.</b> OVRFLO is 1161 nSLOC across three subsystems &mdash; core vault (<a href="https://github.com/ayeslick/OVRFLO/blob/main/src/OVRFLO.sol"><code>OVRFLO.sol</code></a> wrap/unwrap reserve + PT deposit/claim + Sablier stream creation, <code>OVRFLOToken.sol</code>), the timelocked-multisig-owned admin hub (<a href="https://github.com/ayeslick/OVRFLO/blob/main/src/OVRFLOFactory.sol"><code>OVRFLOFactory.sol</code></a>), and the secondary market (<a href="https://github.com/ayeslick/OVRFLO/blob/main/src/OVRFLOBook.sol"><code>OVRFLOBook.sol</code></a> + <a href="https://github.com/ayeslick/OVRFLO/blob/main/src/StreamPricing.sol"><code>StreamPricing.sol</code></a>). The repo is already unusually audit-prepared: a protocol-spec <a href="https://github.com/ayeslick/OVRFLO/blob/main/README.md"><code>README.md</code></a>, a domain glossary <a href="https://github.com/ayeslick/OVRFLO/blob/main/CONCEPTS.md"><code>CONCEPTS.md</code></a>, security guideline docs, and a full <code>x-ray/</code> suite: <a href="https://github.com/ayeslick/OVRFLO/blob/main/x-ray/x-ray.md"><code>x-ray.md</code></a> (overview + threat/trust model), <a href="https://github.com/ayeslick/OVRFLO/blob/main/x-ray/entry-points.md"><code>entry-points.md</code></a> (37 entry points), <a href="https://github.com/ayeslick/OVRFLO/blob/main/x-ray/invariants.md"><code>invariants.md</code></a> (19 guards + 9 single-contract + 5 cross-contract + 3 economic invariants), <code>architecture.svg</code>, and a 10-persona <a href="https://github.com/ayeslick/OVRFLO/blob/main/x-ray/multi-agent-audit-report.md"><code>multi-agent-audit-report.md</code></a>. There are 16 test files / 161 test functions including 3 stateful-fuzz wrap/unwrap harnesses and mainnet-fork suites.</p>
+  <p><b>The gaps the ideation targets.</b> Despite all of that, the material the user explicitly asked about &mdash; the external-protocol mental models &mdash; is the thinnest. There is no dedicated, dependency-scoped explainer of <b>Pendle</b> (PT/SY, maturity convergence, <code>getPtToSyRate</code> TWAP, observation cardinality, what Pendle governance can mutate) or <b>Sablier V2</b> (stream-NFT sender/recipient/owner semantics, <code>withdrawableAmountOf</code>, non-cancelable + no-cliff, the v1.1 withdraw ACL). External-dependency trust assumptions are scattered across the x-ray, invariants <code>X-2</code>/<code>X-5</code>, and the audit report; there is no single index orienting an auditor to the corpus; and reproduction (fork tests, coverage) is blocked behind unstated <code>MAINNET_RPC_URL</code> / dependency-address setup. The four invariants flagged <b>not enforced on-chain</b> (<code>I-2</code>, <code>I-7</code>, <code>X-2</code>, <code>X-5</code>) are precisely where residual risk lives, but they are buried.</p>
+  <p><b>External best-practice basis.</b> Audit-readiness guidance (<a href="https://scsfg.io/developers/audit-preparation/">Smart Contract Security Field Guide</a>, plus Hacken / Quantstamp / Sherlock readiness checklists) converges on the same package: a pinned scope doc (branch + commit + in-scope paths), a domain glossary, a threat model with access controls, explicit known-issues / risk disclosure, defined invariants, and reproducible build/test.</p>
+</section>
+
+<section>
+  <h2>Topic Axes</h2>
+  <ol class="axes">
+    <li><b>External-protocol mental models</b> &mdash; Pendle + Sablier internals OVRFLO depends on, scoped to OVRFLO's actual usage and trust assumptions.</li>
+    <li><b>Internal protocol model &amp; economic design</b> &mdash; OVRFLO flows, value split, dual-backing accounting, self-repaying-loan economics.</li>
+    <li><b>Security-reasoning scaffolding</b> &mdash; threat model, invariants, trust boundaries, known/rejected findings, what to attack.</li>
+    <li><b>Verifiability &amp; reproduction</b> &mdash; runnable tests/coverage/fork, pinned commit + dependency addresses, executable invariant/property harnesses.</li>
+    <li><b>Navigation &amp; packaging / delivery</b> &mdash; how the corpus is indexed, sequenced, versioned, and handed off.</li>
+  </ol>
+</section>
+
+<section>
+  <h2>Ranked Ideas</h2>
+  <div class="jump">
+    <b>Jump to:</b>
+    <ol>
+      <li><a href="#i1">Dependency Interface Contract (Pendle + Sablier)</a></li>
+      <li><a href="#i2">Guided <code>AUDIT.md</code> index + citation graph + triage map</a></li>
+      <li><a href="#i3">Reproducible audit harness (pinned + one-command + invariants-as-properties)</a></li>
+      <li><a href="#i4">Trust Assumption Ledger / "not-enforced-on-chain" pre-flight briefing</a></li>
+      <li><a href="#i5">Known / rejected findings decision record + pre-answered Q&amp;A bank</a></li>
+      <li><a href="#i6">Dual-backing solvency tie-out + self-repaying-loan economics explainer</a></li>
+      <li><a href="#i7">Annotated golden-path lifecycle traces / interactive walkthrough</a></li>
+    </ol>
+  </div>
+
+  <!-- IDEA 1 -->
+  <article class="idea" id="i1">
+    <div class="idea-head"><span class="idchip">I1</span><h3>Dependency Interface Contract (Pendle + Sablier)</h3></div>
+    <div class="pills">
+      <span class="pill axis">Axis 1 &middot; External mental models</span>
+      <span class="pill conf-high">Confidence 85%</span>
+      <span class="pill cx">Complexity: Medium</span>
+      <span class="pill">Top pick</span>
+    </div>
+    <p>One artifact per external dependency, scoped to <em>exactly</em> what OVRFLO calls, framed not as a tutorial but as an interface contract the auditor tries to falsify: each external call (<code>getPtToSyRate</code>, <code>createWithDurations</code>, <code>withdrawableAmountOf</code>, <code>transferFrom</code>, <code>yieldToken</code>) listed with the precondition OVRFLO assumes, the postcondition it relies on, where that is validated locally (or <em>not</em>, with <code>file:line</code>), and the failure mode if the assumption breaks. Each card is pinned to the deployed version (Sablier V2 Lockup Linear v1.1 at <code>0xAFb979…</code>) and ships with a short runnable test that demonstrates the assumption against the real bytecode.</p>
+    <figure>
+      <svg viewBox="0 0 880 250" role="img" aria-label="Mapping from OVRFLO external calls to assumed properties, local enforcement point, and failure mode">
+        <style>
+          .b{fill:var(--surface);stroke:var(--line);stroke-width:1.5}
+          .h{font:600 13px var(--sans);fill:var(--ink)}
+          .t{font:12px var(--sans);fill:var(--muted)}
+          .a{font:11px var(--mono);fill:var(--accent-text)}
+          .ar{stroke:var(--muted);stroke-width:1.5;fill:none;marker-end:url(#ah)}
+        </style>
+        <defs><marker id="ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="var(--muted)"/></marker></defs>
+        <text class="h" x="20" y="24">OVRFLO call</text>
+        <text class="h" x="250" y="24">Assumed property</text>
+        <text class="h" x="500" y="24">Enforced?</text>
+        <text class="h" x="680" y="24">If violated</text>
+        <rect class="b" x="14" y="40" width="200" height="48" rx="6"/>
+        <text class="a" x="26" y="62">getPtToSyRate()</text>
+        <text class="t" x="26" y="78">deposit split</text>
+        <rect class="b" x="244" y="40" width="230" height="48" rx="6"/>
+        <text class="t" x="254" y="60">Fresh TWAP of stated</text>
+        <text class="t" x="254" y="76">cardinality</text>
+        <rect class="b" x="494" y="40" width="160" height="48" rx="6"/>
+        <text class="t" x="504" y="60">Onboarding only</text>
+        <text class="a" x="504" y="76">X-2: not per-call</text>
+        <rect class="b" x="674" y="40" width="190" height="48" rx="6"/>
+        <text class="t" x="684" y="66">Skewed mint split</text>
+        <rect class="b" x="14" y="100" width="200" height="48" rx="6"/>
+        <text class="a" x="26" y="122">withdrawableAmountOf</text>
+        <text class="t" x="26" y="138">loan close</text>
+        <rect class="b" x="244" y="100" width="230" height="48" rx="6"/>
+        <text class="t" x="254" y="120">Monotonic, ACL: sender/</text>
+        <text class="t" x="254" y="136">owner/approved only</text>
+        <rect class="b" x="494" y="100" width="160" height="48" rx="6"/>
+        <text class="t" x="504" y="120">External (v1.1)</text>
+        <text class="a" x="504" y="136">X-5: trusted</text>
+        <rect class="b" x="674" y="100" width="190" height="48" rx="6"/>
+        <text class="t" x="684" y="126">closeLoan drift</text>
+        <rect class="b" x="14" y="160" width="200" height="48" rx="6"/>
+        <text class="a" x="26" y="182">yieldToken()</text>
+        <text class="t" x="26" y="198">addMarket</text>
+        <rect class="b" x="244" y="160" width="230" height="48" rx="6"/>
+        <text class="t" x="254" y="180">== vault underlying</text>
+        <rect class="b" x="494" y="160" width="160" height="48" rx="6"/>
+        <text class="t" x="504" y="180">Checked</text>
+        <text class="a" x="504" y="196">G-18 / X-4</text>
+        <rect class="b" x="674" y="160" width="190" height="48" rx="6"/>
+        <text class="t" x="684" y="186">Asset mismatch</text>
+        <line class="ar" x1="214" y1="64" x2="244" y2="64"/>
+        <line class="ar" x1="474" y1="64" x2="494" y2="64"/>
+        <line class="ar" x1="654" y1="64" x2="674" y2="64"/>
+        <line class="ar" x1="214" y1="124" x2="244" y2="124"/>
+        <line class="ar" x1="474" y1="124" x2="494" y2="124"/>
+        <line class="ar" x1="654" y1="124" x2="674" y2="124"/>
+        <line class="ar" x1="214" y1="184" x2="244" y2="184"/>
+        <line class="ar" x1="474" y1="184" x2="494" y2="184"/>
+        <line class="ar" x1="654" y1="184" x2="674" y2="184"/>
+      </svg>
+      <figcaption>Illustrative: each external call becomes one row of assumption &rarr; enforcement point &rarr; failure mode. The "Enforced?" column is where the contract earns its keep &mdash; rows like <code>X-2</code>/<code>X-5</code> are the off-chain-trusted seams.</figcaption>
+    </figure>
+    <dl class="fields">
+      <dt>Description</dt>
+      <dd>Scoping to OVRFLO's actual usage means an auditor reads ~3 pages per dependency instead of Pendle's or Sablier's full docs, and the runnable demo (e.g. prank a stranger &rarr; <code>SablierV2Lockup_Unauthorized</code>) lets them confirm semantics against the deployed contract rather than trust prose.</dd>
+      <dt>Axis</dt><dd>1 &mdash; External-protocol mental models</dd>
+      <dt>Basis</dt>
+      <dd class="basis direct"><span class="tag">direct:</span> Grounding gaps #1/#2 (no scoped Pendle/Sablier explainer); <code>invariants.md</code> X-2 callee side ("oracle freshness/cardinality is only pre-checked at onboarding… not revalidated inside deposit path"); the verified Sablier v1.1 withdraw-ACL table in <code>multi-agent-audit-report.md</code> ("requires <code>msg.sender</code> to be stream sender, NFT owner, or approved operator… that does not apply to the V2 v1.1 bytecode" distinction that flipped H-2). <span class="tag">external:</span> NASA Interface Control Document practice; scsfg.io audit-prep "meaningful dependencies" requirement.</dd>
+      <dt>Rationale</dt>
+      <dd>The #1 ranked adversary in the x-ray is the oracle manipulator and the entire self-repaying-loan close path rests on Sablier semantics &mdash; both are external. An auditor who misreads the Sablier version (the exact thing that turned a "High" into a rejected finding internally) wastes the engagement re-deriving it or re-raises a false positive.</dd>
+      <dt>Downsides</dt>
+      <dd>Must be re-pinned whenever a dependency version/address changes, or it silently misleads. Requires care to scope tightly &mdash; the temptation to drift into a general Pendle tutorial defeats the purpose.</dd>
+    </dl>
+  </article>
+
+  <!-- IDEA 2 -->
+  <article class="idea" id="i2">
+    <div class="idea-head"><span class="idchip">I2</span><h3>Guided <code>AUDIT.md</code> index + citation graph + one-screen triage map</h3></div>
+    <div class="pills">
+      <span class="pill axis">Axis 5 &middot; Navigation &amp; packaging</span>
+      <span class="pill conf-high">Confidence 88%</span>
+      <span class="pill cx">Complexity: Low</span>
+      <span class="pill">Cheapest multiplier</span>
+    </div>
+    <p>A single root <code>AUDIT.md</code> that turns the already-rich-but-scattered corpus into a guided path: a prescribed reading order (scope/commit snapshot &rarr; dependency contracts &rarr; internal model &rarr; invariants, starting with the four not-enforced &rarr; known/rejected findings &rarr; reproduce), every artifact addressable by the stable IDs that already exist (<code>G-/I-/X-/E-</code> codes, entry-point names), a scope-exclusion log stating what is out of scope and why (e.g. "Sablier internals = bounded external, trusted at v1.1"), and a one-screen triage map: 37 entry points &times; invariant IDs &times; adversary ranking, flagged by reentrancy-guard presence and by the not-enforced set.</p>
+    <dl class="fields">
+      <dt>Description</dt>
+      <dd>The artifacts mostly exist; what is missing is the map. An index that sequences them and gives every item a citation handle converts a pile of docs into an addressable graph an auditor can navigate and reference findings against ("re: <code>X-5</code> closeLoan / Sablier withdrawability").</dd>
+      <dt>Axis</dt><dd>5 &mdash; Navigation &amp; packaging / delivery</dd>
+      <dt>Basis</dt>
+      <dd class="basis direct"><span class="tag">direct:</span> Grounding gap #4 (no single entry/index); <code>entry-points.md</code> already enumerates 37 entry points with per-function reentrancy flags; <code>invariants.md</code> already carries stable <code>G-/I-/X-/E-</code> IDs with <code>file:line</code>. <span class="tag">external:</span> scsfg.io "documentation as cornerstone" (scope doc + glossary + threat model); legal-discovery Bates indexing + privilege log (addressable corpus + documented exclusions).</dd>
+      <dt>Rationale</dt>
+      <dd>This is the highest leverage-to-cost idea: it multiplies the value of every artifact already written, removes the "where do I start / is this current?" tax, and the triage map ensures the auditor's first hour targets oracle and Book-settlement risk rather than admin boilerplate.</dd>
+      <dt>Downsides</dt>
+      <dd>An index that drifts from the artifacts it points to is worse than none; needs to be regenerated or checked at each audited commit. The one-screen map risks over-compression if it tries to encode too much.</dd>
+    </dl>
+  </article>
+
+  <!-- IDEA 3 -->
+  <article class="idea" id="i3">
+    <div class="idea-head"><span class="idchip">I3</span><h3>Reproducible audit harness (pinned + one-command + invariants-as-properties)</h3></div>
+    <div class="pills">
+      <span class="pill axis">Axis 4 &middot; Verifiability &amp; reproduction</span>
+      <span class="pill conf-high">Confidence 82%</span>
+      <span class="pill cx">Complexity: High</span>
+    </div>
+    <p>Reframe the handoff from "document bundle" to "forge project the auditor clones and runs green before reading prose." It bundles an immutable scope snapshot (commit <code>8c603d8</code>, in-scope/excluded paths, code-freeze declaration, deployed Sablier + Pendle market/oracle addresses, <code>lib/</code> submodule commits, pinned fork block), a one-command environment that resolves the <code>MAINNET_RPC_URL</code> friction currently blocking coverage, and every entry in <code>invariants.md</code> compiled to a named runnable Foundry/Halmos property &mdash; with the four not-enforced invariants (<code>I-2</code>, <code>I-7</code>, <code>X-2</code>, <code>X-5</code>) shipped as deliberately documented-gap / red harnesses that show the off-chain-trusted boundary empirically.</p>
+    <dl class="fields">
+      <dt>Description</dt>
+      <dd>Prose invariants are unfalsifiable and rot; executable ones force precision, let the auditor probe boundaries in minutes, and double as a regression asset reused across every future market and re-audit. The pinned snapshot makes every finding reproducible rather than contestable ("that was fixed yesterday").</dd>
+      <dt>Axis</dt><dd>4 &mdash; Verifiability &amp; reproduction</dd>
+      <dt>Basis</dt>
+      <dd class="basis direct"><span class="tag">direct:</span> x-ray Test Analysis &mdash; coverage "Unavailable &mdash; <code>forge coverage</code> run failed due missing <code>MAINNET_RPC_URL</code>", "Stateless Fuzz 0", no formal verification; audit-report test-gap "P1 &mdash; No invariant/fuzz on loan lifecycle interleaving"; <code>invariants.md</code> already carries on-chain Yes/No status + <code>file:line</code> for every invariant (the metadata needed to generate one property each). <span class="tag">external:</span> ACM artifact-evaluation / reproducibility-package practice; Sherlock/Quantstamp "defined invariants" as runnable artifacts.</dd>
+      <dt>Rationale</dt>
+      <dd>The single biggest reproduction friction today is the fork RPC env; removing it up front means zero setup time and immediate trust in the baseline. Encoding the not-enforced invariants as explicit harnesses converts the audit's highest-value targets from a buried footnote into observable evidence and closes the protocol's biggest current testing gap (loan-lifecycle interleaving).</dd>
+      <dt>Downsides</dt>
+      <dd>Real test-engineering cost &mdash; this is the heaviest survivor. Halmos/formal tooling has a learning curve; over-investing here could delay the cheaper, higher-ramp-value artifacts (I1, I2).</dd>
+    </dl>
+  </article>
+
+  <!-- IDEA 4 -->
+  <article class="idea" id="i4">
+    <div class="idea-head"><span class="idchip">I4</span><h3>Trust Assumption Ledger / "not-enforced-on-chain" pre-flight briefing</h3></div>
+    <div class="pills">
+      <span class="pill axis">Axis 3 &middot; Security-reasoning scaffolding</span>
+      <span class="pill conf-high">Confidence 84%</span>
+      <span class="pill cx">Complexity: Low</span>
+    </div>
+    <p>One surface that consolidates every belief OVRFLO asks the auditor to validate: the four invariants flagged <b>On-chain: No</b> (<code>I-2</code> deposit-limit lowering, <code>I-7</code> APR-drift on active orders, <code>X-2</code> oracle freshness, <code>X-5</code> Sablier withdrawability drift), every "bounded external" actor, and every documented trust boundary &mdash; each formatted as a line item the auditor explicitly marks <b>ACCEPT</b> or <b>CHALLENGE</b>. Framed as an aviation-style pre-flight briefing whose "NOTAM" section declares these known soft spots as hazards to probe, not surprises to discover.</p>
+    <dl class="fields">
+      <dt>Description</dt>
+      <dd>Off-chain-trusted invariants are exactly where real findings hide. Surfacing them as the audit's front door &mdash; and as explicit accept/challenge assertions &mdash; concentrates finite hours on genuine residual risk instead of re-confirming the 15 enforced guards, and pre-empts the "we assumed Pendle-only tokens" class of late-stage disagreement.</dd>
+      <dt>Axis</dt><dd>3 &mdash; Security-reasoning scaffolding</dd>
+      <dt>Basis</dt>
+      <dd class="basis direct"><span class="tag">direct:</span> <code>invariants.md</code> header "4 not enforced on-chain"; <code>I-2</code>/<code>I-7</code>/<code>X-2</code>/<code>X-5</code> each carry <b>On-chain: No</b> with explicit "If violated" notes (e.g. I-7: "active orders can remain executable while outside the latest APR policy"); x-ray trust boundaries + actors/adversary ranking. <span class="tag">external:</span> FAA pre-flight briefing / NOTAM practice (declare known hazards to fly around).</dd>
+      <dt>Rationale</dt>
+      <dd>Most protocol/auditor disputes are about unstated assumptions; making them explicit and acknowledge-able is cheap and high-signal. It is also a trust move &mdash; publishing your own known soft spots up front reads as a mature team and redirects scrutiny where it pays.</dd>
+      <dt>Downsides</dt>
+      <dd>Requires a judgment call on how much to "lead the witness" &mdash; over-framing could anchor an auditor away from a real issue you mis-categorized as accepted. Needs sign-off from the team on what is genuinely accepted vs simply unaddressed.</dd>
+    </dl>
+  </article>
+
+  <!-- IDEA 5 -->
+  <article class="idea" id="i5">
+    <div class="idea-head"><span class="idchip">I5</span><h3>Known / rejected findings decision record + pre-answered Q&amp;A bank</h3></div>
+    <div class="pills">
+      <span class="pill axis">Axis 3 &middot; Security-reasoning scaffolding</span>
+      <span class="pill conf-high">Confidence 80%</span>
+      <span class="pill cx">Complexity: Low</span>
+    </div>
+    <p>Promote the internal 10-persona review's settled conclusions into a persistent, citable decision record so the external auditor starts where the last review ended: the rejected/downgraded findings (H-2 Sablier withdraw-grief, rejected via the verified v1.1 ACL table keyed to <code>0xAFb979…</code>; M-5 cross-market fungibility, by-design; H-1 <code>uint128</code> narrowing downgraded to L-1), each with the evidence that closed it, plus a pre-answered Q&amp;A bank seeded from the five "Resolved open questions" (Sablier withdraw ACL, permissionless <code>closeLoan</code> intent, Pendle-only token assumptions, multi-market same-expiry, stale listing fee).</p>
+    <dl class="fields">
+      <dt>Description</dt>
+      <dd>Auditors predictably rediscover and re-raise the same "obvious" items in week one. A rigorous prior-reasoning ledger converts a one-time (expensive) verification into permanent capital each subsequent audit extends rather than repeats, and signals a mature team.</dd>
+      <dt>Axis</dt><dd>3 &mdash; Security-reasoning scaffolding</dd>
+      <dt>Basis</dt>
+      <dd class="basis direct"><span class="tag">direct:</span> <code>multi-agent-audit-report.md</code> "Rejected findings" (H-2, M-5 with full reasoning), "Resolved open questions" table (5 Q/A), and "Reviewed &mdash; no medium+ issue" consensus table; the verified Sablier v1.1 ACL table tied to the deployed address. <span class="tag">external:</span> scsfg.io / Hacken require a known-issues / risk-disclosure deliverable.</dd>
+      <dt>Rationale</dt>
+      <dd>The exact Sablier-v1.1-vs-later-version distinction already cost a verification pass; without disclosure every new auditor re-derives it (or gets it wrong, as the initial internal pass did). Front-loading it redirects budget toward genuinely novel surface.</dd>
+      <dt>Downsides</dt>
+      <dd>Risk of leading the witness or appearing defensive; a careless reader might treat "rejected" as "don't look here." Must be framed as evidence to challenge, not conclusions to accept. Overlaps partly with I4 &mdash; the two should cross-link rather than duplicate.</dd>
+    </dl>
+  </article>
+
+  <!-- IDEA 6 -->
+  <article class="idea" id="i6">
+    <div class="idea-head"><span class="idchip">I6</span><h3>Dual-backing solvency tie-out + self-repaying-loan economics explainer</h3></div>
+    <div class="pills">
+      <span class="pill axis">Axis 2 &middot; Internal model &amp; economics</span>
+      <span class="pill conf-med">Confidence 76%</span>
+      <span class="pill cx">Complexity: Medium</span>
+    </div>
+    <p>Explain OVRFLO's two subtlest internal mechanics as auditor-checkable accounting identities rather than happy-path prose. First: one fungible <code>ovrfloToken</code> is backed by two separately-accounted pools (matured PT claims via <code>marketTotalDeposited</code> vs underlying wrap reserve via <code>wrappedUnderlying</code>); present it as a balance sheet the auditor can "tie out" against on-chain state, framed insolvency-first ("here is every way the books could stop balancing"). Second: the self-repaying loan departs from auditor priors &mdash; no health checks, no loan-time oracle, no liquidations &mdash; so explain <code>outstanding = obligation − (drawn + repaid)</code>, why permissionless <code>closeLoan()</code> is liveness not exploit, and the <code>deposited − withdrawn</code> pricing-at-fill rule.</p>
+    <figure>
+      <svg viewBox="0 0 760 220" role="img" aria-label="One fungible ovrfloToken supply backed by two separately accounted pools, with three conservation invariants">
+        <style>
+          .bx{fill:var(--surface);stroke:var(--line);stroke-width:1.5}
+          .bk{fill:var(--info-soft);stroke:var(--info);stroke-width:1.5}
+          .tk{fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5}
+          .lh{font:600 14px var(--sans);fill:var(--ink)}
+          .ls{font:12px var(--sans);fill:var(--muted)}
+          .lm{font:11px var(--mono);fill:var(--accent-text)}
+          .cn{stroke:var(--muted);stroke-width:1.5;fill:none}
+        </style>
+        <rect class="tk" x="280" y="14" width="200" height="52" rx="8"/>
+        <text class="lh" x="380" y="38" text-anchor="middle">ovrfloToken supply</text>
+        <text class="ls" x="380" y="56" text-anchor="middle">(fungible, one per underlying)</text>
+        <rect class="bk" x="60" y="130" width="280" height="64" rx="8"/>
+        <text class="lh" x="200" y="156" text-anchor="middle">PT-claim backing</text>
+        <text class="lm" x="200" y="176" text-anchor="middle">marketTotalDeposited</text>
+        <rect class="bk" x="420" y="130" width="280" height="64" rx="8"/>
+        <text class="lh" x="560" y="156" text-anchor="middle">Wrap reserve backing</text>
+        <text class="lm" x="560" y="176" text-anchor="middle">wrappedUnderlying</text>
+        <path class="cn" d="M340 66 C300 96, 240 104, 200 130"/>
+        <path class="cn" d="M420 66 C460 96, 520 104, 560 130"/>
+        <text class="ls" x="120" y="104">claim / deposit (I-1)</text>
+        <text class="ls" x="470" y="104">wrap / unwrap (I-3)</text>
+        <text class="lm" x="380" y="214" text-anchor="middle">E-3: 1:1 solvency holds while both ledgers + registry wiring (X-3) hold &mdash; raw balance &ne; backing</text>
+      </svg>
+      <figcaption>Illustrative tie-out: the two backing pools are non-interchangeable even though the token is fungible. Donations to raw balance do <em>not</em> increase either reserve &mdash; the seam where conservation can silently break.</figcaption>
+    </figure>
+    <dl class="fields">
+      <dt>Description</dt>
+      <dd>An auditor anchored to standard ERC-4626 / lending mental models will either flag missing liquidation logic as a finding (false positive) or miss the dual-backing seam (false negative). An insolvency-first, tie-out framing puts attention exactly where conservation invariants <code>I-1</code>/<code>I-3</code>/<code>E-1</code>/<code>E-2</code>/<code>E-3</code> can break.</dd>
+      <dt>Axis</dt><dd>2 &mdash; Internal protocol model &amp; economic design</dd>
+      <dt>Basis</dt>
+      <dd class="basis direct"><span class="tag">direct:</span> <code>CONCEPTS.md</code> ("two backing sources for the same receipt token… must remain separately accounted"; self-repaying loan "non-cancelable… cannot underperform"); economic invariants <code>E-1</code>/<code>E-2</code>/<code>E-3</code> and conservation <code>I-1</code>/<code>I-3</code>; audit-report I-3 ("Permissionless <code>closeLoan()</code>… Accept as intentional liveness"); the <code>deposited − withdrawn</code> pricing note. <span class="tag">external:</span> double-entry / financial-audit tie-out methodology.</dd>
+      <dt>Rationale</dt>
+      <dd>This is the core of "understand how OVRFLO works" &mdash; its economic identity, not its function signatures. Framing it as a balance sheet gives the auditor an independent, on-chain-checkable solvency argument and pre-empts a whole class of prior-anchored false positives around the loan design.</dd>
+      <dt>Downsides</dt>
+      <dd>Lower confidence because some of this is already in <code>CONCEPTS.md</code> and the README's Design Notes &mdash; the win is consolidation + the insolvency-first reframe + the diagram, so it risks feeling like a repackage if not paired with the tie-out harness (links to I3).</dd>
+    </dl>
+  </article>
+
+  <!-- IDEA 7 -->
+  <article class="idea" id="i7">
+    <div class="idea-head"><span class="idchip">I7</span><h3>Annotated golden-path lifecycle traces / interactive walkthrough</h3></div>
+    <div class="pills">
+      <span class="pill axis">Axis 1 &middot; External mental models</span>
+      <span class="pill conf-med">Confidence 72%</span>
+      <span class="pill cx">Complexity: Medium</span>
+    </div>
+    <p>Capture the three core journeys (deposit&rarr;stream, list&rarr;take, borrow&rarr;claim&rarr;close) as committed, human-annotated fork-test traces that double as auditor walkthroughs and regression fixtures &mdash; each step labeled with the state it mutates, the guard it passes, and crucially <em>who owns the Sablier NFT at that moment</em>. Optionally drive it as a guided sandbox on the existing local-seed infrastructure (<code>script/seed-local.sh</code> / <code>bootstrap:local</code>) so a reviewer who has never seen Pendle or Sablier learns the dynamic interplay by running it.</p>
+    <dl class="fields">
+      <dt>Description</dt>
+      <dd>The hardest thing to transfer is the <em>dynamic</em> interaction between Pendle valuation and Sablier streaming &mdash; who can call <code>withdraw</code> at each lifecycle stage, when the oracle split is computed, how NFT ownership moves through the book. A static entry-point table doesn't expose the timing interleaving the #2 adversary (stream/MEV trader) probes.</dd>
+      <dt>Axis</dt><dd>1 &mdash; External-protocol mental models (the Pendle&times;Sablier interplay)</dd>
+      <dt>Basis</dt>
+      <dd class="basis direct"><span class="tag">direct:</span> fork suites already exist (<code>test/fork/OVRFLOBookMainnetFork.t.sol</code>) and the x-ray already documents these exact call chains step-by-step; <code>script/seed-local.sh</code> + <code>bootstrap:local</code> infra exists to build on; entry-points.md marks <code>closeLoan()</code> "Anyone" with the Sablier withdraw call chain. <span class="tag">external:</span> game tutorial-level / sandbox onboarding design.</dd>
+      <dt>Rationale</dt>
+      <dd>A trace is simultaneously the fastest way to transfer the dynamic model, a regression baseline, and an internal-onboarding asset &mdash; it earns its keep three ways and stays valid as long as it re-generates against the pinned commit.</dd>
+      <dt>Downsides</dt>
+      <dd>Lowest confidence: annotated traces drift if not regenerated, and a guided sandbox is build effort that overlaps the reproducible harness (I3). Risk of gilding &mdash; for a single audit, narrated walkthroughs of just the two costliest flows (deposit, closeLoan) may capture most of the value at a fraction of the cost.</dd>
+    </dl>
+  </article>
+</section>
+
+<section>
+  <h2>Rejection Summary</h2>
+  <table>
+    <thead><tr><th class="rej-id">#</th><th>Idea</th><th>Reason rejected</th></tr></thead>
+    <tbody>
+      <tr><td class="rej-id">R1</td><td>Auto-generate entry-point map from source</td><td>Folded into I2/I3 (generated-artifact discipline) rather than a standalone idea.</td></tr>
+      <tr><td class="rej-id">R2</td><td>Mock-oracle test fixtures for hard-to-reach branches</td><td>Folded into I3 &mdash; a subset of invariants-as-properties (rate &ge; 1e18, uint128/uint40 cast branches).</td></tr>
+      <tr><td class="rej-id">R3</td><td>Dependency-drift fork test (Sablier behavior assertions)</td><td>Folded into I1's runnable-demo component and I3's harness.</td></tr>
+      <tr><td class="rej-id">R4</td><td>NatSpec completion pass on OVRFLOBook</td><td>Worthwhile code hygiene but a maintenance task, not a context-package direction; partly served by I2/I7.</td></tr>
+      <tr><td class="rej-id">R5</td><td>Diff-scoped re-audit packet generator</td><td>About future re-audit efficiency, adjacent to the asked scope (giving an auditor context now); strong but deferred.</td></tr>
+      <tr><td class="rej-id">R6</td><td>Per-market onboarding security dossier template</td><td>Onboarding-ops artifact, adjacent to the asked scope; valuable but not core to first-audit context transfer.</td></tr>
+      <tr><td class="rej-id">R7</td><td>Parameterized economic-model simulation notebook</td><td>Partly folded into I6; standalone notebook is heavier than the tie-out explainer the ask needs.</td></tr>
+      <tr><td class="rej-id">R8</td><td>Adversarial economic simulation lab (10x budget)</td><td>Too expensive relative to likely value for a context package; constraint-flip artifact, not a deliverable.</td></tr>
+      <tr><td class="rej-id">R9</td><td>Surgical "time-out" / joint kickoff handshake</td><td>A process ritual, not a context artifact; the content it confirms is already covered by I2/I3/I4.</td></tr>
+      <tr><td class="rej-id">R10</td><td>Threat-model-as-code (pytm / Threat Dragon)</td><td>Heavy tooling investment; the x-ray threat model already exists in structured prose, partly served by I2.</td></tr>
+      <tr><td class="rej-id">R11</td><td>Git hardening-history-as-spec commit narrative</td><td>Interesting provenance angle but folded into I5 (decision record); standalone narrative is lower value.</td></tr>
+      <tr><td class="rej-id">R12</td><td>Inline source invariant/threat NatSpec anchors</td><td>Good point-of-need idea but folded into I2 (citation graph) and I7; standalone it overlaps both.</td></tr>
+      <tr><td class="rej-id">R13</td><td>Machine-readable context index for an AI auditor agent</td><td>Speculative scope expansion (new audience) for a "give an auditor context" ask; revisit once human-facing package exists.</td></tr>
+      <tr><td class="rej-id">R14</td><td>Subsystem-partitioned packs (onboard 5 auditors at once)</td><td>Engagement-size-dependent packaging; premature absent a known multi-team engagement.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<footer class="composition-signal">
+  Composed 2026-06-26 by ce-ideate from the OVRFLO repository (<code>src/</code>, <code>x-ray/</code>, <code>CONCEPTS.md</code>, <code>README.md</code>) and external audit-readiness sources. 48 raw candidates across 6 frames &rarr; 7 ranked survivors.
+</footer>
+
+</div>
+</body>
+</html>

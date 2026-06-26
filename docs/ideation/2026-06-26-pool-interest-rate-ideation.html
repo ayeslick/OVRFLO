@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ideation: The OVRFLO Pool as the Market's Reference Ceiling</title>
+<link rel="stylesheet" href="https://fonts.bunny.net/css?family=inter:400,500,600,700|jetbrains-mono:400,500">
+<style>
+  :root{
+    --bg:#f7f6f3; --canvas:#ffffff; --ink:#1c1b19; --muted:#5f5b54;
+    --line:#e4e0d8; --accent:#0e7c66; --accent-soft:#e3f2ec; --accent-text:#0a5a4a;
+    --warn:#9a5b13; --warn-soft:#fbeede; --info:#2b5d8c; --info-soft:#e6eef6;
+    --radius:10px;
+    --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+    --sans:"Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+    font-size:15px;line-height:1.6;-webkit-font-smoothing:antialiased}
+  .page{max-width:900px;margin-inline:auto;padding:48px 24px 80px}
+  header.doc{border-bottom:1px solid var(--line);padding-bottom:24px;margin-bottom:32px}
+  .eyebrow{font-size:11px;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--accent-text);font-weight:600;margin-bottom:10px}
+  h1{font-size:30px;line-height:1.2;margin:0 0 16px;font-weight:700;letter-spacing:-.01em}
+  h2{font-size:21px;margin:44px 0 14px;font-weight:650;letter-spacing:-.01em;
+    padding-bottom:6px;border-bottom:1px solid var(--line)}
+  h3{font-size:17px;margin:0 0 4px;font-weight:600}
+  p{max-width:72ch}
+  .meta{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+  .pill{font-size:12px;border:1px solid var(--line);background:var(--canvas);
+    border-radius:999px;padding:3px 11px;color:var(--muted)}
+  .pill strong{color:var(--ink);font-weight:600}
+  .stats{display:flex;flex-wrap:wrap;gap:10px;margin:20px 0 0}
+  .stat{flex:1;min-width:130px;background:var(--canvas);border:1px solid var(--line);
+    border-radius:var(--radius);padding:14px 16px}
+  .stat .num{font-size:24px;font-weight:700}
+  .stat .lbl{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+  section{background:var(--canvas);border:1px solid var(--line);border-radius:var(--radius);
+    padding:22px 26px;margin-top:14px}
+  .axes li{margin:4px 0}
+  code{font-family:var(--mono);font-size:.88em;background:#f0eee8;padding:1px 5px;border-radius:5px}
+  .jump{list-style:none;padding:0;margin:0 0 4px;display:flex;flex-direction:column;gap:4px}
+  .jump a{text-decoration:none;color:var(--accent-text);font-size:14px}
+  .jump a:hover{text-decoration:underline}
+  .jump .ji{color:var(--muted);font-family:var(--mono);font-size:12px;margin-right:8px}
+  article.idea{background:var(--canvas);border:1px solid var(--line);border-radius:var(--radius);
+    padding:22px 26px;margin-top:16px}
+  .idhead{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+  .rank{font-family:var(--mono);font-weight:600;color:var(--accent-text);
+    background:var(--accent-soft);border-radius:6px;padding:2px 9px;font-size:13px}
+  .chips{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0 16px}
+  .chip{font-size:12px;border-radius:999px;padding:3px 11px;border:1px solid var(--line);
+    background:#f4f2ec;color:var(--muted)}
+  .chip.axis{background:var(--info-soft);color:var(--info);border-color:#cfe0ef}
+  .chip.conf{background:var(--accent-soft);color:var(--accent-text);border-color:#c6e4d8}
+  .chip.cx{background:var(--warn-soft);color:var(--warn);border-color:#f0ddc2}
+  dl.fields{margin:0}
+  dl.fields dt{font-size:11px;letter-spacing:.08em;text-transform:uppercase;
+    color:var(--muted);font-weight:600;margin-top:14px}
+  dl.fields dd{margin:3px 0 0;max-width:74ch}
+  .basis{border-left:3px solid var(--accent);background:var(--accent-soft);
+    padding:8px 12px;border-radius:0 6px 6px 0}
+  .basis .tag{font-family:var(--mono);font-size:12px;color:var(--accent-text);font-weight:600}
+  figure{margin:18px 0 4px;text-align:center}
+  figure svg{max-width:100%;height:auto}
+  figcaption{font-size:12px;color:var(--muted);margin-top:8px}
+  table{border-collapse:collapse;width:100%;font-size:14px;margin-top:6px}
+  th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+  td.n{font-family:var(--mono);color:var(--muted);width:34px}
+  .callout{background:var(--info-soft);border:1px solid #cfe0ef;border-radius:var(--radius);
+    padding:16px 20px;margin-top:14px}
+  .callout .lab{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--info);font-weight:600}
+  footer.composition-signal{margin-top:40px;padding-top:18px;border-top:1px solid var(--line);
+    font-size:12px;color:var(--muted)}
+  .lead{font-size:16px;color:var(--ink)}
+</style>
+</head>
+<body>
+<div class="page">
+
+<header class="doc">
+  <div class="eyebrow">Ideation &middot; Compound Engineering &middot; Revised</div>
+  <h1>The OVRFLO Pool as the Market's Reference Ceiling</h1>
+  <div class="meta">
+    <span class="pill"><strong>Date</strong> <time datetime="2026-06-26">2026-06-26</time></span>
+    <span class="pill"><strong>Topic</strong> pool-interest-rate</span>
+    <span class="pill"><strong>Focus</strong> implementing the Pool; its rate as a market reference ceiling</span>
+    <span class="pill"><strong>Mode</strong> repo-grounded</span>
+  </div>
+  <div class="stats">
+    <div class="stat"><div class="num">8</div><div class="lbl">Survivors</div></div>
+    <div class="stat"><div class="num">19</div><div class="lbl">Raw candidates</div></div>
+    <div class="stat"><div class="num">11</div><div class="lbl">Cut / superseded</div></div>
+    <div class="stat"><div class="num">5</div><div class="lbl">Axes covered</div></div>
+  </div>
+</header>
+
+<p class="lead">This revision reframes the Pool around a new design hypothesis: <strong>the Pool's single rate
+functions as a reference ceiling on the whole market.</strong> If the Pool offers 10%, no Book borrower
+accepts a lend offer priced worse than that and instead routes to the Pool, so market rates cluster at or
+below the Pool rate. The Pool is a <em>finite reference anchor</em>, not an infinite always-on counterparty,
+which keeps the ceiling soft and the Book relevant once Pool capital is consumed. That insight inverts the
+captured &ldquo;Pool prices off the Book&rdquo; assumption and reorganizes the rate-setting ideas below.</p>
+
+<div class="callout">
+  <div class="lab">What changed in this revision</div>
+  <p style="margin:6px 0 0">The prior &ldquo;Pool reads the Book&rdquo; ideas (snapshot, capacity-weighted TWAP) are
+  <strong>superseded</strong> &mdash; the ceiling reframing reverses the dependency direction (the Pool now
+  <em>anchors</em> the Book). The prior &ldquo;per-loan inherited APR&rdquo; idea is <strong>subsumed</strong>: the
+  Pool is single-rate so it can be a legible ceiling, and per-order rates become a Book behavior that floats below
+  that ceiling. The admin-constant, canonical-base-rate, and staleness-fallback ideas are carried forward, promoted
+  or reframed. Superseded/subsumed prior survivors are recorded in the Rejection Summary so the trail is visible.</p>
+</div>
+
+<h2>Grounding Context</h2>
+<section>
+  <p><strong>Codebase context.</strong> Foundry/Solidity. The Book (<code>OVRFLOBook</code>) is active scope; the Pool
+  (<code>OVRFLOPool</code>) is deferred and must attach with <strong>zero change to <code>src/OVRFLO.sol</code></strong>,
+  reading the factory only as a read-only provenance registry. The deliberate design today is that &ldquo;the book and
+  pool have no such relationship &mdash; they only read provenance.&rdquo;</p>
+  <p><strong>Shared pricing primitive.</strong> <code>StreamPricing</code> is a pure library shared by Book and Pool.
+  A single annualized rate <code>aprBps</code> term-adjusts per stream:
+  <code>factor = 1 + apr&middot;ttm/(YEAR&middot;BPS)</code>. &ldquo;The rate&rdquo; is an annualized APR, the same units
+  the Book uses.</p>
+  <p><strong>How the Book sets rate.</strong> APR is <em>per-order</em>, bounded by <code>[aprMinBps, aprMaxBps]</code>
+  under an immutable <code>APR_MAX_CEILING</code>. Launch locks both bounds to <code>1000</code> (10%); the multisig
+  widens later. Bounds are economic guardrails, not safety invariants. Directionally, a borrower always prefers a
+  <em>lower</em> lend APR, so a standing cheaper venue caps the lend-side rate from above.</p>
+  <p><strong>Pool spec (deferred).</strong> Closed-end, sealed, pro-rata. Lifecycle
+  <code>Open &rarr; ClosedToDeposits &rarr; Sealed &rarr; Settled</code> with two levers (amount cap closes deposits;
+  time deadline seals), lazy seal folded into the first post-deadline claim, balance-checked borrow as the entire
+  imbalance-prevention mechanism, flat <code>shares = underlying deposited</code>, and
+  <code>totalObligations = &Sigma; obligations</code> as the frozen lender entitlement. The captured intent: &ldquo;the
+  pool launches after the book, because it will price off the book's market-set APR rather than a constant.&rdquo;</p>
+  <div class="callout" style="background:var(--warn-soft);border-color:#f0ddc2">
+    <div class="lab" style="color:var(--warn)">New constraint (this session)</div>
+    <p style="margin:6px 0 0">The Pool rate is a <strong>reference rate</strong> that economically caps the market,
+    <strong>not</strong> a live, infinite, always-on counterparty. Because the Pool is closed-end and finite, the
+    ceiling is soft: it anchors the market while funded, and the Book reabsorbs demand once the Pool is sealed or
+    exhausted. This both motivates the ceiling and bounds how literally it can be enforced.</p>
+  </div>
+  <p><strong>Project rules in scope.</strong> Prefer off-chain multisig verification over redundant on-chain checks;
+  favor simplicity over abstraction; stay Pendle-specific; no keeper/bounty; no <code>OVRFLO.sol</code> change.</p>
+</section>
+
+<h2>Topic Axes</h2>
+<section class="axes">
+  <ul>
+    <li><strong>Rate-setting &amp; the ceiling anchor</strong> &mdash; how the Pool's single rate is chosen and published as the reference everyone quotes against.</li>
+    <li><strong>Ceiling mechanism</strong> &mdash; how the Pool rate actually caps the Book: on-chain enforcement vs purely behavioral/arbitrage.</li>
+    <li><strong>Book/Pool dependency direction</strong> &mdash; who leads whom; resolving the &ldquo;Pool prices off Book&rdquo; vs &ldquo;Pool anchors Book&rdquo; tension and the cold-start order.</li>
+    <li><strong>Lifecycle, capacity &amp; sealing</strong> &mdash; how finiteness, caps, and seal timing make the ceiling soft and keep the Book alive.</li>
+    <li><strong>Economic guardrails</strong> &mdash; the floor under the ceiling (lender participation, <code>aprMin</code>), fallbacks, and manipulation resistance.</li>
+  </ul>
+</section>
+
+<h2>Ranked Ideas</h2>
+<ul class="jump">
+  <li><a href="#i1"><span class="ji">1</span>Reverse the dependency: Pool leads, Book follows (Pool-as-anchor)</a></li>
+  <li><a href="#i2"><span class="ji">2</span>Pool rate as the Book's on-chain <code>aprMaxBps</code> (hard ceiling)</a></li>
+  <li><a href="#i3"><span class="ji">3</span>Behavioral / arbitrage ceiling &mdash; no on-chain coupling (minimal default)</a></li>
+  <li><a href="#i4"><span class="ji">4</span>Single admin/governance rate per pool, immutable for life</a></li>
+  <li><a href="#i5"><span class="ji">5</span>Interest-rate corridor: Pool = ceiling, <code>aprMin</code> = floor</a></li>
+  <li><a href="#i6"><span class="ji">6</span>Finiteness is the safety valve &mdash; size capacity &amp; sealing to keep the Book alive</a></li>
+  <li><a href="#i7"><span class="ji">7</span>Pool publishes a canonical &ldquo;OVRFLO base rate&rdquo; consumed everywhere</a></li>
+  <li><a href="#i8"><span class="ji">8</span>Book <code>aprMaxBps</code> fallback when no Pool is active</a></li>
+</ul>
+
+<article class="idea" id="i1">
+  <div class="idhead"><span class="rank">1</span><h3>Reverse the dependency: Pool leads, Book follows (Pool-as-anchor)</h3></div>
+  <div class="chips">
+    <span class="chip axis">Book/Pool dependency direction</span>
+    <span class="chip conf">Confidence 72%</span>
+    <span class="chip cx">Complexity Medium</span>
+  </div>
+  <dl class="fields">
+    <dt>Description</dt>
+    <dd>The captured spec has the Pool launch <em>after</em> the Book so it can &ldquo;price off the book's market-set
+      APR.&rdquo; The ceiling insight inverts this: the Pool's single governance-set rate is the <em>anchor</em> the
+      Book discovers around and under. Launch the Pool first (or concurrently) with a credible rate so it seeds the
+      thin early Book, rather than waiting for a Book that has no trustworthy rate yet. This resolves the
+      chicken-and-egg &mdash; &ldquo;Pool needs the Book's rate&rdquo; vs &ldquo;Book has no rate until it has
+      liquidity.&rdquo;</dd>
+    <dt>Axis</dt><dd>Book/Pool dependency direction</dd>
+    <dt>Basis</dt>
+    <dd class="basis"><span class="tag">direct:</span> spec &mdash; &ldquo;the pool launches after the book, because it
+      will price off the book's market-set APR rather than a constant&rdquo;; this idea deliberately reverses that
+      premise. <span class="tag">reasoned:</span> a thin Book's rate is noisy and manipulable (the prior revision's
+      core concern), so it cannot be the anchor at launch &mdash; something must seed the reference, and a
+      governance-set Pool rate is the natural seed.</dd>
+    <dt>Rationale</dt>
+    <dd>Makes the ceiling actually function as the organizing reference and fixes the bootstrap ordering. Once the
+      direction is flipped, every &ldquo;Pool reads the Book&rdquo; mechanism becomes unnecessary, collapsing a lot of
+      complexity.</dd>
+    <dt>Downsides</dt>
+    <dd>Contradicts a captured requirement, so it needs explicit sign-off; puts the burden of a good anchor rate on
+      governance; a wrong anchor mis-prices the whole market (mitigated by competing pools and the immutable bounds).</dd>
+  </dl>
+
+  <figure>
+    <svg viewBox="0 0 620 170" role="img" aria-label="Before: the Pool reads a rate from the Book. After: the Pool publishes an anchor rate that the Book discovers beneath.">
+      <style>
+        .bx{fill:#ffffff;stroke:#e4e0d8;stroke-width:1.5}
+        .pool{fill:#e3f2ec;stroke:#0e7c66;stroke-width:1.5}
+        .t{font-family:Inter,sans-serif;font-size:12px;fill:#1c1b19}
+        .tt{font-family:Inter,sans-serif;font-size:11px;fill:#5f5b54}
+        .ar{stroke:#0e7c66;stroke-width:1.6;fill:none;marker-end:url(#ah)}
+        .lab{font-family:Inter,sans-serif;font-size:11px;fill:#5f5b54;paint-order:stroke fill;stroke:#ffffff;stroke-width:3px}
+        .hd{font-family:Inter,sans-serif;font-size:11px;letter-spacing:.08em;fill:#9a5b13;font-weight:600}
+        .hd2{font-family:Inter,sans-serif;font-size:11px;letter-spacing:.08em;fill:#0a5a4a;font-weight:600}
+      </style>
+      <defs><marker id="ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+        <path d="M0,0 L8,4 L0,8 z" fill="#0e7c66"/></marker></defs>
+
+      <text class="hd" x="14" y="20">SPEC (BEFORE)</text>
+      <rect class="bx" x="14" y="40" width="110" height="40" rx="6"/><text class="t" x="52" y="64">Book</text>
+      <rect class="pool" x="180" y="40" width="110" height="40" rx="6"/><text class="t" x="212" y="64">Pool</text>
+      <path class="ar" d="M180 60 L 126 60"/>
+      <text class="lab" x="128" y="34">reads rate</text>
+
+      <line x1="320" y1="20" x2="320" y2="150" stroke="#e4e0d8" stroke-width="1"/>
+
+      <text class="hd2" x="346" y="20">CEILING (AFTER)</text>
+      <rect class="pool" x="346" y="40" width="110" height="40" rx="6"/><text class="t" x="378" y="64">Pool</text>
+      <rect class="bx" x="510" y="40" width="100" height="40" rx="6"/><text class="t" x="540" y="64">Book</text>
+      <path class="ar" d="M456 60 L 508 60"/>
+      <text class="lab" x="460" y="34">anchors</text>
+      <text class="tt" x="346" y="108">Pool sets one rate (ceiling);</text>
+      <text class="tt" x="346" y="124">Book discovers beneath it.</text>
+    </svg>
+    <figcaption>Illustrative: the ceiling reframing reverses who sources the rate from whom.</figcaption>
+  </figure>
+</article>
+
+<article class="idea" id="i2">
+  <div class="idhead"><span class="rank">2</span><h3>Pool rate as the Book's on-chain <code>aprMaxBps</code> (hard ceiling)</h3></div>
+  <div class="chips">
+    <span class="chip axis">Ceiling mechanism</span>
+    <span class="chip conf">Confidence 60%</span>
+    <span class="chip cx">Complexity Medium&ndash;High</span>
+  </div>
+  <dl class="fields">
+    <dt>Description</dt>
+    <dd>Rather than the multisig hand-setting <code>aprMaxBps</code>, the Book reads the active Pool's rate for a market
+      and uses it as the dynamic upper APR bound on lend-side posts. No lend offer can be posted above the Pool rate,
+      so the ceiling is enforced in code, not just by behavior. Per-order Book rates still vary &mdash; they simply
+      float <em>below</em> this clamp (this subsumes the prior &ldquo;per-loan inherited APR&rdquo; idea). When no Pool
+      is active, fall back to the governance <code>aprMaxBps</code> (idea #8).</dd>
+    <dt>Axis</dt><dd>Ceiling mechanism</dd>
+    <dt>Basis</dt>
+    <dd class="basis"><span class="tag">direct:</span> the Book already enforces
+      <code>aprMinBps &le; apr &le; aprMaxBps</code> per order under an immutable ceiling; swapping the static
+      <code>aprMaxBps</code> for a Pool read is a small, well-scoped change to an existing check.
+      <span class="tag">reasoned:</span> a borrower never accepts a lend APR above the Pool's, so offers above it are
+      dead capital &mdash; clamping at post time makes that explicit and removes wasted gas and UX confusion.</dd>
+    <dt>Rationale</dt>
+    <dd>Turns the user's insight into a guarantee instead of a hope: the market literally cannot price the lend side
+      above the ceiling.</dd>
+    <dt>Downsides</dt>
+    <dd>Couples Book to Pool state, the dependency the spec deliberately avoided; Pool-rate changes/staleness need
+      handling; cleanly bounds only the lend side (the sale side needs separate treatment); adds Book surface. Sits in
+      tension with the &ldquo;reference rate, not a live counterparty&rdquo; clarification &mdash; this is the
+      strongest-enforcement option and should be weighed against idea #3.</dd>
+  </dl>
+</article>
+
+<article class="idea" id="i3">
+  <div class="idhead"><span class="rank">3</span><h3>Behavioral / arbitrage ceiling &mdash; no on-chain coupling (minimal default)</h3></div>
+  <div class="chips">
+    <span class="chip axis">Ceiling mechanism</span>
+    <span class="chip conf">Confidence 80%</span>
+    <span class="chip cx">Complexity Low</span>
+  </div>
+  <dl class="fields">
+    <dt>Description</dt>
+    <dd>Keep Book and Pool fully decoupled. The Pool is simply an attractive, fixed-rate, finite venue; rational
+      borrowers route to whichever is cheaper, so the market rate naturally clusters at or below the Pool rate without
+      any contract reading another. The ceiling is an emergent economic property, not an enforced invariant.</dd>
+    <dt>Axis</dt><dd>Ceiling mechanism</dd>
+    <dt>Basis</dt>
+    <dd class="basis"><span class="tag">direct:</span> project rule &mdash; &ldquo;prefer off-chain verification over
+      redundant on-chain checks&rdquo; &mdash; and the spec's deliberate decoupling (&ldquo;the book and pool have no
+      such relationship&rdquo;). <span class="tag">reasoned:</span> arbitrage enforces the ceiling for free as long as
+      the Pool is a real, accessible venue, which is exactly the &ldquo;reference rate, not a live counterparty&rdquo;
+      model the user described.</dd>
+    <dt>Rationale</dt>
+    <dd>Zero added coupling, honors the session's clarification most directly, simplest to ship and audit. This is the
+      conservative default the others should beat to justify their extra surface.</dd>
+    <dt>Downsides</dt>
+    <dd>The ceiling is soft &mdash; when the Pool is sealed or exhausted the Book can exceed it; relies on borrowers
+      actually routing optimally (UI/aggregator dependent); no on-chain guarantee for integrators.</dd>
+  </dl>
+</article>
+
+<article class="idea" id="i4">
+  <div class="idhead"><span class="rank">4</span><h3>Single admin/governance rate per pool, immutable for life</h3></div>
+  <div class="chips">
+    <span class="chip axis">Rate-setting &amp; ceiling anchor</span>
+    <span class="chip conf">Confidence 85%</span>
+    <span class="chip cx">Complexity Low</span>
+  </div>
+  <dl class="fields">
+    <dt>Description</dt>
+    <dd><code>createPool(market, aprBps, &hellip;)</code> takes one fixed <code>aprBps</code> (validated to bounds); every
+      loan in that pool prices at it for the pool's life. This single rate is what the market reads as the ceiling
+      reference. Different pools carry different anchor rates; selection and competition across pools refine the
+      reference over time.</dd>
+    <dt>Axis</dt><dd>Rate-setting &amp; ceiling anchor</dd>
+    <dt>Basis</dt>
+    <dd class="basis"><span class="tag">direct:</span> the Book's launch posture
+      (<code>aprMinBps = aprMaxBps = 1000</code> &rarr; only 10% legal) applied per pool; <code>createPool</code> is
+      already on the deferred surface.</dd>
+    <dt>Rationale</dt>
+    <dd>A ceiling needs one legible number. A per-pool constant is the simplest credible anchor and the natural unit
+      the market quotes against &mdash; it is the value ideas #1, #2, and #5 all reference.</dd>
+    <dt>Downsides</dt>
+    <dd>Relies on governance/creators picking sane rates; a stale pool drifts from the live market until a new pool is
+      created.</dd>
+  </dl>
+</article>
+
+<article class="idea" id="i5">
+  <div class="idhead"><span class="rank">5</span><h3>Interest-rate corridor: Pool = ceiling, <code>aprMin</code> = floor</h3></div>
+  <div class="chips">
+    <span class="chip axis">Economic guardrails</span>
+    <span class="chip conf">Confidence 65%</span>
+    <span class="chip cx">Complexity Low</span>
+  </div>
+  <dl class="fields">
+    <dt>Description</dt>
+    <dd>Model the system as a central-bank-style rate corridor. The Pool rate is the ceiling (borrowers won't pay more);
+      <code>aprMinBps</code> is the floor (offers can't post below). The Book trades within the corridor. The floor is
+      load-bearing because the ceiling can't be pushed arbitrarily low: below some rate, lenders stop supplying the
+      Pool, so <strong>lender participation endogenously bounds where the ceiling can sit.</strong></dd>
+    <dt>Axis</dt><dd>Economic guardrails</dd>
+    <dt>Basis</dt>
+    <dd class="basis"><span class="tag">external:</span> central-bank standing-facility design &mdash; a deposit
+      facility sets the floor, a lending facility sets the ceiling, and the interbank rate trades between them.
+      <span class="tag">reasoned:</span> at Pool rate &rarr; 0, lenders earn nothing and supply dries up, so the ceiling
+      is naturally bounded below by participation; this explains why &ldquo;set the ceiling low&rdquo; has a hard
+      limit.</dd>
+    <dt>Rationale</dt>
+    <dd>Gives governance a clean mental model and exactly two knobs (ceiling = Pool rate, floor = <code>aprMin</code>)
+      that fully describe the rate environment, and explains the lower bound on the ceiling.</dd>
+    <dt>Downsides</dt>
+    <dd>The corridor only holds while the Pool is funded; mapping monetary-policy intuition onto a closed-end finite
+      pool is imperfect (there is no infinite facility), so it is a framing aid, not a literal mechanism.</dd>
+  </dl>
+
+  <figure>
+    <svg viewBox="0 0 600 150" role="img" aria-label="A rate corridor: the aprMin floor at the bottom, the Pool rate ceiling at the top, and the Book market rate trading in between.">
+      <style>
+        .axisln{stroke:#9a9384;stroke-width:1.5}
+        .floor{stroke:#2b5d8c;stroke-width:2.5}
+        .ceil{stroke:#0e7c66;stroke-width:2.5}
+        .band{fill:#e3f2ec;opacity:.5}
+        .t{font-family:Inter,sans-serif;font-size:12px;fill:#1c1b19}
+        .tt{font-family:Inter,sans-serif;font-size:11px;fill:#5f5b54}
+        .dot{fill:#9a5b13}
+      </style>
+      <text class="tt" x="14" y="20" transform="rotate(0)">rate</text>
+      <line class="axisln" x1="40" y1="20" x2="40" y2="130"/>
+      <rect class="band" x="40" y="40" width="520" height="70"/>
+      <line class="ceil" x1="40" y1="40" x2="560" y2="40"/>
+      <text class="t" x="46" y="34">Ceiling = Pool rate (e.g. 10%) &mdash; borrowers route to Pool above this</text>
+      <line class="floor" x1="40" y1="110" x2="560" y2="110"/>
+      <text class="t" x="46" y="126">Floor = aprMin &mdash; bounded below by lender participation</text>
+      <circle class="dot" cx="150" cy="92" r="4"/><circle class="dot" cx="280" cy="70" r="4"/>
+      <circle class="dot" cx="400" cy="84" r="4"/><circle class="dot" cx="500" cy="62" r="4"/>
+      <text class="tt" x="250" y="20">Book orders discover within the corridor</text>
+    </svg>
+    <figcaption>Illustrative: the Pool rate caps the corridor; <code>aprMin</code> and lender supply set the floor.</figcaption>
+  </figure>
+</article>
+
+<article class="idea" id="i6">
+  <div class="idhead"><span class="rank">6</span><h3>Finiteness is the safety valve &mdash; size capacity &amp; sealing to keep the Book alive</h3></div>
+  <div class="chips">
+    <span class="chip axis">Lifecycle, capacity &amp; sealing</span>
+    <span class="chip conf">Confidence 68%</span>
+    <span class="chip cx">Complexity Low&ndash;Medium</span>
+  </div>
+  <dl class="fields">
+    <dt>Description</dt>
+    <dd>Flip the constraint: if the Pool had infinite capital at its rate, it would <em>be</em> the entire market and the
+      Book would die. The Pool's closed-end cap and seal deadline are precisely what keep the ceiling soft and the Book
+      relevant &mdash; when Pool capital is consumed, demand spills back to the Book. So treat Pool capacity and seal
+      timing as deliberate market-design levers, not just accounting bounds.</dd>
+    <dt>Axis</dt><dd>Lifecycle, capacity &amp; sealing</dd>
+    <dt>Basis</dt>
+    <dd class="basis"><span class="tag">direct:</span> the spec's two lifecycle levers (&ldquo;amount cap closes
+      deposits; time deadline seals&rdquo;) and &ldquo;balance-checked borrow &hellip; the entire imbalance-prevention
+      mechanism.&rdquo; <span class="tag">reasoned:</span> a finite venue can only anchor, not clear, the whole market
+      &mdash; that finiteness is the feature behind the user's &ldquo;reference rate, not always-on counterparty.&rdquo;</dd>
+    <dt>Rationale</dt>
+    <dd>Reframes capacity and seal parameters as the dial balancing &ldquo;strong anchor&rdquo; against &ldquo;leave room
+      for Book price discovery,&rdquo; which is the lever that makes the whole ceiling model work in practice.</dd>
+    <dt>Downsides</dt>
+    <dd>Requires governance to actively tune capacity per market; too small a pool is a weak anchor, too large starves
+      the Book.</dd>
+  </dl>
+</article>
+
+<article class="idea" id="i7">
+  <div class="idhead"><span class="rank">7</span><h3>Pool publishes a canonical &ldquo;OVRFLO base rate&rdquo; consumed everywhere</h3></div>
+  <div class="chips">
+    <span class="chip axis">Rate-setting &amp; ceiling anchor</span>
+    <span class="chip conf">Confidence 62%</span>
+    <span class="chip cx">Complexity Medium</span>
+  </div>
+  <dl class="fields">
+    <dt>Description</dt>
+    <dd>Expose the Pool's anchor rate as a single canonical <code>baseApr(market)</code> read in the shared
+      <code>StreamPricing</code> layer, consumed by the Book (as ceiling/clamp in #2), by quote/UX surfaces, and by any
+      future product (fixed-rate notes, structured products). One source of truth for &ldquo;the OVRFLO rate.&rdquo;</dd>
+    <dt>Axis</dt><dd>Rate-setting &amp; ceiling anchor</dd>
+    <dt>Basis</dt>
+    <dd class="basis"><span class="tag">direct:</span> <code>StreamPricing</code> is already &ldquo;a new library
+      &hellip; shared by book and pool.&rdquo; <span class="tag">reasoned:</span> a single published reference is what
+      makes the ceiling legible and reusable; centralizing it once gives every consumer the same number and the same
+      governance hook.</dd>
+    <dt>Rationale</dt>
+    <dd>Compounding leverage: makes ideas #2 and #5 implementations of one primitive, and lets future products inherit
+      the anchor for free.</dd>
+    <dt>Downsides</dt>
+    <dd>Premature generality if only the Book ever consumes it (tension with the simplicity rule); still requires
+      choosing how the base rate is derived &mdash; idea #4 supplies that.</dd>
+  </dl>
+</article>
+
+<article class="idea" id="i8">
+  <div class="idhead"><span class="rank">8</span><h3>Book <code>aprMaxBps</code> fallback when no Pool is active</h3></div>
+  <div class="chips">
+    <span class="chip axis">Economic guardrails</span>
+    <span class="chip conf">Confidence 78%</span>
+    <span class="chip cx">Complexity Low</span>
+  </div>
+  <dl class="fields">
+    <dt>Description</dt>
+    <dd>Any design where the Book reads the Pool as its ceiling (#2/#7) needs defined behavior when no Pool is active for
+      a market &mdash; none created yet, or all pools sealed/settled between cohorts. The fallback: use the
+      governance-set static <code>aprMaxBps</code>, and only use the Pool-derived ceiling when a live pool exists.</dd>
+    <dt>Axis</dt><dd>Economic guardrails</dd>
+    <dt>Basis</dt>
+    <dd class="basis"><span class="tag">direct:</span> pools are closed-end and will routinely sit between cohorts
+      (sealed/settled with none open). <span class="tag">reasoned:</span> a ceiling source that can be absent must have
+      a fallback, or Book posting bricks in exactly the gaps the Pool is meant to anchor.</dd>
+    <dt>Rationale</dt>
+    <dd>Cheap, decisive safety net that makes the on-chain ceiling (#2) shippable across the Pool's natural lifecycle
+      gaps.</dd>
+    <dt>Downsides</dt>
+    <dd>A companion idea, not standalone; introduces an &ldquo;is a pool active?&rdquo; check and a second code path to
+      test.</dd>
+  </dl>
+</article>
+
+<h2>Rejection Summary</h2>
+<section>
+<table>
+  <thead><tr><th>#</th><th>Idea</th><th>Reason rejected / superseded</th></tr></thead>
+  <tbody>
+    <tr><td class="n">1</td><td>Live best-offer Book read at every borrow</td>
+      <td>Manipulable per-borrow, per-borrow read gas, undefined when no offer rests &mdash; and moot under the ceiling reframing (Pool no longer reads the Book).</td></tr>
+    <tr><td class="n">2</td><td>Uniform-price sealed-bid auction at seal (T-bill style)</td>
+      <td>Lifecycle mismatch &mdash; borrows happen during <code>Open</code> and need a rate before <code>seal</code>; heavy on-chain machinery violates the simplicity rule.</td></tr>
+    <tr><td class="n">3</td><td>In-pool lender min-APR order book (fill lowest first)</td>
+      <td>Duplicates the Book's job and breaks the flat <code>shares = underlying</code> pro-rata model; also conflicts with the single-rate ceiling.</td></tr>
+    <tr><td class="n">4</td><td>Utilization-curve rate (Aave/Compound style)</td>
+      <td>Circular &mdash; a borrow needs its rate before seal, but final utilization is only known at seal; live reads are gameable by deposit timing.</td></tr>
+    <tr><td class="n">5</td><td>&ldquo;<code>min APR = 0</code> is safe&rdquo; as a standalone idea</td>
+      <td>A supporting property of the bounds, not a mechanism; folded into the grounding and into idea #5's floor argument.</td></tr>
+    <tr><td class="n">6</td><td>Per-loan inherited APR as a Pool property <em>(prior survivor #1)</em></td>
+      <td>Subsumed: the ceiling reframing makes the Pool single-rate so it can be a legible reference; per-order rates are now a Book behavior floating below the Pool ceiling (idea #2).</td></tr>
+    <tr><td class="n">7</td><td>Pool reads a Book snapshot at <code>createPool</code> <em>(prior survivor #3)</em></td>
+      <td>Superseded: the ceiling reframing reverses the dependency direction (Pool anchors Book), and a thin early Book has no trustworthy rate to read at cold-start.</td></tr>
+    <tr><td class="n">8</td><td>Pool reads capacity-weighted Book TWAP <em>(prior survivor #5)</em></td>
+      <td>Superseded by the same direction reversal; also over-engineered relative to a governance-set anchor.</td></tr>
+    <tr><td class="n">9</td><td>Pool as an infinite, always-on backstop counterparty</td>
+      <td>Contradicts the session clarification (&ldquo;reference rate, not a live always-on counterparty&rdquo;) and is impossible for a closed-end finite pool.</td></tr>
+    <tr><td class="n">10</td><td>Re-specify lifecycle/accounting (lazy seal, three-number gate, pro-rata shares)</td>
+      <td>Already pinned in the requirements doc; not open design space for this ideation.</td></tr>
+    <tr><td class="n">11</td><td>Set Pool rate &rarr; 0 to maximize the ceiling effect</td>
+      <td>Degenerate: destroys lender supply, so no pool exists to anchor anything (this is exactly idea #5's floor argument).</td></tr>
+  </tbody>
+</table>
+</section>
+
+<footer class="composition-signal">Composed 2026-06-26 by ce-ideate (revised, ceiling reframing) from session prompts on the OVRFLO Pool, grounded in <code>docs/brainstorms/2026-06-20-ovrflo-secondary-market-requirements.md</code>, <code>src/StreamPricing.sol</code>, and <code>CONCEPTS.md</code>.</footer>
+
+</div>
+</body>
+</html>

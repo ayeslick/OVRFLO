@@ -25,40 +25,13 @@ Related pre-audit context: [x-ray.md](x-ray.md), [invariants.md](invariants.md),
 
 Follow-up review against OVRFLO product design and **Sablier V2 Lockup Linear v1.1** source ([`sablier-labs/v2-core` tag `v1.1`](https://github.com/sablier-labs/v2-core/tree/v1.1), matching deployed `0xAFb979…`). Key corrections:
 
-1. **H-2 rejected.** Sablier V2 `withdraw()` reverts `SablierV2Lockup_Unauthorized` unless `msg.sender` is the stream **sender**, **NFT owner (recipient)**, or **ERC-721 approved operator**. There is no permissionless public withdraw path in v1.1 (unlike some newer Sablier Lockup docs for later versions).
-2. **H-1 downgraded to Low.** Technically valid cast guard; economically unreachable with 18-decimal Pendle PT.
-3. **M-5 rejected.** Cross-series `ovrfloToken` fungibility is intentional (`README.md`, book plan). Pendle does not normally produce two onboarded markets with identical `expiryCached` under one core.
-4. **M-1 / M-2 reclassified informational.** Pendle-only onboarding assumption; multisig validates markets at `addMarket()`.
-5. **M-3 reclassified informational / by design.** Permissionless `closeLoan()` matches spec (liveness once stream is closable).
+The rejected/downgraded findings and the reclassifications below are now canonicalized in [`docs/audit/rejected-findings-record.md`](../docs/audit/rejected-findings-record.md), with full evidence. Summary: **H-2 rejected** (Sablier v1.1 ACL — no permissionless withdraw); **H-1 downgraded to Low** (L-1 remains an active finding — see Findings below); **M-5 rejected** (cross-series `ovrfloToken` fungibility is intentional); **M-1/M-2 reclassified informational** (Pendle-only onboarding trust boundary); **M-3 reclassified informational / by design** (permissionless `closeLoan()` = liveness). The verified Sablier v1.1 withdraw-ACL table lives in [`docs/audit/sablier-interface-contract.md`](../docs/audit/sablier-interface-contract.md).
 
 ---
 
 ## Sablier V2 integration (verified)
 
-OVRFLO deposits create streams with `sender = OVRFLO` and `recipient = depositor` (`src/OVRFLO.sol`). In Sablier V2, **recipient = NFT owner** (`_ownerOf(streamId)`).
-
-When `OVRFLOBook` takes custody via `sablier.transferFrom`, the **book becomes recipient/owner**. Withdraw ACL from `SablierV2Lockup.withdraw()` (v1.1):
-
-```solidity
-bool isCallerStreamSender = _isCallerStreamSender(streamId);
-if (!isCallerStreamSender && !_isCallerStreamRecipientOrApproved(streamId)) {
-    revert Errors.SablierV2Lockup_Unauthorized(streamId, msg.sender);
-}
-address recipient = _ownerOf(streamId);
-if (isCallerStreamSender && to != recipient) {
-    revert Errors.SablierV2Lockup_InvalidSenderWithdrawal(streamId, msg.sender, to);
-}
-```
-
-| Caller | While user holds NFT | While book holds NFT |
-|--------|----------------------|----------------------|
-| Random third party | ❌ `Unauthorized` | ❌ `Unauthorized` |
-| User (owner/recipient) | ✅ withdraw to any `to` | N/A (no longer owner) |
-| Book (owner/recipient) | N/A | ✅ withdraw to any `to` (e.g. lender in `claimLoan`) |
-| Approved operator (e.g. book pre-transfer) | ✅ withdraw to any `to` | Depends on approval state |
-| OVRFLO vault (sender) | ✅ only `to == recipient` | ✅ only `to == book` (trusted protocol) |
-
-Book flows require user `approve(book, streamId)` before `transferFrom` (exercised in `test/fork/OVRFLOBookMainnetFork.t.sol`). Lender recovery uses `claimLoan` / `closeLoan` where **the book** calls `sablier.withdraw(streamId, lender, amount)` — not the lender directly.
+The verified v1.1 withdraw-ACL table, the NFT-ownership-through-the-Book lifecycle, and the version caveat (v1.1 vs later Sablier Lockup docs) are now canonicalized in [`docs/audit/sablier-interface-contract.md`](../docs/audit/sablier-interface-contract.md), pinned to the deployed address `0xAFb979d9afAd1aD27C5eFf4E27226E3AB9e5dCC9` (v2-core tag `v1.1`). Key fact retained here: OVRFLO deposits create streams with `sender = OVRFLO` and `recipient = depositor`; when `OVRFLOBook` takes custody via `transferFrom` the book becomes recipient/owner, and lender recovery uses `claimLoan`/`closeLoan` where **the book** calls `sablier.withdraw(streamId, lender, amount)` — not the lender directly. Book flows require user `approve(book, streamId)` before `transferFrom` (exercised in `test/fork/OVRFLOBookMainnetFork.t.sol`).
 
 **Pre-custody note:** Original recipient may withdraw vested `ovrfloToken` before listing/borrowing; pricing uses `deposited − withdrawn` at fill time (documented in book plan). After NFT transfer to the book, former holder cannot withdraw.
 
@@ -204,38 +177,7 @@ Fee computed on `toUser` and transferred to treasury without balance-delta verif
 
 ## Rejected findings
 
-### ~~H-2~~ — Escrow value sink / permissionless withdraw while book holds stream NFT
-
-| Field | Detail |
-|-------|--------|
-| **Original severity** | High (conditional) |
-| **Status** | **Rejected — not exploitable** |
-| **Verified against** | Sablier V2 Lockup v1.1 `SablierV2Lockup.sol` + deployed `0xAFb979d9afAd1aD27C5eFf4E27226E3AB9e5dCC9` |
-
-**Original claim:** Third parties could call `sablier.withdraw(streamId, address(book), amount)` while the book escrows the NFT, reducing `remaining` and stranding `ovrfloToken` on the book.
-
-**Why rejected:** Sablier V2 v1.1 requires `msg.sender` to be stream **sender**, **NFT owner**, or **approved operator** — otherwise `SablierV2Lockup_Unauthorized`. There is no permissionless withdraw, including no “withdraw to recipient on behalf of anyone” path. When the book holds the NFT it **is** the recipient; only the book (or its approved operators) can withdraw to third parties such as the lender. The OVRFLO vault as sender may only withdraw **to** the current recipient (the book), which is trusted protocol behavior.
-
-**Note:** Initial review and some Sablier Lockup docs (later versions) describe a public “withdraw to recipient” row; that does **not** apply to the V2 v1.1 bytecode OVRFLO integrates.
-
-No `_sweepOvrfloTo` or similar is required for this threat model.
-
----
-
-### ~~M-5~~ — Cross-market stream reuse when `expiryCached` collides
-
-| Field | Detail |
-|-------|--------|
-| **Original severity** | Medium |
-| **Status** | **Rejected — not a bug under OVRFLO design** |
-
-**Original claim:** Streams from market A could be used against market B liquidity when both share `expiryCached` and `ovrfloToken`.
-
-**Why rejected:**
-
-1. **Intentional fungibility** — one `ovrfloToken` per underlying across approved maturities is a documented product feature (`README.md`, `CONCEPTS.md`, book plan). `endTime == expiryCached` is the deliberate series pin when `asset` alone cannot identify series.
-2. **Pendle practice** — distinct Pendle markets for the same underlying use distinct expiries; onboarding two markets with identical `expiryCached` is not a normal deployment pattern.
-3. **Economic equivalence** — same `ovrfloToken` + same maturity end time ⇒ economically identical stream claim regardless of which `market` parameter is passed to the book.
+The full rejected-findings decision record — H-2 (Sablier v1.1 ACL, no permissionless withdraw), M-5 (cross-market `ovrfloToken` fungibility by design), the H-1→L-1 downgrade rationale, and the informational reclassifications (ex-M-1/M-2/M-3) with full evidence and Q&A — is now canonicalized in [`docs/audit/rejected-findings-record.md`](../docs/audit/rejected-findings-record.md). L-1 remains an active finding (see Findings below).
 
 ---
 

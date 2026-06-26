@@ -1,67 +1,64 @@
 # Invariant Map
 
-> OVRFLO | 19 guards | 9 inferred + 5 cross-contract + 3 economic | 4 not enforced on-chain
+> OVRFLO | 18 guards | 13 inferred | 7 not enforced on-chain
 
 ---
 
 ## 1. Enforced Guards (Reference)
 
 #### G-1
-`require(msg.sender == adminContract, "OVRFLO: not admin")` · `src/OVRFLO.sol:180` · protects the factory-admin trust boundary for all series/deposit-limit/sweep writes.
+`require(msg.sender == adminContract, "OVRFLO: not admin")` · `OVRFLO.sol:208` · Gates all vault admin functions (series approval, deposit limits, sweeps) to the factory admin hub.
 
 #### G-2
-`require(info.ptToken == address(0), "OVRFLO: series already configured")` · `src/OVRFLO.sol:226` · enforces one-time market configuration so PT/expiry/oracle wiring cannot be overwritten later.
+`require(info.ptToken == address(0), "OVRFLO: series already configured")` · `OVRFLO.sol:232` · One-shot series latch — a market can be configured exactly once; backs I-9 immutability.
 
 #### G-3
-`require(ptToMarket[pt] == address(0), "OVRFLO: PT already mapped")` · `src/OVRFLO.sol:227` · protects one-to-one PT-to-market routing.
+`require(ptToMarket[pt] == address(0), "OVRFLO: PT already mapped")` · `OVRFLO.sol:233` · One-shot reverse-map latch — a PT cannot be remapped to a second market.
 
 #### G-4
-`require(balanceAfter >= balanceBefore && balanceAfter - balanceBefore == amount, "OVRFLO: transfer amount mismatch")` · `src/OVRFLO.sol:295` · enforces exact-transfer semantics for wrap accounting.
+`require(ptAmount >= MIN_PT_AMOUNT, "OVRFLO: amount < min PT")` · `OVRFLO.sol:335` · Dust-deposit gate; `MIN_PT_AMOUNT = 1e6` is a vault immutable.
 
 #### G-5
-`require(reserve >= amount, "OVRFLO: insufficient reserve")` · `src/OVRFLO.sol:312` · protects 1:1 unwrap solvency against reserve underflow.
+`require(block.timestamp < info.expiryCached, "OVRFLO: matured")` · `OVRFLO.sol:336` · Temporal gate — deposits only allowed pre-maturity; backs I-11.
 
 #### G-6
-`require(info.approved, "OVRFLO: market not approved")` · `src/OVRFLO.sol:336` · ensures deposits only use explicitly approved market metadata.
+`require(currentDeposited + ptAmount <= limit, "OVRFLO: deposit limit exceeded")` · `OVRFLO.sol:341` · Per-market cap (only when `limit > 0`); backs I-8 (bound holds at deposit, not at setter).
 
 #### G-7
-`require(ptAmount >= MIN_PT_AMOUNT, "OVRFLO: amount < min PT")` · `src/OVRFLO.sol:337` · prevents dust PT deposits that would destabilize stream/value math.
+`require(toStream > 0, "OVRFLO: nothing to stream")` · `OVRFLO.sol:352` · Ensures a non-trivial split; rejects rate >= 1e18 (PT at/above par).
 
 #### G-8
-`require(block.timestamp < info.expiryCached, "OVRFLO: matured")` · `src/OVRFLO.sol:338` · blocks pre-maturity deposit path from extending value after expiry.
+`require(toUser >= minToUser, "OVRFLO: slippage")` · `OVRFLO.sol:353` · User slippage protection on the immediate portion.
 
 #### G-9
-`require(currentDeposited + ptAmount <= limit, "OVRFLO: deposit limit exceeded")` · `src/OVRFLO.sol:345` · caps incremental PT deposits when a market limit is active.
+`require(block.timestamp >= info.expiryCached, "OVRFLO: not matured")` · `OVRFLO.sol:393` · Temporal gate — claims only after maturity; the complement of G-5.
 
 #### G-10
-`require(toStream > 0, "OVRFLO: nothing to stream")` · `src/OVRFLO.sol:358` · enforces that deposit mints a non-zero streamed component.
+`require(currentDeposited >= amount, "OVRFLO: deposit accounting")` · `OVRFLO.sol:397` · Per-market claim bounded by tracked deposits; backs I-1 conservation.
 
 #### G-11
-`require(block.timestamp >= info.expiryCached, "OVRFLO: not matured")` · `src/OVRFLO.sol:398` · gates claims to post-maturity redemption only.
+`require(balanceAfter - balanceBefore == amount, "OVRFLO: transfer amount mismatch")` · `OVRFLO.sol:293` · `wrap` balance-delta check — rejects fee-on-transfer underlying; backs I-2.
 
 #### G-12
-`require(currentDeposited >= amount, "OVRFLO: deposit accounting")` · `src/OVRFLO.sol:402` · prevents market deposit accounting underflow during claim.
+`require(reserve >= amount, "OVRFLO: insufficient reserve")` · `OVRFLO.sol:307` · `unwrap` cannot drain past `wrappedUnderlying`; backs I-2.
 
 #### G-13
-`require(aprBps >= aprMinBps && aprBps <= aprMaxBps, "OVRFLOBook: apr out of bounds")` · `src/OVRFLOBook.sol:697` · enforces APR band for new secondary-market order creation.
+`require(aprMaxBps_ >= aprMinBps_, "OVRFLOBook: bad apr bounds")` · `OVRFLOBook.sol:314` · APR bound ordering at the only setter; backs I-5.
 
 #### G-14
-`require(balanceAfter >= balanceBefore && balanceAfter - balanceBefore == amount, "OVRFLOBook: transfer mismatch")` · `src/OVRFLOBook.sol:716` · enforces exact-transfer semantics for underlying escrow pulls.
+`require(aprMaxBps_ <= APR_MAX_CEILING, "OVRFLOBook: apr too high")` · `OVRFLOBook.sol:315` · Hardcoded 100% ceiling on the APR max; backs I-5.
 
 #### G-15
-`require(loan.borrower != address(0), "OVRFLOBook: unknown loan")` · `src/OVRFLOBook.sol:744` · ensures servicing functions operate only on initialized loans.
+`require(feeBps_ <= MAX_FEE_BPS, "OVRFLOBook: fee too high")` · `OVRFLOBook.sol:328` · Hardcoded 100% ceiling on the book fee; backs I-4.
 
 #### G-16
-`require(amount <= outstanding, "OVRFLOBook: repay too much")` · `src/OVRFLOBook.sol:572` · caps repayment path to remaining obligation.
+`require(aprBps >= aprMinBps && aprBps <= aprMaxBps, "OVRFLOBook: apr out of bounds")` · `OVRFLOBook.sol:916` · Per-post APR gate; backs I-6 (enforced at post, not retained after bound changes).
 
 #### G-17
-`require(feeBps_ <= MAX_FEE_BPS, "OVRFLOBook: fee too high")` · `src/OVRFLOBook.sol:224` · globally bounds configurable book fee.
+`require(amount <= outstanding, "OVRFLOBook: repay too much")` · `OVRFLOBook.sol:783` · Repayment capped at outstanding; backs the loan conservation E-2.
 
 #### G-18
-`require(IStandardizedYield(sy).yieldToken() == info.underlying, "OVRFLOFactory: underlying mismatch")` · `src/OVRFLOFactory.sol:165` · enforces exact underlying matching for new Pendle market onboarding.
-
-#### G-19
-`require(twapDuration >= MIN_TWAP_DURATION, "OVRFLOFactory: twap too short")` · `src/OVRFLOFactory.sol:209` · protects oracle readiness flow from sub-minimum TWAP windows.
+`require(withdrawable >= outstanding, "OVRFLOBook: loan not closable")` · `OVRFLOBook.sol:742` · `closeLoan` only when the stream can cover the debt; backs E-2 liveness.
 
 ---
 
@@ -69,49 +66,49 @@
 
 #### I-1
 
-`Conservation` · On-chain: **Yes**
+`Conservation` · On-chain: **No**
 
-> `marketTotalDeposited[market]` tracks net PT principal per market: +`ptAmount` on `deposit()` and -`amount` on `claim()`.
+> For every approved market, `IERC20(ptToken).balanceOf(vault) >= marketTotalDeposited[market]`, so every ovrfloToken claim is backed by a claimable PT.
 
-**Derivation** — `Δ-pair: src/OVRFLO.sol:347 ↔ src/OVRFLO.sol:403` with no other writer to `marketTotalDeposited`.
+**Derivation** — Δ-pair: `OVRFLO.deposit:340-343` does `safeTransferFrom(pt)` then `Δ(marketTotalDeposited[market]) = +ptAmount`; `OVRFLO.claim:397-401` does `Δ(marketTotalDeposited[market]) = -amount` then `safeTransfer(pt, amount)`. `sweepExcessPt:262` removes only `balance - deposited`. **Gap**: `deposit` pulls PT *without* a balance-delta check (contrast G-11 on `wrap`), so a fee-on-transfer PT would advance `marketTotalDeposited` by more than the received balance. On-chain=**No** — the conservation relies on the exact-transfer token assumption.
 
-**If violated** — claimability/accounting diverges from actual vault PT balances.
+**If violated** — `marketTotalDeposited` exceeds real PT balance; a claimant burns ovrfloToken but the PT transfer fails (or later claimants are shortchanged).
 
 ---
 
 #### I-2
 
-`Bound` · On-chain: **No**
+`Conservation` · On-chain: **Yes**
 
-> Global property candidate: `marketTotalDeposited[market] <= marketDepositLimits[market]` whenever limit is non-zero.
+> `IERC20(underlying).balanceOf(vault) >= wrappedUnderlying`, so every wrapped ovrfloToken is redeemable 1:1.
 
-**Derivation** — `guard-lift: require(currentDeposited + ptAmount <= limit)` at `src/OVRFLO.sol:345`; write-site enumeration shows unguarded `marketDepositLimits[market] = limit` at `src/OVRFLO.sol:249` can lower limit below current deposited.
+**Derivation** — Δ-pair: `OVRFLO.wrap:290-296` does `Δ(wrappedUnderlying) = +amount` behind a balance-delta check (G-11); `OVRFLO.unwrap:307-313` does `Δ(wrappedUnderlying) = -amount` behind `reserve >= amount` (G-12); `sweepExcessUnderlying:276` removes only `balance - wrappedUnderlying`. Every write site of `wrappedUnderlying` preserves the inequality.
 
-**If violated** — admin can set a new limit below already deposited principal, so the bound is not globally preserved.
+**If violated** — `unwrap` could fail or late wrappers be unable to redeem.
 
 ---
 
 #### I-3
 
-`Conservation` · On-chain: **Yes**
+`Bound` · On-chain: **Yes**
 
-> `wrappedUnderlying` is a reserve ledger: +`amount` on `wrap()`, -`amount` on `unwrap()`.
+> `SeriesInfo.feeBps <= FEE_MAX_BPS (100)` for every approved market.
 
-**Derivation** — `Δ-pair: src/OVRFLO.sol:299 ↔ src/OVRFLO.sol:314`; sweep path computes excess against reserve and does not mutate reserve (`src/OVRFLO.sol:270-279`).
+**Derivation** — guard-lift: `OVRFLOFactory.addMarket:153` enforces `require(feeBps <= FEE_MAX_BPS)`; `setSeriesApproved` is the only other writer of `feeBps` and is callable only by the factory (G-1), gated by the one-shot latch (G-2) so the fee is set exactly once per market. All write sites enforce the bound.
 
-**If violated** — unwrap availability and actual underlying reserve drift apart.
+**If violated** — deposit fee could exceed the intended 1% ceiling.
 
 ---
 
 #### I-4
 
-`StateMachine` · On-chain: **Yes**
+`Bound` · On-chain: **Yes**
 
-> Series configuration and PT reverse mapping are one-shot latches per market/PT.
+> `OVRFLOBook.feeBps <= MAX_FEE_BPS (10_000)`.
 
-**Derivation** — `edge: address(0)@src/OVRFLO.sol:226 → pt@src/OVRFLO.sol:233` and `address(0)@src/OVRFLO.sol:227 → market@src/OVRFLO.sol:238` with no reset path.
+**Derivation** — guard-lift: `OVRFLOBook.setFee:328` enforces G-15; it is the only writer of `feeBps` (constructor initializes to `LAUNCH_APR_BPS`... actually to 0 then owner sets). Single guarded write site.
 
-**If violated** — market identity/expiry/oracle immutability for outstanding deposits is broken.
+**If violated** — protocol fee could exceed 100%, trapping fills.
 
 ---
 
@@ -119,47 +116,47 @@
 
 `Bound` · On-chain: **Yes**
 
-> `feeBps` in `OVRFLOBook` stays in `[0, MAX_FEE_BPS]`.
+> `aprMinBps <= aprMaxBps <= APR_MAX_CEILING (10_000)`.
 
-**Derivation** — `guard-lift: require(feeBps_ <= MAX_FEE_BPS)` at `src/OVRFLOBook.sol:224`; all writes to `feeBps` occur in `setFee()` (`src/OVRFLOBook.sol:226`).
+**Derivation** — guard-lift: `OVRFLOBook.setAprBounds:314-315` enforces G-13 + G-14; constructor sets both to `LAUNCH_APR_BPS (1000)`. Only writer is the guarded setter.
 
-**If violated** — fee extraction can exceed configured policy envelope.
+**If violated** — APR bounds could invert or exceed 100%, breaking pricing assumptions.
 
 ---
 
 #### I-6
 
-`Bound` · On-chain: **Yes**
+`Bound` · On-chain: **No**
 
-> Newly created book orders have APR within current `[aprMinBps, aprMaxBps]`.
+> Every *posted* offer/listing `aprBps` was within `[aprMinBps, aprMaxBps]` at post time, but not necessarily within current bounds thereafter.
 
-**Derivation** — `guard-lift: require(aprBps >= aprMinBps && aprBps <= aprMaxBps)` at `src/OVRFLOBook.sol:697`; all order creation sites call `_validateApr()` (`src/OVRFLOBook.sol:248,309,374,448`).
+**Derivation** — guard-lift: `_validateApr` (G-16) checks `aprBps ∈ [aprMinBps, aprMaxBps]` at every `post*` callsite. **Gap**: `setAprBounds` (the only writer of `aprMinBps`/`aprMaxBps`) does not touch existing offers/listings, so a bound change can leave active orders outside the new range. On-chain=**No** — by design (makers keep their posted APR), but the global property "all active aprBps ∈ current bounds" does not hold.
 
-**If violated** — order intake could accept out-of-policy financing terms.
+**If violated** — resting offers may carry APRs outside current policy; this is intentional maker protection, not a bug, but auditors should confirm no fill path re-validates APR against live bounds.
 
 ---
 
 #### I-7
 
-`Bound` · On-chain: **No**
+`Bound` · On-chain: **Yes**
 
-> Global property candidate: all *active* book orders always satisfy current APR bounds.
+> `SeriesInfo.twapDurationFixed ∈ [MIN_TWAP_DURATION (15m), MAX_TWAP_DURATION (30m)]`.
 
-**Derivation** — `guard-lift` above applies only at creation; write-site enumeration shows admin can later shift bounds via `setAprBounds()` (`src/OVRFLOBook.sol:217-218`) without revalidating stored orders.
+**Derivation** — guard-lift: `OVRFLOFactory.addMarket:150-151` enforces both bounds; one-shot latch (G-2) means the value is immutable after approval. Single guarded write site.
 
-**If violated** — active orders can remain executable while outside the latest APR policy.
+**If violated** — oracle window could be too short (manipulable) or too long (stale).
 
 ---
 
 #### I-8
 
-`Ratio` · On-chain: **Yes**
+`Bound` · On-chain: **No**
 
-> Loan outstanding is strictly `obligation - (drawn + repaid)`.
+> `marketTotalDeposited[market] <= marketDepositLimits[market]` whenever `limit > 0`.
 
-**Derivation** — formula source `src/OVRFLOBook.sol:747-753`; writes: `drawn += amount` (`src/OVRFLOBook.sol:538,555`) and `repaid += amount` (`src/OVRFLOBook.sol:574`) are guarded by outstanding checks.
+**Derivation** — guard-lift: `OVRFLO.deposit:340-341` (G-6) enforces `currentDeposited + ptAmount <= limit` at deposit. **Gap**: `setMarketDepositLimit` (factory `OVRFLOFactory.sol:180` and vault `OVRFLO.sol:247`) writes `marketDepositLimits[market]` with **no check** against the current `marketTotalDeposited`. The admin can lower the cap below already-deposited principal. On-chain=**No** — new deposits block, but the bound "deposited <= limit" is broken for the lowered case.
 
-**If violated** — lender/borrower settlement symmetry breaks across claim, repay, and close paths.
+**If violated** — existing deposits exceed the stated cap; claims still work (G-10), but the limit no longer bounds total exposure.
 
 ---
 
@@ -167,11 +164,59 @@
 
 `StateMachine` · On-chain: **Yes**
 
-> Offer/listing active flags are one-way toggles from `true` to `false` for each ID.
+> A market series, once configured, is immutable: `ptToken`, `ovrfloToken`, `underlying`, `oracle`, `expiryCached`, `twapDurationFixed`, `feeBps` never change.
 
-**Derivation** — `edge: true@creation (src/OVRFLOBook.sol:253,323,379,468) → false@consume/cancel (src/OVRFLOBook.sol:267,290,333,353,393,425,478,505)` with no reactivation write.
+**Derivation** — edge: `unconfigured (ptToken == 0) → configured` via `setSeriesApproved` (G-2 + G-3); no update/override function exists. `setSeriesApproved` reverts if already configured. No reverse path.
 
-**If violated** — consumed or canceled orders could be replayed.
+**If violated** — claims (which depend on `ptToken`/`ovrfloToken`/`expiryCached` permanence) would break for outstanding deposits.
+
+---
+
+#### I-10
+
+`StateMachine` · On-chain: **Yes**
+
+> A loan transitions `open → closed` exactly once; no loan op is callable after `closed`.
+
+**Derivation** — edge: `Loan.closed = false` at `_storeLoan`; `closeLoan:739` and `repayLoan:787` set `closed = true`; `claimLoan:716`, `closeLoan:737`, `repayLoan:777` all require `!loan.closed`. No reopen path.
+
+**If violated** — a closed loan could be re-drawn or double-settled.
+
+---
+
+#### I-11
+
+`Temporal` · On-chain: **Yes**
+
+> Deposits occur only before `expiryCached`; claims occur only at/after `expiryCached`.
+
+**Derivation** — temporal: `OVRFLO.deposit:336` (G-5) `require(block.timestamp < expiryCached)`; `OVRFLO.claim:393` (G-9) `require(block.timestamp >= expiryCached)`. Complementary predicates on the same stored `expiryCached`.
+
+**If violated** — post-maturity deposits would create unbacked streams; pre-maturity claims would break the vesting design.
+
+---
+
+#### I-12
+
+`Temporal` · On-chain: **Yes**
+
+> Book fills (sell/borrow) only occur before series maturity.
+
+**Derivation** — temporal: `StreamPricing.marketActive` reverts `SeriesMatured` when `block.timestamp >= expiryCached`; every book fill calls `_requireEligible` → `marketActive` first.
+
+**If violated** — a matured stream (no discount window) could be mispriced.
+
+---
+
+#### I-13
+
+`StateMachine` · On-chain: **Yes**
+
+> An offer/listing deactivates one-shot: `active: true → false` on cancel or fill; no reactivate path.
+
+**Derivation** — edge: `active = true` at every `post*`; set `false` in `cancel*` and on fill; no function sets it back to `true`. Duplicate-fill guarded by `require(... .active)`.
+
+**If violated** — a consumed/cancelled order could be replayed.
 
 ---
 
@@ -179,15 +224,15 @@
 
 #### X-1
 
-On-chain: **Yes**
+On-chain: **No**
 
-> `OVRFLOBook` only prices/trades streams that belong to the expected core/market/token tuple.
+> `OVRFLO.deposit` assumes `IPendleOracle.getPtToSyRate` returns a fresh, manipulation-resistant rate; oracle readiness is verified only at market onboarding, not at deposit.
 
-**Caller side** — `src/OVRFLOBook.sol:278,343,409,451,492,597` route through `_requireEligible()`.
+**Caller side** — `OVRFLO.sol:344` consumes `rateE18 = IPendleOracle(oracle).getPtToSyRate(market, info.twapDurationFixed)` and uses it to mint `toUser`/`toStream` with no bounds/staleness check.
 
-**Callee side** — `src/StreamPricing.sol:98-111` validates core registration, market approval, series approval, stream sender, stream asset, end time, no cliff, non-cancelable.
+**Callee side** — `OVRFLOFactory.addMarket:155-159` is the only in-scope validation site (cardinality + oldest-observation satisfied); it runs once at onboarding. No in-scope code re-validates at deposit.
 
-**If violated** — arbitrary streams could be sold/financed against incorrect collateral context.
+**If violated** — a stale or manipulated TWAP skews the immediate-vs-streamed split within a block.
 
 ---
 
@@ -195,13 +240,13 @@ On-chain: **Yes**
 
 On-chain: **No**
 
-> `OVRFLO.deposit()` assumes oracle rate quality for immediate minting split.
+> `OVRFLOBook` loan servicing assumes Sablier `withdrawableAmountOf()` is monotonic and that `withdraw` ACL remains sender/owner/approved-only; the book relies on NFT custody to gate withdrawals.
 
-**Caller side** — `src/OVRFLO.sol:352-356` consumes `getPtToSyRate()` and mints `toUser`/`toStream`.
+**Caller side** — `OVRFLOBook.claimLoan:723` reads `sablier.withdrawableAmountOf(streamId)` and caps the draw at `_outstanding`; `closeLoan:741` requires `withdrawable >= outstanding`; both call `sablier.withdraw(streamId, lender, amount)`.
 
-**Callee side** — oracle freshness/cardinality is only pre-checked at onboarding (`src/OVRFLOFactory.sol:154-157`), not revalidated inside deposit path.
+**Callee side** — `StreamPricing.requireEligible:148-160` validates at pledge that the stream is non-cancelable, sender=core, asset/end-time correct, and `remaining > 0`. No in-scope re-validation at claim/close. Sablier itself (v1.1, immutable `0xAFb979…`) is out of scope.
 
-**If violated** — short-horizon oracle anomalies can skew immediate-vs-streamed value split.
+**If violated** — wrong withdrawable accounting or an ACL bypass could let a lender overdraw or a third party drain the escrowed stream.
 
 ---
 
@@ -209,13 +254,13 @@ On-chain: **No**
 
 On-chain: **Yes**
 
-> Wrap/unwrap asset identity for a vault is anchored to factory registry wiring.
+> `OVRFLOBook` immutables (`treasury`, `underlying`, `ovrfloToken`) equal the factory registry values for the served vault and never change.
 
-**Caller side** — `src/OVRFLO.sol:290-317` loads `(underlying, ovrfloToken)` from `ovrfloInfo(address(this))`.
+**Caller side** — `OVRFLOBook.constructor:297-304` reads `IOVRFLOFactoryRegistry(factory).ovrfloInfo(core)` and stores the tuple as immutables.
 
-**Callee side** — `src/OVRFLOFactory.sol:127-128` writes registry once at deploy; no subsequent writer mutates existing `ovrfloInfo[ovrflo]`.
+**Callee side** — `OVRFLOFactory.deploy:131-137` is the only writer of `ovrfloInfo[ovrflo]`; no setter updates an existing entry. One-shot, no mutation.
 
-**If violated** — unwrap reserve accounting could be applied to the wrong token pair.
+**If violated** — the book would price/repay in a token mismatched with the vault.
 
 ---
 
@@ -223,27 +268,27 @@ On-chain: **Yes**
 
 On-chain: **Yes**
 
-> Factory-listed markets must match vault underlying at Pendle SY layer.
+> `isMarketApproved[ovrflo][market]`, once set true by `addMarket`, is never unset (no unapprove path).
 
-**Caller side** — `src/OVRFLOFactory.sol:164-166` checks `IStandardizedYield(sy).yieldToken() == info.underlying`.
+**Caller side** — `StreamPricing.marketActive:121` reads `isMarketApproved(core, market)` to gate offers.
 
-**Callee side** — `src/OVRFLO.sol:229-236` stores the validated underlying into immutable per-series routing used by deposits.
+**Callee side** — `OVRFLOFactory.addMarket:175` is the only writer; no `false` write exists. Deposit-limit=0 is the freeze mechanism, not an unapprove.
 
-**If violated** — mismatched markets could route fees/principal across incompatible assets.
+**If violated** — a frozen market could still accept book offers (offers only check market approval, not deposit limits); by design, but worth noting.
 
 ---
 
 #### X-5
 
-On-chain: **No**
+On-chain: **Yes**
 
-> Loan servicing assumes Sablier `withdrawableAmountOf()` and stream transfer semantics remain stable.
+> Every pledged/sold stream matches its series: Sablier sender = core vault, asset = series ovrfloToken, end time = cached expiry (fits uint40), no cliff, non-cancelable, `deposited > withdrawn`.
 
-**Caller side** — `src/OVRFLOBook.sol:535-559` uses Sablier withdrawability to gate claim/close transitions.
+**Caller side** — `OVRFLOBook` fill paths call `_requireEligible` → `StreamPricing.requireEligible` before any pricing/transfer.
 
-**Callee side** — external Sablier contract state/logic is out of local scope and may evolve operationally despite fixed integration surface.
+**Callee side** — `StreamPricing.requireEligible:142-160` reads the live Sablier stream state and the synthesized `series(market)`; all checks enforced at pledge/post time. The validated `remaining = deposited - withdrawn` is returned for pricing.
 
-**If violated** — closability and lender draw paths can deviate from local bookkeeping assumptions.
+**If violated** — an off-spec stream (wrong asset, cancelable, wrong end) could be sold/borrowed against with incorrect collateral.
 
 ---
 
@@ -251,13 +296,13 @@ On-chain: **No**
 
 #### E-1
 
-On-chain: **Yes**
+On-chain: **No**
 
-> Every cash settlement path conserves quote currency: `gross = net + fee`.
+> Every ovrfloToken in circulation is backed by either wrapped underlying, deposited PT, or unvested stream value: `totalSupply(ovrfloToken) <= wrappedUnderlying + Σ_market marketTotalDeposited[market] + streamedUndrawn`.
 
-**Follows from** — `I-5` + settlement writes at `src/OVRFLOBook.sol:284-286`, `src/OVRFLOBook.sol:350-352`, `src/OVRFLOBook.sol:502-503`.
+**Follows from** — `I-1` (PT backing per market) + `I-2` (wrap reserve backing) + the deposit split (`toUser` minted to user, `toStream` minted to vault then streamed). On-chain=**No** because I-1 is On-chain=No (exact-transfer gap).
 
-**If violated** — fee leakage or hidden value transfer appears in book settlements.
+**If violated** — ovrfloToken supply exceeds real backing; claims or unwraps fail for late holders.
 
 ---
 
@@ -265,11 +310,11 @@ On-chain: **Yes**
 
 On-chain: **Yes**
 
-> Lender extractable value per loan is capped by recorded obligation.
+> For every loan, `obligation <= remaining` and `drawn + repaid <= obligation`, so the pledged stream can always cover the debt and `closeLoan` is eventually callable (liveness).
 
-**Follows from** — `I-8` + `X-1`.
+**Follows from** — `StreamPricing.obligationForFill` (full-borrow fast-paths to `remaining`; partial-borrow ceils and `borrowAmount <= grossPrice = floor(remaining/factor)` guarantees `obligation <= remaining`) + `I-10` (loan closed one-shot) + G-17 (repay <= outstanding) + G-18 (close requires coverage). Rounding directions are directional and load-bearing (floor price, ceil obligation).
 
-**If violated** — lender can overdraw stream value beyond negotiated loan terms.
+**If violated** — a loan could become unrepayable or the lender overdraw past the stream, breaking the no-liquidation design.
 
 ---
 
@@ -277,8 +322,8 @@ On-chain: **Yes**
 
 On-chain: **Yes**
 
-> 1:1 wrap/unwrap liquidity remains solvent while reserve accounting and registry wiring hold.
+> ovrfloToken is fungible across all PT series of the same underlying; a holder may burn against any matured series with sufficient `claimablePt(ptToken)`, and `addMarket` enforces an exact underlying match so unrelated assets never share a token.
 
-**Follows from** — `I-3` + `X-3`.
+**Follows from** — `I-9` (series immutability) + `OVRFLOFactory.addMarket:164-166` (`IStandardizedYield(sy).yieldToken() == info.underlying`) + the shared vault-level `ovrfloToken` immutable. Per-market accounting (`marketTotalDeposited`, `claimablePt`) is tracked independently so claims are bounded per-market even though the token is shared.
 
-**If violated** — wrappers can face redeemability gaps despite nominal token balances.
+**If violated** — cross-series claims could draw PT from the wrong market, or unrelated assets could share a wrapper token.

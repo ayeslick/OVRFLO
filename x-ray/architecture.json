@@ -1,0 +1,35 @@
+{
+  "title": "OVRFLO Architecture",
+  "nodes": [
+    {"id": "multisig", "label": "Timelocked Multisig", "subtitle": "Owner", "type": "actor", "row": 0},
+    {"id": "user", "label": "User", "subtitle": "Depositor/Lender/Borrower", "type": "actor", "row": 0},
+    {"id": "factory", "label": "OVRFLOFactory", "subtitle": "Admin hub", "type": "protocol", "row": 1},
+    {"id": "ovrflo", "label": "OVRFLO", "subtitle": "Core vault", "type": "protocol", "row": 1},
+    {"id": "book", "label": "OVRFLOBook", "subtitle": "Secondary market", "type": "protocol", "row": 1},
+    {"id": "token", "label": "OVRFLOToken", "subtitle": "Wrapper ERC20", "type": "protocol", "row": 2},
+    {"id": "pricing", "label": "StreamPricing", "subtitle": "Pricing library", "type": "protocol", "row": 2},
+    {"id": "poracle", "label": "Pendle Oracle", "subtitle": "TWAP rate", "type": "external", "row": 2},
+    {"id": "sablier", "label": "Sablier V2 LL", "subtitle": "Streaming", "type": "external", "row": 2}
+  ],
+  "edges": [
+    {"from": "multisig", "to": "factory", "label": "owns"},
+    {"from": "multisig", "to": "book", "label": "owns"},
+    {"from": "user", "to": "ovrflo", "label": "deposit/claim"},
+    {"from": "user", "to": "book", "label": "post/fill"},
+    {"from": "factory", "to": "ovrflo", "label": "deploys+admin"},
+    {"from": "factory", "to": "token", "label": "deploys"},
+    {"from": "factory", "to": "poracle", "label": "prepareOracle"},
+    {"from": "ovrflo", "to": "token", "label": "mint/burn"},
+    {"from": "ovrflo", "to": "poracle", "label": "getPtToSyRate"},
+    {"from": "ovrflo", "to": "sablier", "label": "createStream"},
+    {"from": "book", "to": "pricing", "label": "price/eligibility"},
+    {"from": "book", "to": "sablier", "label": "escrow/withdraw"},
+    {"from": "book", "to": "factory", "label": "registry lookup"}
+  ],
+  "groups": [
+    {"label": "Vault", "nodes": ["ovrflo", "token"]},
+    {"label": "Admin", "nodes": ["factory"]},
+    {"label": "Book", "nodes": ["book", "pricing"]},
+    {"label": "External", "nodes": ["poracle", "sablier"]}
+  ]
+}
