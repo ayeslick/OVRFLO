@@ -89,3 +89,7 @@ Total lender recovery is capped at the obligation; the pledged stream is returne
 ### Self-repaying loan
 
 A loan against a pledged Sablier stream where the stream's deterministic payouts repay the lender without liquidations, health checks, or loan-time oracles. The stream is non-cancelable and pays a fixed asset on a fixed schedule, so it cannot underperform; the lender draws accrued value until the obligation is satisfied, then the residual stream returns to the borrower.
+
+### OVRFLO cycle
+
+The composition of PT deposit, book sale, and unwrap that lets the PT discount -- fixed at deposit -- overflow into extractable value. A depositor receives immediate ovrfloToken (principal at TWAP value) plus a Sablier stream (the yield). Selling the stream on the book and unwrapping the immediate portion converts both legs to underlying, capturing the fixed yield. Flash loans remove the capital requirement, making the cycle executable with zero upfront cost. The protocol remains solvent throughout: the deposit adds PT backing, the unwrap consumes wrap-reserve backing, and every participant is economically whole. See `README.md` "What's Fixed Will OVRFLO" for the full example.
