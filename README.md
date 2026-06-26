@@ -312,11 +312,11 @@ book.repayLoan(loanId, amount);
 
 ### What's Fixed Will OVRFLO
 
-The PT discount is fixed at deposit -- the oracle splits principal from yield deterministically. What's fixed will overflow: the yield portion vests through a Sablier stream, and the composition of deposit, book sale, and unwrap lets that fixed yield flow out of the PT and into extractable value. Every participant benefits:
+The PT discount is fixed at deposit -- the oracle splits principal from yield deterministically. What's fixed will overflow: the yield portion vests through a Sablier stream, and the composition of deposit, book sale, and unwrap or swap lets that fixed yield flow out of the PT and into extractable value. Every participant benefits:
 
 1. **Flash-loan 100 PT** (pre-maturity, PT trading at 95% of face)
 2. **Deposit 100 PT** -- receive 95 ovrfloToken (immediate) + Sablier stream vesting 5 ovrfloToken
-3. **Unwrap 95 ovrfloToken** for 95 underlying (consumes the wrap reserve funded by an independent wrapper)
+3. **Exit the 95 ovrfloToken** -- either `unwrap()` for 95 underlying (consumes the wrap reserve) or swap on a DEX for underlying or any other token
 4. **Sell the stream on the book** into a sale offer -- receive ~4.5 underlying (5 face value discounted at the offer maker's APR)
 5. **Buy 100 PT on the Pendle AMM** for ~95 underlying
 6. **Repay the flash loan** -- return 100 PT
@@ -341,16 +341,16 @@ The PT discount is fixed at deposit -- the oracle splits principal from yield de
 │   95 ovrfloToken          Stream (5 ovrfloToken)                     │
 │         │                     │                                      │
 │         ▼                     ▼                                      │
-│   ┌──────────┐       ┌──────────────┐                                │
-│   │ unwrap() │       │  sellInto    │                                │
-│   │  → 95    │       │  Offer()     │                                │
-│   │  underly │       │  → ~4.5      │                                │
-│   └────┬─────┘       │    underly   │                                │
-│        │             └──────┬───────┘                                │
+│   ┌────────────┐     ┌──────────────┐                               │
+│   │ unwrap()   │     │  sellInto    │                               │
+│   │   or swap  │     │  Offer()     │                               │
+│   │  → ~95     │     │  → ~4.5      │                               │
+│   │  underly   │     │    underly   │                               │
+│   └────┬───────┘     └──────┬───────┘                               │
 │        │                    │                                        │
 │        ▼                    ▼                                        │
 │   Buy 100 PT on Pendle AMM ← ~99.5 underlying total                  │
-│        │                    (95 from unwrap + 4.5 from stream sale)  │
+│        │                    (95 from unwrap/swap + 4.5 from stream)   │
 │        ▼                    │                                        │
 │   Repay flash loan ─────────┘  Profit: ~4.5 underlying               │
 │                                                                      │
@@ -362,11 +362,11 @@ The PT discount is fixed at deposit -- the oracle splits principal from yield de
 | Participant | Outcome |
 |-------------|---------|
 | **Extractor** | Captures ~4.5 underlying of PT yield with zero capital |
-| **Wrap reserve funder** | Reserve drained by 95 underlying, but deposit added 100 PT backing -- can `claim` 100 ovrfloToken for 100 PT at maturity. Economically whole. |
+| **Wrap reserve funder** | If unwrap is used: reserve drained by 95 underlying, but deposit added 100 PT backing -- can `claim` 100 ovrfloToken for 100 PT at maturity. Economically whole. If swap is used: reserve untouched. |
 | **Book offer maker** | Bought a stream worth 5 ovrfloToken at maturity for ~4.5 underlying today. Fair trade at their chosen APR. |
 | **Protocol** | Remains solvent (E-1 holds: net ovrfloToken supply = net backing). No funds stolen. |
 
-Without flash loans, any PT holder can do the same (deposit, sell stream, unwrap). Flash loans just democratize it by removing the capital requirement. See `docs/audit/rejected-findings-record.md` for the full security analysis of why this is accepted by design.
+Without flash loans, any PT holder can do the same (deposit, sell stream, unwrap or swap). Flash loans just democratize it by removing the capital requirement. See `docs/audit/rejected-findings-record.md` for the full security analysis of why this is accepted by design.
 
 ## Admin Flows
 
