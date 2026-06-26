@@ -4,6 +4,7 @@ pragma solidity ^0.8.20;
 import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 import {OVRFLO} from "./OVRFLO.sol";
 import {OVRFLOToken} from "./OVRFLOToken.sol";
+import {OVRFLOBook} from "./OVRFLOBook.sol";
 import {IPendleMarket} from "../interfaces/IPendleMarket.sol";
 import {IPendleOracle} from "../interfaces/IPendleOracle.sol";
 import {IStandardizedYield} from "../interfaces/IStandardizedYield.sol";
@@ -46,6 +47,9 @@ contract OVRFLOFactory is Ownable2Step {
     mapping(address ovrflo => mapping(uint256 index => address)) public approvedMarketAt;
     mapping(address ovrflo => mapping(address market => bool)) public isMarketApproved;
 
+    /// @notice Maps an OVRFLO vault to its deployed OVRFLOBook (1:1).
+    mapping(address => address) public ovrfloToBook;
+
     /// @notice Pendle TWAP oracle address (singleton, same for all markets)
     address public immutable oracle;
 
@@ -56,6 +60,7 @@ contract OVRFLOFactory is Ownable2Step {
     event DeploymentConfigured(address indexed treasury, address indexed underlying);
     event DeploymentCancelled();
     event OvrfloDeployed(address indexed ovrflo, address indexed ovrfloToken, address treasury, address underlying);
+    event BookDeployed(address indexed ovrflo, address indexed book);
 
     /*//////////////////////////////////////////////////////////////
                               CONSTRUCTOR
@@ -133,6 +138,25 @@ contract OVRFLOFactory is Ownable2Step {
             OvrfloInfo({treasury: config.treasury, underlying: config.underlying, ovrfloToken: ovrfloToken});
 
         emit OvrfloDeployed(ovrflo, ovrfloToken, config.treasury, config.underlying);
+    }
+
+    /// @notice Deploy an OVRFLOBook for an existing vault (1:1, one book per vault)
+    /// @dev Reads the Sablier address from the vault's sablierLL immutable.
+    ///      Nominates the factory owner (multisig) as the book's pending owner.
+    /// @param ovrflo The OVRFLO core vault address
+    /// @return book The deployed OVRFLOBook address
+    function deployBook(address ovrflo) external onlyOwner returns (address book) {
+        _requireKnownOvrflo(ovrflo);
+        require(ovrfloToBook[ovrflo] == address(0), "OVRFLOFactory: book exists");
+
+        address sablierAddr = address(OVRFLO(ovrflo).sablierLL());
+        OVRFLOBook b = new OVRFLOBook(address(this), ovrflo, sablierAddr);
+        book = address(b);
+
+        ovrfloToBook[ovrflo] = book;
+        b.transferOwnership(owner());
+
+        emit BookDeployed(ovrflo, book);
     }
 
     /*//////////////////////////////////////////////////////////////
