@@ -6,6 +6,7 @@ import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {OVRFLO} from "../src/OVRFLO.sol";
 import {OVRFLOFactory} from "../src/OVRFLOFactory.sol";
 import {OVRFLOToken} from "../src/OVRFLOToken.sol";
+import {OVRFLOBook} from "../src/OVRFLOBook.sol";
 import {IPPrincipalToken} from "../interfaces/IPPrincipalToken.sol";
 import {IPendleMarket} from "../interfaces/IPendleMarket.sol";
 
@@ -102,6 +103,7 @@ contract OVRFLOFactoryTest is Test {
     event DeploymentConfigured(address indexed treasury, address indexed underlying);
     event DeploymentCancelled();
     event OvrfloDeployed(address indexed ovrflo, address indexed ovrfloToken, address treasury, address underlying);
+    event BookDeployed(address indexed ovrflo, address indexed book);
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
     event OwnershipTransferStarted(address indexed previousOwner, address indexed newOwner);
     event SeriesApproved(
@@ -299,6 +301,10 @@ contract OVRFLOFactoryTest is Test {
         vm.prank(STRANGER);
         vm.expectRevert("Ownable: caller is not the owner");
         factory.transferOwnership(NEW_OWNER);
+
+        vm.prank(STRANGER);
+        vm.expectRevert("Ownable: caller is not the owner");
+        factory.deployBook(address(ovrflo));
     }
 
     function test_PrepareOracle_RevertsForShortDurationAndIncreasesCardinalityWhenRequired() public {
@@ -613,6 +619,42 @@ contract OVRFLOFactoryTest is Test {
 
         assertEq(factory.owner(), OWNER);
         assertEq(factory.pendingOwner(), NEW_OWNER);
+    }
+
+    function test_DeployBook_DeploysBookRegistersAndNominatesOwner() public {
+        (OVRFLO ovrflo,) = _deployConfiguredSystem();
+
+        vm.expectEmit(true, false, false, false, address(factory));
+        emit BookDeployed(address(ovrflo), address(0));
+
+        vm.prank(OWNER);
+        address book = factory.deployBook(address(ovrflo));
+
+        assertTrue(book != address(0));
+        assertEq(factory.ovrfloToBook(address(ovrflo)), book);
+
+        OVRFLOBook b = OVRFLOBook(book);
+        assertEq(address(b.factory()), address(factory));
+        assertEq(address(b.core()), address(ovrflo));
+        assertEq(address(b.sablier()), address(OVRFLO(address(ovrflo)).sablierLL()));
+        assertEq(b.pendingOwner(), OWNER);
+    }
+
+    function test_DeployBook_RevertsForDuplicate() public {
+        (OVRFLO ovrflo,) = _deployConfiguredSystem();
+
+        vm.prank(OWNER);
+        factory.deployBook(address(ovrflo));
+
+        vm.prank(OWNER);
+        vm.expectRevert("OVRFLOFactory: book exists");
+        factory.deployBook(address(ovrflo));
+    }
+
+    function test_DeployBook_RevertsForUnknownVault() public {
+        vm.prank(OWNER);
+        vm.expectRevert("OVRFLOFactory: unknown ovrflo");
+        factory.deployBook(address(0xDEAD));
     }
 
     function _deployConfiguredSystem() internal returns (OVRFLO ovrflo, OVRFLOToken token) {

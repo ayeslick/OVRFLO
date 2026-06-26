@@ -81,8 +81,8 @@ OVRFLO operates in two layers:
 │           │                            └──────────────────────┘          │
 │           │                                                              │
 │           │         ┌──────────────┐    ┌───────────────────┐            │
-│           └────────▶│  OVRFLOBook  │───▶│  StreamPricing    │            │
-│                     │  (lending)   │    │  (pricing library)│            │
+│           │ deploys │  OVRFLOBook  │───▶│  StreamPricing    │            │
+│           └────────▶│  (lending)   │    │  (pricing library)│            │
 │                     │ - sell       │    │ - factor          │            │
 │                     │ - borrow     │    │ - grossPrice      │            │
 │                     │ - loan svc   │    │ - obligation      │            │
@@ -160,6 +160,7 @@ Factory and admin hub for deploying and managing OVRFLO vaults. Owned by a timel
 | `constructor(owner, oracle)` | Deploy factory with multisig owner and Pendle oracle (both immutable) |
 | `configureDeployment(treasury, underlying, nameSuffix, symbolSuffix)` | Stage deployment parameters; factory prepends `OVRFLO ` to name and `ovrflo` to symbol |
 | `deploy()` | Deploy OVRFLO + OVRFLOToken from stored config; returns both addresses |
+| `deployBook(ovrflo)` | Deploy an OVRFLOBook for an existing vault (1:1, one book per vault); reads Sablier from vault, nominates multisig as pending owner |
 | `cancelDeployment()` | Cancel a pending deployment |
 | `addMarket(ovrflo, market, twapDuration, feeBps)` | Add a PT maturity; reads PT address and expiry from Pendle market; requires ready oracle and exact underlying match |
 | `prepareOracle(market, twapDuration)` | Increase oracle cardinality before `addMarket` (separate transaction) |
@@ -335,16 +336,19 @@ The factory:
 ### Deploying the Book
 
 ```solidity
-// Deploy the lending book bound to a vault and Sablier instance
-OVRFLOBook book = new OVRFLOBook(factory, ovrflo, SABLIER_LL);
+// Preferred: factory deploys the book, enforces 1:1, and nominates multisig as pending owner
+vm.prank(multisig);
+address book = factory.deployBook(ovrflo);
 
-// Optionally configure fee and APR bounds before transferring ownership
-book.setFee(feeBps);
-book.setAprBounds(aprMin, aprMax);
-book.transferOwnership(multisig);
+// Multisig accepts ownership (two-step)
+OVRFLOBook(book).acceptOwnership();
+
+// Optionally configure fee and APR bounds
+OVRFLOBook(book).setFee(feeBps);
+OVRFLOBook(book).setAprBounds(aprMin, aprMax);
 ```
 
-The book pulls treasury, underlying, and ovrfloToken from the factory registry at construction, ensuring consistency with the served vault. APR bounds initialize to the launch APR (10%).
+The factory reads the Sablier address from the vault's `sablierLL` immutable, enforces 1:1 (one book per vault), registers the book in `ovrfloToBook`, and nominates the multisig as pending owner. The book pulls treasury, underlying, and ovrfloToken from the factory registry at construction. APR bounds initialize to the launch APR (10%). A standalone script (`script/OVRFLOBook.s.sol`) remains available for flexible deployment but does not register in the factory's `ovrfloToBook` mapping.
 
 ### Onboarding a New Market
 
