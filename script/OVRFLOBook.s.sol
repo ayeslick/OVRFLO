@@ -4,6 +4,11 @@ pragma solidity ^0.8.20;
 import {Script, console} from "forge-std/Script.sol";
 import {OVRFLOBook} from "../src/OVRFLOBook.sol";
 
+/// @notice Standalone deployment script for OVRFLOBook.
+/// @dev For production, prefer `OVRFLOFactory.deployBook(ovrflo)` which enforces
+///      1:1 (one book per vault), registers in `ovrfloToBook`, and nominates the
+///      multisig as pending owner. This script remains for standalone/flexible
+///      deployment but does not register in the factory's `ovrfloToBook` mapping.
 contract OVRFLOBookScript is Script {
     address internal constant DEFAULT_SABLIER_LL = 0xAFb979d9afAd1aD27C5eFf4E27226E3AB9e5dCC9;
     uint256 internal constant DEFAULT_BOOK_FEE_BPS = 0;
