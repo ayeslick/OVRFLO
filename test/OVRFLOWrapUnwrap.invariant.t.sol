@@ -27,13 +27,7 @@ contract InvariantOvrfloAdmin {
         ovrfloToken = ovrfloToken_;
     }
 
-    function approveSeries(
-        OVRFLO ovrflo,
-        address market,
-        address pt,
-        uint32 twapDuration,
-        uint256 expiry
-    ) external {
+    function approveSeries(OVRFLO ovrflo, address market, address pt, uint32 twapDuration, uint256 expiry) external {
         ovrflo.setSeriesApproved(market, pt, twapDuration, expiry, 0);
     }
 

@@ -172,9 +172,7 @@ contract OVRFLOProtocolTest is Test {
 
         vm.prank(ADMIN);
         vm.expectRevert("OVRFLO: series already configured");
-        ovrflo.setSeriesApproved(
-            MARKET_ONE, address(ptTwo), TWAP_DURATION, block.timestamp + 60 days, 0
-        );
+        ovrflo.setSeriesApproved(MARKET_ONE, address(ptTwo), TWAP_DURATION, block.timestamp + 60 days, 0);
     }
 
     function test_SetSeriesApproved_RevertsForDuplicatePtRegistration() public {
@@ -182,9 +180,7 @@ contract OVRFLOProtocolTest is Test {
 
         vm.prank(ADMIN);
         vm.expectRevert("OVRFLO: PT already mapped");
-        ovrflo.setSeriesApproved(
-            MARKET_TWO, address(ptOne), TWAP_DURATION, block.timestamp + 60 days, 0
-        );
+        ovrflo.setSeriesApproved(MARKET_TWO, address(ptOne), TWAP_DURATION, block.timestamp + 60 days, 0);
     }
 
     function test_SetMarketDepositLimit_SetsLimitAndEmitsEvent() public {
