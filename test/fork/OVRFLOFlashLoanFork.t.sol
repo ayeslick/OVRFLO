@@ -20,12 +20,16 @@ contract ForkFlashBorrower is IFlashBorrower, Test {
 
     bool public depositDuringCallback;
     bool public unwrapDuringCallback;
+    bool public nestedFlashLoanDuringCallback;
     address public depositMarket;
     uint256 public depositAmount;
     uint256 public unwrapAmount;
+    address public nestedPtToken;
+    uint256 public nestedAmount;
 
     bool public depositSucceeded;
     bool public unwrapSucceeded;
+    bool public nestedSucceeded;
 
     constructor(OVRFLO vault_) {
         vault = vault_;
@@ -46,9 +50,16 @@ contract ForkFlashBorrower is IFlashBorrower, Test {
         unwrapAmount = amount;
     }
 
+    function configureNestedFlashLoan(address ptToken, uint256 amount) external {
+        nestedFlashLoanDuringCallback = true;
+        nestedPtToken = ptToken;
+        nestedAmount = amount;
+    }
+
     function resetConfig() external {
         depositDuringCallback = false;
         unwrapDuringCallback = false;
+        nestedFlashLoanDuringCallback = false;
     }
 
     function executeFlashLoan(address ptToken, uint256 amount, bytes calldata data) external {
@@ -66,6 +77,12 @@ contract ForkFlashBorrower is IFlashBorrower, Test {
         if (unwrapDuringCallback) {
             (bool ok,) = address(vault).call(abi.encodeCall(OVRFLO.unwrap, (unwrapAmount)));
             unwrapSucceeded = ok;
+        }
+
+        if (nestedFlashLoanDuringCallback) {
+            (bool ok,) =
+                address(vault).call(abi.encodeCall(OVRFLO.flashLoan, (nestedPtToken, nestedAmount, "")));
+            nestedSucceeded = ok;
         }
 
         return returnSuccess ? CALLBACK_SUCCESS : bytes32(0);
@@ -337,10 +354,24 @@ contract OVRFLOFlashLoanForkTest is OVRFLOForkBase {
         flashBorrower.executeFlashLoan(PRIMARY_PT, FLASH_AMOUNT, "");
     }
 
-    function test_FlashLoan_NestedReverts_NonReentrant_RealToken() public {
-        // This test verifies nonReentrant works with real token state
-        // We can't easily do a nested flash loan without a custom borrower,
-        // but we can verify the guard is in place by checking the modifier
+    function test_FlashLoan_NestedFlashLoan_Reverts_NonReentrant_RealToken() public {
+        // Configure borrower to attempt a nested flash loan during callback
+        flashBorrower.configureNestedFlashLoan(PRIMARY_PT, FLASH_AMOUNT);
+
+        flashBorrower.executeFlashLoan(PRIMARY_PT, FLASH_AMOUNT, "");
+
+        // Nested flash loan must be blocked by nonReentrant
+        assertFalse(flashBorrower.nestedSucceeded(), "nested flash loan should revert due to nonReentrant");
+
+        // Vault state should be unchanged (outer flash loan still completes normally)
+        assertEq(
+            IERC20(PRIMARY_PT).balanceOf(address(ovrflo)),
+            PT_AMOUNT,
+            "vault PT balance should be unchanged after round trip"
+        );
+    }
+
+    function test_FlashLoan_PauseUnpause_RealToken() public {
         assertEq(ovrflo.flashLoanPaused(), false, "flash should not be paused by default");
 
         // Pause and verify revert
