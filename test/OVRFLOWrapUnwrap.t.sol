@@ -124,7 +124,8 @@ contract OVRFLOWrapUnwrapTest is Test {
     function test_Wrap_RevertsWhenUnderlyingTransfersLessThanRequestedAmount() public {
         ShortTransferUnderlying shortUnderlying = new ShortTransferUnderlying();
         OVRFLOToken shortToken = new OVRFLOToken("OVRFLO Short", "ovrfloSUND");
-        OVRFLO shortOvrflo = new OVRFLO(address(admin), TREASURY, address(shortUnderlying), address(shortToken), DUMMY_ORACLE);
+        OVRFLO shortOvrflo =
+            new OVRFLO(address(admin), TREASURY, address(shortUnderlying), address(shortToken), DUMMY_ORACLE);
         shortToken.transferOwnership(address(shortOvrflo));
 
         uint256 amount = 10 ether;

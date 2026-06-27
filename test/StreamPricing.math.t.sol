@@ -14,21 +14,15 @@ contract MathHarness {
         return StreamPricing.grossPrice(remaining, aprBps, ttm);
     }
 
-    function obligation(uint256 borrowAmount, uint16 aprBps, uint256 ttm)
+    function obligation(uint256 borrowAmount, uint16 aprBps, uint256 ttm) external pure returns (uint128) {
+        return StreamPricing.obligation(borrowAmount, aprBps, ttm);
+    }
+
+    function obligationForFill(uint256 borrowAmount, uint256 grossPrice_, uint128 remaining, uint16 aprBps, uint256 ttm)
         external
         pure
         returns (uint128)
     {
-        return StreamPricing.obligation(borrowAmount, aprBps, ttm);
-    }
-
-    function obligationForFill(
-        uint256 borrowAmount,
-        uint256 grossPrice_,
-        uint128 remaining,
-        uint16 aprBps,
-        uint256 ttm
-    ) external pure returns (uint128) {
         return StreamPricing.obligationForFill(borrowAmount, grossPrice_, remaining, aprBps, ttm);
     }
 
@@ -91,9 +85,7 @@ contract StreamPricingMathTest is Test {
                      GROSSPRICE PROPERTIES
     //////////////////////////////////////////////////////////////*/
 
-    function test_GrossPrice_NeverExceedsRemaining(uint128 remaining, uint16 aprBps, uint256 ttm)
-        public
-    {
+    function test_GrossPrice_NeverExceedsRemaining(uint128 remaining, uint16 aprBps, uint256 ttm) public {
         ttm = ttm % (1000 * 365 days); // bound to avoid PRBMath mulDiv overflow
         vm.assume(remaining > 0);
         uint256 price = h.grossPrice(remaining, aprBps, ttm);
@@ -135,9 +127,7 @@ contract StreamPricingMathTest is Test {
                      OBLIGATION PROPERTIES
     //////////////////////////////////////////////////////////////*/
 
-    function test_Obligation_NeverBelowBorrowAmount(uint256 borrowAmount, uint16 aprBps, uint256 ttm)
-        public
-    {
+    function test_Obligation_NeverBelowBorrowAmount(uint256 borrowAmount, uint16 aprBps, uint256 ttm) public {
         ttm = ttm % (1000 * 365 days); // bound to avoid PRBMath mulDiv overflow
         vm.assume(borrowAmount > 0 && borrowAmount <= type(uint128).max);
         // Skip cases that overflow uint128 (tested separately)
@@ -239,11 +229,9 @@ contract StreamPricingMathTest is Test {
         assertLe(ob, remaining, "obligation exceeds remaining");
     }
 
-    function test_Fuzz_ObligationForFill_FastPathOnlyWhenExactMatch(
-        uint128 remaining,
-        uint16 aprBps,
-        uint256 ttm
-    ) public {
+    function test_Fuzz_ObligationForFill_FastPathOnlyWhenExactMatch(uint128 remaining, uint16 aprBps, uint256 ttm)
+        public
+    {
         remaining = uint128(bound(uint256(remaining), 1, type(uint128).max));
         ttm = bound(ttm, 0, 100 * 365 days);
 
@@ -287,9 +275,7 @@ contract StreamPricingMathTest is Test {
         assertGe(uint256(ob), borrowAmount, "obligation below borrow");
     }
 
-    function test_Fuzz_RealisticRange_GrossPricePositive(uint128 remainingSeed, uint16 aprBps, uint256 ttmSeed)
-        public
-    {
+    function test_Fuzz_RealisticRange_GrossPricePositive(uint128 remainingSeed, uint16 aprBps, uint256 ttmSeed) public {
         uint128 remaining = uint128(bound(uint256(remainingSeed), 1 ether, 10_000 ether));
         uint16 apr = uint16(bound(uint256(aprBps), 0, 5000));
         uint256 ttm = bound(ttmSeed, 1, 2 * 365 days);
@@ -338,11 +324,9 @@ contract StreamPricingMathTest is Test {
     /// @dev The round-trip gap (remaining - obligation(grossPrice)) is not
     ///      always 1 wei — it can be up to floor(F/W) - 1 when the factor is
     ///      large. But the invariant obligation <= remaining always holds.
-    function test_Fuzz_RoundTrip_ObligationOfGrossPriceLeRemaining(
-        uint128 remaining,
-        uint16 aprBps,
-        uint256 ttm
-    ) public {
+    function test_Fuzz_RoundTrip_ObligationOfGrossPriceLeRemaining(uint128 remaining, uint16 aprBps, uint256 ttm)
+        public
+    {
         remaining = uint128(bound(uint256(remaining), 1, type(uint128).max));
         ttm = bound(ttm, 0, 100 * 365 days);
 
@@ -373,9 +357,7 @@ contract StreamPricingMathTest is Test {
         if (borrowAmount != gp) {
             uint128 obForFill = h.obligationForFill(borrowAmount, gp, remaining, aprBps, ttm);
             // May revert on overflow — skip those cases
-            (bool ok,) = address(h).staticcall(
-                abi.encodeCall(MathHarness.obligation, (borrowAmount, aprBps, ttm))
-            );
+            (bool ok,) = address(h).staticcall(abi.encodeCall(MathHarness.obligation, (borrowAmount, aprBps, ttm)));
             if (ok) {
                 uint128 ob = h.obligation(borrowAmount, aprBps, ttm);
                 assertEq(obForFill, ob, "partial-borrow mismatch");

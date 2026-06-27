@@ -168,10 +168,7 @@ contract OVRFLOFactory is Ownable2Step {
     /// @param market The Pendle market address
     /// @param twapDuration TWAP duration in seconds
     /// @param feeBps Fee in basis points (max FEE_MAX_BPS)
-    function addMarket(address ovrflo, address market, uint32 twapDuration, uint16 feeBps)
-        external
-        onlyOwner
-    {
+    function addMarket(address ovrflo, address market, uint32 twapDuration, uint16 feeBps) external onlyOwner {
         _requireKnownOvrflo(ovrflo);
         require(twapDuration <= MAX_TWAP_DURATION, "OVRFLOFactory: twap too long");
         require(twapDuration >= MIN_TWAP_DURATION, "OVRFLOFactory: twap too short");
@@ -192,9 +189,8 @@ contract OVRFLOFactory is Ownable2Step {
             require(IStandardizedYield(sy).yieldToken() == info.underlying, "OVRFLOFactory: underlying mismatch");
         }
 
-        OVRFLO(ovrflo)
-            .setSeriesApproved(market, pt, twapDuration, IPendleMarket(market).expiry(), feeBps);
-            
+        OVRFLO(ovrflo).setSeriesApproved(market, pt, twapDuration, IPendleMarket(market).expiry(), feeBps);
+
         isMarketApproved[ovrflo][market] = true;
         approvedMarketAt[ovrflo][approvedMarketCount[ovrflo]] = market;
         approvedMarketCount[ovrflo]++;
@@ -216,6 +212,22 @@ contract OVRFLOFactory is Ownable2Step {
     function sweepExcessUnderlying(address ovrflo, address to) external onlyOwner {
         _requireKnownOvrflo(ovrflo);
         OVRFLO(ovrflo).sweepExcessUnderlying(to);
+    }
+
+    /// @notice Set the flash loan fee on an OVRFLO vault
+    /// @param ovrflo The OVRFLO contract address
+    /// @param feeBps The flash loan fee in basis points (max OVRFLO.FLASH_FEE_MAX_BPS)
+    function setFlashFeeBps(address ovrflo, uint16 feeBps) external onlyOwner {
+        _requireKnownOvrflo(ovrflo);
+        OVRFLO(ovrflo).setFlashFeeBps(feeBps);
+    }
+
+    /// @notice Pause or unpause flash loans on an OVRFLO vault
+    /// @param ovrflo The OVRFLO contract address
+    /// @param paused True to pause, false to unpause
+    function setFlashLoanPaused(address ovrflo, bool paused) external onlyOwner {
+        _requireKnownOvrflo(ovrflo);
+        OVRFLO(ovrflo).setFlashLoanPaused(paused);
     }
 
     /// @notice Increase Pendle oracle cardinality for a market (must be done before addMarket)
