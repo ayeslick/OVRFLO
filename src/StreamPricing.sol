@@ -225,7 +225,7 @@ library StreamPricing {
         if (expiryCached > type(uint40).max) revert WrongEndTime();
         // forge-lint: disable-next-line(unsafe-typecast)
         if (lockup.getEndTime(streamId) != uint40(expiryCached)) revert WrongEndTime();
-        if (lockup.getCliffTime(streamId) != 0) revert CliffPresent();
+        if (lockup.getCliffTime(streamId) != lockup.getStartTime(streamId)) revert CliffPresent();
         if (lockup.isCancelable(streamId)) revert CancelableStream();
 
         uint128 deposited = lockup.getDepositedAmount(streamId);

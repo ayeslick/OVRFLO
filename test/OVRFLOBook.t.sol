@@ -103,6 +103,7 @@ contract OVRFLOBookMockSablier {
     struct Stream {
         address sender;
         IERC20 asset;
+        uint40 startTime;
         uint40 endTime;
         uint40 cliffTime;
         bool cancelable;
@@ -127,10 +128,14 @@ contract OVRFLOBookMockSablier {
         uint128 deposited,
         uint128 withdrawn
     ) external {
+        uint40 startTime = uint40(block.timestamp);
+        // Mimic real Sablier: cliff duration of 0 → cliffTime = startTime
+        if (cliffTime == 0) cliffTime = startTime;
         owners[streamId] = owner;
         streams[streamId] = Stream({
             sender: sender,
             asset: asset,
+            startTime: startTime,
             endTime: endTime,
             cliffTime: cliffTime,
             cancelable: cancelable,
@@ -180,6 +185,10 @@ contract OVRFLOBookMockSablier {
 
     function getEndTime(uint256 streamId) external view returns (uint40 endTime) {
         return streams[streamId].endTime;
+    }
+
+    function getStartTime(uint256 streamId) external view returns (uint40 startTime) {
+        return streams[streamId].startTime;
     }
 
     function getCliffTime(uint256 streamId) external view returns (uint40 cliffTime) {

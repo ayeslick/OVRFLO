@@ -105,6 +105,7 @@ contract StreamPricingMockSablier {
     struct Stream {
         address sender;
         IERC20 asset;
+        uint40 startTime;
         uint40 endTime;
         uint40 cliffTime;
         bool cancelable;
@@ -124,9 +125,36 @@ contract StreamPricingMockSablier {
         uint128 deposited,
         uint128 withdrawn
     ) external {
+        uint40 startTime = uint40(block.timestamp);
+        // Mimic real Sablier: cliff duration of 0 → cliffTime = startTime
+        if (cliffTime == 0) cliffTime = startTime;
         streams[streamId] = Stream({
             sender: sender,
             asset: asset,
+            startTime: startTime,
+            endTime: endTime,
+            cliffTime: cliffTime,
+            cancelable: cancelable,
+            deposited: deposited,
+            withdrawn: withdrawn
+        });
+    }
+
+    function setStreamWithStartTime(
+        uint256 streamId,
+        address sender,
+        IERC20 asset,
+        uint40 startTime,
+        uint40 endTime,
+        uint40 cliffTime,
+        bool cancelable,
+        uint128 deposited,
+        uint128 withdrawn
+    ) external {
+        streams[streamId] = Stream({
+            sender: sender,
+            asset: asset,
+            startTime: startTime,
             endTime: endTime,
             cliffTime: cliffTime,
             cancelable: cancelable,
@@ -141,6 +169,10 @@ contract StreamPricingMockSablier {
 
     function getAsset(uint256 streamId) external view returns (IERC20 asset) {
         return streams[streamId].asset;
+    }
+
+    function getStartTime(uint256 streamId) external view returns (uint40 startTime) {
+        return streams[streamId].startTime;
     }
 
     function getEndTime(uint256 streamId) external view returns (uint40 endTime) {
@@ -318,7 +350,18 @@ contract StreamPricingTest is Test {
     }
 
     function test_EligibilityRejectsCliffedStream() public {
-        sablier.setStream(streamId, address(core), ovrfloToken, uint40(expiry), 1, false, 100 ether, 30 ether);
+        // Cliff time must differ from start time to trigger rejection
+        sablier.setStreamWithStartTime(
+            streamId,
+            address(core),
+            ovrfloToken,
+            uint40(block.timestamp),
+            uint40(expiry),
+            uint40(block.timestamp) + 1,
+            false,
+            100 ether,
+            30 ether
+        );
 
         vm.expectRevert(StreamPricing.CliffPresent.selector);
         harness.requireEligible(address(factory), address(sablier), address(core), MARKET_ONE, streamId);

@@ -33,6 +33,8 @@ interface ISablierV2LockupLinear {
 
     function getEndTime(uint256 streamId) external view returns (uint40 endTime);
 
+    function getStartTime(uint256 streamId) external view returns (uint40 startTime);
+
     function getCliffTime(uint256 streamId) external view returns (uint40 cliffTime);
 
     function isCancelable(uint256 streamId) external view returns (bool result);

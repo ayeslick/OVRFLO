@@ -24,10 +24,13 @@ contract OVRFLOBookMainnetForkTest is OVRFLOForkBase {
 
         vm.prank(USER);
         _approveStream(address(sablier), address(book), streamId);
-        vm.prank(USER);
-        uint256 listingId = book.postSaleListing(PRIMARY_MARKET, streamId, book.LAUNCH_APR_BPS());
 
-        (uint256 grossPrice,,,,) = book.quote(PRIMARY_MARKET, streamId, book.LAUNCH_APR_BPS(), 0);
+        // Cache LAUNCH_APR_BPS before prank to avoid argument-evaluation consuming the prank
+        uint16 launchApr = book.LAUNCH_APR_BPS();
+        vm.prank(USER);
+        uint256 listingId = book.postSaleListing(PRIMARY_MARKET, streamId, launchApr);
+
+        (uint256 grossPrice,,,,) = book.quote(PRIMARY_MARKET, streamId, launchApr, 0);
         _seedWstEth(BUYER, grossPrice);
         vm.startPrank(BUYER);
         IERC20(WSTETH).approve(address(book), grossPrice);
@@ -119,9 +122,12 @@ contract OVRFLOBookMainnetForkTest is OVRFLOForkBase {
 
         vm.prank(USER);
         _approveStream(address(foreignSablier), address(book), foreignStreamId);
+
+        // Cache LAUNCH_APR_BPS before expectRevert to avoid argument-evaluation gotcha
+        uint16 launchApr = book.LAUNCH_APR_BPS();
         vm.prank(USER);
         vm.expectRevert();
-        book.postSaleListing(PRIMARY_MARKET, foreignStreamId, book.LAUNCH_APR_BPS());
+        book.postSaleListing(PRIMARY_MARKET, foreignStreamId, launchApr);
     }
 
     function _deployApprovedPrimarySeries(uint16 feeBps)
