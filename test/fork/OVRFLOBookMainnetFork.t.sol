@@ -130,6 +130,81 @@ contract OVRFLOBookMainnetForkTest is OVRFLOForkBase {
         book.postSaleListing(PRIMARY_MARKET, foreignStreamId, launchApr);
     }
 
+    function test_BookSellIntoOffer_RealStream() public {
+        (OVRFLOFactory factory, OVRFLO ovrflo, OVRFLOToken token) = _deployApprovedPrimarySeries(0);
+        OVRFLOBook book = _deployBook(factory, ovrflo);
+        ISablierV2LockupLinear sablier = ISablierV2LockupLinear(address(ovrflo.sablierLL()));
+        (,, uint256 streamId) = _depositPrimary(ovrflo, PT_AMOUNT);
+
+        // Quote to determine required offer capacity
+        uint16 launchApr = book.LAUNCH_APR_BPS();
+        (uint256 grossPrice,,,,) = book.quote(PRIMARY_MARKET, streamId, launchApr, 0);
+
+        // Buyer posts a sale offer with enough capacity
+        _seedWstEth(BUYER, grossPrice);
+        vm.startPrank(BUYER);
+        IERC20(WSTETH).approve(address(book), grossPrice);
+        uint256 offerId = book.postSaleOffer(PRIMARY_MARKET, launchApr, uint128(grossPrice));
+        vm.stopPrank();
+
+        // User sells stream into the offer
+        vm.prank(USER);
+        _approveStream(address(sablier), address(book), streamId);
+        vm.prank(USER);
+        book.sellIntoOffer(offerId, streamId, 0);
+
+        // Stream transferred to buyer (offer maker)
+        assertEq(sablier.ownerOf(streamId), BUYER, "stream should transfer to offer maker");
+
+        // User received wstETH (net of fee; feeBps=0 so net == gross)
+        assertEq(IERC20(WSTETH).balanceOf(USER), grossPrice, "seller should receive full gross price");
+
+        // Offer capacity consumed
+        (,,, uint128 remainingCapacity, bool active) = book.saleOffers(offerId);
+        assertFalse(active, "offer should be inactive after full consumption");
+        assertEq(remainingCapacity, 0, "capacity should be 0 after full fill");
+    }
+
+    function test_BookLendAgainstListing_RealStream() public {
+        (OVRFLOFactory factory, OVRFLO ovrflo, OVRFLOToken token) = _deployApprovedPrimarySeries(0);
+        OVRFLOBook book = _deployBook(factory, ovrflo);
+        ISablierV2LockupLinear sablier = ISablierV2LockupLinear(address(ovrflo.sablierLL()));
+        (,, uint256 streamId) = _depositPrimary(ovrflo, PT_AMOUNT);
+
+        // Quote to determine borrow amount
+        uint16 launchApr = book.LAUNCH_APR_BPS();
+        (uint256 grossPrice,,,,) = book.quote(PRIMARY_MARKET, streamId, launchApr, 0);
+        uint128 borrowAmount = uint128(grossPrice / 2);
+
+        // User posts a borrow listing (pledges stream)
+        vm.prank(USER);
+        _approveStream(address(sablier), address(book), streamId);
+        vm.prank(USER);
+        uint256 listingId = book.postBorrowListing(PRIMARY_MARKET, streamId, launchApr, borrowAmount);
+
+        // Lender fills the listing
+        _seedWstEth(LENDER, borrowAmount);
+        vm.startPrank(LENDER);
+        IERC20(WSTETH).approve(address(book), borrowAmount);
+        uint256 loanId = book.lendAgainstListing(listingId, 0);
+        vm.stopPrank();
+
+        // Loan created with correct obligation
+        (,,, uint128 obligation,,,, bool closed) = book.loanState(loanId);
+        assertFalse(closed, "loan should not be closed");
+        assertGt(obligation, 0, "obligation should be > 0");
+
+        // Stream escrowed by book
+        assertEq(sablier.ownerOf(streamId), address(book), "stream should be escrowed by book");
+
+        // User received wstETH (borrow amount; feeBps=0 so net == borrowAmount)
+        assertEq(IERC20(WSTETH).balanceOf(USER), borrowAmount, "borrower should receive wstETH");
+
+        // Listing is no longer active
+        (,,,,,, bool listingActive) = book.borrowListings(listingId);
+        assertFalse(listingActive, "listing should be inactive after fill");
+    }
+
     function _deployApprovedPrimarySeries(uint16 feeBps)
         internal
         returns (OVRFLOFactory factory, OVRFLO ovrflo, OVRFLOToken token)
