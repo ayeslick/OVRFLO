@@ -424,7 +424,9 @@ contract OVRFLOAttackScenariosTest is Test {
 
         // vault PT balance: 100 (initial) - 50 (flash out) + 50 (deposit in) + 50 (repayment) = 150
         assertEq(ptA.balanceOf(address(ovrflo)), 150 ether, "vault PT balance should be 150");
-        assertEq(ovrflo.marketTotalDeposited(MARKET_A), depositedBefore + flashAmount, "marketTotalDeposited should be 150");
+        assertEq(
+            ovrflo.marketTotalDeposited(MARKET_A), depositedBefore + flashAmount, "marketTotalDeposited should be 150"
+        );
         assertEq(ovrflo.wrappedUnderlying(), reserveBefore - expectedToUser, "reserve not decremented");
         assertEq(
             underlying.balanceOf(address(borrower)) - borrowerUnderlyingBefore,
@@ -452,11 +454,7 @@ contract OVRFLOAttackScenariosTest is Test {
         borrower.executeFlashLoan(address(ptA), flashAmount, "");
 
         // Fee should be calculated at 0.95e18 (rate read before callback), not 0.01e18
-        assertEq(
-            underlying.balanceOf(TREASURY) - treasuryBefore,
-            expectedFee,
-            "fee should use pre-callback rate"
-        );
+        assertEq(underlying.balanceOf(TREASURY) - treasuryBefore, expectedFee, "fee should use pre-callback rate");
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -497,7 +495,15 @@ contract OVRFLOAttackScenariosTest is Test {
         // Create an eligible stream
         uint256 streamId = 1;
         bookSablier.setStream(
-            streamId, borrowerAddr, address(core), IERC20(address(bookOvrfloToken)), uint40(expiry), 0, false, 100 ether, 0
+            streamId,
+            borrowerAddr,
+            address(core),
+            IERC20(address(bookOvrfloToken)),
+            uint40(expiry),
+            0,
+            false,
+            100 ether,
+            0
         );
 
         // Post lend offer
@@ -511,7 +517,7 @@ contract OVRFLOAttackScenariosTest is Test {
         vm.stopPrank();
 
         // Read loan state
-        (,, , uint128 obligation,,, ) = book.loans(loanId);
+        (,,, uint128 obligation,,,) = book.loans(loanId);
 
         // Set partial withdrawable
         uint128 partialClaim = obligation / 2;
@@ -527,7 +533,7 @@ contract OVRFLOAttackScenariosTest is Test {
         book.repayLoan(loanId, outstanding);
 
         // Loan should be closed and NFT returned
-        (,,, , , , bool closed) = book.loans(loanId);
+        (,,,,,, bool closed) = book.loans(loanId);
         assertTrue(closed, "loan should be closed after full repayment");
 
         assertEq(bookSablier.ownerOf(streamId), borrowerAddr, "NFT should be returned to borrower");

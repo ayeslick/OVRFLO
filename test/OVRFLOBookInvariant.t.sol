@@ -394,7 +394,7 @@ contract OVRFLOBookInvariantHandler is Test {
         address borrower = _actor(offerIdSeed);
         uint256 streamId = _createStream(borrower);
 
-        (uint256 grossPrice,, ,,) = book.quote(market, streamId, aprBps, 0);
+        (uint256 grossPrice,,,,) = book.quote(market, streamId, aprBps, 0);
         if (grossPrice == 0) return;
 
         uint128 borrowAmount = uint128(bound(borrowSeed, 1, _min(grossPrice, capacity)));
@@ -452,8 +452,15 @@ contract OVRFLOBookInvariantHandler is Test {
     function claimLoan(uint256 loanIdSeed) public {
         if (book.nextLoanId() == 1) return;
         uint256 loanId = bound(loanIdSeed, 1, book.nextLoanId() - 1);
-        (address borrower, address lender, uint256 streamId, uint128 obligation, uint128 drawn, uint128 repaid, bool closed)
-        = book.loans(loanId);
+        (
+            address borrower,
+            address lender,
+            uint256 streamId,
+            uint128 obligation,
+            uint128 drawn,
+            uint128 repaid,
+            bool closed
+        ) = book.loans(loanId);
         if (borrower == address(0) || closed) return;
 
         // Set withdrawable so claim can succeed
@@ -464,7 +471,7 @@ contract OVRFLOBookInvariantHandler is Test {
         vm.prank(lender);
         try book.claimLoan(loanId) {
             // Read updated drawn
-            (,, , uint128 obligation2, uint128 drawn2, uint128 repaid2,) = book.loans(loanId);
+            (,,, uint128 obligation2, uint128 drawn2, uint128 repaid2,) = book.loans(loanId);
             uint128 claimed = drawn2 - drawn;
             loanGhosts[loanId].lenderReceived += claimed;
         } catch {}
@@ -473,7 +480,7 @@ contract OVRFLOBookInvariantHandler is Test {
     function repayLoan(uint256 loanIdSeed, uint256 amountSeed) public {
         if (book.nextLoanId() == 1) return;
         uint256 loanId = bound(loanIdSeed, 1, book.nextLoanId() - 1);
-        (address borrower,, , uint128 obligation, uint128 drawn, uint128 repaid, bool closed) = book.loans(loanId);
+        (address borrower,,, uint128 obligation, uint128 drawn, uint128 repaid, bool closed) = book.loans(loanId);
         if (borrower == address(0) || closed) return;
 
         uint128 outstanding = obligation - drawn - repaid;
@@ -493,8 +500,15 @@ contract OVRFLOBookInvariantHandler is Test {
     function closeLoan(uint256 loanIdSeed) public {
         if (book.nextLoanId() == 1) return;
         uint256 loanId = bound(loanIdSeed, 1, book.nextLoanId() - 1);
-        (address borrower, address lender, uint256 streamId, uint128 obligation, uint128 drawn, uint128 repaid, bool closed)
-        = book.loans(loanId);
+        (
+            address borrower,
+            address lender,
+            uint256 streamId,
+            uint128 obligation,
+            uint128 drawn,
+            uint128 repaid,
+            bool closed
+        ) = book.loans(loanId);
         if (borrower == address(0) || closed) return;
 
         uint128 outstanding = obligation - drawn - repaid;
@@ -514,23 +528,21 @@ contract OVRFLOBookInvariantHandler is Test {
     function _createStream(address owner) internal returns (uint256 streamId) {
         streamId = nextStreamId++;
         sablier.setStream(
-            streamId,
-            owner,
-            address(core),
-            IERC20(address(ovrfloToken)),
-            uint40(expiry),
-            0,
-            false,
-            100 ether,
-            0
+            streamId, owner, address(core), IERC20(address(ovrfloToken)), uint40(expiry), 0, false, 100 ether, 0
         );
     }
 
-    function _trackNewLoan(uint256 loanId, address borrower, address market, uint256 streamId, uint16 aprBps, uint256 grossPrice)
-        internal
-    {
+    function _trackNewLoan(
+        uint256 loanId,
+        address borrower,
+        address market,
+        uint256 streamId,
+        uint16 aprBps,
+        uint256 grossPrice
+    ) internal {
         (,,, uint128 obligation,,,) = book.loans(loanId);
-        (uint128 deposited, uint128 withdrawn) = (sablier.getDepositedAmount(streamId), sablier.getWithdrawnAmount(streamId));
+        (uint128 deposited, uint128 withdrawn) =
+            (sablier.getDepositedAmount(streamId), sablier.getWithdrawnAmount(streamId));
         loanGhosts[loanId] = LoanGhost({
             obligation: obligation,
             remainingAtOrigination: deposited - withdrawn,
@@ -554,7 +566,8 @@ contract OVRFLOBookInvariantHandler is Test {
         uint256 grossPrice
     ) internal {
         (,,, uint128 obligation,,,) = book.loans(loanId);
-        (uint128 deposited, uint128 withdrawn) = (sablier.getDepositedAmount(streamId), sablier.getWithdrawnAmount(streamId));
+        (uint128 deposited, uint128 withdrawn) =
+            (sablier.getDepositedAmount(streamId), sablier.getWithdrawnAmount(streamId));
         loanGhosts[loanId] = LoanGhost({
             obligation: obligation,
             remainingAtOrigination: deposited - withdrawn,
