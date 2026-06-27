@@ -525,6 +525,27 @@ contract OVRFLOProtocolTest is Test {
         }
     }
 
+    function test_Claim_RevertsWhenExceedsDepositedAccounting() public {
+        uint256 expiry = block.timestamp + 30 days;
+        _approveSeries(MARKET_ONE, ptOne, expiry, 0);
+        (uint256 toUser,) = _deposit(MARKET_ONE, ptOne, 10 ether, 0.8e18, 0, expiry, 11);
+        // marketTotalDeposited = 10, user has 8 ovrfloToken
+
+        // Wrap extra underlying to get more ovrfloToken beyond deposited PT
+        underlying.mint(user, 5 ether);
+        vm.startPrank(user);
+        underlying.approve(address(ovrflo), 5 ether);
+        ovrflo.wrap(5 ether);
+        vm.stopPrank();
+        // user now has 8 + 5 = 13 ovrfloToken, but marketTotalDeposited = 10
+
+        vm.warp(expiry);
+
+        vm.prank(user);
+        vm.expectRevert("OVRFLO: deposit accounting");
+        ovrflo.claim(address(ptOne), 13 ether);
+    }
+
     function _deposit(
         address market,
         MockERC20Metadata pt,

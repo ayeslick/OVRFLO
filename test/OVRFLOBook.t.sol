@@ -1175,4 +1175,77 @@ contract OVRFLOBookTest is Test {
     function _mintEligibleStream(uint256 streamId, address owner, uint128 deposited, uint128 withdrawn) internal {
         sablier.setStream(streamId, owner, address(core), ovrfloToken, uint40(expiry), 0, false, deposited, withdrawn);
     }
+
+    /*//////////////////////////////////////////////////////////////
+                    COVERAGE: UNCOVERED BRANCH TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_Constructor_RevertForZeroUnderlying() public {
+        OVRFLOBookMockFactory badFactory = new OVRFLOBookMockFactory();
+        badFactory.setInfo(address(core), TREASURY, address(0), address(ovrfloToken));
+        vm.expectRevert("OVRFLOBook: underlying zero");
+        new OVRFLOBook(address(badFactory), address(core), address(sablier));
+    }
+
+    function test_Constructor_RevertForZeroToken() public {
+        OVRFLOBookMockFactory badFactory = new OVRFLOBookMockFactory();
+        badFactory.setInfo(address(core), TREASURY, address(underlying), address(0));
+        vm.expectRevert("OVRFLOBook: token zero");
+        new OVRFLOBook(address(badFactory), address(core), address(sablier));
+    }
+
+    function test_CancelSaleOffer_RevertForWrongMaker() public {
+        uint256 offerId = _postSaleOffer(BUYER, 100 ether);
+        vm.prank(SELLER);
+        vm.expectRevert("OVRFLOBook: not offer maker");
+        book.cancelSaleOffer(offerId);
+    }
+
+    function test_CancelSaleListing_RevertForWrongMaker() public {
+        _mintEligibleStream(40, SELLER, 110 ether, 0);
+        uint256 listingId = _postSaleListing(SELLER, 40);
+        vm.prank(BUYER);
+        vm.expectRevert("OVRFLOBook: not listing maker");
+        book.cancelSaleListing(listingId);
+    }
+
+    function test_CancelLendOffer_RevertForWrongLender() public {
+        uint256 offerId = _postLendOffer(BUYER, 100 ether);
+        vm.prank(SELLER);
+        vm.expectRevert("OVRFLOBook: not lender");
+        book.cancelLendOffer(offerId);
+    }
+
+    function test_CancelBorrowListing_RevertForWrongBorrower() public {
+        _mintEligibleStream(41, SELLER, 110 ether, 0);
+        uint256 listingId = _postBorrowListing(SELLER, 41, 100 ether);
+        vm.prank(BUYER);
+        vm.expectRevert("OVRFLOBook: not borrower");
+        book.cancelBorrowListing(listingId);
+    }
+
+    function test_PostSaleOffer_RevertForZeroCapacity() public {
+        vm.expectRevert("OVRFLOBook: capacity zero");
+        book.postSaleOffer(MARKET, 1000, 0);
+    }
+
+    function test_PostLendOffer_RevertForZeroCapacity() public {
+        vm.expectRevert("OVRFLOBook: capacity zero");
+        book.postLendOffer(MARKET, 1000, 0);
+    }
+
+    function test_ClaimLoan_RevertForUnknownLoan() public {
+        vm.expectRevert("OVRFLOBook: unknown loan");
+        book.claimLoan(999);
+    }
+
+    function test_CloseLoan_RevertForUnknownLoan() public {
+        vm.expectRevert("OVRFLOBook: unknown loan");
+        book.closeLoan(999);
+    }
+
+    function test_RepayLoan_RevertForUnknownLoan() public {
+        vm.expectRevert("OVRFLOBook: unknown loan");
+        book.repayLoan(999, 1);
+    }
 }
