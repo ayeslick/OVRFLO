@@ -178,3 +178,13 @@ repayment transfer.
 ### Files changed
 
 - `src/OVRFLOBook.sol` — `borrowAgainstOffer`, `lendAgainstListing`.
+
+### Test coverage note
+
+The OVRFLOBook non-fork test suite now asserts all-party token balances
+(`underlying.balanceOf` and `ovrfloToken.balanceOf` for seller, buyer,
+treasury, and the book) after every settlement, per
+[best-practices/verify-token-balance-movement-not-just-ownership.md](../best-practices/verify-token-balance-movement-not-just-ownership.md).
+Had a self-match test been written at the time, the revert in `_pullExact`
+would have been caught at test authoring time rather than during a later
+full-contract review.

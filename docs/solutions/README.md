@@ -18,6 +18,7 @@ enums have been widened to reflect our stack; everything else matches the upstre
 - `integration-issues/` — Pendle, Sablier, Envio, CoinGecko, wallets
 - `logic-errors/` — business-logic bugs in contracts or client code
 - `developer-experience/` — DX issues: dead code, env layout, dev setup
+- `best-practices/` — testing, workflow, and code-quality practices distilled from real review work
 - `patterns/` — **required reading**: short, enforceable rules extracted
   from the writeups above. If you are touching an area a pattern covers,
   follow it or have a documented reason not to.
@@ -44,7 +45,23 @@ enums have been widened to reflect our stack; everything else matches the upstre
   4. Prevent self-matched loans in OVRFLOBook (`borrowAgainstOffer` / `lendAgainstListing`).
   5. TWAP duration bounds must be consistent across `prepareOracle` and `addMarket`.
   6. Standalone OVRFLOBook deployment must verify Sablier matches the vault's canonical immutable.
+  7. Assert all-party token balances in every money-movement test (not just state flags and NFT ownership).
+  8. View functions that resolve by ID must revert on non-existent IDs, not return zero defaults.
   - Also includes a "Considered and rejected" section documenting 4 findings from the 2026-06-28 full-contract review that were explicitly dismissed (18-decimal underlying check, sweep zero-address guard, unchecked downcasts in deposit, registeredToken equality check).
+
+### Best practices
+
+- [best-practices/verify-token-balance-movement-not-just-ownership.md](best-practices/verify-token-balance-movement-not-just-ownership.md) —
+  Non-fork tests for OVRFLOBook must assert `underlying.balanceOf` (and
+  `ovrfloToken.balanceOf` / `sablier.getWithdrawnAmount` / `sablier.ownerOf`
+  where applicable) for every party that touched value (seller, buyer,
+  treasury, book), not just state flags and NFT ownership. State flags prove
+  an entry changed hands; balance assertions prove the money moved correctly.
+- [best-practices/record-rejected-findings-with-rationale.md](best-practices/record-rejected-findings-with-rationale.md) —
+  Rejected audit and code-review findings should be recorded in a persistent
+  decision record with the original claim, rejection rationale, and supporting
+  evidence, so future reviewers start where the last review ended instead of
+  re-deriving settled conclusions.
 
 ### Web UI
 
@@ -107,6 +124,12 @@ enums have been widened to reflect our stack; everything else matches the upstre
   fast before locking liquidity behind a dead market. The shared checks live in
   one `StreamPricing.marketActive` helper that `requireEligible` also delegates
   to — single source of truth, no hot-path gas regression.
+- [architecture-patterns/view-functions-revert-on-nonexistent-ids.md](architecture-patterns/view-functions-revert-on-nonexistent-ids.md) —
+  View functions that resolve a struct by ID (offer, listing, loan) must
+  revert when the ID does not exist rather than returning zero defaults.
+  The sentinel is `maker`/`lender`/`borrower != address(0)`, which survives
+  teardown (only `capacity`/`active` are zeroed) and fails only for IDs that
+  were never created.
 
 ### Local devnet & seeding
 

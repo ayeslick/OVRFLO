@@ -1,7 +1,7 @@
 ---
 kind: required_reading
 scope: ovrflo
-last_updated: 2026-04-21
+last_updated: 2026-06-27
 audience: [contributors, ai-agents]
 ---
 
@@ -11,6 +11,8 @@ audience: [contributors, ai-agents]
     consistency in prepareOracle), #6 (Sablier binding verification in
     standalone script), and a "Considered and rejected" section (R-01 through
     R-04) from the 2026-06-28 full-contract review.
+  - 2026-06-27: Appended patterns #7 (assert all-party token balances in
+    money-movement tests) and #8 (view functions revert on non-existent IDs).
   - 2026-04-21: Appended pattern #2 (avoid forge script --broadcast against Anvil
     mainnet forks) from docs/solutions/integration-issues/anvil-forge-script-broadcast-out-of-funds-LocalSeeding-20260421.md.
   - 2026-04-21: Appended pattern #3 (modal bodies wrapped in a class-component
@@ -419,6 +421,114 @@ construction.
 rg "sablier mismatch" script/OVRFLOBook.s.sol
 # expected: 1 match
 ```
+
+---
+
+## 7. Assert all-party token balances in every money-movement test (ALWAYS REQUIRED)
+
+### ❌ WRONG (state flags and NFT ownership pass while value misroutes silently)
+
+```solidity
+// test/OVRFLOBook.t.sol — proves the offer was consumed and the stream moved,
+// not that the underlying left the book, the fee was paid, or the buyer
+// (who posted liquidity upfront) is back to zero.
+(,,, uint128 capacity,) = book.saleOffers(offerId);
+assertEq(capacity, 0);
+assertEq(underlying.balanceOf(SELLER), 100 ether);
+assertEq(sablier.ownerOf(28), BUYER);
+// missing: balanceOf(TREASURY), balanceOf(address(book)), balanceOf(BUYER)
+```
+
+### ✅ CORRECT (every party that touched value is checked)
+
+```solidity
+(,,, uint128 capacity,) = book.saleOffers(offerId);
+assertEq(capacity, 0);
+assertEq(underlying.balanceOf(SELLER), 100 ether);
+assertEq(underlying.balanceOf(TREASURY), 0);
+assertEq(underlying.balanceOf(address(book)), 0);
+assertEq(underlying.balanceOf(BUYER), 0);
+assertEq(sablier.ownerOf(28), BUYER);
+```
+
+**Why:** The highest-severity bug class in `OVRFLOBook` is a misrouted
+payment: value sent to the wrong address, a fee skipped or double-charged,
+or funds stranded in the contract after teardown. State flags (`capacity ==
+0`, `active == false`, `loan.closed == true`) and NFT ownership
+(`sablier.ownerOf(...) == X`) are necessary but not sufficient — they prove
+an entry changed hands, not that the money moved correctly. A refactor that
+breaks `_payUnderlying` (wrong payee, skipped fee, stranded value) would
+pass every flag and ownership assertion and ship a fund-loss bug.
+
+**Placement/Context:** Any non-fork or fork test that calls a function
+transferring `underlying`, `ovrfloToken`, or a Sablier stream NFT:
+`sellIntoOffer`, `buyListing`, `borrowAgainstOffer`, `lendAgainstListing`,
+`cancel*` functions, `claimLoan`, `closeLoan`, `repayLoan`. The four-party
+check (actor, counterparty, treasury, book) is the minimum. For loan
+servicing, also assert `ovrfloToken.balanceOf`, `sablier.getWithdrawnAmount`,
+and `sablier.ownerOf` for the lender and borrower.
+
+**How to detect violation:**
+
+```bash
+# Find settlement tests that assert state/ownership but skip balanceOf
+# for treasury or the book contract:
+rg -l "sellIntoOffer|buyListing|borrowAgainstOffer|lendAgainstListing|claimLoan|closeLoan|repayLoan" \
+  test/OVRFLOBook.t.sol | \
+  xargs -I{} sh -c 'rg -L "balanceOf\(TREASURY\)|balanceOf\(address\(book\)\)" "{}" && echo "REVIEW: {}"'
+```
+
+**Documented in:** [`docs/solutions/best-practices/verify-token-balance-movement-not-just-ownership.md`](../best-practices/verify-token-balance-movement-not-just-ownership.md)
+
+---
+
+## 8. View functions that resolve by ID must revert on non-existent IDs (ALWAYS REQUIRED)
+
+### ❌ WRONG (silent zero defaults for a non-existent ID)
+
+```solidity
+function saleOfferState(uint256 offerId) external view returns (...) {
+    SaleOffer storage offer = saleOffers[offerId];
+    // no existence check — returns (address(0), address(0), 0, 0, false)
+    // for an ID that was never created
+    return (offer.maker, offer.market, offer.aprBps, offer.capacity, offer.active);
+}
+```
+
+### ✅ CORRECT (revert with a sentinel check)
+
+```solidity
+function saleOfferState(uint256 offerId) external view returns (...) {
+    SaleOffer storage offer = saleOffers[offerId];
+    require(offer.maker != address(0), "OVRFLOBook: unknown offer");
+    return (offer.maker, offer.market, offer.aprBps, offer.capacity, offer.active);
+}
+```
+
+**Why:** Returning zero defaults for a non-existent ID is silent garbage. An
+indexer or frontend cannot distinguish "this offer was cancelled" (real entry,
+`active == false`) from "this ID was never created" (no entry, default
+struct). Reverting makes the distinction explicit. The sentinel is the
+`maker`/`lender`/`borrower` field, which is `address(0)` in a
+default-initialized struct and always non-zero for a real entry. Torn-down
+entries (cancelled/filled) retain `maker`/`lender`/`borrower` (only
+`capacity`/`active` are zeroed), so the sentinel succeeds for dead entries
+and fails only for non-existent ones.
+
+**Placement/Context:** Every view function in `OVRFLOBook` that resolves a
+struct by ID: `saleOfferState`, `saleListingState`, `lendOfferState`,
+`borrowListingState`, `loanState`. Also applies to any future view function
+added to the book or vault that resolves by ID.
+
+**How to detect violation:**
+
+```bash
+# Find view functions that return a struct from a mapping without a sentinel check:
+rg -A5 "function .*State\(.*\) external view" src/OVRFLOBook.sol | \
+  rg -L "require.*address\(0\)|unknown" && echo "REVIEW: missing existence check"
+```
+
+**Documented in:** [`docs/solutions/architecture-patterns/view-functions-revert-on-nonexistent-ids.md`](../architecture-patterns/view-functions-revert-on-nonexistent-ids.md)
 
 ---
 

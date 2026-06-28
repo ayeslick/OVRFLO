@@ -141,7 +141,13 @@ are harmless and cheaper to leave, and loans must not be erased.
 
 - `src/OVRFLOBook.sol` — `cancelSaleOffer`, `cancelLendOffer`, `cancelSaleListing`,
   `cancelBorrowListing`, `closeLoan`, `repayLoan`, and the `*State` views.
+- `test/OVRFLOBook.t.sol` — non-fork tests assert the exact `active`/`capacity`/
+  `closed` flips this doc specifies, plus all-party token balances per
+  [best-practices/verify-token-balance-movement-not-just-ownership.md](../best-practices/verify-token-balance-movement-not-just-ownership.md).
 - [patterns/ovrflo-critical-patterns.md](../patterns/ovrflo-critical-patterns.md)
   — enforceable rules distilled from writeups.
+- [architecture-patterns/view-functions-revert-on-nonexistent-ids.md](../architecture-patterns/view-functions-revert-on-nonexistent-ids.md)
+  — the sentinel check (`maker != address(0)`) depends on teardown leaving
+  `maker`/`lender`/`borrower` populated.
 - [security-issues/repayloan-equality-rounding-no-brick-OVRFLOBook-20260624.md](../security-issues/repayloan-equality-rounding-no-brick-OVRFLOBook-20260624.md)
   — companion note on loan closure math.

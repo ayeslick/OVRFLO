@@ -452,6 +452,9 @@ contract OVRFLOBookTest is Test {
         (,,, uint128 capacity,) = book.saleOffers(offerId);
         assertEq(capacity, 0);
         assertEq(underlying.balanceOf(SELLER), 100 ether);
+        assertEq(underlying.balanceOf(TREASURY), 0);
+        assertEq(underlying.balanceOf(address(book)), 0);
+        assertEq(underlying.balanceOf(BUYER), 0);
         assertEq(sablier.ownerOf(28), BUYER);
     }
 
@@ -507,6 +510,9 @@ contract OVRFLOBookTest is Test {
         (,,, uint128 capacity, bool active) = book.saleOffers(offerId);
         assertEq(capacity, 150 ether);
         assertTrue(active);
+        assertEq(underlying.balanceOf(SELLER), 100 ether);
+        assertEq(underlying.balanceOf(address(book)), 150 ether);
+        assertEq(sablier.ownerOf(5), BUYER);
 
         vm.prank(BUYER);
         book.cancelSaleOffer(offerId);
@@ -591,6 +597,9 @@ contract OVRFLOBookTest is Test {
 
         assertEq(underlying.balanceOf(SELLER), 100 ether);
         assertEq(underlying.balanceOf(TREASURY), 0);
+        assertEq(underlying.balanceOf(BUYER), 0);
+        assertEq(underlying.balanceOf(address(book)), 0);
+        assertEq(sablier.ownerOf(32), BUYER);
     }
 
     function test_TakeListing_RespectsSlippageDustAndDeadIds() public {
@@ -646,6 +655,7 @@ contract OVRFLOBookTest is Test {
         assertEq(sablier.ownerOf(11), address(book));
         assertEq(underlying.balanceOf(SELLER), 99 ether);
         assertEq(underlying.balanceOf(TREASURY), 1 ether);
+        assertEq(underlying.balanceOf(address(book)), 150 ether);
 
         (,,, uint128 capacity, bool active) = book.lendOffers(offerId);
         assertEq(capacity, 150 ether);
@@ -670,6 +680,8 @@ contract OVRFLOBookTest is Test {
 
         (,,, uint128 obligation,,,) = book.loans(loanId);
         assertEq(obligation, 100 ether);
+        assertEq(underlying.balanceOf(SELLER), grossPrice);
+        assertEq(underlying.balanceOf(address(book)), 100 ether - grossPrice);
     }
 
     function test_BorrowAgainstOffer_RevertsForBoundsSlippageIneligibleAndDeadOffer() public {
@@ -784,6 +796,8 @@ contract OVRFLOBookTest is Test {
         assertEq(sablier.ownerOf(15), address(book));
         assertEq(underlying.balanceOf(SELLER), 99 ether);
         assertEq(underlying.balanceOf(TREASURY), 1 ether);
+        assertEq(underlying.balanceOf(BUYER), 0);
+        assertEq(underlying.balanceOf(address(book)), 0);
 
         (,,,,,, bool active) = book.borrowListings(listingId);
         assertFalse(active);
@@ -805,6 +819,8 @@ contract OVRFLOBookTest is Test {
         assertEq(obligation, 110 ether);
         assertEq(underlying.balanceOf(SELLER), 100 ether);
         assertEq(underlying.balanceOf(TREASURY), 0);
+        assertEq(underlying.balanceOf(BUYER), 0);
+        assertEq(underlying.balanceOf(address(book)), 0);
     }
 
     function test_BorrowListing_CancelAndDeadIdAndObligationSlippage() public {
@@ -871,6 +887,7 @@ contract OVRFLOBookTest is Test {
         assertFalse(closed);
         assertEq(ovrfloToken.balanceOf(BUYER), 110 ether);
         assertEq(sablier.getWithdrawnAmount(18), 110 ether);
+        assertEq(sablier.ownerOf(18), address(book));
 
         vm.prank(BUYER);
         vm.expectRevert("OVRFLOBook: nothing claimable");
@@ -891,6 +908,12 @@ contract OVRFLOBookTest is Test {
         (,,,, uint128 drawn,,) = book.loans(loanId);
         assertEq(drawn, 70 ether);
         assertEq(ovrfloToken.balanceOf(BUYER), 70 ether);
+        assertEq(sablier.getWithdrawnAmount(19), 70 ether);
+        assertEq(sablier.ownerOf(19), address(book));
+
+        (,,,,, uint128 repaid, uint128 outstanding,) = book.loanState(loanId);
+        assertEq(repaid, 0);
+        assertEq(outstanding, 40 ether);
     }
 
     function test_CloseLoan_RevertsUntilClosableThenPaysAndReturnsNft() public {
@@ -908,6 +931,7 @@ contract OVRFLOBookTest is Test {
         assertEq(drawn, 110 ether);
         assertTrue(closed);
         assertEq(ovrfloToken.balanceOf(BUYER), 110 ether);
+        assertEq(sablier.getWithdrawnAmount(20), 110 ether);
         assertEq(sablier.ownerOf(20), SELLER);
 
         vm.expectRevert("OVRFLOBook: loan closed");
@@ -945,6 +969,7 @@ contract OVRFLOBookTest is Test {
         assertEq(drawn, 110 ether);
         assertTrue(closed);
         assertEq(ovrfloToken.balanceOf(BUYER), 110 ether);
+        assertEq(sablier.getWithdrawnAmount(21), 110 ether);
         assertEq(sablier.ownerOf(21), SELLER);
     }
 
@@ -966,6 +991,7 @@ contract OVRFLOBookTest is Test {
         assertEq(repaid, 70 ether);
         assertTrue(closed);
         assertEq(ovrfloToken.balanceOf(BUYER), 110 ether);
+        assertEq(ovrfloToken.balanceOf(SELLER), 0);
         assertEq(sablier.getWithdrawnAmount(22), 40 ether);
         assertEq(sablier.ownerOf(22), SELLER);
     }
@@ -996,6 +1022,7 @@ contract OVRFLOBookTest is Test {
         assertEq(drawn, 85 ether);
         assertTrue(closedAfter);
         assertEq(ovrfloToken.balanceOf(BUYER), 110 ether);
+        assertEq(sablier.getWithdrawnAmount(23), 85 ether);
         assertEq(sablier.ownerOf(23), SELLER);
     }
 
@@ -1043,6 +1070,11 @@ contract OVRFLOBookTest is Test {
         sablier.approve(address(book), 25);
         uint256 loanId = book.borrowAgainstOffer(offerId, 25, 100 ether, 99 ether);
         vm.stopPrank();
+
+        assertEq(underlying.balanceOf(SELLER), 99 ether);
+        assertEq(underlying.balanceOf(TREASURY), 1 ether);
+        assertEq(underlying.balanceOf(address(book)), 0);
+        assertEq(sablier.ownerOf(25), address(book));
 
         (,,, uint128 obligation,,,, bool closed) = book.loanState(loanId);
         assertEq(obligation, quotedObligation);

@@ -169,3 +169,4 @@ Keep these checks around any future change to this feature:
 - Fork test real wstETH round-trip and donation sweep.
 - Review that unwrap capacity never uses raw underlying `balanceOf`.
 - Review that every new mint/burn path preserves or deliberately updates the backing invariant.
+- The "assert every party's balance delta" discipline has been generalized to all OVRFLOBook settlement tests — see [best-practices/verify-token-balance-movement-not-just-ownership.md](../best-practices/verify-token-balance-movement-not-just-ownership.md).
