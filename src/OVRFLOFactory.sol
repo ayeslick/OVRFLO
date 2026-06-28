@@ -12,7 +12,7 @@ import {IStandardizedYield} from "../interfaces/IStandardizedYield.sol";
 /// @title OVRFLOFactory
 /// @notice Factory and admin hub for deploying and managing OVRFLO systems
 /// @dev Owned by a timelocked multisig. Deploys OVRFLO + OVRFLOToken and serves as
-///      the adminContract for every OVRFLO it creates. Ownership uses the OZ
+///      the immutable `factory` (admin) for every OVRFLO it creates. Ownership uses the OZ
 ///      two-step pattern (`transferOwnership` -> `acceptOwnership`).
 contract OVRFLOFactory is Ownable2Step {
     /*//////////////////////////////////////////////////////////////
@@ -50,6 +50,18 @@ contract OVRFLOFactory is Ownable2Step {
     /// @notice Maps an OVRFLO vault to its deployed OVRFLOBook (1:1).
     mapping(address => address) public ovrfloToBook;
 
+    /// @notice Reverse lookup: OVRFLOBook address => OVRFLO vault address.
+    mapping(address => address) public bookToOvrflo;
+
+    /// @notice Total number of OVRFLOBooks deployed by this factory.
+    uint256 public bookCount;
+
+    /// @notice Enumerable list of all OVRFLOBook addresses deployed by this factory.
+    mapping(uint256 => address) public books;
+
+    /// @notice Maps an underlying asset to its deployed OVRFLO vault (1:1, prevents duplicates).
+    mapping(address => address) public underlyingToOvrflo;
+
     /// @notice Pendle TWAP oracle address (singleton, same for all markets)
     address public immutable oracle;
 
@@ -61,6 +73,9 @@ contract OVRFLOFactory is Ownable2Step {
     event DeploymentCancelled();
     event OvrfloDeployed(address indexed ovrflo, address indexed ovrfloToken, address treasury, address underlying);
     event BookDeployed(address indexed ovrflo, address indexed book);
+    event BookAprBoundsSet(address indexed book, uint16 aprMinBps, uint16 aprMaxBps);
+    event BookFeeSet(address indexed book, uint16 feeBps);
+    event BookTreasurySet(address indexed book, address treasury);
 
     /*//////////////////////////////////////////////////////////////
                               CONSTRUCTOR
@@ -90,6 +105,7 @@ contract OVRFLOFactory is Ownable2Step {
     ) external onlyOwner {
         require(treasury != address(0), "OVRFLOFactory: treasury zero");
         require(underlying != address(0), "OVRFLOFactory: underlying zero");
+        require(underlyingToOvrflo[underlying] == address(0), "OVRFLOFactory: underlying already deployed");
         require(bytes(nameSuffix).length != 0 && bytes(nameSuffix).length <= 64, "OVRFLOFactory: bad name");
         require(bytes(symbolSuffix).length != 0 && bytes(symbolSuffix).length <= 32, "OVRFLOFactory: bad symbol");
 
@@ -136,13 +152,15 @@ contract OVRFLOFactory is Ownable2Step {
         ovrfloCount += 1;
         ovrfloInfo[ovrflo] =
             OvrfloInfo({treasury: config.treasury, underlying: config.underlying, ovrfloToken: ovrfloToken});
+        underlyingToOvrflo[config.underlying] = ovrflo;
 
         emit OvrfloDeployed(ovrflo, ovrfloToken, config.treasury, config.underlying);
     }
 
     /// @notice Deploy an OVRFLOBook for an existing vault (1:1, one book per vault)
     /// @dev Reads the Sablier address from the vault's sablierLL immutable.
-    ///      Nominates the factory owner (multisig) as the book's pending owner.
+    ///      The factory remains the book's owner so all book admin calls flow through
+    ///      the factory (consistent with the vault admin model).
     /// @param ovrflo The OVRFLO core vault address
     /// @return book The deployed OVRFLOBook address
     function deployBook(address ovrflo) external onlyOwner returns (address book) {
@@ -154,7 +172,9 @@ contract OVRFLOFactory is Ownable2Step {
         book = address(b);
 
         ovrfloToBook[ovrflo] = book;
-        b.transferOwnership(owner());
+        bookToOvrflo[book] = ovrflo;
+        books[bookCount] = book;
+        bookCount += 1;
 
         emit BookDeployed(ovrflo, book);
     }
@@ -203,12 +223,18 @@ contract OVRFLOFactory is Ownable2Step {
     }
 
     /// @notice Sweep excess PT tokens from an OVRFLO
+    /// @dev `to` is trusted: the caller is the multisig (factory owner), so zero-address
+    ///      validation is intentionally omitted per the project's stance of trusting what
+    ///      the multisig already validates.
     function sweepExcessPt(address ovrflo, address ptToken, address to) external onlyOwner {
         _requireKnownOvrflo(ovrflo);
         OVRFLO(ovrflo).sweepExcessPt(ptToken, to);
     }
 
     /// @notice Sweep excess underlying from an OVRFLO
+    /// @dev `to` is trusted: the caller is the multisig (factory owner), so zero-address
+    ///      validation is intentionally omitted per the project's stance of trusting what
+    ///      the multisig already validates.
     function sweepExcessUnderlying(address ovrflo, address to) external onlyOwner {
         _requireKnownOvrflo(ovrflo);
         OVRFLO(ovrflo).sweepExcessUnderlying(to);
@@ -244,6 +270,38 @@ contract OVRFLOFactory is Ownable2Step {
     }
 
     /*//////////////////////////////////////////////////////////////
+                    BOOK ADMIN (FACTORY-FORWARDED)
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Set the APR bounds on an OVRFLOBook (factory is the book's owner)
+    /// @param book The OVRFLOBook address
+    /// @param aprMinBps_ New minimum APR in basis points
+    /// @param aprMaxBps_ New maximum APR in basis points
+    function setBookAprBounds(address book, uint16 aprMinBps_, uint16 aprMaxBps_) external onlyOwner {
+        _requireKnownBook(book);
+        OVRFLOBook(book).setAprBounds(aprMinBps_, aprMaxBps_);
+        emit BookAprBoundsSet(book, aprMinBps_, aprMaxBps_);
+    }
+
+    /// @notice Set the protocol fee on an OVRFLOBook
+    /// @param book The OVRFLOBook address
+    /// @param feeBps_ New fee in basis points
+    function setBookFee(address book, uint16 feeBps_) external onlyOwner {
+        _requireKnownBook(book);
+        OVRFLOBook(book).setFee(feeBps_);
+        emit BookFeeSet(book, feeBps_);
+    }
+
+    /// @notice Set the fee treasury on an OVRFLOBook
+    /// @param book The OVRFLOBook address
+    /// @param treasury_ New treasury address
+    function setBookTreasury(address book, address treasury_) external onlyOwner {
+        _requireKnownBook(book);
+        OVRFLOBook(book).setTreasury(treasury_);
+        emit BookTreasurySet(book, treasury_);
+    }
+
+    /*//////////////////////////////////////////////////////////////
                             VIEW FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
@@ -261,5 +319,9 @@ contract OVRFLOFactory is Ownable2Step {
 
     function _requireKnownOvrflo(address ovrflo) internal view {
         require(ovrfloInfo[ovrflo].treasury != address(0), "OVRFLOFactory: unknown ovrflo");
+    }
+
+    function _requireKnownBook(address book) internal view {
+        require(bookToOvrflo[book] != address(0), "OVRFLOFactory: unknown book");
     }
 }

@@ -77,9 +77,9 @@ generality (different pairs per market) the core never uses. (see origin:
   and `underlying` in the event, filled from the immutables. Event indexers
   may key on these fields; dropping them is an event-signature change with
   indexer impact. (user-confirmed)
-- KTD4. `adminContract` stays mutable. Only `underlying` and `ovrfloToken`
-  become immutable; `adminContract` remains a storage variable because
-  `transferVaultAdmin` requires updating it. (see origin)
+- KTD4. `factory` (formerly `factory`) is immutable. Only `underlying` and `ovrfloToken`
+  become immutable; `factory` is also immutable (set once in constructor, no setter, no
+  migration path).
 - KTD5. Sablier approval to deploy-time. `setSeriesApproved` currently calls
   `IERC20(ovrfloToken).approve(sablierLL, type(uint256).max)` on every series.
   Because `ovrfloToken` is now a vault immutable, the approval is identical
@@ -205,7 +205,7 @@ the vault; Sablier allowance is max from construction.
 **Dependencies:** U1
 
 **Files:**
-- `src/OVRFLO.sol` (`wrap`, `unwrap`, `sweepExcessUnderlying`: replace `IOvrfloAdmin(adminContract).ovrfloInfo(this)` calls with immutable reads; remove `IOvrfloAdmin` interface import)
+- `src/OVRFLO.sol` (`wrap`, `unwrap`, `sweepExcessUnderlying`: replace `IOvrfloAdmin(factory).ovrfloInfo(this)` calls with immutable reads; remove `IOvrfloAdmin` interface import)
 
 **Approach:** `wrap` and `unwrap` currently destructure
 `(, underlying, ovrfloToken) = ovrfloInfo(this)`; replace with the immutables.

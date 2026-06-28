@@ -80,8 +80,7 @@ contract ForkFlashBorrower is IFlashBorrower, Test {
         }
 
         if (nestedFlashLoanDuringCallback) {
-            (bool ok,) =
-                address(vault).call(abi.encodeCall(OVRFLO.flashLoan, (nestedPtToken, nestedAmount, "")));
+            (bool ok,) = address(vault).call(abi.encodeCall(OVRFLO.flashLoan, (nestedPtToken, nestedAmount, "")));
             nestedSucceeded = ok;
         }
 

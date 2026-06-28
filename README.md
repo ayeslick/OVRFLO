@@ -441,7 +441,7 @@ Two separate fees operate at different layers:
 
 ### Access Control
 
-- **OVRFLOFactory**: Owned by timelocked multisig, serves as `adminContract` for all deployed OVRFLOs
+- **OVRFLOFactory**: Owned by timelocked multisig, serves as immutable `factory` (admin) for all deployed OVRFLOs
 - **OVRFLO**: Controlled by factory (admin functions gated by `onlyAdmin` modifier)
 - **OVRFLOToken**: Owned by OVRFLO (mint/burn restricted)
 - **OVRFLOBook**: Owned by multisig (two-step ownership transfer), bound to one vault + Sablier instance at construction

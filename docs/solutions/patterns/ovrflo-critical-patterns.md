@@ -7,6 +7,9 @@ audience: [contributors, ai-agents]
 
 <!--
   Refresh log:
+  - 2026-06-28: Updated R-02 to note natspec codification. Appended patterns
+    #9 (factory owns all deployed books) and #10 (one vault per underlying)
+    from the factory deployment/management pattern review.
   - 2026-06-28: Appended patterns #4 (self-match prevention), #5 (TWAP bound
     consistency in prepareOracle), #6 (Sablier binding verification in
     standalone script), and a "Considered and rejected" section (R-01 through
@@ -560,6 +563,8 @@ check contradicts the project's simplicity preference.
 trusted to provide a correct recipient. A zero-address guard is
 defense-in-depth that the project explicitly does not want per the "prefer
 off-chain multisig verification over redundant on-chain checks" preference.
+This trust assumption is now explicitly documented in `@dev` natspec on both
+the factory and vault sweep functions.
 
 ### R-03: Unchecked downcasts in `OVRFLO.deposit` (`uint128(toStream)`, `uint40(duration)`)
 
@@ -584,3 +589,123 @@ the series `ovrfloToken` = `OVRFLO.series(market).ovrfloToken` which returns
 the same vault immutable. They are identical by construction. An equality
 check would be a no-op invariant that contradicts the "don't add redundant
 checks" preference.
+
+---
+
+## 9. The factory owns every deployed book — book admin is forwarded, not direct (ALWAYS REQUIRED)
+
+### ❌ WRONG (multisig calls the book directly, bypassing the factory)
+
+```solidity
+// deployBook transfers ownership to the multisig
+b.transferOwnership(owner());
+
+// multisig calls OVRFLOBook.setAprBounds directly
+OVRFLOBook(book).setAprBounds(500, 2000);
+// Now a factory ownership transfer does NOT move book governance.
+// Books stay owned by the old multisig address.
+```
+
+### ✅ CORRECT (factory stays the owner; admin flows through forwarders)
+
+```solidity
+// deployBook — no transferOwnership call; factory is the book's owner
+OVRFLOBook b = new OVRFLOBook(address(this), ovrflo, sablierAddr);
+// factory remains owner
+
+// factory exposes forwarding functions
+function setBookAprBounds(address book, uint16 aprMinBps_, uint16 aprMaxBps_)
+    external onlyOwner
+{
+    _requireKnownBook(book);
+    OVRFLOBook(book).setAprBounds(aprMinBps_, aprMaxBps_);
+    emit BookAprBoundsSet(book, aprMinBps_, aprMaxBps_);
+}
+```
+
+**Why:** The factory is the single admin hub. If it owns every vault and
+every book, a single factory ownership transfer moves governance for all
+dependents atomically. If books are owned directly by the multisig, a factory
+ownership rotation silently abandons book governance — the books stay owned by
+the old multisig address while the factory moves to the new one. This is an
+operational incident in a timelocked-multisig context, not a refactor.
+
+**Placement/Context:** `OVRFLOFactory.deployBook` (must not transfer
+ownership away from the factory) and every admin action on `OVRFLOBook`
+(`setAprBounds`, `setFee`, `setTreasury` — must be forwarded through a
+factory function, not called directly on the book).
+
+**How to detect violation:**
+
+```bash
+# deployBook must NOT call transferOwnership
+rg "transferOwnership" src/OVRFLOFactory.sol | rg -v "token.transferOwnership(ovrflo)"
+# expected: no matches (the only transferOwnership is for OVRFLOToken -> vault)
+
+# Book admin functions must not be called directly by the multisig
+rg "setAprBounds|setFee|setTreasury" src/OVRFLOFactory.sol
+# expected: 3 forwarding functions (setBookAprBounds, setBookFee, setBookTreasury)
+```
+
+**Documented in:** [`docs/solutions/architecture-patterns/ovrflo-factory-deployment-admin-management-pattern.md`](../architecture-patterns/ovrflo-factory-deployment-admin-management-pattern.md)
+
+---
+
+## 10. One vault per underlying — `configureDeployment` must reject duplicates (ALWAYS REQUIRED)
+
+### ❌ WRONG (no guard, silently creates a non-fungible second token)
+
+```solidity
+function configureDeployment(...) external onlyOwner {
+    // no check — a second vault for the same underlying is allowed
+    pendingDeployment = DeploymentConfig({ underlying: underlying, ... });
+}
+// deploy() creates a second OVRFLOToken for the same underlying.
+// The two tokens are NOT fungible with each other, breaking the
+// "cross-market ovrfloToken fungibility under one underlying" invariant.
+```
+
+### ✅ CORRECT (reject at configure time, before any deployment)
+
+```solidity
+function configureDeployment(...) external onlyOwner {
+    require(
+        underlyingToOvrflo[underlying] == address(0),
+        "OVRFLOFactory: underlying already deployed"
+    );
+    pendingDeployment = DeploymentConfig({ underlying: underlying, ... });
+}
+
+function deploy() external onlyOwner returns (address ovrflo) {
+    // ...deploy vault...
+    underlyingToOvrflo[config.underlying] = ovrflo; // lock after deploy
+}
+```
+
+**Why:** The documented design feature "cross-market `ovrfloToken` fungibility
+under one underlying" only holds **within** a single vault. Two vaults for the
+same underlying mint two distinct `OVRFLOToken` contracts that are not
+fungible with each other. A user who deposits into the second vault expecting
+parity with the first gets a different token. The guard turns a silent
+invariant violation into a loud revert at the earliest possible point
+(configure, not deploy).
+
+The mapping is set at `deploy()` time, not `configureDeployment()` time, so
+reconfiguring a pending (never-deployed) config is still allowed — the guard
+only fires when a vault already exists for that underlying.
+
+**Placement/Context:** `OVRFLOFactory.configureDeployment` (the guard) and
+`OVRFLOFactory.deploy` (the mapping write). The `underlyingToOvrflo` mapping
+is the single source of truth for which underlyings have live vaults.
+
+**How to detect violation:**
+
+```bash
+rg "underlying already deployed" src/OVRFLOFactory.sol
+# expected: 1 match in configureDeployment
+
+rg "underlyingToOvrflo\[config.underlying\]" src/OVRFLOFactory.sol
+# expected: 1 match in deploy()
+```
+
+**Documented in:** [`docs/solutions/architecture-patterns/ovrflo-factory-deployment-admin-management-pattern.md`](../architecture-patterns/ovrflo-factory-deployment-admin-management-pattern.md)

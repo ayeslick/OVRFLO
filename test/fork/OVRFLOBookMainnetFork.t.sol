@@ -255,4 +255,54 @@ contract OVRFLOBookMainnetForkTest is OVRFLOForkBase {
         (bool success,) = sablier.call(abi.encodeWithSignature("approve(address,uint256)", spender, streamId));
         assertTrue(success);
     }
+
+    /*//////////////////////////////////////////////////////////////
+        SABLIER V2 v1.1 WITHDRAW ACL DURING BOOK ESCROW (P2 GAP)
+    //////////////////////////////////////////////////////////////*/
+
+    function test_BookEscrow_StrangerCannotWithdrawFromEscrowedStream() public {
+        (OVRFLOFactory factory, OVRFLO ovrflo,) = _deployApprovedPrimarySeries(0);
+        OVRFLOBook book = _deployBook(factory, ovrflo);
+        ISablierV2LockupLinear sablier = ISablierV2LockupLinear(address(ovrflo.sablierLL()));
+        (,, uint256 streamId) = _depositPrimary(ovrflo, PT_AMOUNT);
+
+        // Escrow the stream via a borrow listing
+        uint16 launchApr = book.LAUNCH_APR_BPS();
+        (uint256 grossPrice,,,,) = book.quote(PRIMARY_MARKET, streamId, launchApr, 0);
+        uint128 borrowAmount = uint128(grossPrice / 2);
+
+        vm.prank(USER);
+        _approveStream(address(sablier), address(book), streamId);
+        vm.prank(USER);
+        book.postBorrowListing(PRIMARY_MARKET, streamId, launchApr, borrowAmount);
+
+        assertEq(sablier.ownerOf(streamId), address(book), "book should hold the NFT");
+
+        // Warp forward so the stream has withdrawable value
+        uint256 claimTimestamp = block.timestamp + (PRIMARY_EXPIRY - block.timestamp) / 4;
+        vm.warp(claimTimestamp);
+        uint128 withdrawable = sablier.withdrawableAmountOf(streamId);
+        assertGt(withdrawable, 0, "stream should have accrual");
+
+        address stranger = makeAddr("stranger");
+
+        // Stranger cannot withdraw
+        vm.prank(stranger);
+        (bool ok,) =
+            address(sablier).call(abi.encodeCall(ISablierV2LockupLinear.withdraw, (streamId, stranger, withdrawable)));
+        assertFalse(ok, "stranger should not be able to withdraw");
+
+        // Former borrower (USER) cannot withdraw — they no longer own the NFT
+        vm.prank(USER);
+        (ok,) = address(sablier).call(abi.encodeCall(ISablierV2LockupLinear.withdraw, (streamId, USER, withdrawable)));
+        assertFalse(ok, "former borrower should not be able to withdraw");
+
+        // Lender (has not been assigned yet) cannot withdraw
+        vm.prank(LENDER);
+        (ok,) = address(sablier).call(abi.encodeCall(ISablierV2LockupLinear.withdraw, (streamId, LENDER, withdrawable)));
+        assertFalse(ok, "lender should not be able to withdraw");
+
+        // Stream withdrawn amount unchanged
+        assertEq(sablier.getWithdrawnAmount(streamId), 0, "no withdrawal should have succeeded");
+    }
 }

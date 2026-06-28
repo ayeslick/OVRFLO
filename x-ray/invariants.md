@@ -7,7 +7,7 @@
 ## 1. Enforced Guards (Reference)
 
 #### G-1
-`require(msg.sender == adminContract, "OVRFLO: not admin")` · `OVRFLO.sol:208` · Gates all vault admin functions (series approval, deposit limits, sweeps) to the factory admin hub.
+`require(msg.sender == factory, "OVRFLO: not admin")` · `OVRFLO.sol` · Gates all vault admin functions (series approval, deposit limits, sweeps) to the factory admin hub. `factory` is immutable.
 
 #### G-2
 `require(info.ptToken == address(0), "OVRFLO: series already configured")` · `OVRFLO.sol:232` · One-shot series latch — a market can be configured exactly once; backs I-9 immutability.

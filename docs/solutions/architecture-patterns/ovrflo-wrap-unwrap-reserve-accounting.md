@@ -21,7 +21,7 @@ tags:
 related_components:
   - src/OVRFLO.sol
   - src/OVRFLOFactory.sol
-  - interfaces/IOvrfloAdmin.sol
+  - src/StreamPricing.sol
   - test/OVRFLOWrapUnwrap.t.sol
   - test/OVRFLOWrapUnwrap.invariant.t.sol
   - test/fork/OVRFLOWrapUnwrapFork.t.sol
@@ -35,7 +35,7 @@ OVRFLO originally minted `ovrfloToken` through PT deposits: users deposited Pend
 
 The wrap/unwrap feature adds a parallel permissionless path: underlying goes in, `ovrfloToken` comes out 1:1, and `ovrfloToken` can be burned back to underlying 1:1 without fees or streams. Because PT deposits do not put underlying into the vault, unwrap liquidity must be bounded by underlying that wrappers actually deposited. OVRFLO tracks that backing with `wrappedUnderlying`, separate from PT deposit accounting.
 
-Factory deployment now records the canonical `(treasury, underlying, ovrfloToken)` tuple in `ovrfloInfo`, exposed through `IOvrfloAdmin`. The core reads this tuple for `wrap` and `unwrap`, so the user flow does not require a market argument.
+Factory deployment now records the canonical `(treasury, underlying, ovrfloToken)` tuple in `ovrfloInfo`, exposed through `IOVRFLOFactoryRegistry`. The core reads this tuple for `wrap` and `unwrap`, so the user flow does not require a market argument.
 
 ## Guidance
 

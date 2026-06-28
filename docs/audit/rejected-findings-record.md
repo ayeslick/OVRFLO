@@ -23,11 +23,12 @@
 - **Disproof (downgrade rationale):** With 18-decimal Pendle PT, `toStream > type(uint128).max` (~3.4×10³⁸) is not reachable in practice. Technically valid as a defense-in-depth cast guard; economically unreachable. Downgraded to **L-1** (active Low finding).
 - **Note for the auditor:** Only the **downgrade rationale** is settled here. **L-1 remains an active Low finding** with a recommended fix (`require(toStream <= type(uint128).max)` and `require(duration <= type(uint40).max)` before mint + `createWithDurations`) — see `x-ray/multi-agent-audit-report.md` Findings (severity-ranked). Do not treat L-1 as rejected.
 
-### Self-loan `repayLoan` revert — REJECTED (UX edge case, not a security finding)
+### Self-loan `repayLoan` revert — REJECTED as security finding, FIXED as correctness guard
 
-- **Original claim (Low):** The book allows `borrower == lender` (self-loans via `borrowAgainstOffer` or `lendAgainstListing`), but `repayLoan()` calls `_pullExact(ovrfloToken, msg.sender, loan.lender, amount)`. When `from == to`, an OZ ERC20 self-transfer is a net-zero balance change, so the `balanceAfter - balanceBefore == amount` check reverts. Self-loans therefore cannot be early-repaid.
-- **Disproof:** Self-lending is economically irrational — the user posts `capacity` in underlying, borrows against their own stream, receives `borrowAmount - fee` back, and the fee goes to treasury. Nobody does this intentionally. The loan is still fully resolvable via `claimLoan()` and `closeLoan()` (the book calls `sablier.withdraw(streamId, loan.lender, amount)`, which has no self-transfer issue). No fund safety issue: no one else is affected, accounting is correct, nothing is permanently locked (`closeLoan` is permissionless and works at maturity). The only impact is a self-inflicted UX edge case for irrational behavior.
-- **Evidence:** `src/OVRFLOBook.sol` — `_storeLoan(msg.sender, offer.lender, ...)` at `borrowAgainstOffer` (line 585) and `_storeLoan(listing.borrower, msg.sender, ...)` at `lendAgainstListing` (line 683) have no `borrower != lender` guard; `_pullExact` (line 971-975) enforces a strict balance delta; `claimLoan` (line 721) and `closeLoan` (line 744) use `sablier.withdraw` which is unaffected by the self-transfer issue.
+- **Original claim (Low):** The book allows `borrower == lender` (self-loans via `borrowAgainstOffer` or `lendAgainstListing`), but `repayLoan()` calls `_pullExact(ovrfloToken, msg.sender, loan.lender, amount)`. When `from == to`, an OZ ERC20 self-transfer is a net-zero balance change, so the `balanceAfter - balanceBefore == amount` check reverts. Self-loans therefore cannot be early-repaired.
+- **Disproof (security):** Self-lending is economically irrational — the user posts `capacity` in underlying, borrows against their own stream, receives `borrowAmount - fee` back, and the fee goes to treasury. Nobody does this intentionally. The loan is still fully resolvable via `claimLoan()` and `closeLoan()` (the book calls `sablier.withdraw(streamId, loan.lender, amount)`, which has no self-transfer issue). No fund safety issue: no one else is affected, accounting is correct, nothing is permanently locked (`closeLoan` is permissionless and works at maturity). The only impact is a self-inflicted UX edge case for irrational behavior.
+- **Fix applied (2026-06-28):** Despite being a non-security UX edge case, self-match prevention guards were added to both loan-creation paths as a correctness guard: `require(msg.sender != offer.lender, "OVRFLOBook: self-match")` in `borrowAgainstOffer` and `require(msg.sender != listing.borrower, "OVRFLOBook: self-match")` in `lendAgainstListing`. This prevents the irrational state at the root cause rather than special-casing the repayment transfer. Tests added in `test/OVRFLOBook.t.sol` (`test_BorrowAgainstOffer_RevertsForSelfMatch`, `test_LendAgainstListing_RevertsForSelfMatch`). Documented as pattern #4 in `docs/solutions/patterns/ovrflo-critical-patterns.md`.
+- **Evidence:** `src/OVRFLOBook.sol` — self-match guards in `borrowAgainstOffer` and `lendAgainstListing`; `docs/solutions/security-issues/repayloan-equality-rounding-no-brick-OVRFLOBook-20260624.md` — companion finding section; `docs/solutions/patterns/ovrflo-critical-patterns.md` — pattern #4.
 
 ### Pre-maturity flash-loan PT yield extraction via deposit + book sale + unwrap — REJECTED (accepted by design + normal arb)
 
@@ -67,7 +68,7 @@ These were Medium findings reclassified to **Informational** under the documente
 - **audit-report I-1 (ex-M-1)** — `deposit()` PT transfer accounting trusts user-supplied `ptAmount` without balance-delta check. Pendle-only scope; multisig validates canonical markets. See `trust-assumption-ledger.md`.
 - **audit-report I-2 (ex-M-2)** — Underlying fee collection in `deposit()` assumes exact transfer. Same trust boundary as I-1 for canonical underlyings.
 - **audit-report I-3 (ex-M-3)** — Permissionless `closeLoan()`. **By design** — liveness per book plan R15; does not misroute funds. See internal-model explainer.
-- **audit-report I-4 (ex-M-6)** — Operational trust concentration (no `adminContract` migration by design; immutable Sablier; book fee cap is a deploy footgun, runtime-enforced). Informational / operational.
+- **audit-report I-4 (ex-M-6)** — Operational trust concentration (no `factory` migration by design — `factory` is immutable; immutable Sablier; book fee cap is a deploy footgun, runtime-enforced). Informational / operational.
 
 > **ID disambiguation:** `I-1..I-13` in `x-ray/invariants.md` are **invariants**; `I-1..I-4` here are **audit-report informational findings** (ex-M-1..M-6). Where this doc says "audit-report I-1 (ex-M-1)" it means the finding; "invariant I-8" means the invariant.
 
@@ -81,7 +82,7 @@ These are the questions an auditor predictably asks in week one. They are alread
 4. **Multi-market same `expiryCached`?** — Not a practical Pendle concern; cross-market `ovrfloToken` fungibility makes cross-market routing acceptable anyway. (See M-5.)
 5. **Stale fee on listings after `setFee()`?** — Intentional maker protection. `feeBps` is snapshotted at listing/offer post time; settlement uses the stored fee, so `setFee()` does not retroactively change resting orders.
 6. **Flash-loan PT yield extraction pre-maturity?** — Accepted by design. Flash-loan PT → deposit → sell stream on book → unwrap → buy PT back is yield arbitrage using the protocol as designed. Wrap reserve drain is accepted (cross-origin fungibility). Protocol remains solvent (E-1). Wrapper is economically whole at maturity. Flash loan only removes the capital requirement. See rejected finding above.
-7. **Self-loan `repayLoan` revert?** — UX edge case, not a security finding. Self-lending is economically irrational. Loan still resolvable via `claimLoan`/`closeLoan`. See rejected finding above.
+7. **Self-loan `repayLoan` revert?** — UX edge case, not a security finding. Self-lending is economically irrational. Loan still resolvable via `claimLoan`/`closeLoan`. Self-match prevention guards added as a correctness fix (2026-06-28); see rejected finding above and pattern #4 in `ovrflo-critical-patterns.md`.
 8. **Sandwich / flash-loan manipulation of book pricing?** — Not exploitable. Book pricing is purely `StreamPricing` (remaining, APR, time-to-maturity) with no oracle dependency. `remaining` can't be manipulated (Sablier v1.1 ACL). Same-block `block.timestamp`. Slippage params on all fills. See "Other probed vectors" table above.
 9. **Reentrancy on vault paths (no `nonReentrant`)?** — CEI is followed on all vault paths (`deposit`, `claim`, `wrap`, `unwrap`). State is updated before external calls. `wrap` has balance-delta check (G-11). Canonical Pendle PT/underlying tokens don't have transfer callbacks. See "Other probed vectors" table above.
 
@@ -140,6 +141,28 @@ The following fixes from the same review were applied:
 - OVRFLOBook view functions (`saleOfferState`, `saleListingState`, `lendOfferState`, `borrowListingState`) now revert for non-existent IDs, matching the existing `loanState` pattern.
 - Interface licenses: `IPendleOracle`, `IPendleMarket`, `ISablierV2LockupLinear` changed from `UNLICENSED` to `MIT` (project-written minimal interfaces). Contradictory MIT comment block removed from `IStandardizedYield` (kept GPL SPDX, Pendle's interface).
 - `prepareOracle` in `OVRFLOFactory` now validates `twapDuration <= MAX_TWAP_DURATION` (was externally applied before this review session).
+
+## 2026-06-28 OVRFLOBook / StreamPricing gap review — rejected findings
+
+The following findings were raised during a focused gap review of `OVRFLOBook` and `StreamPricing` and rejected by the project owner. They are recorded here so future reviewers do not re-derive them.
+
+### L-2 — Dust loan/fill griefing and unbounded ID growth — REJECTED (minimums are ineffective)
+
+- **Original claim (Low, from multi-agent audit):** `borrowAmount > 0` and `capacity > 0` are the only floors; monotonic IDs with permanent mapping writes allow storage/event spam.
+- **Rejection rationale:** Regardless of what minimum threshold is set, someone determined to grief can always post entries just above it. A minimum does not eliminate griefing — it merely raises the floor. Worse, a minimum that is high enough to deter spam would also exclude legitimate small streams, harming usability. The real natural floor is already in place: every loan-creating fill must escrow a real Sablier stream NFT, and streams are created by vault deposits which have `MIN_PT_AMOUNT = 1e6`. This rate-limits spam at the source without an arbitrary book-level minimum. Adding `MIN_BORROW`/`MIN_FILL` would add complexity for no real protection, contradicting the project's simplicity preference.
+- **Evidence:** `src/OVRFLO.sol` — `MIN_PT_AMOUNT = 1e6` deposit floor; `src/OVRFLOBook.sol` — `borrowAmount > 0` and `capacity > 0` checks; streams are NFT-escrowed (rate-limiting by design).
+
+### I-4 — No per-market book freeze — REJECTED (by design, global circuit breaker sufficient)
+
+- **Original claim (Informational/operational, from multi-agent audit):** Setting a market's deposit limit to 0 stops new vault deposits but does not pause secondary market trading on the book for that market. The only circuit breaker is the global `feeBps = 100%`.
+- **Rejection rationale:** The global `feeBps = 100%` circuit breaker is the intentional emergency pause mechanism (see CR-L4 rejection above). Adding per-market freeze toggles would increase the attack surface and contradict the project preference against adding `disableSeries`/`enableSeries` toggles (AGENTS.md). A per-market freeze is also economically unnecessary: if deposits are frozen (limit = 0), no new streams are created for that market; existing streams can still be traded on the book, which is the book's purpose (providing early-exit liquidity for existing positions). The multisig can set `feeBps = 100%` globally if a hard stop is needed.
+- **Evidence:** `src/OVRFLOBook.sol` — `MAX_FEE_BPS = 10_000`; `setFee` enforces `feeBps_ <= MAX_FEE_BPS`; AGENTS.md — "do not add `disableSeries`/`enableSeries` toggles."
+
+### No `deadline` parameter on taker entrypoints — REJECTED (slippage params are load-bearing)
+
+- **Original claim (Informational, deferred in maker protections plan):** `sellIntoOffer`, `buyListing`, `borrowAgainstOffer`, and `lendAgainstListing` have slippage params but no time-based `deadline` parameter.
+- **Rejection rationale:** Slippage parameters (`minNetOut`, `maxPriceIn`, `minObligationOut`) are the load-bearing protection against time-drift. Book pricing is purely deterministic from `StreamPricing` (remaining, APR, time-to-maturity) with no oracle dependency, so the only risk from a delayed transaction is that the price drifts — which the slippage params already bound. A `deadline` would be redundant API surface that adds no protection beyond what slippage already provides. The maker protections plan explicitly deferred this as "an API-symmetry nicety, not a correctness fix."
+- **Evidence:** `src/OVRFLOBook.sol` — all four taker entrypoints have slippage params; `docs/plans/2026-06-23-001-feat-ovrflo-book-maker-protections-plan.md` — Scope Boundaries section.
 
 ## Also reviewed — no medium+ issue (consensus)
 

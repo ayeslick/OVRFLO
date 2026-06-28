@@ -4,6 +4,12 @@ Shared domain vocabulary for this project — entities, named processes, and sta
 
 ## OVRFLO core
 
+### Factory
+
+The admin hub that deploys OVRFLO vaults, OVRFLOTokens, and OVRFLOBooks, and serves as the single governance entry point for every contract it creates.
+
+The factory is owned by a timelocked multisig and is the permanent admin on every deployed vault and the owner of every deployed book. All admin actions flow multisig -> factory -> vault or book; no dependent contract is administered directly. A factory ownership transfer moves governance for all vaults and books atomically. One vault per underlying is enforced; duplicate deployment for the same underlying is rejected before any vault is created.
+
 ### OVRFLO vault
 
 The protocol vault for a single underlying asset that accepts supported Pendle principal-token positions and manages the corresponding fungible OVRFLO receipt token.

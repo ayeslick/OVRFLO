@@ -160,7 +160,7 @@ The flash loan generates fee revenue in underlying. Routing those fees to the tr
 - `TREASURY_ADDR` is an immutable set at factory deploy (confirmed: `src/OVRFLO.sol` constructor, `src/OVRFLOFactory.sol` deploy path).
 - The Pendle oracle (`IPendleOracle.getPtToSyRate`) is already used by `deposit` and available as a vault-level immutable via the `oracle` state variable (confirmed: `src/OVRFLO.sol`, `address public immutable oracle`).
 - `marketTotalDeposited` is a per-market state variable tracking deposited PT (confirmed: `src/OVRFLO.sol`).
-- The vault's `onlyAdmin` modifier checks `msg.sender == adminContract` (the factory), and the factory forwards admin calls from the timelocked multisig (confirmed: `src/OVRFLO.sol`, `src/OVRFLOFactory.sol`).
+- The vault's `onlyAdmin` modifier checks `msg.sender == factory` (the factory), and the factory forwards admin calls from the timelocked multisig (confirmed: `src/OVRFLO.sol`, `src/OVRFLOFactory.sol`).
 - `PRBMath.mulDiv` is available for precise fee calculation (confirmed: existing usage in `src/OVRFLO.sol`).
 - The treasury (multisig) will actively wrap accumulated fees to fund the wrap reserve. This is an operational assumption, not enforced on-chain.
 

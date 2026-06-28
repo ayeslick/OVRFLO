@@ -111,7 +111,7 @@ flowchart TB
 | `evm-audit-access-control` | Multisig → factory → vault chain, `onlyAdmin`/`onlyOwner`/`onlyOwner` gating, two-step ownership, no on-chain timelock, `setMarketDepositLimit` lowering, `setAprBounds` non-retroactivity | I-8, I-6, I-9; G-1, G-2, G-3; admin entry points |
 | `evm-audit-flashloans` | Flash loan manipulation of Pendle TWAP, deposit split skewing within a single transaction, cross-market flash loan paths | X-1; `deposit()` |
 | `evm-audit-dos` | Unbounded offer/listing/loan ID growth, dust griefing via `MIN_PT_AMOUNT`, gas limits in `multicall` loops, stale-order accumulation | I-13; G-4; `postSaleOffer()`, `postLendOffer()`, `multicall()` |
-| `evm-audit-governance` | Multisig + two-step ownership, no on-chain timelock/pause, admin key compromise, `transferVaultAdmin` migration path | I-8, I-6; `transferOwnership()`, `acceptOwnership()`, `transferVaultAdmin()` |
+| `evm-audit-governance` | Multisig + two-step ownership, no on-chain timelock/pause, admin key compromise, no vault admin migration path | I-8, I-6; `transferOwnership()`, `acceptOwnership()` |
 
 ### Excluded domains — not routed
 

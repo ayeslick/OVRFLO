@@ -104,6 +104,12 @@ contract OVRFLOFactoryTest is Test {
     event DeploymentCancelled();
     event OvrfloDeployed(address indexed ovrflo, address indexed ovrfloToken, address treasury, address underlying);
     event BookDeployed(address indexed ovrflo, address indexed book);
+    event BookAprBoundsSet(address indexed book, uint16 aprMinBps, uint16 aprMaxBps);
+    event BookFeeSet(address indexed book, uint16 feeBps);
+    event BookTreasurySet(address indexed book, address treasury);
+    event AprBoundsSet(uint16 aprMinBps, uint16 aprMaxBps);
+    event FeeSet(uint16 feeBps);
+    event TreasurySet(address indexed treasury);
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
     event OwnershipTransferStarted(address indexed previousOwner, address indexed newOwner);
     event SeriesApproved(
@@ -248,7 +254,7 @@ contract OVRFLOFactoryTest is Test {
 
         assertEq(factory.ovrfloCount(), 1);
         assertEq(factory.ovrflos(0), ovrfloAddr);
-        assertEq(ovrflo.adminContract(), address(factory));
+        assertEq(ovrflo.factory(), address(factory));
         assertEq(ovrflo.TREASURY_ADDR(), TREASURY);
         assertEq(token.owner(), ovrfloAddr);
         assertEq(token.name(), "OVRFLO Wrapped Ether");
@@ -305,6 +311,18 @@ contract OVRFLOFactoryTest is Test {
         vm.prank(STRANGER);
         vm.expectRevert("Ownable: caller is not the owner");
         factory.deployBook(address(ovrflo));
+
+        vm.prank(STRANGER);
+        vm.expectRevert("Ownable: caller is not the owner");
+        factory.setBookAprBounds(address(ovrflo), 500, 2000);
+
+        vm.prank(STRANGER);
+        vm.expectRevert("Ownable: caller is not the owner");
+        factory.setBookFee(address(ovrflo), 50);
+
+        vm.prank(STRANGER);
+        vm.expectRevert("Ownable: caller is not the owner");
+        factory.setBookTreasury(address(ovrflo), NEW_OWNER);
     }
 
     function test_PrepareOracle_RevertsForShortDurationAndIncreasesCardinalityWhenRequired() public {
@@ -621,7 +639,7 @@ contract OVRFLOFactoryTest is Test {
         assertEq(factory.pendingOwner(), NEW_OWNER);
     }
 
-    function test_DeployBook_DeploysBookRegistersAndNominatesOwner() public {
+    function test_DeployBook_DeploysBookRegistersAndKeepsFactoryAsOwner() public {
         (OVRFLO ovrflo,) = _deployConfiguredSystem();
 
         vm.expectEmit(true, false, false, false, address(factory));
@@ -632,12 +650,16 @@ contract OVRFLOFactoryTest is Test {
 
         assertTrue(book != address(0));
         assertEq(factory.ovrfloToBook(address(ovrflo)), book);
+        assertEq(factory.bookToOvrflo(book), address(ovrflo));
+        assertEq(factory.bookCount(), 1);
+        assertEq(factory.books(0), book);
 
         OVRFLOBook b = OVRFLOBook(book);
         assertEq(address(b.factory()), address(factory));
         assertEq(address(b.core()), address(ovrflo));
         assertEq(address(b.sablier()), address(OVRFLO(address(ovrflo)).sablierLL()));
-        assertEq(b.pendingOwner(), OWNER);
+        assertEq(b.owner(), address(factory));
+        assertEq(b.pendingOwner(), address(0));
     }
 
     function test_DeployBook_RevertsForDuplicate() public {
@@ -655,6 +677,162 @@ contract OVRFLOFactoryTest is Test {
         vm.prank(OWNER);
         vm.expectRevert("OVRFLOFactory: unknown ovrflo");
         factory.deployBook(address(0xDEAD));
+    }
+
+    /* ---------- Duplicate underlying prevention ---------- */
+
+    function test_ConfigureDeployment_RevertsForAlreadyDeployedUnderlying() public {
+        _deployConfiguredSystem();
+
+        // Same underlying — should revert even with a different treasury
+        vm.prank(OWNER);
+        vm.expectRevert("OVRFLOFactory: underlying already deployed");
+        factory.configureDeployment(NEW_OWNER, address(underlying), "Wrapped Ether 2", "WETH2");
+    }
+
+    function test_ConfigureDeployment_AllowsReconfigureIfFirstWasNotDeployed() public {
+        vm.prank(OWNER);
+        factory.configureDeployment(TREASURY, address(underlying), "Wrapped Ether", "WETH");
+
+        // Not yet deployed — reconfiguring with a different treasury should succeed
+        vm.prank(OWNER);
+        factory.configureDeployment(NEW_OWNER, address(underlying), "Wrapped Ether", "WETH");
+
+        (address pendingTreasury,,,,) = factory.pendingDeployment();
+        assertEq(pendingTreasury, NEW_OWNER);
+    }
+
+    function test_Deploy_SetsUnderlyingToOvrfloMapping() public {
+        (OVRFLO ovrflo,) = _deployConfiguredSystem();
+        assertEq(factory.underlyingToOvrflo(address(underlying)), address(ovrflo));
+    }
+
+    function test_ConfigureDeployment_AllowsDifferentUnderlyings() public {
+        _deployConfiguredSystem();
+
+        MockERC20Metadata dai = new MockERC20Metadata("Dai", "DAI", 18);
+
+        vm.prank(OWNER);
+        factory.configureDeployment(TREASURY, address(dai), "Dai Stablecoin", "DAI");
+        // Should not revert
+        vm.prank(OWNER);
+        (address ovrflo2,) = factory.deploy();
+        assertEq(factory.underlyingToOvrflo(address(dai)), ovrflo2);
+        assertEq(factory.ovrfloCount(), 2);
+    }
+
+    /* ---------- Book admin forwarding ---------- */
+
+    function test_BookAdmin_RevertForUnauthorizedCallers() public {
+        (OVRFLO ovrflo,) = _deployConfiguredSystem();
+
+        vm.prank(OWNER);
+        address book = factory.deployBook(address(ovrflo));
+
+        vm.prank(STRANGER);
+        vm.expectRevert("Ownable: caller is not the owner");
+        factory.setBookAprBounds(book, 500, 2000);
+
+        vm.prank(STRANGER);
+        vm.expectRevert("Ownable: caller is not the owner");
+        factory.setBookFee(book, 50);
+
+        vm.prank(STRANGER);
+        vm.expectRevert("Ownable: caller is not the owner");
+        factory.setBookTreasury(book, NEW_OWNER);
+    }
+
+    function test_BookAdmin_RevertsForUnknownBook() public {
+        vm.prank(OWNER);
+        vm.expectRevert("OVRFLOFactory: unknown book");
+        factory.setBookAprBounds(address(0xDEAD), 500, 2000);
+
+        vm.prank(OWNER);
+        vm.expectRevert("OVRFLOFactory: unknown book");
+        factory.setBookFee(address(0xDEAD), 50);
+
+        vm.prank(OWNER);
+        vm.expectRevert("OVRFLOFactory: unknown book");
+        factory.setBookTreasury(address(0xDEAD), NEW_OWNER);
+    }
+
+    function test_BookAdmin_ForwardsToBookAndEmitsEvents() public {
+        (OVRFLO ovrflo,) = _deployConfiguredSystem();
+
+        vm.prank(OWNER);
+        address book = factory.deployBook(address(ovrflo));
+        OVRFLOBook b = OVRFLOBook(book);
+
+        // setAprBounds — book event fires first (inside the call), then factory event
+        vm.expectEmit(address(book));
+        emit AprBoundsSet(500, 2000);
+        vm.expectEmit(true, false, false, false, address(factory));
+        emit BookAprBoundsSet(book, 500, 2000);
+
+        vm.prank(OWNER);
+        factory.setBookAprBounds(book, 500, 2000);
+
+        assertEq(b.aprMinBps(), 500);
+        assertEq(b.aprMaxBps(), 2000);
+
+        // setFee
+        vm.expectEmit(address(book));
+        emit FeeSet(50);
+        vm.expectEmit(true, false, false, false, address(factory));
+        emit BookFeeSet(book, 50);
+
+        vm.prank(OWNER);
+        factory.setBookFee(book, 50);
+
+        assertEq(b.feeBps(), 50);
+
+        // setTreasury
+        vm.expectEmit(true, false, false, false, address(book));
+        emit TreasurySet(NEW_OWNER);
+        vm.expectEmit(true, true, false, false, address(factory));
+        emit BookTreasurySet(book, NEW_OWNER);
+
+        vm.prank(OWNER);
+        factory.setBookTreasury(book, NEW_OWNER);
+
+        assertEq(b.treasury(), NEW_OWNER);
+    }
+
+    function test_BookAdmin_BookOnlyOwnerRevertsForNonFactory() public {
+        (OVRFLO ovrflo,) = _deployConfiguredSystem();
+
+        vm.prank(OWNER);
+        address book = factory.deployBook(address(ovrflo));
+        OVRFLOBook b = OVRFLOBook(book);
+
+        // The multisig (OWNER) is NOT the book's owner — factory is
+        vm.prank(OWNER);
+        vm.expectRevert("Ownable: caller is not the owner");
+        b.setAprBounds(500, 2000);
+    }
+
+    /* ---------- Book enumeration ---------- */
+
+    function test_DeployBook_EnumeratesMultipleBooks() public {
+        // Deploy two vaults with different underlyings
+        (OVRFLO ovrflo1,) = _deployConfiguredSystem();
+
+        MockERC20Metadata dai = new MockERC20Metadata("Dai", "DAI", 18);
+        vm.startPrank(OWNER);
+        factory.configureDeployment(TREASURY, address(dai), "Dai Stablecoin", "DAI");
+        (address ovrflo2Addr,) = factory.deploy();
+        vm.stopPrank();
+
+        vm.startPrank(OWNER);
+        address book1 = factory.deployBook(address(ovrflo1));
+        address book2 = factory.deployBook(ovrflo2Addr);
+        vm.stopPrank();
+
+        assertEq(factory.bookCount(), 2);
+        assertEq(factory.books(0), book1);
+        assertEq(factory.books(1), book2);
+        assertEq(factory.bookToOvrflo(book1), address(ovrflo1));
+        assertEq(factory.bookToOvrflo(book2), ovrflo2Addr);
     }
 
     function _deployConfiguredSystem() internal returns (OVRFLO ovrflo, OVRFLOToken token) {

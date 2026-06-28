@@ -13,7 +13,6 @@ Add on-chain approved markets storage to OVRFLOFactory and build the OVRFLO stre
 - `vaultCount` → `ovrfloCount`
 - `vaultInfo` → `ovrfloInfo`
 - `_requireKnownVault` → `_requireKnownOvrflo`
-- `transferVaultAdmin` → `transferOvrfloAdmin`
 - `getVaultInfo` → `getOvrfloInfo`
 - All event and parameter names updated accordingly
 

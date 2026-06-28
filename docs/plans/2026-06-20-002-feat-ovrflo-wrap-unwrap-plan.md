@@ -13,7 +13,7 @@ Add two permissionless, exactly-1:1 functions to the OVRFLO core: `wrap(amount)`
 pulls the underlying and mints an equal amount of `ovrfloToken` to the caller;
 `unwrap(amount)` burns `ovrfloToken` from the caller and returns an equal amount of
 underlying from a single on-contract reserve. The core resolves its `(underlying, ovrfloToken)`
-pair by reading `ovrfloInfo(address(this))` on its `adminContract` (the factory), so neither
+pair by reading `ovrfloInfo(address(this))` on its `factory` (the factory), so neither
 function needs a `market` argument. No Sablier stream, no fee. `unwrap` is bounded
 by the reserve and reverts when it cannot be covered. This gives `ovrfloToken` holders a
 stream-independent exit to underlying and lets the protocol mint `ovrfloToken` from underlying
@@ -68,10 +68,10 @@ intrinsically bounded by the wrap reserve, and that bound is the central design 
 
 - KTD1. **Lives on the core; pair read from the admin/factory, no market arg.** `wrap(amount)`
   and `unwrap(amount)` resolve `(underlying, ovrfloToken)` by reading
-  `ovrfloInfo(address(this))` on `adminContract` (the factory that deployed the core), via a
+  `ovrfloInfo(address(this))` on `factory` (the factory that deployed the core), via a
   minimal local interface to avoid importing `OVRFLOFactory` (which imports `OVRFLO` → circular).
   This needs no new core storage for the pair and no `market` argument. It is safe because
-  `adminContract` is set once in the constructor (`src/OVRFLO.sol:179`) with **no setter**
+  `factory` is set once in the constructor (`src/OVRFLO.sol:179`) with **no setter**
   anywhere — it is permanently the deploying factory, and `ovrfloInfo[core]` is populated at
   `deploy()` (`src/OVRFLOFactory.sol:127-128`). Reading from the trusted admin matches the
   project's "trust what the multisig/admin already validates" stance. (Confirmed with user.)
@@ -143,7 +143,7 @@ flowchart LR
   U2[Holder] -->|unwrap: burn ovrfloToken| W
   W -->|require reserve >= amount; reserve -= amount| RES
   W -->|transfer underlying 1:1| U2
-  ADMIN[adminContract] -->|sweepExcessUnderlying| W
+  ADMIN[factory] -->|sweepExcessUnderlying| W
 ```
 
 Backing/redemption split (KTD8):
@@ -159,11 +159,11 @@ invariant:     supply(ovrfloToken) == Σ marketTotalDeposited + wrappedUnderlyin
 ## Requirements
 
 - R1. `wrap(amount)` requires `amount > 0`; resolves `(underlying, ovrfloToken)` from
-  `adminContract.ovrfloInfo(address(this))`; pulls exactly `amount` underlying via `SafeERC20`,
+  `factory.ovrfloInfo(address(this))`; pulls exactly `amount` underlying via `SafeERC20`,
   mints exactly `amount` ovrfloToken to the caller, and increments `wrappedUnderlying` by
   `amount`. Emits `Wrapped`.
 - R2. `unwrap(amount)` requires `amount > 0` and `wrappedUnderlying >= amount`; resolves the pair
-  from `adminContract.ovrfloInfo(address(this))`; decrements the reserve and burns `amount`
+  from `factory.ovrfloInfo(address(this))`; decrements the reserve and burns `amount`
   ovrfloToken from the caller before transferring `amount` underlying to the caller (CEI). Emits
   `Unwrapped`.
 - R3. `unwrap` reverts (does not partial-fill or queue) when `wrappedUnderlying < amount`.
@@ -171,9 +171,9 @@ invariant:     supply(ovrfloToken) == Σ marketTotalDeposited + wrappedUnderlyin
 - R5. `unwrap` capacity derives from the `wrappedUnderlying` counter, never `balanceOf`; a direct
   underlying donation does not change unwrap capacity.
 - R6. `sweepExcessUnderlying(to)` is `onlyAdmin`, resolves `underlying` from
-  `adminContract.ovrfloInfo(address(this))`, transfers only `balanceOf(underlying) −
+  `factory.ovrfloInfo(address(this))`, transfers only `balanceOf(underlying) −
   wrappedUnderlying` (reverts when zero), and can never reduce the reserve. Emits an event.
-  Because `onlyAdmin` means `msg.sender == adminContract` (the factory), `OVRFLOFactory` exposes a
+  Because `onlyAdmin` means `msg.sender == factory` (the factory), `OVRFLOFactory` exposes a
   thin `onlyOwner` forwarder `sweepExcessUnderlying(address ovrflo, address to)` — mirroring
   `sweepExcessPt` (`src/OVRFLOFactory.sol:185-188`) — so the timelocked multisig can actually
   invoke it. Without this forwarder the core function would be unreachable.
@@ -199,10 +199,10 @@ underlying, address ovrfloToken); }` interface, and `Wrapped(address indexed use
 amount)` / `Unwrapped(address indexed user, uint256 amount)` events. Implement `wrap`/`unwrap`
 per KTD3 using the existing `SafeERC20`-for-`IERC20` import and `OVRFLOToken(ovrfloToken).mint/burn`
 (owner-gated, the core is owner — `src/OVRFLOToken.sol:26-32`). Resolve `(underlying, ovrfloToken)`
-once at the top of each call via `IOvrfloAdmin(adminContract).ovrfloInfo(address(this))`. Strict
+once at the top of each call via `IOvrfloAdmin(factory).ovrfloInfo(address(this))`. Strict
 CEI in `unwrap`: decrement reserve, burn, then transfer out.
 **Patterns to follow:** `deposit` `require`/`SafeERC20` style (`src/OVRFLO.sol:265-320`); mint/burn
-calls as in `deposit`/`claim`; event style in the constants/events block; `adminContract` usage
+calls as in `deposit`/`claim`; event style in the constants/events block; `factory` usage
 (`src/OVRFLO.sol:163-166`).
 **Test scenarios:**
 - `wrap` mints exactly `amount` ovrfloToken to caller, pulls exactly `amount` underlying,
@@ -213,7 +213,7 @@ calls as in `deposit`/`claim`; event style in the constants/events block; `admin
 - `unwrap` reverts when `wrappedUnderlying < amount` (reserve dry / partially funded), with no
   state change (no partial fill).
 - `wrap`/`unwrap` revert on `amount == 0`.
-- The pair is sourced from the admin: test fixture sets `adminContract` to a mock factory exposing
+- The pair is sourced from the admin: test fixture sets `factory` to a mock factory exposing
   `ovrfloInfo(core) -> (treasury, underlying, ovrfloToken)`; assert `wrap`/`unwrap` use those
   exact addresses (the existing unit fixture deploys the core with an EOA admin, so a mock-admin
   contract is required here).
@@ -234,7 +234,7 @@ expectations on every path.
 **Files:** `src/OVRFLO.sol`; `src/OVRFLOFactory.sol` (additive forwarder); `test/OVRFLOWrapUnwrap.t.sol`
 (extend).
 **Approach:** On the core, mirror `sweepExcessPt` (`src/OVRFLO.sol:241-249`): resolve `underlying`
-via `IOvrfloAdmin(adminContract).ovrfloInfo(address(this))`, compute `excess =
+via `IOvrfloAdmin(factory).ovrfloInfo(address(this))`, compute `excess =
 balanceOf(underlying) − wrappedUnderlying`, require `excess > 0`, `safeTransfer` to `to`, emit an
 `ExcessUnderlyingSwept` event. `onlyAdmin`. Signature is `sweepExcessUnderlying(address to)` — no
 `market` needed. On the factory, add a thin `onlyOwner` forwarder `sweepExcessUnderlying(address
@@ -321,8 +321,8 @@ no-`forge script --broadcast`-against-Anvil rule in `docs/solutions/patterns/ovr
 - Governance cap on `wrappedUnderlying` — deferred; supply is fully 1:1 backed so this is
   risk-appetite, not solvency (origin Outstanding Question).
 - Admin pause on `wrap`/`unwrap` — deferred (origin Outstanding Question).
-- Admin coupling (KTD1): `wrap`/`unwrap`/`sweepExcessUnderlying` assume `adminContract` exposes
-  `ovrfloInfo(address)`. True and permanent today (no `adminContract` setter). If an
+- Admin coupling (KTD1): `wrap`/`unwrap`/`sweepExcessUnderlying` assume `factory` exposes
+  `ovrfloInfo(address)`. True and permanent today (no `factory` setter). If an
   admin-migration path is ever introduced, the new admin must preserve that getter — track it
   with any future migration work.
 
@@ -333,7 +333,7 @@ no-`forge script --broadcast`-against-Anvil rule in `docs/solutions/patterns/ovr
 - Origin requirements: `docs/brainstorms/2026-06-20-ovrflo-wrap-unwrap-requirements.md`.
 - Core: `src/OVRFLO.sol` — `deposit` mint + `marketTotalDeposited` (`:281,303-304`), `claim`
   burn + per-market accounting (`:327-341`), fee→treasury (`:298`), `sweepExcessPt` pattern
-  (`:241-249`), `adminContract` set once with no setter (`:41,179`), no `ReentrancyGuard`.
+  (`:241-249`), `factory` set once with no setter (`:41,179`), no `ReentrancyGuard`.
 - Token: `src/OVRFLOToken.sol` — owner-gated `mint`/`burn` (`:26-32`).
 - Factory (the admin/registry read, plus the new sweep forwarder): `src/OVRFLOFactory.sol` —
   `OvrfloInfo` struct `(treasury, underlying, ovrfloToken)` (`:33-37`), public `ovrfloInfo` mapping

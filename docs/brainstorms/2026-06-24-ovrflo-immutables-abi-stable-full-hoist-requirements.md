@@ -137,7 +137,8 @@ and 6 are vault-level redundant; the rest are genuinely per-market and stay.
 
 - The `series(market)` return tuple shape, field order, and types must remain identical
   (hard ABI constraint driven by the off-chain web consumers).
-- `adminContract` stays mutable (`transferVaultAdmin` requires it); only `underlying` and
+- `factory` (formerly `adminContract`) is immutable (set once in constructor, no
+  setter, no migration path); only `underlying` and
   `ovrfloToken` become immutable. `TREASURY_ADDR` is already immutable.
 - `OVRFLOToken` ownership transfer remains one-step (`transferOwnership` directly sets `owner`);
   the deploy reorder must not introduce an `acceptOwnership` step.

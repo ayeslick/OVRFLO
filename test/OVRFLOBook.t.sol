@@ -1280,4 +1280,40 @@ contract OVRFLOBookTest is Test {
         vm.expectRevert("OVRFLOBook: unknown loan");
         book.repayLoan(999, 1);
     }
+
+    /*//////////////////////////////////////////////////////////////
+                    COVERAGE: SELF-MATCH PREVENTION
+    //////////////////////////////////////////////////////////////*/
+
+    function test_BorrowAgainstOffer_RevertsForSelfMatch() public {
+        uint256 offerId = _postLendOffer(BUYER, 100 ether);
+        _mintEligibleStream(50, BUYER, 110 ether, 0);
+
+        vm.startPrank(BUYER);
+        sablier.approve(address(book), 50);
+        vm.expectRevert("OVRFLOBook: self-match");
+        book.borrowAgainstOffer(offerId, 50, 100 ether, 0);
+        vm.stopPrank();
+
+        assertEq(sablier.ownerOf(50), BUYER, "stream should not be escrowed");
+        (,,, uint128 capacity, bool active) = book.lendOffers(offerId);
+        assertTrue(active, "offer should still be active");
+        assertEq(capacity, 100 ether, "capacity should be unchanged");
+    }
+
+    function test_LendAgainstListing_RevertsForSelfMatch() public {
+        _mintEligibleStream(51, SELLER, 110 ether, 0);
+        uint256 listingId = _postBorrowListing(SELLER, 51, 100 ether);
+
+        underlying.mint(SELLER, 100 ether);
+        vm.startPrank(SELLER);
+        underlying.approve(address(book), 100 ether);
+        vm.expectRevert("OVRFLOBook: self-match");
+        book.lendAgainstListing(listingId, 0);
+        vm.stopPrank();
+
+        assertEq(sablier.ownerOf(51), address(book), "stream should remain escrowed");
+        (,,,,,, bool active) = book.borrowListings(listingId);
+        assertTrue(active, "listing should still be active");
+    }
 }

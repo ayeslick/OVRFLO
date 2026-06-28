@@ -54,8 +54,8 @@ contract OVRFLO is ReentrancyGuard {
     /// @notice Pendle TWAP oracle for PT-to-SY rate lookups (constant per vault)
     address public immutable oracle;
 
-    /// @notice Admin contract address with permission to configure markets
-    address public adminContract;
+    /// @notice Factory address with permission to configure markets (immutable, set at construction)
+    address public immutable factory;
 
     /// @notice Underlying deposited through wrap and reserved for 1:1 unwraps
     uint256 public wrappedUnderlying;
@@ -207,9 +207,9 @@ contract OVRFLO is ReentrancyGuard {
                                 MODIFIERS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Restricts function access to the admin contract
+    /// @notice Restricts function access to the factory
     modifier onlyAdmin() {
-        require(msg.sender == adminContract, "OVRFLO: not admin");
+        require(msg.sender == factory, "OVRFLO: not admin");
         _;
     }
 
@@ -218,7 +218,7 @@ contract OVRFLO is ReentrancyGuard {
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Initializes the OVRFLO contract
-    /// @param admin The admin contract address
+    /// @param admin The factory address (immutable admin for the vault's lifetime)
     /// @param treasury The treasury address for fee collection
     /// @param _underlying The underlying asset address (constant per vault)
     /// @param _ovrfloToken The ovrflo token address (constant per vault)
@@ -229,7 +229,7 @@ contract OVRFLO is ReentrancyGuard {
         require(_ovrfloToken != address(0), "OVRFLO: ovrfloToken is zero address");
         require(_oracle != address(0), "OVRFLO: oracle is zero address");
 
-        adminContract = admin;
+        factory = admin;
         TREASURY_ADDR = treasury;
         underlying = _underlying;
         ovrfloToken = _ovrfloToken;
@@ -276,7 +276,9 @@ contract OVRFLO is ReentrancyGuard {
     }
 
     /// @notice Sweeps excess PT tokens accidentally sent to the contract
-    /// @dev Only sweeps tokens above the tracked deposit amount
+    /// @dev Only sweeps tokens above the tracked deposit amount. `to` is trusted because
+    ///      the caller is always the factory (admin), which is itself owned by a timelocked
+    ///      multisig; zero-address validation is intentionally omitted.
     /// @param ptToken The PT token address to sweep
     /// @param to The recipient address
     function sweepExcessPt(address ptToken, address to) external onlyAdmin {
@@ -290,7 +292,9 @@ contract OVRFLO is ReentrancyGuard {
     }
 
     /// @notice Sweeps underlying accidentally sent above the wrap reserve
-    /// @dev Underlying held for wrapped supply is reserved and cannot be swept.
+    /// @dev Underlying held for wrapped supply is reserved and cannot be swept. `to` is
+    ///      trusted because the caller is always the factory (admin), which is itself owned
+    ///      by a timelocked multisig; zero-address validation is intentionally omitted.
     /// @param to The recipient address
     function sweepExcessUnderlying(address to) external onlyAdmin {
         uint256 balance = IERC20(underlying).balanceOf(address(this));

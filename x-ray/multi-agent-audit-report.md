@@ -82,19 +82,20 @@ require(duration <= type(uint40).max, "OVRFLO: duration overflow");
 
 ---
 
-### L-2 — Dust loan/fill griefing and unbounded ID growth
+### L-2 — Dust loan/fill griefing and unbounded ID growth — REJECTED
 
 | Field | Detail |
 |-------|--------|
 | **Location** | `src/OVRFLOBook.sol` — offer/listing/loan ID allocators |
 | **Agents** | ce-performance-reviewer, ce-security-sentinel |
 | **Confidence** | Low |
+| **Status** | **Rejected** (2026-06-28) |
 
 **Root cause:** `borrowAmount > 0` and `capacity > 0` only; monotonic IDs with permanent mapping writes.
 
 **Impact:** Storage/event spam; indexer/UI pressure — not direct fund theft.
 
-**Minimal fix:** `MIN_BORROW` / `MIN_FILL` / minimum offer notional; optional listing fee.
+**Rejection rationale:** Regardless of what minimum threshold is set, someone determined to grief can always post entries just above it. A minimum does not eliminate griefing — it merely raises the floor. The real natural floor is already in place: every loan-creating fill must escrow a real Sablier stream NFT, and streams are created by vault deposits which have `MIN_PT_AMOUNT = 1e6`. See [`docs/audit/rejected-findings-record.md`](../docs/audit/rejected-findings-record.md) — 2026-06-28 gap review section.
 
 ---
 
@@ -168,8 +169,8 @@ Fee computed on `toUser` and transferred to treasury without balance-delta verif
 
 | Item | Assessment |
 |------|------------|
-| No `adminContract` migration on `OVRFLO` | **By design** — set once in constructor; factory is permanent admin hub |
-| No per-market book freeze beyond deposit limits | Operational gap; stop deposits via `limit = 0` does not pause secondary market |
+| No `factory` migration on `OVRFLO` | **By design** — `factory` is immutable, set in constructor; factory is permanent admin hub |
+| No per-market book freeze beyond deposit limits | **Rejected** (2026-06-28) — global `feeBps = 100%` circuit breaker is sufficient; per-market toggles contradict project simplicity preferences. See [`docs/audit/rejected-findings-record.md`](../docs/audit/rejected-findings-record.md) |
 | Immutable Sablier in `OVRFLO` / `OVRFLOBook` | **Intentional** (immutable V2 integration) |
 | `OVRFLOBook` constructor `MAX_FEE_BPS` not capped at `10_000` | Deploy footgun; runtime `setFee()` enforces `<= MAX_FEE_BPS` |
 
@@ -177,7 +178,7 @@ Fee computed on `toUser` and transferred to treasury without balance-delta verif
 
 ## Rejected findings
 
-The full rejected-findings decision record — H-2 (Sablier v1.1 ACL, no permissionless withdraw), M-5 (cross-market `ovrfloToken` fungibility by design), the H-1→L-1 downgrade rationale, and the informational reclassifications (ex-M-1/M-2/M-3) with full evidence and Q&A — is now canonicalized in [`docs/audit/rejected-findings-record.md`](../docs/audit/rejected-findings-record.md). L-1 remains an active finding (see Findings below).
+The full rejected-findings decision record — H-2 (Sablier v1.1 ACL, no permissionless withdraw), M-5 (cross-market `ovrfloToken` fungibility by design), the H-1→L-1 downgrade rationale, the self-loan fix (correctness guard, not security), L-2 (dust griefing), I-4 per-market freeze, and the informational reclassifications (ex-M-1/M-2/M-3) with full evidence and Q&A — is now canonicalized in [`docs/audit/rejected-findings-record.md`](../docs/audit/rejected-findings-record.md). L-1 remains an active finding (see Findings below).
 
 ---
 
@@ -210,16 +211,16 @@ The full rejected-findings decision record — H-2 (Sablier v1.1 ACL, no permiss
 
 ## Test gaps (prioritized)
 
-| Priority | Gap | Suggested test |
-|----------|-----|----------------|
-| P1 | No negative auth tests on book cancel paths | Prank non-maker; assert revert + unchanged escrow |
-| P1 | No invariant/fuzz on loan lifecycle interleaving | Random `claimLoan` / `repayLoan` / `closeLoan` sequences |
-| P2 | `toStream > uint128.max` deposit path | Assert revert, not silent truncation |
-| P2 | `expiryCached > uint40.max` at deposit | Assert revert (or align deposit with eligibility bound) |
-| P2 | Sablier `Unauthorized` on pranked withdraw during book escrow | Fork test: stranger, former borrower, lender prank `withdraw` → revert |
-| P3 | Oracle rate `>= 1e18` deposit branch | Mock TWAP; assert `nothing to stream` revert |
-| ~~P2~~ | ~~Cross-market same-expiry stream reuse~~ | **Removed** — would encode wrong product behavior |
-| ~~P2~~ | ~~Sablier withdraw-to-book grief~~ | **Removed** — rejected finding |
+| Priority | Gap | Suggested test | Status |
+|----------|-----|----------------|--------|
+| P1 | No negative auth tests on book cancel paths | Prank non-maker; assert revert + unchanged escrow | **Done** — `test_Cancel*_RevertForWrong*` in `OVRFLOBook.t.sol` |
+| P1 | No invariant/fuzz on loan lifecycle interleaving | Random `claimLoan` / `repayLoan` / `closeLoan` sequences | **Done** — `OVRFLOBookInvariant.t.sol` (R6-R9) |
+| P2 | `toStream > uint128.max` deposit path | Assert revert, not silent truncation | Open (L-1 / R-03 rejected) |
+| P2 | `expiryCached > uint40.max` at deposit | Assert revert (or align deposit with eligibility bound) | Open (L-1 / R-03 rejected) |
+| P2 | Sablier `Unauthorized` on pranked withdraw during book escrow | Fork test: stranger, former borrower, lender prank `withdraw` → revert | **Done** — `test_BookEscrow_StrangerCannotWithdrawFromEscrowedStream` in `OVRFLOBookMainnetFork.t.sol` |
+| P3 | Oracle rate `>= 1e18` deposit branch | Mock TWAP; assert `nothing to stream` revert | **Done** — `test_OracleEdge_RateAbovePar_Reverts` in `OVRFLOFuzz.t.sol` |
+| ~~P2~~ | ~~Cross-market same-expiry stream reuse~~ | **Removed** — would encode wrong product behavior | — |
+| ~~P2~~ | ~~Sablier withdraw-to-book grief~~ | **Removed** — rejected finding | — |
 
 ---
 
@@ -244,13 +245,12 @@ The full rejected-findings decision record — H-2 (Sablier v1.1 ACL, no permiss
 
 ## Recommended fix order
 
-1. **L-1** — Add `toStream <= type(uint128).max` and `duration <= type(uint40).max` in `deposit()` (cheap; matches book patterns).
+1. **L-1** — Add `toStream <= type(uint128).max` and `duration <= type(uint40).max` in `deposit()` (cheap; matches book patterns). **Note:** R-03 in `ovrflo-critical-patterns.md` rejects this as redundant given protocol constraints, but the rejection is subject to revisitation if deposit limits are raised.
 2. **M-4** — Document oracle trust boundary; optional staleness policy if ops require it.
 3. **I-1 / I-2** — Document Pendle-only token assumptions in security docs (optional balance-delta hardening).
 4. **I-3** — Document permissionless `closeLoan` as intentional liveness.
-5. **L-2** — Minimum notionals on book if operational spam is a concern.
 
-~~H-2~~ and ~~M-5~~ require no code changes.
+~~H-2~~ and ~~M-5~~ require no code changes. ~~L-2~~ rejected (2026-06-28) — see [`docs/audit/rejected-findings-record.md`](../docs/audit/rejected-findings-record.md).
 
 ---
 
