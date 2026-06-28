@@ -40,7 +40,7 @@ contract OVRFLO is ReentrancyGuard {
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Minimum PT amount required for deposits
-    uint256 public immutable MIN_PT_AMOUNT = 1e6;
+    uint256 public constant MIN_PT_AMOUNT = 1e6;
 
     /// @notice Treasury address that receives protocol fees
     address public immutable TREASURY_ADDR;
@@ -311,12 +311,13 @@ contract OVRFLO is ReentrancyGuard {
     function wrap(uint256 amount) external {
         require(amount > 0, "OVRFLO: amount is zero");
 
+        wrappedUnderlying += amount;
+
         uint256 balanceBefore = IERC20(underlying).balanceOf(address(this));
         IERC20(underlying).safeTransferFrom(msg.sender, address(this), amount);
         uint256 balanceAfter = IERC20(underlying).balanceOf(address(this));
         require(balanceAfter - balanceBefore == amount, "OVRFLO: transfer amount mismatch");
 
-        wrappedUnderlying += amount;
         OVRFLOToken(ovrfloToken).mint(msg.sender, amount);
 
         emit Wrapped(msg.sender, amount);

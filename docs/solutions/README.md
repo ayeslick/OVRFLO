@@ -41,6 +41,10 @@ enums have been widened to reflect our stack; everything else matches the upstre
   1. ERC-721 current ownership comes from the token, not from derived protocol events.
   2. Do not use `forge script --broadcast` against an Anvil mainnet fork (foundry#11714); use `forge create` + `cast send` via `script/seed-local.sh`.
   3. Modal bodies — and only modal bodies — are wrapped in a class-component error boundary with an `onReset` contract (header/close button stay outside).
+  4. Prevent self-matched loans in OVRFLOBook (`borrowAgainstOffer` / `lendAgainstListing`).
+  5. TWAP duration bounds must be consistent across `prepareOracle` and `addMarket`.
+  6. Standalone OVRFLOBook deployment must verify Sablier matches the vault's canonical immutable.
+  - Also includes a "Considered and rejected" section documenting 4 findings from the 2026-06-28 full-contract review that were explicitly dismissed (18-decimal underlying check, sweep zero-address guard, unchecked downcasts in deposit, registeredToken equality check).
 
 ### Web UI
 
@@ -81,7 +85,11 @@ enums have been widened to reflect our stack; everything else matches the upstre
   it exactly on an 18-decimal token, and `obligation <= remaining` (ceiling debt
   vs. floor price) so the stream-draw close path via permissionless `closeLoan`
   always eventually succeeds. Documents the rounding invariants future
-  `StreamPricing` edits must preserve.
+  `StreamPricing` edits must preserve. Includes a companion finding (fixed
+  2026-06-28): self-matched loans (`borrower == lender`) broke `repayLoan`
+  because `_pullExact`'s balance-delta check reverts on self-transfer; fixed by
+  rejecting self-matching at loan creation in `borrowAgainstOffer` and
+  `lendAgainstListing`.
 
 ### Architecture patterns
 

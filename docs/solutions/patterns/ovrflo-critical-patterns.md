@@ -7,6 +7,10 @@ audience: [contributors, ai-agents]
 
 <!--
   Refresh log:
+  - 2026-06-28: Appended patterns #4 (self-match prevention), #5 (TWAP bound
+    consistency in prepareOracle), #6 (Sablier binding verification in
+    standalone script), and a "Considered and rejected" section (R-01 through
+    R-04) from the 2026-06-28 full-contract review.
   - 2026-04-21: Appended pattern #2 (avoid forge script --broadcast against Anvil
     mainnet forks) from docs/solutions/integration-issues/anvil-forge-script-broadcast-out-of-funds-LocalSeeding-20260421.md.
   - 2026-04-21: Appended pattern #3 (modal bodies wrapped in a class-component
@@ -292,3 +296,181 @@ complementary safety net, not a replacement. Do **not** pull in
 - Unit test contract — see `web/tests/components/ModalErrorBoundary.test.tsx` (T-WEB-ERRBOUND-1..3): renders children when no throw, renders fallback on throw, recovers on reset with `vi.spyOn(console, "error").mockImplementation(() => {})` to silence React's own boundary log.
 
 **Documented in:** [`docs/solutions/runtime-errors/modal-render-error-crashes-dashboard-WebUI-20260421.md`](../runtime-errors/modal-render-error-crashes-dashboard-WebUI-20260421.md)
+
+---
+
+## 4. Prevent self-matched loans in OVRFLOBook (ALWAYS REQUIRED)
+
+### ❌ WRONG (borrower == lender breaks `repayLoan`)
+
+```solidity
+// borrowAgainstOffer — no self-match guard.
+LendOffer storage offer = lendOffers[offerId];
+require(offer.active, "OVRFLOBook: lend offer inactive");
+// msg.sender could be offer.lender, creating a loan where from == to
+// in _pullExact, which reverts on the balance-delta check.
+```
+
+### ✅ CORRECT (reject at loan creation)
+
+```solidity
+LendOffer storage offer = lendOffers[offerId];
+require(offer.active, "OVRFLOBook: lend offer inactive");
+require(msg.sender != offer.lender, "OVRFLOBook: self-match");
+```
+
+**Why:** If `borrower == lender`, `repayLoan`'s `_pullExact` does a
+self-transfer (`from == to`), the ERC20 balance doesn't change, and the
+balance-delta check reverts. `closeLoan` (permissionless) still works once
+the stream accrues, and the borrower can repay from another address, so
+nothing is permanently stranded — but the `repayLoan` path is broken for
+this state. Self-matching is economically irrational (you pay a treasury
+fee to yourself), so this is a correctness guard, not a value-loss
+prevention.
+
+**Placement/Context:** Both loan-creation entry points that pair a borrower
+with a lender: `borrowAgainstOffer` (borrower = `msg.sender`, lender =
+`offer.lender`) and `lendAgainstListing` (borrower = `listing.borrower`,
+lender = `msg.sender`).
+
+**How to detect violation:**
+
+```bash
+rg -n "self-match" src/OVRFLOBook.sol
+# expected: 2 matches (one per loan-creation path)
+```
+
+**Documented in:** [`docs/solutions/security-issues/repayloan-equality-rounding-no-brick-OVRFLOBook-20260624.md`](../security-issues/repayloan-equality-rounding-no-brick-OVRFLOBook-20260624.md) — companion finding section.
+
+---
+
+## 5. TWAP duration bounds must be consistent across `prepareOracle` and `addMarket` (ALWAYS REQUIRED)
+
+### ❌ WRONG (prepareOracle accepts a TWAP that addMarket will reject)
+
+```solidity
+function prepareOracle(address market, uint32 twapDuration) external onlyOwner {
+    require(twapDuration >= MIN_TWAP_DURATION, "OVRFLOFactory: twap too short");
+    // missing: require(twapDuration <= MAX_TWAP_DURATION, ...)
+    // operator can prepare with 1h, then addMarket rejects at 15min
+}
+```
+
+### ✅ CORRECT (same bounds in both functions)
+
+```solidity
+function prepareOracle(address market, uint32 twapDuration) external onlyOwner {
+    require(twapDuration >= MIN_TWAP_DURATION, "OVRFLOFactory: twap too short");
+    require(twapDuration <= MAX_TWAP_DURATION, "OVRFLOFactory: twap too long");
+    ...
+}
+```
+
+**Why:** `prepareOracle` over-provisions cardinality if called with a longer
+TWAP than `addMarket` will use — harmless but wastes a tx. The real footgun
+is the operator calling `prepareOracle` with a value `addMarket` will reject,
+then wondering why `addMarket` fails. Aligning the bounds eliminates the
+mismatch. No security impact; this is an operational consistency rule.
+
+**Placement/Context:** `OVRFLOFactory.prepareOracle` and
+`OVRFLOFactory.addMarket` — the two onlyOwner functions that take a
+`twapDuration` parameter.
+
+**How to detect violation:**
+
+```bash
+rg -A2 "function prepareOracle" src/OVRFLOFactory.sol | rg "MAX_TWAP"
+# expected: 1 match
+```
+
+---
+
+## 6. Standalone OVRFLOBook deployment must verify Sablier matches the vault's canonical immutable (ALWAYS REQUIRED)
+
+### ❌ WRONG (blindly trusts env var)
+
+```solidity
+address sablier = vm.envOr("SABLIER_ADDRESS", DEFAULT_SABLIER_LL);
+// no verification that sablier matches the core vault's sablierLL
+```
+
+### ✅ CORRECT (assert against the vault immutable)
+
+```solidity
+address sablier = vm.envOr("SABLIER_ADDRESS", DEFAULT_SABLIER_LL);
+require(sablier == address(OVRFLO(core).sablierLL()), "OVRFLOBookScript: sablier mismatch");
+```
+
+**Why:** The canonical production path is `OVRFLOFactory.deployBook()`, which
+reads `address(OVRFLO(ovrflo).sablierLL())` (an immutable hardcoded constant)
+and passes it to the `OVRFLOBook` constructor. The standalone
+`OVRFLOBook.s.sol` script allows a `SABLIER_ADDRESS` override for flexibility.
+Without a verification assertion, a misconfigured env var could bind the book
+to the wrong Sablier instance, breaking all stream eligibility checks. The
+assert ensures even the standalone path self-verifies.
+
+**Placement/Context:** `script/OVRFLOBook.s.sol` — the standalone deployment
+script. The factory path (`OVRFLOFactory.deployBook`) is already safe by
+construction.
+
+**How to detect violation:**
+
+```bash
+rg "sablier mismatch" script/OVRFLOBook.s.sol
+# expected: 1 match
+```
+
+---
+
+## Considered and rejected (2026-06-28 full-contract review)
+
+The following findings were raised during a full-contract review and
+explicitly rejected. They are documented here so future reviewers do not
+re-raise them without new context.
+
+### R-01: No on-chain 18-decimal underlying validation
+
+**Finding:** `configureDeployment` accepts any `underlying` without checking
+`decimals() == 18`, but `wrap`/`unwrap` and `OVRFLOToken` assume 18-decimal
+semantics.
+
+**Rejected because:** `addMarket` already requires
+`IStandardizedYield(sy).yieldToken() == info.underlying`, binding the
+underlying to a Pendle SY yield token. The multisig governs which underlyings
+are configured. Per AGENTS.md: "do not duplicate what the timelocked multisig
+already validates" and "keep code Pendle-specific." Adding an on-chain decimal
+check contradicts the project's simplicity preference.
+
+### R-02: Sweep functions do not reject `to = address(0)`
+
+**Finding:** `sweepExcessPt` and `sweepExcessUnderlying` in both `OVRFLO` and
+`OVRFLOFactory` don't guard against `to = address(0)`.
+
+**Rejected because:** These are multisig-only admin functions. The multisig is
+trusted to provide a correct recipient. A zero-address guard is
+defense-in-depth that the project explicitly does not want per the "prefer
+off-chain multisig verification over redundant on-chain checks" preference.
+
+### R-03: Unchecked downcasts in `OVRFLO.deposit` (`uint128(toStream)`, `uint40(duration)`)
+
+**Finding:** `toStream` is cast to `uint128` and `duration` to `uint40`
+without `SafeCast` bounds checks.
+
+**Rejected because:** `toStream` is bounded by `ptAmount` (itself bounded by
+deposit limits and `MIN_PT_AMOUNT`), and `duration = expiryCached -
+block.timestamp` is at most ~1-2 years of seconds (~63M), well within
+`type(uint40).max` (~1.1e12). Both casts are safe given protocol constraints.
+Adding `SafeCast` would be redundant.
+
+### R-04: `registeredToken` not checked against series `ovrfloToken` in `requireEligible`
+
+**Finding:** `StreamPricing.requireEligible` fetches `registeredToken` from
+`registry.ovrfloInfo(core)` but doesn't assert it equals the series
+`ovrfloToken` from `marketActive`.
+
+**Rejected because:** Both values derive from the same vault immutable:
+`registeredToken` = vault-level `ovrfloToken` (set at factory deploy), and
+the series `ovrfloToken` = `OVRFLO.series(market).ovrfloToken` which returns
+the same vault immutable. They are identical by construction. An equality
+check would be a no-op invariant that contradicts the "don't add redundant
+checks" preference.

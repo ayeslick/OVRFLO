@@ -142,3 +142,39 @@ re-introduce a real residual that the equality cannot match.
   `_outstanding`, `_satisfied`.
 - `src/StreamPricing.sol` — `grossPrice`, `obligation`,
   `obligationForFill`, `requireEligible`, `marketActive`.
+
+---
+
+## Companion finding: self-matched loans break `repayLoan` (fixed 2026-06-28)
+
+During a full-contract review, a separate edge case in the same loan-servicing
+path was identified and fixed.
+
+### The bug
+
+`borrowAgainstOffer` and `lendAgainstListing` did not prevent
+`borrower == lender` (self-matching). When a self-matched loan exists,
+`repayLoan` calls `_pullExact(ovrfloToken, msg.sender, loan.lender, amount)`
+where `from == to`. ERC20 self-transfers leave the balance unchanged, so the
+balance-delta check in `_pullExact` (`balanceAfter - balanceBefore == amount`)
+sees a zero delta and reverts with `"OVRFLOBook: transfer mismatch"`.
+
+### Impact
+
+Low-medium. Self-matching is economically irrational (the user pays a treasury
+fee to themselves), so this is unlikely in practice. The stream is not
+permanently stranded — `closeLoan` (permissionless) still works once the stream
+accrues, and the borrower can repay from a different address. But the
+`repayLoan` path is broken for this state, which is a correctness gap.
+
+### Fix applied
+
+Added `require(msg.sender != offer.lender, "OVRFLOBook: self-match")` in
+`borrowAgainstOffer` and `require(msg.sender != listing.borrower,
+"OVRFLOBook: self-match")` in `lendAgainstListing`. Prevents the irrational
+self-matched loan state at the root cause rather than special-casing the
+repayment transfer.
+
+### Files changed
+
+- `src/OVRFLOBook.sol` — `borrowAgainstOffer`, `lendAgainstListing`.

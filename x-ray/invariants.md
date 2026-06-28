@@ -16,7 +16,7 @@
 `require(ptToMarket[pt] == address(0), "OVRFLO: PT already mapped")` · `OVRFLO.sol:233` · One-shot reverse-map latch — a PT cannot be remapped to a second market.
 
 #### G-4
-`require(ptAmount >= MIN_PT_AMOUNT, "OVRFLO: amount < min PT")` · `OVRFLO.sol:335` · Dust-deposit gate; `MIN_PT_AMOUNT = 1e6` is a vault immutable.
+`require(ptAmount >= MIN_PT_AMOUNT, "OVRFLO: amount < min PT")` · `OVRFLO.sol:335` · Dust-deposit gate; `MIN_PT_AMOUNT = 1e6` is a vault constant.
 
 #### G-5
 `require(block.timestamp < info.expiryCached, "OVRFLO: matured")` · `OVRFLO.sol:336` · Temporal gate — deposits only allowed pre-maturity; backs I-11.
@@ -82,7 +82,7 @@
 
 > `IERC20(underlying).balanceOf(vault) >= wrappedUnderlying`, so every wrapped ovrfloToken is redeemable 1:1.
 
-**Derivation** — Δ-pair: `OVRFLO.wrap:290-296` does `Δ(wrappedUnderlying) = +amount` behind a balance-delta check (G-11); `OVRFLO.unwrap:307-313` does `Δ(wrappedUnderlying) = -amount` behind `reserve >= amount` (G-12); `sweepExcessUnderlying:276` removes only `balance - wrappedUnderlying`. Every write site of `wrappedUnderlying` preserves the inequality.
+**Derivation** — Δ-pair: `OVRFLO.wrap` does `Δ(wrappedUnderlying) = +amount` before the transfer (CEI), with a balance-delta check (G-11) on the received amount; `OVRFLO.unwrap:307-313` does `Δ(wrappedUnderlying) = -amount` behind `reserve >= amount` (G-12); `sweepExcessUnderlying:276` removes only `balance - wrappedUnderlying`. Every write site of `wrappedUnderlying` preserves the inequality.
 
 **If violated** — `unwrap` could fail or late wrappers be unable to redeem.
 

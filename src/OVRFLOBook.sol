@@ -562,6 +562,7 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
         require(borrowAmount > 0, "OVRFLOBook: borrow zero");
         LendOffer storage offer = lendOffers[offerId];
         require(offer.active, "OVRFLOBook: lend offer inactive");
+        require(msg.sender != offer.lender, "OVRFLOBook: self-match");
 
         StreamPricing.Eligibility memory eligibility = _requireEligible(offer.market, streamId);
         uint256 timeToMaturity = _timeToMaturity(eligibility.seriesMaturity);
@@ -665,6 +666,7 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
     {
         BorrowListing storage listing = borrowListings[listingId];
         require(listing.active, "OVRFLOBook: borrow listing inactive");
+        require(msg.sender != listing.borrower, "OVRFLOBook: self-match");
 
         StreamPricing.Eligibility memory eligibility = _requireEligible(listing.market, listing.streamId);
         uint256 timeToMaturity = _timeToMaturity(eligibility.seriesMaturity);
@@ -869,6 +871,7 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
         returns (address maker, address market, uint16 aprBps, uint128 capacity, bool active)
     {
         SaleOffer storage offer = saleOffers[offerId];
+        require(offer.maker != address(0), "OVRFLOBook: unknown offer");
         return (offer.maker, offer.market, offer.aprBps, offer.capacity, offer.active);
     }
 
@@ -886,6 +889,7 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
         returns (address maker, address market, uint256 streamId, uint16 aprBps, uint16 listingFeeBps, bool active)
     {
         SaleListing storage listing = saleListings[listingId];
+        require(listing.maker != address(0), "OVRFLOBook: unknown listing");
         return (listing.maker, listing.market, listing.streamId, listing.aprBps, listing.feeBps, listing.active);
     }
 
@@ -902,6 +906,7 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
         returns (address lender, address market, uint16 aprBps, uint128 capacity, bool active)
     {
         LendOffer storage offer = lendOffers[offerId];
+        require(offer.lender != address(0), "OVRFLOBook: unknown offer");
         return (offer.lender, offer.market, offer.aprBps, offer.capacity, offer.active);
     }
 
@@ -928,6 +933,7 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
         )
     {
         BorrowListing storage listing = borrowListings[listingId];
+        require(listing.borrower != address(0), "OVRFLOBook: unknown listing");
         return (
             listing.borrower,
             listing.market,

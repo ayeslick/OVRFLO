@@ -2,6 +2,7 @@
 pragma solidity ^0.8.20;
 
 import {Script, console} from "forge-std/Script.sol";
+import {OVRFLO} from "../src/OVRFLO.sol";
 import {OVRFLOBook} from "../src/OVRFLOBook.sol";
 
 /// @notice Standalone deployment script for OVRFLOBook.
@@ -18,6 +19,7 @@ contract OVRFLOBookScript is Script {
         address core = vm.envAddress("OVRFLO_ADDRESS");
         address multisig = vm.envAddress("MULTISIG_ADDRESS");
         address sablier = vm.envOr("SABLIER_ADDRESS", DEFAULT_SABLIER_LL);
+        require(sablier == address(OVRFLO(core).sablierLL()), "OVRFLOBookScript: sablier mismatch");
         uint16 bookFeeBps = _toUint16(vm.envOr("BOOK_FEE_BPS", DEFAULT_BOOK_FEE_BPS), "BOOK_FEE_BPS");
         address bookTreasury = vm.envOr("BOOK_TREASURY", address(0));
 

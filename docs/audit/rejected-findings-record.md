@@ -85,6 +85,62 @@ These are the questions an auditor predictably asks in week one. They are alread
 8. **Sandwich / flash-loan manipulation of book pricing?** — Not exploitable. Book pricing is purely `StreamPricing` (remaining, APR, time-to-maturity) with no oracle dependency. `remaining` can't be manipulated (Sablier v1.1 ACL). Same-block `block.timestamp`. Slippage params on all fills. See "Other probed vectors" table above.
 9. **Reentrancy on vault paths (no `nonReentrant`)?** — CEI is followed on all vault paths (`deposit`, `claim`, `wrap`, `unwrap`). State is updated before external calls. `wrap` has balance-delta check (G-11). Canonical Pendle PT/underlying tokens don't have transfer callbacks. See "Other probed vectors" table above.
 
+## 2026-06-27 code review — rejected findings
+
+The following findings were raised in a comprehensive review of all non-test `*.sol` files (following ethskills.com ship/security/concepts/audit guidance) and rejected by the project owner. They are recorded here so future reviewers do not re-derive them.
+
+### CR-M1 — OVRFLOToken custom ownership instead of OZ Ownable2Step — REJECTED (unnecessary complexity)
+
+- **Original claim (Medium):** `OVRFLOToken` implements a hand-rolled one-step `transferOwnership` instead of using OpenZeppelin's `Ownable2Step`, contrary to the ethskills guidance "don't reinvent AccessControl."
+- **Rejection rationale:** The token is deployed by the factory and immediately transferred to the vault in the same transaction. There is no window for ownership error. Adding `Ownable2Step` would require an extra `acceptOwnership` call on the vault (an external contract with no current acceptance logic) for a one-time transfer that is already atomic. The custom ownership is simpler and sufficient for this controlled deployment path.
+- **Evidence:** `src/OVRFLOToken.sol` (custom `owner`/`transferOwnership`); `src/OVRFLOFactory.sol` `deploy()` creates token then calls `token.transferOwnership(ovrflo)` in the same tx.
+
+### CR-L1 — Missing `nonReentrant` on `deposit`/`wrap`/`unwrap`/`claim` — REJECTED (PTs are not hookable)
+
+- **Original claim (Low):** `flashLoan` is `nonReentrant` but the other four user functions are not. Defense-in-depth recommends adding it.
+- **Rejection rationale:** Pendle PT tokens and the underlyings used (WETH, wstETH) are standard ERC20s without transfer hooks. They cannot trigger reentrancy during `safeTransferFrom`. The `flashLoan` function needs `nonReentrant` because it sends PT before the callback and pulls it back after — a classic reentrancy vector that doesn't exist in the other functions. CEI ordering is the correct protection for non-hookable tokens, and the `wrap` CEI violation has been fixed (see below).
+- **CEI fix applied:** `wrap()` previously updated `wrappedUnderlying` after `safeTransferFrom` (effect after interaction). Fixed: `wrappedUnderlying += amount` is now before the transfer. This makes the "Reentrancy on vault" row in the "Other probed vectors" table above fully accurate.
+- **Evidence:** `src/OVRFLO.sol` `wrap()` — `wrappedUnderlying += amount` now precedes `safeTransferFrom`; `deposit()`, `claim()`, `unwrap()` already followed CEI.
+
+### CR-L2 — Infinite approval to Sablier in OVRFLO constructor — REJECTED (intentional, gas optimization)
+
+- **Original claim (Low):** `IERC20(ovrfloToken).approve(address(sablierLL), type(uint256).max)` contradicts the "never use infinite approvals" guidance.
+- **Rejection rationale:** The approval is to an immutable, trusted Sablier address. The vault is the sole minter of ovrfloToken and does not store ovrfloToken as a balance (minted tokens go to users or directly into Sablier streams). Re-approving per stream would waste gas on every deposit for zero security benefit. The approval is for ovrfloToken only, not for PT or underlying.
+- **Evidence:** `src/OVRFLO.sol` constructor — `IERC20(ovrfloToken).approve(address(sablierLL), type(uint256).max)`; `sablierLL` is `immutable`.
+
+### CR-L3 — `sweepExcessPt`/`sweepExcessUnderlying` don't validate `to != address(0)` — REJECTED (admin-controlled)
+
+- **Original claim (Low):** The `to` parameter is not checked for the zero address. Tokens sent to `address(0)` are burned forever.
+- **Rejection rationale:** Both functions are `onlyAdmin` (multisig → factory → vault). The timelocked multisig is the trust boundary for admin operations. Adding a zero-address check duplicates what the multisig already validates off-chain.
+- **Evidence:** `src/OVRFLO.sol` — `sweepExcessPt` and `sweepExcessUnderlying` are `onlyAdmin`.
+
+### CR-L4 — OVRFLOBook fee cap of 100% (`MAX_FEE_BPS = 10_000`) — REJECTED (intentional pause mechanism)
+
+- **Original claim (Low):** The owner can set `feeBps` to 100%, taking the entire sale/borrow amount as a fee, which could be used to rug users on offer fills.
+- **Rejection rationale:** The 100% cap is an intentional emergency pause mechanism. If there is a bug in the contract, setting the fee to 100% prevents users from interacting with the book without adding a separate `Pausable` contract or increasing the attack surface. The timelocked multisig is the trust boundary. Existing listings are protected by snapshotted fees; only new offer fills would be affected. A lower cap could be set, but the current cap provides a gas-free circuit breaker.
+- **Evidence:** `src/OVRFLOBook.sol` — `MAX_FEE_BPS = 10_000`; `setFee` enforces `feeBps_ <= MAX_FEE_BPS`; listings snapshot `feeBps` at post time.
+
+### CR-I2 — Hardcoded Sablier address in OVRFLO — REJECTED (intentional transparency)
+
+- **Original claim (Informational):** `sablierLL` is hardcoded to a mainnet address, limiting portability to other chains.
+- **Rejection rationale:** Hardcoding ensures all participants know exactly where the stream is created. The project intentionally stays on Sablier V2 (smaller attack surface, immutable). The address is `immutable` in the contract and read by the factory's `deployBook` for consistency.
+- **Evidence:** `src/OVRFLO.sol` — `ISablierV2LockupLinear(0xAFb979d9afAd1aD27C5eFf4E27226E3AB9e5dCC9)`; AGENTS.md "Stay on Sablier V2 intentionally."
+
+### CR-I3 — `SeriesInfo.expiryCached` is `uint256` but could be `uint32` — REJECTED (non-issue)
+
+- **Original claim (Informational):** Timestamps fit in `uint32` until 2106. Packing as `uint32` would save one storage slot per series.
+- **Rejection rationale:** Non-issue. The gas savings are marginal and the current `uint256` avoids casting complexity.
+- **Evidence:** `src/OVRFLO.sol` — `SeriesInfo.expiryCached` is `uint256`.
+
+### Review fixes applied (not rejected)
+
+The following fixes from the same review were applied:
+- `MIN_PT_AMOUNT` changed from `immutable` to `constant` (compile-time literal, zero SLOAD cost).
+- `wrap()` CEI fix: `wrappedUnderlying += amount` moved before `safeTransferFrom`.
+- OVRFLOBook view functions (`saleOfferState`, `saleListingState`, `lendOfferState`, `borrowListingState`) now revert for non-existent IDs, matching the existing `loanState` pattern.
+- Interface licenses: `IPendleOracle`, `IPendleMarket`, `ISablierV2LockupLinear` changed from `UNLICENSED` to `MIT` (project-written minimal interfaces). Contradictory MIT comment block removed from `IStandardizedYield` (kept GPL SPDX, Pendle's interface).
+- `prepareOracle` in `OVRFLOFactory` now validates `twapDuration <= MAX_TWAP_DURATION` (was externally applied before this review session).
+
 ## Also reviewed — no medium+ issue (consensus)
 
 The internal review's "Reviewed — no medium+ issue (consensus)" table (in `x-ray/multi-agent-audit-report.md`) covers consensus-reviewed design decisions that are neither rejected findings nor resolved Q&A: maker fee snapshots, `lendAgainstListing` obligation-before-slippage ordering, loan accounting `drawn + repaid ≤ obligation`, stream eligibility vs deposit creation alignment, reentrancy guards on book mutators, admin APR drift as a governance/trust boundary, and book `claimLoan`/`closeLoan` Sablier calls (fork-tested). If you are about to raise one of these, it has already been consensus-reviewed — the table entry is the starting point, not a wall.

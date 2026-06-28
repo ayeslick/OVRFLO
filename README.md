@@ -124,11 +124,11 @@ Secondary market book for selling OVRFLO streams or borrowing against them. Boun
 | `closeLoan(loanId)` | Permissionless: draw remaining outstanding, return stream to borrower |
 | `repayLoan(loanId, amount)` | Borrower repays ovrfloToken to reduce or clear the obligation |
 | `quote(market, streamId, aprBps, borrowAmount)` | Preview price, obligation, fee, net, and residual (pass `0` for full borrow) |
-| `loanState(loanId)` | View full loan state (borrower, lender, stream, obligation, drawn, repaid, outstanding, closed) |
-| `saleOfferState(offerId)` | View sale offer state |
-| `saleListingState(listingId)` | View sale listing state |
-| `lendOfferState(offerId)` | View lend offer state |
-| `borrowListingState(listingId)` | View borrow listing state |
+| `loanState(loanId)` | View full loan state (reverts for non-existent loan) |
+| `saleOfferState(offerId)` | View sale offer state (reverts for non-existent offer) |
+| `saleListingState(listingId)` | View sale listing state (reverts for non-existent listing) |
+| `lendOfferState(offerId)` | View lend offer state (reverts for non-existent offer) |
+| `borrowListingState(listingId)` | View borrow listing state (reverts for non-existent listing) |
 | `setAprBounds(aprMinBps, aprMaxBps)` | Set accepted APR range for new posts (owner) |
 | `setFee(feeBps)` | Set protocol fee on offer fills (owner) |
 | `setTreasury(treasury)` | Set fee recipient (owner) |
@@ -163,7 +163,7 @@ Factory and admin hub for deploying and managing OVRFLO vaults. Owned by a timel
 | `deployBook(ovrflo)` | Deploy an OVRFLOBook for an existing vault (1:1, one book per vault); reads Sablier from vault, nominates multisig as pending owner |
 | `cancelDeployment()` | Cancel a pending deployment |
 | `addMarket(ovrflo, market, twapDuration, feeBps)` | Add a PT maturity; reads PT address and expiry from Pendle market; requires ready oracle and exact underlying match |
-| `prepareOracle(market, twapDuration)` | Increase oracle cardinality before `addMarket` (separate transaction) |
+| `prepareOracle(market, twapDuration)` | Increase oracle cardinality before `addMarket`; duration must be 15-30 min (separate transaction) |
 | `setMarketDepositLimit(ovrflo, market, limit)` | Set deposit cap for a market |
 | `sweepExcessPt(ovrflo, ptToken, to)` | Sweep excess PT from an OVRFLO |
 | `sweepExcessUnderlying(ovrflo, to)` | Sweep excess underlying from an OVRFLO |
@@ -174,7 +174,7 @@ Factory and admin hub for deploying and managing OVRFLO vaults. Owned by a timel
 
 ### OVRFLO.sol
 
-The core vault that creates collateral from Pendle PT deposits. Depositors receive immediate ovrfloTokens (principal at TWAP value) plus a Sablier stream vesting the remaining discount. After maturity, ovrfloTokens can be burned 1:1 to claim the underlying PT. Three vault-level immutables: `underlying`, `ovrfloToken`, `oracle`.
+The core vault that creates collateral from Pendle PT deposits. Depositors receive immediate ovrfloTokens (principal at TWAP value) plus a Sablier stream vesting the remaining discount. After maturity, ovrfloTokens can be burned 1:1 to claim the underlying PT. Vault-level immutables: `underlying`, `ovrfloToken`, `oracle`, `TREASURY_ADDR`, `sablierLL` (hardcoded). Constant: `MIN_PT_AMOUNT`.
 
 | Function | Description |
 |----------|-------------|
@@ -420,7 +420,7 @@ The factory reads the Sablier address from the vault's `sablierLL` immutable, en
 
 ```solidity
 // 1. If Pendle reports more observations are needed, prepare the oracle first
-//    in a separate transaction. twapDuration must be >= 15 minutes.
+//    in a separate transaction. twapDuration must be 15-30 minutes.
 factory.prepareOracle(market, twapDuration);
 
 // 2. Add market only after cardinality is sufficient and the oracle's

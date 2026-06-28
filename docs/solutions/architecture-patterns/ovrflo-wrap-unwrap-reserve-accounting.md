@@ -76,9 +76,11 @@ require(excess > 0, "OVRFLO: no excess");
 IERC20(underlying).safeTransfer(to, excess);
 ```
 
-`wrap` should verify the actual inbound transfer amount before minting, so fee-on-transfer or short-transfer underlying cannot create under-backed `ovrfloToken`:
+`wrap` should update the reserve counter before the transfer (CEI) and verify the actual inbound transfer amount before minting, so fee-on-transfer or short-transfer underlying cannot create under-backed `ovrfloToken`:
 
 ```solidity
+wrappedUnderlying += amount;
+
 uint256 balanceBefore = IERC20(underlying).balanceOf(address(this));
 IERC20(underlying).safeTransferFrom(msg.sender, address(this), amount);
 uint256 balanceAfter = IERC20(underlying).balanceOf(address(this));
@@ -87,7 +89,6 @@ require(
     "OVRFLO: transfer amount mismatch"
 );
 
-wrappedUnderlying += amount;
 OVRFLOToken(ovrfloToken).mint(msg.sender, amount);
 ```
 

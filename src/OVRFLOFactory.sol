@@ -235,6 +235,7 @@ contract OVRFLOFactory is Ownable2Step {
     /// @param twapDuration TWAP duration in seconds
     function prepareOracle(address market, uint32 twapDuration) external onlyOwner {
         require(twapDuration >= MIN_TWAP_DURATION, "OVRFLOFactory: twap too short");
+        require(twapDuration <= MAX_TWAP_DURATION, "OVRFLOFactory: twap too long");
         (bool increaseCardinalityRequired, uint16 cardinalityRequired,) =
             IPendleOracle(oracle).getOracleState(market, twapDuration);
         if (increaseCardinalityRequired) {
