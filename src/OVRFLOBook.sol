@@ -1291,7 +1291,7 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
 
         uint256 count;
         uint256 gathered;
-        for (uint256 i = startId; i < nextLendOfferId; i++) {
+        for (uint256 i = startId; i < startId + maxCount; i++) {
             LendOffer storage offer = lendOffers[i];
             if (offer.active && offer.market == market && offer.aprBps == aprBps && offer.capacity > 0) {
                 ids[count++] = i;
@@ -1331,7 +1331,7 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
 
         uint256 count;
         uint256 gathered;
-        for (uint256 i = startId; i < nextBorrowListingId; i++) {
+        for (uint256 i = startId; i < startId + maxCount; i++) {
             BorrowListing storage listing = borrowListings[i];
             if (listing.active && listing.market == market && listing.aprBps == aprBps && listing.borrowAmount > 0) {
                 ids[count++] = i;
