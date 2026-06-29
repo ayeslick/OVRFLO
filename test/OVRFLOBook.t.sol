@@ -1462,4 +1462,112 @@ contract OVRFLOBookTest is Test {
         vm.expectRevert("OVRFLOBook: use poolClaimLoan");
         book.claimLoan(loanId);
     }
+
+    /*//////////////////////////////////////////////////////////////
+                    COVERAGE: GATHER FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_GatherLendCapacities_SufficientCapacity() public {
+        book.setAprBounds(0, 9900);
+        _postLendOfferAtApr(BUYER, 50 ether, 500);
+        _postLendOfferAtApr(SELLER, 60 ether, 500);
+
+        (uint256[] memory ids, bool sufficient) = book.gatherLendCapacities(MARKET, 500, 100 ether, 1);
+        assertTrue(sufficient);
+        assertEq(ids.length, 2);
+        assertEq(ids[0], 1);
+        assertEq(ids[1], 2);
+    }
+
+    function test_GatherLendCapacities_InsufficientCapacity() public {
+        book.setAprBounds(0, 9900);
+        _postLendOfferAtApr(BUYER, 50 ether, 500);
+        _postLendOfferAtApr(SELLER, 30 ether, 500);
+
+        (uint256[] memory ids, bool sufficient) = book.gatherLendCapacities(MARKET, 500, 100 ether, 1);
+        assertFalse(sufficient);
+        assertEq(ids.length, 2);
+    }
+
+    function test_GatherLendCapacities_NoMatchingOffers() public {
+        _postLendOffer(BUYER, 100 ether);
+
+        (uint256[] memory ids, bool sufficient) = book.gatherLendCapacities(MARKET, 500, 100 ether, 1);
+        assertFalse(sufficient);
+        assertEq(ids.length, 0);
+    }
+
+    function test_GatherLendCapacities_SkipsCancelledAndDepleted() public {
+        _postLendOffer(BUYER, 50 ether);
+        _postLendOffer(SELLER, 60 ether);
+
+        // Cancel first offer
+        vm.prank(BUYER);
+        book.cancelLendOffer(1);
+
+        (uint256[] memory ids, bool sufficient) = book.gatherLendCapacities(MARKET, 1000, 100 ether, 1);
+        assertFalse(sufficient);
+        assertEq(ids.length, 1);
+        assertEq(ids[0], 2);
+    }
+
+    function test_GatherLendCapacities_SkipsDifferentApr() public {
+        book.setAprBounds(0, 9900);
+        _postLendOfferAtApr(BUYER, 50 ether, 500);
+        _postLendOfferAtApr(SELLER, 60 ether, 1000);
+
+        (uint256[] memory ids, bool sufficient) = book.gatherLendCapacities(MARKET, 500, 100 ether, 1);
+        assertFalse(sufficient);
+        assertEq(ids.length, 1);
+        assertEq(ids[0], 1);
+    }
+
+    function test_GatherLendCapacities_StartIdBeyondRange() public {
+        _postLendOffer(BUYER, 100 ether);
+
+        (uint256[] memory ids, bool sufficient) = book.gatherLendCapacities(MARKET, 1000, 100 ether, 99);
+        assertFalse(sufficient);
+        assertEq(ids.length, 0);
+    }
+
+    function test_GatherLendCapacities_ExpiredSeriesReverts() public {
+        _postLendOffer(BUYER, 100 ether);
+        vm.warp(expiry);
+        vm.expectRevert();
+        book.gatherLendCapacities(MARKET, 1000, 100 ether, 1);
+    }
+
+    function test_GatherBorrowListings_SufficientAmount() public {
+        _mintEligibleStream(80, SELLER, 110 ether, 0);
+        _postBorrowListing(SELLER, 80, 50 ether);
+        _mintEligibleStream(81, SELLER, 110 ether, 0);
+        _postBorrowListing(SELLER, 81, 60 ether);
+
+        (uint256[] memory ids, bool sufficient) = book.gatherBorrowListings(MARKET, 1000, 100 ether, 1);
+        assertTrue(sufficient);
+        assertEq(ids.length, 2);
+    }
+
+    function test_GatherBorrowListings_InsufficientAmount() public {
+        _mintEligibleStream(82, SELLER, 110 ether, 0);
+        _postBorrowListing(SELLER, 82, 50 ether);
+
+        (uint256[] memory ids, bool sufficient) = book.gatherBorrowListings(MARKET, 1000, 100 ether, 1);
+        assertFalse(sufficient);
+        assertEq(ids.length, 1);
+    }
+
+    function test_GatherBorrowListings_NoMatching() public {
+        (uint256[] memory ids, bool sufficient) = book.gatherBorrowListings(MARKET, 1000, 100 ether, 1);
+        assertFalse(sufficient);
+        assertEq(ids.length, 0);
+    }
+
+    function _postLendOfferAtApr(address lender, uint128 capacity, uint16 aprBps) internal returns (uint256 offerId) {
+        underlying.mint(lender, capacity);
+        vm.startPrank(lender);
+        underlying.approve(address(book), capacity);
+        offerId = book.postLendOffer(MARKET, aprBps, capacity);
+        vm.stopPrank();
+    }
 }

@@ -1005,6 +1005,90 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
     }
 
     /*//////////////////////////////////////////////////////////////
+                          GATHER FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Scans lend offers for matching capacity.
+    /// @dev Gated by `marketActive` (reverts on expired series). Returns IDs of active
+    ///      offers matching `market` and `aprBps` with remaining capacity, stopping once
+    ///      accumulated capacity meets `targetAmount`. Use `startId` to paginate.
+    /// @param market Pendle market to match.
+    /// @param aprBps Rate to match.
+    /// @param targetAmount Minimum total capacity desired.
+    /// @param startId First offer ID to scan (inclusive).
+    /// @return ids Matching offer IDs.
+    /// @return sufficient True if accumulated capacity >= `targetAmount`.
+    function gatherLendCapacities(address market, uint16 aprBps, uint128 targetAmount, uint256 startId)
+        external
+        view
+        returns (uint256[] memory ids, bool sufficient)
+    {
+        StreamPricing.marketActive(address(factory), core, market);
+        if (startId >= nextLendOfferId) {
+            return (new uint256[](0), false);
+        }
+
+        uint256 maxCount = nextLendOfferId - startId;
+        ids = new uint256[](maxCount);
+
+        uint256 count;
+        uint256 gathered;
+        for (uint256 i = startId; i < nextLendOfferId; i++) {
+            LendOffer storage offer = lendOffers[i];
+            if (offer.active && offer.market == market && offer.aprBps == aprBps && offer.capacity > 0) {
+                ids[count++] = i;
+                gathered += offer.capacity;
+                if (gathered >= targetAmount) break;
+            }
+        }
+
+        sufficient = gathered >= targetAmount;
+        // forge-lint: disable-next-line(unsafe-assembly)
+        assembly {
+            mstore(ids, count)
+        }
+    }
+
+    /// @notice Scans borrow listings for matching borrow amounts.
+    /// @dev Same pattern as `gatherLendCapacities` but accumulates `borrowAmount`.
+    /// @param market Pendle market to match.
+    /// @param aprBps Rate to match.
+    /// @param targetAmount Minimum total borrow amount desired.
+    /// @param startId First listing ID to scan (inclusive).
+    /// @return ids Matching listing IDs.
+    /// @return sufficient True if accumulated borrow amount >= `targetAmount`.
+    function gatherBorrowListings(address market, uint16 aprBps, uint128 targetAmount, uint256 startId)
+        external
+        view
+        returns (uint256[] memory ids, bool sufficient)
+    {
+        StreamPricing.marketActive(address(factory), core, market);
+        if (startId >= nextBorrowListingId) {
+            return (new uint256[](0), false);
+        }
+
+        uint256 maxCount = nextBorrowListingId - startId;
+        ids = new uint256[](maxCount);
+
+        uint256 count;
+        uint256 gathered;
+        for (uint256 i = startId; i < nextBorrowListingId; i++) {
+            BorrowListing storage listing = borrowListings[i];
+            if (listing.active && listing.market == market && listing.aprBps == aprBps && listing.borrowAmount > 0) {
+                ids[count++] = i;
+                gathered += listing.borrowAmount;
+                if (gathered >= targetAmount) break;
+            }
+        }
+
+        sufficient = gathered >= targetAmount;
+        // forge-lint: disable-next-line(unsafe-assembly)
+        assembly {
+            mstore(ids, count)
+        }
+    }
+
+    /*//////////////////////////////////////////////////////////////
                                 INTERNALS
     //////////////////////////////////////////////////////////////*/
 
