@@ -1,12 +1,15 @@
 ---
 kind: required_reading
 scope: ovrflo
-last_updated: 2026-06-27
+last_updated: 2026-06-29
 audience: [contributors, ai-agents]
 ---
 
 <!--
   Refresh log:
+  - 2026-06-29: Appended patterns #11 (strictly-increasing IDs in batch
+    arrays) and #12 (pro-rata cap on shared-pool claims) from the OVRFLOBook
+    Pool feature review (commits 91df170, ca8e248).
   - 2026-06-28: Updated R-02 to note natspec codification. Appended patterns
     #9 (factory owns all deployed books) and #10 (one vault per underlying)
     from the factory deployment/management pattern review.
@@ -709,3 +712,101 @@ rg "underlyingToOvrflo\[config.underlying\]" src/OVRFLOFactory.sol
 ```
 
 **Documented in:** [`docs/solutions/architecture-patterns/ovrflo-factory-deployment-admin-management-pattern.md`](../architecture-patterns/ovrflo-factory-deployment-admin-management-pattern.md)
+
+---
+
+## 11. Require strictly-increasing IDs in batch functions that accept ID arrays (ALWAYS REQUIRED)
+
+### ❌ WRONG (duplicate IDs double-count capacity or create double loans)
+
+```solidity
+// createBorrowPool — no ordering check
+for (uint256 i = 0; i < offerIds.length; i++) {
+    LendOffer storage offer = lendOffers[offerIds[i]];
+    require(offer.active, "OVRFLOBook: lend offer inactive");
+    totalAvailable += offer.capacity; // duplicate ID => counted twice
+}
+// Borrower receives more underlying than was actually consumed from any
+// single offer — fund theft from other offers' escrowed funds.
+```
+
+### ✅ CORRECT (strict-increasing guard rejects duplicates and unsorted input)
+
+```solidity
+for (uint256 i = 0; i < offerIds.length; i++) {
+    if (i > 0) require(offerIds[i] > offerIds[i - 1], "OVRFLOBook: duplicate or unsorted ids");
+    LendOffer storage offer = lendOffers[offerIds[i]];
+    require(offer.active, "OVRFLOBook: lend offer inactive");
+    totalAvailable += offer.capacity;
+}
+```
+
+**Why:** When a batch function iterates IDs in a validation loop then a
+separate fill loop, duplicate IDs cause double-counting in validation
+(inflated `totalAvailable` or `totalDeployable`) and double-execution in the
+fill (two loans against the same escrowed stream, or funds drawn twice from
+the same offer). `require(ids[i] > ids[i-1])` rejects both duplicates and
+unsorted input in a single check. As defense-in-depth, also re-assert the
+`active` flag inside the fill loop.
+
+**Placement/Context:** Any function that accepts an array of IDs and
+iterates them more than once: `createBorrowPool` (offer IDs),
+`createLenderPool` (listing IDs), and any future batch primitive.
+
+**How to detect violation:**
+
+```bash
+rg "duplicate or unsorted ids" src/OVRFLOBook.sol
+# expected: 2 matches (one per pool creation function)
+```
+
+**Documented in:** [`docs/solutions/design-patterns/solidity-batch-function-safety-patterns.md`](../design-patterns/solidity-batch-function-safety-patterns.md)
+
+---
+
+## 12. Cap shared-pool claims at the contributor's pro-rata share of current poolProceeds (ALWAYS REQUIRED)
+
+### ❌ WRONG (majority contributor drains the pot before others can claim)
+
+```solidity
+// claimPoolShare — bounded only by remaining entitlement
+uint256 remaining = entitlement - poolReceived[poolId][msg.sender];
+require(uint256(amount) <= remaining, "OVRFLOBook: exceeds available");
+// A 60% contributor can sweep 100% of poolProceeds on their first claim,
+// forcing the 40% contributor into the more expensive poolClaimLoan path.
+```
+
+### ✅ CORRECT (pro-rata cap on the current pot balance)
+
+```solidity
+uint256 proRataShare =
+    uint256(poolProceeds[poolId]) * poolContributions[poolId][msg.sender]
+        / pools[poolId].totalContributed;
+uint256 available = proRataShare;
+if (remaining < available) available = remaining;
+require(uint256(amount) <= available, "OVRFLOBook: exceeds available");
+```
+
+**Why:** Without the pro-rata cap, a majority contributor can drain all of
+`poolProceeds` on their first claim, leaving later claimants with nothing in
+the pot even though their `remaining` entitlement is positive. They are then
+forced into `poolClaimLoan` (direct stream draw, higher gas). The pro-rata
+cap throttles the *rate* at which the shared pot can be drained — it never
+lets anyone over-claim their true share because `remaining` still caps the
+total across both claim channels.
+
+**Placement/Context:** `claimPoolShare` — the shared-pot claim channel for
+both borrower and lender pools. `poolClaimLoan` (the direct-draw channel)
+does not need this cap because it draws from a specific loan's stream, not
+from a shared accumulator.
+
+**How to detect violation:**
+
+```bash
+rg "proRataShare" src/OVRFLOBook.sol
+# expected: 1 match in claimPoolShare
+```
+
+**Documented in:** [`docs/solutions/design-patterns/solidity-batch-function-safety-patterns.md`](../design-patterns/solidity-batch-function-safety-patterns.md)
+
+---

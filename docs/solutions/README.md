@@ -19,6 +19,8 @@ enums have been widened to reflect our stack; everything else matches the upstre
 - `logic-errors/` — business-logic bugs in contracts or client code
 - `developer-experience/` — DX issues: dead code, env layout, dev setup
 - `best-practices/` — testing, workflow, and code-quality practices distilled from real review work
+- `architecture-patterns/` — structural and system-level design patterns for OVRFLO contracts
+- `design-patterns/` — function-level design patterns and Solidity-specific learnings distilled from implementation and review work
 - `patterns/` — **required reading**: short, enforceable rules extracted
   from the writeups above. If you are touching an area a pattern covers,
   follow it or have a documented reason not to.
@@ -47,6 +49,10 @@ enums have been widened to reflect our stack; everything else matches the upstre
   6. Standalone OVRFLOBook deployment must verify Sablier matches the vault's canonical immutable.
   7. Assert all-party token balances in every money-movement test (not just state flags and NFT ownership).
   8. View functions that resolve by ID must revert on non-existent IDs, not return zero defaults.
+  9. The factory owns every deployed book — book admin is forwarded, not direct.
+  10. One vault per underlying — `configureDeployment` must reject duplicates.
+  11. Require strictly-increasing IDs in batch functions that accept ID arrays.
+  12. Cap shared-pool claims at the contributor's pro-rata share of current `poolProceeds`.
   - Also includes a "Considered and rejected" section documenting 4 findings from the 2026-06-28 full-contract review that were explicitly dismissed (18-decimal underlying check, sweep zero-address guard, unchecked downcasts in deposit, registeredToken equality check).
 
 ### Best practices
@@ -130,6 +136,21 @@ enums have been widened to reflect our stack; everything else matches the upstre
   The sentinel is `maker`/`lender`/`borrower != address(0)`, which survives
   teardown (only `capacity`/`active` are zeroed) and fails only for IDs that
   were never created.
+- [architecture-patterns/ovrflo-factory-deployment-admin-management-pattern.md](architecture-patterns/ovrflo-factory-deployment-admin-management-pattern.md) —
+  The factory owns every deployed vault and book; admin is forwarded through
+  factory functions, not called directly. One vault per underlying is enforced
+  at `configureDeployment` time.
+
+### Design patterns
+
+- [design-patterns/solidity-batch-function-safety-patterns.md](design-patterns/solidity-batch-function-safety-patterns.md) —
+  Five function-level design patterns distilled from the OVRFLOBook Pool
+  implementation: (1) strictly-increasing IDs in batch arrays to prevent
+  duplicate-ID fund theft, (2) pro-rata cap on shared-pool claims to prevent
+  majority-contributor draining, (3) aggregate `totalObligation` for
+  multi-loan pool entitlement, (4) no artificial caps on `view`-function
+  results (eth_call has high gas limits), (5) stack-too-deep workarounds
+  (memory arrays, block scoping, helper factoring).
 
 ### Local devnet & seeding
 
