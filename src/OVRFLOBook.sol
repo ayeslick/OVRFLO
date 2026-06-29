@@ -1261,14 +1261,12 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
                           GATHER FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Maximum number of IDs returned by gather functions in a single call.
-    uint256 public constant MAX_GATHER_RESULTS = 500;
-
     /// @notice Scans lend offers for matching capacity.
-    /// @dev Gated by `marketActive` (reverts on expired series). Returns IDs of active
-    ///      offers matching `market` and `aprBps` with remaining capacity, stopping once
-    ///      accumulated capacity meets `targetAmount`. Use `startId` to paginate.
-    ///      Allocation capped at `MAX_GATHER_RESULTS` to bound gas cost.
+    /// @dev View function (called via eth_call off-chain, high gas available). Gated by
+    ///      `marketActive` (reverts on expired series). Returns IDs of active offers
+    ///      matching `market` and `aprBps` with remaining capacity, stopping once
+    ///      accumulated capacity meets `targetAmount`. Use `startId` to paginate if the
+    ///      scan is large and `sufficient` is false.
     /// @param market Pendle market to match.
     /// @param aprBps Rate to match.
     /// @param targetAmount Minimum total capacity desired.
@@ -1286,12 +1284,11 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
         }
 
         uint256 maxCount = nextLendOfferId - startId;
-        if (maxCount > MAX_GATHER_RESULTS) maxCount = MAX_GATHER_RESULTS;
         ids = new uint256[](maxCount);
 
         uint256 count;
         uint256 gathered;
-        for (uint256 i = startId; i < startId + maxCount; i++) {
+        for (uint256 i = startId; i < nextLendOfferId; i++) {
             LendOffer storage offer = lendOffers[i];
             if (offer.active && offer.market == market && offer.aprBps == aprBps && offer.capacity > 0) {
                 ids[count++] = i;
@@ -1308,7 +1305,8 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
     }
 
     /// @notice Scans borrow listings for matching borrow amounts.
-    /// @dev Same pattern as `gatherLendCapacities` but accumulates `borrowAmount`.
+    /// @dev View function (called via eth_call off-chain). Same pattern as
+    ///      `gatherLendCapacities` but accumulates `borrowAmount`.
     /// @param market Pendle market to match.
     /// @param aprBps Rate to match.
     /// @param targetAmount Minimum total borrow amount desired.
@@ -1326,12 +1324,11 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
         }
 
         uint256 maxCount = nextBorrowListingId - startId;
-        if (maxCount > MAX_GATHER_RESULTS) maxCount = MAX_GATHER_RESULTS;
         ids = new uint256[](maxCount);
 
         uint256 count;
         uint256 gathered;
-        for (uint256 i = startId; i < startId + maxCount; i++) {
+        for (uint256 i = startId; i < nextBorrowListingId; i++) {
             BorrowListing storage listing = borrowListings[i];
             if (listing.active && listing.market == market && listing.aprBps == aprBps && listing.borrowAmount > 0) {
                 ids[count++] = i;
