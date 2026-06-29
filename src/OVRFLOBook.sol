@@ -844,6 +844,85 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
     }
 
     /*//////////////////////////////////////////////////////////////
+                                POOLS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Creates a borrower pool: aggregates multiple lend offers into one loan.
+    /// @dev The borrower pledges `streamId` and borrows from multiple lend offers in a
+    ///      single atomic transaction. The pool becomes the virtual lender
+    ///      (`loan.lender = address(this)`, `loanPoolId[loanId] = poolId`). Each offer
+    ///      maker's consumed capacity is recorded for pro-rata claims. All offers must
+    ///      share the same `market` and `aprBps`. Self-match (borrower is an offer maker)
+    ///      is prevented. CEI: all validation before any state mutation.
+    /// @param offerIds Lend offer IDs to consume (must all match same market/aprBps).
+    /// @param streamId The Sablier stream to pledge as collateral.
+    /// @param targetBorrow Desired principal; actual may be less if capacity is insufficient.
+    /// @param minAcceptable Minimum principal the borrower will accept (slippage).
+    /// @return poolId The new pool id.
+    function createBorrowPool(
+        uint256[] memory offerIds,
+        uint256 streamId,
+        uint128 targetBorrow,
+        uint128 minAcceptable
+    ) external nonReentrant returns (uint256 poolId) {
+        require(targetBorrow > 0, "OVRFLOBook: borrow zero");
+        require(offerIds.length > 0, "OVRFLOBook: empty offers");
+
+        address market;
+        uint16 aprBps;
+        {
+            LendOffer storage firstOffer = lendOffers[offerIds[0]];
+            require(firstOffer.active, "OVRFLOBook: lend offer inactive");
+            market = firstOffer.market;
+            aprBps = firstOffer.aprBps;
+        }
+
+        uint128 obligation;
+        uint128 actualBorrow128;
+        uint256 netToBorrower;
+        uint256 feeAmount;
+        {
+            StreamPricing.Eligibility memory eligibility = _requireEligible(market, streamId);
+            uint256 timeToMaturity = _timeToMaturity(eligibility.seriesMaturity);
+            uint256 grossPrice = StreamPricing.grossPrice(eligibility.remaining, aprBps, timeToMaturity);
+            require(grossPrice > 0, "OVRFLOBook: price zero");
+
+            uint256 totalAvailable = _validateBorrowOffers(offerIds, market, aprBps, msg.sender);
+            uint256 actualBorrow = targetBorrow < totalAvailable ? uint256(targetBorrow) : totalAvailable;
+            require(actualBorrow >= minAcceptable, "OVRFLOBook: insufficient capacity");
+            require(actualBorrow <= grossPrice, "OVRFLOBook: borrow above price");
+
+            obligation = StreamPricing.obligationForFill(
+                actualBorrow, grossPrice, eligibility.remaining, aprBps, timeToMaturity
+            );
+            feeAmount = StreamPricing.fee(actualBorrow, feeBps);
+            netToBorrower = actualBorrow - feeAmount;
+            actualBorrow128 = _toUint128(actualBorrow);
+        }
+
+        poolId = nextPoolId++;
+        pools[poolId] = Pool({
+            creator: msg.sender,
+            aprBps: aprBps,
+            isLend: false,
+            active: true,
+            market: market,
+            totalContributed: actualBorrow128
+        });
+
+        _consumeBorrowOffers(offerIds, poolId, actualBorrow128);
+
+        uint256 loanId = _storeLoan(msg.sender, address(this), streamId, obligation);
+        loanPoolId[loanId] = poolId;
+
+        sablier.transferFrom(msg.sender, address(this), streamId);
+        _payUnderlying(msg.sender, netToBorrower);
+        _payUnderlying(treasury, feeAmount);
+
+        emit PoolCreated(poolId, msg.sender, market, aprBps, false, actualBorrow128);
+    }
+
+    /*//////////////////////////////////////////////////////////////
                               VIEW FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
@@ -1091,6 +1170,40 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
     /*//////////////////////////////////////////////////////////////
                                 INTERNALS
     //////////////////////////////////////////////////////////////*/
+
+    /// @dev Validates all offers in a borrower pool: active, same market, same aprBps,
+    ///      no self-match. Returns total available capacity.
+    function _validateBorrowOffers(
+        uint256[] memory offerIds,
+        address market,
+        uint16 aprBps,
+        address borrower
+    ) internal view returns (uint256 totalAvailable) {
+        for (uint256 i = 0; i < offerIds.length; i++) {
+            LendOffer storage offer = lendOffers[offerIds[i]];
+            require(offer.active, "OVRFLOBook: lend offer inactive");
+            require(offer.market == market, "OVRFLOBook: market mismatch");
+            require(offer.aprBps == aprBps, "OVRFLOBook: apr mismatch");
+            require(offer.lender != borrower, "OVRFLOBook: self-match");
+            totalAvailable += offer.capacity;
+        }
+    }
+
+    /// @dev Consumes lend offers up to `actualBorrow`, recording per-lender contributions.
+    function _consumeBorrowOffers(uint256[] memory offerIds, uint256 poolId, uint256 actualBorrow) internal {
+        uint256 toBorrow = actualBorrow;
+        for (uint256 i = 0; i < offerIds.length; i++) {
+            if (toBorrow == 0) break;
+            LendOffer storage offer = lendOffers[offerIds[i]];
+            uint256 consumed = toBorrow < offer.capacity ? toBorrow : offer.capacity;
+            offer.capacity -= _toUint128(consumed);
+            if (offer.capacity == 0) {
+                offer.active = false;
+            }
+            poolContributions[poolId][offer.lender] += _toUint128(consumed);
+            toBorrow -= consumed;
+        }
+    }
 
     /// @dev Reverts if `aprBps` is outside the current `[aprMinBps, aprMaxBps]` bounds.
     function _validateApr(uint16 aprBps) internal view {
