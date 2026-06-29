@@ -1316,4 +1316,60 @@ contract OVRFLOBookTest is Test {
         (,,,,,, bool active) = book.borrowListings(listingId);
         assertTrue(active, "listing should still be active");
     }
+
+    /*//////////////////////////////////////////////////////////////
+                    COVERAGE: WHOLE-NUMBER RATE CONSTRAINT
+    //////////////////////////////////////////////////////////////*/
+
+    function test_Apr_RejectsNonWholeRateOnLendOffer() public {
+        book.setAprBounds(0, 9900);
+
+        vm.startPrank(BUYER);
+        underlying.mint(BUYER, 100 ether);
+        underlying.approve(address(book), 100 ether);
+        vm.expectRevert("OVRFLOBook: apr not whole");
+        book.postLendOffer(MARKET, 550, 100 ether);
+        vm.stopPrank();
+    }
+
+    function test_Apr_AcceptsBoundaryWholeRates() public {
+        book.setAprBounds(0, 9900);
+
+        vm.startPrank(BUYER);
+        underlying.mint(BUYER, 300 ether);
+        underlying.approve(address(book), 300 ether);
+        uint256 id0 = book.postLendOffer(MARKET, 0, 100 ether);
+        uint256 id500 = book.postLendOffer(MARKET, 500, 100 ether);
+        uint256 id9900 = book.postLendOffer(MARKET, 9900, 100 ether);
+        vm.stopPrank();
+
+        (, , uint16 apr0, , ) = book.lendOffers(id0);
+        assertEq(apr0, 0);
+        (, , uint16 apr500, , ) = book.lendOffers(id500);
+        assertEq(apr500, 500);
+        (, , uint16 apr9900, , ) = book.lendOffers(id9900);
+        assertEq(apr9900, 9900);
+    }
+
+    function test_Apr_RejectsNonWholeRateOnBorrowListing() public {
+        book.setAprBounds(0, 9900);
+        _mintEligibleStream(60, SELLER, 110 ether, 0);
+
+        vm.startPrank(SELLER);
+        sablier.approve(address(book), 60);
+        vm.expectRevert("OVRFLOBook: apr not whole");
+        book.postBorrowListing(MARKET, 60, 550, 100 ether);
+        vm.stopPrank();
+    }
+
+    function test_Apr_RejectsNonWholeRateOnSaleOffer() public {
+        book.setAprBounds(0, 9900);
+
+        vm.startPrank(BUYER);
+        underlying.mint(BUYER, 100 ether);
+        underlying.approve(address(book), 100 ether);
+        vm.expectRevert("OVRFLOBook: apr not whole");
+        book.postSaleOffer(MARKET, 333, 100 ether);
+        vm.stopPrank();
+    }
 }

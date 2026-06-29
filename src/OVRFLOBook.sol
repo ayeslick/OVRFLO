@@ -31,6 +31,8 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
 
     /// @notice Launch APR (10%) used as the initial min and max APR bound.
     uint16 public constant LAUNCH_APR_BPS = 1000;
+    /// @notice Step size for APR validation (100 bps = 1%). All APRs must be whole numbers.
+    uint16 public constant APR_STEP_BPS = 100;
 
     /*//////////////////////////////////////////////////////////////
                                 IMMUTABLES
@@ -952,6 +954,7 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
     /// @dev Reverts if `aprBps` is outside the current `[aprMinBps, aprMaxBps]` bounds.
     function _validateApr(uint16 aprBps) internal view {
         require(aprBps >= aprMinBps && aprBps <= aprMaxBps, "OVRFLOBook: apr out of bounds");
+        require(aprBps % APR_STEP_BPS == 0, "OVRFLOBook: apr not whole");
     }
 
     /// @dev Stream-level eligibility gate; delegates to `StreamPricing.requireEligible`.
