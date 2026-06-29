@@ -1590,7 +1590,7 @@ contract OVRFLOBookTest is Test {
         vm.stopPrank();
 
         // Pool state
-        (address creator, uint16 aprBps, bool isLend, bool active, address market, uint128 totalContributed) =
+        (address creator, uint16 aprBps, bool isLend, bool active, address market, uint128 totalContributed,) =
             book.pools(poolId);
         assertEq(creator, SELLER);
         assertEq(aprBps, 1000);
@@ -1665,7 +1665,7 @@ contract OVRFLOBookTest is Test {
         uint256 poolId = book.createBorrowPool(offerIds, 102, 100 ether, 70 ether);
         vm.stopPrank();
 
-        (, uint16 aprBps,,,, uint128 totalContributed) = book.pools(poolId);
+        (, uint16 aprBps,,,, uint128 totalContributed,) = book.pools(poolId);
         assertEq(aprBps, 1000);
         assertEq(totalContributed, 80 ether, "actual borrow = available, not target");
 
@@ -1747,6 +1747,182 @@ contract OVRFLOBookTest is Test {
         sablier.approve(address(book), 106);
         vm.expectRevert("OVRFLOBook: lend offer inactive");
         book.createBorrowPool(offerIds, 106, 100 ether, 90 ether);
+        vm.stopPrank();
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                    COVERAGE: LENDER POOL CREATION
+    //////////////////////////////////////////////////////////////*/
+
+    function test_CreateLenderPool_SufficientCapacity() public {
+        _mintEligibleStream(110, SELLER, 110 ether, 0);
+        uint256 listing1 = _postBorrowListing(SELLER, 110, 50 ether);
+
+        _mintEligibleStream(111, STRANGER, 110 ether, 0);
+        uint256 listing2 = _postBorrowListing(STRANGER, 111, 50 ether);
+
+        address borrower3 = address(0x7777);
+        _mintEligibleStream(112, borrower3, 110 ether, 0);
+        uint256 listing3 = _postBorrowListing(borrower3, 112, 50 ether);
+
+        underlying.mint(BUYER, 150 ether);
+        uint256[] memory listingIds = new uint256[](3);
+        listingIds[0] = listing1;
+        listingIds[1] = listing2;
+        listingIds[2] = listing3;
+
+        vm.startPrank(BUYER);
+        underlying.approve(address(book), 150 ether);
+        uint256 poolId = book.createLenderPool(listingIds, 150 ether, 100 ether);
+        vm.stopPrank();
+
+        // Pool state
+        (, uint16 aprBps, bool isLend, bool active,, uint128 totalContributed, uint128 totalObligation) =
+            book.pools(poolId);
+        assertEq(aprBps, 1000);
+        assertTrue(isLend);
+        assertTrue(active);
+        assertEq(totalContributed, 150 ether);
+        assertEq(totalObligation, 165 ether);
+
+        // Contributions
+        assertEq(book.poolContributions(poolId, BUYER), 150 ether);
+
+        // Each loan has loanPoolId set
+        assertEq(book.loanPoolId(1), poolId);
+        assertEq(book.loanPoolId(2), poolId);
+        assertEq(book.loanPoolId(3), poolId);
+
+        // poolProceeds starts at 0
+        assertEq(book.poolProceeds(poolId), 0);
+
+        // Listings deactivated
+        (,,,,,, bool active1) = book.borrowListings(listing1);
+        assertFalse(active1);
+        (,,,,,, bool active2) = book.borrowListings(listing2);
+        assertFalse(active2);
+
+        // Balance assertions
+        assertEq(underlying.balanceOf(BUYER), 0, "lender deployed all");
+        assertEq(underlying.balanceOf(SELLER), 50 ether, "borrower1 paid");
+        assertEq(underlying.balanceOf(STRANGER), 50 ether, "borrower2 paid");
+        assertEq(underlying.balanceOf(borrower3), 50 ether, "borrower3 paid");
+        assertEq(underlying.balanceOf(TREASURY), 0, "no fees");
+        assertEq(underlying.balanceOf(address(book)), 0, "book holds no underlying");
+    }
+
+    function test_CreateLenderPool_InsufficientCapacityReverts() public {
+        _mintEligibleStream(113, SELLER, 110 ether, 0);
+        _postBorrowListing(SELLER, 113, 50 ether);
+        _mintEligibleStream(114, STRANGER, 110 ether, 0);
+        _postBorrowListing(STRANGER, 114, 50 ether);
+
+        underlying.mint(BUYER, 200 ether);
+        uint256[] memory listingIds = new uint256[](2);
+        listingIds[0] = 1;
+        listingIds[1] = 2;
+
+        vm.startPrank(BUYER);
+        underlying.approve(address(book), 200 ether);
+        vm.expectRevert("OVRFLOBook: insufficient capacity");
+        book.createLenderPool(listingIds, 200 ether, 150 ether);
+        vm.stopPrank();
+
+        assertEq(underlying.balanceOf(BUYER), 200 ether, "lender keeps funds");
+        (,,,,,, bool active1) = book.borrowListings(1);
+        assertTrue(active1, "listing untouched");
+    }
+
+    function test_CreateLenderPool_PartialCoverageReturnsUnused() public {
+        _mintEligibleStream(115, SELLER, 110 ether, 0);
+        _postBorrowListing(SELLER, 115, 50 ether);
+        _mintEligibleStream(116, STRANGER, 110 ether, 0);
+        _postBorrowListing(STRANGER, 116, 50 ether);
+
+        underlying.mint(BUYER, 150 ether);
+        uint256[] memory listingIds = new uint256[](2);
+        listingIds[0] = 1;
+        listingIds[1] = 2;
+
+        vm.startPrank(BUYER);
+        underlying.approve(address(book), 150 ether);
+        uint256 poolId = book.createLenderPool(listingIds, 150 ether, 80 ether);
+        vm.stopPrank();
+
+        (,,,,, uint128 totalContributed,) = book.pools(poolId);
+        assertEq(totalContributed, 100 ether);
+        assertEq(underlying.balanceOf(BUYER), 50 ether, "unused returned");
+        assertEq(underlying.balanceOf(SELLER), 50 ether);
+        assertEq(underlying.balanceOf(STRANGER), 50 ether);
+    }
+
+    function test_CreateLenderPool_SelfMatchReverts() public {
+        _mintEligibleStream(117, BUYER, 110 ether, 0);
+        _postBorrowListing(BUYER, 117, 50 ether);
+        _mintEligibleStream(118, STRANGER, 110 ether, 0);
+        _postBorrowListing(STRANGER, 118, 50 ether);
+
+        underlying.mint(BUYER, 100 ether);
+        uint256[] memory listingIds = new uint256[](2);
+        listingIds[0] = 1;
+        listingIds[1] = 2;
+
+        vm.startPrank(BUYER);
+        underlying.approve(address(book), 100 ether);
+        vm.expectRevert("OVRFLOBook: self-match");
+        book.createLenderPool(listingIds, 100 ether, 80 ether);
+        vm.stopPrank();
+    }
+
+    function test_CreateLenderPool_AprMismatchReverts() public {
+        book.setAprBounds(0, 9900);
+        _mintEligibleStream(119, SELLER, 110 ether, 0);
+        _postBorrowListingAtApr(SELLER, 119, 50 ether, 500);
+        _mintEligibleStream(120, STRANGER, 110 ether, 0);
+        _postBorrowListingAtApr(STRANGER, 120, 50 ether, 1000);
+
+        underlying.mint(BUYER, 100 ether);
+        uint256[] memory listingIds = new uint256[](2);
+        listingIds[0] = 1;
+        listingIds[1] = 2;
+
+        vm.startPrank(BUYER);
+        underlying.approve(address(book), 100 ether);
+        vm.expectRevert("OVRFLOBook: apr mismatch");
+        book.createLenderPool(listingIds, 100 ether, 80 ether);
+        vm.stopPrank();
+    }
+
+    function test_CreateLenderPool_CancelledListingReverts() public {
+        _mintEligibleStream(121, SELLER, 110 ether, 0);
+        uint256 listing1 = _postBorrowListing(SELLER, 121, 50 ether);
+        _mintEligibleStream(122, STRANGER, 110 ether, 0);
+        _postBorrowListing(STRANGER, 122, 50 ether);
+
+        vm.prank(SELLER);
+        book.cancelBorrowListing(listing1);
+
+        underlying.mint(BUYER, 100 ether);
+        uint256[] memory listingIds = new uint256[](2);
+        listingIds[0] = listing1;
+        listingIds[1] = 2;
+
+        vm.startPrank(BUYER);
+        underlying.approve(address(book), 100 ether);
+        vm.expectRevert("OVRFLOBook: borrow listing inactive");
+        book.createLenderPool(listingIds, 100 ether, 80 ether);
+        vm.stopPrank();
+    }
+
+    function _postBorrowListingAtApr(
+        address borrower,
+        uint256 streamId,
+        uint128 borrowAmount,
+        uint16 aprBps
+    ) internal returns (uint256 listingId) {
+        vm.startPrank(borrower);
+        sablier.approve(address(book), streamId);
+        listingId = book.postBorrowListing(MARKET, streamId, aprBps, borrowAmount);
         vm.stopPrank();
     }
 }

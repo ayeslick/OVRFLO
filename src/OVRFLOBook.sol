@@ -176,6 +176,7 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
     /// @param active False once all loans settled and proceeds claimed.
     /// @param market Pendle market all offers/listings belong to.
     /// @param totalContributed Total capital contributed (borrowed or deployed).
+    /// @param totalObligation Total ovrfloToken owed across all pool loans.
     struct Pool {
         address creator;
         uint16 aprBps;
@@ -183,6 +184,7 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
         bool active;
         address market;
         uint128 totalContributed;
+        uint128 totalObligation;
     }
 
     /// @notice Sale offer id => offer.
@@ -907,7 +909,8 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
             isLend: false,
             active: true,
             market: market,
-            totalContributed: actualBorrow128
+            totalContributed: actualBorrow128,
+            totalObligation: obligation
         });
 
         _consumeBorrowOffers(offerIds, poolId, actualBorrow128);
@@ -920,6 +923,113 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
         _payUnderlying(treasury, feeAmount);
 
         emit PoolCreated(poolId, msg.sender, market, aprBps, false, actualBorrow128);
+    }
+
+    /// @notice Creates a lender pool: deploys capital across multiple borrow listings.
+    /// @dev The lender funds multiple borrow listings in one atomic transaction. A loan is
+    ///      created per listing with `loan.lender = address(this)` and
+    ///      `loanPoolId[loanId] = poolId`. The lender's total deployment is recorded for
+    ///      pro-rata claims. Listings are fully funded or skipped (no partial fills). All
+    ///      listings must share the same `market` and `aprBps`. Unused capital is returned.
+    ///      CEI: all validation before any state mutation.
+    /// @param listingIds Borrow listing IDs to fill (must all match same market/aprBps).
+    /// @param totalAmount Total underlying to deploy; unused portion is returned.
+    /// @param minAcceptable Minimum total the lender will deploy (slippage).
+    /// @return poolId The new pool id.
+    function createLenderPool(
+        uint256[] memory listingIds,
+        uint128 totalAmount,
+        uint128 minAcceptable
+    ) external nonReentrant returns (uint256 poolId) {
+        require(totalAmount > 0, "OVRFLOBook: amount zero");
+        require(listingIds.length > 0, "OVRFLOBook: empty listings");
+
+        BorrowListing storage firstListing = borrowListings[listingIds[0]];
+        require(firstListing.active, "OVRFLOBook: borrow listing inactive");
+        require(msg.sender != firstListing.borrower, "OVRFLOBook: self-match");
+        address market = firstListing.market;
+        uint16 aprBps = firstListing.aprBps;
+
+        // Validate all listings and compute total deployable (budget-constrained)
+        uint256 totalDeployable;
+        {
+            uint256 remainingBudget = totalAmount;
+            for (uint256 i = 0; i < listingIds.length; i++) {
+                BorrowListing storage listing = borrowListings[listingIds[i]];
+                require(listing.active, "OVRFLOBook: borrow listing inactive");
+                require(listing.market == market, "OVRFLOBook: market mismatch");
+                require(listing.aprBps == aprBps, "OVRFLOBook: apr mismatch");
+                require(msg.sender != listing.borrower, "OVRFLOBook: self-match");
+                if (uint256(listing.borrowAmount) <= remainingBudget) {
+                    totalDeployable += listing.borrowAmount;
+                    remainingBudget -= listing.borrowAmount;
+                }
+            }
+        }
+
+        require(totalDeployable >= minAcceptable, "OVRFLOBook: insufficient capacity");
+
+        // Pull totalAmount from lender
+        _pullExact(IERC20(underlying), msg.sender, address(this), totalAmount);
+
+        // Create pool
+        poolId = nextPoolId++;
+        pools[poolId] = Pool({
+            creator: msg.sender,
+            aprBps: aprBps,
+            isLend: true,
+            active: true,
+            market: market,
+            totalContributed: _toUint128(totalDeployable),
+            totalObligation: 0
+        });
+        poolContributions[poolId][msg.sender] = _toUint128(totalDeployable);
+
+        // Fill listings and accumulate total obligation
+        uint256 totalObligation;
+        {
+            uint256 remainingBudget = totalAmount;
+            for (uint256 i = 0; i < listingIds.length; i++) {
+                if (remainingBudget == 0) break;
+                BorrowListing storage listing = borrowListings[listingIds[i]];
+                if (uint256(listing.borrowAmount) > remainingBudget) continue;
+
+                StreamPricing.Eligibility memory eligibility =
+                    _requireEligible(listing.market, listing.streamId);
+                uint256 timeToMaturity = _timeToMaturity(eligibility.seriesMaturity);
+                uint256 grossPrice =
+                    StreamPricing.grossPrice(eligibility.remaining, aprBps, timeToMaturity);
+                require(grossPrice > 0, "OVRFLOBook: price zero");
+                require(listing.borrowAmount <= grossPrice, "OVRFLOBook: borrow above price");
+
+                uint128 obligation = StreamPricing.obligationForFill(
+                    listing.borrowAmount, grossPrice, eligibility.remaining, aprBps, timeToMaturity
+                );
+                uint256 feeAmount = StreamPricing.fee(listing.borrowAmount, listing.feeBps);
+                uint256 netToBorrower = uint256(listing.borrowAmount) - feeAmount;
+
+                listing.active = false;
+                uint256 loanId = _storeLoan(listing.borrower, address(this), listing.streamId, obligation);
+                loanPoolId[loanId] = poolId;
+
+                _payUnderlying(listing.borrower, netToBorrower);
+                _payUnderlying(treasury, feeAmount);
+
+                totalObligation += obligation;
+                remainingBudget -= listing.borrowAmount;
+            }
+        }
+
+        // Update total obligation in pool
+        pools[poolId].totalObligation = _toUint128(totalObligation);
+
+        // Return unused capital
+        uint256 unused = uint256(totalAmount) - totalDeployable;
+        if (unused > 0) {
+            _payUnderlying(msg.sender, unused);
+        }
+
+        emit PoolCreated(poolId, msg.sender, market, aprBps, true, _toUint128(totalDeployable));
     }
 
     /*//////////////////////////////////////////////////////////////
