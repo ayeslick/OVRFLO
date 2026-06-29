@@ -7,6 +7,9 @@ audience: [contributors, ai-agents]
 
 <!--
   Refresh log:
+  - 2026-06-29: Appended R-05 (protocol-level PT redemption rejected) from
+    the claim redesign fork-test findings. Updated pattern #4 and #7 to
+    reference pool-only functions after single-party lending removal.
   - 2026-06-29: Appended patterns #11 (strictly-increasing IDs in batch
     arrays) and #12 (pro-rata cap on shared-pool claims) from the OVRFLOBook
     Pool feature review (commits 91df170, ca8e248).
@@ -592,6 +595,28 @@ the series `ovrfloToken` = `OVRFLO.series(market).ovrfloToken` which returns
 the same vault immutable. They are identical by construction. An equality
 check would be a no-op invariant that contradicts the "don't add redundant
 checks" preference.
+
+### R-05: Protocol-level PT redemption in `claim()` (replacing per-user PT transfer)
+
+**Finding:** A redesign proposed replacing the per-user `claim()` (burn
+ovrfloToken, transfer PT 1:1, user redeems on Pendle themselves) with a
+permissionless protocol-level PT-to-SY-to-underlying redemption that sends
+the underlying asset directly to the user.
+
+**Rejected because:** Fork testing against real Pendle mainnet markets
+revealed that PT redemption through the SY is 1:1 for the **accounting
+asset** (stETH), not the **yield token** (wstETH). For a wstETH market, 10 PT
+redeems to 10 stETH, which at the variable stETH-to-wstETH rate (~1.2x) is
+only ~8.138 wstETH. This breaks the fundamental 1:1 supply invariant between
+ovrfloToken and the underlying (wstETH) that the wrap/unwrap reserve and all
+vault accounting depend on. Additional issues: `redeemPY` lives on the YT not
+the PT, `burnFromInternalBalance` must be `false`, stETH rebasing variance
+would complicate vault accounting, and `minTokenOut` estimation would need
+fuzzy slippage handling. The current per-user claim is simpler, preserves the
+1:1 invariant, and users handle PT-to-underlying conversion on their own
+terms.
+
+**Documented in:** [`docs/solutions/architecture-patterns/ovrflo-claim-per-user-pt-transfer-not-protocol-redemption.md`](../architecture-patterns/ovrflo-claim-per-user-pt-transfer-not-protocol-redemption.md)
 
 ---
 
