@@ -96,6 +96,10 @@ Total lender recovery is capped at the obligation; the pledged stream is returne
 
 A loan against a pledged Sablier stream where the stream's deterministic payouts repay the lender without liquidations, health checks, or loan-time oracles. The stream is non-cancelable and pays a fixed asset on a fixed schedule, so it cannot underperform; the lender draws accrued value until the obligation is satisfied, then the residual stream returns to the borrower.
 
+### Pool
+
+An atomic batch primitive in the OVRFLOBook that aggregates multiple offers or listings into a single transaction. A borrower pool batches `borrowAgainstOffer` across multiple lend offers; a lender pool batches `lendAgainstListing` across multiple borrow listings. The pool becomes the virtual lender on every loan it creates (`loan.lender = address(book)`, tracked via `loanPoolId`). Claims are address-based (no NFTs): contributors claim pro-rata proceeds via `claimPoolShare` (from accumulated `poolProceeds`) or `poolClaimLoan` (direct draw from a specific loan's stream). A single `poolReceived` variable caps total received across both channels at the contributor's pro-rata entitlement.
+
 ### OVRFLO cycle
 
 The composition of PT deposit, book sale, and unwrap or swap that lets the PT discount -- fixed at deposit -- overflow into extractable value. A depositor receives immediate ovrfloToken (principal at TWAP value) plus a Sablier stream (the yield). Selling the stream on the book and exiting the immediate portion via unwrap or a swap pool converts both legs to underlying, capturing the fixed yield. Executable today with held PT, zero capital via an underlying flash loan from an external provider (swap for PT on the Pendle AMM, run the cycle, repay in underlying), or zero capital via a PT flash loan from OVRFLO itself (run the cycle, buy PT on the Pendle AMM for repayment). The protocol remains solvent throughout: the deposit adds PT backing, the unwrap (if used) consumes wrap-reserve backing, and every participant is economically whole. See `README.md` "What's Fixed Will OVRFLO" for the full example.
