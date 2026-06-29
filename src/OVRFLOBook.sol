@@ -954,6 +954,7 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
         {
             uint256 remainingBudget = totalAmount;
             for (uint256 i = 0; i < listingIds.length; i++) {
+                if (i > 0) require(listingIds[i] > listingIds[i - 1], "OVRFLOBook: duplicate or unsorted ids");
                 BorrowListing storage listing = borrowListings[listingIds[i]];
                 require(listing.active, "OVRFLOBook: borrow listing inactive");
                 require(listing.market == market, "OVRFLOBook: market mismatch");
@@ -971,18 +972,8 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
         // Pull totalAmount from lender
         _pullExact(IERC20(underlying), msg.sender, address(this), totalAmount);
 
-        // Create pool
-        poolId = nextPoolId++;
-        pools[poolId] = Pool({
-            creator: msg.sender,
-            aprBps: aprBps,
-            isLend: true,
-            active: true,
-            market: market,
-            totalContributed: _toUint128(totalDeployable),
-            totalObligation: 0
-        });
-        poolContributions[poolId][msg.sender] = _toUint128(totalDeployable);
+        // Reserve pool ID (used in fill loop for loanPoolId)
+        poolId = nextPoolId;
 
         // Fill listings and accumulate total obligation
         uint256 totalObligation;
@@ -992,6 +983,7 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
                 if (remainingBudget == 0) break;
                 BorrowListing storage listing = borrowListings[listingIds[i]];
                 if (uint256(listing.borrowAmount) > remainingBudget) continue;
+                require(listing.active, "OVRFLOBook: borrow listing inactive");
 
                 StreamPricing.Eligibility memory eligibility = _requireEligible(listing.market, listing.streamId);
                 uint256 timeToMaturity = _timeToMaturity(eligibility.seriesMaturity);
@@ -1017,8 +1009,18 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
             }
         }
 
-        // Update total obligation in pool
-        pools[poolId].totalObligation = _toUint128(totalObligation);
+        // Create pool with finalized totalObligation
+        nextPoolId++;
+        pools[poolId] = Pool({
+            creator: msg.sender,
+            aprBps: aprBps,
+            isLend: true,
+            active: true,
+            market: market,
+            totalContributed: _toUint128(totalDeployable),
+            totalObligation: _toUint128(totalObligation)
+        });
+        poolContributions[poolId][msg.sender] = _toUint128(totalDeployable);
 
         // Return unused capital
         uint256 unused = uint256(totalAmount) - totalDeployable;
@@ -1255,10 +1257,14 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
                           GATHER FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
+    /// @notice Maximum number of IDs returned by gather functions in a single call.
+    uint256 public constant MAX_GATHER_RESULTS = 500;
+
     /// @notice Scans lend offers for matching capacity.
     /// @dev Gated by `marketActive` (reverts on expired series). Returns IDs of active
     ///      offers matching `market` and `aprBps` with remaining capacity, stopping once
     ///      accumulated capacity meets `targetAmount`. Use `startId` to paginate.
+    ///      Allocation capped at `MAX_GATHER_RESULTS` to bound gas cost.
     /// @param market Pendle market to match.
     /// @param aprBps Rate to match.
     /// @param targetAmount Minimum total capacity desired.
@@ -1276,6 +1282,7 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
         }
 
         uint256 maxCount = nextLendOfferId - startId;
+        if (maxCount > MAX_GATHER_RESULTS) maxCount = MAX_GATHER_RESULTS;
         ids = new uint256[](maxCount);
 
         uint256 count;
@@ -1315,6 +1322,7 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
         }
 
         uint256 maxCount = nextBorrowListingId - startId;
+        if (maxCount > MAX_GATHER_RESULTS) maxCount = MAX_GATHER_RESULTS;
         ids = new uint256[](maxCount);
 
         uint256 count;
@@ -1347,6 +1355,7 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
         returns (uint256 totalAvailable)
     {
         for (uint256 i = 0; i < offerIds.length; i++) {
+            if (i > 0) require(offerIds[i] > offerIds[i - 1], "OVRFLOBook: duplicate or unsorted ids");
             LendOffer storage offer = lendOffers[offerIds[i]];
             require(offer.active, "OVRFLOBook: lend offer inactive");
             require(offer.market == market, "OVRFLOBook: market mismatch");

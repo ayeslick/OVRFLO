@@ -1750,6 +1750,21 @@ contract OVRFLOBookTest is Test {
         vm.stopPrank();
     }
 
+    function test_CreateBorrowPool_DuplicateOfferIdsReverts() public {
+        _postLendOffer(BUYER, 100 ether);
+        _mintEligibleStream(107, SELLER, 110 ether, 0);
+
+        uint256[] memory offerIds = new uint256[](2);
+        offerIds[0] = 1;
+        offerIds[1] = 1;
+
+        vm.startPrank(SELLER);
+        sablier.approve(address(book), 107);
+        vm.expectRevert("OVRFLOBook: duplicate or unsorted ids");
+        book.createBorrowPool(offerIds, 107, 100 ether, 90 ether);
+        vm.stopPrank();
+    }
+
     /*//////////////////////////////////////////////////////////////
                     COVERAGE: LENDER POOL CREATION
     //////////////////////////////////////////////////////////////*/
@@ -1911,6 +1926,22 @@ contract OVRFLOBookTest is Test {
         underlying.approve(address(book), 100 ether);
         vm.expectRevert("OVRFLOBook: borrow listing inactive");
         book.createLenderPool(listingIds, 100 ether, 80 ether);
+        vm.stopPrank();
+    }
+
+    function test_CreateLenderPool_DuplicateListingIdsReverts() public {
+        _mintEligibleStream(123, SELLER, 110 ether, 0);
+        _postBorrowListing(SELLER, 123, 50 ether);
+
+        underlying.mint(BUYER, 100 ether);
+        uint256[] memory listingIds = new uint256[](2);
+        listingIds[0] = 1;
+        listingIds[1] = 1;
+
+        vm.startPrank(BUYER);
+        underlying.approve(address(book), 100 ether);
+        vm.expectRevert("OVRFLOBook: duplicate or unsorted ids");
+        book.createLenderPool(listingIds, 100 ether, 50 ether);
         vm.stopPrank();
     }
 
