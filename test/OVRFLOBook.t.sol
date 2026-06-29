@@ -1343,11 +1343,11 @@ contract OVRFLOBookTest is Test {
         uint256 id9900 = book.postLendOffer(MARKET, 9900, 100 ether);
         vm.stopPrank();
 
-        (, , uint16 apr0, , ) = book.lendOffers(id0);
+        (,, uint16 apr0,,) = book.lendOffers(id0);
         assertEq(apr0, 0);
-        (, , uint16 apr500, , ) = book.lendOffers(id500);
+        (,, uint16 apr500,,) = book.lendOffers(id500);
         assertEq(apr500, 500);
-        (, , uint16 apr9900, , ) = book.lendOffers(id9900);
+        (,, uint16 apr9900,,) = book.lendOffers(id9900);
         assertEq(apr9900, 9900);
     }
 
@@ -1914,12 +1914,10 @@ contract OVRFLOBookTest is Test {
         vm.stopPrank();
     }
 
-    function _postBorrowListingAtApr(
-        address borrower,
-        uint256 streamId,
-        uint128 borrowAmount,
-        uint16 aprBps
-    ) internal returns (uint256 listingId) {
+    function _postBorrowListingAtApr(address borrower, uint256 streamId, uint128 borrowAmount, uint16 aprBps)
+        internal
+        returns (uint256 listingId)
+    {
         vm.startPrank(borrower);
         sablier.approve(address(book), streamId);
         listingId = book.postBorrowListing(MARKET, streamId, aprBps, borrowAmount);
@@ -2105,20 +2103,14 @@ contract OVRFLOBookTest is Test {
         book.closeLoan(1);
 
         // Invariant: book ovrfloToken balance >= poolProceeds
-        assertGe(
-            ovrfloToken.balanceOf(address(book)),
-            book.poolProceeds(poolId),
-            "book balance >= poolProceeds"
-        );
+        assertGe(ovrfloToken.balanceOf(address(book)), book.poolProceeds(poolId), "book balance >= poolProceeds");
 
         // After partial claim, invariant still holds
         vm.prank(BUYER);
         book.claimPoolShare(poolId, 33 ether);
 
         assertGe(
-            ovrfloToken.balanceOf(address(book)),
-            book.poolProceeds(poolId),
-            "book balance >= poolProceeds after claim"
+            ovrfloToken.balanceOf(address(book)), book.poolProceeds(poolId), "book balance >= poolProceeds after claim"
         );
     }
 }

@@ -861,12 +861,11 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
     /// @param targetBorrow Desired principal; actual may be less if capacity is insufficient.
     /// @param minAcceptable Minimum principal the borrower will accept (slippage).
     /// @return poolId The new pool id.
-    function createBorrowPool(
-        uint256[] memory offerIds,
-        uint256 streamId,
-        uint128 targetBorrow,
-        uint128 minAcceptable
-    ) external nonReentrant returns (uint256 poolId) {
+    function createBorrowPool(uint256[] memory offerIds, uint256 streamId, uint128 targetBorrow, uint128 minAcceptable)
+        external
+        nonReentrant
+        returns (uint256 poolId)
+    {
         require(targetBorrow > 0, "OVRFLOBook: borrow zero");
         require(offerIds.length > 0, "OVRFLOBook: empty offers");
 
@@ -936,11 +935,11 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
     /// @param totalAmount Total underlying to deploy; unused portion is returned.
     /// @param minAcceptable Minimum total the lender will deploy (slippage).
     /// @return poolId The new pool id.
-    function createLenderPool(
-        uint256[] memory listingIds,
-        uint128 totalAmount,
-        uint128 minAcceptable
-    ) external nonReentrant returns (uint256 poolId) {
+    function createLenderPool(uint256[] memory listingIds, uint128 totalAmount, uint128 minAcceptable)
+        external
+        nonReentrant
+        returns (uint256 poolId)
+    {
         require(totalAmount > 0, "OVRFLOBook: amount zero");
         require(listingIds.length > 0, "OVRFLOBook: empty listings");
 
@@ -994,11 +993,9 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
                 BorrowListing storage listing = borrowListings[listingIds[i]];
                 if (uint256(listing.borrowAmount) > remainingBudget) continue;
 
-                StreamPricing.Eligibility memory eligibility =
-                    _requireEligible(listing.market, listing.streamId);
+                StreamPricing.Eligibility memory eligibility = _requireEligible(listing.market, listing.streamId);
                 uint256 timeToMaturity = _timeToMaturity(eligibility.seriesMaturity);
-                uint256 grossPrice =
-                    StreamPricing.grossPrice(eligibility.remaining, aprBps, timeToMaturity);
+                uint256 grossPrice = StreamPricing.grossPrice(eligibility.remaining, aprBps, timeToMaturity);
                 require(grossPrice > 0, "OVRFLOBook: price zero");
                 require(listing.borrowAmount <= grossPrice, "OVRFLOBook: borrow above price");
 
@@ -1048,9 +1045,8 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
         _requireLoanExists(loan);
         require(!loan.closed, "OVRFLOBook: loan closed");
 
-        uint256 entitlement =
-            uint256(poolContributions[poolId][msg.sender]) * pools[poolId].totalObligation
-                / pools[poolId].totalContributed;
+        uint256 entitlement = uint256(poolContributions[poolId][msg.sender]) * pools[poolId].totalObligation
+            / pools[poolId].totalContributed;
         uint256 remaining = entitlement - poolReceived[poolId][msg.sender];
         require(remaining > 0, "OVRFLOBook: fully claimed");
 
@@ -1075,9 +1071,8 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
     function claimPoolShare(uint256 poolId, uint128 amount) external nonReentrant {
         require(poolContributions[poolId][msg.sender] > 0, "OVRFLOBook: not contributor");
 
-        uint256 entitlement =
-            uint256(poolContributions[poolId][msg.sender]) * pools[poolId].totalObligation
-                / pools[poolId].totalContributed;
+        uint256 entitlement = uint256(poolContributions[poolId][msg.sender]) * pools[poolId].totalObligation
+            / pools[poolId].totalContributed;
         uint256 remaining = entitlement - poolReceived[poolId][msg.sender];
         require(remaining > 0, "OVRFLOBook: fully claimed");
 
@@ -1346,12 +1341,11 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
 
     /// @dev Validates all offers in a borrower pool: active, same market, same aprBps,
     ///      no self-match. Returns total available capacity.
-    function _validateBorrowOffers(
-        uint256[] memory offerIds,
-        address market,
-        uint16 aprBps,
-        address borrower
-    ) internal view returns (uint256 totalAvailable) {
+    function _validateBorrowOffers(uint256[] memory offerIds, address market, uint16 aprBps, address borrower)
+        internal
+        view
+        returns (uint256 totalAvailable)
+    {
         for (uint256 i = 0; i < offerIds.length; i++) {
             LendOffer storage offer = lendOffers[offerIds[i]];
             require(offer.active, "OVRFLOBook: lend offer inactive");
