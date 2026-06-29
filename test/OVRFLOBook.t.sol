@@ -2026,6 +2026,35 @@ contract OVRFLOBookTest is Test {
         book.claimPoolShare(poolId, 50 ether);
     }
 
+    function test_ClaimPoolShare_ProRataCapOnPartialProceeds() public {
+        // Alice (BUYER) 60%, Bob (STRANGER) 40%, obligation = 110
+        (uint256 poolId, uint256 loanId) = _createBorrowerPool(141, 60 ether, 40 ether, 100 ether, 100 ether);
+
+        // Partial repayment: only 50 accumulates in poolProceeds (not full 110)
+        ovrfloToken.mint(SELLER, 50 ether);
+        vm.startPrank(SELLER);
+        ovrfloToken.approve(address(book), 50 ether);
+        book.repayLoan(loanId, 50 ether);
+        vm.stopPrank();
+        assertEq(book.poolProceeds(poolId), 50 ether, "partial proceeds");
+
+        // Alice tries to claim 50 (entitlement is 66, but pro-rata share of 50 is 30)
+        vm.prank(BUYER);
+        vm.expectRevert("OVRFLOBook: exceeds available");
+        book.claimPoolShare(poolId, 50 ether);
+
+        // Alice claims her pro-rata share: 50 * 60/100 = 30
+        vm.prank(BUYER);
+        book.claimPoolShare(poolId, 30 ether);
+        assertEq(ovrfloToken.balanceOf(BUYER), 30 ether, "Alice gets pro-rata share");
+        assertEq(book.poolProceeds(poolId), 20 ether, "20 remains for Bob");
+
+        // Bob claims his pro-rata share of remaining 20: 20 * 40/100 = 8
+        vm.prank(STRANGER);
+        book.claimPoolShare(poolId, 8 ether);
+        assertEq(ovrfloToken.balanceOf(STRANGER), 8 ether, "Bob gets his share");
+    }
+
     function test_PoolClaimLoan_NonContributorReverts() public {
         (uint256 poolId, uint256 loanId) = _createBorrowerPool(133, 60 ether, 40 ether, 100 ether, 100 ether);
         sablier.setWithdrawable(133, 50 ether);

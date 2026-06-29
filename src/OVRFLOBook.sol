@@ -1078,7 +1078,11 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
         uint256 remaining = entitlement - poolReceived[poolId][msg.sender];
         require(remaining > 0, "OVRFLOBook: fully claimed");
 
-        uint256 available = uint256(poolProceeds[poolId]);
+        // Pro-rata cap: each claim limited to contributor's share of current poolProceeds,
+        // preventing one contributor from draining the pot before others can claim.
+        uint256 proRataShare =
+            uint256(poolProceeds[poolId]) * poolContributions[poolId][msg.sender] / pools[poolId].totalContributed;
+        uint256 available = proRataShare;
         if (remaining < available) available = remaining;
 
         require(amount > 0, "OVRFLOBook: claim zero");
