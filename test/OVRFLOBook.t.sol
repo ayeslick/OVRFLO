@@ -1385,4 +1385,81 @@ contract OVRFLOBookTest is Test {
         uint256 loanId = _originateLoanViaOffer(70, 100 ether);
         assertEq(book.loanPoolId(loanId), 0, "non-pool loan should have poolId 0");
     }
+
+    /*//////////////////////////////////////////////////////////////
+                    COVERAGE: LOAN SERVICING INTEGRATION
+    //////////////////////////////////////////////////////////////*/
+
+    /// @dev Sets loanPoolId[loanId] = poolId via direct storage write (slot 19).
+    function _setLoanPoolId(uint256 loanId, uint256 poolId) internal {
+        bytes32 slot = keccak256(abi.encode(loanId, uint256(19)));
+        vm.store(address(book), slot, bytes32(uint256(poolId)));
+    }
+
+    function test_CloseLoan_NonPoolTransfersToLender() public {
+        uint256 loanId = _originateLoanViaOffer(71, 100 ether);
+        sablier.setWithdrawable(71, 110 ether);
+
+        book.closeLoan(loanId);
+
+        assertEq(ovrfloToken.balanceOf(BUYER), 110 ether, "lender receives ovrfloToken");
+        assertEq(book.poolProceeds(1), 0, "poolProceeds untouched");
+        assertEq(sablier.ownerOf(71), SELLER, "stream returned to borrower");
+    }
+
+    function test_CloseLoan_PoolCreditsPoolProceeds() public {
+        uint256 loanId = _originateLoanViaOffer(72, 100 ether);
+        _setLoanPoolId(loanId, 1);
+        sablier.setWithdrawable(72, 110 ether);
+
+        uint256 bookBefore = ovrfloToken.balanceOf(address(book));
+        book.closeLoan(loanId);
+
+        assertEq(book.poolProceeds(1), 110 ether, "poolProceeds credited");
+        assertEq(ovrfloToken.balanceOf(address(book)) - bookBefore, 110 ether, "book receives ovrfloToken");
+        assertEq(ovrfloToken.balanceOf(BUYER), 0, "lender does not receive directly");
+        assertEq(sablier.ownerOf(72), SELLER, "stream returned to borrower");
+
+        (,,,, uint128 drawn,, bool closed) = book.loans(loanId);
+        assertEq(drawn, 110 ether);
+        assertTrue(closed);
+    }
+
+    function test_RepayLoan_NonPoolTransfersToLender() public {
+        uint256 loanId = _originateLoanViaOffer(73, 100 ether);
+
+        ovrfloToken.mint(SELLER, 50 ether);
+        vm.startPrank(SELLER);
+        ovrfloToken.approve(address(book), 50 ether);
+        book.repayLoan(loanId, 50 ether);
+        vm.stopPrank();
+
+        assertEq(ovrfloToken.balanceOf(BUYER), 50 ether, "lender receives ovrfloToken");
+        assertEq(book.poolProceeds(1), 0, "poolProceeds untouched");
+    }
+
+    function test_RepayLoan_PoolCreditsPoolProceeds() public {
+        uint256 loanId = _originateLoanViaOffer(74, 100 ether);
+        _setLoanPoolId(loanId, 1);
+
+        ovrfloToken.mint(SELLER, 50 ether);
+        vm.startPrank(SELLER);
+        ovrfloToken.approve(address(book), 50 ether);
+        book.repayLoan(loanId, 50 ether);
+        vm.stopPrank();
+
+        assertEq(book.poolProceeds(1), 50 ether, "poolProceeds credited");
+        assertEq(ovrfloToken.balanceOf(address(book)), 50 ether, "book holds ovrfloToken");
+        assertEq(ovrfloToken.balanceOf(BUYER), 0, "lender does not receive directly");
+    }
+
+    function test_ClaimLoan_PoolLoanReverts() public {
+        uint256 loanId = _originateLoanViaOffer(75, 100 ether);
+        _setLoanPoolId(loanId, 1);
+        sablier.setWithdrawable(75, 50 ether);
+
+        vm.prank(BUYER);
+        vm.expectRevert("OVRFLOBook: use poolClaimLoan");
+        book.claimLoan(loanId);
+    }
 }

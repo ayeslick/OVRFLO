@@ -759,6 +759,7 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
     function claimLoan(uint256 loanId) external nonReentrant {
         Loan storage loan = loans[loanId];
         _requireLoanExists(loan);
+        require(loanPoolId[loanId] == 0, "OVRFLOBook: use poolClaimLoan");
         require(!loan.closed, "OVRFLOBook: loan closed");
         require(loan.lender == msg.sender, "OVRFLOBook: not lender");
 
@@ -789,7 +790,13 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
         loan.closed = true;
         if (outstanding > 0) {
             loan.drawn += outstanding;
-            sablier.withdraw(loan.streamId, loan.lender, outstanding);
+            uint256 poolId = loanPoolId[loanId];
+            if (poolId != 0) {
+                sablier.withdraw(loan.streamId, address(this), outstanding);
+                poolProceeds[poolId] += outstanding;
+            } else {
+                sablier.withdraw(loan.streamId, loan.lender, outstanding);
+            }
         }
         sablier.transferFrom(address(this), loan.borrower, loan.streamId);
 
@@ -822,7 +829,13 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
             loan.closed = true;
         }
 
-        _pullExact(IERC20(ovrfloToken), msg.sender, loan.lender, amount);
+        uint256 poolId = loanPoolId[loanId];
+        if (poolId != 0) {
+            _pullExact(IERC20(ovrfloToken), msg.sender, address(this), amount);
+            poolProceeds[poolId] += amount;
+        } else {
+            _pullExact(IERC20(ovrfloToken), msg.sender, loan.lender, amount);
+        }
         if (closes) {
             sablier.transferFrom(address(this), loan.borrower, loan.streamId);
         }
