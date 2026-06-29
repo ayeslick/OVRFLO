@@ -178,7 +178,7 @@
 
 > A loan transitions `open → closed` exactly once; no loan op is callable after `closed`.
 
-**Derivation** — edge: `Loan.closed = false` at `_storeLoan`; `closeLoan:739` and `repayLoan:787` set `closed = true`; `claimLoan:716`, `closeLoan:737`, `repayLoan:777` all require `!loan.closed`. No reopen path.
+**Derivation** — edge: `Loan.closed = false` at `_storeLoan`; `closeLoan:739` and `repayLoan:787` set `closed = true`; `poolClaimLoan`, `closeLoan:737`, `repayLoan:777` all require `!loan.closed`. No reopen path.
 
 **If violated** — a closed loan could be re-drawn or double-settled.
 
@@ -242,7 +242,7 @@ On-chain: **No**
 
 > `OVRFLOBook` loan servicing assumes Sablier `withdrawableAmountOf()` is monotonic and that `withdraw` ACL remains sender/owner/approved-only; the book relies on NFT custody to gate withdrawals.
 
-**Caller side** — `OVRFLOBook.claimLoan:723` reads `sablier.withdrawableAmountOf(streamId)` and caps the draw at `_outstanding`; `closeLoan:741` requires `withdrawable >= outstanding`; both call `sablier.withdraw(streamId, lender, amount)`.
+**Caller side** — `OVRFLOBook.poolClaimLoan` reads `sablier.withdrawableAmountOf(streamId)` and caps the draw at `_outstanding`; `closeLoan:741` requires `withdrawable >= outstanding`; `poolClaimLoan` calls `sablier.withdraw(streamId, msg.sender, amount)` (draw to contributor), `closeLoan` calls `sablier.withdraw(streamId, address(this), amount)` (draw to `poolProceeds`).
 
 **Callee side** — `StreamPricing.requireEligible:148-160` validates at pledge that the stream is non-cancelable, sender=core, asset/end-time correct, and `remaining > 0`. No in-scope re-validation at claim/close. Sablier itself (v1.1, immutable `0xAFb979…`) is out of scope.
 

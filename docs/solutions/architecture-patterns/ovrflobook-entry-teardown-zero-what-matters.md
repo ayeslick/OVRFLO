@@ -99,7 +99,7 @@ plus a value check, not by zeroing:
   — `capacity == 0` fails the second check even if `active` were somehow true.
 - `cancelSaleOffer` / `cancelLendOffer`: `require(offer.active)` — reverts on a
   second call.
-- `buyListing` / `lendAgainstListing` / `cancelSaleListing` / `cancelBorrowListing`:
+- `buyListing` / `createLenderPool` / `cancelSaleListing` / `cancelBorrowListing`:
   all `require(*.active)`.
 
 So leaving `maker` / `market` / `aprBps` populated after `active = false` is

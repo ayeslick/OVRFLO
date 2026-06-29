@@ -57,7 +57,8 @@ contract OVRFLOBookMainnetForkTest is OVRFLOForkBase {
         vm.prank(USER);
         _approveStream(address(sablier), address(book), streamId);
         vm.prank(USER);
-        uint256 loanId = book.borrowAgainstOffer(offerId, streamId, borrowAmount, 0);
+        uint256 poolId = book.createBorrowPool(_singletonArray(offerId), streamId, borrowAmount, 0);
+        uint256 loanId = 1;
 
         uint256 claimTimestamp = block.timestamp + (PRIMARY_EXPIRY - block.timestamp) / 4;
         vm.warp(claimTimestamp);
@@ -67,13 +68,13 @@ contract OVRFLOBookMainnetForkTest is OVRFLOForkBase {
         assertLt(partialClaim, outstandingBeforeClaim);
 
         vm.prank(LENDER);
-        book.claimLoan(loanId);
+        book.poolClaimLoan(poolId, loanId, partialClaim);
         assertEq(token.balanceOf(LENDER), partialClaim);
 
         vm.warp(PRIMARY_EXPIRY);
         book.closeLoan(loanId);
 
-        _assertLoanClosedAfterClaim(book, token, sablier, loanId, streamId);
+        _assertLoanClosedAfterClaim(book, token, sablier, loanId, streamId, poolId);
     }
 
     function test_BookLoan_RealEarlyRepayViaWrapAndUnwrap() public {
@@ -93,7 +94,8 @@ contract OVRFLOBookMainnetForkTest is OVRFLOForkBase {
         vm.prank(USER);
         _approveStream(address(sablier), address(book), streamId);
         vm.prank(USER);
-        uint256 loanId = book.borrowAgainstOffer(offerId, streamId, borrowAmount, 0);
+        uint256 poolId = book.createBorrowPool(_singletonArray(offerId), streamId, borrowAmount, 0);
+        uint256 loanId = 1;
 
         (,,,,,, uint128 outstanding,) = book.loanState(loanId);
         _seedWstEth(USER, outstanding);
@@ -105,6 +107,10 @@ contract OVRFLOBookMainnetForkTest is OVRFLOForkBase {
         vm.stopPrank();
 
         assertEq(sablier.ownerOf(streamId), USER);
+
+        // Lender withdraws repaid amount from pool proceeds
+        vm.prank(LENDER);
+        book.claimPoolShare(poolId, outstanding);
         assertEq(token.balanceOf(LENDER), outstanding);
 
         uint256 lenderWstEthBefore = IERC20(WSTETH).balanceOf(LENDER);
@@ -182,12 +188,13 @@ contract OVRFLOBookMainnetForkTest is OVRFLOForkBase {
         vm.prank(USER);
         uint256 listingId = book.postBorrowListing(PRIMARY_MARKET, streamId, launchApr, borrowAmount);
 
-        // Lender fills the listing
+        // Lender fills the listing via pool
         _seedWstEth(LENDER, borrowAmount);
         vm.startPrank(LENDER);
         IERC20(WSTETH).approve(address(book), borrowAmount);
-        uint256 loanId = book.lendAgainstListing(listingId, 0);
+        uint256 poolId = book.createLenderPool(_singletonArray(listingId), borrowAmount, 0);
         vm.stopPrank();
+        uint256 loanId = 1;
 
         // Loan created with correct obligation
         (,,, uint128 obligation,,,, bool closed) = book.loanState(loanId);
@@ -226,14 +233,23 @@ contract OVRFLOBookMainnetForkTest is OVRFLOForkBase {
         OVRFLOToken token,
         ISablierV2LockupLinear sablier,
         uint256 loanId,
-        uint256 streamId
-    ) internal view {
+        uint256 streamId,
+        uint256 poolId
+    ) internal {
         (,,, uint128 obligation, uint128 drawn, uint128 repaid, uint128 outstanding, bool closed) =
             book.loanState(loanId);
         assertEq(drawn, obligation);
         assertEq(repaid, 0);
         assertEq(outstanding, 0);
         assertTrue(closed);
+
+        // Lender withdraws closeLoan proceeds from pool
+        uint128 lenderReceived = uint128(token.balanceOf(LENDER));
+        if (obligation > lenderReceived) {
+            vm.prank(LENDER);
+            book.claimPoolShare(poolId, obligation - lenderReceived);
+        }
+
         assertEq(token.balanceOf(LENDER), obligation);
         assertEq(sablier.ownerOf(streamId), USER);
     }
@@ -304,5 +320,10 @@ contract OVRFLOBookMainnetForkTest is OVRFLOForkBase {
 
         // Stream withdrawn amount unchanged
         assertEq(sablier.getWithdrawnAmount(streamId), 0, "no withdrawal should have succeeded");
+    }
+
+    function _singletonArray(uint256 id) internal pure returns (uint256[] memory arr) {
+        arr = new uint256[](1);
+        arr[0] = id;
     }
 }

@@ -116,11 +116,12 @@ Secondary market book for selling OVRFLO streams or borrowing against them. Boun
 | `buyListing(listingId, maxPriceIn)` | Buy a listed stream at its discounted price |
 | `postLendOffer(market, aprBps, capacity)` | Fund standing lend-side liquidity |
 | `cancelLendOffer(offerId)` | Cancel unmatched lend offer, refund remaining capacity |
-| `borrowAgainstOffer(offerId, streamId, borrowAmount, minNetOut)` | Pledge stream as collateral, borrow underlying from a standing offer |
+| `createBorrowPool(offerIds, streamId, targetBorrow, minAcceptable)` | Batch-borrow against multiple lend offers, pledging one stream as collateral |
 | `postBorrowListing(market, streamId, aprBps, borrowAmount)` | Post a borrow request for a specific stream (escrows stream, snapshots fee) |
 | `cancelBorrowListing(listingId)` | Cancel unmatched borrow listing, return stream |
-| `lendAgainstListing(listingId, minObligationOut)` | Fill a borrow listing, advancing underlying to the borrower |
-| `claimLoan(loanId)` | Lender draws accrued ovrfloToken from a loan's pledged stream |
+| `createLenderPool(listingIds, totalAmount, minAcceptable)` | Batch-lend across multiple borrow listings, advancing underlying to borrowers |
+| `poolClaimLoan(poolId, loanId, amount)` | Pool contributor draws accrued ovrfloToken directly from a loan's pledged stream |
+| `claimPoolShare(poolId, amount)` | Pool contributor claims pro-rata from accumulated `poolProceeds` |
 | `closeLoan(loanId)` | Permissionless: draw remaining outstanding, return stream to borrower |
 | `repayLoan(loanId, amount)` | Borrower repays ovrfloToken to reduce or clear the obligation |
 | `quote(market, streamId, aprBps, borrowAmount)` | Preview price, obligation, fee, net, and residual (pass `0` for full borrow) |
@@ -275,40 +276,43 @@ Both paths transfer the stream permanently. The sale price is the stream's remai
 
 ### Borrowing Against a Stream (Book)
 
-Two paths to borrow underlying using a stream as collateral:
+Lending is handled exclusively via pool primitives that batch across multiple offers or listings in a single transaction:
 
-**Path A — Borrow against a standing lend offer:**
+**Borrower pool — batch borrow across multiple lend offers:**
 ```solidity
-// Borrower pledges stream, receives underlying
-uint256 loanId = book.borrowAgainstOffer(offerId, streamId, borrowAmount, minNetOut);
+// Borrower pledges stream, borrows underlying from several offers at once
+uint256 poolId = book.createBorrowPool(offerIds, streamId, targetBorrow, minAcceptable);
 ```
 
-**Path B — Post a borrow listing:**
+**Lender pool — batch lend across multiple borrow listings:**
 ```solidity
 // Borrower posts a request
 uint256 listingId = book.postBorrowListing(market, streamId, aprBps, borrowAmount);
-// Lender fills it
-uint256 loanId = book.lendAgainstListing(listingId, minObligationOut);
+// Lender fills multiple listings at once
+uint256 poolId = book.createLenderPool(listingIds, totalAmount, minAcceptable);
 ```
 
 The borrower receives `borrowAmount` underlying (net of fee) and owes an `obligation` in ovrfloToken at maturity. The stream is escrowed by the book. The obligation is computed via `StreamPricing.obligationForFill`, which guarantees `obligation <= remaining` so the stream can always cover the debt. No liquidations — the stream is deterministic and non-cancelable.
 
 ### Loan Servicing (Book)
 
-Three actions manage an active loan:
+Loan servicing routes through pool claim channels. `closeLoan` and `repayLoan` route proceeds to `poolProceeds` rather than directly to a lender:
 
 ```solidity
-// Lender draws accrued ovrfloToken from the pledged stream (capped at outstanding)
-book.claimLoan(loanId);
+// Pool contributor draws accrued ovrfloToken directly from a loan's pledged stream (capped at outstanding)
+book.poolClaimLoan(poolId, loanId, amount);
 
-// Permissionless: draw remaining outstanding, return stream to borrower
+// Pool contributor claims pro-rata from accumulated pool proceeds
+book.claimPoolShare(poolId, amount);
+
+// Permissionless: draw remaining outstanding, return stream to borrower (proceeds to poolProceeds)
 book.closeLoan(loanId);
 
-// Borrower repays early in ovrfloToken to reduce or clear the obligation
+// Borrower repays early in ovrfloToken to reduce or clear the obligation (proceeds to poolProceeds)
 book.repayLoan(loanId, amount);
 ```
 
-`claimLoan` is lender-only and draws from the stream's withdrawable balance, capped at the loan's outstanding obligation. `closeLoan` is permissionless and requires the stream to have accrued enough to cover the outstanding. `repayLoan` lets the borrower repay early in ovrfloToken; when the obligation is fully satisfied, the stream is returned.
+`poolClaimLoan` lets a pool contributor draw directly from a loan's pledged stream, capped at the loan's outstanding obligation. `claimPoolShare` lets a contributor claim pro-rata from the pool's accumulated `poolProceeds` (fed by `closeLoan` and `repayLoan`). `closeLoan` is permissionless and requires the stream to have accrued enough to cover the outstanding. `repayLoan` lets the borrower repay early in ovrfloToken; when the obligation is fully satisfied, the stream is returned.
 
 ### What's Fixed Will OVRFLO
 

@@ -312,8 +312,8 @@ complementary safety net, not a replacement. Do **not** pull in
 ### ❌ WRONG (borrower == lender breaks `repayLoan`)
 
 ```solidity
-// borrowAgainstOffer — no self-match guard.
-LendOffer storage offer = lendOffers[offerId];
+// createBorrowPool — no self-match guard on offer makers.
+LendOffer storage offer = lendOffers[offerIds[i]];
 require(offer.active, "OVRFLOBook: lend offer inactive");
 // msg.sender could be offer.lender, creating a loan where from == to
 // in _pullExact, which reverts on the balance-delta check.
@@ -322,9 +322,9 @@ require(offer.active, "OVRFLOBook: lend offer inactive");
 ### ✅ CORRECT (reject at loan creation)
 
 ```solidity
-LendOffer storage offer = lendOffers[offerId];
+LendOffer storage offer = lendOffers[offerIds[i]];
 require(offer.active, "OVRFLOBook: lend offer inactive");
-require(msg.sender != offer.lender, "OVRFLOBook: self-match");
+require(offer.lender != borrower, "OVRFLOBook: self-match");
 ```
 
 **Why:** If `borrower == lender`, `repayLoan`'s `_pullExact` does a
@@ -336,16 +336,16 @@ this state. Self-matching is economically irrational (you pay a treasury
 fee to yourself), so this is a correctness guard, not a value-loss
 prevention.
 
-**Placement/Context:** Both loan-creation entry points that pair a borrower
-with a lender: `borrowAgainstOffer` (borrower = `msg.sender`, lender =
-`offer.lender`) and `lendAgainstListing` (borrower = `listing.borrower`,
-lender = `msg.sender`).
+**Placement/Context:** Both pool-creation entry points that pair a borrower
+with a lender: `createBorrowPool` (borrower = `msg.sender`, checked against
+each `offer.lender` in `_validateBorrowOffers`) and `createLenderPool`
+(lender = `msg.sender`, checked against each `listing.borrower`).
 
 **How to detect violation:**
 
 ```bash
 rg -n "self-match" src/OVRFLOBook.sol
-# expected: 2 matches (one per loan-creation path)
+# expected: matches in createBorrowPool (_validateBorrowOffers) and createLenderPool
 ```
 
 **Documented in:** [`docs/solutions/security-issues/repayloan-equality-rounding-no-brick-OVRFLOBook-20260624.md`](../security-issues/repayloan-equality-rounding-no-brick-OVRFLOBook-20260624.md) — companion finding section.
@@ -468,8 +468,8 @@ pass every flag and ownership assertion and ship a fund-loss bug.
 
 **Placement/Context:** Any non-fork or fork test that calls a function
 transferring `underlying`, `ovrfloToken`, or a Sablier stream NFT:
-`sellIntoOffer`, `buyListing`, `borrowAgainstOffer`, `lendAgainstListing`,
-`cancel*` functions, `claimLoan`, `closeLoan`, `repayLoan`. The four-party
+`sellIntoOffer`, `buyListing`, `createBorrowPool`, `createLenderPool`,
+`cancel*` functions, `poolClaimLoan`, `claimPoolShare`, `closeLoan`, `repayLoan`. The four-party
 check (actor, counterparty, treasury, book) is the minimum. For loan
 servicing, also assert `ovrfloToken.balanceOf`, `sablier.getWithdrawnAmount`,
 and `sablier.ownerOf` for the lender and borrower.
@@ -479,7 +479,7 @@ and `sablier.ownerOf` for the lender and borrower.
 ```bash
 # Find settlement tests that assert state/ownership but skip balanceOf
 # for treasury or the book contract:
-rg -l "sellIntoOffer|buyListing|borrowAgainstOffer|lendAgainstListing|claimLoan|closeLoan|repayLoan" \
+rg -l "sellIntoOffer|buyListing|createBorrowPool|createLenderPool|poolClaimLoan|claimPoolShare|closeLoan|repayLoan" \
   test/OVRFLOBook.t.sol | \
   xargs -I{} sh -c 'rg -L "balanceOf\(TREASURY\)|balanceOf\(address\(book\)\)" "{}" && echo "REVIEW: {}"'
 ```

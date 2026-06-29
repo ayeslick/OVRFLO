@@ -385,28 +385,6 @@ contract OVRFLOBookInvariantHandler is Test {
         totalActiveLendOfferCapacity -= capacity;
     }
 
-    function borrowAgainstOffer(uint256 offerIdSeed, uint256 borrowSeed) public {
-        if (book.nextLendOfferId() == 1) return;
-        uint256 offerId = bound(offerIdSeed, 1, book.nextLendOfferId() - 1);
-        (, address market, uint16 aprBps, uint128 capacity, bool active) = book.lendOffers(offerId);
-        if (!active || capacity == 0) return;
-
-        address borrower = _actor(offerIdSeed);
-        uint256 streamId = _createStream(borrower);
-
-        (uint256 grossPrice,,,,) = book.quote(market, streamId, aprBps, 0);
-        if (grossPrice == 0) return;
-
-        uint128 borrowAmount = uint128(bound(borrowSeed, 1, _min(grossPrice, capacity)));
-        if (borrowAmount > grossPrice || borrowAmount > capacity) return;
-
-        vm.prank(borrower);
-        try book.borrowAgainstOffer(offerId, streamId, borrowAmount, 0) returns (uint256 loanId) {
-            totalActiveLendOfferCapacity -= borrowAmount;
-            _trackNewLoan(loanId, borrower, market, streamId, aprBps, grossPrice);
-        } catch {}
-    }
-
     /*//////////////////////////////////////////////////////////////
                         BORROW LISTINGS
     //////////////////////////////////////////////////////////////*/
@@ -430,52 +408,9 @@ contract OVRFLOBookInvariantHandler is Test {
         book.cancelBorrowListing(listingId);
     }
 
-    function lendAgainstListing(uint256 listingIdSeed, uint256 actorSeed) public {
-        if (book.nextBorrowListingId() == 1) return;
-        uint256 listingId = bound(listingIdSeed, 1, book.nextBorrowListingId() - 1);
-        (address borrower,,,,,, bool active) = book.borrowListings(listingId);
-        if (!active) return;
-
-        address lender = _actor(actorSeed);
-        vm.prank(lender);
-        try book.lendAgainstListing(listingId, 0) returns (uint256 loanId) {
-            (, address market, uint256 streamId, uint16 aprBps, uint128 borrowAmount,,) = book.borrowListings(listingId);
-            (uint256 grossPrice,,,,) = book.quote(market, streamId, aprBps, 0);
-            _trackNewLoanFromListing(loanId, borrower, lender, streamId, borrowAmount, grossPrice);
-        } catch {}
-    }
-
     /*//////////////////////////////////////////////////////////////
                         LOAN SERVICING
     //////////////////////////////////////////////////////////////*/
-
-    function claimLoan(uint256 loanIdSeed) public {
-        if (book.nextLoanId() == 1) return;
-        uint256 loanId = bound(loanIdSeed, 1, book.nextLoanId() - 1);
-        (
-            address borrower,
-            address lender,
-            uint256 streamId,
-            uint128 obligation,
-            uint128 drawn,
-            uint128 repaid,
-            bool closed
-        ) = book.loans(loanId);
-        if (borrower == address(0) || closed) return;
-
-        // Set withdrawable so claim can succeed
-        uint128 outstanding = obligation - drawn - repaid;
-        if (outstanding == 0) return;
-        sablier.setWithdrawable(streamId, outstanding);
-
-        vm.prank(lender);
-        try book.claimLoan(loanId) {
-            // Read updated drawn
-            (,,, uint128 obligation2, uint128 drawn2, uint128 repaid2,) = book.loans(loanId);
-            uint128 claimed = drawn2 - drawn;
-            loanGhosts[loanId].lenderReceived += claimed;
-        } catch {}
-    }
 
     function repayLoan(uint256 loanIdSeed, uint256 amountSeed) public {
         if (book.nextLoanId() == 1) return;
@@ -530,53 +465,6 @@ contract OVRFLOBookInvariantHandler is Test {
         sablier.setStream(
             streamId, owner, address(core), IERC20(address(ovrfloToken)), uint40(expiry), 0, false, 100 ether, 0
         );
-    }
-
-    function _trackNewLoan(
-        uint256 loanId,
-        address borrower,
-        address market,
-        uint256 streamId,
-        uint16 aprBps,
-        uint256 grossPrice
-    ) internal {
-        (,,, uint128 obligation,,,) = book.loans(loanId);
-        (uint128 deposited, uint128 withdrawn) =
-            (sablier.getDepositedAmount(streamId), sablier.getWithdrawnAmount(streamId));
-        loanGhosts[loanId] = LoanGhost({
-            obligation: obligation,
-            remainingAtOrigination: deposited - withdrawn,
-            lenderReceived: 0,
-            borrower: borrower,
-            lender: address(0), // set from loan state
-            streamId: streamId,
-            closed: false
-        });
-        // Read lender from loan
-        (, address lender,,,,,) = book.loans(loanId);
-        loanGhosts[loanId].lender = lender;
-    }
-
-    function _trackNewLoanFromListing(
-        uint256 loanId,
-        address borrower,
-        address lender,
-        uint256 streamId,
-        uint128 borrowAmount,
-        uint256 grossPrice
-    ) internal {
-        (,,, uint128 obligation,,,) = book.loans(loanId);
-        (uint128 deposited, uint128 withdrawn) =
-            (sablier.getDepositedAmount(streamId), sablier.getWithdrawnAmount(streamId));
-        loanGhosts[loanId] = LoanGhost({
-            obligation: obligation,
-            remainingAtOrigination: deposited - withdrawn,
-            lenderReceived: 0,
-            borrower: borrower,
-            lender: lender,
-            streamId: streamId,
-            closed: false
-        });
     }
 
     function _actor(uint256 seed) internal view returns (address) {

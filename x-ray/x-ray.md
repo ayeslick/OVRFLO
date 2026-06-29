@@ -44,7 +44,7 @@ OVRFLO.deposit(market, ptAmount, minToUser)
 ### Borrow Against Stream (Book)
 
 ```
-OVRFLOBook.borrowAgainstOffer(offerId, streamId, borrowAmount, minNetOut)
+OVRFLOBook.createBorrowPool(offerIds, streamId, targetBorrow, minAcceptable)
 ├─ StreamPricing.requireEligible(factory, sablier, core, market, streamId)   *sender=core, asset, end=expiry, no cliff, non-cancelable, remaining>0*
 ├─ grossPrice = grossPrice(remaining, aprBps, ttm)   *floors; ttm = expiry - block.timestamp*
 ├─ require(borrowAmount <= grossPrice && <= capacity)
@@ -53,7 +53,7 @@ OVRFLOBook.borrowAgainstOffer(offerId, streamId, borrowAmount, minNetOut)
 ├─ pay underlying(net) to borrower; pay fee to treasury
 └─ store Loan{obligation, drawn:0, repaid:0, closed:false}
 ```
-*Servicing: `claimLoan` (lender draws, capped at outstanding) / `closeLoan` (permissionless, requires withdrawable ≥ outstanding) / `repayLoan` (borrower pays ovrfloToken). `outstanding = obligation - drawn - repaid`.*
+*Servicing: `poolClaimLoan` (contributor draws, capped at outstanding) / `closeLoan` (permissionless, requires withdrawable ≥ outstanding) / `repayLoan` (borrower pays ovrfloToken). `outstanding = obligation - drawn - repaid`.*
 
 ---
 
@@ -63,7 +63,7 @@ OVRFLOBook.borrowAgainstOffer(offerId, streamId, borrowAmount, minNetOut)
 
 > Protocol classified as: **Lending/Borrowing** with **Yield Aggregator/Vault** characteristics
 
-Lending signals: `borrowAgainstOffer`, `repayLoan`, `claimLoan`, `closeLoan`, loan obligations, collateral (stream), no liquidations by design. Vault signals: `deposit`/`claim`/`wrap`/`unwrap`, mint/burn wrapper token, streaming yield. Primary adversaries from lending (oracle, flash-loan, MEV, admin); vault adds share/donation and backing concerns.
+Lending signals: `createBorrowPool`, `repayLoan`, `poolClaimLoan`, `closeLoan`, loan obligations, collateral (stream), no liquidations by design. Vault signals: `deposit`/`claim`/`wrap`/`unwrap`, mint/burn wrapper token, streaming yield. Primary adversaries from lending (oracle, flash-loan, MEV, admin); vault adds share/donation and backing concerns.
 
 ### Actors & Adversary Model
 
@@ -101,7 +101,7 @@ See [entry-points.md](entry-points.md) for the full permissionless entry point m
 
 - **Book pricing time-dependence** &nbsp;[I-6](invariants.md#i-6), [E-2](invariants.md#e-2) — `grossPrice`/`obligation` recompute at fill time from `expiryCached - block.timestamp`; a listing posted early is re-priced later (remaining may also drop if the seller withdrew mid-stream). Worth checking fill-time repricing interaction with snapshotted fees and `minObligationOut` slippage.
 
-- **Permissionless `closeLoan` liveness** &nbsp;[X-2](invariants.md#x-2), [I-10](invariants.md#i-10) — `OVRFLOBook.closeLoan:732` is callable by anyone once `withdrawableAmountOf >= outstanding`; it draws the stream and returns the NFT. Worth tracing whether any partial-`claimLoan` state leaves the loan unclosable or the residual misrouted.
+- **Permissionless `closeLoan` liveness** &nbsp;[X-2](invariants.md#x-2), [I-10](invariants.md#i-10) — `OVRFLOBook.closeLoan:732` is callable by anyone once `withdrawableAmountOf >= outstanding`; it draws the stream and returns the NFT. Worth tracing whether any partial-`poolClaimLoan` state leaves the loan unclosable or the residual misrouted.
 
 - **Admin instant powers without on-chain timelock/pause** &nbsp;[I-4](invariants.md#i-4), [I-8](invariants.md#i-8) — `setFee`/`setAprBounds`/`setTreasury`/`sweepExcess*`/`setMarketDepositLimit` execute instantly on multisig sign; `setMarketDepositLimit` can lower the cap below already-deposited principal. No `Pausable` anywhere; deposit-limit=0 freezes new deposits but never pauses claims or the book. Worth confirming the off-chain timelock is the sole delay.
 
@@ -117,7 +117,7 @@ No upgradeable contracts (no UUPS/transparent/beacon/proxy). All core contracts 
 
 **As a Lending/Borrowing:**
 - No health factor, no liquidation, no liquidator incentive — by design (deterministic non-cancelable stream is the collateral). Solvency rests entirely on `obligation <= remaining` (`StreamPricing` rounding invariant [E-2](invariants.md#e-2)).
-- `claimLoan` caps draws at `_outstanding` so the lender cannot overdraw past the obligation; `closeLoan` requires full coverage. Worth checking the partial-claim → close residual path.
+- `poolClaimLoan` caps draws at `_outstanding` so a contributor cannot overdraw past the obligation; `closeLoan` requires full coverage. Worth checking the partial-claim → close residual path.
 
 **As a Yield Aggregator/Vault:**
 - Not ERC4626 share-based; ovrfloToken is minted at PT market value (not pro-rata), so classic share-inflation is not the model. `wrap`/`unwrap` is 1:1 against a tracked `wrappedUnderlying` reserve with a balance-delta check [I-2](invariants.md#i-2).

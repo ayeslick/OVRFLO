@@ -98,7 +98,7 @@ A loan against a pledged Sablier stream where the stream's deterministic payouts
 
 ### Pool
 
-An atomic batch primitive in the OVRFLOBook that aggregates multiple offers or listings into a single transaction. A borrower pool batches `borrowAgainstOffer` across multiple lend offers; a lender pool batches `lendAgainstListing` across multiple borrow listings. The pool becomes the virtual lender on every loan it creates (`loan.lender = address(book)`, tracked via `loanPoolId`). Claims are address-based (no NFTs): contributors claim pro-rata proceeds via `claimPoolShare` (from accumulated `poolProceeds`) or `poolClaimLoan` (direct draw from a specific loan's stream). A single `poolReceived` variable caps total received across both channels at the contributor's pro-rata entitlement.
+The only lending mechanism in the OVRFLOBook: an atomic batch primitive that aggregates multiple offers or listings into a single transaction. A borrower pool (`createBorrowPool`) batches borrows across multiple lend offers; a lender pool (`createLenderPool`) batches lends across multiple borrow listings. The pool becomes the virtual lender on every loan it creates (`loan.lender = address(book)`, tracked via `loanPoolId`). Claims are address-based (no NFTs): contributors claim pro-rata proceeds via `claimPoolShare` (from accumulated `poolProceeds`) or `poolClaimLoan` (direct draw from a specific loan's stream). A single `poolReceived` variable caps total received across both channels at the contributor's pro-rata entitlement.
 
 ### OVRFLO cycle
 

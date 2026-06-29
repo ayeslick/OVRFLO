@@ -61,7 +61,7 @@ _outstanding = obligation - (drawn + repaid)
 All three terms are integer wei values:
 - `obligation` is a `uint128` (the ceiling above).
 - `drawn` accumulates exact integer wei from `sablier.withdraw` amounts
-  (`claimLoan`/`closeLoan` draw whole-wei amounts).
+  (`poolClaimLoan`/`closeLoan` draw whole-wei amounts).
 - `repaid` accumulates exact integer wei from `_pullExact` transfers.
 
 So `outstanding` is always an exact integer `>= 1` at the point the equality
@@ -104,7 +104,7 @@ Even setting aside the equality being reachable, the loan cannot be stranded:
   `withdrawable` eventually reaches `remaining - drawn`, the inequality
   `withdrawable >= outstanding` is eventually satisfiable, so `closeLoan`
   is always callable in the limit.
-- `claimLoan` lets the lender draw `outstanding` down to `0`; once
+- `poolClaimLoan` lets a pool contributor draw `outstanding` down to `0`; once
   `outstanding == 0`, anyone calls `closeLoan` to return the (possibly
   empty) stream.
 
@@ -138,7 +138,7 @@ re-introduce a real residual that the equality cannot match.
 
 - [patterns/ovrflo-critical-patterns.md](../patterns/ovrflo-critical-patterns.md)
   — enforceable rules distilled from writeups.
-- `src/OVRFLOBook.sol` — `repayLoan`, `closeLoan`, `claimLoan`,
+- `src/OVRFLOBook.sol` — `repayLoan`, `closeLoan`, `poolClaimLoan`,
   `_outstanding`, `_satisfied`.
 - `src/StreamPricing.sol` — `grossPrice`, `obligation`,
   `obligationForFill`, `requireEligible`, `marketActive`.
@@ -152,7 +152,7 @@ path was identified and fixed.
 
 ### The bug
 
-`borrowAgainstOffer` and `lendAgainstListing` did not prevent
+`createBorrowPool` and `createLenderPool` did not prevent
 `borrower == lender` (self-matching). When a self-matched loan exists,
 `repayLoan` calls `_pullExact(ovrfloToken, msg.sender, loan.lender, amount)`
 where `from == to`. ERC20 self-transfers leave the balance unchanged, so the
@@ -169,15 +169,15 @@ accrues, and the borrower can repay from a different address. But the
 
 ### Fix applied
 
-Added `require(msg.sender != offer.lender, "OVRFLOBook: self-match")` in
-`borrowAgainstOffer` and `require(msg.sender != listing.borrower,
-"OVRFLOBook: self-match")` in `lendAgainstListing`. Prevents the irrational
+Added `require(offer.lender != borrower, "OVRFLOBook: self-match")` in
+`createBorrowPool` (via `_validateBorrowOffers`) and `require(msg.sender != listing.borrower,
+"OVRFLOBook: self-match")` in `createLenderPool`. Prevents the irrational
 self-matched loan state at the root cause rather than special-casing the
 repayment transfer.
 
 ### Files changed
 
-- `src/OVRFLOBook.sol` — `borrowAgainstOffer`, `lendAgainstListing`.
+- `src/OVRFLOBook.sol` — `createBorrowPool`, `createLenderPool`.
 
 ### Test coverage note
 

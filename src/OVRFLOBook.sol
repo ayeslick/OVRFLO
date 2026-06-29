@@ -145,8 +145,8 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
 
     /// @notice A loan backed by a pledged Sablier stream.
     /// @dev Satisfied amount = `drawn + repaid`; outstanding = `obligation - satisfied`.
-    ///      The lender recovers by drawing ovrfloToken from the stream (`claimLoan`/
-    ///      `closeLoan`) or by the borrower repaying in ovrfloToken (`repayLoan`).
+    ///      The lender recovers by drawing ovrfloToken from the stream via
+    ///      `closeLoan`, or by the borrower repaying in ovrfloToken (`repayLoan`).
     ///      Total recovery is capped at `obligation`; the stream is returned to the
     ///      borrower once the loan closes.
     /// @param borrower Stream owner who received the loan principal.
@@ -167,8 +167,8 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
     }
 
     /// @notice A pool aggregates multiple offers or listings into one atomic batch.
-    /// @dev Borrower pools (isLend=false) batch borrowAgainstOffer across lend offers.
-    ///      Lender pools (isLend=true) batch lendAgainstListing across borrow listings.
+    /// @dev Borrower pools (isLend=false) batch across lend offers via `createBorrowPool`.
+    ///      Lender pools (isLend=true) batch across borrow listings via `createLenderPool`.
     ///      Claims are address-based (no NFTs) via poolContributions and poolReceived.
     /// @param creator Pool creator (borrower for borrower pools, lender for lender pools).
     /// @param aprBps Shared rate across all consumed offers/listings.
@@ -205,7 +205,7 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
     mapping(uint256 => uint128) public poolProceeds;
     /// @notice Pool id => contributor => total received across both claim channels.
     mapping(uint256 => mapping(address => uint128)) public poolReceived;
-    /// @notice Loan id => poolId (0 = non-pool loan).
+    /// @notice Loan id => poolId (every loan belongs to a pool).
     mapping(uint256 => uint256) public loanPoolId;
 
     /*//////////////////////////////////////////////////////////////
@@ -261,18 +261,6 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
     );
     /// @notice Emitted when a lend offer is cancelled and its remaining capacity refunded.
     event LendOfferCancelled(uint256 indexed offerId, address indexed lender, uint128 refunded);
-    /// @notice Emitted when a borrower pledges a stream against a lend offer, opening a loan.
-    event BorrowedAgainstOffer(
-        uint256 indexed offerId,
-        uint256 indexed loanId,
-        uint256 indexed streamId,
-        address borrower,
-        address lender,
-        uint128 borrowAmount,
-        uint128 obligation,
-        uint256 fee,
-        uint256 netToBorrower
-    );
     /// @notice Emitted when a borrow listing is posted (stream pledged as collateral).
     event BorrowListingPosted(
         uint256 indexed listingId,
@@ -285,20 +273,6 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
     );
     /// @notice Emitted when a borrow listing is cancelled and the stream returned.
     event BorrowListingCancelled(uint256 indexed listingId, address indexed borrower, uint256 streamId);
-    /// @notice Emitted when a lender fills a borrow listing, opening a loan.
-    event LentAgainstListing(
-        uint256 indexed listingId,
-        uint256 indexed loanId,
-        uint256 indexed streamId,
-        address borrower,
-        address lender,
-        uint128 borrowAmount,
-        uint128 obligation,
-        uint256 fee,
-        uint256 netToBorrower
-    );
-    /// @notice Emitted when a lender draws ovrfloToken from a loan's pledged stream.
-    event LoanClaimed(uint256 indexed loanId, address indexed lender, uint128 amount, uint128 drawn);
     /// @notice Emitted when a loan is closed by drawing the remainder and returning the stream.
     event LoanClosed(uint256 indexed loanId, address indexed borrower, address indexed lender, uint128 finalDraw);
     /// @notice Emitted when a borrower repays ovrfloToken toward a loan (and whether it closed).
@@ -552,7 +526,7 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
     ///         any eligible stream from `market` at rate `aprBps`.
     /// @dev Pulls `capacity` underlying upfront. Market-gated via `_requireMarketActive`
     ///      (no stream bound yet); full eligibility is checked per-draw in
-    ///      `borrowAgainstOffer`.
+    ///      `createBorrowPool`.
     /// @param market Pendle market collateral streams must belong to.
     /// @param aprBps Rate used to price collateral and accrue obligation.
     /// @param capacity Underlying liquidity to fund.
@@ -589,57 +563,6 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
         _payUnderlying(msg.sender, refund);
 
         emit LendOfferCancelled(offerId, msg.sender, refund);
-    }
-
-    /// @notice Borrows against a standing lend offer (taker side).
-    /// @dev Pledges `streamId` as collateral, receives `borrowAmount` underlying (net of
-    ///      the global `feeBps`), and opens a loan owed to the offer's lender. The
-    ///      obligation is computed via `StreamPricing.obligationForFill`. The stream is
-    ///      escrowed by the book. Reverts if `borrowAmount` exceeds the discounted price
-    ///      or remaining capacity, or if the net slips below `minNetOut`.
-    /// @param offerId The lend offer to borrow against.
-    /// @param streamId The Sablier stream to pledge.
-    /// @param borrowAmount Principal to advance.
-    /// @param minNetOut Minimum underlying the borrower must receive (slippage).
-    /// @return loanId The new loan id.
-    function borrowAgainstOffer(uint256 offerId, uint256 streamId, uint128 borrowAmount, uint256 minNetOut)
-        external
-        nonReentrant
-        returns (uint256 loanId)
-    {
-        require(borrowAmount > 0, "OVRFLOBook: borrow zero");
-        LendOffer storage offer = lendOffers[offerId];
-        require(offer.active, "OVRFLOBook: lend offer inactive");
-        require(msg.sender != offer.lender, "OVRFLOBook: self-match");
-
-        StreamPricing.Eligibility memory eligibility = _requireEligible(offer.market, streamId);
-        uint256 timeToMaturity = _timeToMaturity(eligibility.seriesMaturity);
-        uint256 grossPrice = StreamPricing.grossPrice(eligibility.remaining, offer.aprBps, timeToMaturity);
-        require(grossPrice > 0, "OVRFLOBook: price zero");
-        require(borrowAmount <= grossPrice, "OVRFLOBook: borrow above price");
-        require(borrowAmount <= offer.capacity, "OVRFLOBook: insufficient capacity");
-
-        uint256 feeAmount = StreamPricing.fee(borrowAmount, feeBps);
-        uint256 netToBorrower = borrowAmount - feeAmount;
-        require(netToBorrower >= minNetOut, "OVRFLOBook: slippage");
-        uint128 obligation = StreamPricing.obligationForFill(
-            borrowAmount, grossPrice, eligibility.remaining, offer.aprBps, timeToMaturity
-        );
-
-        offer.capacity -= borrowAmount;
-        if (offer.capacity == 0) {
-            offer.active = false;
-        }
-
-        loanId = _storeLoan(msg.sender, offer.lender, streamId, obligation);
-
-        sablier.transferFrom(msg.sender, address(this), streamId);
-        _payUnderlying(msg.sender, netToBorrower);
-        _payUnderlying(treasury, feeAmount);
-
-        emit BorrowedAgainstOffer(
-            offerId, loanId, streamId, msg.sender, offer.lender, borrowAmount, obligation, feeAmount, netToBorrower
-        );
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -698,81 +621,9 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
         emit BorrowListingCancelled(listingId, msg.sender, listing.streamId);
     }
 
-    /// @notice Fills a borrow listing (lender side).
-    /// @dev Re-prices the collateral at fill time, computes the obligation via
-    ///      `StreamPricing.obligationForFill`, charges the listing's snapshotted
-    ///      `feeBps`, advances `borrowAmount` underlying (net of fee) to the borrower,
-    ///      and opens a loan owed to the caller. Reverts if the obligation slips below
-    ///      `minObligationOut`.
-    /// @param listingId The borrow listing to fill.
-    /// @param minObligationOut Minimum obligation the lender will accept (slippage).
-    /// @return loanId The new loan id.
-    function lendAgainstListing(uint256 listingId, uint128 minObligationOut)
-        external
-        nonReentrant
-        returns (uint256 loanId)
-    {
-        BorrowListing storage listing = borrowListings[listingId];
-        require(listing.active, "OVRFLOBook: borrow listing inactive");
-        require(msg.sender != listing.borrower, "OVRFLOBook: self-match");
-
-        StreamPricing.Eligibility memory eligibility = _requireEligible(listing.market, listing.streamId);
-        uint256 timeToMaturity = _timeToMaturity(eligibility.seriesMaturity);
-        uint256 grossPrice = StreamPricing.grossPrice(eligibility.remaining, listing.aprBps, timeToMaturity);
-        require(grossPrice > 0, "OVRFLOBook: price zero");
-        require(listing.borrowAmount <= grossPrice, "OVRFLOBook: borrow above price");
-
-        uint128 obligation = StreamPricing.obligationForFill(
-            listing.borrowAmount, grossPrice, eligibility.remaining, listing.aprBps, timeToMaturity
-        );
-        require(obligation >= minObligationOut, "OVRFLOBook: slippage");
-        uint256 feeAmount = StreamPricing.fee(listing.borrowAmount, listing.feeBps);
-        uint256 netToBorrower = uint256(listing.borrowAmount) - feeAmount;
-
-        listing.active = false;
-        loanId = _storeLoan(listing.borrower, msg.sender, listing.streamId, obligation);
-
-        _pullExact(IERC20(underlying), msg.sender, address(this), listing.borrowAmount);
-        _payUnderlying(listing.borrower, netToBorrower);
-        _payUnderlying(treasury, feeAmount);
-
-        emit LentAgainstListing(
-            listingId,
-            loanId,
-            listing.streamId,
-            listing.borrower,
-            msg.sender,
-            listing.borrowAmount,
-            obligation,
-            feeAmount,
-            netToBorrower
-        );
-    }
-
     /*//////////////////////////////////////////////////////////////
                               LOAN SERVICING
     //////////////////////////////////////////////////////////////*/
-
-    /// @notice Lender draws accrued ovrfloToken from a loan's pledged stream.
-    /// @dev Draw is capped at the smaller of the stream's withdrawable amount and the
-    ///      loan's current outstanding, so the lender can never over-claim past the
-    ///      obligation. Increases `drawn` and emits the cumulative draw.
-    /// @param loanId The loan to claim against.
-    function claimLoan(uint256 loanId) external nonReentrant {
-        Loan storage loan = loans[loanId];
-        _requireLoanExists(loan);
-        require(loanPoolId[loanId] == 0, "OVRFLOBook: use poolClaimLoan");
-        require(!loan.closed, "OVRFLOBook: loan closed");
-        require(loan.lender == msg.sender, "OVRFLOBook: not lender");
-
-        uint128 amount = _minUint128(sablier.withdrawableAmountOf(loan.streamId), _outstanding(loan));
-        require(amount > 0, "OVRFLOBook: nothing claimable");
-
-        loan.drawn += amount;
-        sablier.withdraw(loan.streamId, loan.lender, amount);
-
-        emit LoanClaimed(loanId, loan.lender, amount, loan.drawn);
-    }
 
     /// @notice Closes a loan by drawing the remaining outstanding and returning the stream.
     /// @dev Permissionless. Requires the stream to have accrued at least `outstanding`
@@ -793,12 +644,8 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
         if (outstanding > 0) {
             loan.drawn += outstanding;
             uint256 poolId = loanPoolId[loanId];
-            if (poolId != 0) {
-                sablier.withdraw(loan.streamId, address(this), outstanding);
-                poolProceeds[poolId] += outstanding;
-            } else {
-                sablier.withdraw(loan.streamId, loan.lender, outstanding);
-            }
+            sablier.withdraw(loan.streamId, address(this), outstanding);
+            poolProceeds[poolId] += outstanding;
         }
         sablier.transferFrom(address(this), loan.borrower, loan.streamId);
 
@@ -832,12 +679,8 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
         }
 
         uint256 poolId = loanPoolId[loanId];
-        if (poolId != 0) {
-            _pullExact(IERC20(ovrfloToken), msg.sender, address(this), amount);
-            poolProceeds[poolId] += amount;
-        } else {
-            _pullExact(IERC20(ovrfloToken), msg.sender, loan.lender, amount);
-        }
+        _pullExact(IERC20(ovrfloToken), msg.sender, address(this), amount);
+        poolProceeds[poolId] += amount;
         if (closes) {
             sablier.transferFrom(address(this), loan.borrower, loan.streamId);
         }

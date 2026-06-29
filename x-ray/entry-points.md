@@ -20,11 +20,11 @@
 `[factory addMarket above]` → user approves PT + underlying → `OVRFLO.deposit()`  ◄── block.timestamp < expiry
                                                    ├─→ `OVRFLO.claim()`  ◄── block.timestamp >= expiry
                                                    ├─→ `OVRFLO.wrap()` / `OVRFLO.unwrap()`  ◄── wrap reserve funded
-                                                   └─→ stream NFT → `OVRFLOBook.postSaleListing()` / `postBorrowListing()` / `sellIntoOffer()` / `borrowAgainstOffer()`
+                                                   └─→ stream NFT → `OVRFLOBook.postSaleListing()` / `postBorrowListing()` / `sellIntoOffer()` / `createBorrowPool()`
 
 ### Loan Servicing (Lender / Borrower / Anyone)
 
-`[borrow opened above]` → `OVRFLOBook.claimLoan()`  ◄── lender only, withdrawable > 0
+`[borrow opened above]` → `OVRFLOBook.poolClaimLoan()`  ◄── pool contributor, withdrawable > 0
                          ├─→ `OVRFLOBook.repayLoan()`  ◄── borrower only
                          └─→ `OVRFLOBook.closeLoan()`  ◄── permissionless, withdrawable >= outstanding
 
@@ -32,11 +32,11 @@
 
 `OVRFLOBook.postSaleOffer()` / `postLendOffer()`  ◄── maker funds capacity
    ├─→ `OVRFLOBook.cancelSaleOffer()` / `cancelLendOffer()`  ◄── maker only
-   └─→ `OVRFLOBook.sellIntoOffer()` / `borrowAgainstOffer()`  ◄── taker fills
+   └─→ `OVRFLOBook.sellIntoOffer()` / `createBorrowPool()`  ◄── taker fills
 
 `OVRFLOBook.postSaleListing()` / `postBorrowListing()`  ◄── maker escrows stream
    ├─→ `OVRFLOBook.cancelSaleListing()` / `cancelBorrowListing()`  ◄── maker only
-   └─→ `OVRFLOBook.buyListing()` / `lendAgainstListing()`  ◄── taker fills
+   └─→ `OVRFLOBook.buyListing()` / `createLenderPool()`  ◄── taker fills
 
 ---
 
@@ -150,15 +150,15 @@
 | Value flow | underlying: lender → book |
 | Reentrancy guard | yes |
 
-### `OVRFLOBook.borrowAgainstOffer(uint256 offerId, uint256 streamId, uint128 borrowAmount, uint256 minNetOut)`
+### `OVRFLOBook.createBorrowPool(uint256[] offerIds, uint256 streamId, uint128 targetBorrow, uint128 minAcceptable)`
 
 | Aspect | Detail |
 |--------|--------|
 | Visibility | external, `nonReentrant` |
 | Caller | User (borrower) |
-| Parameters | offerId, streamId, borrowAmount, minNetOut (all user-controlled) |
-| Call chain | `→ StreamPricing.requireEligible` → `grossPrice/obligationForFill/fee` → `_storeLoan` → `sablier.transferFrom(borrower, book)` → `_payUnderlying` (x2) |
-| State modified | `lendOffers[offerId].capacity` (-borrowAmount); `loans[id]` (new); `nextLoanId` (+1) |
+| Parameters | offerIds, streamId, targetBorrow, minAcceptable (all user-controlled) |
+| Call chain | `→ StreamPricing.requireEligible` → `grossPrice/obligationForFill/fee` → `_validateBorrowOffers` → `_consumeBorrowOffers` → `_storeLoan` → `sablier.transferFrom(borrower, book)` → `_payUnderlying` (x2) |
+| State modified | `lendOffers[offerIds].capacity` (-consumed); `pools[id]` (new); `loans[id]` (new); `nextPoolId` (+1); `nextLoanId` (+N) |
 | Value flow | stream NFT: borrower → book escrow; underlying: book → borrower (net) + treasury (fee) |
 | Reentrancy guard | yes |
 
@@ -174,16 +174,16 @@
 | Value flow | stream NFT: borrower → book escrow |
 | Reentrancy guard | yes |
 
-### `OVRFLOBook.lendAgainstListing(uint256 listingId, uint128 minObligationOut)`
+### `OVRFLOBook.createLenderPool(uint256[] listingIds, uint128 totalAmount, uint128 minAcceptable)`
 
 | Aspect | Detail |
 |--------|--------|
 | Visibility | external, `nonReentrant` |
 | Caller | User (lender) |
-| Parameters | listingId (user-controlled), minObligationOut (user-controlled) |
-| Call chain | `→ StreamPricing.requireEligible` → `grossPrice/obligationForFill/fee` → `_storeLoan` → `_pullExact(underlying)` → `_payUnderlying` (x2) |
-| State modified | `borrowListings[id].active` (false); `loans[id]` (new); `nextLoanId` (+1) |
-| Value flow | underlying: lender → book → borrower (net) + treasury (fee) |
+| Parameters | listingIds, totalAmount, minAcceptable (all user-controlled) |
+| Call chain | `→ StreamPricing.requireEligible` → `grossPrice/obligationForFill/fee` → `_pullExact(underlying)` → `_storeLoan` (per listing) → `sablier.transferFrom(borrower, book)` (per listing) → `_payUnderlying` (x2) |
+| State modified | `borrowListings[ids].active` (false); `pools[id]` (new); `loans[id]` (new); `nextPoolId` (+1); `nextLoanId` (+N) |
+| Value flow | underlying: lender → book → borrowers (net) + treasury (fee); stream NFTs: borrowers → book escrow |
 | Reentrancy guard | yes |
 
 ### `OVRFLOBook.closeLoan(uint256 loanId)`
@@ -195,7 +195,7 @@
 | Parameters | loanId (user-controlled) |
 | Call chain | `→ sablier.withdrawableAmountOf` → `sablier.withdraw` (if outstanding > 0) → `sablier.transferFrom(book, borrower)` |
 | State modified | `loans[id].closed` (true); `loans[id].drawn` (+outstanding) |
-| Value flow | ovrfloToken: stream → lender (draw); stream NFT: book → borrower |
+| Value flow | ovrfloToken: stream → `poolProceeds` (draw); stream NFT: book → borrower |
 | Reentrancy guard | yes |
 
 ### `OVRFLOBook.multicall(bytes[])` *(inherited)*
@@ -227,8 +227,8 @@
 
 | Contract | Function | Gate | State Modified |
 |----------|----------|------|----------------|
-| OVRFLOBook | `claimLoan(loanId)` | `loan.lender == msg.sender` | `loans[id].drawn` (+amount); ovrfloToken drawn to lender |
-| OVRFLOBook | `repayLoan(loanId, amount)` | `loan.borrower == msg.sender` | `loans[id].repaid` (+amount), maybe `closed=true`; ovrfloToken to lender; stream returned if closed |
+| OVRFLOBook | `poolClaimLoan(poolId, loanId, amount)` | pool contributor | `loans[id].drawn` (+amount); ovrfloToken drawn to caller |
+| OVRFLOBook | `repayLoan(loanId, amount)` | `loan.borrower == msg.sender` | `loans[id].repaid` (+amount), maybe `closed=true`; ovrfloToken to `poolProceeds`; stream returned if closed |
 
 ### Pending owner (two-step accept)
 

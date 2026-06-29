@@ -510,11 +510,12 @@ contract OVRFLOAttackScenariosTest is Test {
         vm.prank(lender);
         uint256 offerId = book.postLendOffer(BOOK_MARKET, 1000, 50 ether);
 
-        // Borrow against offer
+        // Create borrow pool with single offer
         vm.startPrank(borrowerAddr);
         bookSablier.approve(address(book), streamId);
-        uint256 loanId = book.borrowAgainstOffer(offerId, streamId, 50 ether, 0);
+        uint256 poolId = book.createBorrowPool(_singletonArray(offerId), streamId, 50 ether, 0);
         vm.stopPrank();
+        uint256 loanId = 1;
 
         // Read loan state
         (,,, uint128 obligation,,,) = book.loans(loanId);
@@ -523,9 +524,9 @@ contract OVRFLOAttackScenariosTest is Test {
         uint128 partialClaim = obligation / 2;
         bookSablier.setWithdrawable(streamId, partialClaim);
 
-        // Lender claims partial
+        // Lender claims partial via pool
         vm.prank(lender);
-        book.claimLoan(loanId);
+        book.poolClaimLoan(poolId, loanId, partialClaim);
 
         // Borrower repays remainder
         uint128 outstanding = obligation - partialClaim;
@@ -538,7 +539,11 @@ contract OVRFLOAttackScenariosTest is Test {
 
         assertEq(bookSablier.ownerOf(streamId), borrowerAddr, "NFT should be returned to borrower");
 
-        // Lender total received: partialClaim (from stream) + outstanding (from repayment) == obligation
+        // Lender withdraws repaid portion from pool proceeds
+        vm.prank(lender);
+        book.claimPoolShare(poolId, outstanding);
+
+        // Lender total received: partialClaim (from stream) + outstanding (from pool proceeds) == obligation
         uint128 lenderOvrfloReceived = uint128(bookOvrfloToken.balanceOf(lender));
         assertEq(lenderOvrfloReceived, obligation, "lender total should equal obligation");
     }
@@ -627,5 +632,10 @@ contract OVRFLOAttackScenariosTest is Test {
     function _computeFee(uint256 amount, uint256 rateE18, uint16 feeBps) internal pure returns (uint256) {
         uint256 ptValueInUnderlying = (amount * rateE18) / 1e18;
         return (ptValueInUnderlying * feeBps) / 10_000;
+    }
+
+    function _singletonArray(uint256 id) internal pure returns (uint256[] memory arr) {
+        arr = new uint256[](1);
+        arr[0] = id;
     }
 }

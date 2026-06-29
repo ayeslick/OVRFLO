@@ -36,7 +36,7 @@ end time == expiry, no cliff, non-cancelable, remaining > 0).
 The two **offer** posting functions previously validated only the APR and
 capacity — they accepted ANY `market` argument and pulled funds, deferring all
 market/series/maturity checks to fill time (`sellIntoOffer` /
-`borrowAgainstOffer`). So a maker could lock up underlying behind a dead or
+`createBorrowPool`). So a maker could lock up underlying behind a dead or
 unapproved market and only discover the rejection when someone tried to fill it.
 
 ## Guidance
@@ -125,13 +125,13 @@ no longer reads `series()` directly; the pricing library does.
 ## Examples
 
 - **Before:** `postLendOffer(market = unapprovedMarket, ...)` succeeded and
-  pulled 100 underlying; the first `borrowAgainstOffer` against it reverted with
+  pulled 100 underlying; the first `createBorrowPool` against it reverted with
   `MarketNotApproved`, stranding the lender's capital until `cancelLendOffer`.
 - **After:** `postLendOffer(market = unapprovedMarket, ...)` reverts immediately
   with `MarketNotApproved` before any transfer.
-- **Test update:** `test_BorrowAgainstOffer_RevertsForBoundsSlippageIneligibleAndDeadOffer`
+- **Test update:** `test_CreateBorrowPool_CancelledOfferReverts`
   had to be updated. It used to unapprove the market BEFORE posting a lend offer
-  (relying on post not checking), then expect `borrowAgainstOffer` to revert.
+  (relying on post not checking), then expect `createBorrowPool` to revert.
   Now post rejects unapproved markets, so the test posts while approved, then
   unapproves, then expects the fill to revert — preserving the fill-time
   ineligibility intent.

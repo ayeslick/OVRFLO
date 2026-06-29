@@ -33,8 +33,8 @@ confirmed that the sale offer's `capacity` dropped to `0` and that
 *consumed* and the stream was *transferred*, but not that the underlying
 *left the book*, that the *fee was paid*, or that the upfront-liquidity provider
 ended up at zero. The same shape recurred across `sellIntoOffer`, `buyListing`,
-`borrowAgainstOffer`, `lendAgainstListing`, and the loan-servicing paths
-(`claimLoan`, `closeLoan`, `repayLoan`).
+`createBorrowPool`, `createLenderPool`, and the loan-servicing paths
+(`poolClaimLoan`, `claimPoolShare`, `closeLoan`, `repayLoan`).
 
 The friction this created: a future refactor that breaks `_payUnderlying` (wrong
 payee, skipped fee, value stranded in the book, double-pay) would pass every
@@ -63,18 +63,18 @@ Per-flow checklist (all amounts are `underlying` unless noted):
   - book balance == `0` (all pulled underlying was paid out)
   - buyer balance == `0` (they paid `grossPrice`)
 
-- **`borrowAgainstOffer` (lend offer fill):**
+- **`createBorrowPool` (borrower pool — lend offer fill):**
   - borrower received net underlying
   - treasury received the fee
   - book balance == remaining capacity
 
-- **`lendAgainstListing` (borrow listing fill):**
+- **`createLenderPool` (lender pool — borrow listing fill):**
   - borrower received net underlying
   - treasury received the fee
   - buyer (lender) balance == `0` (they paid `borrowAmount`)
   - book balance == `0` (all paid out)
 
-- **`claimLoan` / `closeLoan` / `repayLoan` (loan servicing):**
+- **`poolClaimLoan` / `claimPoolShare` / `closeLoan` / `repayLoan` (loan servicing):**
   - `ovrfloToken.balanceOf` for the lender reflects accumulated draws (and
     repayments, where applicable)
   - `sablier.getWithdrawnAmount` reflects the total withdrawn from the stream
@@ -123,8 +123,8 @@ measurable runtime cost, and all 240 non-fork tests still pass.
 - Any non-fork **or** fork test that calls a function transferring `underlying`,
   `ovrfloToken`, or a Sablier stream NFT.
 - New tests written for `OVRFLOBook` entry/teardown functions: `sellIntoOffer`,
-  `buyListing`, `borrowAgainstOffer`, `lendAgainstListing`, the `cancel*`
-  functions, and `claimLoan` / `closeLoan` / `repayLoan`.
+  `buyListing`, `createBorrowPool`, `createLenderPool`, the `cancel*`
+  functions, and `poolClaimLoan` / `claimPoolShare` / `closeLoan` / `repayLoan`.
 - During test PR review: if a balance assertion is missing for a party that
   touched value, request it before approving. The four-party check (actor,
   counterparty, treasury, book) is the minimum, not a nice-to-have.
@@ -167,9 +167,9 @@ upfront and is paid out, so they end at `0`. The seller keeps their `100 ether`
 net. A refactor that stranded underlying in the book, paid the buyer twice, or
 routed the fee to the wrong address now fails this test.
 
-### `lendAgainstListing` — add the buyer and book legs
+### `createLenderPool` — add the buyer and book legs
 
-`test_LendAgainstListing_OriginatesLoan` verified the loan struct, the stream
+`test_CreateLenderPool_SufficientCapacity` verified the loan struct, the stream
 escrow, and the seller/treasury split, but omitted the lender (buyer) and the
 book:
 
@@ -200,8 +200,8 @@ money actually moved to the right places."
 ## Related
 
 - `test/OVRFLOBook.t.sol` — the ~15 tests updated with full balance assertions
-  (`sellIntoOffer`, `buyListing`, `borrowAgainstOffer`, `lendAgainstListing`,
-  `claimLoan`, `closeLoan`, `repayLoan` paths).
+  (`sellIntoOffer`, `buyListing`, `createBorrowPool`, `createLenderPool`,
+  `poolClaimLoan`, `claimPoolShare`, `closeLoan`, `repayLoan` paths).
 - `src/OVRFLOBook.sol` — the entry/teardown and loan-servicing functions whose
   value routing these assertions guard (`_payUnderlying`, `_pullExact`, and the
   per-flow payout logic).
