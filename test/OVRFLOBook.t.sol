@@ -1372,4 +1372,17 @@ contract OVRFLOBookTest is Test {
         book.postSaleOffer(MARKET, 333, 100 ether);
         vm.stopPrank();
     }
+
+    /*//////////////////////////////////////////////////////////////
+                    COVERAGE: POOL DATA STRUCTURES
+    //////////////////////////////////////////////////////////////*/
+
+    function test_Pool_NextPoolIdStartsAtOne() public view {
+        assertEq(book.nextPoolId(), 1);
+    }
+
+    function test_Pool_LoanPoolIdDefaultsToZero() public {
+        uint256 loanId = _originateLoanViaOffer(70, 100 ether);
+        assertEq(book.loanPoolId(loanId), 0, "non-pool loan should have poolId 0");
+    }
 }

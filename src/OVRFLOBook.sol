@@ -76,6 +76,8 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
     uint256 public nextBorrowListingId = 1;
     /// @notice Next loan id (monotonic from 1).
     uint256 public nextLoanId = 1;
+    /// @notice Next pool id (monotonic from 1).
+    uint256 public nextPoolId = 1;
 
     /// @notice Standing buy-side offer: liquidity in underlying waiting to buy any
     ///         eligible stream from `market` at `aprBps`.
@@ -164,6 +166,25 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
         bool closed;
     }
 
+    /// @notice A pool aggregates multiple offers or listings into one atomic batch.
+    /// @dev Borrower pools (isLend=false) batch borrowAgainstOffer across lend offers.
+    ///      Lender pools (isLend=true) batch lendAgainstListing across borrow listings.
+    ///      Claims are address-based (no NFTs) via poolContributions and poolReceived.
+    /// @param creator Pool creator (borrower for borrower pools, lender for lender pools).
+    /// @param aprBps Shared rate across all consumed offers/listings.
+    /// @param isLend True = lender pool, false = borrower pool.
+    /// @param active False once all loans settled and proceeds claimed.
+    /// @param market Pendle market all offers/listings belong to.
+    /// @param totalContributed Total capital contributed (borrowed or deployed).
+    struct Pool {
+        address creator;
+        uint16 aprBps;
+        bool isLend;
+        bool active;
+        address market;
+        uint128 totalContributed;
+    }
+
     /// @notice Sale offer id => offer.
     mapping(uint256 => SaleOffer) public saleOffers;
     /// @notice Sale listing id => listing.
@@ -174,6 +195,16 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
     mapping(uint256 => BorrowListing) public borrowListings;
     /// @notice Loan id => loan.
     mapping(uint256 => Loan) public loans;
+    /// @notice Pool id => Pool.
+    mapping(uint256 => Pool) public pools;
+    /// @notice Pool id => contributor => contributed amount.
+    mapping(uint256 => mapping(address => uint128)) public poolContributions;
+    /// @notice Pool id => accumulated ovrfloToken from closeLoan/repayLoan.
+    mapping(uint256 => uint128) public poolProceeds;
+    /// @notice Pool id => contributor => total received across both claim channels.
+    mapping(uint256 => mapping(address => uint128)) public poolReceived;
+    /// @notice Loan id => poolId (0 = non-pool loan).
+    mapping(uint256 => uint256) public loanPoolId;
 
     /*//////////////////////////////////////////////////////////////
                                 EVENTS
@@ -272,6 +303,19 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
     event LoanRepaid(
         uint256 indexed loanId, address indexed borrower, address indexed lender, uint128 amount, bool closed
     );
+    /// @notice Emitted when a pool is created (borrower or lender).
+    event PoolCreated(
+        uint256 indexed poolId,
+        address indexed creator,
+        address market,
+        uint16 aprBps,
+        bool isLend,
+        uint128 totalContributed
+    );
+    /// @notice Emitted when a contributor claims ovrfloToken from pool proceeds.
+    event PoolShareClaimed(uint256 indexed poolId, address indexed claimant, uint128 amount);
+    /// @notice Emitted when a contributor draws directly from a pool loan's stream.
+    event PoolLoanClaimed(uint256 indexed poolId, address indexed claimant, uint256 indexed loanId, uint128 amount);
 
     /*//////////////////////////////////////////////////////////////
                               CONSTRUCTOR
