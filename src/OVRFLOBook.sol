@@ -785,7 +785,7 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Scans offers for matching capacity.
-    /// @dev View function (called via eth_call off-chain, high gas available). Gated by
+    /// @dev Gated by
     ///      `marketActive` (reverts on expired series). Returns IDs of active offers
     ///      matching `market` and `aprBps` with remaining capacity, stopping once
     ///      accumulated capacity meets `targetAmount`. Use `startId` to paginate if the
@@ -927,14 +927,9 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
         require(loan.borrower != address(0), "OVRFLOBook: unknown loan");
     }
 
-    /// @dev Total ovrfloToken already applied to the obligation (stream draws + repayments).
-    function _satisfied(Loan storage loan) internal view returns (uint256) {
-        return uint256(loan.drawn) + loan.repaid;
-    }
-
     /// @dev Remaining ovrfloToken owed: `obligation - (drawn + repaid)`.
     function _outstanding(Loan storage loan) internal view returns (uint128) {
-        return uint128(uint256(loan.obligation) - _satisfied(loan));
+        return loan.obligation - loan.drawn - loan.repaid;
     }
 
     /// @dev Min of two uint128 values.
