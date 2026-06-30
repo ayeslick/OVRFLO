@@ -316,18 +316,18 @@ complementary safety net, not a replacement. Do **not** pull in
 
 ```solidity
 // createBorrowPool — no self-match guard on offer makers.
-LendOffer storage offer = lendOffers[offerIds[i]];
-require(offer.active, "OVRFLOBook: lend offer inactive");
-// msg.sender could be offer.lender, creating a loan where from == to
+Offer storage offer = offers[offerIds[i]];
+require(offer.active, "OVRFLOBook: offer inactive");
+// msg.sender could be offer.maker, creating a loan where from == to
 // in _pullExact, which reverts on the balance-delta check.
 ```
 
 ### ✅ CORRECT (reject at loan creation)
 
 ```solidity
-LendOffer storage offer = lendOffers[offerIds[i]];
-require(offer.active, "OVRFLOBook: lend offer inactive");
-require(offer.lender != borrower, "OVRFLOBook: self-match");
+Offer storage offer = offers[offerIds[i]];
+require(offer.active, "OVRFLOBook: offer inactive");
+require(offer.maker != borrower, "OVRFLOBook: self-match");
 ```
 
 **Why:** If `borrower == lender`, `repayLoan`'s `_pullExact` does a
@@ -339,16 +339,15 @@ this state. Self-matching is economically irrational (you pay a treasury
 fee to yourself), so this is a correctness guard, not a value-loss
 prevention.
 
-**Placement/Context:** Both pool-creation entry points that pair a borrower
-with a lender: `createBorrowPool` (borrower = `msg.sender`, checked against
-each `offer.lender` in `_validateBorrowOffers`) and `createLenderPool`
-(lender = `msg.sender`, checked against each `listing.borrower`).
+**Placement/Context:** The pool-creation entry point that pairs a borrower
+with an offer maker: `createBorrowPool` (borrower = `msg.sender`, checked
+against each `offer.maker` in `_validateOffers`).
 
 **How to detect violation:**
 
 ```bash
 rg -n "self-match" src/OVRFLOBook.sol
-# expected: matches in createBorrowPool (_validateBorrowOffers) and createLenderPool
+# expected: match in createBorrowPool (_validateOffers); createLenderPool removed
 ```
 
 **Documented in:** [`docs/solutions/security-issues/repayloan-equality-rounding-no-brick-OVRFLOBook-20260624.md`](../security-issues/repayloan-equality-rounding-no-brick-OVRFLOBook-20260624.md) — companion finding section.
@@ -747,8 +746,8 @@ rg "underlyingToOvrflo\[config.underlying\]" src/OVRFLOFactory.sol
 ```solidity
 // createBorrowPool — no ordering check
 for (uint256 i = 0; i < offerIds.length; i++) {
-    LendOffer storage offer = lendOffers[offerIds[i]];
-    require(offer.active, "OVRFLOBook: lend offer inactive");
+    Offer storage offer = offers[offerIds[i]];
+    require(offer.active, "OVRFLOBook: offer inactive");
     totalAvailable += offer.capacity; // duplicate ID => counted twice
 }
 // Borrower receives more underlying than was actually consumed from any
@@ -760,8 +759,8 @@ for (uint256 i = 0; i < offerIds.length; i++) {
 ```solidity
 for (uint256 i = 0; i < offerIds.length; i++) {
     if (i > 0) require(offerIds[i] > offerIds[i - 1], "OVRFLOBook: duplicate or unsorted ids");
-    LendOffer storage offer = lendOffers[offerIds[i]];
-    require(offer.active, "OVRFLOBook: lend offer inactive");
+    Offer storage offer = offers[offerIds[i]];
+    require(offer.active, "OVRFLOBook: offer inactive");
     totalAvailable += offer.capacity;
 }
 ```
@@ -775,14 +774,14 @@ unsorted input in a single check. As defense-in-depth, also re-assert the
 `active` flag inside the fill loop.
 
 **Placement/Context:** Any function that accepts an array of IDs and
-iterates them more than once: `createBorrowPool` (offer IDs),
-`createLenderPool` (listing IDs), and any future batch primitive.
+iterates them more than once: `createBorrowPool` (offer IDs), and any
+future batch primitive.
 
 **How to detect violation:**
 
 ```bash
 rg "duplicate or unsorted ids" src/OVRFLOBook.sol
-# expected: 2 matches (one per pool creation function)
+# expected: 1 match (createBorrowPool only; createLenderPool removed)
 ```
 
 **Documented in:** [`docs/solutions/design-patterns/solidity-batch-function-safety-patterns.md`](../design-patterns/solidity-batch-function-safety-patterns.md)

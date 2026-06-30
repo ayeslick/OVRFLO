@@ -506,9 +506,9 @@ contract OVRFLOAttackScenariosTest is Test {
             0
         );
 
-        // Post lend offer
+        // Post offer
         vm.prank(lender);
-        uint256 offerId = book.postLendOffer(BOOK_MARKET, 1000, 50 ether);
+        uint256 offerId = book.postOffer(BOOK_MARKET, 1000, 50 ether);
 
         // Create borrow pool with single offer
         vm.startPrank(borrowerAddr);
@@ -526,7 +526,7 @@ contract OVRFLOAttackScenariosTest is Test {
 
         // Lender claims partial via pool
         vm.prank(lender);
-        book.poolClaimLoan(poolId, loanId, partialClaim);
+        book.poolClaimLoan(poolId, partialClaim);
 
         // Borrower repays remainder
         uint128 outstanding = obligation - partialClaim;

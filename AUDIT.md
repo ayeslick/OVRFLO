@@ -43,7 +43,7 @@ The package reuses the stable IDs already in `x-ray/` — guard codes `G-1..G-18
 
 ## One-screen triage map
 
-42 entry points (14 permissionless, 8 role-gated, 20 admin) per `x-ray/entry-points.md`; the 13 value-moving permissionless paths below are the attack surface (`multicall` is a batch helper that inherits the delegated functions' checks). ◆ = touches a **not-enforced-on-chain** invariant (probe first). Reentrancy guard column: ✓ = `nonReentrant`, ✗ = none. Adversary rank from `x-ray/x-ray.md` (#1 oracle, #2 stream/MEV trader, #3 admin, #4 external drift).
+37 entry points (11 permissionless, 6 role-gated, 20 admin) per `x-ray/entry-points.md`; the 10 value-moving permissionless paths below are the attack surface (`multicall` is a batch helper that inherits the delegated functions' checks). ◆ = touches a **not-enforced-on-chain** invariant (probe first). Reentrancy guard column: ✓ = `nonReentrant`, ✗ = none. Adversary rank from `x-ray/x-ray.md` (#1 oracle, #2 stream/MEV trader, #3 admin, #4 external drift).
 
 ### Permissionless — the attack surface
 
@@ -53,14 +53,11 @@ The package reuses the stable IDs already in `x-ray/` — guard codes `G-1..G-18
 | `OVRFLO.claim()` | G-9/10, I-1 | #2 | ✗ | |
 | `OVRFLO.wrap()` | G-11, I-2, E-3, X-3 | #2 | ✗ | |
 | `OVRFLO.unwrap()` | G-12, I-2, E-3, X-3 | #2 | ✗ | |
-| `OVRFLOBook.postSaleOffer()` | G-16, I-6, I-13 | #2 | ✓ | |
+| `OVRFLOBook.postOffer()` | G-16, I-6, I-13 | #2 | ✓ | |
 | `OVRFLOBook.sellIntoOffer()` | X-5 | #2 | ✓ | |
 | `OVRFLOBook.postSaleListing()` | X-5 | #2 | ✓ | |
 | `OVRFLOBook.buyListing()` | X-5 | #2 | ✓ | |
-| `OVRFLOBook.postLendOffer()` | G-16, I-6, I-13 | #2 | ✓ | |
 | `OVRFLOBook.createBorrowPool()` | X-5, I-10, E-2, X-2 | #2/#4 | ✓ | ◆ X-2 |
-| `OVRFLOBook.postBorrowListing()` | X-5 | #2 | ✓ | |
-| `OVRFLOBook.createLenderPool()` | X-5, I-10, E-2, X-2 | #2/#4 | ✓ | ◆ X-2 |
 | `OVRFLOBook.closeLoan()` | G-18, I-10, X-2 | #2/#4 | ✓ | ◆ X-2 |
 
 > `deposit()` and `closeLoan()` are the two costliest flows. `deposit()` carries the oracle split (◆ X-1, adversary #1). `closeLoan()` is permissionless and Sablier-withdrawability-gated (◆ X-2, adversaries #2/#4). Both lack a reentrancy guard on the vault side (`deposit`); book paths are `nonReentrant`. X-5 is enforced — but probe for bypass/stale-cache of `requireEligible` (see `sablier-interface-contract.md`).
@@ -69,10 +66,8 @@ The package reuses the stable IDs already in `x-ray/` — guard codes `G-1..G-18
 
 | Entry point | Gate | Invariant IDs |
 |-------------|------|---------------|
-| `OVRFLOBook.cancelSaleOffer()` | `offer.maker` | I-13 |
+| `OVRFLOBook.cancelOffer()` | `offer.maker` | I-13 |
 | `OVRFLOBook.cancelSaleListing()` | `listing.maker` | I-13 |
-| `OVRFLOBook.cancelLendOffer()` | `offer.lender` | I-13 |
-| `OVRFLOBook.cancelBorrowListing()` | `listing.borrower` | I-13 |
 | `OVRFLOBook.poolClaimLoan()` | pool contributor | I-10, X-2 |
 | `OVRFLOBook.repayLoan()` | `loan.borrower` | G-17, I-10 |
 | `OVRFLOFactory.acceptOwnership()` | `pendingOwner` | — |
@@ -96,7 +91,7 @@ The package reuses the stable IDs already in `x-ray/` — guard codes `G-1..G-18
 | `OVRFLOBook.setFee()` | G-15, I-4 | |
 | `OVRFLOBook.setTreasury()` | — | |
 
-> Note: counts match `x-ray/entry-points.md` (14 permissionless / 8 role-gated / 20 admin = 42). `OVRFLOToken` standard ERC20 (`transfer`/`transferFrom`/`approve`) are inherited and not listed.
+> Note: counts match `x-ray/entry-points.md` (11 permissionless / 6 role-gated / 20 admin = 37). `OVRFLOToken` standard ERC20 (`transfer`/`transferFrom`/`approve`) are inherited and not listed.
 
 ## Where to start
 

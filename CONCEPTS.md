@@ -76,13 +76,13 @@ Sablier streams belong to the PT deposit path. Wrap and unwrap do not create, mo
 
 ### Offer
 
-A standing buy-side or lend-side order in the OVRFLOBook secondary market where a maker posts underlying liquidity not bound to a specific stream, fillable by any eligible stream from a chosen market.
+A standing order in the OVRFLOBook secondary market where a maker posts underlying liquidity at a discount rate (APR), not bound to a specific stream, consumable by any eligible stream from a chosen market. An offer can be consumed as a sale (stream transfers permanently to the maker via `sellIntoOffer`) or as a loan (stream pledged with obligation via `createBorrowPool`); the maker cannot restrict which.
 
 Offers carry no stream at creation, so they front-load only market-level validation (market approved, series approved, not matured); full stream eligibility is checked per-fill.
 
 ### Listing
 
-A sell-side or borrow-side order in the OVRFLOBook secondary market where a maker escrows a specific Sablier stream, priced at a discount rate until the series maturity.
+A sell-side order in the OVRFLOBook secondary market where a maker escrows a specific Sablier stream, priced at a discount rate until the series maturity.
 
 Listings bind a stream at creation and run full stream eligibility validation at post time.
 
@@ -98,7 +98,7 @@ A loan against a pledged Sablier stream where the stream's deterministic payouts
 
 ### Pool
 
-The only lending mechanism in the OVRFLOBook: an atomic batch primitive that aggregates multiple offers or listings into a single transaction. A borrower pool (`createBorrowPool`) batches borrows across multiple lend offers; a lender pool (`createLenderPool`) batches lends across multiple borrow listings. The pool becomes the virtual lender on every loan it creates (`loan.lender = address(book)`, tracked via `loanPoolId`). Claims are address-based (no NFTs): contributors claim pro-rata proceeds via `claimPoolShare` (from accumulated `poolProceeds`) or `poolClaimLoan` (direct draw from a specific loan's stream). A single `poolReceived` variable caps total received across both channels at the contributor's pro-rata entitlement.
+The only lending mechanism in the OVRFLOBook: an atomic batch primitive where a borrower aggregates multiple offers into a single transaction. A borrower pool (`createBorrowPool`) batches borrows across multiple offers; the borrower is the only pooling actor. The pool becomes the virtual lender on the loan it creates (`loan.lender = address(book)`, tracked via `loanPoolId`). Each pool has exactly one loan. Claims are address-based (no NFTs): contributors claim pro-rata proceeds via `claimPoolShare` (passive, from accumulated `poolProceeds`) or `poolClaimLoan` (active, direct draw from the pool's stream). A single `poolReceived` variable caps total received across both channels at the contributor's pro-rata entitlement.
 
 ### OVRFLO cycle
 

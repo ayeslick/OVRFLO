@@ -245,15 +245,6 @@ contract OVRFLOBookTest is Test {
         uint16 aprBps,
         uint16 feeBps
     );
-    event BorrowListingPosted(
-        uint256 indexed listingId,
-        address indexed borrower,
-        address indexed market,
-        uint256 streamId,
-        uint16 aprBps,
-        uint16 feeBps,
-        uint128 borrowAmount
-    );
 
     OVRFLOBookMockFactory internal factory;
     OVRFLOBookMockCore internal core;
@@ -406,12 +397,12 @@ contract OVRFLOBookTest is Test {
         underlying.approve(address(book), 100 ether);
 
         vm.expectRevert("OVRFLOBook: apr out of bounds");
-        book.postSaleOffer(MARKET, 999, 100 ether);
+        book.postOffer(MARKET, 999, 100 ether);
 
-        uint256 offerId = book.postSaleOffer(MARKET, 1000, 100 ether);
+        uint256 offerId = book.postOffer(MARKET, 1000, 100 ether);
         vm.stopPrank();
 
-        (address maker, address market, uint16 aprBps, uint128 capacity, bool active) = book.saleOffers(offerId);
+        (address maker, address market, uint16 aprBps, uint128 capacity, bool active) = book.offers(offerId);
         assertEq(maker, BUYER);
         assertEq(market, MARKET);
         assertEq(aprBps, 1000);
@@ -423,7 +414,7 @@ contract OVRFLOBookTest is Test {
 
     function test_HitOffer_SettlesSaleAndConsumesCapacity() public {
         book.setFee(100);
-        uint256 offerId = _postSaleOffer(BUYER, 100 ether);
+        uint256 offerId = _postOffer(BUYER, 100 ether);
         _mintEligibleStream(1, SELLER, 110 ether, 0);
 
         vm.prank(SELLER);
@@ -432,7 +423,7 @@ contract OVRFLOBookTest is Test {
         vm.prank(SELLER);
         book.sellIntoOffer(offerId, 1, 99 ether);
 
-        (,,,, bool active) = book.saleOffers(offerId);
+        (,,,, bool active) = book.offers(offerId);
         assertFalse(active);
         assertEq(underlying.balanceOf(SELLER), 99 ether);
         assertEq(underlying.balanceOf(TREASURY), 1 ether);
@@ -441,7 +432,7 @@ contract OVRFLOBookTest is Test {
     }
 
     function test_HitOffer_PricesFromRemainingAfterPriorWithdrawals() public {
-        uint256 offerId = _postSaleOffer(BUYER, 100 ether);
+        uint256 offerId = _postOffer(BUYER, 100 ether);
         _mintEligibleStream(28, SELLER, 150 ether, 40 ether);
 
         vm.prank(SELLER);
@@ -449,7 +440,7 @@ contract OVRFLOBookTest is Test {
         vm.prank(SELLER);
         book.sellIntoOffer(offerId, 28, 0);
 
-        (,,, uint128 capacity,) = book.saleOffers(offerId);
+        (,,, uint128 capacity,) = book.offers(offerId);
         assertEq(capacity, 0);
         assertEq(underlying.balanceOf(SELLER), 100 ether);
         assertEq(underlying.balanceOf(TREASURY), 0);
@@ -461,7 +452,7 @@ contract OVRFLOBookTest is Test {
     function test_HitOffer_RespectsSlippageCapacityDeadIdsDustAndMaturity() public {
         book.setFee(100);
 
-        uint256 slippageOfferId = _postSaleOffer(BUYER, 100 ether);
+        uint256 slippageOfferId = _postOffer(BUYER, 100 ether);
         _mintEligibleStream(2, SELLER, 110 ether, 0);
         vm.prank(SELLER);
         sablier.approve(address(book), 2);
@@ -469,18 +460,18 @@ contract OVRFLOBookTest is Test {
         vm.expectRevert("OVRFLOBook: slippage");
         book.sellIntoOffer(slippageOfferId, 2, 100 ether);
 
-        uint256 smallOfferId = _postSaleOffer(BUYER, 50 ether);
+        uint256 smallOfferId = _postOffer(BUYER, 50 ether);
         vm.prank(SELLER);
         vm.expectRevert("OVRFLOBook: insufficient capacity");
         book.sellIntoOffer(smallOfferId, 2, 0);
 
         vm.prank(BUYER);
-        book.cancelSaleOffer(slippageOfferId);
+        book.cancelOffer(slippageOfferId);
         vm.prank(SELLER);
         vm.expectRevert("OVRFLOBook: offer inactive");
         book.sellIntoOffer(slippageOfferId, 2, 0);
 
-        uint256 dustOfferId = _postSaleOffer(BUYER, 1 ether);
+        uint256 dustOfferId = _postOffer(BUYER, 1 ether);
         _mintEligibleStream(3, SELLER, 1, 0);
         vm.prank(SELLER);
         sablier.approve(address(book), 3);
@@ -488,7 +479,7 @@ contract OVRFLOBookTest is Test {
         vm.expectRevert("OVRFLOBook: price zero");
         book.sellIntoOffer(dustOfferId, 3, 0);
 
-        uint256 maturedOfferId = _postSaleOffer(BUYER, 100 ether);
+        uint256 maturedOfferId = _postOffer(BUYER, 100 ether);
         _mintEligibleStream(4, SELLER, 110 ether, 0);
         vm.prank(SELLER);
         sablier.approve(address(book), 4);
@@ -499,7 +490,7 @@ contract OVRFLOBookTest is Test {
     }
 
     function test_HitOffer_AllowsPartialFillsAndCancelRefundsRemainder() public {
-        uint256 offerId = _postSaleOffer(BUYER, 250 ether);
+        uint256 offerId = _postOffer(BUYER, 250 ether);
         _mintEligibleStream(5, SELLER, 110 ether, 0);
 
         vm.prank(SELLER);
@@ -507,7 +498,7 @@ contract OVRFLOBookTest is Test {
         vm.prank(SELLER);
         book.sellIntoOffer(offerId, 5, 0);
 
-        (,,, uint128 capacity, bool active) = book.saleOffers(offerId);
+        (,,, uint128 capacity, bool active) = book.offers(offerId);
         assertEq(capacity, 150 ether);
         assertTrue(active);
         assertEq(underlying.balanceOf(SELLER), 100 ether);
@@ -515,9 +506,9 @@ contract OVRFLOBookTest is Test {
         assertEq(sablier.ownerOf(5), BUYER);
 
         vm.prank(BUYER);
-        book.cancelSaleOffer(offerId);
+        book.cancelOffer(offerId);
 
-        (,,, capacity, active) = book.saleOffers(offerId);
+        (,,, capacity, active) = book.offers(offerId);
         assertEq(capacity, 0);
         assertFalse(active);
         assertEq(underlying.balanceOf(BUYER), 150 ether);
@@ -626,107 +617,16 @@ contract OVRFLOBookTest is Test {
         book.buyListing(dustListingId, 1);
     }
 
-    function test_PostBorrowListing_RejectsBoundsAndEscrowsNft() public {
-        _mintEligibleStream(14, SELLER, 110 ether, 0);
-
-        vm.startPrank(SELLER);
-        sablier.approve(address(book), 14);
-        vm.expectRevert("OVRFLOBook: apr out of bounds");
-        book.postBorrowListing(MARKET, 14, 999, 100 ether);
-
-        vm.expectRevert("OVRFLOBook: borrow above price");
-        book.postBorrowListing(MARKET, 14, 1000, 101 ether);
-
-        vm.expectRevert("OVRFLOBook: borrow zero");
-        book.postBorrowListing(MARKET, 14, 1000, 0);
-        vm.stopPrank();
-
-        book.setFee(35);
-
-        vm.expectEmit(true, true, true, true, address(book));
-        emit BorrowListingPosted(1, SELLER, MARKET, 14, 1000, 35, 100 ether);
-        vm.startPrank(SELLER);
-        uint256 listingId = book.postBorrowListing(MARKET, 14, 1000, 100 ether);
-        vm.stopPrank();
-
-        (
-            address borrower,
-            address market,
-            uint256 streamId,
-            uint16 aprBps,
-            uint128 borrowAmount,
-            uint16 listingFeeBps,
-            bool active
-        ) = book.borrowListings(listingId);
-        assertEq(borrower, SELLER);
-        assertEq(market, MARKET);
-        assertEq(streamId, 14);
-        assertEq(aprBps, 1000);
-        assertEq(borrowAmount, 100 ether);
-        assertEq(listingFeeBps, 35);
-        assertTrue(active);
-        assertEq(sablier.ownerOf(14), address(book));
-    }
-
-    function test_CreateLenderPool_UsesSnapshottedFeeWhenGlobalFeeChanges() public {
-        book.setFee(0);
-        _mintEligibleStream(33, SELLER, 110 ether, 0);
-        uint256 listingId = _postBorrowListing(SELLER, 33, 100 ether);
-        book.setFee(100);
-
-        underlying.mint(BUYER, 100 ether);
-        vm.startPrank(BUYER);
-        underlying.approve(address(book), 100 ether);
-        book.createLenderPool(_singletonArray(listingId), 100 ether, 100 ether);
-        vm.stopPrank();
-
-        uint256 loanId = 1;
-        (,,, uint128 obligation,,,) = book.loans(loanId);
-        assertEq(obligation, 110 ether);
-        assertEq(underlying.balanceOf(SELLER), 100 ether);
-        assertEq(underlying.balanceOf(TREASURY), 0);
-        assertEq(underlying.balanceOf(BUYER), 0);
-        assertEq(underlying.balanceOf(address(book)), 0);
-    }
-
-    function test_BorrowListing_CancelAndDeadIdAndObligationSlippage() public {
-        _mintEligibleStream(16, SELLER, 110 ether, 0);
-        uint256 listingId = _postBorrowListing(SELLER, 16, 100 ether);
-
-        vm.prank(SELLER);
-        book.cancelBorrowListing(listingId);
-        assertEq(sablier.ownerOf(16), SELLER);
-
-        underlying.mint(BUYER, 100 ether);
-        vm.startPrank(BUYER);
-        underlying.approve(address(book), 100 ether);
-        vm.expectRevert("OVRFLOBook: borrow listing inactive");
-        book.createLenderPool(_singletonArray(listingId), 100 ether, 100 ether);
-        vm.stopPrank();
-
-        _mintEligibleStream(17, SELLER, 110 ether, 0);
-        uint256 slippageListingId = _postBorrowListing(SELLER, 17, 100 ether);
-        vm.startPrank(BUYER);
-        vm.expectRevert("OVRFLOBook: insufficient capacity");
-        book.createLenderPool(_singletonArray(slippageListingId), 100 ether, 101 ether);
-        book.createLenderPool(_singletonArray(slippageListingId), 100 ether, 99 ether);
-        vm.stopPrank();
-
-        uint256 loanId = 1;
-        (,,, uint128 obligation,,,) = book.loans(loanId);
-        assertEq(obligation, 110 ether);
-    }
-
     function test_PoolClaimLoan_CapsAtOutstandingAndRequiresContributor() public {
         (uint256 poolId, uint256 loanId) = _originateLoanViaBorrowPool(18, 100 ether);
         sablier.setWithdrawable(18, 200 ether);
 
         vm.prank(SELLER);
         vm.expectRevert("OVRFLOBook: not contributor");
-        book.poolClaimLoan(poolId, loanId, 200 ether);
+        book.poolClaimLoan(poolId, 200 ether);
 
         vm.prank(BUYER);
-        book.poolClaimLoan(poolId, loanId, 200 ether);
+        book.poolClaimLoan(poolId, 200 ether);
 
         (,,, uint128 obligation, uint128 drawn, uint128 repaid, bool closed) = book.loans(loanId);
         assertEq(obligation, 110 ether);
@@ -739,7 +639,7 @@ contract OVRFLOBookTest is Test {
 
         vm.prank(BUYER);
         vm.expectRevert("OVRFLOBook: fully claimed");
-        book.poolClaimLoan(poolId, loanId, 1);
+        book.poolClaimLoan(poolId, 1);
     }
 
     function test_PoolClaimLoan_AllowsMultiplePartials() public {
@@ -747,11 +647,11 @@ contract OVRFLOBookTest is Test {
 
         sablier.setWithdrawable(19, 40 ether);
         vm.prank(BUYER);
-        book.poolClaimLoan(poolId, loanId, 40 ether);
+        book.poolClaimLoan(poolId, 40 ether);
 
         sablier.setWithdrawable(19, 30 ether);
         vm.prank(BUYER);
-        book.poolClaimLoan(poolId, loanId, 30 ether);
+        book.poolClaimLoan(poolId, 30 ether);
 
         (,,,, uint128 drawn,,) = book.loans(loanId);
         assertEq(drawn, 70 ether);
@@ -793,7 +693,7 @@ contract OVRFLOBookTest is Test {
 
         sablier.setWithdrawable(30, 40 ether);
         vm.prank(BUYER);
-        book.poolClaimLoan(poolId, loanId, 40 ether);
+        book.poolClaimLoan(poolId, 40 ether);
 
         sablier.setWithdrawable(30, 100 ether);
         book.closeLoan(loanId);
@@ -813,7 +713,7 @@ contract OVRFLOBookTest is Test {
         sablier.setWithdrawable(21, 110 ether);
 
         vm.prank(BUYER);
-        book.poolClaimLoan(poolId, loanId, 110 ether);
+        book.poolClaimLoan(poolId, 110 ether);
 
         book.closeLoan(loanId);
 
@@ -830,7 +730,7 @@ contract OVRFLOBookTest is Test {
         sablier.setWithdrawable(22, 40 ether);
 
         vm.prank(BUYER);
-        book.poolClaimLoan(poolId, loanId, 40 ether);
+        book.poolClaimLoan(poolId, 40 ether);
 
         ovrfloToken.mint(SELLER, 70 ether);
         vm.startPrank(SELLER);
@@ -923,7 +823,7 @@ contract OVRFLOBookTest is Test {
         assertEq(quotedNet, 99 ether);
         assertEq(quotedResidual, 0);
 
-        uint256 offerId = _postLendOffer(BUYER, 100 ether);
+        uint256 offerId = _postOffer(BUYER, 100 ether);
         vm.startPrank(SELLER);
         sablier.approve(address(book), 25);
         uint256[] memory offerIds = new uint256[](1);
@@ -968,14 +868,13 @@ contract OVRFLOBookTest is Test {
     }
 
     function test_OrderStateViewsReflectCurrentState() public {
-        uint256 saleOfferId = _postSaleOffer(BUYER, 100 ether);
-        (address saleMaker, address saleMarket, uint16 saleApr, uint128 saleCapacity, bool saleActive) =
-            book.saleOfferState(saleOfferId);
-        assertEq(saleMaker, BUYER);
-        assertEq(saleMarket, MARKET);
-        assertEq(saleApr, 1000);
-        assertEq(saleCapacity, 100 ether);
-        assertTrue(saleActive);
+        uint256 offerId = _postOffer(BUYER, 100 ether);
+        (address maker, address market, uint16 aprBps, uint128 capacity, bool active) = book.offerState(offerId);
+        assertEq(maker, BUYER);
+        assertEq(market, MARKET);
+        assertEq(aprBps, 1000);
+        assertEq(capacity, 100 ether);
+        assertTrue(active);
 
         _mintEligibleStream(26, SELLER, 110 ether, 0);
         uint256 saleListingId = _postSaleListing(SELLER, 26);
@@ -993,59 +892,13 @@ contract OVRFLOBookTest is Test {
         assertEq(listingApr, 1000);
         assertEq(listingFeeBps, 0);
         assertTrue(listingActive);
-
-        uint256 lendOfferId = _postLendOffer(BUYER, 100 ether);
-        (address lender, address lendMarket, uint16 lendApr, uint128 lendCapacity, bool lendActive) =
-            book.lendOfferState(lendOfferId);
-        assertEq(lender, BUYER);
-        assertEq(lendMarket, MARKET);
-        assertEq(lendApr, 1000);
-        assertEq(lendCapacity, 100 ether);
-        assertTrue(lendActive);
-
-        _mintEligibleStream(27, SELLER, 110 ether, 0);
-        uint256 borrowListingId = _postBorrowListing(SELLER, 27, 100 ether);
-        (
-            address borrower,
-            address borrowMarket,
-            uint256 borrowStreamId,
-            uint16 borrowApr,
-            uint128 borrowAmount,
-            uint16 borrowFeeBps,
-            bool borrowActive
-        ) = book.borrowListingState(borrowListingId);
-        assertEq(borrower, SELLER);
-        assertEq(borrowMarket, MARKET);
-        assertEq(borrowStreamId, 27);
-        assertEq(borrowApr, 1000);
-        assertEq(borrowAmount, 100 ether);
-        assertEq(borrowFeeBps, 0);
-        assertTrue(borrowActive);
     }
 
-    function _postSaleOffer(address maker, uint128 capacity) internal returns (uint256 offerId) {
+    function _postOffer(address maker, uint128 capacity) internal returns (uint256 offerId) {
         underlying.mint(maker, capacity);
         vm.startPrank(maker);
         underlying.approve(address(book), capacity);
-        offerId = book.postSaleOffer(MARKET, 1000, capacity);
-        vm.stopPrank();
-    }
-
-    function _postLendOffer(address lender, uint128 capacity) internal returns (uint256 offerId) {
-        underlying.mint(lender, capacity);
-        vm.startPrank(lender);
-        underlying.approve(address(book), capacity);
-        offerId = book.postLendOffer(MARKET, 1000, capacity);
-        vm.stopPrank();
-    }
-
-    function _postBorrowListing(address borrower, uint256 streamId, uint128 borrowAmount)
-        internal
-        returns (uint256 listingId)
-    {
-        vm.startPrank(borrower);
-        sablier.approve(address(book), streamId);
-        listingId = book.postBorrowListing(MARKET, streamId, 1000, borrowAmount);
+        offerId = book.postOffer(MARKET, 1000, capacity);
         vm.stopPrank();
     }
 
@@ -1053,7 +906,7 @@ contract OVRFLOBookTest is Test {
         internal
         returns (uint256 poolId, uint256 loanId)
     {
-        uint256 offerId = _postLendOffer(BUYER, borrowAmount);
+        uint256 offerId = _postOffer(BUYER, borrowAmount);
         _mintEligibleStream(streamId, SELLER, 110 ether, 0);
         loanId = book.nextLoanId();
         vm.startPrank(SELLER);
@@ -1062,11 +915,6 @@ contract OVRFLOBookTest is Test {
         offerIds[0] = offerId;
         poolId = book.createBorrowPool(offerIds, streamId, borrowAmount, 0);
         vm.stopPrank();
-    }
-
-    function _singletonArray(uint256 id) internal pure returns (uint256[] memory arr) {
-        arr = new uint256[](1);
-        arr[0] = id;
     }
 
     function _postSaleListing(address maker, uint256 streamId) internal returns (uint256 listingId) {
@@ -1098,11 +946,11 @@ contract OVRFLOBookTest is Test {
         new OVRFLOBook(address(badFactory), address(core), address(sablier));
     }
 
-    function test_CancelSaleOffer_RevertForWrongMaker() public {
-        uint256 offerId = _postSaleOffer(BUYER, 100 ether);
+    function test_CancelOffer_RevertForWrongMaker() public {
+        uint256 offerId = _postOffer(BUYER, 100 ether);
         vm.prank(SELLER);
         vm.expectRevert("OVRFLOBook: not offer maker");
-        book.cancelSaleOffer(offerId);
+        book.cancelOffer(offerId);
     }
 
     function test_CancelSaleListing_RevertForWrongMaker() public {
@@ -1113,29 +961,9 @@ contract OVRFLOBookTest is Test {
         book.cancelSaleListing(listingId);
     }
 
-    function test_CancelLendOffer_RevertForWrongLender() public {
-        uint256 offerId = _postLendOffer(BUYER, 100 ether);
-        vm.prank(SELLER);
-        vm.expectRevert("OVRFLOBook: not lender");
-        book.cancelLendOffer(offerId);
-    }
-
-    function test_CancelBorrowListing_RevertForWrongBorrower() public {
-        _mintEligibleStream(41, SELLER, 110 ether, 0);
-        uint256 listingId = _postBorrowListing(SELLER, 41, 100 ether);
-        vm.prank(BUYER);
-        vm.expectRevert("OVRFLOBook: not borrower");
-        book.cancelBorrowListing(listingId);
-    }
-
-    function test_PostSaleOffer_RevertForZeroCapacity() public {
+    function test_PostOffer_RevertForZeroCapacity() public {
         vm.expectRevert("OVRFLOBook: capacity zero");
-        book.postSaleOffer(MARKET, 1000, 0);
-    }
-
-    function test_PostLendOffer_RevertForZeroCapacity() public {
-        vm.expectRevert("OVRFLOBook: capacity zero");
-        book.postLendOffer(MARKET, 1000, 0);
+        book.postOffer(MARKET, 1000, 0);
     }
 
     function test_CloseLoan_RevertForUnknownLoan() public {
@@ -1152,14 +980,14 @@ contract OVRFLOBookTest is Test {
                     COVERAGE: WHOLE-NUMBER RATE CONSTRAINT
     //////////////////////////////////////////////////////////////*/
 
-    function test_Apr_RejectsNonWholeRateOnLendOffer() public {
+    function test_Apr_RejectsNonWholeRateOnOffer() public {
         book.setAprBounds(0, 9900);
 
         vm.startPrank(BUYER);
         underlying.mint(BUYER, 100 ether);
         underlying.approve(address(book), 100 ether);
         vm.expectRevert("OVRFLOBook: apr not whole");
-        book.postLendOffer(MARKET, 550, 100 ether);
+        book.postOffer(MARKET, 550, 100 ether);
         vm.stopPrank();
     }
 
@@ -1169,39 +997,17 @@ contract OVRFLOBookTest is Test {
         vm.startPrank(BUYER);
         underlying.mint(BUYER, 300 ether);
         underlying.approve(address(book), 300 ether);
-        uint256 id0 = book.postLendOffer(MARKET, 0, 100 ether);
-        uint256 id500 = book.postLendOffer(MARKET, 500, 100 ether);
-        uint256 id9900 = book.postLendOffer(MARKET, 9900, 100 ether);
+        uint256 id0 = book.postOffer(MARKET, 0, 100 ether);
+        uint256 id500 = book.postOffer(MARKET, 500, 100 ether);
+        uint256 id9900 = book.postOffer(MARKET, 9900, 100 ether);
         vm.stopPrank();
 
-        (,, uint16 apr0,,) = book.lendOffers(id0);
+        (,, uint16 apr0,,) = book.offers(id0);
         assertEq(apr0, 0);
-        (,, uint16 apr500,,) = book.lendOffers(id500);
+        (,, uint16 apr500,,) = book.offers(id500);
         assertEq(apr500, 500);
-        (,, uint16 apr9900,,) = book.lendOffers(id9900);
+        (,, uint16 apr9900,,) = book.offers(id9900);
         assertEq(apr9900, 9900);
-    }
-
-    function test_Apr_RejectsNonWholeRateOnBorrowListing() public {
-        book.setAprBounds(0, 9900);
-        _mintEligibleStream(60, SELLER, 110 ether, 0);
-
-        vm.startPrank(SELLER);
-        sablier.approve(address(book), 60);
-        vm.expectRevert("OVRFLOBook: apr not whole");
-        book.postBorrowListing(MARKET, 60, 550, 100 ether);
-        vm.stopPrank();
-    }
-
-    function test_Apr_RejectsNonWholeRateOnSaleOffer() public {
-        book.setAprBounds(0, 9900);
-
-        vm.startPrank(BUYER);
-        underlying.mint(BUYER, 100 ether);
-        underlying.approve(address(book), 100 ether);
-        vm.expectRevert("OVRFLOBook: apr not whole");
-        book.postSaleOffer(MARKET, 333, 100 ether);
-        vm.stopPrank();
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -1251,107 +1057,81 @@ contract OVRFLOBookTest is Test {
                     COVERAGE: GATHER FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    function test_GatherLendCapacities_SufficientCapacity() public {
+    function test_GatherOfferCapacities_SufficientCapacity() public {
         book.setAprBounds(0, 9900);
-        _postLendOfferAtApr(BUYER, 50 ether, 500);
-        _postLendOfferAtApr(SELLER, 60 ether, 500);
+        _postOfferAtApr(BUYER, 50 ether, 500);
+        _postOfferAtApr(SELLER, 60 ether, 500);
 
-        (uint256[] memory ids, bool sufficient) = book.gatherLendCapacities(MARKET, 500, 100 ether, 1);
+        (uint256[] memory ids, bool sufficient) = book.gatherOfferCapacities(MARKET, 500, 100 ether, 1);
         assertTrue(sufficient);
         assertEq(ids.length, 2);
         assertEq(ids[0], 1);
         assertEq(ids[1], 2);
     }
 
-    function test_GatherLendCapacities_InsufficientCapacity() public {
+    function test_GatherOfferCapacities_InsufficientCapacity() public {
         book.setAprBounds(0, 9900);
-        _postLendOfferAtApr(BUYER, 50 ether, 500);
-        _postLendOfferAtApr(SELLER, 30 ether, 500);
+        _postOfferAtApr(BUYER, 50 ether, 500);
+        _postOfferAtApr(SELLER, 30 ether, 500);
 
-        (uint256[] memory ids, bool sufficient) = book.gatherLendCapacities(MARKET, 500, 100 ether, 1);
+        (uint256[] memory ids, bool sufficient) = book.gatherOfferCapacities(MARKET, 500, 100 ether, 1);
         assertFalse(sufficient);
         assertEq(ids.length, 2);
     }
 
-    function test_GatherLendCapacities_NoMatchingOffers() public {
-        _postLendOffer(BUYER, 100 ether);
+    function test_GatherOfferCapacities_NoMatchingOffers() public {
+        _postOffer(BUYER, 100 ether);
 
-        (uint256[] memory ids, bool sufficient) = book.gatherLendCapacities(MARKET, 500, 100 ether, 1);
+        (uint256[] memory ids, bool sufficient) = book.gatherOfferCapacities(MARKET, 500, 100 ether, 1);
         assertFalse(sufficient);
         assertEq(ids.length, 0);
     }
 
-    function test_GatherLendCapacities_SkipsCancelledAndDepleted() public {
-        _postLendOffer(BUYER, 50 ether);
-        _postLendOffer(SELLER, 60 ether);
+    function test_GatherOfferCapacities_SkipsCancelledAndDepleted() public {
+        _postOffer(BUYER, 50 ether);
+        _postOffer(SELLER, 60 ether);
 
         // Cancel first offer
         vm.prank(BUYER);
-        book.cancelLendOffer(1);
+        book.cancelOffer(1);
 
-        (uint256[] memory ids, bool sufficient) = book.gatherLendCapacities(MARKET, 1000, 100 ether, 1);
+        (uint256[] memory ids, bool sufficient) = book.gatherOfferCapacities(MARKET, 1000, 100 ether, 1);
         assertFalse(sufficient);
         assertEq(ids.length, 1);
         assertEq(ids[0], 2);
     }
 
-    function test_GatherLendCapacities_SkipsDifferentApr() public {
+    function test_GatherOfferCapacities_SkipsDifferentApr() public {
         book.setAprBounds(0, 9900);
-        _postLendOfferAtApr(BUYER, 50 ether, 500);
-        _postLendOfferAtApr(SELLER, 60 ether, 1000);
+        _postOfferAtApr(BUYER, 50 ether, 500);
+        _postOfferAtApr(SELLER, 60 ether, 1000);
 
-        (uint256[] memory ids, bool sufficient) = book.gatherLendCapacities(MARKET, 500, 100 ether, 1);
+        (uint256[] memory ids, bool sufficient) = book.gatherOfferCapacities(MARKET, 500, 100 ether, 1);
         assertFalse(sufficient);
         assertEq(ids.length, 1);
         assertEq(ids[0], 1);
     }
 
-    function test_GatherLendCapacities_StartIdBeyondRange() public {
-        _postLendOffer(BUYER, 100 ether);
+    function test_GatherOfferCapacities_StartIdBeyondRange() public {
+        _postOffer(BUYER, 100 ether);
 
-        (uint256[] memory ids, bool sufficient) = book.gatherLendCapacities(MARKET, 1000, 100 ether, 99);
+        (uint256[] memory ids, bool sufficient) = book.gatherOfferCapacities(MARKET, 1000, 100 ether, 99);
         assertFalse(sufficient);
         assertEq(ids.length, 0);
     }
 
-    function test_GatherLendCapacities_ExpiredSeriesReverts() public {
-        _postLendOffer(BUYER, 100 ether);
+    function test_GatherOfferCapacities_ExpiredSeriesReverts() public {
+        _postOffer(BUYER, 100 ether);
         vm.warp(expiry);
         vm.expectRevert();
-        book.gatherLendCapacities(MARKET, 1000, 100 ether, 1);
+        book.gatherOfferCapacities(MARKET, 1000, 100 ether, 1);
     }
 
-    function test_GatherBorrowListings_SufficientAmount() public {
-        _mintEligibleStream(80, SELLER, 110 ether, 0);
-        _postBorrowListing(SELLER, 80, 50 ether);
-        _mintEligibleStream(81, SELLER, 110 ether, 0);
-        _postBorrowListing(SELLER, 81, 60 ether);
-
-        (uint256[] memory ids, bool sufficient) = book.gatherBorrowListings(MARKET, 1000, 100 ether, 1);
-        assertTrue(sufficient);
-        assertEq(ids.length, 2);
-    }
-
-    function test_GatherBorrowListings_InsufficientAmount() public {
-        _mintEligibleStream(82, SELLER, 110 ether, 0);
-        _postBorrowListing(SELLER, 82, 50 ether);
-
-        (uint256[] memory ids, bool sufficient) = book.gatherBorrowListings(MARKET, 1000, 100 ether, 1);
-        assertFalse(sufficient);
-        assertEq(ids.length, 1);
-    }
-
-    function test_GatherBorrowListings_NoMatching() public {
-        (uint256[] memory ids, bool sufficient) = book.gatherBorrowListings(MARKET, 1000, 100 ether, 1);
-        assertFalse(sufficient);
-        assertEq(ids.length, 0);
-    }
-
-    function _postLendOfferAtApr(address lender, uint128 capacity, uint16 aprBps) internal returns (uint256 offerId) {
-        underlying.mint(lender, capacity);
-        vm.startPrank(lender);
+    function _postOfferAtApr(address maker, uint128 capacity, uint16 aprBps) internal returns (uint256 offerId) {
+        underlying.mint(maker, capacity);
+        vm.startPrank(maker);
         underlying.approve(address(book), capacity);
-        offerId = book.postLendOffer(MARKET, aprBps, capacity);
+        offerId = book.postOffer(MARKET, aprBps, capacity);
         vm.stopPrank();
     }
 
@@ -1360,8 +1140,8 @@ contract OVRFLOBookTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     function test_CreateBorrowPool_SufficientCapacity() public {
-        uint256 offer1 = _postLendOffer(BUYER, 50 ether);
-        uint256 offer2 = _postLendOffer(STRANGER, 60 ether);
+        uint256 offer1 = _postOffer(BUYER, 50 ether);
+        uint256 offer2 = _postOffer(STRANGER, 60 ether);
         _mintEligibleStream(100, SELLER, 110 ether, 0);
 
         uint256[] memory offerIds = new uint256[](2);
@@ -1374,11 +1154,9 @@ contract OVRFLOBookTest is Test {
         vm.stopPrank();
 
         // Pool state
-        (address creator, uint16 aprBps, bool isLend, bool active, address market, uint128 totalContributed,) =
-            book.pools(poolId);
+        (address creator, uint16 aprBps, bool active, address market, uint128 totalContributed,) = book.pools(poolId);
         assertEq(creator, SELLER);
         assertEq(aprBps, 1000);
-        assertFalse(isLend);
         assertTrue(active);
         assertEq(market, MARKET);
         assertEq(totalContributed, 100 ether);
@@ -1388,9 +1166,9 @@ contract OVRFLOBookTest is Test {
         assertEq(book.poolContributions(poolId, STRANGER), 50 ether);
 
         // Offer capacities
-        (,,, uint128 cap1,) = book.lendOffers(offer1);
+        (,,, uint128 cap1,) = book.offers(offer1);
         assertEq(cap1, 0);
-        (,,, uint128 cap2,) = book.lendOffers(offer2);
+        (,,, uint128 cap2,) = book.offers(offer2);
         assertEq(cap2, 10 ether);
 
         // Loan
@@ -1413,8 +1191,8 @@ contract OVRFLOBookTest is Test {
     }
 
     function test_CreateBorrowPool_InsufficientCapacityReverts() public {
-        uint256 offer1 = _postLendOffer(BUYER, 40 ether);
-        uint256 offer2 = _postLendOffer(STRANGER, 40 ether);
+        uint256 offer1 = _postOffer(BUYER, 40 ether);
+        uint256 offer2 = _postOffer(STRANGER, 40 ether);
         _mintEligibleStream(101, SELLER, 110 ether, 0);
 
         uint256[] memory offerIds = new uint256[](2);
@@ -1428,16 +1206,16 @@ contract OVRFLOBookTest is Test {
         vm.stopPrank();
 
         // No offers consumed
-        (,,, uint128 cap1,) = book.lendOffers(offer1);
+        (,,, uint128 cap1,) = book.offers(offer1);
         assertEq(cap1, 40 ether, "offer1 untouched");
-        (,,, uint128 cap2,) = book.lendOffers(offer2);
+        (,,, uint128 cap2,) = book.offers(offer2);
         assertEq(cap2, 40 ether, "offer2 untouched");
         assertEq(sablier.ownerOf(101), SELLER, "stream not escrowed");
     }
 
     function test_CreateBorrowPool_PartialCoverageSucceeds() public {
-        uint256 offer1 = _postLendOffer(BUYER, 40 ether);
-        uint256 offer2 = _postLendOffer(STRANGER, 40 ether);
+        uint256 offer1 = _postOffer(BUYER, 40 ether);
+        uint256 offer2 = _postOffer(STRANGER, 40 ether);
         _mintEligibleStream(102, SELLER, 110 ether, 0);
 
         uint256[] memory offerIds = new uint256[](2);
@@ -1449,7 +1227,7 @@ contract OVRFLOBookTest is Test {
         uint256 poolId = book.createBorrowPool(offerIds, 102, 100 ether, 70 ether);
         vm.stopPrank();
 
-        (, uint16 aprBps,,,, uint128 totalContributed,) = book.pools(poolId);
+        (, uint16 aprBps,,, uint128 totalContributed,) = book.pools(poolId);
         assertEq(aprBps, 1000);
         assertEq(totalContributed, 80 ether, "actual borrow = available, not target");
 
@@ -1459,8 +1237,8 @@ contract OVRFLOBookTest is Test {
     }
 
     function test_CreateBorrowPool_SelfMatchReverts() public {
-        uint256 offer1 = _postLendOffer(BUYER, 50 ether);
-        uint256 offer2 = _postLendOffer(SELLER, 60 ether);
+        uint256 offer1 = _postOffer(BUYER, 50 ether);
+        uint256 offer2 = _postOffer(SELLER, 60 ether);
         _mintEligibleStream(103, SELLER, 110 ether, 0);
 
         uint256[] memory offerIds = new uint256[](2);
@@ -1475,7 +1253,7 @@ contract OVRFLOBookTest is Test {
     }
 
     function test_CreateBorrowPool_MarketMismatchReverts() public {
-        uint256 offer1 = _postLendOffer(BUYER, 50 ether);
+        uint256 offer1 = _postOffer(BUYER, 50 ether);
 
         address market2 = address(0x6666);
         factory.setMarketApproved(address(core), market2, true);
@@ -1483,7 +1261,7 @@ contract OVRFLOBookTest is Test {
         underlying.mint(STRANGER, 60 ether);
         vm.startPrank(STRANGER);
         underlying.approve(address(book), 60 ether);
-        uint256 offer2 = book.postLendOffer(market2, 1000, 60 ether);
+        uint256 offer2 = book.postOffer(market2, 1000, 60 ether);
         vm.stopPrank();
 
         _mintEligibleStream(104, SELLER, 110 ether, 0);
@@ -1500,8 +1278,8 @@ contract OVRFLOBookTest is Test {
 
     function test_CreateBorrowPool_AprMismatchReverts() public {
         book.setAprBounds(0, 9900);
-        uint256 offer1 = _postLendOfferAtApr(BUYER, 50 ether, 500);
-        uint256 offer2 = _postLendOfferAtApr(STRANGER, 60 ether, 1000);
+        uint256 offer1 = _postOfferAtApr(BUYER, 50 ether, 500);
+        uint256 offer2 = _postOfferAtApr(STRANGER, 60 ether, 1000);
         _mintEligibleStream(105, SELLER, 110 ether, 0);
 
         uint256[] memory offerIds = new uint256[](2);
@@ -1516,11 +1294,11 @@ contract OVRFLOBookTest is Test {
     }
 
     function test_CreateBorrowPool_CancelledOfferReverts() public {
-        uint256 offer1 = _postLendOffer(BUYER, 50 ether);
-        _postLendOffer(STRANGER, 60 ether);
+        uint256 offer1 = _postOffer(BUYER, 50 ether);
+        _postOffer(STRANGER, 60 ether);
 
         vm.prank(BUYER);
-        book.cancelLendOffer(offer1);
+        book.cancelOffer(offer1);
 
         _mintEligibleStream(106, SELLER, 110 ether, 0);
         uint256[] memory offerIds = new uint256[](2);
@@ -1529,13 +1307,13 @@ contract OVRFLOBookTest is Test {
 
         vm.startPrank(SELLER);
         sablier.approve(address(book), 106);
-        vm.expectRevert("OVRFLOBook: lend offer inactive");
+        vm.expectRevert("OVRFLOBook: offer inactive");
         book.createBorrowPool(offerIds, 106, 100 ether, 90 ether);
         vm.stopPrank();
     }
 
     function test_CreateBorrowPool_DuplicateOfferIdsReverts() public {
-        _postLendOffer(BUYER, 100 ether);
+        _postOffer(BUYER, 100 ether);
         _mintEligibleStream(107, SELLER, 110 ether, 0);
 
         uint256[] memory offerIds = new uint256[](2);
@@ -1549,194 +1327,52 @@ contract OVRFLOBookTest is Test {
         vm.stopPrank();
     }
 
-    /*//////////////////////////////////////////////////////////////
-                    COVERAGE: LENDER POOL CREATION
-    //////////////////////////////////////////////////////////////*/
+    function test_Offer_SplitBetweenSaleAndLoan() public {
+        // Post an offer with 200 capacity — consumable as either sale or loan
+        uint256 offerId = _postOffer(BUYER, 200 ether);
 
-    function test_CreateLenderPool_SufficientCapacity() public {
-        _mintEligibleStream(110, SELLER, 110 ether, 0);
-        uint256 listing1 = _postBorrowListing(SELLER, 110, 50 ether);
-
-        _mintEligibleStream(111, STRANGER, 110 ether, 0);
-        uint256 listing2 = _postBorrowListing(STRANGER, 111, 50 ether);
-
-        address borrower3 = address(0x7777);
-        _mintEligibleStream(112, borrower3, 110 ether, 0);
-        uint256 listing3 = _postBorrowListing(borrower3, 112, 50 ether);
-
-        underlying.mint(BUYER, 150 ether);
-        uint256[] memory listingIds = new uint256[](3);
-        listingIds[0] = listing1;
-        listingIds[1] = listing2;
-        listingIds[2] = listing3;
-
-        vm.startPrank(BUYER);
-        underlying.approve(address(book), 150 ether);
-        uint256 poolId = book.createLenderPool(listingIds, 150 ether, 100 ether);
+        // Sale first: SELLER sells a stream worth 100 into the offer
+        _mintEligibleStream(150, SELLER, 110 ether, 0);
+        vm.startPrank(SELLER);
+        sablier.approve(address(book), 150);
+        book.sellIntoOffer(offerId, 150, 0);
         vm.stopPrank();
 
-        // Pool state
-        (, uint16 aprBps, bool isLend, bool active,, uint128 totalContributed, uint128 totalObligation) =
-            book.pools(poolId);
-        assertEq(aprBps, 1000);
-        assertTrue(isLend);
-        assertTrue(active);
-        assertEq(totalContributed, 150 ether);
-        assertEq(totalObligation, 165 ether);
+        // Offer capacity reduced by 100 (grossPrice), still active
+        (,,, uint128 capacityAfterSale, bool activeAfterSale) = book.offers(offerId);
+        assertEq(capacityAfterSale, 100 ether, "capacity after sale");
+        assertTrue(activeAfterSale, "offer still active");
+        assertEq(sablier.ownerOf(150), BUYER, "stream transferred to maker");
 
-        // Contributions
-        assertEq(book.poolContributions(poolId, BUYER), 150 ether);
+        // Loan second: STRANGER borrows 100 via createBorrowPool using the same offer
+        _mintEligibleStream(151, STRANGER, 110 ether, 0);
+        uint256[] memory offerIds = new uint256[](1);
+        offerIds[0] = offerId;
+        vm.startPrank(STRANGER);
+        sablier.approve(address(book), 151);
+        uint256 poolId = book.createBorrowPool(offerIds, 151, 100 ether, 100 ether);
+        vm.stopPrank();
 
-        // Each loan has loanPoolId set
-        assertEq(book.loanPoolId(1), poolId);
-        assertEq(book.loanPoolId(2), poolId);
-        assertEq(book.loanPoolId(3), poolId);
+        // Offer exhausted and deactivated
+        (,,, uint128 capacityAfterLoan, bool activeAfterLoan) = book.offers(offerId);
+        assertEq(capacityAfterLoan, 0, "capacity after loan");
+        assertFalse(activeAfterLoan, "offer deactivated");
 
-        // poolProceeds starts at 0
-        assertEq(book.poolProceeds(poolId), 0);
+        // Maker holds the sold stream (permanent transfer) and borrower's stream is in escrow
+        assertEq(sablier.ownerOf(150), BUYER, "maker holds sold stream");
+        assertEq(sablier.ownerOf(151), address(book), "borrower stream in escrow");
 
-        // Listings deactivated
-        (,,,,,, bool active1) = book.borrowListings(listing1);
-        assertFalse(active1);
-        (,,,,,, bool active2) = book.borrowListings(listing2);
-        assertFalse(active2);
+        // Loan created with 110 obligation
+        (,,, uint128 obligation,,, bool closed) = book.loans(book.poolLoanId(poolId));
+        assertEq(obligation, 110 ether, "loan obligation");
+        assertFalse(closed, "loan not closed");
 
-        // Balance assertions
-        assertEq(underlying.balanceOf(BUYER), 0, "lender deployed all");
-        assertEq(underlying.balanceOf(SELLER), 50 ether, "borrower1 paid");
-        assertEq(underlying.balanceOf(STRANGER), 50 ether, "borrower2 paid");
-        assertEq(underlying.balanceOf(borrower3), 50 ether, "borrower3 paid");
+        // Balance assertions (no fees — default feeBps is 0)
+        assertEq(underlying.balanceOf(SELLER), 100 ether, "seller received net");
+        assertEq(underlying.balanceOf(STRANGER), 100 ether, "borrower received net");
+        assertEq(underlying.balanceOf(BUYER), 0, "maker funded all");
         assertEq(underlying.balanceOf(TREASURY), 0, "no fees");
         assertEq(underlying.balanceOf(address(book)), 0, "book holds no underlying");
-    }
-
-    function test_CreateLenderPool_InsufficientCapacityReverts() public {
-        _mintEligibleStream(113, SELLER, 110 ether, 0);
-        _postBorrowListing(SELLER, 113, 50 ether);
-        _mintEligibleStream(114, STRANGER, 110 ether, 0);
-        _postBorrowListing(STRANGER, 114, 50 ether);
-
-        underlying.mint(BUYER, 200 ether);
-        uint256[] memory listingIds = new uint256[](2);
-        listingIds[0] = 1;
-        listingIds[1] = 2;
-
-        vm.startPrank(BUYER);
-        underlying.approve(address(book), 200 ether);
-        vm.expectRevert("OVRFLOBook: insufficient capacity");
-        book.createLenderPool(listingIds, 200 ether, 150 ether);
-        vm.stopPrank();
-
-        assertEq(underlying.balanceOf(BUYER), 200 ether, "lender keeps funds");
-        (,,,,,, bool active1) = book.borrowListings(1);
-        assertTrue(active1, "listing untouched");
-    }
-
-    function test_CreateLenderPool_PartialCoverageReturnsUnused() public {
-        _mintEligibleStream(115, SELLER, 110 ether, 0);
-        _postBorrowListing(SELLER, 115, 50 ether);
-        _mintEligibleStream(116, STRANGER, 110 ether, 0);
-        _postBorrowListing(STRANGER, 116, 50 ether);
-
-        underlying.mint(BUYER, 150 ether);
-        uint256[] memory listingIds = new uint256[](2);
-        listingIds[0] = 1;
-        listingIds[1] = 2;
-
-        vm.startPrank(BUYER);
-        underlying.approve(address(book), 150 ether);
-        uint256 poolId = book.createLenderPool(listingIds, 150 ether, 80 ether);
-        vm.stopPrank();
-
-        (,,,,, uint128 totalContributed,) = book.pools(poolId);
-        assertEq(totalContributed, 100 ether);
-        assertEq(underlying.balanceOf(BUYER), 50 ether, "unused returned");
-        assertEq(underlying.balanceOf(SELLER), 50 ether);
-        assertEq(underlying.balanceOf(STRANGER), 50 ether);
-    }
-
-    function test_CreateLenderPool_SelfMatchReverts() public {
-        _mintEligibleStream(117, BUYER, 110 ether, 0);
-        _postBorrowListing(BUYER, 117, 50 ether);
-        _mintEligibleStream(118, STRANGER, 110 ether, 0);
-        _postBorrowListing(STRANGER, 118, 50 ether);
-
-        underlying.mint(BUYER, 100 ether);
-        uint256[] memory listingIds = new uint256[](2);
-        listingIds[0] = 1;
-        listingIds[1] = 2;
-
-        vm.startPrank(BUYER);
-        underlying.approve(address(book), 100 ether);
-        vm.expectRevert("OVRFLOBook: self-match");
-        book.createLenderPool(listingIds, 100 ether, 80 ether);
-        vm.stopPrank();
-    }
-
-    function test_CreateLenderPool_AprMismatchReverts() public {
-        book.setAprBounds(0, 9900);
-        _mintEligibleStream(119, SELLER, 110 ether, 0);
-        _postBorrowListingAtApr(SELLER, 119, 50 ether, 500);
-        _mintEligibleStream(120, STRANGER, 110 ether, 0);
-        _postBorrowListingAtApr(STRANGER, 120, 50 ether, 1000);
-
-        underlying.mint(BUYER, 100 ether);
-        uint256[] memory listingIds = new uint256[](2);
-        listingIds[0] = 1;
-        listingIds[1] = 2;
-
-        vm.startPrank(BUYER);
-        underlying.approve(address(book), 100 ether);
-        vm.expectRevert("OVRFLOBook: apr mismatch");
-        book.createLenderPool(listingIds, 100 ether, 80 ether);
-        vm.stopPrank();
-    }
-
-    function test_CreateLenderPool_CancelledListingReverts() public {
-        _mintEligibleStream(121, SELLER, 110 ether, 0);
-        uint256 listing1 = _postBorrowListing(SELLER, 121, 50 ether);
-        _mintEligibleStream(122, STRANGER, 110 ether, 0);
-        _postBorrowListing(STRANGER, 122, 50 ether);
-
-        vm.prank(SELLER);
-        book.cancelBorrowListing(listing1);
-
-        underlying.mint(BUYER, 100 ether);
-        uint256[] memory listingIds = new uint256[](2);
-        listingIds[0] = listing1;
-        listingIds[1] = 2;
-
-        vm.startPrank(BUYER);
-        underlying.approve(address(book), 100 ether);
-        vm.expectRevert("OVRFLOBook: borrow listing inactive");
-        book.createLenderPool(listingIds, 100 ether, 80 ether);
-        vm.stopPrank();
-    }
-
-    function test_CreateLenderPool_DuplicateListingIdsReverts() public {
-        _mintEligibleStream(123, SELLER, 110 ether, 0);
-        _postBorrowListing(SELLER, 123, 50 ether);
-
-        underlying.mint(BUYER, 100 ether);
-        uint256[] memory listingIds = new uint256[](2);
-        listingIds[0] = 1;
-        listingIds[1] = 1;
-
-        vm.startPrank(BUYER);
-        underlying.approve(address(book), 100 ether);
-        vm.expectRevert("OVRFLOBook: duplicate or unsorted ids");
-        book.createLenderPool(listingIds, 100 ether, 50 ether);
-        vm.stopPrank();
-    }
-
-    function _postBorrowListingAtApr(address borrower, uint256 streamId, uint128 borrowAmount, uint16 aprBps)
-        internal
-        returns (uint256 listingId)
-    {
-        vm.startPrank(borrower);
-        sablier.approve(address(book), streamId);
-        listingId = book.postBorrowListing(MARKET, streamId, aprBps, borrowAmount);
-        vm.stopPrank();
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -1751,8 +1387,8 @@ contract OVRFLOBookTest is Test {
         uint128 targetBorrow,
         uint128 minAcceptable
     ) internal returns (uint256 poolId, uint256 loanId) {
-        _postLendOffer(BUYER, lender1Cap);
-        _postLendOffer(STRANGER, lender2Cap);
+        _postOffer(BUYER, lender1Cap);
+        _postOffer(STRANGER, lender2Cap);
         _mintEligibleStream(streamId, SELLER, 110 ether, 0);
 
         uint256[] memory offerIds = new uint256[](2);
@@ -1772,7 +1408,7 @@ contract OVRFLOBookTest is Test {
 
         uint256 before = ovrfloToken.balanceOf(BUYER);
         vm.prank(BUYER);
-        book.poolClaimLoan(poolId, loanId, 66 ether);
+        book.poolClaimLoan(poolId, 66 ether);
 
         assertEq(ovrfloToken.balanceOf(BUYER) - before, 66 ether, "caller receives directly");
         assertEq(book.poolReceived(poolId, BUYER), 66 ether, "poolReceived updated");
@@ -1840,13 +1476,13 @@ contract OVRFLOBookTest is Test {
     }
 
     function test_PoolClaimLoan_NonContributorReverts() public {
-        (uint256 poolId, uint256 loanId) = _createBorrowerPool(133, 60 ether, 40 ether, 100 ether, 100 ether);
+        (uint256 poolId,) = _createBorrowerPool(133, 60 ether, 40 ether, 100 ether, 100 ether);
         sablier.setWithdrawable(133, 50 ether);
 
         address nonContributor = address(0x9999);
         vm.prank(nonContributor);
         vm.expectRevert("OVRFLOBook: not contributor");
-        book.poolClaimLoan(poolId, loanId, 10 ether);
+        book.poolClaimLoan(poolId, 10 ether);
     }
 
     function test_ClaimPoolShare_NonContributorReverts() public {
@@ -1860,18 +1496,6 @@ contract OVRFLOBookTest is Test {
         book.claimPoolShare(poolId, 10 ether);
     }
 
-    function test_PoolClaimLoan_LoanNotInPoolReverts() public {
-        (uint256 poolId,) = _createBorrowerPool(135, 60 ether, 40 ether, 100 ether, 100 ether);
-
-        // Create a separate pool with its own loan
-        (, uint256 nonPoolLoanId) = _originateLoanViaBorrowPool(136, 50 ether);
-        sablier.setWithdrawable(136, 50 ether);
-
-        vm.prank(BUYER);
-        vm.expectRevert("OVRFLOBook: loan not in pool");
-        book.poolClaimLoan(poolId, nonPoolLoanId, 10 ether);
-    }
-
     function test_PoolClaimLoan_ClosedLoanReverts() public {
         (uint256 poolId, uint256 loanId) = _createBorrowerPool(137, 60 ether, 40 ether, 100 ether, 100 ether);
         sablier.setWithdrawable(137, 110 ether);
@@ -1879,37 +1503,37 @@ contract OVRFLOBookTest is Test {
 
         vm.prank(BUYER);
         vm.expectRevert("OVRFLOBook: loan closed");
-        book.poolClaimLoan(poolId, loanId, 10 ether);
+        book.poolClaimLoan(poolId, 10 ether);
     }
 
     function test_PoolClaimLoan_ProRataShares() public {
-        (uint256 poolId, uint256 loanId) = _createBorrowerPool(138, 60 ether, 40 ether, 100 ether, 100 ether);
+        (uint256 poolId,) = _createBorrowerPool(138, 60 ether, 40 ether, 100 ether, 100 ether);
         sablier.setWithdrawable(138, 110 ether);
 
         // BUYER (60%) can draw up to 66
         vm.prank(BUYER);
-        book.poolClaimLoan(poolId, loanId, 66 ether);
+        book.poolClaimLoan(poolId, 66 ether);
         assertEq(ovrfloToken.balanceOf(BUYER), 66 ether);
 
         // BUYER is now fully claimed
         vm.prank(BUYER);
         vm.expectRevert("OVRFLOBook: fully claimed");
-        book.poolClaimLoan(poolId, loanId, 1);
+        book.poolClaimLoan(poolId, 1);
 
         // STRANGER (40%) can draw up to 44
         vm.prank(STRANGER);
-        book.poolClaimLoan(poolId, loanId, 44 ether);
+        book.poolClaimLoan(poolId, 44 ether);
         assertEq(ovrfloToken.balanceOf(STRANGER), 44 ether);
 
         // STRANGER is now fully claimed
         vm.prank(STRANGER);
         vm.expectRevert("OVRFLOBook: fully claimed");
-        book.poolClaimLoan(poolId, loanId, 1);
+        book.poolClaimLoan(poolId, 1);
     }
 
     function test_PoolClaimLoan_DoubleDipCappedAtEntitlement() public {
         // Single-offer borrower pool: BUYER contributes 100%
-        uint256 offerId = _postLendOffer(BUYER, 100 ether);
+        uint256 offerId = _postOffer(BUYER, 100 ether);
         _mintEligibleStream(139, SELLER, 110 ether, 0);
         uint256[] memory offerIds = new uint256[](1);
         offerIds[0] = offerId;
@@ -1922,7 +1546,7 @@ contract OVRFLOBookTest is Test {
         // BUYER's entitlement = 100 * 110 / 100 = 110
         sablier.setWithdrawable(139, 55 ether);
         vm.prank(BUYER);
-        book.poolClaimLoan(poolId, loanId, 55 ether);
+        book.poolClaimLoan(poolId, 55 ether);
         assertEq(book.poolReceived(poolId, BUYER), 55 ether);
 
         // Close loan to accumulate remaining in poolProceeds

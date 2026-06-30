@@ -237,9 +237,10 @@ contract OVRFLOBookInvariantHandler is Test {
     address[3] internal actors;
     uint256 internal nextStreamId = 10_000;
 
-    // Ghost state for R9: track escrowed offer capacity
-    uint256 public totalActiveSaleOfferCapacity;
-    uint256 public totalActiveLendOfferCapacity;
+    // Ghost state: track escrowed offer capacity (unified offers)
+    uint256 public totalActiveOfferCapacity;
+    // Ghost state: track total obligations across borrowed pools
+    uint256 public totalPoolObligation;
 
     // Ghost state for R6/R7/R8: per-loan tracking
     struct LoanGhost {
@@ -284,34 +285,35 @@ contract OVRFLOBookInvariantHandler is Test {
     }
 
     /*//////////////////////////////////////////////////////////////
-                        SALE OFFERS
+                            OFFERS
     //////////////////////////////////////////////////////////////*/
 
-    function postSaleOffer(uint256 actorSeed, uint256 capSeed) public {
+    function postOffer(uint256 actorSeed, uint256 capSeed) public {
         address actor = _actor(actorSeed);
         uint128 capacity = uint128(bound(capSeed, 1, 50 ether));
 
         vm.prank(actor);
-        uint256 offerId = book.postSaleOffer(MARKET, APR, capacity);
+        book.postOffer(MARKET, APR, capacity);
 
-        totalActiveSaleOfferCapacity += capacity;
+        totalActiveOfferCapacity += capacity;
     }
 
-    function cancelSaleOffer(uint256 offerIdSeed) public {
-        uint256 offerId = bound(offerIdSeed, 1, book.nextSaleOfferId() - 1);
-        (address maker,,, uint128 capacity, bool active) = book.saleOffers(offerId);
+    function cancelOffer(uint256 offerIdSeed) public {
+        if (book.nextOfferId() == 1) return;
+        uint256 offerId = bound(offerIdSeed, 1, book.nextOfferId() - 1);
+        (address maker,,, uint128 capacity, bool active) = book.offers(offerId);
         if (!active) return;
 
         vm.prank(maker);
-        book.cancelSaleOffer(offerId);
+        book.cancelOffer(offerId);
 
-        totalActiveSaleOfferCapacity -= capacity;
+        totalActiveOfferCapacity -= capacity;
     }
 
     function sellIntoOffer(uint256 offerIdSeed) public {
-        if (book.nextSaleOfferId() == 1) return;
-        uint256 offerId = bound(offerIdSeed, 1, book.nextSaleOfferId() - 1);
-        (, address market, uint16 aprBps, uint128 capacity, bool active) = book.saleOffers(offerId);
+        if (book.nextOfferId() == 1) return;
+        uint256 offerId = bound(offerIdSeed, 1, book.nextOfferId() - 1);
+        (, address market, uint16 aprBps, uint128 capacity, bool active) = book.offers(offerId);
         if (!active || capacity == 0) return;
 
         address actor = _actor(offerIdSeed);
@@ -323,7 +325,7 @@ contract OVRFLOBookInvariantHandler is Test {
         vm.prank(actor);
         book.sellIntoOffer(offerId, streamId, 0);
 
-        totalActiveSaleOfferCapacity -= grossPrice;
+        totalActiveOfferCapacity -= grossPrice;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -360,52 +362,62 @@ contract OVRFLOBookInvariantHandler is Test {
     }
 
     /*//////////////////////////////////////////////////////////////
-                        LEND OFFERS
+                        BORROW POOLS
     //////////////////////////////////////////////////////////////*/
 
-    function postLendOffer(uint256 actorSeed, uint256 capSeed) public {
-        address actor = _actor(actorSeed);
-        uint128 capacity = uint128(bound(capSeed, 1, 50 ether));
+    /// @dev R13: posts offers from a non-borrower actor, pledges an eligible stream,
+    ///      and borrows against a subset. A different actor posts the offers than the
+    ///      one calling `createBorrowPool` to avoid the self-match guard (pattern #4).
+    ///      Offer IDs are strictly increasing by construction (pattern #11). Ghost
+    ///      variables track escrowed offer capacity and total pool obligations.
+    function createBorrowPool(
+        uint256 borrowerSeed,
+        uint256 numOffersSeed,
+        uint256 capSeed,
+        uint256 targetSeed,
+        uint256 minSeed
+    ) public {
+        address borrower = _actor(borrowerSeed);
 
-        vm.prank(actor);
-        book.postLendOffer(MARKET, APR, capacity);
+        uint256[] memory offerIds;
+        uint256 totalCapacity;
+        {
+            address maker = actors[((borrowerSeed % actors.length) + 1) % actors.length];
+            uint256 numOffers = bound(numOffersSeed, 1, 3);
+            uint128 capacity = uint128(bound(capSeed, 1, 50 ether));
+            offerIds = new uint256[](numOffers);
+            for (uint256 i = 0; i < numOffers; i++) {
+                if (underlying.balanceOf(maker) < capacity) return;
+                vm.prank(maker);
+                offerIds[i] = book.postOffer(MARKET, APR, capacity);
+                totalCapacity += capacity;
+                totalActiveOfferCapacity += capacity;
+            }
+        }
 
-        totalActiveLendOfferCapacity += capacity;
-    }
-
-    function cancelLendOffer(uint256 offerIdSeed) public {
-        if (book.nextLendOfferId() == 1) return;
-        uint256 offerId = bound(offerIdSeed, 1, book.nextLendOfferId() - 1);
-        (address lender,,, uint128 capacity, bool active) = book.lendOffers(offerId);
-        if (!active) return;
-
-        vm.prank(lender);
-        book.cancelLendOffer(offerId);
-
-        totalActiveLendOfferCapacity -= capacity;
-    }
-
-    /*//////////////////////////////////////////////////////////////
-                        BORROW LISTINGS
-    //////////////////////////////////////////////////////////////*/
-
-    function postBorrowListing(uint256 actorSeed, uint256 borrowSeed) public {
-        address borrower = _actor(actorSeed);
         uint256 streamId = _createStream(borrower);
-        uint128 borrowAmount = uint128(bound(borrowSeed, 1, 50 ether));
+
+        uint128 targetBorrow;
+        uint128 minAcceptable;
+        {
+            (uint256 grossPrice,,,,) = book.quote(MARKET, streamId, APR, 0);
+            if (grossPrice == 0) return;
+            uint256 maxBorrow = _min(totalCapacity, grossPrice);
+            if (maxBorrow == 0) return;
+            targetBorrow = uint128(bound(targetSeed, 1, maxBorrow));
+            minAcceptable = uint128(bound(minSeed, 1, uint256(targetBorrow)));
+        }
 
         vm.prank(borrower);
-        try book.postBorrowListing(MARKET, streamId, APR, borrowAmount) {} catch {}
-    }
+        try book.createBorrowPool(offerIds, streamId, targetBorrow, minAcceptable) returns (uint256 poolId) {
+            (,,,, uint128 totalContributed,) = book.pools(poolId);
+            totalActiveOfferCapacity -= totalContributed;
 
-    function cancelBorrowListing(uint256 listingIdSeed) public {
-        if (book.nextBorrowListingId() == 1) return;
-        uint256 listingId = bound(listingIdSeed, 1, book.nextBorrowListingId() - 1);
-        (address borrower,,,,,, bool active) = book.borrowListings(listingId);
-        if (!active) return;
-
-        vm.prank(borrower);
-        book.cancelBorrowListing(listingId);
+            uint256 loanId = book.poolLoanId(poolId);
+            (,,, uint128 obligation,,,) = book.loans(loanId);
+            _recordLoanGhost(loanId, borrower, streamId, obligation);
+            totalPoolObligation += obligation;
+        } catch {}
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -459,6 +471,17 @@ contract OVRFLOBookInvariantHandler is Test {
     /*//////////////////////////////////////////////////////////////
                         HELPERS
     //////////////////////////////////////////////////////////////*/
+
+    function _recordLoanGhost(uint256 loanId, address borrower, uint256 streamId, uint128 obligation) internal {
+        LoanGhost storage ghost = loanGhosts[loanId];
+        ghost.obligation = obligation;
+        ghost.remainingAtOrigination = sablier.getDepositedAmount(streamId) - sablier.getWithdrawnAmount(streamId);
+        ghost.lenderReceived = 0;
+        ghost.borrower = borrower;
+        ghost.lender = address(book);
+        ghost.streamId = streamId;
+        ghost.closed = false;
+    }
 
     function _createStream(address owner) internal returns (uint256 streamId) {
         streamId = nextStreamId++;
@@ -542,9 +565,9 @@ contract OVRFLOBookInvariantTest is Test {
         }
     }
 
-    /// @notice R9: book underlying balance == escrowed offer capacity
+    /// @notice book underlying balance == escrowed offer capacity
     function invariant_BookBalanceEqualsEscrowedCapacity() public view {
-        uint256 expected = handler.totalActiveSaleOfferCapacity() + handler.totalActiveLendOfferCapacity();
+        uint256 expected = handler.totalActiveOfferCapacity();
         assertEq(underlying.balanceOf(address(book)), expected, "book balance != escrowed offer capacity");
     }
 }

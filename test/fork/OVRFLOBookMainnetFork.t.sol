@@ -51,7 +51,7 @@ contract OVRFLOBookMainnetForkTest is OVRFLOForkBase {
         _seedWstEth(LENDER, borrowAmount);
         vm.startPrank(LENDER);
         IERC20(WSTETH).approve(address(book), borrowAmount);
-        uint256 offerId = book.postLendOffer(PRIMARY_MARKET, book.LAUNCH_APR_BPS(), borrowAmount);
+        uint256 offerId = book.postOffer(PRIMARY_MARKET, book.LAUNCH_APR_BPS(), borrowAmount);
         vm.stopPrank();
 
         vm.prank(USER);
@@ -68,7 +68,7 @@ contract OVRFLOBookMainnetForkTest is OVRFLOForkBase {
         assertLt(partialClaim, outstandingBeforeClaim);
 
         vm.prank(LENDER);
-        book.poolClaimLoan(poolId, loanId, partialClaim);
+        book.poolClaimLoan(poolId, partialClaim);
         assertEq(token.balanceOf(LENDER), partialClaim);
 
         vm.warp(PRIMARY_EXPIRY);
@@ -88,7 +88,7 @@ contract OVRFLOBookMainnetForkTest is OVRFLOForkBase {
         _seedWstEth(LENDER, borrowAmount);
         vm.startPrank(LENDER);
         IERC20(WSTETH).approve(address(book), borrowAmount);
-        uint256 offerId = book.postLendOffer(PRIMARY_MARKET, book.LAUNCH_APR_BPS(), borrowAmount);
+        uint256 offerId = book.postOffer(PRIMARY_MARKET, book.LAUNCH_APR_BPS(), borrowAmount);
         vm.stopPrank();
 
         vm.prank(USER);
@@ -150,7 +150,7 @@ contract OVRFLOBookMainnetForkTest is OVRFLOForkBase {
         _seedWstEth(BUYER, grossPrice);
         vm.startPrank(BUYER);
         IERC20(WSTETH).approve(address(book), grossPrice);
-        uint256 offerId = book.postSaleOffer(PRIMARY_MARKET, launchApr, uint128(grossPrice));
+        uint256 offerId = book.postOffer(PRIMARY_MARKET, launchApr, uint128(grossPrice));
         vm.stopPrank();
 
         // User sells stream into the offer
@@ -166,50 +166,9 @@ contract OVRFLOBookMainnetForkTest is OVRFLOForkBase {
         assertEq(IERC20(WSTETH).balanceOf(USER), grossPrice, "seller should receive full gross price");
 
         // Offer capacity consumed
-        (,,, uint128 remainingCapacity, bool active) = book.saleOffers(offerId);
+        (,,, uint128 remainingCapacity, bool active) = book.offers(offerId);
         assertFalse(active, "offer should be inactive after full consumption");
         assertEq(remainingCapacity, 0, "capacity should be 0 after full fill");
-    }
-
-    function test_BookLendAgainstListing_RealStream() public {
-        (OVRFLOFactory factory, OVRFLO ovrflo, OVRFLOToken token) = _deployApprovedPrimarySeries(0);
-        OVRFLOBook book = _deployBook(factory, ovrflo);
-        ISablierV2LockupLinear sablier = ISablierV2LockupLinear(address(ovrflo.sablierLL()));
-        (,, uint256 streamId) = _depositPrimary(ovrflo, PT_AMOUNT);
-
-        // Quote to determine borrow amount
-        uint16 launchApr = book.LAUNCH_APR_BPS();
-        (uint256 grossPrice,,,,) = book.quote(PRIMARY_MARKET, streamId, launchApr, 0);
-        uint128 borrowAmount = uint128(grossPrice / 2);
-
-        // User posts a borrow listing (pledges stream)
-        vm.prank(USER);
-        _approveStream(address(sablier), address(book), streamId);
-        vm.prank(USER);
-        uint256 listingId = book.postBorrowListing(PRIMARY_MARKET, streamId, launchApr, borrowAmount);
-
-        // Lender fills the listing via pool
-        _seedWstEth(LENDER, borrowAmount);
-        vm.startPrank(LENDER);
-        IERC20(WSTETH).approve(address(book), borrowAmount);
-        uint256 poolId = book.createLenderPool(_singletonArray(listingId), borrowAmount, 0);
-        vm.stopPrank();
-        uint256 loanId = 1;
-
-        // Loan created with correct obligation
-        (,,, uint128 obligation,,,, bool closed) = book.loanState(loanId);
-        assertFalse(closed, "loan should not be closed");
-        assertGt(obligation, 0, "obligation should be > 0");
-
-        // Stream escrowed by book
-        assertEq(sablier.ownerOf(streamId), address(book), "stream should be escrowed by book");
-
-        // User received wstETH (borrow amount; feeBps=0 so net == borrowAmount)
-        assertEq(IERC20(WSTETH).balanceOf(USER), borrowAmount, "borrower should receive wstETH");
-
-        // Listing is no longer active
-        (,,,,,, bool listingActive) = book.borrowListings(listingId);
-        assertFalse(listingActive, "listing should be inactive after fill");
     }
 
     function _deployApprovedPrimarySeries(uint16 feeBps)
@@ -282,15 +241,13 @@ contract OVRFLOBookMainnetForkTest is OVRFLOForkBase {
         ISablierV2LockupLinear sablier = ISablierV2LockupLinear(address(ovrflo.sablierLL()));
         (,, uint256 streamId) = _depositPrimary(ovrflo, PT_AMOUNT);
 
-        // Escrow the stream via a borrow listing
+        // Escrow the stream via a sale listing
         uint16 launchApr = book.LAUNCH_APR_BPS();
-        (uint256 grossPrice,,,,) = book.quote(PRIMARY_MARKET, streamId, launchApr, 0);
-        uint128 borrowAmount = uint128(grossPrice / 2);
 
         vm.prank(USER);
         _approveStream(address(sablier), address(book), streamId);
         vm.prank(USER);
-        book.postBorrowListing(PRIMARY_MARKET, streamId, launchApr, borrowAmount);
+        book.postSaleListing(PRIMARY_MARKET, streamId, launchApr);
 
         assertEq(sablier.ownerOf(streamId), address(book), "book should hold the NFT");
 
@@ -313,7 +270,7 @@ contract OVRFLOBookMainnetForkTest is OVRFLOForkBase {
         (ok,) = address(sablier).call(abi.encodeCall(ISablierV2LockupLinear.withdraw, (streamId, USER, withdrawable)));
         assertFalse(ok, "former borrower should not be able to withdraw");
 
-        // Lender (has not been assigned yet) cannot withdraw
+        // Lender (not the NFT owner) cannot withdraw
         vm.prank(LENDER);
         (ok,) = address(sablier).call(abi.encodeCall(ISablierV2LockupLinear.withdraw, (streamId, LENDER, withdrawable)));
         assertFalse(ok, "lender should not be able to withdraw");

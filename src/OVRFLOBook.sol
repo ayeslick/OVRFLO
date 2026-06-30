@@ -12,10 +12,10 @@ import {IOVRFLOFactoryRegistry, StreamPricing} from "./StreamPricing.sol";
 /// @title OVRFLOBook
 /// @notice Secondary market book for selling OVRFLO streams or lending against them.
 /// @dev A per-vault order book deployed against one OVRFLO core vault and one Sablier V2
-///      Lockup Linear instance. It supports four primitives, all priced off
+///      Lockup Linear instance. It supports two primitives, all priced off
 ///      `StreamPricing` using a linear APR discount to the series maturity:
-///        1. Sale offers / sale listings — sell a stream now for underlying.
-///        2. Lend offers / borrow listings — pledge a stream as collateral for a loan,
+///        1. Offers / sale listings — sell a stream now for underlying.
+///        2. Offers / borrow pools — pledge a stream as collateral for a loan,
 ///           settled in ovrfloToken (the stream's payout asset).
 ///      Offers (maker posts liquidity, no stream bound) front-load market gating via
 ///      `_requireMarketActive`; listings (maker posts a specific stream) and all fills
@@ -51,7 +51,7 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
     /// @notice Hard ceiling on the maximum APR bound the owner may set (100%).
     uint16 public constant APR_MAX_CEILING = 10_000;
     /// @notice Hard ceiling on the protocol fee the owner may set (100%).
-    uint16 public constant MAX_FEE_BPS = 10_000;
+    uint16 public constant MAX_FEE_BPS = 10_000; //may need to adjust
 
     /*//////////////////////////////////////////////////////////////
                                 STORAGE
@@ -66,27 +66,27 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
     /// @notice Recipient of protocol fees; defaults to the vault's treasury.
     address public treasury;
 
-    /// @notice Next sale-offer id (monotonic from 1).
-    uint256 public nextSaleOfferId = 1;
+    /// @notice Next offer id (monotonic from 1).
+    uint256 public nextOfferId = 1;
     /// @notice Next sale-listing id (monotonic from 1).
     uint256 public nextSaleListingId = 1;
-    /// @notice Next lend-offer id (monotonic from 1).
-    uint256 public nextLendOfferId = 1;
-    /// @notice Next borrow-listing id (monotonic from 1).
-    uint256 public nextBorrowListingId = 1;
     /// @notice Next loan id (monotonic from 1).
     uint256 public nextLoanId = 1;
     /// @notice Next pool id (monotonic from 1).
     uint256 public nextPoolId = 1;
 
-    /// @notice Standing buy-side offer: liquidity in underlying waiting to buy any
-    ///         eligible stream from `market` at `aprBps`.
+    /// @notice Standing offer: liquidity in underlying waiting to buy or lend against
+    ///         any eligible stream from `market` at `aprBps`. The offer is consumable as
+    ///         either a sale (permanent stream transfer via `sellIntoOffer`) or a loan
+    ///         (stream pledged with obligation via `createBorrowPool`); the maker cannot
+    ///         restrict an offer to one path.
     /// @param maker Offer owner who funded the capacity.
     /// @param market Pendle market streams must belong to.
-    /// @param aprBps Discount rate used to price any stream sold into this offer.
+    /// @param aprBps Discount/accrual rate used to price any stream sold into or borrowed
+    ///        against this offer.
     /// @param capacity Remaining underlying available (decremented on fill).
     /// @param active False once cancelled or fully consumed.
-    struct SaleOffer {
+    struct Offer {
         address maker;
         address market;
         uint16 aprBps;
@@ -106,39 +106,6 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
         address market;
         uint256 streamId;
         uint16 aprBps;
-        uint16 feeBps;
-        bool active;
-    }
-
-    /// @notice Standing lend offer: liquidity in underlying waiting to lend against any
-    ///         eligible stream from `market` at `aprBps`.
-    /// @param lender Offer owner who funded the capacity.
-    /// @param market Pendle market collateral streams must belong to.
-    /// @param aprBps Rate used to price collateral and accrue obligation.
-    /// @param capacity Remaining underlying available to lend (decremented on draw).
-    /// @param active False once cancelled or fully consumed.
-    struct LendOffer {
-        address lender;
-        address market;
-        uint16 aprBps;
-        uint128 capacity;
-        bool active;
-    }
-
-    /// @notice Borrow-side listing: a specific stream pledged as collateral for a loan.
-    /// @param borrower Listing owner (stream pledgor).
-    /// @param market Pendle market the stream belongs to.
-    /// @param streamId The Sablier stream pledged as collateral.
-    /// @param aprBps Rate used to price collateral and accrue obligation.
-    /// @param borrowAmount Principal the borrower wants advanced.
-    /// @param feeBps Protocol fee snapshotted at post time (borrower-protective).
-    /// @param active False once cancelled or lent against.
-    struct BorrowListing {
-        address borrower;
-        address market;
-        uint256 streamId;
-        uint16 aprBps;
-        uint128 borrowAmount;
         uint16 feeBps;
         bool active;
     }
@@ -166,35 +133,28 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
         bool closed;
     }
 
-    /// @notice A pool aggregates multiple offers or listings into one atomic batch.
-    /// @dev Borrower pools (isLend=false) batch across lend offers via `createBorrowPool`.
-    ///      Lender pools (isLend=true) batch across borrow listings via `createLenderPool`.
-    ///      Claims are address-based (no NFTs) via poolContributions and poolReceived.
-    /// @param creator Pool creator (borrower for borrower pools, lender for lender pools).
-    /// @param aprBps Shared rate across all consumed offers/listings.
-    /// @param isLend True = lender pool, false = borrower pool.
+    /// @notice A pool aggregates multiple offers into one atomic batch.
+    /// @dev Borrower pools batch across offers via `createBorrowPool`. Claims are
+    ///      address-based (no NFTs) via poolContributions and poolReceived.
+    /// @param creator Pool creator (the borrower).
+    /// @param aprBps Shared rate across all consumed offers.
     /// @param active False once all loans settled and proceeds claimed.
-    /// @param market Pendle market all offers/listings belong to.
-    /// @param totalContributed Total capital contributed (borrowed or deployed).
+    /// @param market Pendle market all offers belong to.
+    /// @param totalContributed Total capital contributed (borrowed).
     /// @param totalObligation Total ovrfloToken owed across all pool loans.
     struct Pool {
         address creator;
         uint16 aprBps;
-        bool isLend;
         bool active;
         address market;
         uint128 totalContributed;
         uint128 totalObligation;
     }
 
-    /// @notice Sale offer id => offer.
-    mapping(uint256 => SaleOffer) public saleOffers;
+    /// @notice Offer id => offer.
+    mapping(uint256 => Offer) public offers;
     /// @notice Sale listing id => listing.
     mapping(uint256 => SaleListing) public saleListings;
-    /// @notice Lend offer id => offer.
-    mapping(uint256 => LendOffer) public lendOffers;
-    /// @notice Borrow listing id => listing.
-    mapping(uint256 => BorrowListing) public borrowListings;
     /// @notice Loan id => loan.
     mapping(uint256 => Loan) public loans;
     /// @notice Pool id => Pool.
@@ -207,6 +167,8 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
     mapping(uint256 => mapping(address => uint128)) public poolReceived;
     /// @notice Loan id => poolId (every loan belongs to a pool).
     mapping(uint256 => uint256) public loanPoolId;
+    /// @notice Pool id => loanId (every pool has exactly one loan).
+    mapping(uint256 => uint256) public poolLoanId;
 
     /*//////////////////////////////////////////////////////////////
                                 EVENTS
@@ -218,13 +180,13 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
     event FeeSet(uint16 feeBps);
     /// @notice Emitted when the owner changes the fee treasury.
     event TreasurySet(address indexed treasury);
-    /// @notice Emitted when a sale offer is posted (liquidity funded).
-    event SaleOfferPosted(
+    /// @notice Emitted when an offer is posted (liquidity funded).
+    event OfferPosted(
         uint256 indexed offerId, address indexed maker, address indexed market, uint16 aprBps, uint128 capacity
     );
-    /// @notice Emitted when a sale offer is cancelled and its remaining capacity refunded.
-    event SaleOfferCancelled(uint256 indexed offerId, address indexed maker, uint128 refunded);
-    /// @notice Emitted when a seller hits a sale offer, transferring the stream to the maker.
+    /// @notice Emitted when an offer is cancelled and its remaining capacity refunded.
+    event OfferCancelled(uint256 indexed offerId, address indexed maker, uint128 refunded);
+    /// @notice Emitted when a seller hits an offer, transferring the stream to the maker.
     event SaleOfferHit(
         uint256 indexed offerId,
         uint256 indexed streamId,
@@ -255,38 +217,15 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
         uint256 fee,
         uint256 netToSeller
     );
-    /// @notice Emitted when a lend offer is posted (liquidity funded).
-    event LendOfferPosted(
-        uint256 indexed offerId, address indexed lender, address indexed market, uint16 aprBps, uint128 capacity
-    );
-    /// @notice Emitted when a lend offer is cancelled and its remaining capacity refunded.
-    event LendOfferCancelled(uint256 indexed offerId, address indexed lender, uint128 refunded);
-    /// @notice Emitted when a borrow listing is posted (stream pledged as collateral).
-    event BorrowListingPosted(
-        uint256 indexed listingId,
-        address indexed borrower,
-        address indexed market,
-        uint256 streamId,
-        uint16 aprBps,
-        uint16 feeBps,
-        uint128 borrowAmount
-    );
-    /// @notice Emitted when a borrow listing is cancelled and the stream returned.
-    event BorrowListingCancelled(uint256 indexed listingId, address indexed borrower, uint256 streamId);
     /// @notice Emitted when a loan is closed by drawing the remainder and returning the stream.
     event LoanClosed(uint256 indexed loanId, address indexed borrower, address indexed lender, uint128 finalDraw);
     /// @notice Emitted when a borrower repays ovrfloToken toward a loan (and whether it closed).
     event LoanRepaid(
         uint256 indexed loanId, address indexed borrower, address indexed lender, uint128 amount, bool closed
     );
-    /// @notice Emitted when a pool is created (borrower or lender).
+    /// @notice Emitted when a pool is created.
     event PoolCreated(
-        uint256 indexed poolId,
-        address indexed creator,
-        address market,
-        uint16 aprBps,
-        bool isLend,
-        uint128 totalContributed
+        uint256 indexed poolId, address indexed creator, address market, uint16 aprBps, uint128 totalContributed
     );
     /// @notice Emitted when a contributor claims ovrfloToken from pool proceeds.
     event PoolShareClaimed(uint256 indexed poolId, address indexed claimant, uint128 amount);
@@ -364,19 +303,21 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
     }
 
     /*//////////////////////////////////////////////////////////////
-                              SALE OFFERS
+                                OFFERS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Posts a standing sale offer: fund `capacity` underlying to buy any
-    ///         eligible stream from `market` at discount rate `aprBps`.
+    /// @notice Posts a standing offer: fund `capacity` underlying to buy or lend against
+    ///         any eligible stream from `market` at rate `aprBps`.
     /// @dev Pulls `capacity` underlying from the maker upfront. The market is gated
     ///      with `_requireMarketActive` (no stream is bound yet); full stream
-    ///      eligibility is checked per-fill in `sellIntoOffer`.
+    ///      eligibility is checked per-fill in `sellIntoOffer` and `createBorrowPool`.
+    ///      The offer is consumable as either a sale or a loan; the maker cannot
+    ///      restrict an offer to one path.
     /// @param market Pendle market streams must belong to.
-    /// @param aprBps Discount rate used to price streams sold into this offer.
+    /// @param aprBps Discount/accrual rate used to price streams.
     /// @param capacity Underlying liquidity to fund.
-    /// @return offerId The new sale offer id.
-    function postSaleOffer(address market, uint16 aprBps, uint128 capacity)
+    /// @return offerId The new offer id.
+    function postOffer(address market, uint16 aprBps, uint128 capacity)
         external
         nonReentrant
         returns (uint256 offerId)
@@ -385,19 +326,18 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
         _requireMarketActive(market);
         require(capacity > 0, "OVRFLOBook: capacity zero");
 
-        offerId = nextSaleOfferId++;
-        saleOffers[offerId] =
-            SaleOffer({maker: msg.sender, market: market, aprBps: aprBps, capacity: capacity, active: true});
+        offerId = nextOfferId++;
+        offers[offerId] = Offer({maker: msg.sender, market: market, aprBps: aprBps, capacity: capacity, active: true});
 
         _pullExact(IERC20(underlying), msg.sender, address(this), capacity);
 
-        emit SaleOfferPosted(offerId, msg.sender, market, aprBps, capacity);
+        emit OfferPosted(offerId, msg.sender, market, aprBps, capacity);
     }
 
-    /// @notice Cancels a sale offer and refunds its remaining capacity.
+    /// @notice Cancels an offer and refunds its remaining capacity.
     /// @param offerId The offer to cancel.
-    function cancelSaleOffer(uint256 offerId) external nonReentrant {
-        SaleOffer storage offer = saleOffers[offerId];
+    function cancelOffer(uint256 offerId) external nonReentrant {
+        Offer storage offer = offers[offerId];
         require(offer.active, "OVRFLOBook: offer inactive");
         require(offer.maker == msg.sender, "OVRFLOBook: not offer maker");
 
@@ -407,10 +347,10 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
 
         _payUnderlying(msg.sender, refund);
 
-        emit SaleOfferCancelled(offerId, msg.sender, refund);
+        emit OfferCancelled(offerId, msg.sender, refund);
     }
 
-    /// @notice Sells a stream into a standing sale offer (taker side).
+    /// @notice Sells a stream into a standing offer (taker side).
     /// @dev Prices `streamId` at the offer's `aprBps`, charges the global `feeBps`,
     ///      transfers the stream to the offer maker, and pays the seller (net of fee).
     ///      Reverts if the price exceeds remaining capacity or slips below `minNetOut`.
@@ -418,7 +358,7 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
     /// @param streamId The Sablier stream being sold.
     /// @param minNetOut Minimum underlying the seller must receive (slippage).
     function sellIntoOffer(uint256 offerId, uint256 streamId, uint256 minNetOut) external nonReentrant {
-        SaleOffer storage offer = saleOffers[offerId];
+        Offer storage offer = offers[offerId];
         require(offer.active, "OVRFLOBook: offer inactive");
 
         StreamPricing.Eligibility memory eligibility = _requireEligible(offer.market, streamId);
@@ -519,109 +459,6 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
     }
 
     /*//////////////////////////////////////////////////////////////
-                              LEND OFFERS
-    //////////////////////////////////////////////////////////////*/
-
-    /// @notice Posts a standing lend offer: fund `capacity` underlying to lend against
-    ///         any eligible stream from `market` at rate `aprBps`.
-    /// @dev Pulls `capacity` underlying upfront. Market-gated via `_requireMarketActive`
-    ///      (no stream bound yet); full eligibility is checked per-draw in
-    ///      `createBorrowPool`.
-    /// @param market Pendle market collateral streams must belong to.
-    /// @param aprBps Rate used to price collateral and accrue obligation.
-    /// @param capacity Underlying liquidity to fund.
-    /// @return offerId The new lend offer id.
-    function postLendOffer(address market, uint16 aprBps, uint128 capacity)
-        external
-        nonReentrant
-        returns (uint256 offerId)
-    {
-        _validateApr(aprBps);
-        _requireMarketActive(market);
-        require(capacity > 0, "OVRFLOBook: capacity zero");
-
-        offerId = nextLendOfferId++;
-        lendOffers[offerId] =
-            LendOffer({lender: msg.sender, market: market, aprBps: aprBps, capacity: capacity, active: true});
-
-        _pullExact(IERC20(underlying), msg.sender, address(this), capacity);
-
-        emit LendOfferPosted(offerId, msg.sender, market, aprBps, capacity);
-    }
-
-    /// @notice Cancels a lend offer and refunds its remaining capacity.
-    /// @param offerId The offer to cancel.
-    function cancelLendOffer(uint256 offerId) external nonReentrant {
-        LendOffer storage offer = lendOffers[offerId];
-        require(offer.active, "OVRFLOBook: lend offer inactive");
-        require(offer.lender == msg.sender, "OVRFLOBook: not lender");
-
-        uint128 refund = offer.capacity;
-        offer.capacity = 0;
-        offer.active = false;
-
-        _payUnderlying(msg.sender, refund);
-
-        emit LendOfferCancelled(offerId, msg.sender, refund);
-    }
-
-    /*//////////////////////////////////////////////////////////////
-                            BORROW LISTINGS
-    //////////////////////////////////////////////////////////////*/
-
-    /// @notice Posts a borrow listing: pledge `streamId` to borrow `borrowAmount`.
-    /// @dev Escrows the stream and validates eligibility now. Snapshots `feeBps` to
-    ///      protect the borrower from later fee changes. Reverts if `borrowAmount`
-    ///      exceeds the discounted collateral price.
-    /// @param market Pendle market the stream belongs to.
-    /// @param streamId The Sablier stream to pledge.
-    /// @param aprBps Rate used to price collateral and accrue obligation.
-    /// @param borrowAmount Principal the borrower wants advanced.
-    /// @return listingId The new borrow listing id.
-    function postBorrowListing(address market, uint256 streamId, uint16 aprBps, uint128 borrowAmount)
-        external
-        nonReentrant
-        returns (uint256 listingId)
-    {
-        _validateApr(aprBps);
-        require(borrowAmount > 0, "OVRFLOBook: borrow zero");
-
-        StreamPricing.Eligibility memory eligibility = _requireEligible(market, streamId);
-        uint256 grossPrice =
-            StreamPricing.grossPrice(eligibility.remaining, aprBps, _timeToMaturity(eligibility.seriesMaturity));
-        require(grossPrice > 0, "OVRFLOBook: price zero");
-        require(borrowAmount <= grossPrice, "OVRFLOBook: borrow above price");
-
-        listingId = nextBorrowListingId++;
-        borrowListings[listingId] = BorrowListing({
-            borrower: msg.sender,
-            market: market,
-            streamId: streamId,
-            aprBps: aprBps,
-            borrowAmount: borrowAmount,
-            feeBps: feeBps,
-            active: true
-        });
-
-        sablier.transferFrom(msg.sender, address(this), streamId);
-
-        emit BorrowListingPosted(listingId, msg.sender, market, streamId, aprBps, feeBps, borrowAmount);
-    }
-
-    /// @notice Cancels a borrow listing and returns the escrowed stream to the borrower.
-    /// @param listingId The listing to cancel.
-    function cancelBorrowListing(uint256 listingId) external nonReentrant {
-        BorrowListing storage listing = borrowListings[listingId];
-        require(listing.active, "OVRFLOBook: borrow listing inactive");
-        require(listing.borrower == msg.sender, "OVRFLOBook: not borrower");
-
-        listing.active = false;
-        sablier.transferFrom(address(this), msg.sender, listing.streamId);
-
-        emit BorrowListingCancelled(listingId, msg.sender, listing.streamId);
-    }
-
-    /*//////////////////////////////////////////////////////////////
                               LOAN SERVICING
     //////////////////////////////////////////////////////////////*/
 
@@ -653,11 +490,11 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
     }
 
     /// @notice Borrower repays ovrfloToken toward a loan to reduce or clear the obligation.
-    /// @dev Repayment is in ovrfloToken (the stream's payout asset), sent directly to the
-    ///      lender. `amount` is capped at outstanding; when it equals outstanding the loan
-    ///      closes and the stream is returned to the borrower. The equality is safe from
-    ///      rounding bricks because `outstanding` is always an exact integer wei and
-    ///      ovrfloToken has 18-decimal granularity (see
+    /// @dev Repayment is in ovrfloToken (the stream's payout asset), credited to
+    ///      `poolProceeds`. `amount` is capped at outstanding; when it equals outstanding
+    ///      the loan closes and the stream is returned to the borrower. The equality is
+    ///      safe from rounding bricks because `outstanding` is always an exact integer wei
+    ///      and ovrfloToken has 18-decimal granularity (see
     ///      `docs/solutions/security-issues/repayloan-equality-rounding-no-brick-OVRFLOBook-20260624.md`).
     /// @param loanId The loan to repay.
     /// @param amount ovrfloToken to repay (must be <= outstanding).
@@ -692,14 +529,15 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
                                 POOLS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Creates a borrower pool: aggregates multiple lend offers into one loan.
-    /// @dev The borrower pledges `streamId` and borrows from multiple lend offers in a
+    /// @notice Creates a borrower pool: aggregates multiple offers into one loan.
+    /// @dev The borrower pledges `streamId` and borrows from multiple offers in a
     ///      single atomic transaction. The pool becomes the virtual lender
-    ///      (`loan.lender = address(this)`, `loanPoolId[loanId] = poolId`). Each offer
-    ///      maker's consumed capacity is recorded for pro-rata claims. All offers must
-    ///      share the same `market` and `aprBps`. Self-match (borrower is an offer maker)
-    ///      is prevented. CEI: all validation before any state mutation.
-    /// @param offerIds Lend offer IDs to consume (must all match same market/aprBps).
+    ///      (`loan.lender = address(this)`, `loanPoolId[loanId] = poolId`,
+    ///      `poolLoanId[poolId] = loanId`). Each offer maker's consumed capacity is
+    ///      recorded for pro-rata claims. All offers must share the same `market` and
+    ///      `aprBps`. Self-match (borrower is an offer maker) is prevented. CEI: all
+    ///      validation before any state mutation.
+    /// @param offerIds Offer IDs to consume (must all match same market/aprBps).
     /// @param streamId The Sablier stream to pledge as collateral.
     /// @param targetBorrow Desired principal; actual may be less if capacity is insufficient.
     /// @param minAcceptable Minimum principal the borrower will accept (slippage).
@@ -715,8 +553,8 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
         address market;
         uint16 aprBps;
         {
-            LendOffer storage firstOffer = lendOffers[offerIds[0]];
-            require(firstOffer.active, "OVRFLOBook: lend offer inactive");
+            Offer storage firstOffer = offers[offerIds[0]];
+            require(firstOffer.active, "OVRFLOBook: offer inactive");
             market = firstOffer.market;
             aprBps = firstOffer.aprBps;
         }
@@ -731,7 +569,7 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
             uint256 grossPrice = StreamPricing.grossPrice(eligibility.remaining, aprBps, timeToMaturity);
             require(grossPrice > 0, "OVRFLOBook: price zero");
 
-            uint256 totalAvailable = _validateBorrowOffers(offerIds, market, aprBps, msg.sender);
+            uint256 totalAvailable = _validateOffers(offerIds, market, aprBps, msg.sender);
             uint256 actualBorrow = targetBorrow < totalAvailable ? uint256(targetBorrow) : totalAvailable;
             require(actualBorrow >= minAcceptable, "OVRFLOBook: insufficient capacity");
             require(actualBorrow <= grossPrice, "OVRFLOBook: borrow above price");
@@ -748,143 +586,37 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
         pools[poolId] = Pool({
             creator: msg.sender,
             aprBps: aprBps,
-            isLend: false,
             active: true,
             market: market,
             totalContributed: actualBorrow128,
             totalObligation: obligation
         });
 
-        _consumeBorrowOffers(offerIds, poolId, actualBorrow128);
+        _consumeOffers(offerIds, poolId, actualBorrow128);
 
         uint256 loanId = _storeLoan(msg.sender, address(this), streamId, obligation);
         loanPoolId[loanId] = poolId;
+        poolLoanId[poolId] = loanId;
 
         sablier.transferFrom(msg.sender, address(this), streamId);
         _payUnderlying(msg.sender, netToBorrower);
         _payUnderlying(treasury, feeAmount);
 
-        emit PoolCreated(poolId, msg.sender, market, aprBps, false, actualBorrow128);
+        emit PoolCreated(poolId, msg.sender, market, aprBps, actualBorrow128);
     }
 
-    /// @notice Creates a lender pool: deploys capital across multiple borrow listings.
-    /// @dev The lender funds multiple borrow listings in one atomic transaction. A loan is
-    ///      created per listing with `loan.lender = address(this)` and
-    ///      `loanPoolId[loanId] = poolId`. The lender's total deployment is recorded for
-    ///      pro-rata claims. Listings are fully funded or skipped (no partial fills). All
-    ///      listings must share the same `market` and `aprBps`. Unused capital is returned.
-    ///      CEI: all validation before any state mutation.
-    /// @param listingIds Borrow listing IDs to fill (must all match same market/aprBps).
-    /// @param totalAmount Total underlying to deploy; unused portion is returned.
-    /// @param minAcceptable Minimum total the lender will deploy (slippage).
-    /// @return poolId The new pool id.
-    function createLenderPool(uint256[] memory listingIds, uint128 totalAmount, uint128 minAcceptable)
-        external
-        nonReentrant
-        returns (uint256 poolId)
-    {
-        require(totalAmount > 0, "OVRFLOBook: amount zero");
-        require(listingIds.length > 0, "OVRFLOBook: empty listings");
-
-        BorrowListing storage firstListing = borrowListings[listingIds[0]];
-        require(firstListing.active, "OVRFLOBook: borrow listing inactive");
-        require(msg.sender != firstListing.borrower, "OVRFLOBook: self-match");
-        address market = firstListing.market;
-        uint16 aprBps = firstListing.aprBps;
-
-        // Validate all listings and compute total deployable (budget-constrained)
-        uint256 totalDeployable;
-        {
-            uint256 remainingBudget = totalAmount;
-            for (uint256 i = 0; i < listingIds.length; i++) {
-                if (i > 0) require(listingIds[i] > listingIds[i - 1], "OVRFLOBook: duplicate or unsorted ids");
-                BorrowListing storage listing = borrowListings[listingIds[i]];
-                require(listing.active, "OVRFLOBook: borrow listing inactive");
-                require(listing.market == market, "OVRFLOBook: market mismatch");
-                require(listing.aprBps == aprBps, "OVRFLOBook: apr mismatch");
-                require(msg.sender != listing.borrower, "OVRFLOBook: self-match");
-                if (uint256(listing.borrowAmount) <= remainingBudget) {
-                    totalDeployable += listing.borrowAmount;
-                    remainingBudget -= listing.borrowAmount;
-                }
-            }
-        }
-
-        require(totalDeployable >= minAcceptable, "OVRFLOBook: insufficient capacity");
-
-        // Pull totalAmount from lender
-        _pullExact(IERC20(underlying), msg.sender, address(this), totalAmount);
-
-        // Reserve pool ID (used in fill loop for loanPoolId)
-        poolId = nextPoolId;
-
-        // Fill listings and accumulate total obligation
-        uint256 totalObligation;
-        {
-            uint256 remainingBudget = totalAmount;
-            for (uint256 i = 0; i < listingIds.length; i++) {
-                if (remainingBudget == 0) break;
-                BorrowListing storage listing = borrowListings[listingIds[i]];
-                if (uint256(listing.borrowAmount) > remainingBudget) continue;
-                require(listing.active, "OVRFLOBook: borrow listing inactive");
-
-                StreamPricing.Eligibility memory eligibility = _requireEligible(listing.market, listing.streamId);
-                uint256 timeToMaturity = _timeToMaturity(eligibility.seriesMaturity);
-                uint256 grossPrice = StreamPricing.grossPrice(eligibility.remaining, aprBps, timeToMaturity);
-                require(grossPrice > 0, "OVRFLOBook: price zero");
-                require(listing.borrowAmount <= grossPrice, "OVRFLOBook: borrow above price");
-
-                uint128 obligation = StreamPricing.obligationForFill(
-                    listing.borrowAmount, grossPrice, eligibility.remaining, aprBps, timeToMaturity
-                );
-                uint256 feeAmount = StreamPricing.fee(listing.borrowAmount, listing.feeBps);
-                uint256 netToBorrower = uint256(listing.borrowAmount) - feeAmount;
-
-                listing.active = false;
-                uint256 loanId = _storeLoan(listing.borrower, address(this), listing.streamId, obligation);
-                loanPoolId[loanId] = poolId;
-
-                _payUnderlying(listing.borrower, netToBorrower);
-                _payUnderlying(treasury, feeAmount);
-
-                totalObligation += obligation;
-                remainingBudget -= listing.borrowAmount;
-            }
-        }
-
-        // Create pool with finalized totalObligation
-        nextPoolId++;
-        pools[poolId] = Pool({
-            creator: msg.sender,
-            aprBps: aprBps,
-            isLend: true,
-            active: true,
-            market: market,
-            totalContributed: _toUint128(totalDeployable),
-            totalObligation: _toUint128(totalObligation)
-        });
-        poolContributions[poolId][msg.sender] = _toUint128(totalDeployable);
-
-        // Return unused capital
-        uint256 unused = uint256(totalAmount) - totalDeployable;
-        if (unused > 0) {
-            _payUnderlying(msg.sender, unused);
-        }
-
-        emit PoolCreated(poolId, msg.sender, market, aprBps, true, _toUint128(totalDeployable));
-    }
-
-    /// @notice Lets a pool contributor draw directly from a specific loan's Sablier stream.
+    /// @notice Lets a pool contributor draw directly from the pool's Sablier stream.
     /// @dev OvrfloToken goes directly to the caller (not to poolProceeds), avoiding the
-    ///      commons problem. Capped by the contributor's remaining entitlement and the
+    ///      commons problem. The `loanId` is derived internally from `poolId` via
+    ///      `poolLoanId`. Capped by the contributor's remaining entitlement and the
     ///      stream's withdrawable amount. Updates `poolReceived` and `loan.drawn`.
     ///      Any pool contributor can call (can only draw their own share).
     /// @param poolId The pool the loan belongs to.
-    /// @param loanId The specific loan to draw from.
     /// @param amount Requested draw amount (capped at available).
-    function poolClaimLoan(uint256 poolId, uint256 loanId, uint128 amount) external nonReentrant {
+    function poolClaimLoan(uint256 poolId, uint128 amount) external nonReentrant {
         require(poolContributions[poolId][msg.sender] > 0, "OVRFLOBook: not contributor");
-        require(loanPoolId[loanId] == poolId, "OVRFLOBook: loan not in pool");
+        uint256 loanId = poolLoanId[poolId];
+        require(loanId != 0, "OVRFLOBook: loan not in pool");
 
         Loan storage loan = loans[loanId];
         _requireLoanExists(loan);
@@ -1013,19 +745,19 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
         );
     }
 
-    /// @notice Returns the state of a sale offer.
-    /// @param offerId The sale offer id.
+    /// @notice Returns the state of an offer.
+    /// @param offerId The offer id.
     /// @return maker Offer owner.
     /// @return market Pendle market.
-    /// @return aprBps Discount rate.
+    /// @return aprBps Discount/accrual rate.
     /// @return capacity Remaining underlying.
     /// @return active Whether the offer is still live.
-    function saleOfferState(uint256 offerId)
+    function offerState(uint256 offerId)
         external
         view
         returns (address maker, address market, uint16 aprBps, uint128 capacity, bool active)
     {
-        SaleOffer storage offer = saleOffers[offerId];
+        Offer storage offer = offers[offerId];
         require(offer.maker != address(0), "OVRFLOBook: unknown offer");
         return (offer.maker, offer.market, offer.aprBps, offer.capacity, offer.active);
     }
@@ -1048,63 +780,11 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
         return (listing.maker, listing.market, listing.streamId, listing.aprBps, listing.feeBps, listing.active);
     }
 
-    /// @notice Returns the state of a lend offer.
-    /// @param offerId The lend offer id.
-    /// @return lender Offer owner.
-    /// @return market Pendle market.
-    /// @return aprBps Accrual rate.
-    /// @return capacity Remaining underlying.
-    /// @return active Whether the offer is still live.
-    function lendOfferState(uint256 offerId)
-        external
-        view
-        returns (address lender, address market, uint16 aprBps, uint128 capacity, bool active)
-    {
-        LendOffer storage offer = lendOffers[offerId];
-        require(offer.lender != address(0), "OVRFLOBook: unknown offer");
-        return (offer.lender, offer.market, offer.aprBps, offer.capacity, offer.active);
-    }
-
-    /// @notice Returns the state of a borrow listing.
-    /// @param listingId The borrow listing id.
-    /// @return borrower Listing owner.
-    /// @return market Pendle market.
-    /// @return streamId The pledged Sablier stream.
-    /// @return aprBps Accrual rate.
-    /// @return borrowAmount Requested principal.
-    /// @return listingFeeBps Snapshotted fee at post time.
-    /// @return active Whether the listing is still live.
-    function borrowListingState(uint256 listingId)
-        external
-        view
-        returns (
-            address borrower,
-            address market,
-            uint256 streamId,
-            uint16 aprBps,
-            uint128 borrowAmount,
-            uint16 listingFeeBps,
-            bool active
-        )
-    {
-        BorrowListing storage listing = borrowListings[listingId];
-        require(listing.borrower != address(0), "OVRFLOBook: unknown listing");
-        return (
-            listing.borrower,
-            listing.market,
-            listing.streamId,
-            listing.aprBps,
-            listing.borrowAmount,
-            listing.feeBps,
-            listing.active
-        );
-    }
-
     /*//////////////////////////////////////////////////////////////
                           GATHER FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Scans lend offers for matching capacity.
+    /// @notice Scans offers for matching capacity.
     /// @dev View function (called via eth_call off-chain, high gas available). Gated by
     ///      `marketActive` (reverts on expired series). Returns IDs of active offers
     ///      matching `market` and `aprBps` with remaining capacity, stopping once
@@ -1116,66 +796,26 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
     /// @param startId First offer ID to scan (inclusive).
     /// @return ids Matching offer IDs.
     /// @return sufficient True if accumulated capacity >= `targetAmount`.
-    function gatherLendCapacities(address market, uint16 aprBps, uint128 targetAmount, uint256 startId)
+    function gatherOfferCapacities(address market, uint16 aprBps, uint128 targetAmount, uint256 startId)
         external
         view
         returns (uint256[] memory ids, bool sufficient)
     {
         StreamPricing.marketActive(address(factory), core, market);
-        if (startId >= nextLendOfferId) {
+        if (startId >= nextOfferId) {
             return (new uint256[](0), false);
         }
 
-        uint256 maxCount = nextLendOfferId - startId;
+        uint256 maxCount = nextOfferId - startId;
         ids = new uint256[](maxCount);
 
         uint256 count;
         uint256 gathered;
-        for (uint256 i = startId; i < nextLendOfferId; i++) {
-            LendOffer storage offer = lendOffers[i];
+        for (uint256 i = startId; i < nextOfferId; i++) {
+            Offer storage offer = offers[i];
             if (offer.active && offer.market == market && offer.aprBps == aprBps && offer.capacity > 0) {
                 ids[count++] = i;
                 gathered += offer.capacity;
-                if (gathered >= targetAmount) break;
-            }
-        }
-
-        sufficient = gathered >= targetAmount;
-        // forge-lint: disable-next-line(unsafe-assembly)
-        assembly {
-            mstore(ids, count)
-        }
-    }
-
-    /// @notice Scans borrow listings for matching borrow amounts.
-    /// @dev View function (called via eth_call off-chain). Same pattern as
-    ///      `gatherLendCapacities` but accumulates `borrowAmount`.
-    /// @param market Pendle market to match.
-    /// @param aprBps Rate to match.
-    /// @param targetAmount Minimum total borrow amount desired.
-    /// @param startId First listing ID to scan (inclusive).
-    /// @return ids Matching listing IDs.
-    /// @return sufficient True if accumulated borrow amount >= `targetAmount`.
-    function gatherBorrowListings(address market, uint16 aprBps, uint128 targetAmount, uint256 startId)
-        external
-        view
-        returns (uint256[] memory ids, bool sufficient)
-    {
-        StreamPricing.marketActive(address(factory), core, market);
-        if (startId >= nextBorrowListingId) {
-            return (new uint256[](0), false);
-        }
-
-        uint256 maxCount = nextBorrowListingId - startId;
-        ids = new uint256[](maxCount);
-
-        uint256 count;
-        uint256 gathered;
-        for (uint256 i = startId; i < nextBorrowListingId; i++) {
-            BorrowListing storage listing = borrowListings[i];
-            if (listing.active && listing.market == market && listing.aprBps == aprBps && listing.borrowAmount > 0) {
-                ids[count++] = i;
-                gathered += listing.borrowAmount;
                 if (gathered >= targetAmount) break;
             }
         }
@@ -1193,34 +833,34 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
 
     /// @dev Validates all offers in a borrower pool: active, same market, same aprBps,
     ///      no self-match. Returns total available capacity.
-    function _validateBorrowOffers(uint256[] memory offerIds, address market, uint16 aprBps, address borrower)
+    function _validateOffers(uint256[] memory offerIds, address market, uint16 aprBps, address borrower)
         internal
         view
         returns (uint256 totalAvailable)
     {
         for (uint256 i = 0; i < offerIds.length; i++) {
             if (i > 0) require(offerIds[i] > offerIds[i - 1], "OVRFLOBook: duplicate or unsorted ids");
-            LendOffer storage offer = lendOffers[offerIds[i]];
-            require(offer.active, "OVRFLOBook: lend offer inactive");
+            Offer storage offer = offers[offerIds[i]];
+            require(offer.active, "OVRFLOBook: offer inactive");
             require(offer.market == market, "OVRFLOBook: market mismatch");
             require(offer.aprBps == aprBps, "OVRFLOBook: apr mismatch");
-            require(offer.lender != borrower, "OVRFLOBook: self-match");
+            require(offer.maker != borrower, "OVRFLOBook: self-match");
             totalAvailable += offer.capacity;
         }
     }
 
-    /// @dev Consumes lend offers up to `actualBorrow`, recording per-lender contributions.
-    function _consumeBorrowOffers(uint256[] memory offerIds, uint256 poolId, uint256 actualBorrow) internal {
+    /// @dev Consumes offers up to `actualBorrow`, recording per-maker contributions.
+    function _consumeOffers(uint256[] memory offerIds, uint256 poolId, uint256 actualBorrow) internal {
         uint256 toBorrow = actualBorrow;
         for (uint256 i = 0; i < offerIds.length; i++) {
             if (toBorrow == 0) break;
-            LendOffer storage offer = lendOffers[offerIds[i]];
+            Offer storage offer = offers[offerIds[i]];
             uint256 consumed = toBorrow < offer.capacity ? toBorrow : offer.capacity;
             offer.capacity -= _toUint128(consumed);
             if (offer.capacity == 0) {
                 offer.active = false;
             }
-            poolContributions[poolId][offer.lender] += _toUint128(consumed);
+            poolContributions[poolId][offer.maker] += _toUint128(consumed);
             toBorrow -= consumed;
         }
     }

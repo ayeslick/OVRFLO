@@ -103,33 +103,26 @@ OVRFLO operates in two layers:
 
 ### OVRFLOBook.sol
 
-Secondary market book for selling OVRFLO streams or borrowing against them. Bound to one core vault and one Sablier V2 LL instance at deploy time. Four primitives: sale offers, sale listings, lend offers, and borrow listings. All pricing uses `StreamPricing` with a linear APR discount to series maturity. Offers front-load market gating; listings and all fills run full stream validation. Fees are snapshotted per listing at post time (maker-protective); the global `feeBps` applies to offers.
+Secondary market book for selling OVRFLO streams or borrowing against them. Bound to one core vault and one Sablier V2 LL instance at deploy time. Two primitives: unified offers (consumable as sale or loan) and sale listings. All pricing uses `StreamPricing` with a linear APR discount to series maturity. Offers front-load market gating; listings and all fills run full stream validation. Fees are snapshotted per listing at post time (maker-protective); the global `feeBps` applies to offers.
 
 | Function | Description |
 |----------|-------------|
 | `constructor(factory, core, sablier)` | Deploy book bound to one vault and Sablier instance; pulls treasury/underlying/ovrfloToken from factory |
-| `postSaleOffer(market, aprBps, capacity)` | Fund standing buy-side liquidity for any eligible stream from `market` |
-| `cancelSaleOffer(offerId)` | Cancel unmatched sale offer, refund remaining capacity |
+| `postOffer(market, aprBps, capacity)` | Fund standing buy-side liquidity for any eligible stream from `market` (consumable as sale or loan) |
+| `cancelOffer(offerId)` | Cancel unmatched offer, refund remaining capacity |
 | `sellIntoOffer(offerId, streamId, minNetOut)` | Sell a stream into a standing offer for discounted underlying |
 | `postSaleListing(market, streamId, aprBps)` | List a specific stream for sale (escrows stream, snapshots fee) |
 | `cancelSaleListing(listingId)` | Cancel unmatched sale listing, return stream |
 | `buyListing(listingId, maxPriceIn)` | Buy a listed stream at its discounted price |
-| `postLendOffer(market, aprBps, capacity)` | Fund standing lend-side liquidity |
-| `cancelLendOffer(offerId)` | Cancel unmatched lend offer, refund remaining capacity |
-| `createBorrowPool(offerIds, streamId, targetBorrow, minAcceptable)` | Batch-borrow against multiple lend offers, pledging one stream as collateral |
-| `postBorrowListing(market, streamId, aprBps, borrowAmount)` | Post a borrow request for a specific stream (escrows stream, snapshots fee) |
-| `cancelBorrowListing(listingId)` | Cancel unmatched borrow listing, return stream |
-| `createLenderPool(listingIds, totalAmount, minAcceptable)` | Batch-lend across multiple borrow listings, advancing underlying to borrowers |
-| `poolClaimLoan(poolId, loanId, amount)` | Pool contributor draws accrued ovrfloToken directly from a loan's pledged stream |
+| `createBorrowPool(offerIds, streamId, targetBorrow, minAcceptable)` | Batch-borrow against multiple offers, pledging one stream as collateral |
+| `poolClaimLoan(poolId, amount)` | Pool contributor draws accrued ovrfloToken directly from a loan's pledged stream |
 | `claimPoolShare(poolId, amount)` | Pool contributor claims pro-rata from accumulated `poolProceeds` |
 | `closeLoan(loanId)` | Permissionless: draw remaining outstanding, return stream to borrower |
 | `repayLoan(loanId, amount)` | Borrower repays ovrfloToken to reduce or clear the obligation |
 | `quote(market, streamId, aprBps, borrowAmount)` | Preview price, obligation, fee, net, and residual (pass `0` for full borrow) |
 | `loanState(loanId)` | View full loan state (reverts for non-existent loan) |
-| `saleOfferState(offerId)` | View sale offer state (reverts for non-existent offer) |
+| `offerState(offerId)` | View offer state (reverts for non-existent offer) |
 | `saleListingState(listingId)` | View sale listing state (reverts for non-existent listing) |
-| `lendOfferState(offerId)` | View lend offer state (reverts for non-existent offer) |
-| `borrowListingState(listingId)` | View borrow listing state (reverts for non-existent listing) |
 | `setAprBounds(aprMinBps, aprMaxBps)` | Set accepted APR range for new posts (owner) |
 | `setFee(feeBps)` | Set protocol fee on offer fills (owner) |
 | `setTreasury(treasury)` | Set fee recipient (owner) |
@@ -276,20 +269,12 @@ Both paths transfer the stream permanently. The sale price is the stream's remai
 
 ### Borrowing Against a Stream (Book)
 
-Lending is handled exclusively via pool primitives that batch across multiple offers or listings in a single transaction:
+Borrowing is handled via the borrower pool primitive that batches across multiple offers in a single transaction:
 
-**Borrower pool — batch borrow across multiple lend offers:**
+**Borrower pool — batch borrow against multiple offers:**
 ```solidity
 // Borrower pledges stream, borrows underlying from several offers at once
 uint256 poolId = book.createBorrowPool(offerIds, streamId, targetBorrow, minAcceptable);
-```
-
-**Lender pool — batch lend across multiple borrow listings:**
-```solidity
-// Borrower posts a request
-uint256 listingId = book.postBorrowListing(market, streamId, aprBps, borrowAmount);
-// Lender fills multiple listings at once
-uint256 poolId = book.createLenderPool(listingIds, totalAmount, minAcceptable);
 ```
 
 The borrower receives `borrowAmount` underlying (net of fee) and owes an `obligation` in ovrfloToken at maturity. The stream is escrowed by the book. The obligation is computed via `StreamPricing.obligationForFill`, which guarantees `obligation <= remaining` so the stream can always cover the debt. No liquidations — the stream is deterministic and non-cancelable.
@@ -300,7 +285,7 @@ Loan servicing routes through pool claim channels. `closeLoan` and `repayLoan` r
 
 ```solidity
 // Pool contributor draws accrued ovrfloToken directly from a loan's pledged stream (capped at outstanding)
-book.poolClaimLoan(poolId, loanId, amount);
+book.poolClaimLoan(poolId, amount);
 
 // Pool contributor claims pro-rata from accumulated pool proceeds
 book.claimPoolShare(poolId, amount);
