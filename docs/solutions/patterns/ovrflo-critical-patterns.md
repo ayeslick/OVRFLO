@@ -1,7 +1,7 @@
 ---
 kind: required_reading
 scope: ovrflo
-last_updated: 2026-06-29
+last_updated: 2026-06-30
 audience: [contributors, ai-agents]
 ---
 
@@ -470,7 +470,7 @@ pass every flag and ownership assertion and ship a fund-loss bug.
 
 **Placement/Context:** Any non-fork or fork test that calls a function
 transferring `underlying`, `ovrfloToken`, or a Sablier stream NFT:
-`sellIntoOffer`, `buyListing`, `createBorrowPool`, `createLenderPool`,
+`sellIntoOffer`, `buyListing`, `createBorrowPool`,
 `cancel*` functions, `poolClaimLoan`, `claimPoolShare`, `closeLoan`, `repayLoan`. The four-party
 check (actor, counterparty, treasury, book) is the minimum. For loan
 servicing, also assert `ovrfloToken.balanceOf`, `sablier.getWithdrawnAmount`,
@@ -481,7 +481,7 @@ and `sablier.ownerOf` for the lender and borrower.
 ```bash
 # Find settlement tests that assert state/ownership but skip balanceOf
 # for treasury or the book contract:
-rg -l "sellIntoOffer|buyListing|createBorrowPool|createLenderPool|poolClaimLoan|claimPoolShare|closeLoan|repayLoan" \
+rg -l "sellIntoOffer|buyListing|createBorrowPool|poolClaimLoan|claimPoolShare|closeLoan|repayLoan" \
   test/OVRFLOBook.t.sol | \
   xargs -I{} sh -c 'rg -L "balanceOf\(TREASURY\)|balanceOf\(address\(book\)\)" "{}" && echo "REVIEW: {}"'
 ```
@@ -495,8 +495,8 @@ rg -l "sellIntoOffer|buyListing|createBorrowPool|createLenderPool|poolClaimLoan|
 ### ❌ WRONG (silent zero defaults for a non-existent ID)
 
 ```solidity
-function saleOfferState(uint256 offerId) external view returns (...) {
-    SaleOffer storage offer = saleOffers[offerId];
+function offerState(uint256 offerId) external view returns (...) {
+    Offer storage offer = offers[offerId];
     // no existence check — returns (address(0), address(0), 0, 0, false)
     // for an ID that was never created
     return (offer.maker, offer.market, offer.aprBps, offer.capacity, offer.active);
@@ -506,8 +506,8 @@ function saleOfferState(uint256 offerId) external view returns (...) {
 ### ✅ CORRECT (revert with a sentinel check)
 
 ```solidity
-function saleOfferState(uint256 offerId) external view returns (...) {
-    SaleOffer storage offer = saleOffers[offerId];
+function offerState(uint256 offerId) external view returns (...) {
+    Offer storage offer = offers[offerId];
     require(offer.maker != address(0), "OVRFLOBook: unknown offer");
     return (offer.maker, offer.market, offer.aprBps, offer.capacity, offer.active);
 }
@@ -517,15 +517,14 @@ function saleOfferState(uint256 offerId) external view returns (...) {
 indexer or frontend cannot distinguish "this offer was cancelled" (real entry,
 `active == false`) from "this ID was never created" (no entry, default
 struct). Reverting makes the distinction explicit. The sentinel is the
-`maker`/`lender`/`borrower` field, which is `address(0)` in a
+`maker`/`borrower` field, which is `address(0)` in a
 default-initialized struct and always non-zero for a real entry. Torn-down
-entries (cancelled/filled) retain `maker`/`lender`/`borrower` (only
+entries (cancelled/filled) retain `maker`/`borrower` (only
 `capacity`/`active` are zeroed), so the sentinel succeeds for dead entries
 and fails only for non-existent ones.
 
 **Placement/Context:** Every view function in `OVRFLOBook` that resolves a
-struct by ID: `saleOfferState`, `saleListingState`, `lendOfferState`,
-`borrowListingState`, `loanState`. Also applies to any future view function
+struct by ID: `offerState`, `saleListingState`, `loanState`. Also applies to any future view function
 added to the book or vault that resolves by ID.
 
 **How to detect violation:**
