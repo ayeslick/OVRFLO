@@ -251,7 +251,7 @@ Two paths to sell a Sablier stream for discounted underlying:
 
 **Path A — Sell into a standing offer:**
 ```solidity
-// Seller hits an existing sale offer
+// Seller hits an existing offer
 book.sellIntoOffer(offerId, streamId, minNetOut);
 // Stream transfers to offer maker, seller receives net underlying
 ```
@@ -306,7 +306,7 @@ The PT discount is fixed at deposit -- the oracle splits principal from yield de
 **With held PT:**
 1. **Deposit 100 PT** (pre-maturity, PT trading at 95% of face) -- receive 95 ovrfloToken + Sablier stream vesting 5 ovrfloToken
 2. **Exit the 95 ovrfloToken** -- `unwrap()` for 95 underlying or swap on a DEX
-3. **Sell the stream on the book** into a sale offer -- receive ~4.5 underlying
+3. **Sell the stream on the book** into an offer -- receive ~4.5 underlying
 
 **With zero capital (flash-loan underlying, available today):**
 1. **Flash-loan 95 underlying** from Aave, Balancer, etc.
@@ -443,7 +443,7 @@ Two separate fees operate at different layers:
 - **No liquidations**: Deterministic, non-cancelable Sablier streams cannot underperform — the stream itself repays the loan
 - **StreamPricing math**: Floor/ceil rounding is directional and load-bearing. The invariant `obligation <= remaining` is proven and stress-tested (see `plans/streampricing-math-analysis.md`)
 - **Oracle**: TWAP pricing for PT valuation prevents manipulation; oracle is a vault immutable set at factory construction
-- **Slippage**: `minToUser` on deposits, `minNetOut` on book fills, `minObligationOut` on lend-against-listing, `maxPriceIn` on buy-listing
+- **Slippage**: `minToUser` on deposits, `minNetOut` on book fills, `minAcceptable` on borrow pools, `maxPriceIn` on buy-listing
 - **Deposit limits**: Per-market caps available (set limit to 0 to freeze new deposits)
 - **Two-step ownership**: `transferOwnership` on factory and book only nominates a pending owner; the new owner must call `acceptOwnership` to finalize
 
