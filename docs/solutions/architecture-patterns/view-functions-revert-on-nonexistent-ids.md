@@ -1,6 +1,7 @@
 ---
 title: View functions that resolve by ID should revert on non-existent IDs, not return zero defaults
 date: 2026-06-27
+last_updated: 2026-06-30
 category: architecture-patterns
 module: OVRFLOBook
 problem_type: architecture_pattern
@@ -17,11 +18,10 @@ tags: [view-functions, revert, non-existent-ids, ovrflobook, api-design, zero-ad
 
 ## Context
 
-`OVRFLOBook` has four entry types (sale offers, sale listings, lend offers,
-borrow listings) plus loans, each stored in a mapping keyed by a monotonically
-incrementing ID. View functions (`saleOfferState`, `saleListingState`,
-`lendOfferState`, `borrowListingState`, `loanState`) return the full struct
-for a given ID.
+`OVRFLOBook` has three entry types (unified offers, sale listings, loans),
+each stored in a mapping keyed by a monotonically incrementing ID. View
+functions (`offerState`, `saleListingState`, `loanState`) return the full
+struct for a given ID.
 
 `loanState` already reverted for non-existent loan IDs:
 
@@ -33,11 +33,12 @@ function loanState(uint256 loanId) external view returns (...) {
 }
 ```
 
-But the four offer/listing view functions silently returned zeroed defaults
-for non-existent IDs: `address(0)` for maker/lender, `0` for capacity, `false`
-for active. A dashboard or indexer querying a typo'd or stale ID would get
-`(address(0), address(0), 0, 0, false)` and could render it as a legitimate
-dead entry rather than detecting that the ID never existed.
+But the offer and sale listing view functions silently returned zeroed
+defaults for non-existent IDs: `address(0)` for maker/lender, `0` for
+capacity, `false` for active. A dashboard or indexer querying a typo'd or
+stale ID would get `(address(0), address(0), 0, 0, false)` and could render
+it as a legitimate dead entry rather than detecting that the ID never
+existed.
 
 ## Rule
 
@@ -47,12 +48,12 @@ does not exist.** Use a sentinel field (typically `maker != address(0)` or
 `loanState` pattern.
 
 ```solidity
-function saleOfferState(uint256 offerId)
+function offerState(uint256 offerId)
     external
     view
     returns (address maker, address market, uint16 aprBps, uint128 capacity, bool active)
 {
-    SaleOffer storage offer = saleOffers[offerId];
+    Offer storage offer = offers[offerId];
     require(offer.maker != address(0), "OVRFLOBook: unknown offer");
     return (offer.maker, offer.market, offer.aprBps, offer.capacity, offer.active);
 }
@@ -90,13 +91,13 @@ is queryable, a non-existent offer's state is an error.
 
 ## Related
 
-- `src/OVRFLOBook.sol` — `saleOfferState`, `saleListingState`,
-  `lendOfferState`, `borrowListingState` (now revert on non-existent IDs),
-  `loanState` (pre-existing revert pattern).
+- `src/OVRFLOBook.sol` — `offerState`, `saleListingState` (now revert on
+  non-existent IDs), `loanState` (pre-existing revert pattern).
 - [architecture-patterns/ovrflobook-entry-teardown-zero-what-matters.md](../architecture-patterns/ovrflobook-entry-teardown-zero-what-matters.md)
   — companion doc on which struct fields to zero on teardown; the sentinel
   check depends on `maker`/`lender`/`borrower` surviving teardown.
 - [patterns/ovrflo-critical-patterns.md](../patterns/ovrflo-critical-patterns.md)
   — pattern #8 distills this rule as an enforceable check.
 - `docs/audit/rejected-findings-record.md` — "Review fixes applied" section
-  documents the alignment of the four view functions with `loanState`.
+  documents the alignment of the offer and sale listing view functions with
+  `loanState`.

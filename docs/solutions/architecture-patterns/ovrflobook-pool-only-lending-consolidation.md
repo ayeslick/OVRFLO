@@ -1,6 +1,7 @@
 ---
 title: OVRFLOBook pool-only lending consolidation — removing the single-party lending path
 date: 2026-06-29
+last_updated: 2026-06-30
 category: docs/solutions/architecture-patterns
 module: OVRFLOBook
 problem_type: architecture_pattern
@@ -23,7 +24,7 @@ tags: [ovrflobook, lending, pools, architecture, refactor, consolidation, loan-s
 
 1. **Sales** (`sellIntoOffer`, `buyListing`) — active, immediate trading of a stream for underlying.
 2. **Single-party lending** (`borrowAgainstOffer`, `lendAgainstListing`, `claimLoan`) — one borrower paired with one lender, repaid via direct token transfer to the lender.
-3. **Pools** (`createBorrowPool`, `createLenderPool`, `poolClaimLoan`, `claimPoolShare`) — batch lending across many offers/listings with pro-rata claims against a shared `poolProceeds` pot.
+3. **Pools** (`createBorrowPool`, `poolClaimLoan`, `claimPoolShare`) — batch lending across many offers with pro-rata claims against a shared `poolProceeds` pot.
 
 The single-party path was an awkward middle ground. It duplicated the pool semantics ("a pool of one") while carrying its own entry points, its own events (`BorrowedAgainstOffer`, `LentAgainstListing`, `LoanClaimed`), its own test functions, and its own branching inside the shared loan-servicing functions. Every pool loan sets `loanPoolId[loanId] = poolId` and routes repayments through `poolProceeds`; a single-party loan left `loanPoolId` at zero and routed tokens directly to `loan.lender`. That `if (poolId != 0)` fork existed *only* to support the single-party case, and it forced every test, every invariant handler, and every fork test to maintain a parallel set of assertions. A pool created with a single offer or a single listing achieves the exact same economic outcome as single-party lending, so the separate path added surface area and test burden without adding capability.
 
@@ -35,7 +36,7 @@ An adversarial review pass surfaced six findings against this design, including:
 
 ## Guidance
 
-Consolidate on **pools as the only lending mechanism**. If a borrower wants a loan from one lender, that lender posts a lend offer and the borrower calls `createBorrowPool` with a one-element `offerIds` array. If a lender wants to fund one borrower, that borrower posts a borrow listing and the lender calls `createLenderPool` with a one-element `listingIds` array. There is no "single-party" shortcut; the general batch primitive subsumes it.
+Consolidate on **pools as the only lending mechanism**. If a borrower wants a loan from one lender, that lender posts an offer and the borrower calls `createBorrowPool` with a one-element `offerIds` array. If a lender wants to fund one borrower, the borrower calls `createBorrowPool` with a one-element `offerIds` array from the lender's posted offer. There is no "single-party" shortcut; the general batch primitive subsumes it.
 
 The concrete refactor removed `borrowAgainstOffer`, `lendAgainstListing`, and `claimLoan` plus their three events, then collapsed the `if (poolId != 0) { ... } else { ... }` branching in `closeLoan` and `repayLoan` to a single pool-routed path.
 
@@ -246,7 +247,7 @@ function _originateLoanViaOffer(uint256 streamId, uint128 borrowAmount)
     internal
     returns (uint256 loanId)
 {
-    uint256 offerId = _postLendOffer(LENDER, borrowAmount);
+    uint256 offerId = _postOffer(LENDER, borrowAmount);
     _mintEligibleStream(streamId, BORROWER, 110 ether, 0);
     vm.startPrank(BORROWER);
     sablier.approve(address(book), streamId);
@@ -262,7 +263,7 @@ function _originateLoanViaBorrowPool(uint256 streamId, uint128 borrowAmount)
     internal
     returns (uint256 poolId, uint256 loanId)
 {
-    uint256 offerId = _postLendOffer(BUYER, borrowAmount);
+    uint256 offerId = _postOffer(BUYER, borrowAmount);
     _mintEligibleStream(streamId, SELLER, 110 ether, 0);
     loanId = book.nextLoanId();
     vm.startPrank(SELLER);
@@ -281,5 +282,5 @@ The return signature widens to `(poolId, loanId)` because downstream tests need 
 - `docs/solutions/patterns/ovrflo-critical-patterns.md` — pattern #4 (self-match prevention) applies unchanged to `createBorrowPool`; the single-party self-match case is gone.
 - `docs/solutions/architecture-patterns/ovrflobook-entry-teardown-zero-what-matters.md` — entry-point teardown pattern: when removing a mechanism, audit every caller, helper, and assertion that touched it so zero stale references remain.
 - `docs/solutions/architecture-patterns/ovrflobook-offer-market-active-gate.md` — eligibility gating; the market-active / requireEligible split is preserved on the pool path (offers are market-gated at post time, full stream validation runs inside `createBorrowPool`).
-- `docs/solutions/design-patterns/solidity-batch-function-safety-patterns.md` — documents the pool primitives that are now the sole lending mechanism.
+- `docs/solutions/design-patterns/solidity-batch-function-safety-patterns.md` — documents the pool primitive that is now the sole lending mechanism.
 - `docs/solutions/security-issues/repayloan-equality-rounding-no-brick-OVRFLOBook-20260624.md` — rounding invariants for `repayLoan`/`closeLoan` closure math; still applies to the simplified pool-only path.

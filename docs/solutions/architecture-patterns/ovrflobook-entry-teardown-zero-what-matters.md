@@ -1,6 +1,7 @@
 ---
 title: OVRFLOBook entry teardown — zero what's critical, keep the rest
 date: 2026-06-24
+last_updated: 2026-06-30
 last_refreshed: 2026-06-24
 category: architecture-patterns
 module: OVRFLOBook
@@ -30,8 +31,8 @@ tags:
 their defaults rather than `delete`-ing the whole mapping slot. For example:
 
 ```solidity
-function cancelSaleOffer(uint256 offerId) external nonReentrant {
-    SaleOffer storage offer = saleOffers[offerId];
+function cancelOffer(uint256 offerId) external nonReentrant {
+    Offer storage offer = offers[offerId];
     require(offer.active, "OVRFLOBook: offer inactive");
     require(offer.maker == msg.sender, "OVRFLOBook: not offer maker");
 
@@ -40,7 +41,7 @@ function cancelSaleOffer(uint256 offerId) external nonReentrant {
     offer.active = false;
 
     _payUnderlying(msg.sender, refund);
-    emit SaleOfferCancelled(offerId, msg.sender, refund);
+    emit OfferCancelled(offerId, msg.sender, refund);
 }
 ```
 
@@ -67,7 +68,7 @@ loan.**
 
 ## Why not `delete` the whole entry
 
-**You can't truly delete a mapping entry.** `delete saleOffers[offerId]` just
+**You can't truly delete a mapping entry.** `delete offers[offerId]` just
 writes zeros into the struct's storage slots — same as setting fields to
 defaults. The mapping key is permanently occupied regardless; the key itself
 cannot be reclaimed. So the only real question is *which slots do I zero?*
@@ -78,12 +79,12 @@ gas net *cost* per extra slot zeroed (pre-London's 15000 refund made zeroing
 profitable; that era is over). So a full `delete` charges the canceller more
 gas to destroy data that is neither needed nor harmful.
 
-Concretely for `SaleOffer` (2 packed slots):
+Concretely for `Offer` (2 packed slots):
 - slot 1: `maker` (20B) + `aprBps` (2B)
 - slot 2: `capacity` (16B) + `active` (1B)
 
-`cancelSaleOffer` must zero slot 2 (`capacity` + `active`) for safety. Slot 1 is
-left alone, saving the ~200 gas of zeroing it. `delete saleOffers[offerId]`
+`cancelOffer` must zero slot 2 (`capacity` + `active`) for safety. Slot 1 is
+left alone, saving the ~200 gas of zeroing it. `delete offers[offerId]`
 would also zero slot 1 — paying gas to erase `maker`/`aprBps` that nobody reads
 after `active == false`.
 
@@ -97,10 +98,8 @@ plus a value check, not by zeroing:
 
 - `sellIntoOffer`: `require(offer.active)` and `require(grossPrice <= offer.capacity)`
   — `capacity == 0` fails the second check even if `active` were somehow true.
-- `cancelSaleOffer` / `cancelLendOffer`: `require(offer.active)` — reverts on a
-  second call.
-- `buyListing` / `createLenderPool` / `cancelSaleListing` / `cancelBorrowListing`:
-  all `require(*.active)`.
+- `cancelOffer`: `require(offer.active)` — reverts on a second call.
+- `buyListing` / `cancelSaleListing`: all `require(*.active)`.
 
 So leaving `maker` / `market` / `aprBps` populated after `active = false` is
 read-only context (useful for `*State` queries and off-chain indexing; events
@@ -127,7 +126,7 @@ The `closed` sentinel is the correct teardown for loans.
 ## Anti-pattern to avoid
 
 A future "cleanup" pass that replaces the partial zeroing with
-`delete saleOffers[offerId]` (or, worse, `delete loans[loanId]`) would:
+`delete offers[offerId]` (or, worse, `delete loans[loanId]`) would:
 
 1. cost the caller slightly more gas per cancellation (extra slots zeroed at
    ~200 gas net each), and
@@ -139,8 +138,8 @@ are harmless and cheaper to leave, and loans must not be erased.
 
 ## Related
 
-- `src/OVRFLOBook.sol` — `cancelSaleOffer`, `cancelLendOffer`, `cancelSaleListing`,
-  `cancelBorrowListing`, `closeLoan`, `repayLoan`, and the `*State` views.
+- `src/OVRFLOBook.sol` — `cancelOffer`, `cancelSaleListing`, `closeLoan`,
+  `repayLoan`, and the `*State` views.
 - `test/OVRFLOBook.t.sol` — non-fork tests assert the exact `active`/`capacity`/
   `closed` flips this doc specifies, plus all-party token balances per
   [best-practices/verify-token-balance-movement-not-just-ownership.md](../best-practices/verify-token-balance-movement-not-just-ownership.md).

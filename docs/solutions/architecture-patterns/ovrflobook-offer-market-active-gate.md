@@ -1,13 +1,14 @@
 ---
 title: OVRFLOBook offer-post market-active gate and shared eligibility dedup
 date: 2026-06-24
+last_updated: 2026-06-30
 category: architecture-patterns
 module: OVRFLOBook
 problem_type: architecture_pattern
 component: solidity_contracts
 severity: low
 applies_when:
-  - "Posting standing sale/lend offers in OVRFLOBook against a market"
+  - "Posting standing offers (unified, consumable as sale or loan) in OVRFLOBook against a market"
   - "Refactoring shared market/series/maturity eligibility checks across fill and offer code paths"
   - "Deciding whether to validate a market at offer-creation time versus only at fill time"
 tags:
@@ -24,17 +25,17 @@ tags:
 
 ## Context
 
-`OVRFLOBook` has four orderbook primitives. Two are **offers** (maker posts
-standing liquidity in underlying, no stream bound): `postSaleOffer` (formerly
-`postOffer`) and `postLendOffer`. Two are **listings** (maker posts a specific
-Sablier stream): `postSaleListing` (formerly `listStream`) and
-`postBorrowListing`. All fills and all listings validate the stream + market via
+`OVRFLOBook` has two order types. One is an **offer** (maker posts
+standing liquidity in underlying, no stream bound): `postOffer` — unified,
+consumable as sale or loan. The other is a **sale listing** (maker posts a
+specific Sablier stream): `postSaleListing`. All fills and all listings validate
+the stream + market via
 `StreamPricing.requireEligible` (checks: core registered, market approved,
 series approved, not matured, stream sender == core, asset == ovrfloToken,
 end time == expiry, no cliff, non-cancelable, remaining > 0).
 
-The two **offer** posting functions previously validated only the APR and
-capacity — they accepted ANY `market` argument and pulled funds, deferring all
+The offer posting function previously validated only the APR and
+capacity — it accepted ANY `market` argument and pulled funds, deferring all
 market/series/maturity checks to fill time (`sellIntoOffer` /
 `createBorrowPool`). So a maker could lock up underlying behind a dead or
 unapproved market and only discover the rejection when someone tried to fill it.
@@ -72,20 +73,19 @@ if (treasury == address(0) || registeredToken == address(0)) revert CoreNotRegis
 // ... stream-specific checks follow ...
 ```
 
-In `src/OVRFLOBook.sol`, a thin internal helper and two call sites:
+In `src/OVRFLOBook.sol`, a thin internal helper and its call site:
 
 ```solidity
 function _requireMarketActive(address market) internal view {
     StreamPricing.marketActive(address(factory), core, market);
 }
 
-function postSaleOffer(...) external nonReentrant returns (uint256 offerId) {
+function postOffer(...) external nonReentrant returns (uint256 offerId) {
     _validateApr(aprBps);
     _requireMarketActive(market);          // fail fast before pulling funds
     require(capacity > 0, "OVRFLOBook: capacity zero");
     ...
 }
-// same one-liner in postLendOffer
 ```
 
 The `IOVRFLOSeriesRegistry` import was removed from `OVRFLOBook.sol` — the book
@@ -124,13 +124,13 @@ no longer reads `series()` directly; the pricing library does.
 
 ## Examples
 
-- **Before:** `postLendOffer(market = unapprovedMarket, ...)` succeeded and
+- **Before:** `postOffer(market = unapprovedMarket, ...)` succeeded and
   pulled 100 underlying; the first `createBorrowPool` against it reverted with
-  `MarketNotApproved`, stranding the lender's capital until `cancelLendOffer`.
-- **After:** `postLendOffer(market = unapprovedMarket, ...)` reverts immediately
+  `MarketNotApproved`, stranding the lender's capital until `cancelOffer`.
+- **After:** `postOffer(market = unapprovedMarket, ...)` reverts immediately
   with `MarketNotApproved` before any transfer.
 - **Test update:** `test_CreateBorrowPool_CancelledOfferReverts`
-  had to be updated. It used to unapprove the market BEFORE posting a lend offer
+  had to be updated. It used to unapprove the market BEFORE posting an offer
   (relying on post not checking), then expect `createBorrowPool` to revert.
   Now post rejects unapproved markets, so the test posts while approved, then
   unapproves, then expects the fill to revert — preserving the fill-time
@@ -138,7 +138,7 @@ no longer reads `series()` directly; the pricing library does.
 
 ## Related
 
-- `src/OVRFLOBook.sol` — `postSaleOffer`, `postLendOffer`, `_requireMarketActive`.
+- `src/OVRFLOBook.sol` — `postOffer`, `cancelOffer`, `_requireMarketActive`.
 - `src/StreamPricing.sol` — `marketActive`, `requireEligible`.
 - [security-issues/repayloan-equality-rounding-no-brick-OVRFLOBook-20260624.md](../security-issues/repayloan-equality-rounding-no-brick-OVRFLOBook-20260624.md)
   — companion note on `StreamPricing` rounding invariants; its Related section
