@@ -1,6 +1,7 @@
 ---
 module: OVRFLOBook
 date: 2026-06-24
+last_updated: 2026-06-30
 problem_type: security_analysis
 component: solidity_contracts
 symptoms:
@@ -139,7 +140,7 @@ re-introduce a real residual that the equality cannot match.
 - [patterns/ovrflo-critical-patterns.md](../patterns/ovrflo-critical-patterns.md)
   — enforceable rules distilled from writeups.
 - `src/OVRFLOBook.sol` — `repayLoan`, `closeLoan`, `poolClaimLoan`,
-  `_outstanding`, `_satisfied`.
+  `_outstanding`.
 - `src/StreamPricing.sol` — `grossPrice`, `obligation`,
   `obligationForFill`, `requireEligible`, `marketActive`.
 
@@ -152,7 +153,7 @@ path was identified and fixed.
 
 ### The bug
 
-`createBorrowPool` and `createLenderPool` did not prevent
+`createBorrowPool` did not prevent
 `borrower == lender` (self-matching). When a self-matched loan exists,
 `repayLoan` calls `_pullExact(ovrfloToken, msg.sender, loan.lender, amount)`
 where `from == to`. ERC20 self-transfers leave the balance unchanged, so the
@@ -169,15 +170,15 @@ accrues, and the borrower can repay from a different address. But the
 
 ### Fix applied
 
-Added `require(offer.lender != borrower, "OVRFLOBook: self-match")` in
-`createBorrowPool` (via `_validateBorrowOffers`) and `require(msg.sender != listing.borrower,
-"OVRFLOBook: self-match")` in `createLenderPool`. Prevents the irrational
+Added `require(offer.maker != borrower, "OVRFLOBook: self-match")` in
+`createBorrowPool` (via `_validateOffers`). Prevents the irrational
 self-matched loan state at the root cause rather than special-casing the
-repayment transfer.
+repayment transfer. (A parallel guard was also added to `createLenderPool`,
+but that function was later removed in the unified offer merge refactor.)
 
 ### Files changed
 
-- `src/OVRFLOBook.sol` — `createBorrowPool`, `createLenderPool`.
+- `src/OVRFLOBook.sol` — `createBorrowPool`.
 
 ### Test coverage note
 
