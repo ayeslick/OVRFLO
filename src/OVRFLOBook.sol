@@ -51,7 +51,7 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
     /// @notice Hard ceiling on the maximum APR bound the owner may set (100%).
     uint16 public constant APR_MAX_CEILING = 10_000;
     /// @notice Hard ceiling on the protocol fee the owner may set (100%).
-    uint16 public constant MAX_FEE_BPS = 10_000; //may need to adjust
+    uint16 public constant MAX_FEE_BPS = 10_000;
 
     /*//////////////////////////////////////////////////////////////
                                 STORAGE
@@ -138,10 +138,10 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
     ///      address-based (no NFTs) via poolContributions and poolReceived.
     /// @param creator Pool creator (the borrower).
     /// @param aprBps Shared rate across all consumed offers.
-    /// @param active False once all loans settled and proceeds claimed.
+    /// @param active False once the loan is settled and proceeds claimed.
     /// @param market Pendle market all offers belong to.
     /// @param totalContributed Total capital contributed (borrowed).
-    /// @param totalObligation Total ovrfloToken owed across all pool loans.
+    /// @param totalObligation Total ovrfloToken owed on the pool's loan.
     struct Pool {
         address creator;
         uint16 aprBps;

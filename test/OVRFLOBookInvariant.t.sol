@@ -239,8 +239,6 @@ contract OVRFLOBookInvariantHandler is Test {
 
     // Ghost state: track escrowed offer capacity (unified offers)
     uint256 public totalActiveOfferCapacity;
-    // Ghost state: track total obligations across borrowed pools
-    uint256 public totalPoolObligation;
 
     // Ghost state for R6/R7/R8: per-loan tracking
     struct LoanGhost {
@@ -416,7 +414,6 @@ contract OVRFLOBookInvariantHandler is Test {
             uint256 loanId = book.poolLoanId(poolId);
             (,,, uint128 obligation,,,) = book.loans(loanId);
             _recordLoanGhost(loanId, borrower, streamId, obligation);
-            totalPoolObligation += obligation;
         } catch {}
     }
 
