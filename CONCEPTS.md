@@ -16,6 +16,10 @@ The protocol vault for a single underlying asset that accepts supported Pendle p
 
 An OVRFLO vault has two backing sources for the same receipt token: matured principal-token claims and underlying wrap reserves. These backing sources must remain separately accounted even though the receipt token is fungible.
 
+### Combined solvency
+
+The real solvency condition for an OVRFLO vault: `ovrfloToken.totalSupply() <= underlying.balanceOf(vault) + ptToken.balanceOf(vault)`. Individual checks (`wrappedUnderlying <= underlying.balanceOf`, `marketTotalDeposited <= ptToken.balanceOf`) are sufficient but not necessary — they hold pre-maturity (claim is blocked, no cross-exit possible) but can break post-maturity when ovrfloToken fungibility allows cross-exits. As long as the combined invariant holds, every holder can exit through some path (unwrap, claim, or DEX). Established during the 2026-07-01 fuzz campaign (GL-02, GL-55, GL-56).
+
 ### ovrfloToken
 
 The fungible receipt token minted by an OVRFLO vault to represent a one-to-one claim on supported exits for the vault's underlying asset.

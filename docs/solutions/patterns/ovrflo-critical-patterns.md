@@ -7,6 +7,9 @@ audience: [contributors, ai-agents]
 
 <!--
   Refresh log:
+  - 2026-07-01: Appended pattern #13 (sweepExcessPt must validate ptToken is
+    a registered PT) from the fuzz campaign GL-02 violation. The guard
+    prevents draining the wrap reserve when a non-PT address is passed.
   - 2026-06-29: Appended R-05 (protocol-level PT redemption rejected) from
     the claim redesign fork-test findings. Updated pattern #4 and #7 to
     reference pool-only functions after single-party lending removal.
@@ -784,6 +787,64 @@ rg "duplicate or unsorted ids" src/OVRFLOBook.sol
 ```
 
 **Documented in:** [`docs/solutions/design-patterns/solidity-batch-function-safety-patterns.md`](../design-patterns/solidity-batch-function-safety-patterns.md)
+
+---
+
+## 13. `sweepExcessPt` must validate that the passed address is a registered PT (ALWAYS REQUIRED)
+
+### ❌ WRONG (non-PT address drains the wrap reserve)
+
+```solidity
+function sweepExcessPt(address ptToken, address to) external onlyAdmin {
+    uint256 balance = IERC20(ptToken).balanceOf(address(this));
+    // ptToMarket[underlying] == address(0), so deposited == 0
+    uint256 deposited = marketTotalDeposited[ptToMarket[ptToken]];
+    uint256 excess = balance > deposited ? balance - deposited : 0;
+    // excess == entire underlying balance — wrap reserve drained
+    IERC20(ptToken).safeTransfer(to, excess);
+}
+```
+
+### ✅ CORRECT (reject non-PT addresses before computing excess)
+
+```solidity
+function sweepExcessPt(address ptToken, address to) external onlyAdmin {
+    require(ptToMarket[ptToken] != address(0), "OVRFLO: unknown PT");
+    uint256 balance = IERC20(ptToken).balanceOf(address(this));
+    uint256 deposited = marketTotalDeposited[ptToMarket[ptToken]];
+    uint256 excess = balance > deposited ? balance - deposited : 0;
+    require(excess > 0, "OVRFLO: no excess");
+    IERC20(ptToken).safeTransfer(to, excess);
+}
+```
+
+**Why:** `sweepExcessPt` uses `ptToMarket[ptToken]` to look up the deposited
+amount. If a non-PT address is passed (e.g. the underlying token), the lookup
+returns `address(0)` and `marketTotalDeposited[address(0)]` is 0, so the
+entire balance of that token is treated as "excess" and swept out. This
+drains the wrap reserve if the underlying address is passed. Note the
+asymmetry with `sweepExcessUnderlying`, which uses the immutable `underlying`
+address and correctly subtracts `wrappedUnderlying` — it cannot be
+mis-targeted.
+
+This is input validation on a token-transfer function, not redundant multisig
+checking. The multisig validates intent (should we sweep?); the contract
+validates input (is this actually a PT?). This is distinct from R-02 (rejected
+`to = address(0)` guard), which concerns the sweep *destination* — that remains
+trusted to the multisig.
+
+**Placement/Context:** `OVRFLO.sweepExcessPt` — the only sweep function that
+accepts a fuzzed token address. `sweepExcessUnderlying` is safe by construction
+(it uses the immutable `underlying`).
+
+**How to detect violation:**
+
+```bash
+rg "unknown PT" src/OVRFLO.sol
+# expected: 1 match in sweepExcessPt
+```
+
+**Documented in:** Fuzz campaign 2026-07-01 (GL-02 violation), `fizz_data/report.md`
 
 ---
 

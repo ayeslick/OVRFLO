@@ -52,6 +52,20 @@ The core solvency invariant is:
 ovrfloToken.totalSupply() == sum(marketTotalDeposited[market]) + wrappedUnderlying
 ```
 
+The combined asset-backing invariant is:
+
+```text
+ovrfloToken.totalSupply() <= underlying.balanceOf(vault) + ptToken.balanceOf(vault)
+```
+
+This is the real solvency condition. Individual checks (`wrappedUnderlying <=
+underlying.balanceOf`, `marketTotalDeposited <= ptToken.balanceOf`) are sufficient
+but not necessary: they hold pre-maturity (claim is blocked, no cross-exit possible)
+but can break post-maturity when ovrfloToken fungibility allows cross-exits (a
+wrapper claims PT, a depositor unwraps underlying). As long as the combined
+invariant holds, every holder can exit through some path (unwrap, claim, or DEX).
+See the fuzz campaign findings (GL-02, GL-55, GL-56) for the full analysis.
+
 The shipped invariant test currently checks the single-market case while interleaving deposits, claims, wraps, unwraps, and excess sweeps.
 
 `unwrap` capacity must come from the counter, not the token balance:
@@ -165,7 +179,7 @@ Keep these checks around any future change to this feature:
 - Unit test 1:1 unwrap burn, underlying return, reserve decrement, and `Unwrapped` event.
 - Unit test zero amounts, insufficient reserve, short-transfer underlying, donated underlying, shared reserve, reentrancy during unwrap, and factory sweep.
 - Invariant test `ovrfloToken.totalSupply() == marketTotalDeposited + wrappedUnderlying`.
-- Invariant test `wrappedUnderlying <= underlying.balanceOf(address(ovrflo))`.
+- Invariant test `totalSupply <= underlying.balanceOf(vault) + ptToken.balanceOf(vault)` (combined solvency; replaces the individual `wrappedUnderlying <= balance` check which is too strict post-maturity).
 - Fork test real wstETH round-trip and donation sweep.
 - Review that unwrap capacity never uses raw underlying `balanceOf`.
 - Review that every new mint/burn path preserves or deliberately updates the backing invariant.

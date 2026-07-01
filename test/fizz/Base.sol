@@ -1,0 +1,270 @@
+// SPDX-License-Identifier: MIT
+pragma solidity >=0.6.2 <0.9.0;
+
+import {Actor} from "./Actor.sol";
+import {Clamp} from "./utils/Clamp.sol";
+import {DecimalPrinter} from "./utils/DecimalPrinter.sol";
+import {Deployer} from "./utils/Deployer.sol";
+import {vm} from "./utils/Hevm.sol";
+import {Logger} from "./utils/Logger.sol";
+import {Math} from "./utils/Math.sol";
+import {MockERC20} from "./utils/MockERC20.sol";
+import {StringUtils} from "./utils/StringUtils.sol";
+import {EnumerableSet} from "./utils/EnumerableSet.sol";
+import {OVRFLO} from "../../../src/OVRFLO.sol";
+import {OVRFLOToken} from "../../../src/OVRFLOToken.sol";
+import {OVRFLOBook} from "../../../src/OVRFLOBook.sol";
+import {OVRFLOFactory} from "../../../src/OVRFLOFactory.sol";
+import {MockSablier} from "./mocks/MockSablier.sol";
+import {MockPendleOracle} from "./mocks/MockPendleOracle.sol";
+import {MockPendleMarket} from "./mocks/MockPendleMarket.sol";
+import {MockStandardizedYield} from "./mocks/MockStandardizedYield.sol";
+
+/// @notice Base contract with state variables and setup functions
+abstract contract Base is StringUtils, Clamp, Deployer, Math {
+    using DecimalPrinter for uint256;
+
+    string[] internal ACTOR_LABELS = ["Alice", "Bob", "Charlie"];
+    uint256 internal constant BLOCK_INTERVAL = 12 seconds;
+    uint256 internal constant INITIAL_ETH_BALANCE = 1_000 ether;
+    uint256 internal constant INITIAL_TOKEN_BALANCE = 10_000;
+
+    // ―――――――――――――――――――――――――― Ghosts ――――――――――――――――――――――――――
+
+    struct Ghosts {
+        // ID counter tracking (GL-15)
+        uint256 ghost_lastNextOfferId;
+        uint256 ghost_lastNextSaleListingId;
+        uint256 ghost_lastNextLoanId;
+        uint256 ghost_lastNextPoolId;
+        // Cumulative fee tracking (SP-17, SP-18, SP-19)
+        uint256 ghost_totalDepositFees;
+        uint256 ghost_totalFlashFees;
+        uint256 ghost_totalBookFees;
+        // Deposit tracking (SP-07, GL-51, SP-63)
+        uint256 ghost_lastToUser;
+        uint256 ghost_lastDepositPtAmount;
+        // Pricing tracking (GL-52, GL-54, GL-53)
+        uint256 ghost_lastGrossPrice;
+        uint128 ghost_lastGrossPriceRemaining;
+        uint256 ghost_lastGrossPriceTtm;
+        uint128 ghost_lastObligation;
+        uint256 ghost_lastObligationBorrowAmount;
+        // Entity ID tracking (SP-*)
+        uint256 ghost_lastPoolId;
+        uint256 ghost_lastLoanId;
+        uint256 ghost_lastOfferId;
+        uint256 ghost_lastListingId;
+        // Round-trip and fee tracking (SP-03, SP-17, SP-18, SP-19)
+        uint128 ghost_offerFundedCapacity;
+        uint256 ghost_depositFeePaid;
+        uint256 ghost_flashFeePaid;
+        uint256 ghost_bookFeePaid;
+        // Borrow tracking (SP-09, SP-10, SP-56)
+        uint128 ghost_borrowReceived;
+        uint128 ghost_repayPaid;
+        uint128 ghost_streamRemainingBeforeBorrow;
+        // Pool claim tracking (SP-20)
+        uint256 ghost_poolEntitlementSum;
+        // Stream tracking (for snapshots)
+        uint256 ghost_lastStreamId;
+    }
+
+    Ghosts internal ghosts;
+
+    // Mapping ghosts from the property plan
+    mapping(address => bool) internal ghost_hasDeposited;
+    mapping(address => bool) internal ghost_hasWrapped;
+    mapping(address => uint256) internal ghost_actorStartValue;
+
+    // Monotonicity ghost mappings (section 6 of plan)
+    mapping(uint256 => uint128) internal ghost_loanDrawnSnapshot;
+    mapping(uint256 => uint128) internal ghost_loanRepaidSnapshot;
+    mapping(uint256 => mapping(address => uint128)) internal ghost_poolReceivedSnapshot;
+
+    // One-way flag tracking (GL-11, GL-12, GL-13)
+    mapping(uint256 => bool) internal ghost_offerActiveSnapshot;
+    mapping(uint256 => bool) internal ghost_listingActiveSnapshot;
+    mapping(uint256 => bool) internal ghost_loanClosedSnapshot;
+    mapping(uint256 => bool) internal ghost_offerSeen;
+    mapping(uint256 => bool) internal ghost_listingSeen;
+    mapping(uint256 => bool) internal ghost_loanSeen;
+
+    // Immutability tracking (GL-33..GL-42)
+    mapping(uint256 => uint128) internal ghost_loanObligationInit;
+    mapping(uint256 => uint256) internal ghost_loanStreamIdInit;
+    mapping(uint256 => address) internal ghost_loanBorrowerInit;
+    mapping(uint256 => address) internal ghost_loanLenderInit;
+    mapping(uint256 => address) internal ghost_offerMakerInit;
+    mapping(uint256 => uint16) internal ghost_offerAprBpsInit;
+    mapping(uint256 => uint16) internal ghost_listingFeeBpsInit;
+    mapping(uint256 => bool) internal ghost_listingFeeRecorded;
+    mapping(uint256 => uint128) internal ghost_poolTotalContributedInit;
+    mapping(uint256 => uint128) internal ghost_poolTotalObligationInit;
+    mapping(uint256 => mapping(address => uint128)) internal ghost_poolContributionsInit;
+    mapping(address => address) internal ghost_seriesPtTokenInit;
+    mapping(address => uint256) internal ghost_seriesExpiryInit;
+    mapping(address => uint16) internal ghost_seriesFeeBpsInit;
+    mapping(address => address) internal ghost_ptToMarketInit;
+
+    // Factory counter tracking (GL-19, GL-20, GL-21)
+    uint256 internal ghost_lastOvrfloCount;
+    uint256 internal ghost_lastBookCount;
+    uint256 internal ghost_lastApprovedMarketCount;
+
+    // ―――――――――――――――――――――――――― Actors ――――――――――――――――――――――――――
+
+    address[] internal actors;
+    address internal actor;
+    address internal admin;
+
+    modifier asActor() virtual {
+        vm.startPrank(actor);
+        _;
+        vm.stopPrank();
+    }
+
+    modifier asAdmin() virtual {
+        vm.startPrank(admin);
+        _;
+        vm.stopPrank();
+    }
+
+    // ―――――――――――――――――――――――― Contracts ―――――――――――――――――――――――――
+
+    OVRFLOFactory public factory;
+    OVRFLO public vault;
+    OVRFLOToken public ovrfloToken;
+    OVRFLOBook public book;
+    MockERC20 public underlying;
+    MockERC20 public ptToken;
+    MockPendleOracle public mockOracle;
+    MockPendleMarket public mockMarket;
+    MockStandardizedYield public mockSY;
+    MockSablier public mockSablier;
+
+    address public treasury;
+    address public market;
+    address constant SABLIER_ADDR = 0xAFb979d9afAd1aD27C5eFf4E27226E3AB9e5dCC9;
+    uint32 constant TWAP_DURATION = 900; // 15 minutes
+    uint256 constant INITIAL_TOKEN_AMOUNT = 1_000_000 ether;
+
+    // ―――――――――――――――――――――――――― Setup ―――――――――――――――――――――――――――
+
+    function setup() internal {
+        // 1. Deploy mock tokens
+        underlying = new MockERC20(address(this), 0, "Underlying", "UND", 18);
+        ptToken = new MockERC20(address(this), 0, "Pendle PT", "PPT", 18);
+
+        // 2. Deploy mock infrastructure
+        mockOracle = new MockPendleOracle();
+        mockSY = new MockStandardizedYield(address(underlying));
+        mockMarket = new MockPendleMarket(block.timestamp + 365 days, address(mockSY), address(ptToken), address(0));
+        mockSablier = new MockSablier();
+        market = address(mockMarket);
+
+        // 3. Place mock Sablier at the hardcoded address OVRFLO expects
+        vm.etch(SABLIER_ADDR, address(mockSablier).code);
+
+        // 4. Deploy factory (admin = address(this))
+        factory = new OVRFLOFactory(address(this), address(mockOracle));
+
+        // 5. Configure and deploy vault
+        treasury = address(this);
+        vm.label(treasury, "Treasury");
+        factory.configureDeployment(treasury, address(underlying), "TEST", "TST");
+        (address vaultAddr, address tokenAddr) = factory.deploy();
+        vault = OVRFLO(vaultAddr);
+        ovrfloToken = OVRFLOToken(tokenAddr);
+        vm.label(vaultAddr, "OVRFLO Vault");
+        vm.label(tokenAddr, "ovrfloToken");
+
+        // 6. Add market (15 min TWAP, 0.1% deposit fee)
+        factory.prepareOracle(market, TWAP_DURATION);
+        factory.addMarket(vaultAddr, market, TWAP_DURATION, 10);
+        vm.label(market, "MockPendleMarket");
+
+        // 7. Deploy book
+        address bookAddr = factory.deployBook(vaultAddr);
+        book = OVRFLOBook(bookAddr);
+        vm.label(bookAddr, "OVRFLOBook");
+
+        // 8. Configure limits and bounds
+        factory.setMarketDepositLimit(vaultAddr, market, type(uint256).max);
+        factory.setBookAprBounds(bookAddr, 0, 10_000); // 0% to 100% APR
+        factory.setBookFee(bookAddr, 0); // 0% book fee
+
+        // Fund this contract for Actor creation (Medusa doesn't fund during construction)
+        vm.deal(address(this), INITIAL_ETH_BALANCE * ACTOR_LABELS.length);
+
+        setupActors();
+    }
+
+    function setupActors() internal {
+        admin = address(this);
+        vm.label(admin, "Admin");
+
+		for (uint256 i; i < ACTOR_LABELS.length; i++) {
+			address _actor = address(new Actor{value: INITIAL_ETH_BALANCE}());
+            actors.push(_actor);
+            if (ACTOR_LABELS.length > i) {
+                vm.label(_actor, ACTOR_LABELS[i]);
+            }
+            // Mint tokens to actor
+            underlying.deal(_actor, INITIAL_TOKEN_AMOUNT);
+            ptToken.deal(_actor, INITIAL_TOKEN_AMOUNT);
+            // Set approvals: vault (deposit + wrap), book (postOffer + buyListing + repayLoan)
+            vm.startPrank(_actor);
+            ptToken.approve(address(vault), type(uint256).max);
+            underlying.approve(address(vault), type(uint256).max);
+            underlying.approve(address(book), type(uint256).max);
+            ovrfloToken.approve(address(book), type(uint256).max);
+            vm.stopPrank();
+		}
+        actor = actors[0];
+    }
+
+    // ――――――――――――――――――――――――― Helpers ――――――――――――――――――――――――――
+
+    // Maps an arbitrary address to an actor address
+    function toActor(address addy) internal view returns (address) {
+        return actors[uint256(uint160(addy)) % actors.length];
+    }
+
+    // Maps an arbitrary address to an actor address that is different from the current actor
+    function toActorNotCurrent(address addy) internal view returns (address) {
+        address _actor = actors[uint256(uint160(addy)) % actors.length];
+        if (_actor == actor) {
+            _actor = actors[(uint256(uint160(addy)) + 1) % actors.length];
+        }
+        return _actor;
+    }
+
+    // Sums the native token balances of all actors
+    function sumActorsBalances() internal view returns (uint256 sumOfBalances) {
+        for (uint256 i; i < actors.length; i++) {
+            sumOfBalances += actors[i].balance;
+        }
+    }
+
+    // Sums the ERC-20 token balances of all actors for a given token
+    function sumActorsERC20Balances(address _token) internal view returns (uint256 sumOfBalances) {
+        for (uint256 i; i < actors.length; i++) {
+            bytes memory data = abi.encodeWithSignature("balanceOf(address)", actors[i]);
+            (bool success, bytes memory result) = _token.staticcall(data);
+            require(success, "sumActorsERC20Balances: failed to get balance");
+            sumOfBalances += abi.decode(result, (uint256));
+        }
+    }
+
+    function skipBlocks(uint256 blocks) internal {
+        vm.roll(block.number + blocks);
+        vm.warp(block.timestamp + blocks * BLOCK_INTERVAL);
+    }
+
+    function skipTime(uint256 time) internal {
+        uint256 blocks = (time + BLOCK_INTERVAL - 1) / BLOCK_INTERVAL;
+        vm.roll(block.number + blocks);
+        vm.warp(block.timestamp + time);
+    }
+}

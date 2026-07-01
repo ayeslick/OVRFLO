@@ -282,6 +282,7 @@ contract OVRFLO is ReentrancyGuard {
     /// @param ptToken The PT token address to sweep
     /// @param to The recipient address
     function sweepExcessPt(address ptToken, address to) external onlyAdmin {
+        require(ptToMarket[ptToken] != address(0), "OVRFLO: unknown PT");
         uint256 balance = IERC20(ptToken).balanceOf(address(this));
         uint256 deposited = marketTotalDeposited[ptToMarket[ptToken]];
         uint256 excess = balance > deposited ? balance - deposited : 0;

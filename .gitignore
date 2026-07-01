@@ -43,3 +43,9 @@ BASE_SECURITY.md
 CLAUDE.md 
 AGENTS.md
 .cursor/
+
+# Fuzz build artifacts (regenerated per run)
+fizz_data/crytic-export/
+fizz_data/corpus_medusa/coverage/
+fizz_data/corpus_medusa/call_sequences/
+fizz_data/slither_results.json

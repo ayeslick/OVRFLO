@@ -1,0 +1,1428 @@
+{
+  "version": 1,
+  "createdAt": "2026-07-01T21:00:53.083Z",
+  "projectRoot": ".",
+  "suiteDir": "test/fizz",
+  "metaDir": "fizz_data",
+  "contracts": [
+    {
+      "name": "OVRFLO",
+      "sourcePath": "src/OVRFLO.sol",
+      "sourceHash": "sha256:fce631888c81770ccd11e70a4ec55500a4c77dc94984ce8c5ea0f90b76821e3c",
+      "constructor": {
+        "inputs": [
+          {
+            "name": "admin",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "treasury",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "_underlying",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "_ovrfloToken",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "_oracle",
+            "type": "address",
+            "internalType": "address"
+          }
+        ],
+        "stateMutability": "nonpayable"
+      },
+      "functions": [
+        {
+          "name": "claim",
+          "inputs": [
+            {
+              "name": "ptToken",
+              "type": "address",
+              "internalType": "address"
+            },
+            {
+              "name": "amount",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ],
+          "stateMutability": "nonpayable",
+          "tier": "primary",
+          "signature": "claim(address,uint256)"
+        },
+        {
+          "name": "deposit",
+          "inputs": [
+            {
+              "name": "market",
+              "type": "address",
+              "internalType": "address"
+            },
+            {
+              "name": "ptAmount",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "minToUser",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ],
+          "stateMutability": "nonpayable",
+          "tier": "primary",
+          "signature": "deposit(address,uint256,uint256)"
+        },
+        {
+          "name": "flashLoan",
+          "inputs": [
+            {
+              "name": "ptToken",
+              "type": "address",
+              "internalType": "address"
+            },
+            {
+              "name": "amount",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "data",
+              "type": "bytes",
+              "internalType": "bytes"
+            }
+          ],
+          "stateMutability": "nonpayable",
+          "tier": "primary",
+          "signature": "flashLoan(address,uint256,bytes)"
+        },
+        {
+          "name": "setFlashFeeBps",
+          "inputs": [
+            {
+              "name": "feeBps",
+              "type": "uint16",
+              "internalType": "uint16"
+            }
+          ],
+          "stateMutability": "nonpayable",
+          "tier": "secondary",
+          "signature": "setFlashFeeBps(uint16)"
+        },
+        {
+          "name": "setFlashLoanPaused",
+          "inputs": [
+            {
+              "name": "paused",
+              "type": "bool",
+              "internalType": "bool"
+            }
+          ],
+          "stateMutability": "nonpayable",
+          "tier": "secondary",
+          "signature": "setFlashLoanPaused(bool)"
+        },
+        {
+          "name": "setMarketDepositLimit",
+          "inputs": [
+            {
+              "name": "market",
+              "type": "address",
+              "internalType": "address"
+            },
+            {
+              "name": "limit",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ],
+          "stateMutability": "nonpayable",
+          "tier": "secondary",
+          "signature": "setMarketDepositLimit(address,uint256)"
+        },
+        {
+          "name": "setSeriesApproved",
+          "inputs": [
+            {
+              "name": "market",
+              "type": "address",
+              "internalType": "address"
+            },
+            {
+              "name": "pt",
+              "type": "address",
+              "internalType": "address"
+            },
+            {
+              "name": "twapDuration",
+              "type": "uint32",
+              "internalType": "uint32"
+            },
+            {
+              "name": "expiry",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "feeBps",
+              "type": "uint16",
+              "internalType": "uint16"
+            }
+          ],
+          "stateMutability": "nonpayable",
+          "tier": "primary",
+          "signature": "setSeriesApproved(address,address,uint32,uint256,uint16)"
+        },
+        {
+          "name": "sweepExcessPt",
+          "inputs": [
+            {
+              "name": "ptToken",
+              "type": "address",
+              "internalType": "address"
+            },
+            {
+              "name": "to",
+              "type": "address",
+              "internalType": "address"
+            }
+          ],
+          "stateMutability": "nonpayable",
+          "tier": "secondary",
+          "signature": "sweepExcessPt(address,address)"
+        },
+        {
+          "name": "sweepExcessUnderlying",
+          "inputs": [
+            {
+              "name": "to",
+              "type": "address",
+              "internalType": "address"
+            }
+          ],
+          "stateMutability": "nonpayable",
+          "tier": "secondary",
+          "signature": "sweepExcessUnderlying(address)"
+        },
+        {
+          "name": "unwrap",
+          "inputs": [
+            {
+              "name": "amount",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ],
+          "stateMutability": "nonpayable",
+          "tier": "primary",
+          "signature": "unwrap(uint256)"
+        },
+        {
+          "name": "wrap",
+          "inputs": [
+            {
+              "name": "amount",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ],
+          "stateMutability": "nonpayable",
+          "tier": "primary",
+          "signature": "wrap(uint256)"
+        }
+      ]
+    },
+    {
+      "name": "OVRFLOBook",
+      "sourcePath": "src/OVRFLOBook.sol",
+      "sourceHash": "sha256:4bfa5ccf9a7ee91329a4bc944f106d18c3424a797b695682e7a4b280b6bd8c21",
+      "constructor": {
+        "inputs": [
+          {
+            "name": "factory_",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "core_",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "sablier_",
+            "type": "address",
+            "internalType": "address"
+          }
+        ],
+        "stateMutability": "nonpayable"
+      },
+      "functions": [
+        {
+          "name": "acceptOwnership",
+          "inputs": [],
+          "stateMutability": "nonpayable",
+          "tier": "primary",
+          "signature": "acceptOwnership()"
+        },
+        {
+          "name": "buyListing",
+          "inputs": [
+            {
+              "name": "listingId",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "maxPriceIn",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ],
+          "stateMutability": "nonpayable",
+          "tier": "primary",
+          "signature": "buyListing(uint256,uint256)"
+        },
+        {
+          "name": "cancelOffer",
+          "inputs": [
+            {
+              "name": "offerId",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ],
+          "stateMutability": "nonpayable",
+          "tier": "primary",
+          "signature": "cancelOffer(uint256)"
+        },
+        {
+          "name": "cancelSaleListing",
+          "inputs": [
+            {
+              "name": "listingId",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ],
+          "stateMutability": "nonpayable",
+          "tier": "primary",
+          "signature": "cancelSaleListing(uint256)"
+        },
+        {
+          "name": "claimPoolShare",
+          "inputs": [
+            {
+              "name": "poolId",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "amount",
+              "type": "uint128",
+              "internalType": "uint128"
+            }
+          ],
+          "stateMutability": "nonpayable",
+          "tier": "primary",
+          "signature": "claimPoolShare(uint256,uint128)"
+        },
+        {
+          "name": "closeLoan",
+          "inputs": [
+            {
+              "name": "loanId",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ],
+          "stateMutability": "nonpayable",
+          "tier": "primary",
+          "signature": "closeLoan(uint256)"
+        },
+        {
+          "name": "createBorrowPool",
+          "inputs": [
+            {
+              "name": "offerIds",
+              "type": "array",
+              "internalType": "uint256[]"
+            },
+            {
+              "name": "streamId",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "targetBorrow",
+              "type": "uint128",
+              "internalType": "uint128"
+            },
+            {
+              "name": "minAcceptable",
+              "type": "uint128",
+              "internalType": "uint128"
+            }
+          ],
+          "stateMutability": "nonpayable",
+          "tier": "primary",
+          "signature": "createBorrowPool(uint256[],uint256,uint128,uint128)"
+        },
+        {
+          "name": "multicall",
+          "inputs": [
+            {
+              "name": "data",
+              "type": "array",
+              "internalType": "bytes[]"
+            }
+          ],
+          "stateMutability": "nonpayable",
+          "tier": "secondary",
+          "signature": "multicall(bytes[])"
+        },
+        {
+          "name": "poolClaimLoan",
+          "inputs": [
+            {
+              "name": "poolId",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "amount",
+              "type": "uint128",
+              "internalType": "uint128"
+            }
+          ],
+          "stateMutability": "nonpayable",
+          "tier": "primary",
+          "signature": "poolClaimLoan(uint256,uint128)"
+        },
+        {
+          "name": "postOffer",
+          "inputs": [
+            {
+              "name": "market",
+              "type": "address",
+              "internalType": "address"
+            },
+            {
+              "name": "aprBps",
+              "type": "uint16",
+              "internalType": "uint16"
+            },
+            {
+              "name": "capacity",
+              "type": "uint128",
+              "internalType": "uint128"
+            }
+          ],
+          "stateMutability": "nonpayable",
+          "tier": "primary",
+          "signature": "postOffer(address,uint16,uint128)"
+        },
+        {
+          "name": "postSaleListing",
+          "inputs": [
+            {
+              "name": "market",
+              "type": "address",
+              "internalType": "address"
+            },
+            {
+              "name": "streamId",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "aprBps",
+              "type": "uint16",
+              "internalType": "uint16"
+            }
+          ],
+          "stateMutability": "nonpayable",
+          "tier": "primary",
+          "signature": "postSaleListing(address,uint256,uint16)"
+        },
+        {
+          "name": "renounceOwnership",
+          "inputs": [],
+          "stateMutability": "nonpayable",
+          "tier": "primary",
+          "signature": "renounceOwnership()"
+        },
+        {
+          "name": "repayLoan",
+          "inputs": [
+            {
+              "name": "loanId",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "amount",
+              "type": "uint128",
+              "internalType": "uint128"
+            }
+          ],
+          "stateMutability": "nonpayable",
+          "tier": "primary",
+          "signature": "repayLoan(uint256,uint128)"
+        },
+        {
+          "name": "sellIntoOffer",
+          "inputs": [
+            {
+              "name": "offerId",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "streamId",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "minNetOut",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ],
+          "stateMutability": "nonpayable",
+          "tier": "primary",
+          "signature": "sellIntoOffer(uint256,uint256,uint256)"
+        },
+        {
+          "name": "setAprBounds",
+          "inputs": [
+            {
+              "name": "aprMinBps_",
+              "type": "uint16",
+              "internalType": "uint16"
+            },
+            {
+              "name": "aprMaxBps_",
+              "type": "uint16",
+              "internalType": "uint16"
+            }
+          ],
+          "stateMutability": "nonpayable",
+          "tier": "secondary",
+          "signature": "setAprBounds(uint16,uint16)"
+        },
+        {
+          "name": "setFee",
+          "inputs": [
+            {
+              "name": "feeBps_",
+              "type": "uint16",
+              "internalType": "uint16"
+            }
+          ],
+          "stateMutability": "nonpayable",
+          "tier": "secondary",
+          "signature": "setFee(uint16)"
+        },
+        {
+          "name": "setTreasury",
+          "inputs": [
+            {
+              "name": "treasury_",
+              "type": "address",
+              "internalType": "address"
+            }
+          ],
+          "stateMutability": "nonpayable",
+          "tier": "primary",
+          "signature": "setTreasury(address)"
+        },
+        {
+          "name": "transferOwnership",
+          "inputs": [
+            {
+              "name": "newOwner",
+              "type": "address",
+              "internalType": "address"
+            }
+          ],
+          "stateMutability": "nonpayable",
+          "tier": "primary",
+          "signature": "transferOwnership(address)"
+        }
+      ]
+    }
+  ],
+  "handlers": {
+    "Handlers.sol": "sha256:da8ddcad82451508fc9195283e8f958afed5ffe8832b66a92ee6f2f699c1535d",
+    "OVRFLOBookHandler.sol": "sha256:8b27b036f699549e51c7d772cb45e059ce9958dd24c30178abf799596e9d651f",
+    "OVRFLOHandler.sol": "sha256:f75c7840f91b2e2674c3a2d48c50311d5d3e07d54770acdb57e4daa5b8618808"
+  },
+  "properties": [
+    {
+      "id": "GL-01",
+      "checkbox": "x",
+      "functionName": "property_totalSupply_eq_mtd_plus_wrapped",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "GL-02",
+      "checkbox": "x",
+      "functionName": "property_wrapped_le_balance",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "GL-03",
+      "checkbox": "x",
+      "functionName": "property_mtd_le_pt_balance",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "GL-04",
+      "checkbox": "x",
+      "functionName": "property_pool_proceeds_le_token_bal",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "GL-05",
+      "checkbox": "x",
+      "functionName": "property_offer_capacity_le_underlying_bal",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "GL-06",
+      "checkbox": "-",
+      "functionName": null,
+      "file": null
+    },
+    {
+      "id": "GL-07",
+      "checkbox": "-",
+      "functionName": null,
+      "file": null
+    },
+    {
+      "id": "GL-08",
+      "checkbox": "x",
+      "functionName": "property_drawn_repaid_le_obligation",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "GL-09",
+      "checkbox": "x",
+      "functionName": "property_pool_proceeds_le_obligation",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "GL-10",
+      "checkbox": "x",
+      "functionName": "property_loan_obligation_eq_pool",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "GL-60",
+      "checkbox": "x",
+      "functionName": "property_total_supply_eq_holder_sum",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "GL-55",
+      "checkbox": "x",
+      "functionName": "property_pure_wrapper_can_unwrap",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "GL-56",
+      "checkbox": "x",
+      "functionName": "property_depositor_can_claim",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "GL-57",
+      "checkbox": "-",
+      "functionName": null,
+      "file": null
+    },
+    {
+      "id": "GL-59",
+      "checkbox": "x",
+      "functionName": "property_no_orphaned_wrap_reserve",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "GL-63",
+      "checkbox": "x",
+      "functionName": "property_sum_outstanding_le_remaining",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "GL-58",
+      "checkbox": "x",
+      "functionName": "property_zero_state_after_withdraw",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "GL-11",
+      "checkbox": "x",
+      "functionName": "property_offer_active_no_revival",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "GL-12",
+      "checkbox": "x",
+      "functionName": "property_listing_active_no_revival",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "GL-13",
+      "checkbox": "x",
+      "functionName": "property_loan_closed_no_revival",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "GL-14",
+      "checkbox": "x",
+      "functionName": "property_pool_active_always",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "GL-15",
+      "checkbox": "x",
+      "functionName": "property_id_counters_monotonic",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "GL-19",
+      "checkbox": "x",
+      "functionName": "property_ovrflo_count_monotonic",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "GL-20",
+      "checkbox": "x",
+      "functionName": "property_book_count_monotonic",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "GL-21",
+      "checkbox": "x",
+      "functionName": "property_approved_market_count_monotonic",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "GL-16",
+      "checkbox": "x",
+      "functionName": "property_drawn_monotonic",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "GL-17",
+      "checkbox": "x",
+      "functionName": "property_repaid_monotonic",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "GL-18",
+      "checkbox": "x",
+      "functionName": "property_pool_received_monotonic",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "GL-22",
+      "checkbox": "x",
+      "functionName": "property_pool_exists_iff_pool_loan_id",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "GL-23",
+      "checkbox": "x",
+      "functionName": "property_loan_exists_iff_loan_pool_id",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "GL-24",
+      "checkbox": "x",
+      "functionName": "property_pool_loan_id_iff_loan_pool_id",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "GL-25",
+      "checkbox": "x",
+      "functionName": "property_offer_slot_iff_id",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "GL-26",
+      "checkbox": "x",
+      "functionName": "property_loan_slot_iff_id",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "GL-27",
+      "checkbox": "x",
+      "functionName": "property_pool_slot_iff_id",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "GL-28",
+      "checkbox": "x",
+      "functionName": "property_listing_slot_iff_id",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "GL-29",
+      "checkbox": "x",
+      "functionName": "property_underlying_to_ovrflo_oneshot",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "GL-30",
+      "checkbox": "x",
+      "functionName": "property_ovrflo_to_book_iff",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "GL-31",
+      "checkbox": "x",
+      "functionName": "property_closed_implies_satisfied",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "GL-32",
+      "checkbox": "x",
+      "functionName": "property_offer_active_iff_capacity",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "GL-33",
+      "checkbox": "x",
+      "functionName": "property_loan_obligation_immutable",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "GL-34",
+      "checkbox": "x",
+      "functionName": "property_loan_stream_id_immutable",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "GL-35",
+      "checkbox": "x",
+      "functionName": "property_loan_parties_immutable",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "GL-36",
+      "checkbox": "x",
+      "functionName": "property_offer_maker_apr_immutable",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "GL-37",
+      "checkbox": "x",
+      "functionName": "property_listing_fee_immutable",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "GL-38",
+      "checkbox": "x",
+      "functionName": "property_pool_total_contributed_immutable",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "GL-39",
+      "checkbox": "x",
+      "functionName": "property_pool_total_obligation_immutable",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "GL-40",
+      "checkbox": "x",
+      "functionName": "property_pool_contributions_immutable",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "GL-41",
+      "checkbox": "x",
+      "functionName": "property_series_immutable",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "GL-42",
+      "checkbox": "x",
+      "functionName": "property_pt_to_market_immutable",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "GL-43",
+      "checkbox": "x",
+      "functionName": "property_gross_price_floors",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "GL-44",
+      "checkbox": "x",
+      "functionName": "property_obligation_ceils",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "GL-45",
+      "checkbox": "x",
+      "functionName": "property_factor_ge_wad",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "GL-46",
+      "checkbox": "x",
+      "functionName": "property_wrap_zero_reverts",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "GL-47",
+      "checkbox": "x",
+      "functionName": "property_unwrap_zero_reverts",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "GL-48",
+      "checkbox": "x",
+      "functionName": "property_deposit_min_reverts",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "GL-49",
+      "checkbox": "x",
+      "functionName": "property_claim_zero_reverts",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "GL-50",
+      "checkbox": "x",
+      "functionName": "property_post_offer_zero_reverts",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "GL-51",
+      "checkbox": "x",
+      "functionName": "property_touser_monotonic",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "GL-52",
+      "checkbox": "x",
+      "functionName": "property_gross_price_monotonic_remaining",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "GL-53",
+      "checkbox": "x",
+      "functionName": "property_obligation_monotonic_borrow",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "GL-54",
+      "checkbox": "x",
+      "functionName": "property_gross_price_nonincreasing_ttm",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "GL-61",
+      "checkbox": "-",
+      "functionName": null,
+      "file": null
+    },
+    {
+      "id": "GL-62",
+      "checkbox": "-",
+      "functionName": null,
+      "file": null
+    },
+    {
+      "id": "SP-01",
+      "checkbox": "x",
+      "functionName": null,
+      "file": null
+    },
+    {
+      "id": "SP-02",
+      "checkbox": "x",
+      "functionName": "roundTrip_unwrapWrap",
+      "file": "test/fizz/handlers/OVRFLOHandler.sol"
+    },
+    {
+      "id": "SP-03",
+      "checkbox": "x",
+      "functionName": "roundTrip_postOfferCancel",
+      "file": "test/fizz/handlers/OVRFLOBookHandler.sol"
+    },
+    {
+      "id": "SP-04",
+      "checkbox": "x",
+      "functionName": "roundTrip_postListingCancel",
+      "file": "test/fizz/handlers/OVRFLOBookHandler.sol"
+    },
+    {
+      "id": "SP-05",
+      "checkbox": "x",
+      "functionName": null,
+      "file": null
+    },
+    {
+      "id": "SP-06",
+      "checkbox": "x",
+      "functionName": null,
+      "file": null
+    },
+    {
+      "id": "SP-25",
+      "checkbox": "x",
+      "functionName": "property_poolConservation",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "SP-07",
+      "checkbox": "x",
+      "functionName": "property_depositConservesSplit",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "SP-11",
+      "checkbox": "x",
+      "functionName": "property_previewDepositMatches",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "SP-12",
+      "checkbox": "x",
+      "functionName": "property_previewStreamMatches",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "SP-14",
+      "checkbox": "x",
+      "functionName": "property_claimExactOneToOne",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "SP-16",
+      "checkbox": "x",
+      "functionName": "property_depositToUserCapped",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "SP-17",
+      "checkbox": "x",
+      "functionName": "property_depositFeeFloored",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "SP-26",
+      "checkbox": "x",
+      "functionName": "property_depositIncreasesMtd",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "SP-27",
+      "checkbox": "x",
+      "functionName": "property_depositWrappedUnchanged",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "SP-28",
+      "checkbox": "x",
+      "functionName": "property_depositPreMaturity",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "SP-62",
+      "checkbox": "-",
+      "functionName": null,
+      "file": null
+    },
+    {
+      "id": "SP-63",
+      "checkbox": "x",
+      "functionName": "property_noShareInflation",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "SP-76",
+      "checkbox": "x",
+      "functionName": "property_lowLimitNoBrickClaim",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "SP-29",
+      "checkbox": "x",
+      "functionName": "property_claimDecreasesMtd",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "SP-30",
+      "checkbox": "x",
+      "functionName": "property_claimPostMaturity",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "SP-31",
+      "checkbox": "x",
+      "functionName": "property_claimWrappedUnchanged",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "SP-61",
+      "checkbox": "x",
+      "functionName": null,
+      "file": null
+    },
+    {
+      "id": "SP-32",
+      "checkbox": "x",
+      "functionName": "property_wrapIncreasesWrapped",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "SP-33",
+      "checkbox": "x",
+      "functionName": "property_unwrapDecreasesWrapped",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "SP-34",
+      "checkbox": "x",
+      "functionName": "property_wrapMtdUnchanged",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "SP-35",
+      "checkbox": "x",
+      "functionName": "property_unwrapMtdUnchanged",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "SP-08",
+      "checkbox": "x",
+      "functionName": "property_flashLoanAtomicRepay",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "SP-18",
+      "checkbox": "x",
+      "functionName": "property_flashLoanFeeFloored",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "SP-36",
+      "checkbox": "x",
+      "functionName": "property_flashLoanMtdUnchanged",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "SP-37",
+      "checkbox": "x",
+      "functionName": "property_flashLoanPreMaturity",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "SP-38",
+      "checkbox": "x",
+      "functionName": "property_flashLoanWrappedUnchanged",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "SP-64",
+      "checkbox": "x",
+      "functionName": "property_flashLoanNoFreeProfit",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "SP-39",
+      "checkbox": "x",
+      "functionName": "property_sweepExcessPtMtdUnchanged",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "SP-40",
+      "checkbox": "x",
+      "functionName": "property_sweepExcessUnderlyingWrappedUnchanged",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "SP-41",
+      "checkbox": "x",
+      "functionName": "property_setFlashFeeBpsCorrect",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "SP-42",
+      "checkbox": "x",
+      "functionName": "property_setFlashLoanPausedCorrect",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "SP-43",
+      "checkbox": "x",
+      "functionName": "property_postOfferIdIncrements",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "SP-44",
+      "checkbox": "x",
+      "functionName": "property_postOfferNewOfferActive",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "SP-45",
+      "checkbox": "x",
+      "functionName": "property_cancelOfferInactive",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "SP-46",
+      "checkbox": "x",
+      "functionName": "property_sellIntoOfferCapacityDecreases",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "SP-71",
+      "checkbox": "x",
+      "functionName": "property_nonMakerCannotCancelListing",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "SP-75",
+      "checkbox": "-",
+      "functionName": null,
+      "file": null
+    },
+    {
+      "id": "SP-47",
+      "checkbox": "x",
+      "functionName": "property_postListingIdIncrements",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "SP-48",
+      "checkbox": "x",
+      "functionName": "property_postListingActiveFeeSnapshotted",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "SP-49",
+      "checkbox": "x",
+      "functionName": "property_cancelSaleListingInactive",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "SP-50",
+      "checkbox": "x",
+      "functionName": "property_buyListingInactive",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "SP-19",
+      "checkbox": "x",
+      "functionName": "property_bookFeeFlooredWithBps",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "SP-09",
+      "checkbox": "x",
+      "functionName": "property_obligationGeBorrow",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "SP-10",
+      "checkbox": "x",
+      "functionName": "property_obligationLeRemaining",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "SP-13",
+      "checkbox": "x",
+      "functionName": "property_quoteMatchesObligation",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "SP-15",
+      "checkbox": "x",
+      "functionName": "property_fullBorrowFastPath",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "SP-22",
+      "checkbox": "x",
+      "functionName": "property_poolContributionsSum",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "SP-23",
+      "checkbox": "x",
+      "functionName": "property_poolReceivedLeTotalObligation",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "SP-24",
+      "checkbox": "x",
+      "functionName": "property_poolReceivedLeEntitlement",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "SP-51",
+      "checkbox": "x",
+      "functionName": "property_createPoolIdIncrements",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "SP-52",
+      "checkbox": "x",
+      "functionName": "property_createPoolLoanState",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "SP-53",
+      "checkbox": "x",
+      "functionName": "property_createPoolContributionsSet",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "SP-66",
+      "checkbox": "-",
+      "functionName": null,
+      "file": null
+    },
+    {
+      "id": "SP-67",
+      "checkbox": "-",
+      "functionName": null,
+      "file": null
+    },
+    {
+      "id": "SP-77",
+      "checkbox": "x",
+      "functionName": "property_noSelfMatch",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "SP-78",
+      "checkbox": "x",
+      "functionName": "property_noLoanOnZeroRemaining",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "SP-79",
+      "checkbox": "x",
+      "functionName": "property_borrowAmountLeGrossPrice",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "SP-80",
+      "checkbox": "x",
+      "functionName": "property_offerIdsStrictlyIncreasing",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "SP-21",
+      "checkbox": "x",
+      "functionName": "property_repayLoanExactCheck",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "SP-54",
+      "checkbox": "x",
+      "functionName": "property_closeLoanDrawnIncreases",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "SP-55",
+      "checkbox": "x",
+      "functionName": "property_closeLoanOutstandingZero",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "SP-56",
+      "checkbox": "x",
+      "functionName": "property_repayLoanRepaidIncreases",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "SP-57",
+      "checkbox": "x",
+      "functionName": "property_repayLoanClosedIff",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "SP-58",
+      "checkbox": "x",
+      "functionName": "property_poolClaimLoanDrawnIncreases",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "SP-59",
+      "checkbox": "x",
+      "functionName": "property_poolClaimLoanProceedsUnchanged",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "SP-60",
+      "checkbox": "x",
+      "functionName": "property_claimPoolShareReceivedIncreases",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "SP-72",
+      "checkbox": "x",
+      "functionName": "property_nonBorrowerCannotRepay",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "SP-74",
+      "checkbox": "-",
+      "functionName": null,
+      "file": null
+    },
+    {
+      "id": "SP-20",
+      "checkbox": "x",
+      "functionName": "property_proRataEntitlementFloored",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "SP-69",
+      "checkbox": "x",
+      "functionName": "property_nonAdminCannotCallVaultAdmin",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "SP-70",
+      "checkbox": "x",
+      "functionName": "property_nonOwnerCannotCallBookAdmin",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "SP-73",
+      "checkbox": "x",
+      "functionName": "property_streamOwnerOnly",
+      "file": "test/fizz/Properties.sol"
+    },
+    {
+      "id": "SP-65",
+      "checkbox": "-",
+      "functionName": null,
+      "file": null
+    },
+    {
+      "id": "SP-68",
+      "checkbox": "-",
+      "functionName": null,
+      "file": null
+    }
+  ]
+}

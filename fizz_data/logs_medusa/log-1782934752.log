@@ -1,0 +1,117 @@
+⇾ Compiling targets with crytic-compile
+⇾ Running command:
+/opt/homebrew/bin/crytic-compile . --export-format solc --export-dir fizz_data/crytic-export --foundry-compile-all
+⇾ Finished compiling targets in 14s
+⇾ artifacts: Medusa is running against a new set of build artifacts
+⇾ Using cached Slither results found at fizz_data/slither_results.json
+⇾ Running with a timeout of 300 seconds
+⇾ Setting up test chain
+⇾ Finished setting up test chain
+⇾ Creating corpus...
+⇾ Fuzzing with 10 workers
+⇾ [NOT STARTED] Assertion Test: FuzzTester.oVRFLO_flashLoan_clamped(address,uint256,bytes)
+⇾ [NOT STARTED] Assertion Test: FuzzTester.oVRFLOBook_cancelOffer(uint256)
+⇾ fuzz: elapsed:       0s, calls:          0 (     0/sec), seq/s:      0, branches:    835, corpus:     0, failures: 0/0, gas/s:            0
+⇾ [NOT STARTED] Assertion Test: FuzzTester.oVRFLOBook_closeLoan_clamped(uint256)
+⇾ [NOT STARTED] Assertion Test: FuzzTester.oVRFLO_wrap(uint256)
+⇾ [NOT STARTED] Assertion Test: FuzzTester.oVRFLO_wrap_clamped(uint256)
+⇾ [NOT STARTED] Assertion Test: FuzzTester.ovrfloToken()
+⇾ [NOT STARTED] Assertion Test: FuzzTester.oVRFLOBook_postSaleListing_clamped(address,uint256,uint16)
+⇾ [NOT STARTED] Assertion Test: FuzzTester.oVRFLOBook_secondary(uint8,uint256,uint256)
+⇾ [NOT STARTED] Assertion Test: FuzzTester.oVRFLOBook_sellIntoOffer_clamped(uint256,uint256,uint256)
+⇾ [NOT STARTED] Assertion Test: FuzzTester.oVRFLO_claim_clamped(address,uint256)
+⇾ [NOT STARTED] Assertion Test: FuzzTester.market()
+⇾ [NOT STARTED] Assertion Test: FuzzTester.mockMarket()
+⇾ [NOT STARTED] Assertion Test: FuzzTester.oVRFLOBook_cancelOffer_clamped(uint256)
+⇾ [NOT STARTED] Assertion Test: FuzzTester.oVRFLOBook_cancelSaleListing_clamped(uint256)
+⇾ [NOT STARTED] Assertion Test: FuzzTester.oVRFLOBook_claimPoolShare(uint256,uint128)
+⇾ [NOT STARTED] Assertion Test: FuzzTester.oVRFLO_claim(address,uint256)
+⇾ [NOT STARTED] Assertion Test: FuzzTester.oVRFLO_unwrap_clamped(uint256)
+⇾ [NOT STARTED] Assertion Test: FuzzTester.vault()
+⇾ [NOT STARTED] Assertion Test: FuzzTester.mockOracle()
+⇾ [NOT STARTED] Assertion Test: FuzzTester.oVRFLOBook_buyListing(uint256,uint256)
+⇾ [NOT STARTED] Assertion Test: FuzzTester.oVRFLOBook_cancelSaleListing(uint256)
+⇾ [NOT STARTED] Assertion Test: FuzzTester.oVRFLOBook_claimPoolShare_clamped(uint256,uint128)
+⇾ [NOT STARTED] Assertion Test: FuzzTester.oVRFLOBook_repayLoan(uint256,uint128)
+⇾ [NOT STARTED] Assertion Test: FuzzTester.oVRFLO_flashLoan(address,uint256,bytes)
+⇾ [NOT STARTED] Assertion Test: FuzzTester.oVRFLO_secondary(uint8,uint256,address,address)
+⇾ [NOT STARTED] Assertion Test: FuzzTester.ptToken()
+⇾ [NOT STARTED] Assertion Test: FuzzTester.mockSablier()
+⇾ [NOT STARTED] Assertion Test: FuzzTester.oVRFLOBook_createBorrowPool_clamped(uint256[],uint256,uint128,uint128)
+⇾ [NOT STARTED] Assertion Test: FuzzTester.oVRFLOBook_repayLoan_clamped(uint256,uint128)
+⇾ [NOT STARTED] Assertion Test: FuzzTester.oVRFLOBook_sellIntoOffer(uint256,uint256,uint256)
+⇾ [NOT STARTED] Assertion Test: FuzzTester.oVRFLO_unwrap(uint256)
+⇾ [NOT STARTED] Assertion Test: FuzzTester.underlying()
+⇾ [NOT STARTED] Assertion Test: FuzzTester.oVRFLOBook_poolClaimLoan(uint256,uint128)
+⇾ [NOT STARTED] Assertion Test: FuzzTester.oVRFLOBook_postSaleListing(address,uint256,uint16)
+⇾ [NOT STARTED] Assertion Test: FuzzTester.oVRFLO_deposit(address,uint256,uint256)
+⇾ [NOT STARTED] Assertion Test: FuzzTester.oVRFLOBook_buyListing_clamped(uint256,uint256)
+⇾ [NOT STARTED] Assertion Test: FuzzTester.oVRFLOBook_closeLoan(uint256)
+⇾ [NOT STARTED] Assertion Test: FuzzTester.oVRFLOBook_postOffer_clamped(address,uint16,uint128)
+⇾ [NOT STARTED] Assertion Test: FuzzTester.setCurrentActor(uint256)
+⇾ [NOT STARTED] Assertion Test: FuzzTester.treasury()
+⇾ [NOT STARTED] Assertion Test: FuzzTester.book()
+⇾ [NOT STARTED] Assertion Test: FuzzTester.factory()
+⇾ [NOT STARTED] Assertion Test: FuzzTester.mockSY()
+⇾ [NOT STARTED] Assertion Test: FuzzTester.oVRFLOBook_createBorrowPool(uint256[],uint256,uint128,uint128)
+⇾ [NOT STARTED] Assertion Test: FuzzTester.oVRFLOBook_poolClaimLoan_clamped(uint256,uint128)
+⇾ [NOT STARTED] Assertion Test: FuzzTester.oVRFLOBook_postOffer(address,uint16,uint128)
+⇾ [NOT STARTED] Assertion Test: FuzzTester.oVRFLO_deposit_clamped(address,uint256,uint256)
+⇾ fuzz: elapsed:       3s, calls:      84734 ( 28243/sec), seq/s:    280, branches:   3160, corpus:   166, failures: 0/841, gas/s:   1737382011
+⇾ fuzz: elapsed:       6s, calls:     178339 ( 31185/sec), seq/s:    312, branches:   3176, corpus:   173, failures: 0/1778, gas/s:   1921011777
+⇾ fuzz: elapsed:       9s, calls:     274183 ( 31947/sec), seq/s:    319, branches:   3191, corpus:   177, failures: 0/2736, gas/s:   1926274840
+⇾ fuzz: elapsed:      12s, calls:     372448 ( 32754/sec), seq/s:    328, branches:   3191, corpus:   177, failures: 0/3721, gas/s:   1937834237
+⇾ fuzz: elapsed:      15s, calls:     468949 ( 32163/sec), seq/s:    320, branches:   3191, corpus:   177, failures: 0/4683, gas/s:   1904441021
+⇾ fuzz: elapsed:      18s, calls:     564771 ( 31940/sec), seq/s:    319, branches:   3193, corpus:   178, failures: 0/5643, gas/s:   1917467353
+⇾ Transaction test limit reached, halting now...
+⇾ Fuzzer stopped, test results follow below ...
+⇾ [1m[32m[PASSED] [0m[0m[1mAssertion Test: FuzzTester.book()[0m
+⇾ [1m[32m[PASSED] [0m[0m[1mAssertion Test: FuzzTester.factory()[0m
+⇾ [1m[32m[PASSED] [0m[0m[1mAssertion Test: FuzzTester.market()[0m
+⇾ [1m[32m[PASSED] [0m[0m[1mAssertion Test: FuzzTester.mockMarket()[0m
+⇾ [1m[32m[PASSED] [0m[0m[1mAssertion Test: FuzzTester.mockOracle()[0m
+⇾ [1m[32m[PASSED] [0m[0m[1mAssertion Test: FuzzTester.mockSY()[0m
+⇾ [1m[32m[PASSED] [0m[0m[1mAssertion Test: FuzzTester.mockSablier()[0m
+⇾ [1m[32m[PASSED] [0m[0m[1mAssertion Test: FuzzTester.oVRFLO_claim(address,uint256)[0m
+⇾ [1m[32m[PASSED] [0m[0m[1mAssertion Test: FuzzTester.oVRFLO_claim_clamped(address,uint256)[0m
+⇾ [1m[32m[PASSED] [0m[0m[1mAssertion Test: FuzzTester.oVRFLO_deposit(address,uint256,uint256)[0m
+⇾ [1m[32m[PASSED] [0m[0m[1mAssertion Test: FuzzTester.oVRFLO_deposit_clamped(address,uint256,uint256)[0m
+⇾ [1m[32m[PASSED] [0m[0m[1mAssertion Test: FuzzTester.oVRFLO_flashLoan(address,uint256,bytes)[0m
+⇾ [1m[32m[PASSED] [0m[0m[1mAssertion Test: FuzzTester.oVRFLO_flashLoan_clamped(address,uint256,bytes)[0m
+⇾ [1m[32m[PASSED] [0m[0m[1mAssertion Test: FuzzTester.oVRFLO_secondary(uint8,uint256,address,address)[0m
+⇾ [1m[32m[PASSED] [0m[0m[1mAssertion Test: FuzzTester.oVRFLO_unwrap(uint256)[0m
+⇾ [1m[32m[PASSED] [0m[0m[1mAssertion Test: FuzzTester.oVRFLO_unwrap_clamped(uint256)[0m
+⇾ [1m[32m[PASSED] [0m[0m[1mAssertion Test: FuzzTester.oVRFLO_wrap(uint256)[0m
+⇾ [1m[32m[PASSED] [0m[0m[1mAssertion Test: FuzzTester.oVRFLO_wrap_clamped(uint256)[0m
+⇾ [1m[32m[PASSED] [0m[0m[1mAssertion Test: FuzzTester.oVRFLOBook_buyListing(uint256,uint256)[0m
+⇾ [1m[32m[PASSED] [0m[0m[1mAssertion Test: FuzzTester.oVRFLOBook_buyListing_clamped(uint256,uint256)[0m
+⇾ [1m[32m[PASSED] [0m[0m[1mAssertion Test: FuzzTester.oVRFLOBook_cancelOffer(uint256)[0m
+⇾ [1m[32m[PASSED] [0m[0m[1mAssertion Test: FuzzTester.oVRFLOBook_cancelOffer_clamped(uint256)[0m
+⇾ [1m[32m[PASSED] [0m[0m[1mAssertion Test: FuzzTester.oVRFLOBook_cancelSaleListing(uint256)[0m
+⇾ [1m[32m[PASSED] [0m[0m[1mAssertion Test: FuzzTester.oVRFLOBook_cancelSaleListing_clamped(uint256)[0m
+⇾ [1m[32m[PASSED] [0m[0m[1mAssertion Test: FuzzTester.oVRFLOBook_claimPoolShare(uint256,uint128)[0m
+⇾ [1m[32m[PASSED] [0m[0m[1mAssertion Test: FuzzTester.oVRFLOBook_claimPoolShare_clamped(uint256,uint128)[0m
+⇾ [1m[32m[PASSED] [0m[0m[1mAssertion Test: FuzzTester.oVRFLOBook_closeLoan(uint256)[0m
+⇾ [1m[32m[PASSED] [0m[0m[1mAssertion Test: FuzzTester.oVRFLOBook_closeLoan_clamped(uint256)[0m
+⇾ [1m[32m[PASSED] [0m[0m[1mAssertion Test: FuzzTester.oVRFLOBook_createBorrowPool(uint256[],uint256,uint128,uint128)[0m
+⇾ [1m[32m[PASSED] [0m[0m[1mAssertion Test: FuzzTester.oVRFLOBook_createBorrowPool_clamped(uint256[],uint256,uint128,uint128)[0m
+⇾ [1m[32m[PASSED] [0m[0m[1mAssertion Test: FuzzTester.oVRFLOBook_poolClaimLoan(uint256,uint128)[0m
+⇾ [1m[32m[PASSED] [0m[0m[1mAssertion Test: FuzzTester.oVRFLOBook_poolClaimLoan_clamped(uint256,uint128)[0m
+⇾ [1m[32m[PASSED] [0m[0m[1mAssertion Test: FuzzTester.oVRFLOBook_postOffer(address,uint16,uint128)[0m
+⇾ [1m[32m[PASSED] [0m[0m[1mAssertion Test: FuzzTester.oVRFLOBook_postOffer_clamped(address,uint16,uint128)[0m
+⇾ [1m[32m[PASSED] [0m[0m[1mAssertion Test: FuzzTester.oVRFLOBook_postSaleListing(address,uint256,uint16)[0m
+⇾ [1m[32m[PASSED] [0m[0m[1mAssertion Test: FuzzTester.oVRFLOBook_postSaleListing_clamped(address,uint256,uint16)[0m
+⇾ [1m[32m[PASSED] [0m[0m[1mAssertion Test: FuzzTester.oVRFLOBook_repayLoan(uint256,uint128)[0m
+⇾ [1m[32m[PASSED] [0m[0m[1mAssertion Test: FuzzTester.oVRFLOBook_repayLoan_clamped(uint256,uint128)[0m
+⇾ [1m[32m[PASSED] [0m[0m[1mAssertion Test: FuzzTester.oVRFLOBook_secondary(uint8,uint256,uint256)[0m
+⇾ [1m[32m[PASSED] [0m[0m[1mAssertion Test: FuzzTester.oVRFLOBook_sellIntoOffer(uint256,uint256,uint256)[0m
+⇾ [1m[32m[PASSED] [0m[0m[1mAssertion Test: FuzzTester.oVRFLOBook_sellIntoOffer_clamped(uint256,uint256,uint256)[0m
+⇾ [1m[32m[PASSED] [0m[0m[1mAssertion Test: FuzzTester.ovrfloToken()[0m
+⇾ [1m[32m[PASSED] [0m[0m[1mAssertion Test: FuzzTester.ptToken()[0m
+⇾ [1m[32m[PASSED] [0m[0m[1mAssertion Test: FuzzTester.setCurrentActor(uint256)[0m
+⇾ [1m[32m[PASSED] [0m[0m[1mAssertion Test: FuzzTester.treasury()[0m
+⇾ [1m[32m[PASSED] [0m[0m[1mAssertion Test: FuzzTester.underlying()[0m
+⇾ [1m[32m[PASSED] [0m[0m[1mAssertion Test: FuzzTester.vault()[0m
+⇾ Test summary: 47 test(s) passed, 0 test(s) failed
+⇾ html report(s) saved to: fizz_data/corpus_medusa/coverage/coverage_report.html
+⇾ lcov report(s) saved to: fizz_data/corpus_medusa/coverage/lcov.info

@@ -11,6 +11,7 @@ applies_when:
   - Integrating with OVRFLO's wrap/unwrap or PT claim path and reasoning about token amounts
   - Debugging unexpected wstETH quantities when redeeming PT through Pendle's SY at maturity
   - Deciding which Pendle SY field (assetInfo vs yieldToken) to validate against OVRFLO's underlying
+  - Evaluating whether stETH could replace wstETH as the vault underlying
 tags: [pendle, sy, wsteth, steth, ovrflotoken, pt-redemption, exchange-rate, token-mapping]
 ---
 
@@ -60,6 +61,21 @@ This is not a bug and does not mean ovrfloToken is not 1:1 with wstETH. The 1:1 
 3. **PT redemption on Pendle**: 1 PT = 1 SY share = equivalent value in wstETH or stETH
 
 The token count may differ across units (0.999 wstETH = 1.1488 stETH = 1 PT), but the value is identical in every unit. wstETH is a more valuable unit than stETH (1 wstETH > 1 stETH because wstETH wraps stETH shares that accrue staking rewards), so the wstETH token count is lower for the same value.
+
+### SY lag is self-policing
+
+The tiny token-count gap from SY exchange rate lag is actually beneficial for OVRFLO. The wrap → claim → Pendle redeem cycle costs a few bips (the SY lag), while wrap → unwrap costs nothing. This means there is no profitable arbitrage through the wrap/claim cycle — the SY lag nudges users toward unwrap (the hard-backed path) over claim+redeem, which is the safer dynamic for the wrap reserve. No one is forced to take the lossy path; the fungibility gives users the option to pick the best exit.
+
+### Why stETH as underlying would break the 1:1
+
+Using stETH (the SY's accounting asset) as the vault underlying instead of wstETH (the SY's yield token) would create a **22%+ value mismatch** between exit paths, not a 0.1% rounding gap:
+
+- unwrap(1 ovrfloToken) = 1 stETH
+- claim(1 ovrfloToken) = 1 PT = 1 SY = 1 wstETH in value = ~1.2287 stETH
+
+The unwrap path gives 1 stETH but the claim path gives 1.2287 stETH. This transfers value from depositors (who put in 1 PT worth 1.2287 stETH but can only unwrap for 1 stETH) to wrappers (who put in 1 stETH but can claim 1 PT worth 1.2287 stETH). The 1:1 accounting in stETH is not value-consistent because 1 stETH is not worth 1 SY share.
+
+Additionally, stETH is a rebasing token (balances grow via staking rewards, not per-token value), which creates a 1-2 wei rounding issue in the `wrap` function's strict `balanceAfter - balanceBefore == amount` check. wstETH avoids this entirely as a non-rebasing wrapper.
 
 ## When to Apply
 
