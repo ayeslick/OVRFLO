@@ -1,6 +1,7 @@
 ---
 title: ovrfloToken value mapping through Pendle SY (wstETH yield token, stETH asset)
-date: 2026-06-30
+date: 2026-07-01
+last_updated: 2026-07-01
 category: docs/solutions/best-practices/
 module: OVRFLO
 problem_type: best_practice
@@ -18,6 +19,8 @@ tags: [pendle, sy, wsteth, steth, ovrflotoken, pt-redemption, exchange-rate, tok
 ## Context
 
 OVRFLO uses wstETH as its underlying asset. The wrap/unwrap path is 1:1 with wstETH. At maturity, users claim PT from OVRFLO (1 ovrfloToken = 1 PT) and redeem on Pendle. A common source of confusion: redeeming 1 PT for wstETH can return slightly less than 1 wstETH, which looks like a bug but is not. The cause is Pendle's SY accounting denomination, not a value discrepancy.
+
+**Why wstETH is the correct underlying:** The tracking chain is ovrfloToken → PT → SY share → wstETH. PT tracks SY shares (1 PT = 1 SY share at maturity). The SY holds wstETH as its yield token — that is the actual asset in the vault. Since OVRFLO wraps PTs (1 ovrfloToken claims 1 PT at maturity), OVRFLO effectively tracks SY shares, which track wstETH. wstETH is therefore the correct underlying for the wrap/unwrap path. Pendle denominates the SY exchange rate in stETH (its `assetInfo` asset), but that is an accounting choice — the SY holds wstETH, and you can redeem for wstETH directly.
 
 ## Guidance
 
@@ -85,9 +88,22 @@ exchange rate = 1.1488e18
 ```
 You get 0.999 wstETH instead of 1.0, but 0.999 wstETH is worth 0.999 x 1.15 = 1.1488 stETH, which is exactly 1 PT's value. The gap is under 10 basis points in practice.
 
-### Fork test confirmation
+### On-chain verification (block 24609670)
 
-The OVRFLO fork tests verify the SY's field values on-chain:
+Verified directly from the wstETH SY contract (`0xcbC72d92b2dc8187414F6734718563898740C0BC`):
+
+| Field | Value | Meaning |
+|-------|-------|---------|
+| `assetInfo().assetAddress` | `0xae7a...312D7fE84` (stETH) | Accounting unit for exchange rate |
+| `assetInfo().assetDecimals` | 18 | stETH decimals |
+| `yieldToken()` | `0x7f39...C935E2Ca0` (wstETH) | What the SY actually holds |
+| `exchangeRate()` | `1.2287e18` | 1 SY share = 1.2287 stETH at this block |
+| `getTokensIn()` | ETH, WETH, stETH, wstETH | Accepted deposit tokens |
+| `getTokensOut()` | stETH, wstETH | Redemption output tokens |
+
+The exchange rate (1.2287 stETH per SY share) matches the wstETH/stETH rate at this block — the SY holds wstETH, so each share's stETH value tracks the wstETH-to-stETH conversion. This confirms 1 SY share = 1 wstETH in value, and therefore 1 PT = 1 wstETH in value at maturity.
+
+The OVRFLO fork tests also verify these fields:
 
 ```solidity
 (, address assetAddress,) = IStandardizedYield(sy).assetInfo();
