@@ -5,7 +5,7 @@
 ## In-scope commit
 
 - **Branch:** `main`
-- **Commit:** `183e0ce` (2026-06-30)
+- **Commit:** `66e31d5` (2026-07-01)
 - **Code freeze declaration:** This is the frozen revision under audit. Findings are reproducible against this commit; any post-freeze change is out of scope and must be re-audited separately.
 
 > **Line-number caveat:** The `x-ray/` suite was regenerated at the current HEAD. Companion docs in this package cite **function names and invariant IDs** (e.g. `OVRFLO.deposit()`, invariant `X-1`) rather than brittle line numbers. Where a `file:line` is given, re-verify it against the pinned commit's source before relying on it.
