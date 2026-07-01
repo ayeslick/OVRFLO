@@ -9,7 +9,7 @@ OVRFLO touches only the PT/SY/oracle surface of Pendle. It never trades YT or in
 ### A1. `IPendleOracle.getPtToSyRate()` returns a fresh TWAP of stated cardinality
 
 - **Assumed property:** The rate reflects a time-weighted average over the observation cardinality established at market onboarding, and is not stale or single-block manipulable.
-- **Enforced?** **Onboarding only.** Cardinality/TWAP duration are validated when the multisig calls `OVRFLOFactory.addMarket()` / `OVRFLO.prepareOracle()`. The deposit path does **not** revalidate freshness per call. This is invariant **X-1 (On-chain: No)** — see `x-ray/invariants.md#x-1`.
+- **Enforced?** **Onboarding only.** Cardinality/TWAP duration are validated when the multisig calls `OVRFLOFactory.addMarket()` / `OVRFLO.prepareOracle()`. The deposit path does **not** revalidate freshness per call. This is invariant **X-1 (On-chain: No)** — see `x-ray/invariants.md#x-1`. Low practical risk: Pendle is a live protocol with external traders and LPs whose activity writes oracle observations continuously. OVRFLO is not the sole AMM user. Worst case, if external activity drops, a keeper bot can touch the market via `OVRFLOFactory.prepareOracle()` to maintain freshness.
 - **If violated:** A manipulated or stale TWAP skews the `toUser` / `toStream` mint split in `OVRFLO.deposit()`. Fee is charged only on `toUser`, so a depressed rate also shrinks protocol fee. This is the open Medium finding **M-4** in `x-ray/multi-agent-audit-report.md`.
 - **OVRFLO call site:** `OVRFLO.deposit()`.
 
@@ -20,30 +20,22 @@ OVRFLO touches only the PT/SY/oracle surface of Pendle. It never trades YT or in
 - **If violated:** Mismatched markets could route fees/principal across incompatible assets. Prevented by the onboarding check; the residual risk is multisig onboarding error (bounded-external/admin trust).
 - **OVRFLO call site:** `OVRFLOFactory.addMarket()`.
 
-### A3. Pendle PT is always 18 decimals
+### A3. Token standard assumptions (decimals, fee-on-transfer) — OUT OF SCOPE
 
-- **Assumed property:** Every onboarded PT has 18 decimals, so fixed-point stream/value math is consistent.
-- **Enforced?** **Yes, indirectly.** `MIN_PT_AMOUNT` and the deposit/claim math assume 18 decimals; non-18-decimal PTs are outside the stated Pendle-only scope. The multisig validates canonical Pendle markets at `addMarket()`.
-- **If violated:** Stream durations, `toStream` amounts, and `obligation` math would be miscalibrated. This is the trust boundary behind audit-report **I-1 (ex-M-1)** — see the trust-assumption ledger.
-- **OVRFLO call site:** `OVRFLO.deposit()`, `OVRFLO.claim()`.
+- **Assumed property:** All tokens used (PT, underlying, ovrfloToken) are standard ERC-20 with 18 decimals and exact-transfer semantics (no fee-on-transfer, no rebasing).
+- **Enforced?** **By scope, not by code.** The multisig validates canonical Pendle PTs at `addMarket()`. Non-standard tokens are outside the protocol's threat model. Do not raise findings about fee-on-transfer, rebasing, or non-18-decimal tokens — these are explicitly excluded.
+- **OVRFLO call site:** N/A — accepted by design.
 
 ### A4. PT converges 1:1 to its underlying at `expiryCached`
 
 - **Assumed property:** A PT redeems 1:1 for its underlying at maturity, so post-maturity `claim()` (burn `ovrfloToken` → receive PT) is economically a 1:1 exit.
-- **Enforced?** **Yes, structurally.** `OVRFLO.deposit()` blocks after expiry (guard **G-5**); `OVRFLO.claim()` requires maturity (guard **G-9**). Maturity is the series pin; `setSeriesApproved` is one-shot (invariant **I-9**).
+- **Enforced?** **Yes, structurally.** `OVRFLO.deposit()` blocks after expiry (guard **G-6**); `OVRFLO.claim()` requires maturity (guard **G-10**). Maturity is the series pin; `setSeriesApproved` is one-shot (invariant **I-9**).
 - **If violated:** The claim path's 1:1 economic value breaks. Pendle maturity convergence is a protocol guarantee outside OVRFLO's control.
 - **OVRFLO call site:** `OVRFLO.deposit()` (pre-maturity gate), `OVRFLO.claim()` (post-maturity gate).
 
-### A5. ERC20 PT/underlying tokens behave with standard exact-transfer semantics
-
-- **Assumed property:** `transferFrom`/`transfer` move exactly the requested amount under normal conditions; fee-on-transfer or rebasing tokens are not onboarded.
-- **Enforced?** **Partially.** `OVRFLO.wrap()` verifies balance-delta exactness (guard **G-11**); `OVRFLOBook._pullExact()` uses the same balance-delta pattern. The `deposit()` PT pull and the underlying fee pull do **not** balance-delta check (audit-report **I-1/I-2 (ex-M-1/M-2)**) — they trust user-supplied `ptAmount` and canonical Pendle PT behavior.
-- **If violated:** Non-standard PT/underlying could make `marketTotalDeposited` diverge from received balances. Outside the Pendle-only, canonical-asset scope; documented as a trust boundary, not hardened on-chain.
-- **OVRFLO call site:** `OVRFLO.deposit()` (PT + fee pulls), `OVRFLO.wrap()`/`unwrap()` (underlying, exact-checked).
-
 ## Dynamic context — when the oracle split is computed
 
-Inside `OVRFLO.deposit()`, the split is computed **after** the PT pull and **before** the `ovrfloToken` mint and Sablier stream creation: `getPtToSyRate()` → derive `toUser`/`toStream` → mint `toUser` to the depositor and `toStream` to the vault → `Sablier.createWithDurations(...)`. `toStream` is clamped so `toUser <= ptAmount`; if `toStream == 0` (rate ≥ 1e18, i.e. no discount) the deposit reverts (guard **G-7**) — correct product behavior, not a bug.
+Inside `OVRFLO.deposit()`, the split is computed **after** the PT pull and **before** the `ovrfloToken` mint and Sablier stream creation: `getPtToSyRate()` → derive `toUser`/`toStream` → mint `toUser` to the depositor and `toStream` to the vault → `Sablier.createWithDurations(...)`. `toStream` is clamped so `toUser <= ptAmount`; if `toStream == 0` (rate ≥ 1e18, i.e. no discount) the deposit reverts (guard **G-8**) — correct product behavior, not a bug.
 
 ## Scope exclusions
 

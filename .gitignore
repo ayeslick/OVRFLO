@@ -34,6 +34,9 @@ web/.postcss-cache/
 web/reviews/
 node_modules/
 
+# Scratch plans
+docs/plans/
+
 # Agents
 .claude/
 .factory/

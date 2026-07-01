@@ -1,59 +1,107 @@
 # X-Ray Report
 
-> OVRFLO | 1135 nSLOC | c01fba7 (`main`) | Foundry | 26/06/26
+> OVRFLO | 1,162 nSLOC | 183e0ce (`main`) | Foundry | 01/07/26
 
 ---
 
 ## 1. Protocol Overview
 
-**What it does:** A Pendle-PT wrapper that splits a deposit into immediate ovrfloTokens (principal at TWAP value) plus a non-cancelable Sablier stream vesting the discount, then lets users sell or borrow against that stream on a secondary book where the stream itself repays the loan.
+**What it does:** Wraps Pendle Principal Tokens into liquid ovrfloTokens (immediate value) plus deterministic Sablier streams (residual discount), with a secondary market for trading and lending against those streams.
 
-- **Users**: PT depositors (create collateral), stream sellers/borrowers (secondary market), lenders (fund loans/offers).
-- **Core flow**: Deposit PT → receive ovrfloTokens + Sablier stream → pledge/sell stream on OVRFLOBook → stream repays loan at maturity.
-- **Key mechanism**: Linear-APR discount pricing (`StreamPricing`), TWAP oracle split at deposit, deterministic non-cancelable streams as collateral (no liquidations).
-- **Token model**: `OVRFLOToken` — ERC20, 18-decimals, mint/burn by the owning vault, fungible across all PT series sharing one underlying (by design).
-- **Admin model**: Timelocked multisig owns `OVRFLOFactory` (admin hub for all vaults) and each `OVRFLOBook`; two-step ownership (`Ownable2Step`). No on-chain timelock or pause contract in scope.
+- **Users**: Deposit PT for yield tokenization; trade/lend Sablier streams on the secondary market
+- **Core flow**: Deposit PT → receive ovrfloToken + Sablier stream → trade or borrow against stream → claim PT after maturity
+- **Key mechanism**: TWAP oracle splits PT deposit into immediate (ovrfloToken) and streamed (Sablier) portions; linear APR discounting for secondary market pricing
+- **Token model**: ovrfloToken (ERC20, 1:1 with PT at maturity, fungible across series of same underlying)
+- **Admin model**: Timelocked multisig → OVRFLOFactory → OVRFLO vaults + OVRFLOBook instances; no upgradeable contracts
 
-See the [architecture diagram](architecture.svg).
+For a visual overview of the protocol's architecture, see the [architecture diagram](architecture.svg).
 
 ### Contracts in Scope
 
 | Subsystem | Key Contracts | nSLOC | Role |
 |-----------|--------------|------:|------|
-| Core Vault | OVRFLO, OVRFLOToken | 279 | PT deposit → ovrfloToken + stream; 1:1 wrap/unwrap; post-maturity claim |
-| Admin Hub | OVRFLOFactory | 146 | Deploys vaults+tokens, onboards markets (oracle/underlying checks), sweeps |
-| Secondary Market | OVRFLOBook, StreamPricing | 710 | Sell/borrow against streams; linear-APR pricing + eligibility library |
+| Vault Core | OVRFLO, OVRFLOToken | 314 | PT deposit vault + wrapper ERC20 (1:1 wrap/unwrap, post-maturity claim) |
+| Secondary Market | OVRFLOBook | 546 | Order book for stream sales and self-repaying pool loans backed by Sablier streams |
+| Admin Hub | OVRFLOFactory | 194 | Deploys vaults/tokens/books; forwards multisig admin to vaults and books |
+| Pricing Library | StreamPricing | 108 | Pure library for stream valuation, eligibility checks, and fee/obligation math |
 
 ### How It Fits Together
 
-The core: a Pendle PT deposit is split into a liquid principal token (ovrfloToken) and a deterministic vesting stream of the same token, making the stream usable as self-repaying collateral without oracles.
+**The core trick:** Deposit PT at a discount → receive liquid ovrfloToken (immediate value) + a deterministic Sablier stream (residual discount) → trade or borrow against the stream on OVRFLOBook → exit via unwrap or post-maturity claim.
 
-### Deposit → Stream → Claim
+Key change since last x-ray: Sale offers and lend offers merged into a single unified `Offer` type (commit `aed261d`, 548 lines changed). An offer can be consumed as either a sale (`sellIntoOffer`) or a loan (`createBorrowPool`); the maker cannot restrict the path. Borrow listings and `createLenderPool` removed; pools are the only lending mechanism, and each pool has exactly one loan via the `poolLoanId` mapping. nSLOC dropped 17% (1,398 → 1,162).
 
+### Deposit (PT → ovrfloToken + stream)
 ```
 OVRFLO.deposit(market, ptAmount, minToUser)
-├─ IERC20(ptToken).safeTransferFrom(user, vault, ptAmount)   *no balance-delta check*
-├─ rateE18 = IPendleOracle(oracle).getPtToSyRate(market, twap)   *freshness only checked at onboarding*
-├─ toUser = ptAmount * rate / 1e18 (capped at ptAmount); toStream = ptAmount - toUser
-├─ fee = toUser * feeBps / BPS  → safeTransferFrom(user, treasury, fee)
-├─ OVRFLOToken.mint(user, toUser); OVRFLOToken.mint(vault, toStream)
-└─ sablierLL.createWithDurations(...) → streamId             *recipient=user, non-cancelable*
+├─ IPendleOracle(oracle).getPtToSyRate(market, twapDuration)     *TWAP rate splits principal from discount*
+├─ toUser = PRBMath.mulDiv(ptAmount, rateE18, WAD)               *immediate ovrfloToken*
+├─ toStream = ptAmount - toUser                                   *residual for streaming*
+├─ IERC20(ptToken).safeTransferFrom(user, vault, ptAmount)
+├─ IERC20(underlying).safeTransferFrom(user, TREASURY_ADDR, fee)  *fee in underlying*
+├─ OVRFLOToken.mint(user, toUser)
+├─ OVRFLOToken.mint(vault, toStream)
+└─ sablierLL.createWithDurations(...)                              *non-cancelable stream to user*
 ```
-*After maturity: `OVRFLO.claim(ptToken, amount)` burns ovrfloToken 1:1 and transfers PT out (`marketTotalDeposited` decremented).*
 
-### Borrow Against Stream (Book)
-
+### Borrow Pool (stream → loan)
 ```
 OVRFLOBook.createBorrowPool(offerIds, streamId, targetBorrow, minAcceptable)
-├─ StreamPricing.requireEligible(factory, sablier, core, market, streamId)   *sender=core, asset, end=expiry, no cliff, non-cancelable, remaining>0*
-├─ grossPrice = grossPrice(remaining, aprBps, ttm)   *floors; ttm = expiry - block.timestamp*
-├─ require(borrowAmount <= grossPrice && <= capacity)
-├─ obligation = obligationForFill(...)   *ceils; fast-paths to `remaining` on full borrow*
-├─ sablier.transferFrom(borrower, book, streamId)   *book escrows NFT*
-├─ pay underlying(net) to borrower; pay fee to treasury
-└─ store Loan{obligation, drawn:0, repaid:0, closed:false}
+├─ StreamPricing.requireEligible(factory, sablier, core, market, streamId)  *validates stream*
+├─ StreamPricing.grossPrice(remaining, aprBps, timeToMaturity)              *discounted price*
+├─ _validateOffers(offerIds, market, aprBps, msg.sender)                    *no self-match, sorted*
+├─ StreamPricing.obligationForFill(borrow, grossPrice, remaining, ...)      *ceiling-rounded debt*
+├─ pools[poolId] = Pool(...)                          *CEI: all state before transfers*
+├─ _consumeOffers(offerIds, poolId, actualBorrow)                           *decrement capacities*
+├─ _storeLoan(borrower, address(this), streamId, obligation)
+├─ loanPoolId[loanId] = poolId; poolLoanId[poolId] = loanId                 *1:1 pool-to-loan*
+├─ sablier.transferFrom(borrower, book, streamId)                           *escrow stream*
+├─ _payUnderlying(borrower, netToBorrower)                                  *loan disbursement*
+└─ _payUnderlying(treasury, feeAmount)                                      *protocol fee*
 ```
-*Servicing: `poolClaimLoan` (contributor draws, capped at outstanding) / `closeLoan` (permissionless, requires withdrawable ≥ outstanding) / `repayLoan` (borrower pays ovrfloToken). `outstanding = obligation - drawn - repaid`.*
+
+### Pool Claim (dual channel)
+```
+Channel A: Direct stream draw
+OVRFLOBook.poolClaimLoan(poolId, amount)                                    *loanId derived from poolId*
+├─ loanId = poolLoanId[poolId]; require(loanId != 0)
+├─ entitlement = contribution * totalObligation / totalContributed          *pro-rata cap*
+├─ streamClaimable = min(sablier.withdrawableAmountOf, _outstanding)
+├─ drawAmount = min(amount, remaining, streamClaimable)
+├─ poolReceived[poolId][caller] += drawAmount
+├─ loan.drawn += drawAmount
+└─ sablier.withdraw(streamId, caller, drawAmount)                           *direct to caller*
+
+Channel B: Shared proceeds
+OVRFLOBook.claimPoolShare(poolId, amount)
+├─ proRataShare = poolProceeds * contribution / totalContributed             *pro-rata of pot*
+├─ available = min(remaining, proRataShare)
+├─ poolReceived[poolId][caller] += amount
+├─ poolProceeds[poolId] -= amount
+└─ IERC20(ovrfloToken).safeTransfer(caller, amount)                         *from shared pot*
+```
+
+### Flash Loan (PT → callback → repay)
+```
+OVRFLO.flashLoan(ptToken, amount, data)
+├─ IPendleOracle(oracle).getPtToSyRate(market, twapDuration)                *rate for fee calc*
+├─ IERC20(ptToken).safeTransfer(borrower, amount)                           *send PT first*
+├─ IFlashBorrower(borrower).onFlashLoan(...)                                 *callback — can deposit/wrap/unwrap*
+├─ require(ret == FLASH_CALLBACK_SUCCESS)
+├─ IERC20(ptToken).safeTransferFrom(borrower, vault, amount)                *pull back PT*
+└─ IERC20(underlying).safeTransferFrom(borrower, treasury, fee)             *fee in underlying*
+```
+
+### Close Loan (permissionless stream draw)
+```
+OVRFLOBook.closeLoan(loanId)                                                *permissionless*
+├─ outstanding = obligation - drawn - repaid
+├─ require(sablier.withdrawableAmountOf(streamId) >= outstanding)           *stream must cover debt*
+├─ loan.closed = true
+├─ sablier.withdraw(streamId, address(this), outstanding)                   *draw to poolProceeds*
+├─ poolProceeds[poolId] += outstanding
+└─ sablier.transferFrom(book, borrower, streamId)                           *return stream*
+```
 
 ---
 
@@ -61,109 +109,113 @@ OVRFLOBook.createBorrowPool(offerIds, streamId, targetBorrow, minAcceptable)
 
 ### Protocol Threat Profile
 
-> Protocol classified as: **Lending/Borrowing** with **Yield Aggregator/Vault** characteristics
+> Protocol classified as: **Yield Aggregator/Vault** with **Lending/Borrowing** and **Secondary Market** characteristics
 
-Lending signals: `createBorrowPool`, `repayLoan`, `poolClaimLoan`, `closeLoan`, loan obligations, collateral (stream), no liquidations by design. Vault signals: `deposit`/`claim`/`wrap`/`unwrap`, mint/burn wrapper token, streaming yield. Primary adversaries from lending (oracle, flash-loan, MEV, admin); vault adds share/donation and backing concerns.
+Primary vault mechanism (PT deposit → ovrfloToken + stream) matches yield aggregator signals. Stream-collateralized self-repaying loans add lending/borrowing. Unified offers and sale listings add secondary market order book. No liquidations exist by design — deterministic non-cancelable streams eliminate the need.
 
 ### Actors & Adversary Model
 
 | Actor | Trust Level | Capabilities |
 |-------|-------------|-------------|
-| Multisig | Trusted (off-chain timelocked) | Owns factory + each book via Ownable2Step. 2-step transfer delay on the seat; **all operational actions instant** (deploy, addMarket, sweep, setFee→100%, setAprBounds, setTreasury). No on-chain timelock/pause. |
-| OVRFLOFactory | Bounded (multisig-gated) | Admin hub for all vaults: market onboarding, deposit limits, sweeps, oracle prep. Forwards admin to vaults. |
-| OVRFLO vault | Bounded (factory is admin) | Holds PT + underlying; mints/burns ovrfloToken. Admin sweep of excess only. |
-| OVRFLOToken | Bounded (vault-owned) | mint/burn restricted to owner vault; standard ERC20 otherwise. |
-| User | Untrusted | Permissionless deposit/claim/wrap/unwrap + all book post/fill/close paths. |
-| Lender / Borrower / Maker | Bounded (position-owner) | Cancel/claim/repay gated to the offer/listing/loan owner. |
+| Timelocked Multisig | Trusted (external timelock) | Owns factory; all admin ops via 2-step ownership. Instant operational powers: set fees (1% vault, 100% book), set APR bounds (≤100%), sweep excess tokens, pause flash loans, approve markets, deploy vaults/books. No on-chain timelock on actions — delay is external to these contracts. |
+| OVRFLOFactory | Bounded (immutable admin hub) | Forwards multisig calls to vaults and books. Cannot act independently — all functions are onlyOwner. Ownable2Step transfer delay protects the seat itself. |
+| OVRFLO Vault | Bounded (onlyAdmin = factory) | Mints/burns ovrfloToken, creates Sablier streams, flash loans PT. Admin functions only callable by factory. |
+| OVRFLOBook | Bounded (onlyOwner = factory) | Secondary market for stream trades and loans. Admin (fee/APR/treasury) only callable by factory. All stateful user functions are nonReentrant. |
+| Users | Untrusted | Permissionless deposit/claim/wrap/unwrap/flashLoan on vault; post/fill offers, listings, pools on book. |
 
 **Adversary Ranking** (ordered by threat level):
 
-1. **Oracle manipulator** — `deposit()` splits value off `getPtToSyRate`; the TWAP oracle is the single source of truth for the immediate-vs-streamed split.
-2. **MEV / time-of-flight trader** — book `grossPrice` depends on `block.timestamp` via `timeToMaturity`; price drifts every block and is re-priced at fill vs post.
-3. **Compromised admin (multisig)** — instant operational powers (sweep, 100% fee, treasury redirect, APR bounds) with no on-chain timelock or pause.
-4. **External dependency drift** — Sablier V2 withdrawability/ACL semantics and Pendle oracle freshness are trusted; both are immutable addresses but externally governed.
-5. **Malicious first depositor / donor** — wrap/unwrap reserve and cross-market ovrfloToken fungibility create backing-edge cases.
+1. **Oracle manipulator / Flash loan attacker** — TWAP rate determines the deposit split; flash loans provide capital to move Pendle market prices within a single tx. Freshness not rechecked per deposit (X-1), but low practical risk: external Pendle traders/LPs write observations continuously; keeper bot via `prepareOracle()` as fallback.
+2. **Pool claim accounting attacker** — Dual claim channels (poolClaimLoan + claimPoolShare) share a single entitlement cap; interactions between the two paths deserve scrutiny.
+3. **Compromised multisig** — All operational powers are instant (no on-chain action delay); can sweep excess, change fees, pause flash loans, approve arbitrary markets.
+4. **Order book griefing attacker** — Can post and cancel offers/listings to lock liquidity or front-run other traders.
 
 See [entry-points.md](entry-points.md) for the full permissionless entry point map.
 
 ### Trust Boundaries
 
-- **Multisig → Factory → Vault** — off-chain timelocked multisig is the only admin path; worst instant action is `sweepExcessPt`/`sweepExcessUnderlying` (only tracked *excess*, not user backing) and `setFee`/`setAprBounds` to ceiling. No on-chain delay on operational calls. `OVRFLOFactory.sol:103-205`.
-- **Vault ↔ OVRFLOToken** — vault is sole minter/burner; `OVRFLOToken.transferOwnership` is single-step (no two-step) — see L-3 in prior audit record.
-- **Book ↔ Sablier NFT escrow** — book takes custody of stream NFTs; only the book (as recipient/owner) can withdraw to lenders. Trust rests on Sablier v1.1 ACL immutability. `OVRFLOBook.sol:398-426`.
-- **External oracles/streams** — Pendle oracle + Sablier V2 are immutable vault/book constants; behavior can change only via external governance. *Git signal: oracle/fund-flow code in top-3 most-changed areas (29 commits each).*
+**Multisig → Factory** — External timelock + 2-step ownership; worst instant action: `sweepExcessPt` / `sweepExcessUnderlying` redirect excess tokens to any address (trusted `to` per project stance). *Git signal: 50 access_control commits — elevated churn.*
+
+**Factory → Vault** — `onlyAdmin` modifier (`msg.sender == factory`); factory is immutable, set at vault construction. No bypass path; vault admin functions are never callable by non-factory addresses.
+
+**Factory → Book** — `onlyOwner` (Ownable2Step); factory is set as owner at book deployment. Book admin (fee/APR/treasury) flows through factory only.
+
+**User → Vault** — Permissionless deposit/claim/wrap/unwrap; no access control. Slippage protection via `minToUser` on deposit. Flash loan gated by `flashLoanPaused` circuit breaker only.
+
+**User → Book** — Permissionless post/fill; `nonReentrant` on all stateful functions. Offer/listing cancellation gated by maker identity check. Pool claims gated by contribution > 0.
 
 ### Key Attack Surfaces
 
-- **Oracle-driven deposit split** &nbsp;[X-1](invariants.md#x-1), [I-11](invariants.md#i-11) — `OVRFLO.deposit:344` consumes `getPtToSyRate` to split `ptAmount` into `toUser`/`toStream`; freshness/cardinality is verified only at `OVRFLOFactory.addMarket:164-166` onboarding, not rechecked at deposit. Worth tracing whether a stale/manipulated TWAP can skew the split within a block.
+- **Pool claim dual-channel accounting** &nbsp;&#91;[I-14](invariants.md#i-14), [I-15](invariants.md#i-15), [I-16](invariants.md#i-16)&#93; — `poolClaimLoan` draws directly from streams (bypassing poolProceeds) while `claimPoolShare` draws from poolProceeds; both share the same `poolReceived`/entitlement accounting. Worth tracing whether concurrent claims on the same loan's stream can let a contributor exceed their entitlement through rounding at the pro-rata boundary.
 
-- **PT exact-transfer assumption** &nbsp;[I-1](invariants.md#i-1) — `OVRFLO.deposit:340` pulls PT via `safeTransferFrom` *without* a balance-delta check (unlike `wrap` and book `_pullExact`), then increments `marketTotalDeposited` by the full `ptAmount`. A fee-on-transfer PT would make accounting exceed the real balance. Worth confirming all onboardable PTs are exact-transfer.
+- **Flash loan reentrancy via unguarded vault functions** &nbsp;&#91;[G-12](invariants.md#g-12), [G-13](invariants.md#g-13)&#93; — `flashLoan` uses `nonReentrant` but the callback can call `deposit`/`wrap`/`unwrap` which have no reentrancy guard. Worth checking if `marketTotalDeposited` increases during the callback affect the flash loan cap or fee calculation.
 
-- **Book pricing time-dependence** &nbsp;[I-6](invariants.md#i-6), [E-2](invariants.md#e-2) — `grossPrice`/`obligation` recompute at fill time from `expiryCached - block.timestamp`; a listing posted early is re-priced later (remaining may also drop if the seller withdrew mid-stream). Worth checking fill-time repricing interaction with snapshotted fees and `minObligationOut` slippage.
+- **setMarketDepositLimit invariant violation** &nbsp;&#91;[I-6](invariants.md#i-6), [X-4](invariants.md#x-4)&#93; — Admin can set a market's deposit limit below the current `marketTotalDeposited` without reverting. Worth confirming no downstream logic assumes `marketTotalDeposited <= limit` holds globally.
 
-- **Permissionless `closeLoan` liveness** &nbsp;[X-2](invariants.md#x-2), [I-10](invariants.md#i-10) — `OVRFLOBook.closeLoan:732` is callable by anyone once `withdrawableAmountOf >= outstanding`; it draws the stream and returns the NFT. Worth tracing whether any partial-`poolClaimLoan` state leaves the loan unclosable or the residual misrouted.
+- **closeLoan permissionless stream draw** &nbsp;&#91;[I-11](invariants.md#i-11), [I-13](invariants.md#i-13)&#93; — `closeLoan` is callable by anyone and draws the exact outstanding from the stream. Worth confirming the `withdrawable >= outstanding` guard prevents over-drawing and that the stream is correctly returned to the borrower.
 
-- **Admin instant powers without on-chain timelock/pause** &nbsp;[I-4](invariants.md#i-4), [I-8](invariants.md#i-8) — `setFee`/`setAprBounds`/`setTreasury`/`sweepExcess*`/`setMarketDepositLimit` execute instantly on multisig sign; `setMarketDepositLimit` can lower the cap below already-deposited principal. No `Pausable` anywhere; deposit-limit=0 freezes new deposits but never pauses claims or the book. Worth confirming the off-chain timelock is the sole delay.
+- **Unified offer consumption ambiguity** — A single `Offer` can be consumed as either a sale (`sellIntoOffer`) or a loan (`createBorrowPool`); the maker cannot restrict the path. Worth tracing whether an offer maker expecting only sale fills could have their capacity consumed by a borrower on different terms.
 
-- **Cross-market ovrfloToken fungibility** &nbsp;[E-3](invariants.md#e-3), [I-9](invariants.md#i-9) — one ovrfloToken serves every PT series of the same underlying; `claim` burns ovrfloToken against any matured series with sufficient `claimablePt(ptToken)`. Worth checking whether two series with identical `expiryCached` under one underlying create any accounting ambiguity.
+- **Fee snapshot vs global fee divergence** — Listings snapshot `feeBps` at post time; offers use the current global `feeBps`. Worth confirming an admin cannot manipulate the global fee to extract value from offer fills (e.g., set to 0, let allies fill, restore).
 
-- **`uint128`/`uint40` narrowing in deposit** &nbsp;[I-1](invariants.md#i-1) — `deposit` casts `toStream` to `uint128` for Sablier and `duration` to `uint40`; economically unreachable with 18-decimal PT but worth a revert-vs-truncation confirmation.
-
-### Upgrade Architecture Concerns
-
-No upgradeable contracts (no UUPS/transparent/beacon/proxy). All core contracts are immutable deployments; `OVRFLOToken` uses single-step `transferOwnership` (not two-step) — a key-transfer risk noted in prior findings.
+- **Oracle rate at deposit boundary** &nbsp;&#91;[G-8](invariants.md#g-8)&#93; — When TWAP rate rounds to 1.0 (rate * ptAmount / WAD == ptAmount), `toStream` becomes 0 and the deposit reverts. Worth checking behavior at the maturity boundary as time-to-maturity approaches zero.
 
 ### Protocol-Type Concerns
 
-**As a Lending/Borrowing:**
-- No health factor, no liquidation, no liquidator incentive — by design (deterministic non-cancelable stream is the collateral). Solvency rests entirely on `obligation <= remaining` (`StreamPricing` rounding invariant [E-2](invariants.md#e-2)).
-- `poolClaimLoan` caps draws at `_outstanding` so a contributor cannot overdraw past the obligation; `closeLoan` requires full coverage. Worth checking the partial-claim → close residual path.
-
 **As a Yield Aggregator/Vault:**
-- Not ERC4626 share-based; ovrfloToken is minted at PT market value (not pro-rata), so classic share-inflation is not the model. `wrap`/`unwrap` is 1:1 against a tracked `wrappedUnderlying` reserve with a balance-delta check [I-2](invariants.md#i-2).
-- `sweepExcessUnderlying` removes only `balance - wrappedUnderlying`; direct donations become admin-sweepable, not user-extractable. Worth confirming no path lets `wrappedUnderlying` exceed actual balance.
+- `OVRFLO.deposit:380-386` — `toUser = ptAmount * rate / WAD` (floored); `if (toUser > ptAmount) toUser = ptAmount` caps at par. Worth checking if rate > 1.0 is possible and whether the cap + `toStream > 0` guard creates a revert-only edge case.
+- No ERC4626 share-price manipulation: ovrfloToken is minted 1:1 with PT deposited, not proportional to balance. Direct PT transfers to the vault are sweepable excess, not donations that inflate share price.
+- `wrappedUnderlying` tracks wrap reserve separately from `balanceOf`; `sweepExcessUnderlying` only removes the delta. Worth confirming wrap/unwrap can't be griefed by direct transfers.
+
+**As a Lending/Borrowing (no liquidations):**
+- `StreamPricing.grossPrice` floors and `obligation` ceils — directional rounding is load-bearing for I-13 (obligation <= remaining). Worth verifying the rounding directions are correct for all APR/time combinations within bounds.
+- No health factor, no liquidation mechanism — loan safety depends entirely on stream determinism (non-cancelable Sablier V2) and the obligation <= remaining invariant. If Sablier V2 behavior changes (immutable, so low risk), the lending model breaks.
 
 ### Temporal Risk Profile
 
 **Deployment & Initialization:**
-- `OVRFLOFactory.deploy` + `addMarket` set vault immutables and one-shot series config in a single multisig-owned flow; `addMarket` requires a ready Pendle oracle window and exact SY-underlying match. No `initialize()`/proxy front-running surface (no proxies). `OVRFLOFactory.sol:112-176`.
+- Two-step deployment (`configureDeployment` → `deploy`) prevents parameter front-running. Series approval is one-shot (I-9); oracle cardinality must be prepared via `prepareOracle` before `addMarket`. Partially mitigated.
 
 **Market Stress:**
-- TWAP (15-30 min window) mitigates single-block oracle manipulation but stale rates during volatility skew the deposit split; no on-chain staleness re-check at deposit. `OVRFLO.deposit:344` [X-1](invariants.md#x-1).
+- TWAP oracle (15-30 min window) provides manipulation resistance. Freshness not rechecked per deposit (X-1), but low practical risk: external Pendle traders/LPs write observations continuously, and a keeper bot via `prepareOracle()` is the fallback. Linear APR pricing for loans is market-stress-immune (no oracle at loan time). Partially mitigated.
 
 ### Composability & Dependency Risks
 
-> **Pendle Oracle** — via `OVRFLO.deposit:344`, `OVRFLOFactory.addMarket:155`
-> - Assumes: `getPtToSyRate` returns a fresh, manipulation-resistant TWAP in 1e18 scale.
-> - Validates: cardinality + oldest-observation satisfied at onboarding only (`addMarket`); not rechecked at deposit.
-> - Mutability: Immutable vault/factory constant; oracle contract is externally governed by Pendle.
-> - On failure: returns a stale/wrong rate → split skew; no revert/circuit-breaker at deposit.
+**Dependency Risk Map:**
 
-> **Sablier V2 Lockup Linear** — via `OVRFLO.deposit:362`, `OVRFLOBook.*`
-> - Assumes: `withdrawableAmountOf` monotonic, `withdraw` ACL = sender/owner/approved only, NFT ownership = withdrawal authority, non-cancelable streams stay non-cancelable.
-> - Validates: `StreamPricing.requireEligible` checks sender=core, asset, end=expiry, no cliff, non-cancelable, remaining>0 at pledge time; not re-checked at claim/close.
-> - Mutability: Immutable constant (`0xAFb979…`); Sablier V2 is immutable (v1.1), externally governed.
-> - On failure: wrong withdrawable → over/under-draw; ACL bypass → value sink. Bounded by book NFT custody.
+> **Pendle Oracle (TWAP)** — via `OVRFLO.oracle.getPtToSyRate()`
+> - Assumes: returns correct PT-to-SY rate in 1e18 scale within the TWAP window
+> - Validates: TWAP duration bounds (15-30 min), oracle cardinality/observation readiness at `addMarket`
+> - Mutability: Pendle-governed; potentially upgradeable by Pendle multisig
+> - On failure: reverts (no fallback)
 
-**Token Assumptions** *(unvalidated only)*:
-- Pendle PT: assumes exact transfer (no fee-on-transfer) and 18 decimals — `deposit` has no PT balance-delta check [I-1](invariants.md#i-1).
-- ovrfloToken: assumes 18-decimal granularity so `repayLoan` equality closes cleanly (documented in `docs/solutions`).
-- Underlying: `wrap` and book `_pullExact` use balance-delta checks (fee-on-transfer safe).
+> **Sablier V2 Lockup Linear** — via `OVRFLO.sablierLL` and `OVRFLOBook.sablier`
+> - Assumes: streams vest linearly, non-cancelable streams are truly non-cancelable, `withdrawableAmountOf` is accurate
+> - Validates: stream sender == core vault, asset == ovrfloToken, end time == expiry, no cliff, non-cancelable
+> - Mutability: immutable (V2 is not upgradeable; V4 rejected for this reason)
+> - On failure: reverts
 
-**Shared State Exposure**: Pendle oracle TWAP is shared with all Pendle users; large PT market actions could move the TWAP window the vault reads. Sablier streams are per-deposit (not shared pools).
+> **Pendle Market** — via `OVRFLOFactory.addMarket`
+> - Assumes: `readTokens` returns correct SY/PT/YT, `expiry()` returns correct maturity
+> - Validates: `IStandardizedYield(sy).yieldToken() == info.underlying`
+> - Mutability: Pendle-governed
+> - On failure: reverts
+
+**Token Assumptions** *(out of scope — do not audit)*:
+- Only standard 18-decimal exact-transfer ERC-20s will be used (no fee-on-transfer, no rebasing). The multisig validates canonical Pendle PTs at `addMarket()`. Token standard deviations are explicitly outside the threat model.
 
 ---
 
 ## 3. Invariants
 
-> ### Full invariant map: [invariants.md](invariants.md)
+> ### Full invariant map: **[invariants.md](invariants.md)**
 >
-> - **18 Enforced Guards** (`G-1` … `G-18`) — per-call preconditions with `Check` / `Location` / `Purpose`
-> - **13 Single-Contract Invariants** (`I-1` … `I-13`) — Conservation, Bound, StateMachine, Temporal
-> - **5 Cross-Contract Invariants** (`X-1` … `X-5`) — caller/callee pairs across scope boundaries
-> - **3 Economic Invariants** (`E-1` … `E-3`) — higher-order properties deriving from `I-N` + `X-N`
+> - **32 Enforced Guards** (`G-1` … `G-32`) — per-call preconditions with `Check` / `Location` / `Purpose`
+> - **18 Single-Contract Invariants** (`I-1` … `I-18`) — Conservation, Bound, Ratio, StateMachine, Temporal
+> - **4 Cross-Contract Invariants** (`X-1` … `X-4`) — caller/callee pairs that cross scope boundaries
+> - **4 Economic Invariants** (`E-1` … `E-4`) — higher-order properties deriving from `I-N` + `X-N`
 >
-> The **On-chain=No** blocks are the high-signal ones — each is simultaneously an invariant and a potential bug. Attack-surface bullets above cross-link directly into the relevant blocks.
+> Every inferred block cites a concrete Δ-pair, guard-lift + write-sites, state edge, temporal predicate, or NatSpec quote. The **On-chain=No** blocks (I-6, X-4) are the high-signal ones — each is simultaneously an invariant and a potential bug. Attack-surface bullets above cross-link directly into the relevant blocks.
 
 ---
 
@@ -171,10 +223,12 @@ No upgradeable contracts (no UUPS/transparent/beacon/proxy). All core contracts 
 
 | Aspect | Status | Notes |
 |--------|--------|-------|
-| README | Present | `README.md` — thorough protocol spec with flows, architecture, fee structure, security notes (per spec) |
-| NatSpec | ~120 annotations | Extensive `@notice`/`@dev` across all contracts; rounding-direction rationale documented in `StreamPricing` |
-| Spec/Whitepaper | Present | `README.md` doubles as spec; `CONCEPTS.md` holds domain glossary (per spec) |
-| Inline Comments | Thorough | Load-bearing rounding notes, CEI intent, solution-doc cross-references |
+| README | Present | `README.md` (39KB); comprehensive protocol description, flows, design notes, fee structure |
+| NatSpec | ~578 annotations | Thorough across all 5 source files; per-function `@notice`/`@dev` with design rationale |
+| Spec/Whitepaper | Present | README serves as spec (per spec); contains invariants, actor definitions, trust assumptions |
+| Inline Comments | Adequate | Rounding directions documented in StreamPricing; security docs referenced for key decisions |
+
+Spec-derived claims tagged `(per spec)` where applicable: obligation <= remaining (per spec), protocol solvency E-1 (per spec), no liquidations by design (per spec), ovrfloToken cross-series fungibility (per spec).
 
 ---
 
@@ -182,122 +236,128 @@ No upgradeable contracts (no UUPS/transparent/beacon/proxy). All core contracts 
 
 | Metric | Value | Source |
 |--------|-------|--------|
-| Test files | 16 | File scan (always reliable) |
-| Test functions | 179 | File scan (always reliable) |
-| Line coverage | Unavailable | `forge coverage` ran (167 pass / 4 fork skipped) but emitted no % summary; lcov may exist in `coverage/` |
+| Test files | 19 | File scan (13 in test/ + 6 in test/fork/) |
+| Test functions | 296 | File scan |
+| Line coverage | Unavailable | forge coverage timed out after 180s (twice); background run completed tests (67 passed, 0 failed) but did not produce coverage table |
 | Branch coverage | Unavailable | Same as above |
 
 ### Test Depth
 
 | Category | Count | Contracts Covered |
 |----------|-------|-------------------|
-| Unit | ~130 | OVRFLO, OVRFLOBook, OVRFLOFactory, OVRFLOToken, StreamPricing |
-| Stateless Fuzz | ~20 | StreamPricing math (`grossPrice`/`obligation`/`factor` bounds, monotonicity) |
-| Stateful Fuzz (Foundry invariant) | 3 | wrap/unwrap solvency: `SupplyEqualsPtBackingPlusUnderlyingReserve`, `UnwrapsNeverExceedSuccessfulWraps`, `WrappedReserveNeverExceedsUnderlyingBalance` |
-| Fork | 4 files | Book, Factory, OVRFLO, WrapUnwrap — require `MAINNET_RPC_URL` (skipped here) |
-| Stateful Fuzz (Echidna) | 0 | — |
-| Stateful Fuzz (Medusa) | 0 | — |
-| Formal Verification (Certora/Halmos/hevm) | 0 | — |
+| Unit | 13 | All (OVRFLO, OVRFLOBook, OVRFLOFactory, OVRFLOToken, StreamPricing, FlashLoan, WrapUnwrap) |
+| Fork | 6 | Mainnet fork: vault, book, factory, flash loan, wrap/unwrap |
+| Stateless Fuzz | present | OVRFLOFuzz (1000 runs) |
+| Stateful Fuzz (Foundry) | 3 | OVRFLOBook invariant, OVRFLO invariant, wrap/unwrap invariant (500 runs, depth 25) |
+| Attack Scenarios | 1 | Flash-loan griefing, wrap/claim/redeem loops |
+| Math Stress | 1 | StreamPricing math (rounding, overflow, boundary) |
+| Stateful Fuzz (Echidna) | 0 | none |
+| Stateful Fuzz (Medusa) | 0 | none |
+| Formal Verification (Certora) | 0 | none |
+| Formal Verification (Halmos) | 0 | none |
+| Formal Verification (HEVM) | 0 | none |
 
 ### Gaps
 
-- No stateful fuzz on the **book loan lifecycle** (claim/repay/close interleaving) — the 3 Foundry invariants cover wrap/unwrap only.
-- No formal verification of `StreamPricing` rounding invariant `obligation <= remaining` (stress-tested via stateless fuzz but not proven).
-- Fork tests require an archive RPC; not runnable in this environment.
-- No negative auth tests documented for book cancel paths beyond unit reverts.
+- No Echidna or Medusa stateful fuzzing for pool claim accounting and flash loan reentrancy paths — highest audit impact given the dual-channel claim complexity.
+- No formal verification for StreamPricing math (obligation <= remaining, rounding directions) — math-heavy financial logic benefits most from formal methods.
+- Coverage metrics unavailable (forge coverage timed out); test existence confirmed by file scan (19 files, 296 functions). Previous run reported 88.35% line coverage (100% for src/ files) but that predates the unified offer merge.
+- Frontend tests (Vitest in `web/tests/`) exist but are out of scope for this contract audit.
 
 ---
 
 ## 6. Developer & Git History
 
-> Repo shape: **normal_dev** — 63 source-touching commits over 315 days; the OVFL→OVRFLO rename/migration (commit `96dd254`) reset many file paths; current `src/` is the post-migration codebase.
+> Repo shape: normal_dev — 84 source-touching commits over 319 days (2025-08-15 → 2026-06-30). Analyzed branch: `main` at `183e0ce`.
 
 ### Contributors
 
 | Author | Commits | Source Lines (+/-) | % of Source Changes |
 |--------|--------:|--------------------|--------------------:|
-| jay | 111 | +3811 / — | 100% |
-| Perplexity Computer | 4 | — | <1% |
-| ayeslick | 3 | — | <1% |
+| jay | 171 | +4,643 | 100% |
 
 ### Review & Process Signals
 
 | Signal | Value | Assessment |
 |--------|-------|------------|
-| Unique contributors | 3 | Single-dev dominance (jay = 100% of source lines) |
-| Merge commits | 5 of 118 (4%) | Minimal merge-based review |
-| Repo age | 2025-08-15 → 2026-06-26 | ~10.5 months |
-| Recent source activity (30d) | 10 commits | **Late burst before audit** — entire secondary market + wrap/unwrap + refactor landed 2026-06-23/24 |
-| Test co-change rate | 58.7% | Majority of source commits also touch tests (co-modification, not coverage) |
+| Unique contributors | 1 | Single-dev dominance (jay: 100% of source lines) |
+| Merge commits | low | Minimal formal review process |
+| Repo age | 2025-08-15 → 2026-06-30 | 319 days |
+| Recent source activity (30d) | 31 commits | Very active — late burst of pool features, unified offer merge, and fixes |
+| Test co-change rate | 64.3% | Most source commits include test changes; 10% fix-without-test rate |
 
 ### File Hotspots
 
 | File | Modifications | Note |
 |------|-------------:|------|
-| src/OVRFLO.sol (ex-OVFL.sol) | 47 combined | Highest churn — core vault, refactored repeatedly |
-| src/OVRFLOFactory.sol (ex-OVFLFactory) | 25 combined | Onboarding/oracle flow reworked several times |
-| src/OVRFLOBook.sol | 5 | New (2026-06-23), 849-line initial drop |
-| src/OVRFLOToken.sol | 6 | Thin, stable |
-| src/StreamPricing.sol | 2 | New, math-critical |
+| src/OVRFLO.sol | 50 | Highest churn — vault core, renamed mid-project |
+| src/OVRFLOBook.sol | 31 | Secondary market — all pool features and unified offer merge in last 30 days |
+| src/OVRFLOFactory.sol | 22 | Admin hub, deployment, market approval |
 
 ### Security-Relevant Commits
 
-**Score** = weighted fix-like signals (keywords, diff patterns, change shape). **10+ warrants a manual diff.**
-
 | SHA | Date | Subject | Score | Key Signal |
 |-----|------|---------|------:|------------|
-| e3514b3 | 2026-03-07 | Port recovered Solidity hardening and tests onto main | 17 | +6 runtime guards, tightens AC, token/accounting logic, 4 security domains |
-| 342409f | 2026-04-18 | Fix tests, update front end | 16 | rewrites guards, loosens AC (-5), net removal |
-| 36103df | 2026-06-24 | Gate OVRFLOBook offers on active markets + audit docs | 15 | +33 guards, tightens AC, 437 lines |
-| a668f38 | 2026-06-23 | feat: add OVRFLO wrap unwrap | 14 | +10 guards, token/accounting, 4 domains |
-| 769a00a | 2026-06-23 | protect OVRFLOBook makers from retroactive fee changes | 13 | hardening, fee snapshot, accounting |
-| 384c92e | 2026-06-23 | feat: add OVRFLO secondary market book | 12 | +64 guards, +849 lines, new subsystem |
+| 3a7b06a | 2026-06-27 | fix: code review fixes + doc updates | 18 | adds guards, tightens AC, 4 security domains |
+| 860f72d | 2026-06-27 | feat: fix factory deployment/management gaps + make admin immutable | 17 | adds guards, tightens AC, fund_flows + oracle |
+| e3514b3 | 2026-03-07 | Port recovered Solidity hardening and tests onto main | 17 | hardening, guards, token transfer + accounting |
+| 342409f | 2026-04-18 | Fix tests, update front end | 16 | rewrites guards, loosens AC, 4 domains |
+| 36103df | 2026-06-24 | Gate OVRFLOBook offers on active markets | 15 | adds 33 guards, tightens AC, 437 lines changed |
+| 98bff9d | 2026-06-27 | feat: add PT flash loan facility | 14 | new feature, guards, AC, token transfer |
+| 887f2b9 | 2026-06-29 | feat(U7): add poolClaimLoan and claimPoolShare | 14 | new feature, guards, fund_flows |
+| f925744 | 2026-06-29 | feat(U5): add createBorrowPool | 14 | new feature, guards, fund_flows |
+| a668f38 | 2026-06-23 | feat: add OVRFLO wrap unwrap | 14 | new feature, guards, AC, token transfer |
+| aed261d | 2026-06-30 | refactor: merge sale and lend offers into unified offer type | — | 548 lines changed; major structural simplification |
 
 ### Dangerous Area Evolution
 
 | Security Area | Commits | Key Files |
 |--------------|--------:|-----------|
-| access_control | 30 | OVRFLO, OVRFLOBook, OVRFLOFactory, OVRFLOToken |
-| fund_flows | 29 | OVRFLO, OVRFLOBook, OVRFLOFactory, StreamPricing |
-| oracle_price | 29 | OVRFLO, OVRFLOBook, OVRFLOFactory, StreamPricing |
-| state_machines | 19 | OVRFLOFactory |
+| access_control | 50 | OVRFLO.sol, OVRFLOBook.sol, OVRFLOFactory.sol, OVRFLOToken.sol |
+| fund_flows | 50 | OVRFLO.sol, OVRFLOBook.sol, OVRFLOFactory.sol, StreamPricing.sol |
+| oracle_price | 50 | OVRFLO.sol, OVRFLOBook.sol, OVRFLOFactory.sol, StreamPricing.sol |
+| state_machines | 29 | OVRFLO.sol, OVRFLOFactory.sol |
 
 ### Forked Dependencies
 
 | Library | Path | Upstream | Status | Notes |
 |---------|------|----------|--------|-------|
-| openzeppelin-contracts | lib/openzeppelin-contracts | OpenZeppelin | Submodule | Standard v4.9; pragma range broad but unmodified |
-| prb-math | lib/prb-math | — | Submodule | `>=0.8.4`; used for `mulDiv` rounding |
-
-No internalized/forked libraries with logic changes. No tech-debt markers (TODO/FIXME) in source.
+| openzeppelin-contracts | lib/openzeppelin-contracts | OpenZeppelin | Submodule | 318 .sol files; not internalized |
+| prb-math | lib/prb-math | — | Submodule | 9 .sol files; not internalized |
 
 ### Security Observations
 
-- **Single-developer code** — jay authored 100% of source lines; no on-chain peer-review signal beyond 5 merge commits.
-- **Late burst** — 10 source commits in the 30 days before audit, including the entire 849-line book subsystem and wrap/unwrap; minimal seasoning.
-- **One commit without test co-change** in the late window (`11a8806` "CEI for OVRFLOBook") — 12-line CEI reorder, low residual risk.
-- **Oracle/fund-flow/access churn** — top-3 most-modified security areas (29-30 commits each); high-churn core vault warrants deeper review.
-- **No on-chain timelock/pause** — admin powers rely entirely on the off-chain multisig process; no `Pausable`/`TimelockController` in scope.
-- **OVRFLOToken single-step ownership** — unlike factory/book (`Ownable2Step`), the token uses single-step `transferOwnership`.
-- **Fix-without-test rate 0%** — every fix-scored commit co-changed tests (co-modification signal, not coverage).
+- **Single-developer risk** — jay authored 100% of source lines; no peer review signals.
+- **Late burst** — 31 source commits in 30 days, all OVRFLOBook pool features and unified offer merge; least testing history for newest code.
+- **High-churn security areas** — 50 commits each across access_control, fund_flows, oracle_price.
+- **Fix without tests** — 10% fix-without-test rate; 5 late commits without test changes.
+- **Critical late fix** — `ca8e248` added pro-rata cap on `claimPoolShare` to prevent draining `poolProceeds` — validates I-15/E-4.
+- **Major refactor** — `aed261d` merged sale/lend offers into unified type (548 lines changed, nSLOC -17%); simplifies attack surface but all in last 30 days.
+- **No TODO/FIXME** — 0 technical debt markers in the codebase.
+- **No internalized libs** — all dependencies are standard submodules; no hidden attack surface from adapted code.
 
 ### Cross-Reference Synthesis
 
-- **`OVRFLO.deposit` is #1 in BOTH oracle-surface AND conservation gap** — no PT balance-delta + onboarding-only freshness → highest-leverage review: the split math and the exact-transfer assumption.
-- **Late-burst book subsystem (384c92e, 849 lines) has no stateful fuzz on loan interleaving** — claim/repay/close sequences are unit-tested only → prioritize stateful fuzz here.
-- **`StreamPricing` rounding is load-bearing for solvency (E-2) but only stress-fuzzed, not formally proven** — `obligation <= remaining` underpins the no-liquidation design.
+- **OVRFLOBook.sol is #1 in BOTH churn AND attack-surface priority** — all top attack surfaces route through it → highest-leverage review: poolClaimLoan, claimPoolShare, createBorrowPool, closeLoan.
+- **31 late commits correlate with the newest attack surfaces** — pool claim dual-channel accounting and unified offer consumption have the least testing history.
+- **setMarketDepositLimit gap (I-6, X-4) aligns with 50 access_control commits** — admin power churn increases risk of missing invariant checks on setters.
+- **Unified offer merge (aed261d) simplifies but reshapes the surface** — removed createLenderPool double-validation and borrow listings; new risk is offer consumption ambiguity (sale vs loan path).
 
 ---
 
 ## X-Ray Verdict
 
-**ADEQUATE** — Roles, docs, and tests are solid (Foundry invariants + stateless fuzz + unit breadth), but single-developer code with a late pre-audit feature burst, no on-chain timelock/pause, and load-bearing math that is stress-fuzzed but not formally proven cap the posture at adequate.
+**HARDENED** — Comprehensive test suite (unit + fuzz + invariant, 19 files, 296 functions) with thorough NatSpec and spec documentation, but single-developer codebase with a late burst of complex pool features and a major structural refactor that have minimal testing history.
 
-**Tier calculation:** Tests = HARDENED (unit + fuzz + Foundry invariant); Docs = HARDENED (NatSpec + spec + thorough inline); Access Control = ADEQUATE (clear roles + multisig, but no on-chain timelock/pause). Lowest = ADEQUATE. No TODOs in security paths (tech_debt=0), so no further drop.
+**Tier calculation:**
+- Tests: HARDENED (unit + fuzz + invariant, 19 files, 296 functions; coverage unavailable but test existence confirmed)
+- Docs: HARDENED (578 NatSpec annotations + comprehensive README/spec)
+- Access Control: HARDENED (timelocked multisig + 2-step ownership + flash loan pause)
+- Code Hygiene: 0 TODOs → no tier drop
 
 **Structural facts:**
-1. 1135 nSLOC across 3 subsystems (Core Vault, Admin Hub, Secondary Market); 5 in-scope contracts, 0 upgradeable.
-2. 179 test functions across 16 files, including 3 Foundry invariant tests (wrap/unwrap solvency) and ~20 stateless fuzz tests (StreamPricing math).
-3. Single developer (jay) authored 100% of source lines; 10 source commits landed in the 30 days before audit.
-4. 2 external immutable dependencies (Pendle Oracle, Sablier V2 LL at `0xAFb979…`); no internalized/forked libraries with logic changes.
-5. No on-chain timelock or pause mechanism; admin powers are instant on multisig sign (off-chain timelock only).
+1. 1,162 nSLOC across 5 contracts in 3 subsystems (vault, secondary market, pricing library)
+2. 19 test files with 296 test functions; coverage metrics unavailable (forge coverage timed out); previous run reported 88.35% line coverage on source files
+3. Single developer (jay) authored 100% of source lines over 319 days; 31 late commits in 30 days
+4. No upgradeable contracts — all admin relationships are immutable (factory, oracle, sablier, underlying, ovrfloToken)
+5. 0 TODO/FIXME markers in the codebase; unified offer merge (aed261d) reduced nSLOC by 17% (1,398 → 1,162)

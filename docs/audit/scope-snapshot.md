@@ -5,7 +5,7 @@
 ## In-scope commit
 
 - **Branch:** `main`
-- **Commit:** `3e9402b9990b4c990c7a7811185efd2bf7261f38` (2026-06-24)
+- **Commit:** `183e0ce` (2026-06-30)
 - **Code freeze declaration:** This is the frozen revision under audit. Findings are reproducible against this commit; any post-freeze change is out of scope and must be re-audited separately.
 
 > **Line-number caveat:** The `x-ray/` suite was regenerated at the current HEAD. Companion docs in this package cite **function names and invariant IDs** (e.g. `OVRFLO.deposit()`, invariant `X-1`) rather than brittle line numbers. Where a `file:line` is given, re-verify it against the pinned commit's source before relying on it.
@@ -17,10 +17,10 @@
 | Core vault | `src/OVRFLO.sol` | PT deposit/claim, wrap/unwrap reserve accounting, Sablier stream creation |
 | Wrapper token | `src/OVRFLOToken.sol` | Per-underlying ERC20, owner-gated mint/burn |
 | Admin hub | `src/OVRFLOFactory.sol` | Timelocked-multisig-owned deployment, market onboarding, admin forwarding |
-| Secondary market | `src/OVRFLOBook.sol` | Stream sale + stream-collateralized self-repaying loans, orderbook |
+| Secondary market | `src/OVRFLOBook.sol` | Stream sale + stream-collateralized self-repaying loans via unified offers and pools |
 | Pricing | `src/StreamPricing.sol` | APR/discount math + `requireEligible` cross-contract gate |
 
-Approximate 1135 nSLOC across the three subsystems (per `x-ray/x-ray.md`).
+1,162 nSLOC across the three subsystems (per `x-ray/x-ray.md`).
 
 ## Excluded paths
 

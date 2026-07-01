@@ -25,10 +25,10 @@
 
 ### Self-loan `repayLoan` revert — REJECTED as security finding, FIXED as correctness guard
 
-- **Original claim (Low):** The book allows `borrower == lender` (self-loans via `createBorrowPool` or `createLenderPool`), but `repayLoan()` calls `_pullExact(ovrfloToken, msg.sender, loan.lender, amount)`. When `from == to`, an OZ ERC20 self-transfer is a net-zero balance change, so the `balanceAfter - balanceBefore == amount` check reverts. Self-loans therefore cannot be early-repaired.
+- **Original claim (Low):** The book allows `borrower == lender` (self-loans via `createBorrowPool`), but `repayLoan()` calls `_pullExact(ovrfloToken, msg.sender, loan.lender, amount)`. When `from == to`, an OZ ERC20 self-transfer is a net-zero balance change, so the `balanceAfter - balanceBefore == amount` check reverts. Self-loans therefore cannot be early-repaired.
 - **Disproof (security):** Self-lending is economically irrational — the user posts `capacity` in underlying, borrows against their own stream, receives `borrowAmount - fee` back, and the fee goes to treasury. Nobody does this intentionally. The loan is still fully resolvable via `poolClaimLoan()` and `closeLoan()` (the book calls `sablier.withdraw(streamId, msg.sender, amount)` for `poolClaimLoan`, which has no self-transfer issue). No fund safety issue: no one else is affected, accounting is correct, nothing is permanently locked (`closeLoan` is permissionless and works at maturity). The only impact is a self-inflicted UX edge case for irrational behavior.
-- **Fix applied (2026-06-28):** Despite being a non-security UX edge case, self-match prevention guards were added to both pool-creation paths as a correctness guard: `require(offer.lender != borrower, "OVRFLOBook: self-match")` in `createBorrowPool` (via `_validateBorrowOffers`) and `require(msg.sender != listing.borrower, "OVRFLOBook: self-match")` in `createLenderPool`. This prevents the irrational state at the root cause rather than special-casing the repayment transfer. Tests added in `test/OVRFLOBook.t.sol` (`test_CreateBorrowPool_SelfMatchReverts`, `test_CreateLenderPool_SelfMatchReverts`). Documented as pattern #4 in `docs/solutions/patterns/ovrflo-critical-patterns.md`.
-- **Evidence:** `src/OVRFLOBook.sol` — self-match guards in `createBorrowPool` and `createLenderPool`; `docs/solutions/security-issues/repayloan-equality-rounding-no-brick-OVRFLOBook-20260624.md` — companion finding section; `docs/solutions/patterns/ovrflo-critical-patterns.md` — pattern #4.
+- **Fix applied (2026-06-28):** Despite being a non-security UX edge case, self-match prevention guard was added to the pool-creation path as a correctness guard: `require(offer.maker != borrower, "OVRFLOBook: self-match")` in `_validateOffers` called from `createBorrowPool`. This prevents the irrational state at the root cause rather than special-casing the repayment transfer. Tests added in `test/OVRFLOBook.t.sol` (`test_CreateBorrowPool_SelfMatchReverts`). Documented as pattern #4 in `docs/solutions/patterns/ovrflo-critical-patterns.md`.
+- **Evidence:** `src/OVRFLOBook.sol` — self-match guard in `createBorrowPool`; `docs/solutions/security-issues/repayloan-equality-rounding-no-brick-OVRFLOBook-20260624.md` — companion finding section; `docs/solutions/patterns/ovrflo-critical-patterns.md` — pattern #4.
 
 ### Pre-maturity flash-loan PT yield extraction via deposit + book sale + unwrap — REJECTED (accepted by design + normal arb)
 
@@ -47,30 +47,30 @@ The following attack vectors were systematically probed and found not exploitabl
 
 | Vector | Why not exploitable |
 |--------|-------------------|
-| Flash-loan TWAP manipulation | 15-30 min TWAP window (I-7) resists single-block flash-loan manipulation; cardinality validated at onboarding |
+| Flash-loan TWAP manipulation | 15-30 min TWAP window (G-29) resists single-block flash-loan manipulation; cardinality validated at onboarding |
 | Self-filling offers / listings | Self-fill (`msg.sender == offer.maker`) loses fees to treasury; no value extraction; no fill redirection (explicit offer/listing IDs) |
 | Sandwich on book fills | Same-block `block.timestamp` for all txs; `remaining` (Sablier `deposited - withdrawn`) cannot be manipulated by third parties (v1.1 ACL); all fills have slippage params |
-| Cross-market arb | Per-market claim bounds (G-10: `currentDeposited >= amount`); cross-market fungibility is M-5 by design |
-| Wrap/unwrap circular arb | Post-maturity: value-neutral (settled in flash-loan-wrap-claim doc). Pre-maturity: `claim` blocked by G-9 |
+| Cross-market arb | Per-market claim bounds (G-11: `currentDeposited >= amount`); cross-market fungibility is M-5 by design |
+| Wrap/unwrap circular arb | Post-maturity: value-neutral (settled in flash-loan-wrap-claim doc). Pre-maturity: `claim` blocked by G-10 |
 | Deposit fee avoidance | Fee is immutable per series (I-9, one-shot latch G-2); TWAP rate can't be single-user manipulated; `wrap()` is a different product (no PT, no stream) |
 | TOCTOU on stream remaining | `requireEligible` re-reads `deposited - withdrawn` at fill time (every fill calls `_requireEligible`); listings escrow the stream so `remaining` is stable between post and fill |
-| Reentrancy on vault (no `nonReentrant`) | CEI followed: `marketTotalDeposited` and `wrappedUnderlying` updated before all external calls; `wrap` has balance-delta check (G-11); canonical Pendle PT/underlying tokens don't have callbacks |
+| Reentrancy on vault (no `nonReentrant`) | CEI followed: `marketTotalDeposited` and `wrappedUnderlying` updated before all external calls; `wrap` has balance-delta check (G-16); canonical Pendle PT/underlying tokens don't have callbacks |
 | Multicall sequencing | OZ `multicall` reverts on any delegatecall failure (all-or-nothing); each delegated call hits `nonReentrant`; double-fill reverts on `require(listing.active)` / `require(offer.active)` |
-| Loan accounting underflow | `drawn + repaid <= obligation` guaranteed: `poolClaimLoan` caps at `_outstanding(loan)`, `repayLoan` requires `amount <= outstanding` (G-17); no sequence of claim/repay/close can overflow `drawn + repaid` past `obligation` |
+| Loan accounting underflow | `drawn + repaid <= obligation` guaranteed: `poolClaimLoan` caps at `_outstanding(loan)`, `repayLoan` requires `amount <= outstanding` (G-24); no sequence of claim/repay/close can overflow `drawn + repaid` past `obligation` |
 | Stream withdrawal before pledging | `requireEligible` uses `deposited - withdrawn`; if user withdraws accrued value before listing, `remaining` is lower and price is proportionally lower — correct behavior, no exploit |
 | Third-party `closeLoan` | By design (I-3 / audit-report I-3): lender gets `outstanding`, borrower gets residual stream, no misrouting; borrower loses only timing optionality, not value |
-| Book underlying insolvency | `buyListing` / `createLenderPool` are net-zero for the book (buyer/lender pays in = seller/borrower + treasury paid out); offer capacity tracked per-offer with pre-check (`grossPrice <= offer.capacity` or `borrowAmount <= offer.capacity`); total payouts can never exceed total offer deposits |
+| Book underlying insolvency | `buyListing` / `createBorrowPool` are net-zero for the book (buyer/lender pays in = seller/borrower + treasury paid out); offer capacity tracked per-offer with pre-check (`grossPrice <= offer.capacity` or `borrowAmount <= offer.capacity`); total payouts can never exceed total offer deposits |
 
 ### Informational reclassifications (audit-report IDs, ex-Medium)
 
-These were Medium findings reclassified to **Informational** under the documented trust model (Pendle-only onboarding, multisig-validated markets). They are **accepted trust boundaries**, not bugs:
+These were Medium findings reclassified under the documented trust model (Pendle-only onboarding, multisig-validated markets). Token transfer assumptions (I-1, I-2) are **explicitly out of scope** — only standard 18-decimal exact-transfer ERC-20s will be used:
 
-- **audit-report I-1 (ex-M-1)** — `deposit()` PT transfer accounting trusts user-supplied `ptAmount` without balance-delta check. Pendle-only scope; multisig validates canonical markets. See `trust-assumption-ledger.md`.
-- **audit-report I-2 (ex-M-2)** — Underlying fee collection in `deposit()` assumes exact transfer. Same trust boundary as I-1 for canonical underlyings.
+- **audit-report I-1 (ex-M-1)** — `deposit()` PT transfer accounting trusts user-supplied `ptAmount` without balance-delta check. **Out of scope:** only exact-transfer tokens will be used. Do not re-raise.
+- **audit-report I-2 (ex-M-2)** — Underlying fee collection in `deposit()` assumes exact transfer. **Out of scope:** same as I-1. Do not re-raise.
 - **audit-report I-3 (ex-M-3)** — Permissionless `closeLoan()`. **By design** — liveness per book plan R15; does not misroute funds. See internal-model explainer.
 - **audit-report I-4 (ex-M-6)** — Operational trust concentration (no `factory` migration by design — `factory` is immutable; immutable Sablier; book fee cap is a deploy footgun, runtime-enforced). Informational / operational.
 
-> **ID disambiguation:** `I-1..I-13` in `x-ray/invariants.md` are **invariants**; `I-1..I-4` here are **audit-report informational findings** (ex-M-1..M-6). Where this doc says "audit-report I-1 (ex-M-1)" it means the finding; "invariant I-8" means the invariant.
+> **ID disambiguation:** `I-1..I-17` in `x-ray/invariants.md` are **invariants**; `I-1..I-4` here are **audit-report informational findings** (ex-M-1..M-6). Where this doc says "audit-report I-1 (ex-M-1)" it means the finding; "invariant I-6" means the invariant.
 
 ## Q&A bank — resolved open questions
 
@@ -78,13 +78,13 @@ These are the questions an auditor predictably asks in week one. They are alread
 
 1. **Sablier withdraw ACL while book is recipient?** — Closed. V2 v1.1: only sender, NFT owner, or approved operator. No public withdraw. (See H-2 above and the ACL table.)
 2. **`closeLoan` permissionless intent?** — By design — liveness per book plan R15. Removes borrower timing optionality; does not misroute funds.
-3. **Token assumptions (Pendle PT / exact transfer)?** — Trust boundary. Admin onboarding validates canonical Pendle markets; documented explicitly in the trust-assumption ledger and the Pendle interface contract.
+3. **Token assumptions (Pendle PT / exact transfer)?** — **Out of scope.** Only standard 18-decimal exact-transfer ERC-20s will be used. The multisig validates canonical Pendle markets at `addMarket()`. Do not raise findings about fee-on-transfer, rebasing, or non-18-decimal tokens.
 4. **Multi-market same `expiryCached`?** — Not a practical Pendle concern; cross-market `ovrfloToken` fungibility makes cross-market routing acceptable anyway. (See M-5.)
 5. **Stale fee on listings after `setFee()`?** — Intentional maker protection. `feeBps` is snapshotted at listing/offer post time; settlement uses the stored fee, so `setFee()` does not retroactively change resting orders.
 6. **Flash-loan PT yield extraction pre-maturity?** — Accepted by design. Flash-loan PT → deposit → sell stream on book → unwrap → buy PT back is yield arbitrage using the protocol as designed. Wrap reserve drain is accepted (cross-origin fungibility). Protocol remains solvent (E-1). Wrapper is economically whole at maturity. Flash loan only removes the capital requirement. See rejected finding above.
 7. **Self-loan `repayLoan` revert?** — UX edge case, not a security finding. Self-lending is economically irrational. Loan still resolvable via `poolClaimLoan`/`closeLoan`. Self-match prevention guards added as a correctness fix (2026-06-28); see rejected finding above and pattern #4 in `ovrflo-critical-patterns.md`.
 8. **Sandwich / flash-loan manipulation of book pricing?** — Not exploitable. Book pricing is purely `StreamPricing` (remaining, APR, time-to-maturity) with no oracle dependency. `remaining` can't be manipulated (Sablier v1.1 ACL). Same-block `block.timestamp`. Slippage params on all fills. See "Other probed vectors" table above.
-9. **Reentrancy on vault paths (no `nonReentrant`)?** — CEI is followed on all vault paths (`deposit`, `claim`, `wrap`, `unwrap`). State is updated before external calls. `wrap` has balance-delta check (G-11). Canonical Pendle PT/underlying tokens don't have transfer callbacks. See "Other probed vectors" table above.
+9. **Reentrancy on vault paths (no `nonReentrant`)?** — CEI is followed on all vault paths (`deposit`, `claim`, `wrap`, `unwrap`). State is updated before external calls. `wrap` has balance-delta check (G-16). Canonical Pendle PT/underlying tokens don't have transfer callbacks. See "Other probed vectors" table above.
 
 ## 2026-06-27 code review — rejected findings
 
@@ -138,7 +138,7 @@ The following findings were raised in a comprehensive review of all non-test `*.
 The following fixes from the same review were applied:
 - `MIN_PT_AMOUNT` changed from `immutable` to `constant` (compile-time literal, zero SLOAD cost).
 - `wrap()` CEI fix: `wrappedUnderlying += amount` moved before `safeTransferFrom`.
-- OVRFLOBook view functions (`saleOfferState`, `saleListingState`, `lendOfferState`, `borrowListingState`) now revert for non-existent IDs, matching the existing `loanState` pattern.
+- OVRFLOBook view functions (`offerState`, `saleListingState`) now revert for non-existent IDs, matching the existing `loanState` pattern.
 - Interface licenses: `IPendleOracle`, `IPendleMarket`, `ISablierV2LockupLinear` changed from `UNLICENSED` to `MIT` (project-written minimal interfaces). Contradictory MIT comment block removed from `IStandardizedYield` (kept GPL SPDX, Pendle's interface).
 - `prepareOracle` in `OVRFLOFactory` now validates `twapDuration <= MAX_TWAP_DURATION` (was externally applied before this review session).
 
@@ -160,10 +160,10 @@ The following findings were raised during a focused gap review of `OVRFLOBook` a
 
 ### No `deadline` parameter on taker entrypoints — REJECTED (slippage params are load-bearing)
 
-- **Original claim (Informational, deferred in maker protections plan):** `sellIntoOffer`, `buyListing`, `createBorrowPool`, and `createLenderPool` have slippage params but no time-based `deadline` parameter.
+- **Original claim (Informational, deferred in maker protections plan):** `sellIntoOffer`, `buyListing`, `createBorrowPool`, and `closeLoan` are the taker entrypoints. The first three have slippage params but no time-based `deadline` parameter; `closeLoan` is permissionless with no slippage params.
 - **Rejection rationale:** Slippage parameters (`minNetOut`, `maxPriceIn`, `minAcceptable`) are the load-bearing protection against time-drift. Book pricing is purely deterministic from `StreamPricing` (remaining, APR, time-to-maturity) with no oracle dependency, so the only risk from a delayed transaction is that the price drifts — which the slippage params already bound. A `deadline` would be redundant API surface that adds no protection beyond what slippage already provides. The maker protections plan explicitly deferred this as "an API-symmetry nicety, not a correctness fix."
-- **Evidence:** `src/OVRFLOBook.sol` — all four taker entrypoints have slippage params; `docs/plans/2026-06-23-001-feat-ovrflo-book-maker-protections-plan.md` — Scope Boundaries section.
+- **Evidence:** `src/OVRFLOBook.sol` — the first three taker entrypoints have slippage params; `docs/plans/2026-06-23-001-feat-ovrflo-book-maker-protections-plan.md` — Scope Boundaries section.
 
 ## Also reviewed — no medium+ issue (consensus)
 
-The internal review's "Reviewed — no medium+ issue (consensus)" table (in `x-ray/multi-agent-audit-report.md`) covers consensus-reviewed design decisions that are neither rejected findings nor resolved Q&A: maker fee snapshots, `createLenderPool` obligation-before-slippage ordering, loan accounting `drawn + repaid ≤ obligation`, stream eligibility vs deposit creation alignment, reentrancy guards on book mutators, admin APR drift as a governance/trust boundary, and book `poolClaimLoan`/`closeLoan` Sablier calls (fork-tested). If you are about to raise one of these, it has already been consensus-reviewed — the table entry is the starting point, not a wall.
+The internal review's "Reviewed — no medium+ issue (consensus)" table (in `x-ray/multi-agent-audit-report.md`) covers consensus-reviewed design decisions that are neither rejected findings nor resolved Q&A: maker fee snapshots, loan accounting `drawn + repaid ≤ obligation`, stream eligibility vs deposit creation alignment, reentrancy guards on book mutators, admin APR drift as a governance/trust boundary, and book `poolClaimLoan`/`closeLoan` Sablier calls (fork-tested). If you are about to raise one of these, it has already been consensus-reviewed — the table entry is the starting point, not a wall.

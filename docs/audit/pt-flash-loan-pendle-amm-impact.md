@@ -1,13 +1,17 @@
 # PT Flash-Loan Impact on the Pendle AMM Ecosystem
 
-Scope: Analysis of a *proposed* OVRFLO feature that flash-lends deposited Pendle
-Principal Tokens (PT) atomically (same-transaction repayment required), charging
-the borrower a fee in the vault's underlying asset to the treasury. The feature
-does not exist in `src/` today (no `flashLoan`/`IERC3156` surface in
-`OVRFLO.sol`, `OVRFLOFactory.sol`, or `OVRFLOToken.sol`).
+Scope: Analysis of OVRFLO's implemented PT flash loan feature (`OVRFLO.flashLoan()`). The vault flash-loans deposited Pendle Principal Tokens (PT) atomically (same-transaction repayment required), charging the borrower a fee in the vault's underlying asset to the treasury. The feature is live in `src/OVRFLO.sol` with the following safeguards:
+
+- **Pre-maturity gate**: `require(block.timestamp < info.expiryCached, "OVRFLO: matured")` — flash loans are blocked after PT maturity (resolving the concern in section 7 below).
+- **Circuit breaker**: `require(!flashLoanPaused, "OVRFLO: flash paused")` (G-12) — admin can pause flash loans without pausing deposits/claims/wraps.
+- **Amount cap**: `require(amount <= marketTotalDeposited[market], "OVRFLO: exceeds deposited")` (G-13) — cannot flash-loan more PT than is deposited for the market.
+- **Fee ceiling**: `flashFeeBps` capped at 1% (`FLASH_FEE_MAX_BPS = 100`, G-14); fee charged in underlying to `TREASURY_ADDR`.
+- **Reentrancy**: `nonReentrant` on `flashLoan()` itself; the callback can call unguarded `deposit()`/`wrap()`/`unwrap()` (see x-ray attack surface "Flash loan reentrancy via unguarded vault functions").
+- **Callback**: EIP-4531-inspired callback via `IFlashBorrower.onFlashLoan()` with `FLASH_CALLBACK_SUCCESS` hash verification; PT sent before callback, pulled back after.
 
 Key code references used:
-- `src/OVRFLO.sol` `deposit()` reads `IPendleOracle(oracle).getPtToSyRate(market, info.twapDurationFixed)` to split `ptAmount` into `toUser` (immediate ovrfloToken) and `toStream` (Sablier stream). `twapDurationFixed` is bounded to `[15m, 30m]` (invariant I-7). Oracle freshness/cardinality is validated only at market onboarding (`OVRFLOFactory.setSeriesApproved`), **not** revalidated per deposit (trust assumption X-1).
+- `src/OVRFLO.sol` `deposit()` reads `IPendleOracle(oracle).getPtToSyRate(market, info.twapDurationFixed)` to split `ptAmount` into `toUser` (immediate ovrfloToken) and `toStream` (Sablier stream). `twapDurationFixed` is bounded to `[15m, 30m]` (guard G-29). Oracle freshness/cardinality is validated at market onboarding (`OVRFLOFactory.addMarket`), not revalidated per deposit (trust assumption X-1). In practice this is low-risk: Pendle is a live protocol with external traders and LPs whose activity writes oracle observations continuously. Worst case, if external activity drops, a keeper bot can touch the market via `OVRFLOFactory.prepareOracle()` to maintain observation freshness.
+- `src/OVRFLO.sol` `flashLoan()` sends PT to borrower, invokes `IFlashBorrower(borrower).onFlashLoan(...)`, verifies callback success, pulls PT back via `safeTransferFrom`, and collects the fee in underlying.
 - `CONCEPTS.md` "OVRFLO cycle": deposit + book sale + unwrap/swap converts the PT discount to extractable underlying; executable today with held PT or zero capital via an **underlying** flash loan (swap underlying → PT on the Pendle AMM, run the cycle, repay in underlying).
 
 Pendle V2 mechanics confirmed from official docs/whitepaper:
@@ -51,7 +55,7 @@ the flash loan — no AMM harm. This is self-limiting.
 
 ## 2. TWAP oracle manipulation via flash loan to depress the rate for a simultaneous deposit
 
-**Verdict: NO CONCERN (given the 15–30 min TWAP window); the X-1 freshness gap is unchanged by this feature.**
+**Verdict: NO CONCERN (given the 15–30 min TWAP window); the X-1 freshness gap is low-risk and unchanged by this feature.**
 
 Reasoning: The proposed attack is: flash-loan PT → sell on AMM to depress
 `getPtToSyRate` → call `deposit()` in the same tx to capture a favorable split →
@@ -63,15 +67,20 @@ buy back PT → repay. The flaw:
   price across many blocks for ~the full window — which a same-tx flash loan
   structurally cannot do (it must repay within the transaction).
 - The existing `rejected-findings-record.md` already records this: "15–30 min
-  TWAP window (I-7) resists single-block flash-loan manipulation." The PT flash
+  TWAP window (G-29) resists single-block flash-loan manipulation." The PT flash
   loan does not change this — it adds no new ability to move the average that the
   existing underlying-flash-loan cycle didn't already have (an underlying flash
   loan can equally sell PT-amount-equivalent on the AMM intrablock).
-- The one residual the audit already flags (X-1) is **freshness/cardinality not
-  rechecked per deposit** — i.e. a *stale* oracle, not a *manipulated* one. A PT
-  flash loan does not create staleness; it only enables intrablock spot moves,
-  which the TWAP explicitly ignores. So the feature introduces no new oracle
-  attack surface beyond what's already accepted.
+- The one residual the audit flags (X-1) is **freshness/cardinality not
+  rechecked per deposit** — i.e. a *stale* oracle, not a *manipulated* one. This
+  is low-risk in practice: Pendle is a live protocol with external traders and
+  LPs whose normal activity writes oracle observations, keeping the TWAP fresh.
+  OVRFLO is not the sole user of the Pendle AMM. Worst case, if external market
+  activity drops, a keeper bot can touch the market via
+  `OVRFLOFactory.prepareOracle()` to maintain observation freshness. A PT flash
+  loan does not create staleness; it only enables intrablock spot moves, which
+  the TWAP explicitly ignores. So the feature introduces no new oracle attack
+  surface beyond what's already accepted.
 
 Bottom line: the oracle reads a multi-minute average; an atomic round-trip cannot
 move it. No new concern.
@@ -186,9 +195,10 @@ No concern.
 
 ## 7. Post-maturity AMM is disabled — can matured-PT flash loans be repaid?
 
-**Verdict: CONCERN — flash loans of matured PT can become unrepayable via the AMM; block flash loans for matured (or maturity-passing) series.**
+**Verdict: RESOLVED — pre-maturity gate implemented in `OVRFLO.flashLoan()`.**
 
-Reasoning: This is the one substantive issue. Post-maturity:
+Reasoning: This was the one substantive concern identified during the design
+phase. Post-maturity:
 - The Pendle AMM for that market is **inactive** — no PT/SY swap venue exists.
 - Matured PT redeems 1:1 for the underlying (accounting asset) via Pendle's
   `redeemPY`/`redeem` path. So a borrower who flash-loans matured PT *can* redeem
@@ -196,20 +206,19 @@ Reasoning: This is the one substantive issue. Post-maturity:
   **PT**, not underlying. Post-maturity there is no AMM to buy PT back with
   underlying, and minting fresh PT is impossible post-maturity (the SY→PT/YT
   split is disabled at/after expiry).
-- Therefore a flash loan of matured PT is **only repayable if the borrower never
-  disposes of the PT** (i.e., the loan is useless) or has another source of the
-  same matured PT. Any cycle that converts the matured PT to underlying (redeem,
-  unwrap, sell stream) leaves the borrower holding underlying with no path back to
-  PT → the flash loan reverts. That's safe-by-revert for OVRFLO (no loss — the
-  atomic repayment check fails and the tx reverts), but it makes the feature
-  non-functional and could cause confusing reverts or griefing-style gas burns.
+- Therefore a flash loan of matured PT would be **only repayable if the borrower
+  never disposes of the PT** (i.e., the loan is useless) or has another source of
+  the same matured PT. Any cycle that converts the matured PT to underlying
+  (redeem, unwrap, sell stream) leaves the borrower holding underlying with no
+  path back to PT → the flash loan reverts.
 
-Recommendation: **gate PT flash loans to pre-maturity series only**, and ideally
-enforce `block.timestamp < info.expiryCached` at loan time (mirroring the
-`claim`/deposit pre-maturity guards). This both prevents unrepayable-loan reverts
-and aligns with the existing design rule that post-maturity PT exits go through
-the claim path, not the AMM. (Consistent with `4626_SECURITY.md` cautions on
-flash-loan-driven forced-redemption paths.)
+**Fix applied:** `OVRFLO.flashLoan()` enforces
+`require(block.timestamp < info.expiryCached, "OVRFLO: matured")` at line 450,
+mirroring the deposit pre-maturity guard (G-6). This blocks all flash loans for
+matured series, preventing unrepayable-loan reverts and aligning with the existing
+design rule that post-maturity PT exits go through the claim path, not the AMM.
+(Consistent with `4626_SECURITY.md` cautions on flash-loan-driven forced-redemption
+paths.)
 
 ---
 
@@ -256,12 +265,13 @@ risk is borne by the borrower.
 | 4 | Pendle AMM mechanics + flash-loan protections | NO CONCERN |
 | 5 | Cycle amplification / AMM-as-oracle-and-venue | NO CONCERN |
 | 6 | Multi-market (flash from A, trade on B) | NO CONCERN |
-| 7 | Post-maturity AMM disabled → unrepayable flash loans | **CONCERN** |
+| 7 | Post-maturity AMM disabled → unrepayable flash loans | **RESOLVED** (pre-maturity gate implemented) |
 | 8 | Fee + AMM cost exceeding captured yield | NO CONCERN |
 
-**Single actionable recommendation:** gate PT flash loans to pre-maturity series
-(`block.timestamp < info.expiryCached`) to avoid unrepayable post-maturity loans.
-All other dimensions are bounded by existing Pendle V2 design (yield-range curve,
-Uniswap-V3-style TWAP, native flash swaps) and by OVRFLO's atomic-repayment +
-underlying-fee model, and add no risk beyond the already-accepted
-underlying-flash-loan OVRFLO cycle.
+**Implementation status:** The PT flash loan is live in `OVRFLO.flashLoan()` with
+the pre-maturity gate (G-6 at line 450) that resolves the section 7 concern, plus
+a circuit breaker (G-12), amount cap (G-13), fee ceiling (G-14), `nonReentrant`
+protection, and EIP-4531-style callback verification. All other dimensions are
+bounded by existing Pendle V2 design (yield-range curve, Uniswap-V3-style TWAP,
+native flash swaps) and by OVRFLO's atomic-repayment + underlying-fee model, and
+add no risk beyond the already-accepted underlying-flash-loan OVRFLO cycle.

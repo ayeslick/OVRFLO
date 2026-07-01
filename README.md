@@ -337,12 +337,12 @@ The PT discount is fixed at deposit -- the oracle splits principal from yield de
 │   95 ovrfloToken          Stream (5 ovrfloToken)                     │
 │         │                     │                                      │
 │         ▼                     ▼                                      │
-│   ┌────────────┐     ┌──────────────┐                               │
-│   │ unwrap()   │     │  sellInto    │                               │
-│   │   or swap  │     │  Offer()     │                               │
-│   │  → ~95     │     │  → ~4.5      │                               │
-│   │  underly   │     │    underly   │                               │
-│   └────┬───────┘     └──────┬───────┘                               │
+│   ┌────────────┐     ┌──────────────┐                                │
+│   │ unwrap()   │     │  sellInto    │                                │
+│   │   or swap  │     │  Offer()     │                                │
+│   │  → ~95     │     │  → ~4.5      │                                │
+│   │  underly   │     │    underly   │                                │
+│   └────┬───────┘     └──────┬───────┘                                │
 │        │                    │                                        │
 │        ▼                    ▼                                        │
 │   ~99.5 underlying total   (95 + 4.5)                                │

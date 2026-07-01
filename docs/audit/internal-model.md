@@ -14,18 +14,18 @@ One fungible `ovrfloToken` is backed by **two separately-accounted pools** that 
 These pools are **non-interchangeable** even when both are economically 1:1 at maturity. The conservation identities an auditor can tie out against on-chain state:
 
 - **Invariant I-1** — `marketTotalDeposited[market]` tracks net PT principal per market (+deposit / −claim). Derivation: `x-ray/invariants.md#i-1`.
-- **Invariant I-2** — `wrappedUnderlying` is a reserve ledger (+wrap / −unwrap); sweep computes excess against it without mutating it. Derivation: `x-ray/invariants.md#i-2`.
-- **Invariant E-3** — 1:1 wrap/unwrap liquidity stays solvent while reserve accounting (I-2) and registry wiring (X-3) hold. Derivation: `x-ray/invariants.md` (Economic Invariants).
+- **Invariant I-7** — `wrappedUnderlying` is a reserve ledger (+wrap / −unwrap); sweep computes excess against it without mutating it. Derivation: `x-ray/invariants.md#i-7`.
+- **Invariant E-1** — 1:1 wrap/unwrap liquidity stays solvent while reserve accounting (I-7) and registry wiring (X-3) hold. Derivation: `x-ray/invariants.md` (Economic Invariants).
 
 ### The seam where conservation can silently break
 
-Direct token transfers or donations to the vault increase the **raw** underlying balance but do **not** increase `wrappedUnderlying`. `unwrap()` capacity is bounded by the tracked reserve (guard **G-12**: `require(reserve >= amount)`), not by the raw balance. Conversely, `sweepExcessUnderlying()` recovers the excess (raw − reserve) without reducing unwrap capacity. An auditor should confirm:
+Direct token transfers or donations to the vault increase the **raw** underlying balance but do **not** increase `wrappedUnderlying`. `unwrap()` capacity is bounded by the tracked reserve (guard **G-15**: `require(reserve >= amount)`), not by the raw balance. Conversely, `sweepExcessUnderlying()` recovers the excess (raw − reserve) without reducing unwrap capacity. An auditor should confirm:
 
 - Every unwrap path trusts only `wrappedUnderlying`, never `IERC20.balanceOf(address(this))`.
 - Sweep never mutates `wrappedUnderlying`.
 - Donations cannot inflate either backing pool.
 
-This is the `x-ray` attack surface **"Wrap reserve accounting under direct token transfers [I-2, X-3]."**
+This is the `x-ray` attack surface **"Wrap reserve accounting under direct token transfers [I-7, X-3]."**
 
 ### Cross-market fungibility is a feature
 
@@ -43,18 +43,18 @@ The pledged Sablier stream is **non-cancelable** and pays a fixed asset (`ovrflo
 
 ### The accounting identity
 
-For every loan, **outstanding = obligation − (drawn + repaid)** (invariant **E-2**; loan state machine **I-10**):
+For every loan, **outstanding = obligation − (drawn + repaid)** (invariant **E-2**; loan state machine **I-11**; obligation bound **I-13**):
 
 - `obligation` is computed at fill via `StreamPricing.obligationForFill()` and stored.
 - `drawn` increases on `poolClaimLoan()` (contributor draws from the stream) and on `closeLoan()` (final draw to `poolProceeds`).
 - `repaid` increases on `repayLoan()` (borrower repays directly).
-- Repay is capped at remaining outstanding (guard **G-17**); loan servicing preserves monotonic outstanding reduction.
+- Repay is capped at remaining outstanding (guard **G-24**); loan servicing preserves monotonic outstanding reduction.
 
 Derivation: `x-ray/invariants.md#e-2`.
 
 ### Permissionless `closeLoan()` is liveness, not exploit
 
-`closeLoan()` is callable by **anyone** once `Sablier.withdrawableAmountOf(streamId) >= outstanding`. This is intentional liveness (book plan R15; audit-report **I-3 (ex-M-3)**): it removes borrower timing optionality on when to finish via `repayLoan`, but it does not misroute funds — the lender receives the final draw, the borrower receives the residual NFT. An auditor anchored to standard lending will flag "no liquidation logic" or "permissionless close" — both are by design. See `rejected-findings-record.md` (I-3) and the resolved Q&A on `closeLoan` intent.
+`closeLoan()` is callable by **anyone** once `Sablier.withdrawableAmountOf(streamId) >= outstanding`. This is intentional liveness (book plan R15; audit-report **I-3 (ex-M-3)**): it removes borrower timing optionality on when to finish via `repayLoan`, but it does not misroute funds — the lender receives the final draw, the borrower receives the residual stream. An auditor anchored to standard lending will flag "no liquidation logic" or "permissionless close" — both are by design. See `rejected-findings-record.md` (I-3) and the resolved Q&A on `closeLoan` intent.
 
 ### Pricing at fill
 

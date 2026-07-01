@@ -9,15 +9,15 @@ OVRFLO uses Sablier only for linear vesting streams created on PT deposit and th
 ### S1. `createWithDurations` creates a non-cancelable, no-cliff linear stream
 
 - **Assumed property:** The stream is created with `sender = OVRFLO vault`, `recipient = depositor`, `asset = ovrfloToken`, a fixed end time = series `expiryCached`, no cliff, and **non-cancelable**.
-- **Enforced?** **Yes, at creation** via `OVRFLO.deposit()`, and **at every book entry** via `StreamPricing.requireEligible()` which validates sender, asset, end time, no-cliff, and non-cancelability (invariant **X-5**).
-- **If violated:** A cancelable or cliff-bearing stream could be pledged as loan collateral and then voided, breaking the self-repaying-loan invariant. `requireEligible` rejects these; the residual risk is `requireEligible` being bypassed or stale-cached (see X-5 probe direction below).
+- **Enforced?** **Yes, at creation** via `OVRFLO.deposit()`, and **at every book entry** via `StreamPricing.requireEligible()` which validates sender, asset, end time, no-cliff, and non-cancelability (market-approval layer: invariant **X-1**).
+- **If violated:** A cancelable or cliff-bearing stream could be pledged as loan collateral and then voided, breaking the self-repaying-loan invariant. `requireEligible` rejects these; the residual risk is `requireEligible` being bypassed or stale-cached (see probe direction below).
 - **OVRFLO call site:** `OVRFLO.deposit()` (creation), `StreamPricing.requireEligible()` (validation at every book trade/loan).
 
 ### S2. `withdrawableAmountOf` is monotonic and reflects accrued value
 
 - **Assumed property:** `withdrawableAmountOf(streamId)` increases monotonically with time and drops only by the amount withdrawn on a successful `withdraw`.
-- **Enforced?** **External (trusted).** This is invariant **X-2 (On-chain: No)** — OVRFLO depends on Sablier v1.1 behavior it cannot enforce locally. `OVRFLOBook.closeLoan()` uses `withdrawableAmountOf()` to gate closability.
-- **If violated:** Closability and lender draw paths deviate from local bookkeeping. See `x-ray/invariants.md#x-2`.
+- **Enforced?** **External (trusted).** OVRFLO depends on Sablier v1.1 behavior it cannot enforce locally. `OVRFLOBook.closeLoan()` uses `withdrawableAmountOf()` to gate closability (guard **G-23**).
+- **If violated:** Closability and lender draw paths deviate from local bookkeeping. See `x-ray/invariants.md` and the trust-assumption ledger.
 - **OVRFLO call site:** `OVRFLOBook.closeLoan()`, `OVRFLOBook.poolClaimLoan()`.
 
 ### S3. `transferFrom` moves the stream NFT and changes recipient/ownership
@@ -60,6 +60,6 @@ The loan close path hinges on who is the Sablier NFT owner at each stage:
 
 Pricing at fill uses `deposited − withdrawn` (already-withdrawn value is excluded), documented in the book plan and the internal-model explainer.
 
-## X-5 probe direction (enforced, but probe anyway)
+## requireEligible probe direction (enforced, but probe anyway)
 
-`requireEligible()` (invariant **X-5**) is enforced on-chain at every book trade/loan path, so it does **not** appear in the not-enforced ledger. However, `x-ray/x-ray.md` flags it as a key attack surface: *"worth checking any path that can bypass or stale-cache this gate."* When reviewing the book, probe whether any entry can reach a trade/loan fill without passing through `requireEligible`, or whether eligibility state could be stale-cached relative to the live Sablier stream metadata.
+`requireEligible()` is enforced on-chain at every book trade/loan path, so it does **not** appear in the not-enforced ledger. However, `x-ray/x-ray.md` flags it as a key attack surface: *"worth checking any path that can bypass or stale-cache this gate."* When reviewing the book, probe whether any entry can reach a trade/loan fill without passing through `requireEligible`, or whether eligibility state could be stale-cached relative to the live Sablier stream metadata.
