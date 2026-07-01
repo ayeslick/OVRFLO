@@ -1,391 +1,397 @@
 # Invariant Map
 
-> OVRFLO | 32 guards | 18 inferred (single-contract) | 4 cross-contract | 4 economic | 2 not enforced on-chain
+> OVRFLO | 38 guards | 16 inferred | 3 not enforced on-chain
 
 ---
 
 ## 1. Enforced Guards (Reference)
 
-Per-call preconditions. Heading IDs below (`G-N`) are anchor targets from x-ray.md attack surfaces.
-
 #### G-1
-`require(msg.sender == factory, "OVRFLO: not admin")` · `OVRFLO.sol:148` · Gates all vault admin functions to the factory, which is itself owned by a timelocked multisig.
+`require(msg.sender == factory)` · `OVRFLO.sol:267` · Ensures only the factory (admin hub) can call vault admin functions — the factory is the single governance entry point.
 
 #### G-2
-`require(info.ptToken == address(0), "OVRFLO: series already configured")` · `OVRFLO.sol:238` · Prevents overwriting an existing series config; claims depend on ptToken/expiry staying immutable.
+`require(reserve >= amount)` · `OVRFLO.sol:336` · Prevents unwrap from draining more underlying than the wrap reserve tracks — protects the 1:1 backing invariant.
 
 #### G-3
-`require(ptToMarket[pt] == address(0), "OVRFLO: PT already mapped")` · `OVRFLO.sol:239` · Prevents duplicate PT-to-market mapping, ensuring each PT maps to exactly one market.
+`require(info.approved)` · `OVRFLO.sol:362` · Blocks deposits into unapproved markets — the factory must have called `addMarket` first.
 
 #### G-4
-`require(info.approved, "OVRFLO: market not approved")` · `OVRFLO.sol:362` · Ensures deposits only happen on multisig-approved markets with valid series config.
+`require(ptAmount >= MIN_PT_AMOUNT)` · `OVRFLO.sol:363` · Prevents dust deposits that would create uneconomic streams (gas > value).
 
 #### G-5
-`require(ptAmount >= MIN_PT_AMOUNT, "OVRFLO: amount < min PT")` · `OVRFLO.sol:363` · Enforces minimum deposit size (1e6 = 0.001 PT) to prevent dust griefing and rounding edge cases.
+`require(block.timestamp < info.expiryCached)` · `OVRFLO.sol:364` · Deposits only allowed pre-maturity — after maturity, PT = SY and there is no discount to stream.
 
 #### G-6
-`require(block.timestamp < info.expiryCached, "OVRFLO: matured")` · `OVRFLO.sol:364` · Prevents post-maturity deposits; only pre-maturity deposits create streams.
+`require(currentDeposited + ptAmount <= limit)` · `OVRFLO.sol:370` · Per-market deposit cap — when limit > 0, blocks deposits that would exceed the configured ceiling.
 
 #### G-7
-`require(currentDeposited + ptAmount <= limit, "OVRFLO: deposit limit exceeded")` · `OVRFLO.sol:369` · Per-market deposit cap; only checked when limit > 0 (0 = unlimited).
+`require(toStream > 0)` · `OVRFLO.sol:386` · Ensures every deposit creates a meaningful stream — rejects deposits where the PT rate equals 1.0 (no discount).
 
 #### G-8
-`require(toStream > 0, "OVRFLO: nothing to stream")` · `OVRFLO.sol:388` · Ensures every deposit creates a Sablier stream; reverts if rate rounds to 1.0 making toStream = 0.
+`require(toUser >= minToUser)` · `OVRFLO.sol:388` · Slippage protection on the immediate portion — protects depositors from oracle moving between preview and execution.
 
 #### G-9
-`require(toUser >= minToUser, "OVRFLO: slippage")` · `OVRFLO.sol:389` · User-controlled slippage protection on the immediate ovrfloToken mint.
+`require(market != address(0))` · `OVRFLO.sol:420` · Claim only works for registered PT tokens — prevents claiming against unknown PTs.
 
 #### G-10
-`require(block.timestamp >= info.expiryCached, "OVRFLO: not matured")` · `OVRFLO.sol:418` · Ensures claims only happen after PT maturity; enforces the temporal deposit/claim boundary.
+`require(block.timestamp >= info.expiryCached)` · `OVRFLO.sol:424` · Claims only allowed post-maturity — the PT must have matured before it can be withdrawn.
 
 #### G-11
-`require(currentDeposited >= amount, "OVRFLO: deposit accounting")` · `OVRFLO.sol:422` · Prevents claiming more PT than tracked as deposited for the market.
+`require(currentDeposited >= amount)` · `OVRFLO.sol:427` · Claim bounded by per-market deposit accounting — prevents claiming more PT than was deposited into that market.
 
 #### G-12
-`require(!flashLoanPaused, "OVRFLO: flash paused")` · `OVRFLO.sol:449` · Admin-controlled circuit breaker for flash loans; does not gate deposits or claims.
+`require(!flashLoanPaused)` · `OVRFLO.sol:452` · Circuit breaker for flash loans — the admin can pause all flash loans instantly.
 
 #### G-13
-`require(amount <= marketTotalDeposited[market], "OVRFLO: exceeds deposited")` · `OVRFLO.sol:452` · Caps flash loan at the total PT deposited for the market, preventing over-lending.
+`require(amount <= marketTotalDeposited[market])` · `OVRFLO.sol:456` · Flash loan bounded by deposited PT — cannot loan more PT than is tracked for that market.
 
 #### G-14
-`require(feeBps <= FLASH_FEE_MAX_BPS, "OVRFLO: flash fee too high")` · `OVRFLO.sol:475` · Enforces the 1% flash fee ceiling at the setter; protects depositors from excessive flash fees.
+`require(ret == FLASH_CALLBACK_SUCCESS)` · `OVRFLO.sol:467` · EIP-3156-inspired callback verification — borrower must return the correct success hash.
 
 #### G-15
-`require(reserve >= amount, "OVRFLO: insufficient reserve")` · `OVRFLO.sol:335` · Ensures unwrap is bounded by the wrap reserve, not the raw token balance.
+`require(ptToMarket[ptToken] != address(0))` · `OVRFLO.sol:285` · Prevents `sweepExcessPt` from draining non-PT tokens (e.g. the wrap reserve) — added after fuzz campaign GL-02 violation.
 
 #### G-16
-`require(balanceAfter - balanceBefore == amount, "OVRFLO: transfer amount mismatch")` · `OVRFLO.sol:322` · Fee-on-transfer protection on wrap; rejects tokens that don't transfer exact amounts.
+`require(info.ptToken == address(0))` · `OVRFLO.sol:250` · One-shot latch: a market slot can only be configured once — series config is immutable for the vault's lifetime.
 
 #### G-17
-`require(aprMaxBps_ >= aprMinBps_, "OVRFLOBook: bad apr bounds")` · `OVRFLOBook.sol:252` · Ensures APR bounds are well-ordered at the setter.
+`require(ptToMarket[pt] == address(0))` · `OVRFLO.sol:251` · One-shot latch: a PT token can only be mapped to one market — prevents cross-market accounting confusion.
 
 #### G-18
-`require(aprMaxBps_ <= APR_MAX_CEILING, "OVRFLOBook: apr too high")` · `OVRFLOBook.sol:253` · Enforces the 100% APR ceiling; cannot be raised even by the owner.
+`require(feeBps <= FLASH_FEE_MAX_BPS)` · `OVRFLO.sol:478` · Bounds the flash loan fee at 1% (100 bps) — admin cannot set a higher fee.
 
 #### G-19
-`require(feeBps_ <= MAX_FEE_BPS, "OVRFLOBook: fee too high")` · `OVRFLOBook.sol:289` · Enforces the 100% protocol fee ceiling at the setter.
+`require(underlyingToOvrflo[underlying] == address(0))` · `OVRFLOFactory.sol:111` · One vault per underlying — prevents duplicate vaults that would break ovrfloToken fungibility.
 
 #### G-20
-`require(aprBps >= aprMinBps && aprBps <= aprMaxBps, "OVRFLOBook: apr out of bounds")` · `OVRFLOBook.sol:838` · Validates posted APR against current bounds; does not affect existing posts.
+`require(twapDuration >= MIN_TWAP_DURATION)` · `OVRFLOFactory.sol:194` · TWAP window must be at least 15 minutes — prevents short-window oracle manipulation.
 
 #### G-21
-`require(aprBps % APR_STEP_BPS == 0, "OVRFLOBook: apr not whole")` · `OVRFLOBook.sol:839` · Enforces whole-number APRs (multiples of 100 bps) on all new posts.
+`require(twapDuration <= MAX_TWAP_DURATION)` · `OVRFLOFactory.sol:193` · TWAP window capped at 30 minutes — prevents stale-price windows.
 
 #### G-22
-`require(actualBorrow <= grossPrice, "OVRFLOBook: borrow above price")` · `OVRFLOBook.sol:562` · LTV check; ensures borrow principal does not exceed the discounted collateral value.
+`require(feeBps <= FEE_MAX_BPS)` · `OVRFLOFactory.sol:195` · Deposit fee bounded at 1% (100 bps) — admin cannot set a higher fee.
 
 #### G-23
-`require(withdrawable >= outstanding, "OVRFLOBook: loan not closable")` · `OVRFLOBook.sol:478` · Ensures the stream has accrued enough to cover the outstanding obligation before closeLoan draws.
+`require(IStandardizedYield(sy).yieldToken() == info.underlying)` · `OVRFLOFactory.sol:207` · Market's SY yield token must match the vault's underlying — prevents incompatible assets sharing one ovrfloToken.
 
 #### G-24
-`require(amount <= outstanding, "OVRFLOBook: repay too much")` · `OVRFLOBook.sol:514` · Prevents over-repayment; caps repay at the remaining obligation.
+`require(aprMaxBps_ <= APR_MAX_CEILING)` · `OVRFLOBook.sol:278` · APR bound ceiling at 100% — admin cannot raise it past 100% even with a compromised key.
 
 #### G-25
-`require(uint256(amount) <= available, "OVRFLOBook: exceeds available")` · `OVRFLOBook.sol:660` · Pro-rata cap on claimPoolShare; prevents draining poolProceeds beyond a contributor's share.
+`require(feeBps_ <= MAX_FEE_BPS)` · `OVRFLOBook.sol:291` · Book fee bounded at 100% — hardcoded ceiling the owner cannot exceed.
 
 #### G-26
-`require(offerIds[i] > offerIds[i - 1], "OVRFLOBook: duplicate or unsorted ids")` · `OVRFLOBook.sol:807` · Prevents duplicate offer IDs in pool creation; enforces strictly-increasing input.
+`require(aprBps >= aprMinBps && aprBps <= aprMaxBps)` · `OVRFLOBook.sol:919` · Posted APR must fall within the current owner-set bounds — rejected otherwise.
 
 #### G-27
-`require(offer.maker != borrower, "OVRFLOBook: self-match")` · `OVRFLOBook.sol:811` · Prevents a borrower from consuming their own offer in createBorrowPool.
+`require(aprBps % APR_STEP_BPS == 0)` · `OVRFLOBook.sol:920` · APR must be a whole number (100 bps granularity) — prevents fractional APR manipulation.
 
 #### G-28
-`require(underlyingToOvrflo[underlying] == address(0), "OVRFLOFactory: underlying already deployed")` · `OVRFLOFactory.sol:93` · Prevents duplicate vault deployment per underlying asset.
+`require(offer.maker != borrower)` · `OVRFLOBook.sol:906` · Self-match prevention — borrower cannot consume their own offer, which would break `repayLoan` balance-delta checks.
 
 #### G-29
-`require(twapDuration >= MIN_TWAP_DURATION && twapDuration <= MAX_TWAP_DURATION, ...)` · `OVRFLOFactory.sol:188` · Enforces 15-30 minute TWAP window bounds for oracle manipulation resistance.
+`require(offerIds[i] > offerIds[i - 1])` · `OVRFLOBook.sol:900` · Strictly-increasing ID check — prevents duplicate offers being double-counted in pool creation.
 
 #### G-30
-`require(feeBps <= FEE_MAX_BPS, "OVRFLOFactory: fee too high")` · `OVRFLOFactory.sol:191` · Enforces the 1% deposit fee ceiling at market approval time.
+`require(grossPrice <= offer.capacity)` · `OVRFLOBook.sol:374` · Sale price bounded by remaining offer capacity — prevents over-spending escrowed liquidity.
 
 #### G-31
-`require(ovrfloToBook[ovrflo] == address(0), "OVRFLOFactory: book exists")` · `OVRFLOFactory.sol:163` · Enforces 1:1 vault-to-book mapping; one book per vault.
+`require(actualBorrow <= grossPrice)` · `OVRFLOBook.sol:577` · Borrow amount cannot exceed the stream's discounted value — ensures the stream can cover the debt.
 
 #### G-32
-`require(value <= type(uint128).max, "StreamPricing: obligation overflow")` · `StreamPricing.sol:109` · Prevents uint128 overflow on obligation calculation; guards against extreme APR/time combinations.
+`require(withdrawable >= outstanding)` · `OVRFLOBook.sol:479` · Close-loan requires the stream to have accrued enough to cover the outstanding — prevents closing at a loss.
+
+#### G-33
+`require(amount <= outstanding)` · `OVRFLOBook.sol:512` · Repayment capped at outstanding — prevents overpayment that would strand ovrfloToken in the book.
+
+#### G-34
+`require(poolContributions[poolId][msg.sender] > 0)` · `OVRFLOBook.sol:617` · Only pool contributors can claim — gates pool claim channels to actual capital providers.
+
+#### G-35
+`require(uint256(amount) <= available)` · `OVRFLOBook.sol:671` · Claim capped at pro-rata share of poolProceeds — prevents one contributor from draining the shared pot.
+
+#### G-36
+`require(loan.borrower != address(0))` · `OVRFLOBook.sol:960` · View/state functions revert on non-existent IDs — distinguishes dead entries from never-created ones.
+
+#### G-37
+`require(value <= type(uint128).max)` · `StreamPricing.sol:159` · Obligation calculation reverts on uint128 overflow — prevents wrapping around to a small debt.
+
+#### G-38
+`require(balanceAfter - balanceBefore == amount)` · `OVRFLOBook.sol:942` · Strict balance-delta check on `_pullExact` — catches fee-on-transfer or short-transfer tokens.
 
 ---
 
 ## 2. Inferred Invariants (Single-Contract)
 
-Each block below cites one of five extraction methods in its `Derivation` field: Δ-pair, guard-lift + write-sites, state-machine edge, temporal predicate, or NatSpec-stated global property.
-
 #### I-1
 
 `Conservation` · On-chain: **Yes**
 
-> OVRFLOToken.totalSupply() == Σ(marketTotalDeposited[market] for all markets) + wrappedUnderlying
+> `ovrfloToken.totalSupply() == Σ marketTotalDeposited[market] + wrappedUnderlying`
 
-**Derivation** — Δ-pair: `OVRFLO.deposit:380-391` mints `toUser + toStream = ptAmount` (Δ totalSupply = +ptAmount, Δ marketTotalDeposited = +ptAmount). `OVRFLO.claim:428-430` burns `amount` (Δ totalSupply = -amount, Δ marketTotalDeposited = -amount). `OVRFLO.wrap:321-327` mints `amount` (Δ totalSupply = +amount, Δ wrappedUnderlying = +amount). `OVRFLO.unwrap:337-341` burns `amount` (Δ totalSupply = -amount, Δ wrappedUnderlying = -amount). All four paths are exact delta pairs. No other function in scope mints or burns OVRFLOToken.
+**Derivation** — Δ-pair: `OVRFLO.sol:371` (`Δ(marketTotalDeposited) = +ptAmount`) ↔ `OVRFLO.sol:395-396` (`Δ(ovrfloToken totalSupply) = +ptAmount` via `mint(toUser) + mint(toStream)`); same pattern for claim (`:428-431`), wrap (`:318+320`), unwrap (`:338-340`). Every mint is paired with exactly one tracker increment; every burn with one decrement.
 
-**If violated** — Protocol insolvency: ovrfloToken holders cannot all redeem for backing PT/underlying.
+**If violated** — ovrfloToken would be unbacked, enabling value extraction from depositors or wrappers.
+
+---
 
 #### I-2
 
-`Bound` · On-chain: **Yes**
+`Conservation` · On-chain: **Yes**
 
-> flashFeeBps ∈ [0, 100] (FLASH_FEE_MAX_BPS)
+> `Σ poolContributions[poolId][contributor] == pools[poolId].totalContributed` for every pool
 
-**Derivation** — guard-lift: `require(feeBps <= FLASH_FEE_MAX_BPS)` at `OVRFLO.sol:475` (setFlashFeeBps). Write sites: `setFlashFeeBps:476` (guarded), constructor (defaults to 0). All write sites enforce the bound.
+**Derivation** — Δ-pair: `OVRFLOBook.sol:_consumeOffers` (`Δ(offer.capacity) = -consumed` ↔ `Δ(poolContributions[poolId][maker]) = +consumed`); `totalContributed` is set to `actualBorrow128` at pool creation (`:585`), and `_consumeOffers` distributes exactly `actualBorrow` across contributions.
 
-**If violated** — Flash loan fee exceeds 1%, extracting excess value from flash loan borrowers.
+**If violated** — Pool accounting would be inconsistent, enabling over-claiming or under-claiming by contributors.
+
+---
 
 #### I-3
 
-`Bound` · On-chain: **Yes**
+`Conservation` · On-chain: **Yes**
 
-> feeBps ∈ [0, 10000] (MAX_FEE_BPS) on OVRFLOBook
+> `loan.drawn + loan.repaid == poolProceeds[poolId] + Σ directDraws` for every pool loan (proceeds from `closeLoan`/`repayLoan` go to `poolProceeds`; `poolClaimLoan` draws directly to the caller)
 
-**Derivation** — guard-lift: `require(feeBps_ <= MAX_FEE_BPS)` at `OVRFLOBook.sol:289` (setFee). Write sites: `setFee:290` (guarded), constructor (defaults to 0). All write sites enforce the bound.
+**Derivation** — Δ-pair: `OVRFLOBook.sol:488` (`Δ(loan.drawn) = +outstanding` ↔ `Δ(poolProceeds) = +outstanding` in `closeLoan`); `:519` (`Δ(loan.repaid) = +amount` ↔ `Δ(poolProceeds) = +amount` in `repayLoan`); `:633` (`Δ(loan.drawn) = +drawAmount` ↔ `Δ(poolReceived) = +drawAmount` in `poolClaimLoan` — direct draw, NOT to poolProceeds).
 
-**If violated** — Protocol fee exceeds 100%, making fills economically impossible or extracting more than the fill amount.
+**If violated** — Lenders could claim more than their entitlement, or proceeds would be stranded.
+
+---
 
 #### I-4
 
-`Bound` · On-chain: **Yes**
+`Conservation` · On-chain: **Yes**
 
-> aprMaxBps ∈ [0, 10000] (APR_MAX_CEILING)
+> `poolReceived[poolId][contributor] <= entitlement` where `entitlement = poolContributions * totalObligation / totalContributed`
 
-**Derivation** — guard-lift: `require(aprMaxBps_ <= APR_MAX_CEILING)` at `OVRFLOBook.sol:253` (setAprBounds). Write sites: `setAprBounds:255` (guarded), constructor (defaults to LAUNCH_APR_BPS = 1000). All write sites enforce the bound.
+**Derivation** — Guard-lift: `OVRFLOBook.sol:627-629` (`require(remaining > 0)` where `remaining = entitlement - poolReceived`) in `poolClaimLoan`; `OVRFLOBook.sol:660-661` (same pattern) in `claimPoolShare`. Both claim channels cap at `remaining`, so `poolReceived` can never exceed `entitlement`.
 
-**If violated** — APR exceeds 100%, allowing obligation to exceed the stream's face value.
+**If violated** — A contributor could claim more than their pro-rata share, stealing from other contributors.
+
+---
 
 #### I-5
 
 `Bound` · On-chain: **Yes**
 
-> aprMinBps <= aprMaxBps
+> `flashFeeBps ∈ [0, 100]` (FLASH_FEE_MAX_BPS)
 
-**Derivation** — guard-lift: `require(aprMaxBps_ >= aprMinBps_)` at `OVRFLOBook.sol:252` (setAprBounds). Write sites: `setAprBounds:254-255` (writes both, guarded), constructor (sets both to 1000). All write sites enforce the ordering.
+**Derivation** — Guard-lift: `OVRFLO.sol:478` (`require(feeBps <= FLASH_FEE_MAX_BPS)`) is the only write site to `flashFeeBps`. No other function writes to this variable.
 
-**If violated** — APR bounds become inverted; _validateApr rejects all new posts, freezing the market.
+**If violated** — Flash loan fees could be set to 100%, making flash loans economically exploitative.
+
+---
 
 #### I-6
 
-`Bound` · On-chain: **No**
+`Bound` · On-chain: **Yes**
 
-> marketTotalDeposited[market] <= marketDepositLimits[market] (when limit > 0)
+> `aprMaxBps ∈ [0, 10000]` (APR_MAX_CEILING) and `aprMinBps <= aprMaxBps`
 
-**Derivation** — guard-lift: `require(currentDeposited + ptAmount <= limit)` at `OVRFLO.sol:369` (deposit, when limit > 0). Write sites: `deposit:371` (guarded, adds), `claim:428` (subtracts, no check needed), `setMarketDepositLimit:273` (writes limit, NO check against current deposited). The setter can set limit below current marketTotalDeposited, violating the bound.
+**Derivation** — Guard-lift: `OVRFLOBook.sol:278` (`require(aprMaxBps_ <= APR_MAX_CEILING)`) and `:276` (`require(aprMaxBps_ >= aprMinBps_)`) in `setAprBounds` — the only write site for both `aprMinBps` and `aprMaxBps`.
 
-**If violated** — Deposits exceed the intended cap; the invariant "deposits <= limit" no longer holds after an admin lowers the limit.
+**If violated** — APR bounds could be set to allow extreme discount rates, enabling value extraction from stream sellers.
+
+---
 
 #### I-7
 
-`Conservation` · On-chain: **Yes**
+`Bound` · On-chain: **Yes**
 
-> wrappedUnderlying <= IERC20(underlying).balanceOf(address(vault))
+> `obligation <= remaining` for all partial borrows (StreamPricing rounding invariant)
 
-**Derivation** — Δ-pair: `OVRFLO.wrap:321-327` increases both wrappedUnderlying and balance by `amount`. `OVRFLO.unwrap:337-341` decreases both by `amount`. `sweepExcessUnderlying:308` only sweeps `balance - wrappedUnderlying` (excess). Direct transfers increase balance without increasing wrappedUnderlying (by design).
+**Derivation** — NatSpec: `StreamPricing.sol:7-12` — "Rounding is directional and load-bearing: `grossPrice` floors, `obligation` ceils. This keeps `obligation <= remaining` in the partial-borrow path." Confirmed by structural scan: `obligationForFill` fast-paths full-borrow to `remaining` exactly (`:178`), and `obligation` ceils by 1 wei (`:155-157`), while `grossPrice` floors. The ceiling is always <= remaining because `borrowAmount <= grossPrice <= remaining`.
 
-**If violated** — Unwrap could fail due to insufficient underlying balance, or excess underlying could be swept that belongs to wrapped holders.
+**If violated** — The pledged stream could not cover the debt, breaking the self-repaying loan model.
+
+---
 
 #### I-8
 
-`Conservation` · On-chain: **Yes**
+`StateMachine` · On-chain: **Yes**
 
-> marketTotalDeposited[market] <= IERC20(ptToken).balanceOf(address(vault)) (at rest, between txs)
+> `offer.active` never transitions from false to true (one-way flag)
 
-**Derivation** — Δ-pair: `OVRFLO.deposit:371` increases both marketTotalDeposited and PT balance by ptAmount. `OVRFLO.claim:428-430` decreases both by amount. `sweepExcessPt:292` only sweeps `balance - marketTotalDeposited` (excess). `flashLoan:461-465` temporarily sends PT out and pulls it back within the same tx (nonReentrant); at rest, balance is restored.
+**Derivation** — Edge: `true@postOffer` → `false@cancelOffer/sellIntoOffer/_consumeOffers`. No function sets `active = true` after creation. `cancelOffer` sets `active = false` (`:345`); `sellIntoOffer` sets `active = false` when capacity hits 0 (`:380`); `_consumeOffers` sets `active = false` when capacity hits 0 (`:932`).
 
-**If violated** — Claims could fail due to insufficient PT balance, or excess PT could be swept that belongs to depositors.
+**If violated** — Cancelled or consumed offers could be re-activated, draining escrowed funds.
+
+---
 
 #### I-9
 
 `StateMachine` · On-chain: **Yes**
 
-> Series configuration is one-shot: setSeriesApproved can only be called once per market.
+> `loan.closed` never transitions from false to true and back (one-way flag)
 
-**Derivation** — edge: `address(0)@OVRFLO.sol:238 → concrete@OVRFLO.sol:246`. `require(info.ptToken == address(0))` prevents any subsequent call from changing the config. No reverse path exists.
+**Derivation** — Edge: `false@_storeLoan` → `true@closeLoan/repayLoan`. No function sets `closed = false` after it is set to `true`. `closeLoan` sets `closed = true` (`:484`); `repayLoan` sets `closed = true` when `amount == outstanding` (`:517`).
 
-**If violated** — Series config (ptToken, expiry, fee) could be changed after deposits, breaking claim accounting and stream eligibility.
+**If violated** — Closed loans could be re-opened, allowing double-drawing from already-settled streams.
+
+---
 
 #### I-10
 
 `StateMachine` · On-chain: **Yes**
 
-> underlyingToOvrflo is one-shot: one vault per underlying asset.
+> `saleListing.active` never transitions from false to true (one-way flag)
 
-**Derivation** — edge: `address(0)@OVRFLOFactory.sol:93 → concrete@OVRFLOFactory.sol:151`. `require(underlyingToOvrflo[underlying] == address(0))` in configureDeployment prevents duplicates. No reverse path exists.
+**Derivation** — Edge: `true@postSaleListing` → `false@cancelSaleListing/buyListing`. No function sets `active = true` after creation.
 
-**If violated** — Two vaults for the same underlying could fragment liquidity and break ovrfloToken fungibility assumptions.
+**If violated** — Cancelled or purchased listings could be re-activated, double-selling the same stream.
+
+---
 
 #### I-11
 
 `StateMachine` · On-chain: **Yes**
 
-> loan.closed is one-shot: false → true, no reversal.
+> `ptToMarket[pt]` is a one-shot latch: once set, it is never overwritten
 
-**Derivation** — edge: `false@OVRFLOBook._storeLoan:884 → true@OVRFLOBook.closeLoan:480` and `true@OVRFLOBook.repayLoan:519` (when amount == outstanding). Both paths set closed = true; no function sets it back to false. Guard `require(!loan.closed)` at closeLoan:474 and repayLoan:506 prevents operations on closed loans.
+**Derivation** — Edge: `address(0)@initial` → `market@setSeriesApproved:254`. Guard `require(ptToMarket[pt] == address(0))` at `:251` prevents overwriting. No function clears `ptToMarket` entries.
 
-**If violated** — A closed loan could be re-operated, allowing double-drawing from the returned stream.
+**If violated** — A PT could be re-mapped to a different market, breaking per-market deposit accounting that claims depend on.
+
+---
 
 #### I-12
 
 `Temporal` · On-chain: **Yes**
 
-> Deposits only pre-maturity (block.timestamp < expiryCached); claims only post-maturity (block.timestamp >= expiryCached).
+> Deposits only succeed pre-maturity; claims only succeed post-maturity (mutually exclusive by timestamp)
 
-**Derivation** — temporal: `require(block.timestamp < info.expiryCached)` at `OVRFLO.sol:364` (deposit) and `require(block.timestamp >= info.expiryCached)` at `OVRFLO.sol:418` (claim). Also enforced in flashLoan:450. The series expiry is cached at setSeriesApproved time and never changes (I-9).
+**Derivation** — Temporal: `OVRFLO.sol:364` (`require(block.timestamp < info.expiryCached)` on deposit) ↔ `OVRFLO.sol:424` (`require(block.timestamp >= info.expiryCached)` on claim). These are complementary temporal gates on the same storage variable `expiryCached`.
 
-**If violated** — Post-maturity deposits could create streams with zero duration; pre-maturity claims would bypass the streaming mechanism.
+**If violated** — Post-maturity deposits would create streams with zero duration (no value); pre-maturity claims would bypass the streaming mechanism.
+
+---
 
 #### I-13
 
-`Bound` · On-chain: **Yes**
+`Conservation` · On-chain: **Yes**
 
-> obligation <= remaining (for every loan at origination)
+> `ovrfloToken.totalSupply() <= underlying.balanceOf(vault) + Σ ptToken.balanceOf(vault)` (combined solvency)
 
-**Derivation** — NatSpec: `StreamPricing.sol:7-10` — "This keeps `obligation <= remaining` in the partial-borrow path so the pledged stream can always cover the debt." Structural verification: `grossPrice = floor(remaining * WAD / factor)` (floors). `borrowAmount <= grossPrice` (G-22). `obligation = ceil(borrowAmount * factor / WAD)` (ceils). Since `borrowAmount <= floor(remaining * WAD / factor)`, then `borrowAmount * factor <= remaining * WAD`, so `ceil(borrowAmount * factor / WAD) <= remaining`. Full-borrow path returns `remaining` directly (equal).
+**Derivation** — Δ-pair: follows from I-1 (`totalSupply == MTD + wrappedUnderlying`) plus the observation that `marketTotalDeposited` tracks PT held and `wrappedUnderlying` tracks underlying held. Every deposit pulls PT in (`:378`); every wrap pulls underlying in (`:320`); claim sends PT out (`:432`); unwrap sends underlying out (`:341`). The combined asset-backing invariant holds because each tracker is backed by its corresponding asset, and cross-exits (wrapper claims PT, depositor unwraps underlying) preserve the sum.
 
-**If violated** — A loan's obligation exceeds the stream's face value; the lender cannot be fully repaid from the stream, creating bad debt.
+**If violated** — ovrfloToken would be under-backed, meaning not all holders could exit through some path (unwrap, claim, or DEX).
+
+---
 
 #### I-14
 
-`Conservation` · On-chain: **Yes**
+`Bound` · On-chain: **Yes**
 
-> Σ(poolReceived[poolId][i] for all contributors i) <= pools[poolId].totalObligation
+> `feeBps (book) ∈ [0, 10000]` (MAX_FEE_BPS)
 
-**Derivation** — Δ-pair analysis across two claim channels: `poolClaimLoan:622-630` checks `remaining = entitlement - poolReceived > 0` where `entitlement = contribution * totalObligation / totalContributed`. `claimPoolShare:648-660` checks the same entitlement. Both channels update poolReceived additively. Since each contributor's poolReceived <= their entitlement, and Σ entitlements <= totalObligation (integer division rounds down), the sum holds.
+**Derivation** — Guard-lift: `OVRFLOBook.sol:291` (`require(feeBps_ <= MAX_FEE_BPS)`) in `setFee` — the only write site for `feeBps`.
 
-**If violated** — Contributors collectively claim more than the pool's total obligation, extracting value from other pools or the protocol.
+**If violated** — Book fee could exceed 100%, making sales/borrows cost more than the stream's value.
+
+---
 
 #### I-15
 
 `Bound` · On-chain: **Yes**
 
-> poolProceeds[poolId] >= 0 (no underflow in claimPoolShare)
+> `depositFeeBps ∈ [0, 100]` (FEE_MAX_BPS) per market series
 
-**Derivation** — guard-lift: `require(uint256(amount) <= available)` at `OVRFLOBook.sol:660` where `available = min(remaining, proRataShare)` and `proRataShare = poolProceeds * contribution / totalContributed`. Since `amount <= proRataShare <= poolProceeds`, the subtraction `poolProceeds -= amount` cannot underflow. Write sites: `claimPoolShare:662` (guarded subtraction), `closeLoan:483` (addition), `repayLoan:522` (addition), `poolClaimLoan` (no write to poolProceeds — bypasses it).
+**Derivation** — Guard-lift: `OVRFLOFactory.sol:195` (`require(feeBps <= FEE_MAX_BPS)`) in `addMarket` — the only function that writes `SeriesInfo.feeBps` (via `setSeriesApproved`). Series config is immutable after setup (I-11).
 
-**If violated** — poolProceeds underflows (uint128), causing a revert or wrap-around that corrupts pool accounting.
+**If violated** — Deposit fees could exceed 1%, extracting excessive value from depositors.
+
+---
 
 #### I-16
 
-`Ratio` · On-chain: **Yes**
-
-> entitlement = poolContributions[poolId][i] * pools[poolId].totalObligation / pools[poolId].totalContributed
-
-**Derivation** — Ratio used in both `poolClaimLoan:620-621` and `claimPoolShare:648-649`. Both enforce `poolReceived <= entitlement` via the `remaining > 0` check. The ratio is computed fresh each call from current storage values. totalContributed and totalObligation are set at pool creation and never modified.
-
-**If violated** — A contributor could claim more than their pro-rata share of the pool's obligation.
-
-#### I-17
-
-`Bound` · On-chain: **Yes** (for new posts)
-
-> Every posted aprBps is a multiple of APR_STEP_BPS (100 bps)
-
-**Derivation** — guard-lift: `require(aprBps % APR_STEP_BPS == 0)` at `OVRFLOBook.sol:839` (_validateApr). Called from postOffer and postSaleListing. All post functions call _validateApr. Existing posts retain their value and cannot be modified. Write sites: postOffer (guarded), postSaleListing (guarded).
-
-**If violated** — Non-whole-number APRs could cause rounding discrepancies in obligation calculations.
-
-#### I-18
-
 `StateMachine` · On-chain: **Yes**
 
-> Each pool has exactly one loan: poolLoanId[poolId] != 0 iff a loan exists for that pool, and loanPoolId[loanId] == poolId iff poolLoanId[poolId] == loanId.
+> `underlyingToOvrflo[underlying]` is a one-shot latch: one vault per underlying, never overwritten
 
-**Derivation** — edge: `0@createBorrowPool:577 → concrete@createBorrowPool:578-579`. Both `loanPoolId[loanId] = poolId` and `poolLoanId[poolId] = loanId` are written atomically in `createBorrowPool:578-579`. No other function writes to either mapping. `poolClaimLoan` derives `loanId` from `poolLoanId[poolId]` and checks `loanId != 0`. No reverse path exists (no function clears either mapping).
+**Derivation** — Edge: `address(0)@initial` → `ovrflo@deploy:153`. Guard `require(underlyingToOvrflo[underlying] == address(0))` at `configureDeployment:111` prevents duplicate configuration. No function clears the mapping.
 
-**If violated** — poolClaimLoan could derive a wrong or zero loanId, drawing from the wrong stream or reverting; pool-to-loan accounting would be inconsistent.
+**If violated** — Two vaults for the same underlying would mint non-fungible ovrfloTokens, breaking the "cross-market fungibility under one underlying" design.
 
 ---
 
 ## 3. Inferred Invariants (Cross-Contract)
 
-Trust assumptions that span contract boundaries. Each block cites both caller-side and callee-side code.
-
 #### X-1
 
 On-chain: **Yes**
 
-> factory.isMarketApproved(core, market) and core.series(market).approved are consistent
+> The factory's `isMarketApproved[ovrflo][market]` is kept in sync with the vault's `_series[market].approved` — both are set in the same `addMarket` call chain.
 
-**Caller side** — `StreamPricing.sol:152-154` — `marketActive` reads `isMarketApproved` from the factory registry, then reads `series(market).approved` from the core vault. Both must return true for the market to be considered active.
+**Caller side** — `OVRFLOFactory.sol:209` (`addMarket` calls `OVRFLO(ovrflo).setSeriesApproved(...)`) then `:211` (`isMarketApproved[ovrflo][market] = true`)
 
-**Callee side** — `OVRFLOFactory.addMarket:213-214` writes `isMarketApproved[ovrflo][market] = true` and calls `OVRFLO.setSeriesApproved` which writes `info.approved = true`. Both writes happen in the same transaction (atomic). No function can set one without the other.
+**Callee side** — `OVRFLO.sol:248-254` (`setSeriesApproved` sets `info.approved = true` and `ptToMarket[pt] = market`)
 
-**If violated** — A market could be approved on the factory but not the vault (or vice versa), causing inconsistent gating across OVRFLO and OVRFLOBook.
+**If violated** — The book's `_requireMarketActive` (via `StreamPricing.marketActive`) could accept streams from a market the vault doesn't consider approved, or vice versa.
+
+---
 
 #### X-2
 
-On-chain: **Yes**
+On-chain: **No**
 
-> factory.ovrfloInfo(core) returns the correct treasury, underlying, and ovrfloToken for the vault
+> The factory's `ovrfloInfo[ovrflo]` tuple `(treasury, underlying, ovrfloToken)` matches the vault's immutables `(TREASURY_ADDR, underlying, ovrfloToken)` — assumed by `OVRFLOBook` constructor, never re-validated after deployment.
 
-**Caller side** — `OVRFLOBook.constructor:258-260` reads `ovrfloInfo(core)` to set the book's treasury, underlying, and ovrfloToken immutables. `StreamPricing.requireEligible:180` reads `ovrfloInfo(core)` to validate the core vault is registered.
+**Caller side** — `OVRFLOBook.constructor:319-321` reads `IOVRFLOFactoryRegistry(factory_).ovrfloInfo(core_)` and trusts the returned `(treasury, underlying, ovrfloToken)` to match the vault's actual immutables.
 
-**Callee side** — `OVRFLOFactory.deploy:147` writes `ovrfloInfo[ovrflo]` with the deployment config values. These are set once at deployment and never modified (no setter exists for ovrfloInfo).
+**Callee side** — `OVRFLOFactory.sol:149-151` (`deploy()` sets `ovrfloInfo[ovrflo] = OvrfloInfo({treasury, underlying, ovrfloToken})`) and `OVRFLO.constructor:235-240` (sets vault immutables from constructor params). Both are set from the same `config` struct in `deploy()`, so they match at deployment. But there is no ongoing validation — if the factory's storage were corrupted, the book would operate on mismatched assumptions.
 
-**If violated** — The book could be wired to the wrong treasury, underlying, or token, causing fees or loans to flow to incorrect addresses.
+**If violated** — The book would price streams against the wrong ovrfloToken or send fees to the wrong treasury.
+
+---
 
 #### X-3
 
 On-chain: **Yes**
 
-> OVRFLOToken.owner == address(OVRFLO vault) for mint/burn authorization
+> `StreamPricing.requireEligible` validates that the Sablier stream's sender is the OVRFLO core vault, the asset is the series' ovrfloToken, and the end time matches the cached expiry.
 
-**Caller side** — `OVRFLO.deposit:405-406` calls `OVRFLOToken.mint(user, toUser)`. `OVRFLO.claim:429` calls `OVRFLOToken.burn(msg.sender, amount)`. Both rely on the vault being the token's owner.
+**Caller side** — `OVRFLOBook.sol:925` (`_requireEligible` calls `StreamPricing.requireEligible(factory, sablier, core, market, streamId)`)
 
-**Callee side** — `OVRFLOFactory.deploy:141` calls `token.transferOwnership(ovrflo)` immediately after deploying the vault. `OVRFLOToken.mint:26` and `burn:30` enforce `onlyOwner`. The owner is set once and never changed (no re-transfer path in the current code).
+**Callee side** — `StreamPricing.sol:202-224` (checks `getSender == core`, `getAsset == ovrfloToken`, `getEndTime == expiryCached`, no cliff, non-cancelable, `deposited > withdrawn`)
 
-**If violated** — An unauthorized caller could mint unbacked ovrfloTokens or burn tokens they don't own, breaking I-1 (supply conservation).
-
-#### X-4
-
-On-chain: **No**
-
-> setMarketDepositLimit can set limit below current marketTotalDeposited, violating I-6
-
-**Caller side** — `OVRFLOFactory.setMarketDepositLimit:218` calls `OVRFLO.setMarketDepositLimit(market, limit)` forwarding the multisig's chosen value with no check against current deposited amount.
-
-**Callee side** — `OVRFLO.setMarketDepositLimit:273` writes `marketDepositLimits[market] = limit` with no check that `limit >= marketTotalDeposited[market]`. The deposit guard at `OVRFLO.sol:369` only checks `currentDeposited + ptAmount <= limit` for new deposits, not the existing balance.
-
-**If violated** — The invariant "marketTotalDeposited <= limit" (I-6) is broken. New deposits are correctly blocked, but existing deposits exceed the cap. No downstream logic currently assumes this invariant, but it creates a misleading state.
+**If violated** — Non-OVRFLO streams or streams with wrong parameters could be pledged, breaking the pricing model that assumes deterministic vesting to maturity.
 
 ---
 
 ## 4. Economic Invariants
 
-Higher-order properties derived from combinations of §2 and §3 invariants.
-
 #### E-1
 
 On-chain: **Yes**
 
-> Protocol solvency: every ovrfloToken is backed 1:1 by either deposited PT or wrapped underlying
+> Net ovrfloToken supply equals net backing: every outstanding ovrfloToken is backed by either PT (claimable post-maturity) or underlying (unwrappable anytime).
 
-**Follows from** — `I-1` (totalSupply = Σ marketTotalDeposited + wrappedUnderlying) + `I-7` (wrappedUnderlying <= underlying balance) + `I-8` (marketTotalDeposited <= PT balance at rest)
+**Follows from** — I-1 (totalSupply == MTD + wrappedUnderlying) + I-13 (combined solvency: totalSupply <= underlying.balanceOf + PT.balanceOf)
 
-**If violated** — Not all ovrfloToken holders can redeem for backing assets; the protocol is insolvent.
+**If violated** — Holders could not exit through any path, causing a de-peg of ovrfloToken from its underlying value.
+
+---
 
 #### E-2
 
 On-chain: **Yes**
 
-> Every loan can be fully repaid from its pledged stream (no bad debt possible)
+> Self-repaying loan solvency: every loan's obligation can be satisfied by the pledged stream's remaining face value.
 
-**Follows from** — `I-13` (obligation <= remaining at origination) + `I-11` (loan.closed is one-shot) + stream determinism (non-cancelable Sablier V2 streams vest linearly to maturity)
+**Follows from** — I-7 (obligation <= remaining) + I-9 (loan.closed is one-way) + G-32 (closeLoan requires withdrawable >= outstanding)
 
-**If violated** — A loan's obligation exceeds the stream's face value, creating unliquidatable bad debt (no liquidation mechanism exists by design).
+**If violated** — A loan could become unrepayable, stranding the borrower's stream permanently.
+
+---
 
 #### E-3
 
 On-chain: **Yes**
 
-> Pool contributors can never claim more than their pro-rata share of total obligation
+> Pool claim fairness: no contributor can claim more than their pro-rata share of total obligation, across both claim channels combined.
 
-**Follows from** — `I-14` (Σ poolReceived <= totalObligation) + `I-16` (entitlement = contribution * totalObligation / totalContributed) + `G-25` (pro-rata cap on claimPoolShare)
+**Follows from** — I-4 (poolReceived <= entitlement) + I-2 (Σ poolContributions == totalContributed) + G-35 (claimPoolShare capped at pro-rata of poolProceeds)
 
-**If violated** — A contributor extracts more than their share, reducing the pool's proceeds available to other contributors.
-
-#### E-4
-
-On-chain: **Yes**
-
-> Pool proceeds cannot be drained by a single contributor before others can claim
-
-**Follows from** — `I-15` (poolProceeds >= 0, no underflow) + `G-25` (pro-rata cap: available = min(remaining, poolProceeds * contribution / totalContributed)) + fix commit `ca8e248` which added the pro-rata cap
-
-**If violated** — A single contributor drains poolProceeds entirely, leaving nothing for other contributors despite their valid entitlements.
+**If violated** — A majority contributor could drain pool proceeds before minority contributors can claim.
