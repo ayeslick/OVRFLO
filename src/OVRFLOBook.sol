@@ -540,7 +540,7 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
     /// @param offerIds Offer IDs to consume (must all match same market/aprBps).
     /// @param streamId The Sablier stream to pledge as collateral.
     /// @param targetBorrow Desired principal; actual may be less if capacity is insufficient.
-    /// @param minAcceptable Minimum principal the borrower will accept (slippage).
+    /// @param minAcceptable Minimum net proceeds the borrower will accept (after fees).
     /// @return poolId The new pool id.
     function createBorrowPool(uint256[] memory offerIds, uint256 streamId, uint128 targetBorrow, uint128 minAcceptable)
         external
@@ -571,7 +571,6 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
 
             uint256 totalAvailable = _validateOffers(offerIds, market, aprBps, msg.sender);
             uint256 actualBorrow = targetBorrow < totalAvailable ? uint256(targetBorrow) : totalAvailable;
-            require(actualBorrow >= minAcceptable, "OVRFLOBook: insufficient capacity");
             require(actualBorrow <= grossPrice, "OVRFLOBook: borrow above price");
 
             obligation = StreamPricing.obligationForFill(
@@ -579,6 +578,7 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
             );
             feeAmount = StreamPricing.fee(actualBorrow, feeBps);
             netToBorrower = actualBorrow - feeAmount;
+            require(netToBorrower >= minAcceptable, "OVRFLOBook: slippage");
             actualBorrow128 = _toUint128(actualBorrow);
         }
 

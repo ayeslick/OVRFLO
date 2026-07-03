@@ -1201,7 +1201,7 @@ contract OVRFLOBookTest is Test {
 
         vm.startPrank(SELLER);
         sablier.approve(address(book), 101);
-        vm.expectRevert("OVRFLOBook: insufficient capacity");
+        vm.expectRevert("OVRFLOBook: slippage");
         book.createBorrowPool(offerIds, 101, 100 ether, 90 ether);
         vm.stopPrank();
 
@@ -1325,6 +1325,71 @@ contract OVRFLOBookTest is Test {
         vm.expectRevert("OVRFLOBook: duplicate or unsorted ids");
         book.createBorrowPool(offerIds, 107, 100 ether, 90 ether);
         vm.stopPrank();
+    }
+
+    function test_CreateBorrowPool_NetSlippageWithFees() public {
+        // Set fee to 1% (100 bps)
+        book.setFee(100);
+
+        uint256 offer1 = _postOffer(BUYER, 50 ether);
+        uint256 offer2 = _postOffer(STRANGER, 50 ether);
+        _mintEligibleStream(108, SELLER, 110 ether, 0);
+
+        uint256[] memory offerIds = new uint256[](2);
+        offerIds[0] = offer1;
+        offerIds[1] = offer2;
+
+        // actualBorrow = 100, fee = 1, netToBorrower = 99
+        vm.startPrank(SELLER);
+        sablier.approve(address(book), 108);
+        // minAcceptable = 99 (exactly net) — succeeds
+        book.createBorrowPool(offerIds, 108, 100 ether, 99 ether);
+        vm.stopPrank();
+    }
+
+    function test_CreateBorrowPool_SlippageRevertsOnNetNotGross() public {
+        // Set fee to 1% (100 bps)
+        book.setFee(100);
+
+        uint256 offer1 = _postOffer(BUYER, 50 ether);
+        uint256 offer2 = _postOffer(STRANGER, 50 ether);
+        _mintEligibleStream(109, SELLER, 110 ether, 0);
+
+        uint256[] memory offerIds = new uint256[](2);
+        offerIds[0] = offer1;
+        offerIds[1] = offer2;
+
+        // actualBorrow = 100, fee = 1, netToBorrower = 99
+        // minAcceptable = 100 — old code would pass (100 >= 100), new code reverts (99 < 100)
+        vm.startPrank(SELLER);
+        sablier.approve(address(book), 109);
+        vm.expectRevert("OVRFLOBook: slippage");
+        book.createBorrowPool(offerIds, 109, 100 ether, 100 ether);
+        vm.stopPrank();
+    }
+
+    function test_CreateBorrowPool_FeeAtMaxSlippageReverts() public {
+        // Set fee to 100% (10000 bps)
+        book.setFee(10_000);
+
+        uint256 offer1 = _postOffer(BUYER, 50 ether);
+        uint256 offer2 = _postOffer(STRANGER, 50 ether);
+        _mintEligibleStream(110, SELLER, 110 ether, 0);
+
+        uint256[] memory offerIds = new uint256[](2);
+        offerIds[0] = offer1;
+        offerIds[1] = offer2;
+
+        // actualBorrow = 100, fee = 100, netToBorrower = 0
+        // minAcceptable = 1 — reverts because 0 < 1
+        vm.startPrank(SELLER);
+        sablier.approve(address(book), 110);
+        vm.expectRevert("OVRFLOBook: slippage");
+        book.createBorrowPool(offerIds, 110, 100 ether, 1);
+        vm.stopPrank();
+
+        // Reset fee
+        book.setFee(0);
     }
 
     function test_Offer_SplitBetweenSaleAndLoan() public {
