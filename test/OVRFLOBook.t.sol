@@ -1446,7 +1446,7 @@ contract OVRFLOBookTest is Test {
         book.claimPoolShare(poolId, 50 ether);
     }
 
-    function test_ClaimPoolShare_ProRataCapOnPartialProceeds() public {
+    function test_ClaimPoolShare_NoProRataCap() public {
         // Alice (BUYER) 60%, Bob (STRANGER) 40%, obligation = 110
         (uint256 poolId, uint256 loanId) = _createBorrowerPool(141, 60 ether, 40 ether, 100 ether, 100 ether);
 
@@ -1458,21 +1458,51 @@ contract OVRFLOBookTest is Test {
         vm.stopPrank();
         assertEq(book.poolProceeds(poolId), 50 ether, "partial proceeds");
 
-        // Alice tries to claim 50 (entitlement is 66, but pro-rata share of 50 is 30)
+        // Alice's entitlement = 60 * 110 / 100 = 66, available = min(66, 50) = 50
+        // No pro-rata cap — Alice can claim all available proceeds
         vm.prank(BUYER);
-        vm.expectRevert("OVRFLOBook: exceeds available");
         book.claimPoolShare(poolId, 50 ether);
+        assertEq(ovrfloToken.balanceOf(BUYER), 50 ether, "Alice claims all available");
+        assertEq(book.poolProceeds(poolId), 0 ether, "pot drained");
 
-        // Alice claims her pro-rata share: 50 * 60/100 = 30
-        vm.prank(BUYER);
-        book.claimPoolShare(poolId, 30 ether);
-        assertEq(ovrfloToken.balanceOf(BUYER), 30 ether, "Alice gets pro-rata share");
-        assertEq(book.poolProceeds(poolId), 20 ether, "20 remains for Bob");
-
-        // Bob claims his pro-rata share of remaining 20: 20 * 40/100 = 8
+        // Bob's entitlement = 40 * 110 / 100 = 44, but poolProceeds = 0
+        // Bob cannot claim yet, but is NOT stranded
         vm.prank(STRANGER);
-        book.claimPoolShare(poolId, 8 ether);
-        assertEq(ovrfloToken.balanceOf(STRANGER), 8 ether, "Bob gets his share");
+        vm.expectRevert("OVRFLOBook: exceeds available");
+        book.claimPoolShare(poolId, 1 ether);
+
+        // More proceeds arrive via closeLoan (outstanding = 110 - 50 = 60)
+        sablier.setWithdrawable(141, 110 ether);
+        book.closeLoan(loanId);
+        assertEq(book.poolProceeds(poolId), 60 ether, "more proceeds accumulated");
+
+        // Now Bob can claim his entitlement
+        vm.prank(STRANGER);
+        book.claimPoolShare(poolId, 44 ether);
+        assertEq(ovrfloToken.balanceOf(STRANGER), 44 ether, "Bob claims after proceeds arrive");
+    }
+
+    function test_ClaimPoolShare_MinorityContributorNotStranded() public {
+        // A (BUYER) 99%, B (STRANGER) 1%, obligation = 110
+        (uint256 poolId,) = _createBorrowerPool(142, 99 ether, 1 ether, 100 ether, 100 ether);
+
+        // Full proceeds via closeLoan
+        sablier.setWithdrawable(142, 110 ether);
+        book.closeLoan(1);
+        assertEq(book.poolProceeds(poolId), 110 ether, "full proceeds");
+
+        // A's entitlement = 99 * 110 / 100 = 108 (integer division)
+        vm.prank(BUYER);
+        book.claimPoolShare(poolId, 108 ether);
+        assertEq(ovrfloToken.balanceOf(BUYER), 108 ether, "A claims entitlement");
+        assertEq(book.poolProceeds(poolId), 2 ether, "2 remains");
+
+        // B's entitlement = 1 * 110 / 100 = 1
+        // With the old pro-rata cap, B's share = 2 * 1 / 100 = 0 → stranded
+        // Without the cap, B's available = min(1, 2) = 1 → NOT stranded
+        vm.prank(STRANGER);
+        book.claimPoolShare(poolId, 1 ether);
+        assertEq(ovrfloToken.balanceOf(STRANGER), 1 ether, "B claims entitlement");
     }
 
     function test_PoolClaimLoan_NonContributorReverts() public {
