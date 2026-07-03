@@ -242,6 +242,16 @@ contract OVRFLOFlashLoanTest is Test {
         borrower.executeFlashLoan(address(pt), 10 ether, "");
     }
 
+    function test_RevertOracleStale() public {
+        vm.mockCall(
+            PENDLE_ORACLE,
+            abi.encodeCall(IPendleOracle.getOracleState, (MARKET, TWAP_DURATION)),
+            abi.encode(false, 0, false)
+        );
+        vm.expectRevert("OVRFLO: oracle not ready");
+        borrower.executeFlashLoan(address(pt), 10 ether, "");
+    }
+
     /*//////////////////////////////////////////////////////////////
                         HAPPY PATH TESTS
     //////////////////////////////////////////////////////////////*/
@@ -767,6 +777,11 @@ contract OVRFLOFlashLoanTest is Test {
     function _mockRate(address market, uint256 rateE18) internal {
         vm.mockCall(
             PENDLE_ORACLE, abi.encodeCall(IPendleOracle.getPtToSyRate, (market, TWAP_DURATION)), abi.encode(rateE18)
+        );
+        vm.mockCall(
+            PENDLE_ORACLE,
+            abi.encodeCall(IPendleOracle.getOracleState, (market, TWAP_DURATION)),
+            abi.encode(false, 0, true)
         );
     }
 

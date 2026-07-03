@@ -343,6 +343,13 @@ contract OVRFLO is ReentrancyGuard {
         emit Unwrapped(msg.sender, amount);
     }
 
+    /// @dev Reverts if the TWAP oracle lacks sufficient historical data for the given duration.
+    ///      Matches the freshness check performed at market onboarding in OVRFLOFactory.addMarket.
+    function _requireOracleFresh(address market, uint32 twapDuration) internal view {
+        (,, bool oldestObservationSatisfied) = IPendleOracle(oracle).getOracleState(market, twapDuration);
+        require(oldestObservationSatisfied, "OVRFLO: oracle not ready");
+    }
+
     /// @notice Deposits PT tokens to receive ovrfloTokens immediately and a stream for the discount
     /// @dev User must approve both PT token and underlying (for fee) before calling.
     ///      The rate determines the split: if PT is at 95% of face value, user gets 95% immediately
@@ -374,6 +381,7 @@ contract OVRFLO is ReentrancyGuard {
 
         IERC20(info.ptToken).safeTransferFrom(msg.sender, address(this), ptAmount);
 
+        _requireOracleFresh(market, info.twapDurationFixed);
         uint256 rateE18 = IPendleOracle(oracle).getPtToSyRate(market, info.twapDurationFixed);
 
         toUser = PRBMath.mulDiv(ptAmount, rateE18, WAD);
@@ -454,6 +462,7 @@ contract OVRFLO is ReentrancyGuard {
         require(amount > 0, "OVRFLO: zero flash");
         require(amount <= marketTotalDeposited[market], "OVRFLO: exceeds deposited");
 
+        _requireOracleFresh(market, info.twapDurationFixed);
         uint256 rateE18 = IPendleOracle(oracle).getPtToSyRate(market, info.twapDurationFixed);
         uint256 fee =
             flashFeeBps == 0 ? 0 : PRBMath.mulDiv(PRBMath.mulDiv(amount, rateE18, WAD), flashFeeBps, BASIS_POINTS);

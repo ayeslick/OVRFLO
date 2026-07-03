@@ -280,6 +280,23 @@ contract OVRFLOProtocolTest is Test {
         ovrflo.deposit(MARKET_ONE, 1e6, 0);
     }
 
+    function test_Deposit_RevertsWhenOracleStale() public {
+        uint256 expiry = block.timestamp + 30 days;
+        _approveSeries(MARKET_ONE, ptOne, expiry, 0);
+        _seedPreviewAndBalances(MARKET_ONE, ptOne, 10 ether, 0.9e18, 0);
+
+        // Override oracle state mock to return stale
+        vm.mockCall(
+            PENDLE_ORACLE,
+            abi.encodeCall(IPendleOracle.getOracleState, (MARKET_ONE, TWAP_DURATION)),
+            abi.encode(false, 0, false)
+        );
+
+        vm.prank(user);
+        vm.expectRevert("OVRFLO: oracle not ready");
+        ovrflo.deposit(MARKET_ONE, 10 ether, 0);
+    }
+
     function test_Deposit_RevertsOnSlippage() public {
         uint256 expiry = block.timestamp + 30 days;
         _approveSeries(MARKET_ONE, ptOne, expiry, 0);
@@ -565,6 +582,11 @@ contract OVRFLOProtocolTest is Test {
     function _mockRate(address market, uint256 rateE18) internal {
         vm.mockCall(
             PENDLE_ORACLE, abi.encodeCall(IPendleOracle.getPtToSyRate, (market, TWAP_DURATION)), abi.encode(rateE18)
+        );
+        vm.mockCall(
+            PENDLE_ORACLE,
+            abi.encodeCall(IPendleOracle.getOracleState, (market, TWAP_DURATION)),
+            abi.encode(false, 0, true)
         );
     }
 
