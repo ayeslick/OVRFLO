@@ -689,9 +689,11 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
         returns (uint256 grossPrice, uint128 obligation, uint256 feeAmount, uint256 netToBorrower, uint128 residual)
     {
         StreamPricing.Eligibility memory eligibility = _requireEligible(market, streamId);
+        _validateApr(aprBps);
         uint256 timeToMaturity = _timeToMaturity(eligibility.seriesMaturity);
 
         grossPrice = StreamPricing.grossPrice(eligibility.remaining, aprBps, timeToMaturity);
+        require(grossPrice > 0, "OVRFLOBook: price zero");
         uint256 effectiveBorrowAmount = borrowAmount == 0 ? grossPrice : borrowAmount;
         require(effectiveBorrowAmount <= grossPrice, "OVRFLOBook: borrow above price");
 

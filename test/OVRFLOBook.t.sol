@@ -867,6 +867,27 @@ contract OVRFLOBookTest is Test {
         assertEq(residual, 0);
     }
 
+    function test_Quote_RevertsForAprOutOfBounds() public {
+        _mintEligibleStream(32, SELLER, 110 ether, 0);
+        vm.expectRevert("OVRFLOBook: apr out of bounds");
+        book.quote(MARKET, 32, 500, 0);
+    }
+
+    function test_Quote_RevertsForNonWholeApr() public {
+        // Widen bounds to include 50 bps
+        book.setAprBounds(0, 1000);
+        _mintEligibleStream(33, SELLER, 110 ether, 0);
+        vm.expectRevert("OVRFLOBook: apr not whole");
+        book.quote(MARKET, 33, 50, 0);
+    }
+
+    function test_Quote_RevertsForZeroPrice() public {
+        // remaining = 1 wei, grossPrice = 1e18 / factor ≈ 0 (floors to 0)
+        _mintEligibleStream(34, SELLER, 2, 1);
+        vm.expectRevert("OVRFLOBook: price zero");
+        book.quote(MARKET, 34, 1000, 0);
+    }
+
     function test_OrderStateViewsReflectCurrentState() public {
         uint256 offerId = _postOffer(BUYER, 100 ether);
         (address maker, address market, uint16 aprBps, uint128 capacity, bool active) = book.offerState(offerId);
