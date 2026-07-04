@@ -350,6 +350,15 @@ contract OVRFLO is ReentrancyGuard {
         require(oldestObservationSatisfied, "OVRFLO: oracle not ready");
     }
 
+    /// @dev Splits a PT deposit into the immediate mint and the streamed remainder,
+    ///      capping the immediate portion at face value (rate can exceed 1e18 briefly).
+    function _computeSplit(uint256 ptAmount, uint256 rateE18) internal pure returns (uint256 toUser, uint256 toStream) {
+        toUser = PRBMath.mulDiv(ptAmount, rateE18, WAD);
+        if (toUser > ptAmount) toUser = ptAmount;
+        toStream = ptAmount - toUser;
+        require(toStream > 0, "OVRFLO: nothing to stream");
+    }
+
     /// @notice Deposits PT tokens to receive ovrfloTokens immediately and a stream for the discount
     /// @dev User must approve both PT token and underlying (for fee) before calling.
     ///      The rate determines the split: if PT is at 95% of face value, user gets 95% immediately
@@ -384,11 +393,8 @@ contract OVRFLO is ReentrancyGuard {
         _requireOracleFresh(market, info.twapDurationFixed);
         uint256 rateE18 = IPendleOracle(oracle).getPtToSyRate(market, info.twapDurationFixed);
 
-        toUser = PRBMath.mulDiv(ptAmount, rateE18, WAD);
-        if (toUser > ptAmount) toUser = ptAmount;
-        toStream = ptAmount - toUser;
+        (toUser, toStream) = _computeSplit(ptAmount, rateE18);
 
-        require(toStream > 0, "OVRFLO: nothing to stream");
         require(toUser >= minToUser, "OVRFLO: slippage");
 
         uint256 feeAmount = info.feeBps == 0 ? 0 : PRBMath.mulDiv(toUser, info.feeBps, BASIS_POINTS);
@@ -554,10 +560,7 @@ contract OVRFLO is ReentrancyGuard {
         SeriesInfo memory info = _series[market];
         require(info.approved, "OVRFLO: market not approved");
         rateE18 = IPendleOracle(oracle).getPtToSyRate(market, info.twapDurationFixed);
-        toUser = PRBMath.mulDiv(ptAmount, rateE18, WAD);
-        if (toUser > ptAmount) toUser = ptAmount;
-        toStream = ptAmount - toUser;
-        require(toStream > 0, "OVRFLO: nothing to stream");
+        (toUser, toStream) = _computeSplit(ptAmount, rateE18);
     }
 
     /// @notice Full deposit preview including fee calculation
@@ -575,10 +578,7 @@ contract OVRFLO is ReentrancyGuard {
         SeriesInfo memory info = _series[market];
         require(info.approved, "OVRFLO: market not approved");
         rateE18 = IPendleOracle(oracle).getPtToSyRate(market, info.twapDurationFixed);
-        toUser = PRBMath.mulDiv(ptAmount, rateE18, WAD);
-        if (toUser > ptAmount) toUser = ptAmount;
-        toStream = ptAmount - toUser;
-        require(toStream > 0, "OVRFLO: nothing to stream");
+        (toUser, toStream) = _computeSplit(ptAmount, rateE18);
         feeAmount = info.feeBps == 0 ? 0 : PRBMath.mulDiv(toUser, info.feeBps, BASIS_POINTS);
     }
 }

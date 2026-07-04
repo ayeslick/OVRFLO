@@ -33,6 +33,10 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
     uint16 public constant LAUNCH_APR_BPS = 1000;
     /// @notice Step size for APR validation (100 bps = 1%). All APRs must be whole numbers.
     uint16 public constant APR_STEP_BPS = 100;
+    /// @notice Hard ceiling on the maximum APR bound the owner may set (100%).
+    uint16 public constant APR_MAX_CEILING = 10_000;
+    /// @notice Hard ceiling on the protocol fee the owner may set (100%).
+    uint16 public constant MAX_FEE_BPS = 10_000;
 
     /*//////////////////////////////////////////////////////////////
                                 IMMUTABLES
@@ -48,10 +52,6 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
     address public immutable underlying;
     /// @notice Sablier V2 Lockup Linear instance streams are pledged to.
     ISablierV2LockupLinear public immutable sablier;
-    /// @notice Hard ceiling on the maximum APR bound the owner may set (100%).
-    uint16 public constant APR_MAX_CEILING = 10_000;
-    /// @notice Hard ceiling on the protocol fee the owner may set (100%).
-    uint16 public constant MAX_FEE_BPS = 10_000;
 
     /*//////////////////////////////////////////////////////////////
                                 STORAGE
@@ -625,10 +625,7 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
         _requireLoanExists(loan);
         require(!loan.closed, "OVRFLOBook: loan closed");
 
-        uint256 entitlement = uint256(poolContributions[poolId][msg.sender]) * pools[poolId].totalObligation
-            / pools[poolId].totalContributed;
-        uint256 remaining = entitlement - poolReceived[poolId][msg.sender];
-        require(remaining > 0, "OVRFLOBook: fully claimed");
+        uint256 remaining = _remainingEntitlement(poolId, msg.sender);
 
         uint128 streamClaimable = _minUint128(sablier.withdrawableAmountOf(loan.streamId), _outstanding(loan));
         uint128 drawAmount = _minUint128(_minUint128(amount, _toUint128(remaining)), streamClaimable);
@@ -649,12 +646,7 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
     /// @param poolId The pool to claim from.
     /// @param amount Requested claim amount (capped at available).
     function claimPoolShare(uint256 poolId, uint128 amount) external nonReentrant {
-        require(poolContributions[poolId][msg.sender] > 0, "OVRFLOBook: not contributor");
-
-        uint256 entitlement = uint256(poolContributions[poolId][msg.sender]) * pools[poolId].totalObligation
-            / pools[poolId].totalContributed;
-        uint256 remaining = entitlement - poolReceived[poolId][msg.sender];
-        require(remaining > 0, "OVRFLOBook: fully claimed");
+        uint256 remaining = _remainingEntitlement(poolId, msg.sender);
 
         uint256 available = remaining;
         if (uint256(poolProceeds[poolId]) < available) available = uint256(poolProceeds[poolId]);
@@ -886,6 +878,17 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
     /// @dev Market-level gate (no stream required); delegates to `StreamPricing.marketActive`.
     function _requireMarketActive(address market) internal view {
         StreamPricing.marketActive(address(factory), core, market);
+    }
+
+    /// @dev Contributor's remaining pool entitlement: pro-rata share of totalObligation
+    ///      minus what they already received. Reverts for non-contributors and when
+    ///      fully claimed.
+    function _remainingEntitlement(uint256 poolId, address account) internal view returns (uint256 remaining) {
+        uint128 contribution = poolContributions[poolId][account];
+        require(contribution > 0, "OVRFLOBook: not contributor");
+        uint256 entitlement = uint256(contribution) * pools[poolId].totalObligation / pools[poolId].totalContributed;
+        remaining = entitlement - poolReceived[poolId][account];
+        require(remaining > 0, "OVRFLOBook: fully claimed");
     }
 
     /// @dev Seconds from now until the series maturity.
