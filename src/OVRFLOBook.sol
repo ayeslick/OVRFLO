@@ -822,9 +822,12 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
         }
 
         sufficient = gathered >= targetAmount;
-        assembly {
-            mstore(ids, count)
+
+        uint256[] memory result = new uint256[](count);
+        for (uint256 i; i < count; i++) {
+            result[i] = ids[i];
         }
+        ids = result;
     }
 
     /*//////////////////////////////////////////////////////////////
