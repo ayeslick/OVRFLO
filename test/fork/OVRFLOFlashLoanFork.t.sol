@@ -6,8 +6,6 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {OVRFLO} from "../../src/OVRFLO.sol";
 import {OVRFLOFactory} from "../../src/OVRFLOFactory.sol";
 import {OVRFLOToken} from "../../src/OVRFLOToken.sol";
-import {ISablierV2LockupLinear} from "../../interfaces/ISablierV2LockupLinear.sol";
-import {IPendleOracle} from "../../interfaces/IPendleOracle.sol";
 import {IFlashBorrower} from "../../interfaces/IFlashBorrower.sol";
 import {OVRFLOForkBase} from "./OVRFLOForkBase.t.sol";
 
@@ -170,8 +168,8 @@ contract OVRFLOFlashLoanForkTest is OVRFLOForkBase {
         uint256 liveRate = ovrflo.previewRate(PRIMARY_MARKET);
         assertGt(liveRate, 0, "live rate should be > 0");
 
-        // Compute expected fee: amount * rate / 1e18 * feeBps / 10000
-        uint256 expectedFee = (FLASH_AMOUNT * liveRate / 1e18) * 50 / 10_000;
+        // Compute expected fee: amount * rate * feeBps / 1e18 / 10000
+        uint256 expectedFee = FLASH_AMOUNT * liveRate * 50 / 1e18 / 10_000;
 
         uint256 treasuryBefore = IERC20(WSTETH).balanceOf(TREASURY);
         uint256 borrowerBefore = IERC20(WSTETH).balanceOf(address(flashBorrower));
@@ -195,7 +193,7 @@ contract OVRFLOFlashLoanForkTest is OVRFLOForkBase {
         factory.setFlashFeeBps(address(ovrflo), 100);
 
         uint256 liveRate = ovrflo.previewRate(PRIMARY_MARKET);
-        uint256 expectedFee = (FLASH_AMOUNT * liveRate / 1e18) * 100 / 10_000;
+        uint256 expectedFee = FLASH_AMOUNT * liveRate * 100 / 1e18 / 10_000;
 
         uint256 treasuryBefore = IERC20(WSTETH).balanceOf(TREASURY);
 

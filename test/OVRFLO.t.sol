@@ -363,6 +363,7 @@ contract OVRFLOProtocolTest is Test {
         (uint256 toUser, uint256 toStream) = _deposit(MARKET_ONE, ptOne, 10 ether, 0.8e18, 0, expiry, 11);
 
         vm.prank(address(ovrflo));
+        // forge-lint: disable-next-line(erc20-unchecked-transfer)
         ovrfloToken.transfer(user, toStream);
 
         vm.warp(expiry);
@@ -386,6 +387,7 @@ contract OVRFLOProtocolTest is Test {
         uint256 claimAmount = 4 ether;
 
         vm.prank(address(ovrflo));
+        // forge-lint: disable-next-line(erc20-unchecked-transfer)
         ovrfloToken.transfer(user, toStream);
 
         vm.warp(expiry);
@@ -414,6 +416,7 @@ contract OVRFLOProtocolTest is Test {
 
         uint256 streamedBalance = ovrfloToken.balanceOf(address(ovrflo));
         vm.prank(address(ovrflo));
+        // forge-lint: disable-next-line(erc20-unchecked-transfer)
         ovrfloToken.transfer(user, streamedBalance);
 
         vm.warp(secondExpiry);

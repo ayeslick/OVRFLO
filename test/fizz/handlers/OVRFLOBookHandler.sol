@@ -26,6 +26,7 @@ abstract contract OVRFLOBookHandler is Properties {
     }
 
     function _clampApr(uint16 apr) internal view returns (uint16) {
+        // forge-lint: disable-next-line(divide-before-multiply) — intentional round-to-step
         apr = (apr / APR_STEP) * APR_STEP; // round to step
         if (apr < book.aprMinBps()) apr = book.aprMinBps();
         if (apr > book.aprMaxBps()) apr = book.aprMaxBps();

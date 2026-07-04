@@ -406,10 +406,12 @@ contract OVRFLO is ReentrancyGuard {
         ISablierV2LockupLinear.CreateWithDurations memory p = ISablierV2LockupLinear.CreateWithDurations({
             sender: address(this),
             recipient: msg.sender,
+            // forge-lint: disable-next-line(unsafe-typecast) — Sablier requires uint128; safe with 18-decimal PT
             totalAmount: uint128(toStream),
             asset: IERC20(ovrfloToken),
             cancelable: false,
             transferable: true,
+            // forge-lint: disable-next-line(unsafe-typecast) — Sablier requires uint40; duration <= expiry which fits
             durations: ISablierV2LockupLinear.Durations({cliff: 0, total: uint40(duration)}),
             broker: ISablierV2LockupLinear.Broker({account: address(0), fee: 0})
         });

@@ -26,4 +26,7 @@ depth = 25
 [fuzz]
 runs = 1000
 
+[lint]
+exclude_lints = ["mixed-case-function", "mixed-case-variable", "screaming-snake-case-immutable", "screaming-snake-case-const", "unaliased-plain-import", "unwrapped-modifier-logic", "unsafe-typecast", "unused-import"]
+
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options

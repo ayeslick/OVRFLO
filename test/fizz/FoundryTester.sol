@@ -2,7 +2,6 @@
 pragma solidity >=0.6.2 <0.9.0;
 
 import {Test} from "forge-std/Test.sol";
-import {console} from "forge-std/console.sol";
 import {Handlers} from "./handlers/Handlers.sol";
 
 /// @notice Contract to be used for quick testing with Foundry

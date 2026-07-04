@@ -822,7 +822,6 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
         }
 
         sufficient = gathered >= targetAmount;
-        // forge-lint: disable-next-line(unsafe-assembly)
         assembly {
             mstore(ids, count)
         }
