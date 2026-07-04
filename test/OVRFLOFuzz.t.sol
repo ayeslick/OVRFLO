@@ -280,6 +280,11 @@ contract OVRFLOFuzzTest is Test {
         vm.mockCall(
             PENDLE_ORACLE, abi.encodeCall(IPendleOracle.getPtToSyRate, (market, TWAP_DURATION)), abi.encode(rateE18)
         );
+        vm.mockCall(
+            PENDLE_ORACLE,
+            abi.encodeCall(IPendleOracle.getOracleState, (market, TWAP_DURATION)),
+            abi.encode(false, 0, true)
+        );
     }
 
     function _mockSablier(address recipient, uint128 amount, uint256 duration, uint256 streamId) internal {

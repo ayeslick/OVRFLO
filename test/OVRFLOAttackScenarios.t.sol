@@ -627,6 +627,11 @@ contract OVRFLOAttackScenariosTest is Test {
         vm.mockCall(
             PENDLE_ORACLE, abi.encodeCall(IPendleOracle.getPtToSyRate, (market, TWAP_DURATION)), abi.encode(rateE18)
         );
+        vm.mockCall(
+            PENDLE_ORACLE,
+            abi.encodeCall(IPendleOracle.getOracleState, (market, TWAP_DURATION)),
+            abi.encode(false, 0, true)
+        );
     }
 
     function _computeFee(uint256 amount, uint256 rateE18, uint16 feeBps) internal pure returns (uint256) {

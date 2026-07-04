@@ -196,6 +196,9 @@ contract OVRFLOWrapUnwrapInvariantTest is Test {
 
         vm.mockCall(ORACLE, abi.encodeCall(IPendleOracle.getPtToSyRate, (MARKET, TWAP_DURATION)), abi.encode(RATE_E18));
         vm.mockCall(
+            ORACLE, abi.encodeCall(IPendleOracle.getOracleState, (MARKET, TWAP_DURATION)), abi.encode(false, 0, true)
+        );
+        vm.mockCall(
             SABLIER_LL, abi.encodeWithSelector(ISablierV2LockupLinear.createWithDurations.selector), abi.encode(1)
         );
 
