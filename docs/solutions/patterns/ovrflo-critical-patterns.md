@@ -14,7 +14,7 @@ audience: [contributors, ai-agents]
     the claim redesign fork-test findings. Updated pattern #4 and #7 to
     reference pool-only functions after single-party lending removal.
   - 2026-06-29: Appended patterns #11 (strictly-increasing IDs in batch
-    arrays) and #12 (pro-rata cap on shared-pool claims) from the OVRFLOBook
+    arrays) and #12 (cap shared-pool claims at min(remaining, poolProceeds)) from the OVRFLOBook
     Pool feature review (commits 91df170, ca8e248).
   - 2026-06-28: Updated R-02 to note natspec codification. Appended patterns
     #9 (factory owns all deployed books) and #10 (one vault per underlying)
@@ -848,36 +848,38 @@ rg "unknown PT" src/OVRFLO.sol
 
 ---
 
-## 12. Cap shared-pool claims at the contributor's pro-rata share of current poolProceeds (ALWAYS REQUIRED)
+## 12. Cap shared-pool claims at `min(remaining, poolProceeds)` — no pro-rata distribution (ALWAYS REQUIRED)
 
-### ❌ WRONG (majority contributor drains the pot before others can claim)
-
-```solidity
-// claimPoolShare — bounded only by remaining entitlement
-uint256 remaining = entitlement - poolReceived[poolId][msg.sender];
-require(uint256(amount) <= remaining, "OVRFLOBook: exceeds available");
-// A 60% contributor can sweep 100% of poolProceeds on their first claim,
-// forcing the 40% contributor into the more expensive poolClaimLoan path.
-```
-
-### ✅ CORRECT (pro-rata cap on the current pot balance)
+### ❌ WRONG (pro-rata cap on shrinking pot strands minority contributors)
 
 ```solidity
+// claimPoolShare — pro-rata share of current (shrinking) poolProceeds
 uint256 proRataShare =
     uint256(poolProceeds[poolId]) * poolContributions[poolId][msg.sender]
         / pools[poolId].totalContributed;
 uint256 available = proRataShare;
 if (remaining < available) available = remaining;
+// After a majority contributor drains the pot, minority pro-rata floors to 0.
+// totalContributed=100, A=99, B=1, poolProceeds=1 after A claims:
+//   B's proRataShare = 1 * 1 / 100 = 0 → permanently stranded.
+```
+
+### ✅ CORRECT (cap by remaining entitlement and available pot)
+
+```solidity
+uint256 available = remaining;
+if (uint256(poolProceeds[poolId]) < available) available = uint256(poolProceeds[poolId]);
 require(uint256(amount) <= available, "OVRFLOBook: exceeds available");
 ```
 
-**Why:** Without the pro-rata cap, a majority contributor can drain all of
-`poolProceeds` on their first claim, leaving later claimants with nothing in
-the pot even though their `remaining` entitlement is positive. They are then
-forced into `poolClaimLoan` (direct stream draw, higher gas). The pro-rata
-cap throttles the *rate* at which the shared pot can be drained — it never
-lets anyone over-claim their true share because `remaining` still caps the
-total across both claim channels.
+**Why:** The pro-rata cap was intended to prevent a majority contributor from
+draining `poolProceeds` before others can claim. But it caused the opposite
+problem: as the pot shrank, minority contributors' pro-rata share floored to
+zero, permanently stranding their proceeds. The correct approach is to cap
+each claim by `min(remaining, poolProceeds)` — `poolReceived` already
+prevents any contributor from claiming more than their total entitlement, and
+`poolProceeds` caps at what's actually in the pot. First-come-first-served on
+proceeds is acceptable; permanent stranding is not.
 
 **Placement/Context:** `claimPoolShare` — the shared-pot claim channel for
 both borrower and lender pools. `poolClaimLoan` (the direct-draw channel)
@@ -888,6 +890,8 @@ from a shared accumulator.
 
 ```bash
 rg "proRataShare" src/OVRFLOBook.sol
+# expected: 0 matches — pro-rata cap removed
+rg "poolProceeds\[poolId\] < available" src/OVRFLOBook.sol
 # expected: 1 match in claimPoolShare
 ```
 
