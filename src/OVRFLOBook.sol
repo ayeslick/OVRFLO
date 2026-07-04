@@ -269,11 +269,14 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
 
     /// @notice Sets the accepted APR range for new posts.
     /// @dev Does not affect existing offers/listings. Enforced per-post via `_validateApr`.
+    ///      Both bounds must be multiples of `APR_STEP_BPS`.
     /// @param aprMinBps_ New minimum APR in basis points.
     /// @param aprMaxBps_ New maximum APR in basis points.
     function setAprBounds(uint16 aprMinBps_, uint16 aprMaxBps_) external onlyOwner {
         require(aprMaxBps_ >= aprMinBps_, "OVRFLOBook: bad apr bounds");
         require(aprMaxBps_ <= APR_MAX_CEILING, "OVRFLOBook: apr too high");
+        require(aprMinBps_ % APR_STEP_BPS == 0, "OVRFLOBook: aprMin not step-aligned");
+        require(aprMaxBps_ % APR_STEP_BPS == 0, "OVRFLOBook: aprMax not step-aligned");
 
         aprMinBps = aprMinBps_;
         aprMaxBps = aprMaxBps_;

@@ -316,6 +316,25 @@ contract OVRFLOBookTest is Test {
         book.setAprBounds(0, 10_001);
     }
 
+    function test_Admin_SetAprBounds_StepAlignment() public {
+        // Happy path: both multiples of 100
+        book.setAprBounds(1000, 5000);
+        assertEq(book.aprMinBps(), 1000);
+        assertEq(book.aprMaxBps(), 5000);
+
+        // Min not aligned
+        vm.expectRevert("OVRFLOBook: aprMin not step-aligned");
+        book.setAprBounds(50, 5000);
+
+        // Max not aligned
+        vm.expectRevert("OVRFLOBook: aprMax not step-aligned");
+        book.setAprBounds(1000, 5050);
+
+        // Both not aligned — min check fires first
+        vm.expectRevert("OVRFLOBook: aprMin not step-aligned");
+        book.setAprBounds(50, 99);
+    }
+
     function test_Admin_SetFeeAndTreasury() public {
         vm.expectEmit(address(book));
         emit FeeSet(100);
