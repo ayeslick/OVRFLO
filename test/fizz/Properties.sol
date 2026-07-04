@@ -3,8 +3,8 @@ pragma solidity >=0.6.2 <0.9.0;
 
 import {Snapshots} from "./Snapshots.sol";
 import {PropertiesAsserts} from "./utils/PropertiesAsserts.sol";
-import {StreamPricing} from "../../../src/StreamPricing.sol";
-import {ISablierV2LockupLinear} from "../../../interfaces/ISablierV2LockupLinear.sol";
+import {StreamPricing} from "../../src/StreamPricing.sol";
+import {ISablierV2LockupLinear} from "../../interfaces/ISablierV2LockupLinear.sol";
 
 /// @notice Contains the functions that check the properties (invariants)
 abstract contract Properties is PropertiesAsserts, Snapshots {

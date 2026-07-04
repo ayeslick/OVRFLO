@@ -2,7 +2,7 @@
 pragma solidity >=0.6.2 <0.9.0;
 
 import {Base} from "./Base.sol";
-import {ISablierV2LockupLinear} from "../../../interfaces/ISablierV2LockupLinear.sol";
+import {ISablierV2LockupLinear} from "../../interfaces/ISablierV2LockupLinear.sol";
 
 /// @notice Used to take snapshots of the state before and after a function call
 abstract contract Snapshots is Base {
