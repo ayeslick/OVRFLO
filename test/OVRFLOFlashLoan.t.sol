@@ -3,12 +3,12 @@ pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {OVRFLO} from "../src/OVRFLO.sol";
 import {OVRFLOToken} from "../src/OVRFLOToken.sol";
 import {OVRFLOFactory} from "../src/OVRFLOFactory.sol";
 import {IPendleOracle} from "../interfaces/IPendleOracle.sol";
 import {ISablierV2LockupLinear} from "../interfaces/ISablierV2LockupLinear.sol";
+import {VaultMockHelpers} from "./helpers/VaultMockHelpers.sol";
 import {IFlashBorrower} from "../interfaces/IFlashBorrower.sol";
 
 contract MockERC20 is ERC20 {
@@ -136,19 +136,15 @@ contract FlashBorrower is IFlashBorrower {
     }
 }
 
-contract OVRFLOFlashLoanTest is Test {
+contract OVRFLOFlashLoanTest is VaultMockHelpers {
     event FlashLoaned(address indexed borrower, address indexed ptToken, uint256 amount, uint256 fee);
     event FlashFeeBpsSet(uint16 feeBps);
     event FlashLoanPausedSet(bool paused);
 
-    address internal constant PENDLE_ORACLE = 0x9a9Fa8338dd5E5B2188006f1Cd2Ef26d921650C2;
-    address internal constant SABLIER_LL = 0xAFb979d9afAd1aD27C5eFf4E27226E3AB9e5dCC9;
     address internal constant ADMIN = address(0xA11CE);
     address internal constant TREASURY = address(0xBEEF);
     address internal constant MARKET = address(0x1001);
     address internal constant FACTORY_OWNER = address(0xFAC);
-
-    uint32 internal constant TWAP_DURATION = 30 minutes;
 
     OVRFLO internal ovrflo;
     OVRFLOToken internal ovrfloToken;
@@ -774,35 +770,8 @@ contract OVRFLOFlashLoanTest is Test {
         vault = OVRFLO(vaultAddr);
     }
 
-    function _mockRate(address market, uint256 rateE18) internal {
-        vm.mockCall(
-            PENDLE_ORACLE, abi.encodeCall(IPendleOracle.getPtToSyRate, (market, TWAP_DURATION)), abi.encode(rateE18)
-        );
-        vm.mockCall(
-            PENDLE_ORACLE,
-            abi.encodeCall(IPendleOracle.getOracleState, (market, TWAP_DURATION)),
-            abi.encode(false, 0, true)
-        );
-    }
-
     function _mockSablier(address recipient, uint128 amount, uint256 duration, uint256 streamId) internal {
-        ISablierV2LockupLinear.CreateWithDurations memory params = ISablierV2LockupLinear.CreateWithDurations({
-            sender: address(ovrflo),
-            recipient: recipient,
-            totalAmount: amount,
-            asset: IERC20(address(ovrfloToken)),
-            cancelable: false,
-            transferable: true,
-            durations: ISablierV2LockupLinear.Durations({cliff: 0, total: uint40(duration)}),
-            broker: ISablierV2LockupLinear.Broker({account: address(0), fee: 0})
-        });
-        bytes memory callData = abi.encodeCall(ISablierV2LockupLinear.createWithDurations, (params));
-        vm.mockCall(SABLIER_LL, callData, abi.encode(streamId));
-    }
-
-    function _computeFee(uint256 amount, uint256 rateE18, uint16 feeBps) internal pure returns (uint256) {
-        uint256 ptValueInUnderlying = (amount * rateE18) / 1e18;
-        return (ptValueInUnderlying * feeBps) / 10_000;
+        _mockSablierCreate(address(ovrflo), address(ovrfloToken), recipient, amount, duration, streamId);
     }
 
     function _toUser(uint256 ptAmount) internal pure returns (uint256) {

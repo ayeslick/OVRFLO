@@ -2,49 +2,20 @@
 pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
-import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {OVRFLO} from "../src/OVRFLO.sol";
 import {OVRFLOFactory} from "../src/OVRFLOFactory.sol";
 import {OVRFLOToken} from "../src/OVRFLOToken.sol";
+import {TestERC20} from "./mocks/TestERC20.sol";
+import {MockOvrfloAdmin} from "./mocks/MockOvrfloAdmin.sol";
 
-contract WrapMockERC20 is ERC20 {
-    constructor(string memory name_, string memory symbol_) ERC20(name_, symbol_) {}
-
-    function mint(address to, uint256 amount) external {
-        _mint(to, amount);
-    }
-}
-
-contract MockOvrfloAdmin {
-    address public treasury;
-    address public underlying;
-    address public ovrfloToken;
-
-    constructor(address treasury_, address underlying_, address ovrfloToken_) {
-        treasury = treasury_;
-        underlying = underlying_;
-        ovrfloToken = ovrfloToken_;
-    }
-
-    function setInfo(address treasury_, address underlying_, address ovrfloToken_) external {
-        treasury = treasury_;
-        underlying = underlying_;
-        ovrfloToken = ovrfloToken_;
-    }
-
-    function ovrfloInfo(address) external view returns (address, address, address) {
-        return (treasury, underlying, ovrfloToken);
-    }
-}
-
-contract ReentrantUnderlying is WrapMockERC20 {
+contract ReentrantUnderlying is TestERC20 {
     OVRFLO public target;
     uint256 public reenterAmount;
     bool public attackOnTransfer;
     bool public reentered;
     bool public reenterSucceeded;
 
-    constructor() WrapMockERC20("Reentrant Underlying", "RUND") {}
+    constructor() TestERC20("Reentrant Underlying", "RUND") {}
 
     function configureAttack(OVRFLO target_, uint256 reenterAmount_) external {
         target = target_;
@@ -64,8 +35,8 @@ contract ReentrantUnderlying is WrapMockERC20 {
     }
 }
 
-contract ShortTransferUnderlying is WrapMockERC20 {
-    constructor() WrapMockERC20("Short Transfer Underlying", "SUND") {}
+contract ShortTransferUnderlying is TestERC20 {
+    constructor() TestERC20("Short Transfer Underlying", "SUND") {}
 
     function transferFrom(address from, address to, uint256 amount) public override returns (bool) {
         return super.transferFrom(from, to, amount - 1);
@@ -83,7 +54,7 @@ contract OVRFLOWrapUnwrapTest is Test {
 
     OVRFLO internal ovrflo;
     OVRFLOToken internal ovrfloToken;
-    WrapMockERC20 internal underlying;
+    TestERC20 internal underlying;
     MockOvrfloAdmin internal admin;
 
     address internal user;
@@ -95,7 +66,7 @@ contract OVRFLOWrapUnwrapTest is Test {
         otherUser = makeAddr("otherUser");
         recipient = makeAddr("recipient");
 
-        underlying = new WrapMockERC20("Underlying", "UND");
+        underlying = new TestERC20("Underlying", "UND");
         ovrfloToken = new OVRFLOToken("OVRFLO Underlying", "ovrfloUND");
         admin = new MockOvrfloAdmin(TREASURY, address(underlying), address(ovrfloToken));
         ovrflo = new OVRFLO(address(admin), TREASURY, address(underlying), address(ovrfloToken), DUMMY_ORACLE);

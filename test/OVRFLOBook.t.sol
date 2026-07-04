@@ -5,224 +5,8 @@ import {Test} from "forge-std/Test.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {OVRFLOBook} from "../src/OVRFLOBook.sol";
-
-contract OVRFLOBookMockERC20 is ERC20 {
-    constructor(string memory name_, string memory symbol_) ERC20(name_, symbol_) {}
-
-    function mint(address to, uint256 amount) external {
-        _mint(to, amount);
-    }
-}
-
-contract OVRFLOBookMockFactory {
-    struct Info {
-        address treasury;
-        address underlying;
-        address ovrfloToken;
-    }
-
-    mapping(address => Info) internal infos;
-    mapping(address => mapping(address => bool)) public isMarketApproved;
-
-    function setInfo(address core, address treasury, address underlying, address ovrfloToken) external {
-        infos[core] = Info({treasury: treasury, underlying: underlying, ovrfloToken: ovrfloToken});
-    }
-
-    function setMarketApproved(address core, address market, bool approved) external {
-        isMarketApproved[core][market] = approved;
-    }
-
-    function ovrfloInfo(address core)
-        external
-        view
-        returns (address treasury, address underlying, address ovrfloToken)
-    {
-        Info memory info = infos[core];
-        return (info.treasury, info.underlying, info.ovrfloToken);
-    }
-}
-
-contract OVRFLOBookMockCore {
-    struct Series {
-        bool approved;
-        uint32 twapDurationFixed;
-        uint16 feeBps;
-        uint256 expiryCached;
-        address ptToken;
-        address ovrfloToken;
-        address underlying;
-        address oracle;
-    }
-
-    mapping(address => Series) internal seriesInfo;
-
-    function setSeries(address market, bool approved, uint256 expiryCached, address ovrfloToken, address underlying)
-        external
-    {
-        seriesInfo[market] = Series({
-            approved: approved,
-            twapDurationFixed: 30 minutes,
-            feeBps: 0,
-            expiryCached: expiryCached,
-            ptToken: address(0xAAAA),
-            ovrfloToken: ovrfloToken,
-            underlying: underlying,
-            oracle: address(0xBBBB)
-        });
-    }
-
-    function series(address market)
-        external
-        view
-        returns (
-            bool approved,
-            uint32 twapDurationFixed,
-            uint16 feeBps,
-            uint256 expiryCached,
-            address ptToken,
-            address ovrfloToken,
-            address underlying,
-            address oracle
-        )
-    {
-        Series memory info = seriesInfo[market];
-        return (
-            info.approved,
-            info.twapDurationFixed,
-            info.feeBps,
-            info.expiryCached,
-            info.ptToken,
-            info.ovrfloToken,
-            info.underlying,
-            info.oracle
-        );
-    }
-}
-
-contract OVRFLOBookMockSablier {
-    struct Stream {
-        address sender;
-        IERC20 asset;
-        uint40 startTime;
-        uint40 endTime;
-        uint40 cliffTime;
-        bool cancelable;
-        uint128 deposited;
-        uint128 withdrawn;
-        uint128 withdrawable;
-    }
-
-    mapping(uint256 => Stream) internal streams;
-    mapping(uint256 => address) internal owners;
-    mapping(uint256 => address) public getApproved;
-    mapping(address => mapping(address => bool)) public isApprovedForAll;
-
-    function setStream(
-        uint256 streamId,
-        address owner,
-        address sender,
-        IERC20 asset,
-        uint40 endTime,
-        uint40 cliffTime,
-        bool cancelable,
-        uint128 deposited,
-        uint128 withdrawn
-    ) external {
-        uint40 startTime = uint40(block.timestamp);
-        // Mimic real Sablier: cliff duration of 0 → cliffTime = startTime
-        if (cliffTime == 0) cliffTime = startTime;
-        owners[streamId] = owner;
-        streams[streamId] = Stream({
-            sender: sender,
-            asset: asset,
-            startTime: startTime,
-            endTime: endTime,
-            cliffTime: cliffTime,
-            cancelable: cancelable,
-            deposited: deposited,
-            withdrawn: withdrawn,
-            withdrawable: 0
-        });
-    }
-
-    function setWithdrawable(uint256 streamId, uint128 withdrawable) external {
-        streams[streamId].withdrawable = withdrawable;
-    }
-
-    function approve(address to, uint256 streamId) external {
-        require(owners[streamId] == msg.sender, "MockSablier: not owner");
-        getApproved[streamId] = to;
-    }
-
-    function setApprovalForAll(address operator, bool approved) external {
-        isApprovedForAll[msg.sender][operator] = approved;
-    }
-
-    function transferFrom(address from, address to, uint256 streamId) external {
-        address owner = owners[streamId];
-        require(owner == from, "MockSablier: wrong from");
-        require(
-            msg.sender == from || getApproved[streamId] == msg.sender || isApprovedForAll[from][msg.sender],
-            "MockSablier: not approved"
-        );
-        require(to != address(0), "MockSablier: zero to");
-
-        owners[streamId] = to;
-        delete getApproved[streamId];
-    }
-
-    function ownerOf(uint256 streamId) external view returns (address owner) {
-        return owners[streamId];
-    }
-
-    function getSender(uint256 streamId) external view returns (address sender) {
-        return streams[streamId].sender;
-    }
-
-    function getAsset(uint256 streamId) external view returns (IERC20 asset) {
-        return streams[streamId].asset;
-    }
-
-    function getEndTime(uint256 streamId) external view returns (uint40 endTime) {
-        return streams[streamId].endTime;
-    }
-
-    function getStartTime(uint256 streamId) external view returns (uint40 startTime) {
-        return streams[streamId].startTime;
-    }
-
-    function getCliffTime(uint256 streamId) external view returns (uint40 cliffTime) {
-        return streams[streamId].cliffTime;
-    }
-
-    function isCancelable(uint256 streamId) external view returns (bool result) {
-        return streams[streamId].cancelable;
-    }
-
-    function getDepositedAmount(uint256 streamId) external view returns (uint128 depositedAmount) {
-        return streams[streamId].deposited;
-    }
-
-    function getWithdrawnAmount(uint256 streamId) external view returns (uint128 withdrawnAmount) {
-        return streams[streamId].withdrawn;
-    }
-
-    function withdrawableAmountOf(uint256 streamId) external view returns (uint128 withdrawableAmount) {
-        Stream memory stream = streams[streamId];
-        uint128 remaining = stream.deposited - stream.withdrawn;
-        return stream.withdrawable < remaining ? stream.withdrawable : remaining;
-    }
-
-    function withdraw(uint256 streamId, address to, uint128 amount) external {
-        require(amount > 0, "MockSablier: amount zero");
-        uint128 withdrawable = this.withdrawableAmountOf(streamId);
-        require(amount <= withdrawable, "MockSablier: amount too high");
-
-        streams[streamId].withdrawn += amount;
-        streams[streamId].withdrawable = withdrawable - amount;
-        OVRFLOBookMockERC20(address(streams[streamId].asset)).mint(to, amount);
-    }
-}
+import {TestERC20} from "./mocks/TestERC20.sol";
+import {MockBookFactory, MockBookCore, MockBookSablier} from "./mocks/BookMocks.sol";
 
 contract OVRFLOBookTest is Test {
     address internal constant TREASURY = address(0xBEEF);
@@ -246,20 +30,20 @@ contract OVRFLOBookTest is Test {
         uint16 feeBps
     );
 
-    OVRFLOBookMockFactory internal factory;
-    OVRFLOBookMockCore internal core;
-    OVRFLOBookMockSablier internal sablier;
-    OVRFLOBookMockERC20 internal underlying;
-    OVRFLOBookMockERC20 internal ovrfloToken;
+    MockBookFactory internal factory;
+    MockBookCore internal core;
+    MockBookSablier internal sablier;
+    TestERC20 internal underlying;
+    TestERC20 internal ovrfloToken;
     OVRFLOBook internal book;
     uint256 internal expiry;
 
     function setUp() public {
-        factory = new OVRFLOBookMockFactory();
-        core = new OVRFLOBookMockCore();
-        sablier = new OVRFLOBookMockSablier();
-        underlying = new OVRFLOBookMockERC20("Underlying", "UND");
-        ovrfloToken = new OVRFLOBookMockERC20("OVRFLO Underlying", "ovrfloUND");
+        factory = new MockBookFactory();
+        core = new MockBookCore();
+        sablier = new MockBookSablier();
+        underlying = new TestERC20("Underlying", "UND");
+        ovrfloToken = new TestERC20("OVRFLO Underlying", "ovrfloUND");
         expiry = block.timestamp + 365 days;
 
         factory.setInfo(address(core), TREASURY, address(underlying), address(ovrfloToken));
@@ -973,14 +757,14 @@ contract OVRFLOBookTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     function test_Constructor_RevertForZeroUnderlying() public {
-        OVRFLOBookMockFactory badFactory = new OVRFLOBookMockFactory();
+        MockBookFactory badFactory = new MockBookFactory();
         badFactory.setInfo(address(core), TREASURY, address(0), address(ovrfloToken));
         vm.expectRevert("OVRFLOBook: underlying zero");
         new OVRFLOBook(address(badFactory), address(core), address(sablier));
     }
 
     function test_Constructor_RevertForZeroToken() public {
-        OVRFLOBookMockFactory badFactory = new OVRFLOBookMockFactory();
+        MockBookFactory badFactory = new MockBookFactory();
         badFactory.setInfo(address(core), TREASURY, address(underlying), address(0));
         vm.expectRevert("OVRFLOBook: token zero");
         new OVRFLOBook(address(badFactory), address(core), address(sablier));

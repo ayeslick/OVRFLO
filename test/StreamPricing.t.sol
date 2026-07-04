@@ -2,199 +2,9 @@
 pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
-import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {StreamPricing} from "../src/StreamPricing.sol";
-
-contract StreamPricingMockERC20 is ERC20 {
-    constructor(string memory name_, string memory symbol_) ERC20(name_, symbol_) {}
-}
-
-contract StreamPricingMockFactory {
-    struct Info {
-        address treasury;
-        address underlying;
-        address ovrfloToken;
-    }
-
-    mapping(address => Info) internal infos;
-    mapping(address => mapping(address => bool)) public isMarketApproved;
-
-    function setInfo(address core, address treasury, address underlying, address ovrfloToken) external {
-        infos[core] = Info({treasury: treasury, underlying: underlying, ovrfloToken: ovrfloToken});
-    }
-
-    function setMarketApproved(address core, address market, bool approved) external {
-        isMarketApproved[core][market] = approved;
-    }
-
-    function ovrfloInfo(address core)
-        external
-        view
-        returns (address treasury, address underlying, address ovrfloToken)
-    {
-        Info memory info = infos[core];
-        return (info.treasury, info.underlying, info.ovrfloToken);
-    }
-}
-
-contract StreamPricingMockCore {
-    struct Series {
-        bool approved;
-        uint32 twapDurationFixed;
-        uint16 feeBps;
-        uint256 expiryCached;
-        address ptToken;
-        address ovrfloToken;
-        address underlying;
-        address oracle;
-    }
-
-    mapping(address => Series) internal seriesInfo;
-
-    function setSeries(
-        address market,
-        bool approved,
-        uint256 expiryCached,
-        address ptToken,
-        address ovrfloToken,
-        address underlying,
-        address oracle
-    ) external {
-        seriesInfo[market] = Series({
-            approved: approved,
-            twapDurationFixed: 30 minutes,
-            feeBps: 0,
-            expiryCached: expiryCached,
-            ptToken: ptToken,
-            ovrfloToken: ovrfloToken,
-            underlying: underlying,
-            oracle: oracle
-        });
-    }
-
-    function series(address market)
-        external
-        view
-        returns (
-            bool approved,
-            uint32 twapDurationFixed,
-            uint16 feeBps,
-            uint256 expiryCached,
-            address ptToken,
-            address ovrfloToken,
-            address underlying,
-            address oracle
-        )
-    {
-        Series memory info = seriesInfo[market];
-        return (
-            info.approved,
-            info.twapDurationFixed,
-            info.feeBps,
-            info.expiryCached,
-            info.ptToken,
-            info.ovrfloToken,
-            info.underlying,
-            info.oracle
-        );
-    }
-}
-
-contract StreamPricingMockSablier {
-    struct Stream {
-        address sender;
-        IERC20 asset;
-        uint40 startTime;
-        uint40 endTime;
-        uint40 cliffTime;
-        bool cancelable;
-        uint128 deposited;
-        uint128 withdrawn;
-    }
-
-    mapping(uint256 => Stream) internal streams;
-
-    function setStream(
-        uint256 streamId,
-        address sender,
-        IERC20 asset,
-        uint40 endTime,
-        uint40 cliffTime,
-        bool cancelable,
-        uint128 deposited,
-        uint128 withdrawn
-    ) external {
-        uint40 startTime = uint40(block.timestamp);
-        // Mimic real Sablier: cliff duration of 0 → cliffTime = startTime
-        if (cliffTime == 0) cliffTime = startTime;
-        streams[streamId] = Stream({
-            sender: sender,
-            asset: asset,
-            startTime: startTime,
-            endTime: endTime,
-            cliffTime: cliffTime,
-            cancelable: cancelable,
-            deposited: deposited,
-            withdrawn: withdrawn
-        });
-    }
-
-    function setStreamWithStartTime(
-        uint256 streamId,
-        address sender,
-        IERC20 asset,
-        uint40 startTime,
-        uint40 endTime,
-        uint40 cliffTime,
-        bool cancelable,
-        uint128 deposited,
-        uint128 withdrawn
-    ) external {
-        streams[streamId] = Stream({
-            sender: sender,
-            asset: asset,
-            startTime: startTime,
-            endTime: endTime,
-            cliffTime: cliffTime,
-            cancelable: cancelable,
-            deposited: deposited,
-            withdrawn: withdrawn
-        });
-    }
-
-    function getSender(uint256 streamId) external view returns (address sender) {
-        return streams[streamId].sender;
-    }
-
-    function getAsset(uint256 streamId) external view returns (IERC20 asset) {
-        return streams[streamId].asset;
-    }
-
-    function getStartTime(uint256 streamId) external view returns (uint40 startTime) {
-        return streams[streamId].startTime;
-    }
-
-    function getEndTime(uint256 streamId) external view returns (uint40 endTime) {
-        return streams[streamId].endTime;
-    }
-
-    function getCliffTime(uint256 streamId) external view returns (uint40 cliffTime) {
-        return streams[streamId].cliffTime;
-    }
-
-    function isCancelable(uint256 streamId) external view returns (bool result) {
-        return streams[streamId].cancelable;
-    }
-
-    function getDepositedAmount(uint256 streamId) external view returns (uint128 depositedAmount) {
-        return streams[streamId].deposited;
-    }
-
-    function getWithdrawnAmount(uint256 streamId) external view returns (uint128 withdrawnAmount) {
-        return streams[streamId].withdrawn;
-    }
-}
+import {TestERC20} from "./mocks/TestERC20.sol";
+import {MockBookFactory, MockBookCore, MockBookSablier} from "./mocks/BookMocks.sol";
 
 contract StreamPricingHarness {
     function requireEligible(address factory, address sablier, address core, address market, uint256 streamId)
@@ -213,25 +23,25 @@ contract StreamPricingTest is Test {
     address internal constant PT_TOKEN = address(0x2001);
     address internal constant ORACLE = address(0x3001);
 
-    StreamPricingMockFactory internal factory;
-    StreamPricingMockCore internal core;
-    StreamPricingMockSablier internal sablier;
+    MockBookFactory internal factory;
+    MockBookCore internal core;
+    MockBookSablier internal sablier;
     StreamPricingHarness internal harness;
-    StreamPricingMockERC20 internal underlying;
-    StreamPricingMockERC20 internal ovrfloToken;
-    StreamPricingMockERC20 internal wrongToken;
+    TestERC20 internal underlying;
+    TestERC20 internal ovrfloToken;
+    TestERC20 internal wrongToken;
 
     uint256 internal streamId = 42;
     uint256 internal expiry;
 
     function setUp() public {
-        factory = new StreamPricingMockFactory();
-        core = new StreamPricingMockCore();
-        sablier = new StreamPricingMockSablier();
+        factory = new MockBookFactory();
+        core = new MockBookCore();
+        sablier = new MockBookSablier();
         harness = new StreamPricingHarness();
-        underlying = new StreamPricingMockERC20("Underlying", "UND");
-        ovrfloToken = new StreamPricingMockERC20("OVRFLO Underlying", "ovrfloUND");
-        wrongToken = new StreamPricingMockERC20("Wrong", "WRONG");
+        underlying = new TestERC20("Underlying", "UND");
+        ovrfloToken = new TestERC20("OVRFLO Underlying", "ovrfloUND");
+        wrongToken = new TestERC20("Wrong", "WRONG");
         expiry = block.timestamp + 30 days;
 
         _configureEligible(MARKET_ONE, streamId, expiry, 100 ether, 30 ether);
@@ -301,7 +111,7 @@ contract StreamPricingTest is Test {
     }
 
     function test_EligibilityRejectsUnregisteredCore() public {
-        StreamPricingMockCore unknownCore = new StreamPricingMockCore();
+        MockBookCore unknownCore = new MockBookCore();
 
         vm.expectRevert(StreamPricing.CoreNotRegistered.selector);
         harness.requireEligible(address(factory), address(sablier), address(unknownCore), MARKET_ONE, streamId);

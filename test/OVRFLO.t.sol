@@ -8,6 +8,7 @@ import {OVRFLO} from "../src/OVRFLO.sol";
 import {OVRFLOToken} from "../src/OVRFLOToken.sol";
 import {IPendleOracle} from "../interfaces/IPendleOracle.sol";
 import {ISablierV2LockupLinear} from "../interfaces/ISablierV2LockupLinear.sol";
+import {VaultMockHelpers} from "./helpers/VaultMockHelpers.sol";
 
 contract MockERC20Metadata is ERC20 {
     uint8 private immutable CUSTOM_DECIMALS;
@@ -26,7 +27,7 @@ contract MockERC20Metadata is ERC20 {
 }
 
 /// @dev Fast deterministic protocol unit coverage; real Pendle oracle/PT/Sablier integration lives in test/fork/OVRFLOMainnetFork.t.sol.
-contract OVRFLOProtocolTest is Test {
+contract OVRFLOProtocolTest is VaultMockHelpers {
     event Deposited(
         address indexed user,
         address indexed market,
@@ -52,14 +53,11 @@ contract OVRFLOProtocolTest is Test {
     );
     event MarketDepositLimitSet(address indexed market, uint256 limit);
 
-    address internal constant PENDLE_ORACLE = 0x9a9Fa8338dd5E5B2188006f1Cd2Ef26d921650C2;
-    address internal constant SABLIER_LL = 0xAFb979d9afAd1aD27C5eFf4E27226E3AB9e5dCC9;
     address internal constant ADMIN = address(0xA11CE);
     address internal constant TREASURY = address(0xBEEF);
     address internal constant MARKET_ONE = address(0x1001);
     address internal constant MARKET_TWO = address(0x1002);
 
-    uint32 internal constant TWAP_DURATION = 30 minutes;
     uint16 internal constant FEE_BPS = 100;
 
     OVRFLO internal ovrflo;
@@ -580,17 +578,6 @@ contract OVRFLOProtocolTest is Test {
 
         vm.prank(user);
         ovrflo.deposit(market, ptAmount, 0);
-    }
-
-    function _mockRate(address market, uint256 rateE18) internal {
-        vm.mockCall(
-            PENDLE_ORACLE, abi.encodeCall(IPendleOracle.getPtToSyRate, (market, TWAP_DURATION)), abi.encode(rateE18)
-        );
-        vm.mockCall(
-            PENDLE_ORACLE,
-            abi.encodeCall(IPendleOracle.getOracleState, (market, TWAP_DURATION)),
-            abi.encode(false, 0, true)
-        );
     }
 
     function _mockSablier(address recipient, uint128 amount, uint256 duration, uint256 streamId) internal {

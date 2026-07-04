@@ -10,210 +10,9 @@ import {OVRFLOBook} from "../src/OVRFLOBook.sol";
 import {IPendleOracle} from "../interfaces/IPendleOracle.sol";
 import {ISablierV2LockupLinear} from "../interfaces/ISablierV2LockupLinear.sol";
 import {IFlashBorrower} from "../interfaces/IFlashBorrower.sol";
-
-contract AttackMockERC20 is ERC20 {
-    constructor(string memory name_, string memory symbol_) ERC20(name_, symbol_) {}
-
-    function mint(address to, uint256 amount) external {
-        _mint(to, amount);
-    }
-}
-
-// --- Book mocks (minimal copies for R17) ---
-
-contract AttackMockFactory {
-    struct Info {
-        address treasury;
-        address underlying;
-        address ovrfloToken;
-    }
-
-    mapping(address => Info) internal infos;
-    mapping(address => mapping(address => bool)) public isMarketApproved;
-
-    function setInfo(address core, address treasury, address underlying, address ovrfloToken) external {
-        infos[core] = Info({treasury: treasury, underlying: underlying, ovrfloToken: ovrfloToken});
-    }
-
-    function setMarketApproved(address core, address market, bool approved) external {
-        isMarketApproved[core][market] = approved;
-    }
-
-    function ovrfloInfo(address core) external view returns (address, address, address) {
-        Info memory info = infos[core];
-        return (info.treasury, info.underlying, info.ovrfloToken);
-    }
-}
-
-contract AttackMockCore {
-    struct Series {
-        bool approved;
-        uint32 twapDurationFixed;
-        uint16 feeBps;
-        uint256 expiryCached;
-        address ptToken;
-        address ovrfloToken;
-        address underlying;
-        address oracle;
-    }
-
-    mapping(address => Series) internal seriesInfo;
-
-    function setSeries(address market, bool approved, uint256 expiryCached, address ovrfloToken, address underlying)
-        external
-    {
-        seriesInfo[market] = Series({
-            approved: approved,
-            twapDurationFixed: 30 minutes,
-            feeBps: 0,
-            expiryCached: expiryCached,
-            ptToken: address(0xAAAA),
-            ovrfloToken: ovrfloToken,
-            underlying: underlying,
-            oracle: address(0xBBBB)
-        });
-    }
-
-    function series(address market)
-        external
-        view
-        returns (bool, uint32, uint16, uint256, address, address, address, address)
-    {
-        Series memory info = seriesInfo[market];
-        return (
-            info.approved,
-            info.twapDurationFixed,
-            info.feeBps,
-            info.expiryCached,
-            info.ptToken,
-            info.ovrfloToken,
-            info.underlying,
-            info.oracle
-        );
-    }
-}
-
-contract AttackMockSablier {
-    struct Stream {
-        address sender;
-        IERC20 asset;
-        uint40 startTime;
-        uint40 endTime;
-        uint40 cliffTime;
-        bool cancelable;
-        uint128 deposited;
-        uint128 withdrawn;
-        uint128 withdrawable;
-    }
-
-    mapping(uint256 => Stream) internal streams;
-    mapping(uint256 => address) internal owners;
-    mapping(uint256 => address) public getApproved;
-    mapping(address => mapping(address => bool)) public isApprovedForAll;
-
-    function setStream(
-        uint256 streamId,
-        address owner,
-        address sender,
-        IERC20 asset,
-        uint40 endTime,
-        uint40 cliffTime,
-        bool cancelable,
-        uint128 deposited,
-        uint128 withdrawn
-    ) external {
-        uint40 startTime = uint40(block.timestamp);
-        if (cliffTime == 0) cliffTime = startTime;
-        owners[streamId] = owner;
-        streams[streamId] = Stream({
-            sender: sender,
-            asset: asset,
-            startTime: startTime,
-            endTime: endTime,
-            cliffTime: cliffTime,
-            cancelable: cancelable,
-            deposited: deposited,
-            withdrawn: withdrawn,
-            withdrawable: 0
-        });
-    }
-
-    function setWithdrawable(uint256 streamId, uint128 withdrawable) external {
-        streams[streamId].withdrawable = withdrawable;
-    }
-
-    function approve(address to, uint256 streamId) external {
-        require(owners[streamId] == msg.sender, "not owner");
-        getApproved[streamId] = to;
-    }
-
-    function setApprovalForAll(address operator, bool approved) external {
-        isApprovedForAll[msg.sender][operator] = approved;
-    }
-
-    function transferFrom(address from, address to, uint256 streamId) external {
-        address owner = owners[streamId];
-        require(owner == from, "wrong from");
-        require(
-            msg.sender == from || getApproved[streamId] == msg.sender || isApprovedForAll[from][msg.sender],
-            "not approved"
-        );
-        require(to != address(0), "zero to");
-        owners[streamId] = to;
-        delete getApproved[streamId];
-    }
-
-    function ownerOf(uint256 streamId) external view returns (address) {
-        return owners[streamId];
-    }
-
-    function getSender(uint256 streamId) external view returns (address) {
-        return streams[streamId].sender;
-    }
-
-    function getAsset(uint256 streamId) external view returns (IERC20) {
-        return streams[streamId].asset;
-    }
-
-    function getEndTime(uint256 streamId) external view returns (uint40) {
-        return streams[streamId].endTime;
-    }
-
-    function getStartTime(uint256 streamId) external view returns (uint40) {
-        return streams[streamId].startTime;
-    }
-
-    function getCliffTime(uint256 streamId) external view returns (uint40) {
-        return streams[streamId].cliffTime;
-    }
-
-    function isCancelable(uint256 streamId) external view returns (bool) {
-        return streams[streamId].cancelable;
-    }
-
-    function getDepositedAmount(uint256 streamId) external view returns (uint128) {
-        return streams[streamId].deposited;
-    }
-
-    function getWithdrawnAmount(uint256 streamId) external view returns (uint128) {
-        return streams[streamId].withdrawn;
-    }
-
-    function withdrawableAmountOf(uint256 streamId) external view returns (uint128) {
-        Stream memory stream = streams[streamId];
-        uint128 remaining = stream.deposited - stream.withdrawn;
-        return stream.withdrawable < remaining ? stream.withdrawable : remaining;
-    }
-
-    function withdraw(uint256 streamId, address to, uint128 amount) external {
-        require(amount > 0, "amount zero");
-        uint128 withdrawable = this.withdrawableAmountOf(streamId);
-        require(amount <= withdrawable, "amount too high");
-        streams[streamId].withdrawn += amount;
-        streams[streamId].withdrawable = withdrawable - amount;
-        AttackMockERC20(address(streams[streamId].asset)).mint(to, amount);
-    }
-}
+import {VaultMockHelpers} from "./helpers/VaultMockHelpers.sol";
+import {TestERC20} from "./mocks/TestERC20.sol";
+import {MockBookFactory, MockBookCore, MockBookSablier} from "./mocks/BookMocks.sol";
 
 // --- Attack FlashBorrower with configurable callbacks ---
 
@@ -317,23 +116,20 @@ contract AttackFlashBorrower is IFlashBorrower, Test {
     }
 }
 
-contract OVRFLOAttackScenariosTest is Test {
-    address internal constant PENDLE_ORACLE = 0x9a9Fa8338dd5E5B2188006f1Cd2Ef26d921650C2;
-    address internal constant SABLIER_LL = 0xAFb979d9afAd1aD27C5eFf4E27226E3AB9e5dCC9;
+contract OVRFLOAttackScenariosTest is VaultMockHelpers {
     address internal constant ADMIN = address(0xA11CE);
     address internal constant TREASURY = address(0xBEEF);
     address internal constant MARKET_A = address(0x1001);
     address internal constant MARKET_B = address(0x1002);
     address internal constant BOOK_MARKET = address(0x5555);
 
-    uint32 internal constant TWAP_DURATION = 30 minutes;
     uint256 internal constant RATE_95 = 0.95e18;
 
     OVRFLO internal ovrflo;
     OVRFLOToken internal ovrfloToken;
-    AttackMockERC20 internal underlying;
-    AttackMockERC20 internal ptA;
-    AttackMockERC20 internal ptB;
+    TestERC20 internal underlying;
+    TestERC20 internal ptA;
+    TestERC20 internal ptB;
     AttackFlashBorrower internal borrower;
 
     uint256 internal constant DEPOSIT_AMOUNT = 100 ether;
@@ -341,9 +137,9 @@ contract OVRFLOAttackScenariosTest is Test {
     function setUp() public {
         uint256 expiry = block.timestamp + 365 days;
 
-        underlying = new AttackMockERC20("Underlying", "UND");
-        ptA = new AttackMockERC20("PT-A", "PTA");
-        ptB = new AttackMockERC20("PT-B", "PTB");
+        underlying = new TestERC20("Underlying", "UND");
+        ptA = new TestERC20("PT-A", "PTA");
+        ptB = new TestERC20("PT-B", "PTB");
 
         ovrfloToken = new OVRFLOToken("OVRFLO UND", "ovrfloUND");
         ovrflo = new OVRFLO(ADMIN, TREASURY, address(underlying), address(ovrfloToken), PENDLE_ORACLE);
@@ -462,11 +258,11 @@ contract OVRFLOAttackScenariosTest is Test {
 
     function test_R17_StreamWithdrawalDuringActiveLoan() public {
         // Set up Book with its own mock tokens (separate from vault's ovrfloToken)
-        AttackMockFactory factory = new AttackMockFactory();
-        AttackMockCore core = new AttackMockCore();
-        AttackMockSablier bookSablier = new AttackMockSablier();
-        AttackMockERC20 bookUnderlying = new AttackMockERC20("BookUnderlying", "BUND");
-        AttackMockERC20 bookOvrfloToken = new AttackMockERC20("BookOvrflo", "bovRFLO");
+        MockBookFactory factory = new MockBookFactory();
+        MockBookCore core = new MockBookCore();
+        MockBookSablier bookSablier = new MockBookSablier();
+        TestERC20 bookUnderlying = new TestERC20("BookUnderlying", "BUND");
+        TestERC20 bookOvrfloToken = new TestERC20("BookOvrflo", "bovRFLO");
         uint256 expiry = block.timestamp + 365 days;
 
         factory.setInfo(address(core), TREASURY, address(bookUnderlying), address(bookOvrfloToken));
@@ -621,22 +417,6 @@ contract OVRFLOAttackScenariosTest is Test {
     /*//////////////////////////////////////////////////////////////
                         HELPERS
     //////////////////////////////////////////////////////////////*/
-
-    function _mockRate(address market, uint256 rateE18) internal {
-        vm.mockCall(
-            PENDLE_ORACLE, abi.encodeCall(IPendleOracle.getPtToSyRate, (market, TWAP_DURATION)), abi.encode(rateE18)
-        );
-        vm.mockCall(
-            PENDLE_ORACLE,
-            abi.encodeCall(IPendleOracle.getOracleState, (market, TWAP_DURATION)),
-            abi.encode(false, 0, true)
-        );
-    }
-
-    function _computeFee(uint256 amount, uint256 rateE18, uint16 feeBps) internal pure returns (uint256) {
-        uint256 ptValueInUnderlying = (amount * rateE18) / 1e18;
-        return (ptValueInUnderlying * feeBps) / 10_000;
-    }
 
     function _singletonArray(uint256 id) internal pure returns (uint256[] memory arr) {
         arr = new uint256[](1);

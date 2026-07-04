@@ -2,50 +2,19 @@
 pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
-import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {OVRFLO} from "../src/OVRFLO.sol";
 import {OVRFLOToken} from "../src/OVRFLOToken.sol";
 import {IPendleOracle} from "../interfaces/IPendleOracle.sol";
 import {ISablierV2LockupLinear} from "../interfaces/ISablierV2LockupLinear.sol";
-
-contract InvariantMockERC20 is ERC20 {
-    constructor(string memory name_, string memory symbol_) ERC20(name_, symbol_) {}
-
-    function mint(address to, uint256 amount) external {
-        _mint(to, amount);
-    }
-}
-
-contract InvariantOvrfloAdmin {
-    address public treasury;
-    address public underlying;
-    address public ovrfloToken;
-
-    function setInfo(address treasury_, address underlying_, address ovrfloToken_) external {
-        treasury = treasury_;
-        underlying = underlying_;
-        ovrfloToken = ovrfloToken_;
-    }
-
-    function approveSeries(OVRFLO ovrflo, address market, address pt, uint32 twapDuration, uint256 expiry) external {
-        ovrflo.setSeriesApproved(market, pt, twapDuration, expiry, 0);
-    }
-
-    function sweepExcessUnderlying(OVRFLO ovrflo, address to) external {
-        ovrflo.sweepExcessUnderlying(to);
-    }
-
-    function ovrfloInfo(address) external view returns (address, address, address) {
-        return (treasury, underlying, ovrfloToken);
-    }
-}
+import {TestERC20} from "./mocks/TestERC20.sol";
+import {MockOvrfloAdmin} from "./mocks/MockOvrfloAdmin.sol";
 
 contract OVRFLOWrapUnwrapHandler is Test {
     OVRFLO internal ovrflo;
     OVRFLOToken internal ovrfloToken;
-    InvariantMockERC20 internal underlying;
-    InvariantMockERC20 internal pt;
-    InvariantOvrfloAdmin internal admin;
+    TestERC20 internal underlying;
+    TestERC20 internal pt;
+    MockOvrfloAdmin internal admin;
 
     address internal market;
     uint256 internal expiry;
@@ -58,9 +27,9 @@ contract OVRFLOWrapUnwrapHandler is Test {
     constructor(
         OVRFLO ovrflo_,
         OVRFLOToken ovrfloToken_,
-        InvariantMockERC20 underlying_,
-        InvariantMockERC20 pt_,
-        InvariantOvrfloAdmin admin_,
+        TestERC20 underlying_,
+        TestERC20 pt_,
+        MockOvrfloAdmin admin_,
         address market_,
         uint256 expiry_
     ) {
@@ -178,16 +147,16 @@ contract OVRFLOWrapUnwrapInvariantTest is Test {
 
     OVRFLO internal ovrflo;
     OVRFLOToken internal ovrfloToken;
-    InvariantMockERC20 internal underlying;
-    InvariantMockERC20 internal pt;
-    InvariantOvrfloAdmin internal admin;
+    TestERC20 internal underlying;
+    TestERC20 internal pt;
+    MockOvrfloAdmin internal admin;
     OVRFLOWrapUnwrapHandler internal handler;
 
     function setUp() public {
-        underlying = new InvariantMockERC20("Underlying", "UND");
-        pt = new InvariantMockERC20("PT", "PT");
+        underlying = new TestERC20("Underlying", "UND");
+        pt = new TestERC20("PT", "PT");
         ovrfloToken = new OVRFLOToken("OVRFLO Underlying", "ovrfloUND");
-        admin = new InvariantOvrfloAdmin();
+        admin = new MockOvrfloAdmin(address(0), address(0), address(0));
         ovrflo = new OVRFLO(address(admin), TREASURY, address(underlying), address(ovrfloToken), ORACLE);
         ovrfloToken.transferOwnership(address(ovrflo));
 
