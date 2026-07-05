@@ -851,6 +851,35 @@ contract OVRFLOBookTest is Test {
         book.repayLoan(999, 1);
     }
 
+    function test_OfferState_RevertsForUnknownId() public {
+        vm.expectRevert("OVRFLOBook: unknown offer");
+        book.offerState(999);
+    }
+
+    function test_SaleListingState_RevertsForUnknownId() public {
+        vm.expectRevert("OVRFLOBook: unknown listing");
+        book.saleListingState(999);
+    }
+
+    function test_CancelOffer_RevertsWhenAlreadyCancelled() public {
+        uint256 offerId = _postOffer(BUYER, 100 ether);
+        vm.prank(BUYER);
+        book.cancelOffer(offerId);
+        vm.prank(BUYER);
+        vm.expectRevert("OVRFLOBook: offer inactive");
+        book.cancelOffer(offerId);
+    }
+
+    function test_CancelSaleListing_RevertsWhenAlreadyCancelled() public {
+        _mintEligibleStream(41, SELLER, 110 ether, 0);
+        uint256 listingId = _postSaleListing(SELLER, 41);
+        vm.prank(SELLER);
+        book.cancelSaleListing(listingId);
+        vm.prank(SELLER);
+        vm.expectRevert("OVRFLOBook: listing inactive");
+        book.cancelSaleListing(listingId);
+    }
+
     /*//////////////////////////////////////////////////////////////
                     COVERAGE: WHOLE-NUMBER RATE CONSTRAINT
     //////////////////////////////////////////////////////////////*/
