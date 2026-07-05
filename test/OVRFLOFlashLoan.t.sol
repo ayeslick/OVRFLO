@@ -248,6 +248,18 @@ contract OVRFLOFlashLoanTest is VaultMockHelpers {
         borrower.executeFlashLoan(address(pt), 10 ether, "");
     }
 
+    /// @dev The vault checks only oldestObservationSatisfied, not increaseCardinalityRequired.
+    ///      Cardinality is an onboarding concern handled by addMarket. This test locks that
+    ///      asymmetry so a future change to reject cardinality-required is a conscious decision.
+    function test_FlashLoan_SucceedsWithCardinalityRequiredButOldestSatisfied() public {
+        vm.mockCall(
+            PENDLE_ORACLE,
+            abi.encodeCall(IPendleOracle.getOracleState, (MARKET, TWAP_DURATION)),
+            abi.encode(true, 42, true)
+        );
+        borrower.executeFlashLoan(address(pt), 10 ether, "");
+    }
+
     /*//////////////////////////////////////////////////////////////
                         HAPPY PATH TESTS
     //////////////////////////////////////////////////////////////*/

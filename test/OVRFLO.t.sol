@@ -316,6 +316,27 @@ contract OVRFLOProtocolTest is VaultMockHelpers {
         ovrflo.deposit(MARKET_ONE, 10 ether, 0);
     }
 
+    /// @dev The vault checks only oldestObservationSatisfied, not increaseCardinalityRequired.
+    ///      Cardinality is an onboarding concern handled by addMarket. This test locks that
+    ///      asymmetry so a future change to reject cardinality-required is a conscious decision.
+    function test_Deposit_SucceedsWithCardinalityRequiredButOldestSatisfied() public {
+        uint256 expiry = block.timestamp + 30 days;
+        _approveSeries(MARKET_ONE, ptOne, expiry, 0);
+        (, uint256 toStream,,) = _seedPreviewAndBalances(MARKET_ONE, ptOne, 10 ether, 0.9e18, 0);
+        _mockSablier(user, uint128(toStream), expiry - block.timestamp, 77);
+        // Override: cardinality required but oldest observation satisfied
+        vm.mockCall(
+            PENDLE_ORACLE,
+            abi.encodeCall(IPendleOracle.getOracleState, (MARKET_ONE, TWAP_DURATION)),
+            abi.encode(true, 42, true)
+        );
+        vm.startPrank(user);
+        ptOne.approve(address(ovrflo), 10 ether);
+        ovrflo.deposit(MARKET_ONE, 10 ether, 0);
+        vm.stopPrank();
+        assertGe(ovrfloToken.balanceOf(user), 0);
+    }
+
     function test_Deposit_RevertsOnSlippage() public {
         uint256 expiry = block.timestamp + 30 days;
         _approveSeries(MARKET_ONE, ptOne, expiry, 0);

@@ -159,6 +159,25 @@ contract StreamPricingTest is Test {
         harness.requireEligible(address(factory), address(sablier), address(core), MARKET_ONE, streamId);
     }
 
+    function test_EligibilityRevertsWhenExpiryOverflowsUint40() public {
+        // Set expiryCached above uint40 max — passes the maturity check (far future)
+        // but triggers the overflow guard in requireEligible before getEndTime comparison
+        address overflowMarket = address(0x9999);
+        factory.setMarketApproved(address(core), overflowMarket, true);
+        core.setSeries(
+            overflowMarket,
+            true,
+            uint256(type(uint40).max) + 1,
+            PT_TOKEN,
+            address(ovrfloToken),
+            address(underlying),
+            ORACLE
+        );
+        sablier.setStream(99, address(core), ovrfloToken, uint40(expiry), 0, false, 100 ether, 30 ether);
+        vm.expectRevert(StreamPricing.WrongEndTime.selector);
+        harness.requireEligible(address(factory), address(sablier), address(core), overflowMarket, 99);
+    }
+
     function test_EligibilityRejectsCliffedStream() public {
         // Cliff time must differ from start time to trigger rejection
         sablier.setStreamWithStartTime(
