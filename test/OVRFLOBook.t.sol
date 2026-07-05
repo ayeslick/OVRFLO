@@ -1246,6 +1246,64 @@ contract OVRFLOBookTest is Test {
         book.setFee(0);
     }
 
+    function test_CreateBorrowPool_RevertsWhenBorrowZero() public {
+        uint256 offer1 = _postOffer(BUYER, 50 ether);
+        uint256[] memory offerIds = new uint256[](1);
+        offerIds[0] = offer1;
+        vm.expectRevert("OVRFLOBook: borrow zero");
+        book.createBorrowPool(offerIds, 200, 0, 0);
+    }
+
+    function test_CreateBorrowPool_RevertsWhenOffersEmpty() public {
+        uint256[] memory offerIds = new uint256[](0);
+        vm.expectRevert("OVRFLOBook: empty offers");
+        book.createBorrowPool(offerIds, 201, 100 ether, 90 ether);
+    }
+
+    function test_CreateBorrowPool_RevertsWhenPriceZero() public {
+        uint256 offer1 = _postOffer(BUYER, 100 ether);
+        // deposited = 1 wei -> remaining = 1, grossPrice floors to 0 at positive APR/ttm
+        _mintEligibleStream(202, SELLER, 1, 0);
+        uint256[] memory offerIds = new uint256[](1);
+        offerIds[0] = offer1;
+        vm.startPrank(SELLER);
+        sablier.approve(address(book), 202);
+        vm.expectRevert("OVRFLOBook: price zero");
+        book.createBorrowPool(offerIds, 202, 50 ether, 0);
+        vm.stopPrank();
+    }
+
+    function test_CreateBorrowPool_RevertsWhenBorrowAbovePrice() public {
+        // deposited = 110 ether, aprBps = 1000, ttm = 365 days -> grossPrice = 100 ether
+        uint256 offer1 = _postOffer(BUYER, 200 ether);
+        _mintEligibleStream(203, SELLER, 110 ether, 0);
+        uint256[] memory offerIds = new uint256[](1);
+        offerIds[0] = offer1;
+        vm.startPrank(SELLER);
+        sablier.approve(address(book), 203);
+        vm.expectRevert("OVRFLOBook: borrow above price");
+        book.createBorrowPool(offerIds, 203, 200 ether, 0);
+        vm.stopPrank();
+    }
+
+    function test_CreateBorrowPool_RevertsWhenLaterOfferInactive() public {
+        uint256 offer1 = _postOffer(BUYER, 50 ether);
+        uint256 offer2 = _postOffer(STRANGER, 60 ether);
+        // Cancel the second offer — pre-loop check passes (offer1 active),
+        // _validateOffers loop catches offer2 inactive
+        vm.prank(STRANGER);
+        book.cancelOffer(offer2);
+        _mintEligibleStream(204, SELLER, 110 ether, 0);
+        uint256[] memory offerIds = new uint256[](2);
+        offerIds[0] = offer1;
+        offerIds[1] = offer2;
+        vm.startPrank(SELLER);
+        sablier.approve(address(book), 204);
+        vm.expectRevert("OVRFLOBook: offer inactive");
+        book.createBorrowPool(offerIds, 204, 100 ether, 90 ether);
+        vm.stopPrank();
+    }
+
     function test_Offer_SplitBetweenSaleAndLoan() public {
         // Post an offer with 200 capacity — consumable as either sale or loan
         uint256 offerId = _postOffer(BUYER, 200 ether);
