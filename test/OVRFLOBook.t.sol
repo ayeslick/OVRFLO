@@ -699,6 +699,27 @@ contract OVRFLOBookTest is Test {
         book.quote(MARKET, 34, 1000, 0);
     }
 
+    function test_Quote_PartialBorrow() public {
+        // deposited = 110, aprBps = 1000, ttm = 365 days -> grossPrice = 100 ether
+        _mintEligibleStream(35, SELLER, 110 ether, 0);
+        (uint256 grossPrice, uint128 obligation, uint256 feeAmount, uint256 netToBorrower, uint128 residual) =
+            book.quote(MARKET, 35, 1000, 50 ether);
+        assertEq(grossPrice, 100 ether);
+        // obligation = ceil(50 * factor / WAD) = ceil(55 ether) = 55 ether
+        assertEq(obligation, 55 ether);
+        assertEq(feeAmount, 0); // default fee is 0
+        assertEq(netToBorrower, 50 ether);
+        // residual = remaining - obligation = 110 - 55 = 55
+        assertEq(residual, 55 ether);
+    }
+
+    function test_Quote_RevertsWhenBorrowAbovePrice() public {
+        _mintEligibleStream(36, SELLER, 110 ether, 0);
+        // grossPrice = 100 ether, borrowAmount = 101 ether -> reverts
+        vm.expectRevert("OVRFLOBook: borrow above price");
+        book.quote(MARKET, 36, 1000, 101 ether);
+    }
+
     function test_OrderStateViewsReflectCurrentState() public {
         uint256 offerId = _postOffer(BUYER, 100 ether);
         (address maker, address market, uint16 aprBps, uint128 capacity, bool active) = book.offerState(offerId);
