@@ -36,7 +36,7 @@ contract MockFlashBorrower is IFlashBorrower {
         if (data.length > 0) {
             bool reenter = abi.decode(data, (bool));
             if (reenter) {
-                IVaultFlash(vault).deposit(market, 1e6, 0);
+                try IVaultFlash(vault).deposit(market, 1e6, 0) {} catch {}
             }
         }
         return CALLBACK_SUCCESS;

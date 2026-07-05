@@ -5,9 +5,12 @@ import "../Base.sol";
 import {Properties} from "../Properties.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ISablierV2LockupLinear} from "../../../interfaces/ISablierV2LockupLinear.sol";
+import {MockFlashBorrower} from "../mocks/MockFlashBorrower.sol";
 
 /// @notice Handles the interaction with OVRFLO
 abstract contract OVRFLOHandler is Properties {
+
+    MockFlashBorrower public mockFlashBorrower;
 
     // ――――――――――――――――――――――――― Clamped ――――――――――――――――――――――――――
 
@@ -36,21 +39,56 @@ abstract contract OVRFLOHandler is Properties {
         oVRFLO_unwrap(amount);
     }
 
-    function oVRFLO_flashLoan_clamped(address, uint256 amount, bytes memory) public {
+    function oVRFLO_flashLoan_clamped(address, uint256 amount, bytes memory data) public {
         uint256 vaultPt = ptToken.balanceOf(address(vault));
         amount = clampBetween(amount, 1, vaultPt);
         if (amount == 0) return;
-        oVRFLO_flashLoan(address(ptToken), amount, "");
+
+        if (address(mockFlashBorrower) == address(0)) {
+            mockFlashBorrower = new MockFlashBorrower(
+                address(vault), address(ptToken), address(underlying), market
+            );
+        }
+
+        // Seed borrower with underlying for fee and PT for reentrancy deposit
+        underlying.deal(address(mockFlashBorrower), 1e18);
+        ptToken.deal(address(mockFlashBorrower), 1e6);
+
+        bytes memory flashData = data.length > 0 ? abi.encode(true) : abi.encode(false);
+
+        snapshotBefore();
+        vm.prank(actor);
+        mockFlashBorrower.executeFlashLoan(amount, flashData);
+        snapshotAfter();
+
+        ghosts.ghost_flashFeePaid = 0;
+        property_flashLoanAtomicRepay();
+        property_flashLoanMtdUnchanged();
+        property_flashLoanPreMaturity();
+        property_flashLoanWrappedUnchanged();
+        property_flashLoanNoFreeProfit();
+    }
+
+    function fizz_skipTime(uint256 amount) public {
+        skipTime(amount % 365 days);
+    }
+
+    function oVRFLO_transfer(uint256 toSeed, uint256 amount) public asActor {
+        address to = toActor(address(uint160(toSeed)));
+        amount = clampBetween(amount, 1, ovrfloToken.balanceOf(actor));
+        if (amount == 0) return;
+        require(ovrfloToken.transfer(to, amount), "transfer failed");
     }
 
     function oVRFLO_secondary(uint8 selector, uint256 arg0, address arg1, address arg2) public {
-        selector = uint8(selector % 6);
+        selector = uint8(selector % 7);
         if (selector == 0) _oVRFLO_setMarketDepositLimit(arg1, arg0);
         else if (selector == 1) _oVRFLO_setFlashFeeBps(uint16(arg0));
         else if (selector == 2) _oVRFLO_setFlashLoanPaused(arg0 > 0);
         else if (selector == 3) _oVRFLO_sweepExcessPt(arg1, arg2);
         else if (selector == 4) _oVRFLO_sweepExcessUnderlying(arg1);
-        else _oVRFLO_setOracleRate(arg0);
+        else if (selector == 5) _oVRFLO_setOracleRate(arg0);
+        else _oVRFLO_prepareOracle(uint32(arg0));
         // SP-69: Non-admin cannot call vault admin functions
         property_nonAdminCannotCallVaultAdmin();
     }
@@ -177,6 +215,10 @@ abstract contract OVRFLOHandler is Properties {
     function _oVRFLO_setOracleRate(uint256 rateRaw) internal {
         uint256 rate = clampBetween(rateRaw, 0.8e18, 1.02e18);
         mockOracle.setRate(rate);
+    }
+
+    function _oVRFLO_prepareOracle(uint32 twapDuration) internal asAdmin {
+        try factory.prepareOracle(market, twapDuration) {} catch {}
     }
 
     // ―――――――――――――――――――― Round-trip handlers ――――――――――――――――――――
