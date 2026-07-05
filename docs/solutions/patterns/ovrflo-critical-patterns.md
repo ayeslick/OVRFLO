@@ -1,12 +1,14 @@
 ---
 kind: required_reading
 scope: ovrflo
-last_updated: 2026-06-30
+last_updated: 2026-07-05
 audience: [contributors, ai-agents]
 ---
 
 <!--
   Refresh log:
+  - 2026-07-05: Fixed pattern #7 code examples — `saleOffers` → `offerState`
+    after the unified offer merge renamed the view function.
   - 2026-07-01: Appended pattern #13 (sweepExcessPt must validate ptToken is
     a registered PT) from the fuzz campaign GL-02 violation. The guard
     prevents draining the wrap reserve when a non-PT address is passed.
@@ -443,7 +445,7 @@ rg "sablier mismatch" script/OVRFLOBook.s.sol
 // test/OVRFLOBook.t.sol — proves the offer was consumed and the stream moved,
 // not that the underlying left the book, the fee was paid, or the buyer
 // (who posted liquidity upfront) is back to zero.
-(,,, uint128 capacity,) = book.saleOffers(offerId);
+(,,, uint128 capacity,) = book.offerState(offerId);
 assertEq(capacity, 0);
 assertEq(underlying.balanceOf(SELLER), 100 ether);
 assertEq(sablier.ownerOf(28), BUYER);
@@ -453,7 +455,7 @@ assertEq(sablier.ownerOf(28), BUYER);
 ### ✅ CORRECT (every party that touched value is checked)
 
 ```solidity
-(,,, uint128 capacity,) = book.saleOffers(offerId);
+(,,, uint128 capacity,) = book.offerState(offerId);
 assertEq(capacity, 0);
 assertEq(underlying.balanceOf(SELLER), 100 ether);
 assertEq(underlying.balanceOf(TREASURY), 0);
