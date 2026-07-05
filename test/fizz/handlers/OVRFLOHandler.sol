@@ -75,9 +75,25 @@ abstract contract OVRFLOHandler is Properties {
 
     function oVRFLO_transfer(uint256 toSeed, uint256 amount) public asActor {
         address to = toActor(address(uint160(toSeed)));
-        amount = clampBetween(amount, 1, ovrfloToken.balanceOf(actor));
+        uint256 balBefore = ovrfloToken.balanceOf(actor);
+        uint256 supplyBefore = ovrfloToken.totalSupply();
+
+        // GL-62: zero-amount transfer is a no-op
+        if (amount == 0) {
+            require(ovrfloToken.transfer(to, 0), "transfer failed");
+            property_zero_transfer_noop(balBefore, supplyBefore);
+            return;
+        }
+
+        amount = clampBetween(amount, 1, balBefore);
         if (amount == 0) return;
+
         require(ovrfloToken.transfer(to, amount), "transfer failed");
+
+        // GL-61: self-transfer is a no-op
+        if (to == actor) {
+            property_self_transfer_noop(balBefore, supplyBefore);
+        }
     }
 
     function oVRFLO_secondary(uint8 selector, uint256 arg0, address arg1, address arg2) public {
@@ -121,6 +137,7 @@ abstract contract OVRFLOHandler is Properties {
         property_previewDepositMatches(toUser, toStream, feeAmount, _market, ptAmount);
         property_previewStreamMatches(toUser, toStream, _market, ptAmount);
         property_depositFloorsToUser(toUser, ptAmount, _market);
+        property_deposit_liveness(ptAmount);
     }
 
     function oVRFLO_claim(address ptToken_, uint256 amount) public asActor {
@@ -202,6 +219,7 @@ abstract contract OVRFLOHandler is Properties {
             snapshotAfter();
             property_sweepExcessPtMtdUnchanged();
         } catch {}
+        property_sweepExcessPt_reverts_non_pt();
     }
 
     function _oVRFLO_sweepExcessUnderlying(address to) internal asAdmin {

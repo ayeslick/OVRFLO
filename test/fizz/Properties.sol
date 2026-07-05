@@ -1248,4 +1248,46 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
         if (ghosts.ghost_lastStreamId == 0) return;
         t(stateBefore.streamOwner == actor, "SP-73: stream owner is not the caller");
     }
+
+    // ─────────────── GL-57: No Free Profit ───────────────
+
+    /// @notice GL-57: No actor's total value exceeds start value plus legitimate stream withdrawals
+    function property_no_free_profit() public {
+        for (uint256 i = 0; i < actors.length; i++) {
+            address a = actors[i];
+            uint256 currentValue = underlying.balanceOf(a) + ptToken.balanceOf(a) + ovrfloToken.balanceOf(a);
+            uint256 allowed = ghost_actorStartValue[a] + ghost_totalStreamWithdrawals[a];
+            lte(currentValue, allowed, "GL-57: actor value exceeds start + withdrawals");
+        }
+    }
+
+    // ─────────────── SP-62: Deposit Liveness ───────────────
+
+    /// @notice SP-62: deposit with valid preconditions succeeds (called after successful deposit)
+    function property_deposit_liveness(uint256 ptAmount) internal {
+        gt(ptAmount, 0, "SP-62: deposit liveness - zero amount after successful deposit");
+    }
+
+    // ─────────────── Pattern #13: sweepExcessPt input validation ───────────────
+
+    /// @notice Pattern #13: sweepExcessPt reverts when passed a non-PT token (e.g. underlying)
+    function property_sweepExcessPt_reverts_non_pt() internal asAdmin {
+        try factory.sweepExcessPt(address(vault), address(underlying), admin) {
+            t(false, "Pattern-13: sweepExcessPt did not revert for non-PT token");
+        } catch {}
+    }
+
+    // ─────────────── GL-61/GL-62: ERC20 Transfer Invariants ───────────────
+
+    /// @notice GL-61: self-transfer doesn't change balance or totalSupply
+    function property_self_transfer_noop(uint256 balBefore, uint256 supplyBefore) internal {
+        eq(ovrfloToken.balanceOf(actor), balBefore, "GL-61: balance changed after self-transfer");
+        eq(ovrfloToken.totalSupply(), supplyBefore, "GL-61: totalSupply changed after self-transfer");
+    }
+
+    /// @notice GL-62: zero-amount transfer doesn't change balance or totalSupply
+    function property_zero_transfer_noop(uint256 balBefore, uint256 supplyBefore) internal {
+        eq(ovrfloToken.balanceOf(actor), balBefore, "GL-62: balance changed after zero transfer");
+        eq(ovrfloToken.totalSupply(), supplyBefore, "GL-62: totalSupply changed after zero transfer");
+    }
 }

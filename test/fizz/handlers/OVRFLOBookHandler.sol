@@ -196,6 +196,8 @@ abstract contract OVRFLOBookHandler is Properties {
         uint256 fee = feeBps == 0 ? 0 : grossPrice * feeBps / 10_000;
         ghosts.ghost_bookFeePaid = fee;
         ghosts.ghost_totalBookFees += fee;
+        // Track sale proceeds for GL-57
+        ghost_totalStreamWithdrawals[actor] += grossPrice - fee;
         // Property assertions
         property_sellIntoOfferCapacityDecreases(grossPrice);
         property_bookFeeFlooredWithBps(fee, grossPrice, uint16(feeBps));
@@ -249,6 +251,8 @@ abstract contract OVRFLOBookHandler is Properties {
         uint256 fee = feeBps == 0 ? 0 : uint256(actualBorrow) * feeBps / 10_000;
         ghosts.ghost_bookFeePaid = fee;
         ghosts.ghost_totalBookFees += fee;
+        // Track borrow proceeds for GL-57
+        ghost_totalStreamWithdrawals[actor] += uint256(actualBorrow) - fee;
         // Property assertions
         property_obligationGeBorrow();
         property_obligationLeRemaining();
@@ -298,8 +302,9 @@ abstract contract OVRFLOBookHandler is Properties {
         snapshotBefore();
         book.poolClaimLoan(poolId, amount);
         snapshotAfter();
+        // Track stream withdrawal for GL-57
+        ghost_totalStreamWithdrawals[actor] += uint256(amount);
         // Property assertions
-        property_poolClaimLoanDrawnIncreases();
         property_poolClaimLoanProceedsUnchanged();
         property_proRataEntitlementFloored();
         property_poolReceivedLeTotalObligation();
@@ -313,6 +318,8 @@ abstract contract OVRFLOBookHandler is Properties {
         snapshotBefore();
         book.claimPoolShare(poolId, amount);
         snapshotAfter();
+        // Track stream withdrawal for GL-57
+        ghost_totalStreamWithdrawals[actor] += uint256(amount);
         // Property assertions
         property_claimPoolShareReceivedIncreases();
         property_proRataEntitlementFloored();

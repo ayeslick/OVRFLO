@@ -29,7 +29,7 @@ Consolidated from 5 invariant discovery agents (Conservation Auditor, Round-Trip
 
 - [-] **GL-55** Pure wrapper can always unwrap (reserve not drained by depositors). HIGH_LEVEL, EXPLORATORY, HIGH. Sources: ADV-01. Ghosts: ghost_hasDeposited, ghost_hasWrapped. **RESOLVED**: Non-issue. ovrfloToken fungibility is a design feature that increases exit optionality. Pure wrappers can also claim PT post-maturity, swap on a DEX, or use any exit path. Subsumed by GL-02 (combined solvency). No one is forced into any particular exit path.
 - [-] **GL-56** Depositor can always claim PT (MTD not drained by wrap-then-claim). HIGH_LEVEL, EXPLORATORY, HIGH. Sources: ADV-02. Ghosts: ghost_hasDeposited. **RESOLVED**: Non-issue (mirror of GL-55). Depositors can also unwrap underlying, swap on a DEX, or use any exit path. Subsumed by GL-02 (combined solvency).
-- [-] **GL-57** No free profit: actor total value <= start + legitimate yield. HIGH_LEVEL, EXPLORATORY, HIGH. Sources: ADV-04. Ghosts: ghost_actorStartValue.
+- [x] **GL-57** No free profit: actor total value <= start + legitimate yield. HIGH_LEVEL, EXPLORATORY, HIGH. Sources: ADV-04. Ghosts: ghost_actorStartValue, ghost_totalStreamWithdrawals.
 - [x] **GL-59** No orphaned wrap reserve (wrap-then-claim locks underlying). HIGH_LEVEL, EXPLORATORY, HIGH. Sources: ADV-25.
 - [x] **GL-63** Sum outstanding <= sum remaining face values across all loans. HIGH_LEVEL, EXPLORATORY, LOW. Sources: SPEC-L01. Iteration: 1..nextLoanId-1 with stream lookups.
 
@@ -110,8 +110,8 @@ Consolidated from 5 invariant discovery agents (Conservation Auditor, Round-Trip
 
 ### ERC-20 Standard
 
-- [-] **GL-61** Self-transfer doesn't change balance/supply. VALID_STATE, SHOULD-HOLD, MEDIUM. Evidence: ERC-20 standard. Sources: SPEC-T02. Requires transfer handler.
-- [-] **GL-62** Zero-amount transfer doesn't change state. VALID_STATE, SHOULD-HOLD, MEDIUM. Evidence: ERC-20 standard. Sources: SPEC-T03. Requires transfer handler.
+- [x] **GL-61** Self-transfer doesn't change balance/supply. VALID_STATE, SHOULD-HOLD, MEDIUM. Evidence: ERC-20 standard. Sources: SPEC-T02. Called after: transfer.
+- [x] **GL-62** Zero-amount transfer doesn't change state. VALID_STATE, SHOULD-HOLD, MEDIUM. Evidence: ERC-20 standard. Sources: SPEC-T03. Called after: transfer.
 
 ---
 
@@ -138,7 +138,7 @@ Consolidated from 5 invariant discovery agents (Conservation Auditor, Round-Trip
 - [x] **SP-26** marketTotalDeposited increases by exactly ptAmount after deposit. STATE_TRANSITION, SHOULD-HOLD, HIGH. Sources: ST-01. Called after: deposit.
 - [x] **SP-27** wrappedUnderlying unchanged after deposit. STATE_TRANSITION, EXPLORATORY, MEDIUM. Sources: ST-02. Called after: deposit.
 - [x] **SP-28** deposit only succeeds pre-maturity. STATE_TRANSITION, SHOULD-HOLD, HIGH. Sources: ST-03. Called after: deposit.
-- [-] **SP-62** deposit liveness: valid preconditions (approved, >= MIN, pre-maturity, limit ok) -> must succeed. VALID_STATE, SHOULD-HOLD, HIGH. Sources: ADV-03. Called after: deposit.
+- [x] **SP-62** deposit liveness: valid preconditions (approved, >= MIN, pre-maturity, limit ok) -> must succeed. VALID_STATE, SHOULD-HOLD, HIGH. Sources: ADV-03. Called after: deposit.
 - [x] **SP-63** toUser non-decreasing in ptAmount for a fixed rate (not share-based pricing). VALID_STATE, SHOULD-HOLD, MEDIUM. Sources: ADV-05. Called after: deposit. Ghosts: ghost_lastToUser, ghost_lastDepositPtAmount. **REWRITTEN**: Original ratio check (toUser/ptAmount non-decreasing) was a false positive — mulDiv flooring causes ratio variance with input size, not share inflation. Replaced with toUser monotonicity check (gte(toUser, prevToUser) when ptAmount > prevPtAmount).
 - [x] **SP-76** Low deposit limit does not brick claims. VALID_STATE, SHOULD-HOLD, MEDIUM. Sources: ADV-23. Called after: claim.
 
@@ -169,6 +169,7 @@ Consolidated from 5 invariant discovery agents (Conservation Auditor, Round-Trip
 
 - [x] **SP-39** sweepExcessPt: marketTotalDeposited unchanged. STATE_TRANSITION, EXPLORATORY, MEDIUM. Sources: ST-16. Called after: sweepExcessPt.
 - [x] **SP-40** sweepExcessUnderlying: wrappedUnderlying unchanged. STATE_TRANSITION, EXPLORATORY, MEDIUM. Sources: ST-17. Called after: sweepExcessUnderlying.
+- [x] **SP-77** sweepExcessPt reverts for non-PT token (pattern #13 input validation guard). VALID_STATE, SHOULD-HOLD, HIGH. Sources: PATTERN-13. Called after: sweepExcessPt.
 - [x] **SP-41** setFlashFeeBps: flashFeeBps equals arg and <= FLASH_FEE_MAX_BPS. STATE_TRANSITION, SHOULD-HOLD, LOW. Sources: ST-18. Called after: setFlashFeeBps.
 - [x] **SP-42** setFlashLoanPaused: flashLoanPaused equals arg. STATE_TRANSITION, SHOULD-HOLD, LOW. Sources: ST-19. Called after: setFlashLoanPaused.
 

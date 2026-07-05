@@ -76,6 +76,7 @@ abstract contract Base is StringUtils, Clamp, Deployer, Math {
     mapping(address => bool) internal ghost_hasDeposited;
     mapping(address => bool) internal ghost_hasWrapped;
     mapping(address => uint256) internal ghost_actorStartValue;
+    mapping(address => uint256) internal ghost_totalStreamWithdrawals;
 
     // Monotonicity ghost mappings (section 6 of plan)
     mapping(uint256 => uint128) internal ghost_loanDrawnSnapshot;
@@ -220,6 +221,7 @@ abstract contract Base is StringUtils, Clamp, Deployer, Math {
             underlying.approve(address(book), type(uint256).max);
             ovrfloToken.approve(address(book), type(uint256).max);
             vm.stopPrank();
+            ghost_actorStartValue[_actor] = INITIAL_TOKEN_AMOUNT * 2; // underlying + PT
 		}
         actor = actors[0];
     }
