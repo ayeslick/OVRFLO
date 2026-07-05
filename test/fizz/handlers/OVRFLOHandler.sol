@@ -327,4 +327,36 @@ abstract contract OVRFLOHandler is Properties {
             property_depositClaimRoundTrip(ptBefore, ptAfter, 0, 0, 0);
         }
     }
+
+    /// @notice R16: Flash loan reentrancy scenario - exercises deposit during flash loan callback
+    function scenario_flashLoanReentrancy(uint256 amount) public {
+        uint256 vaultPt = ptToken.balanceOf(address(vault));
+        if (vaultPt == 0) return;
+        amount = clampBetween(amount, 1, vaultPt);
+        if (amount == 0) return;
+
+        if (address(mockFlashBorrower) == address(0)) {
+            mockFlashBorrower = new MockFlashBorrower(
+                address(vault), address(ptToken), address(underlying), market
+            );
+        }
+
+        underlying.deal(address(mockFlashBorrower), 1e18);
+        ptToken.deal(address(mockFlashBorrower), 1e6);
+
+        uint256 mtdBefore = vault.marketTotalDeposited(market);
+        uint256 wrappedBefore = vault.wrappedUnderlying();
+        uint256 supplyBefore = ovrfloToken.totalSupply();
+
+        snapshotBefore();
+        vm.prank(actor);
+        try mockFlashBorrower.executeFlashLoan(amount, abi.encode(true)) {
+            snapshotAfter();
+            // Assert vault state consistency after reentrant deposit
+            eq(ovrfloToken.totalSupply(), vault.marketTotalDeposited(market) + vault.wrappedUnderlying(),
+               "R16: totalSupply != MTD + wrapped after reentrancy");
+            // MTD may increase from the reentrant deposit, wrappedUnderlying should not change
+            eq(vault.wrappedUnderlying(), wrappedBefore, "R16: wrappedUnderlying changed in reentrancy");
+        } catch {}
+    }
 }

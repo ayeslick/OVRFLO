@@ -443,4 +443,76 @@ abstract contract OVRFLOBookHandler is Properties {
 
         property_postListingCancelRoundTrip(ownerBefore, ownerAfter);
     }
+
+    /// @notice R15: Pool lifecycle scenario - multi-offer pool, vesting, close, claim
+    function scenario_poolLifecycle(uint16 aprBps, uint128 capacity, uint128 targetBorrow) public {
+        if (actors.length < 3) return;
+        address actorA = actors[0];
+        address actorB = actors[1];
+        address actorC = actors[2];
+
+        aprBps = _clampApr(aprBps);
+        capacity = uint128(clampBetween(uint256(capacity), 1, underlying.balanceOf(actorA)));
+        if (capacity == 0) return;
+
+        // Step 1: Actor A posts an offer
+        vm.prank(actorA);
+        try book.postOffer(market, aprBps, capacity) returns (uint256 offerA) {
+            // Step 2: Actor B posts an offer with same market and aprBps
+            uint256 capB = uint128(clampBetween(uint256(capacity), 1, underlying.balanceOf(actorB)));
+            if (capB == 0) return;
+            vm.prank(actorB);
+            try book.postOffer(market, aprBps, uint128(capB)) returns (uint256 offerB) {
+                // Step 3: Actor C creates a borrow pool with both offers
+                uint256 streamId = 0;
+                for (uint256 i = 1; i < MockSablier(SABLIER_ADDR).nextStreamId() + 1; i++) {
+                    try ISablierV2LockupLinear(SABLIER_ADDR).ownerOf(i) returns (address owner) {
+                        if (owner == actorC) {
+                            (address maker, , , , bool active) = book.offers(offerA);
+                            (address makerB, , , , bool activeB) = book.offers(offerB);
+                            if (active && activeB && maker != actorC && makerB != actorC) {
+                                streamId = i;
+                                break;
+                            }
+                        }
+                    } catch {}
+                }
+                if (streamId == 0) return;
+
+                uint256[] memory offerIds = new uint256[](2);
+                offerIds[0] = offerA;
+                offerIds[1] = offerB;
+                targetBorrow = uint128(clampBetween(uint256(targetBorrow), 1, type(uint128).max));
+
+                vm.prank(actorC);
+                try book.createBorrowPool(offerIds, streamId, targetBorrow, 0) returns (uint256 poolId) {
+                    uint256 loanId = book.poolLoanId(poolId);
+
+                    // Step 4: Advance time for stream vesting
+                    skipTime(365 days);
+
+                    // Step 5: Close the loan
+                    try book.closeLoan(loanId) {
+                        // Step 6: Actor A claims pool share
+                        vm.prank(actorA);
+                        try book.claimPoolShare(poolId, type(uint128).max) {
+                            // Step 7: Actor B claims pool share
+                            vm.prank(actorB);
+                            try book.claimPoolShare(poolId, type(uint128).max) {
+                                // Assert pool conservation held through lifecycle
+                                uint128 proceeds = book.poolProceeds(poolId);
+                                uint256 sumReceived;
+                                for (uint256 i = 0; i < actors.length; i++) {
+                                    sumReceived += book.poolReceived(poolId, actors[i]);
+                                }
+                                (, , , , uint128 drawn, uint128 repaid, ) = book.loans(loanId);
+                                eq(uint256(proceeds) + sumReceived, uint256(drawn) + uint256(repaid),
+                                   "R15: pool conservation violated in lifecycle");
+                            } catch {}
+                        } catch {}
+                    } catch {}
+                } catch {}
+            } catch {}
+        } catch {}
+    }
 }
