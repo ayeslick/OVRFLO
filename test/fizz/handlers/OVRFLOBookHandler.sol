@@ -67,14 +67,49 @@ abstract contract OVRFLOBookHandler is Properties {
         oVRFLOBook_buyListing(listingId, maxPriceIn);
     }
 
-    function oVRFLOBook_createBorrowPool_clamped(uint256[] memory offerIds, uint256 streamSeed, uint128 targetBorrow, uint128) public {
+    function oVRFLOBook_createBorrowPool_clamped(uint256[] memory, uint256 streamSeed, uint128 targetBorrow, uint128 poolSizeSeed) public {
         uint256 maxOffer = book.nextOfferId();
         if (maxOffer <= 1) return;
         uint256 streamId = _pickStream(streamSeed);
         if (streamId == 0) return;
-        // Use single offer from fuzz input
-        offerIds = new uint256[](1);
-        offerIds[0] = clampBetween(offerIds[0] > 0 ? offerIds[0] : 1, 1, maxOffer - 1);
+
+        // Determine pool size: 1-3 offers
+        uint256 poolSize = uint256(poolSizeSeed) % 3 + 1;
+        if (poolSize > maxOffer - 1) poolSize = maxOffer - 1;
+
+        // Find a first valid offer (active, not owned by actor)
+        uint256 firstOfferId = 0;
+        for (uint256 i = 1; i < maxOffer; i++) {
+            (address maker, , , uint128 cap, bool active) = book.offers(i);
+            if (active && cap > 0 && maker != actor) {
+                firstOfferId = i;
+                break;
+            }
+        }
+        if (firstOfferId == 0) return;
+
+        // Get first offer's market and aprBps for matching
+        (, address offerMarket, uint16 offerApr, , ) = book.offers(firstOfferId);
+
+        // Build offer array with matching offers (ascending order by construction)
+        uint256[] memory offerIds = new uint256[](poolSize);
+        offerIds[0] = firstOfferId;
+        uint256 count = 1;
+        for (uint256 i = firstOfferId + 1; i < maxOffer && count < poolSize; i++) {
+            (address maker, address m, uint16 apr, uint128 cap, bool active) = book.offers(i);
+            if (active && cap > 0 && maker != actor && m == offerMarket && apr == offerApr) {
+                offerIds[count] = i;
+                count++;
+            }
+        }
+
+        // Trim if fewer matching offers found
+        if (count < poolSize) {
+            uint256[] memory trimmed = new uint256[](count);
+            for (uint256 i = 0; i < count; i++) trimmed[i] = offerIds[i];
+            offerIds = trimmed;
+        }
+
         targetBorrow = uint128(clampBetween(uint256(targetBorrow), 1, type(uint128).max));
         oVRFLOBook_createBorrowPool(offerIds, streamId, targetBorrow, 0);
     }
@@ -129,7 +164,7 @@ abstract contract OVRFLOBookHandler is Properties {
         selector = uint8(selector % 3);
         if (selector == 0) _oVRFLOBook_setAprBounds(uint16(arg0), uint16(arg1));
         else if (selector == 1) _oVRFLOBook_setFee(uint16(arg0));
-        else _oVRFLOBook_setAprBounds(uint16(arg0), uint16(arg1));
+        else _oVRFLOBook_setTreasury(address(uint160(arg0)));
         // SP-70: Non-owner cannot call book admin functions
         property_nonOwnerCannotCallBookAdmin();
     }
@@ -310,6 +345,30 @@ abstract contract OVRFLOBookHandler is Properties {
         property_nonMakerCannotCancelListing(listingId);
     }
 
+    function oVRFLOBook_gatherOfferCapacities(uint256 offerSeed, uint128 targetAmount) public {
+        uint256 maxOffer = book.nextOfferId();
+        if (maxOffer <= 1) return;
+        uint256 startId = clampBetween(offerSeed, 1, maxOffer - 1);
+        // Find a valid offer to get market and aprBps
+        for (uint256 i = startId; i < maxOffer; i++) {
+            (, address offerMarket, uint16 offerApr, , bool active) = book.offers(i);
+            if (!active) continue;
+            (uint256[] memory ids, bool sufficient) =
+                book.gatherOfferCapacities(offerMarket, offerApr, targetAmount, 1);
+            // Verify returned IDs are active with matching market and aprBps
+            uint128 sum;
+            for (uint256 j = 0; j < ids.length; j++) {
+                (, address m, uint16 apr, uint128 cap, bool a) = book.offers(ids[j]);
+                assert(a && m == offerMarket && apr == offerApr);
+                sum += cap;
+            }
+            if (sufficient) {
+                assert(sum >= targetAmount);
+            }
+            return;
+        }
+    }
+
     // ――――――――――――――――――― Admin (via factory) ―――――――――――――――――――
 
     function _oVRFLOBook_setAprBounds(uint16 aprMinBps_, uint16 aprMaxBps_) internal asAdmin {
@@ -319,6 +378,10 @@ abstract contract OVRFLOBookHandler is Properties {
 
     function _oVRFLOBook_setFee(uint16 feeBps_) internal asAdmin {
         factory.setBookFee(address(book), feeBps_);
+    }
+
+    function _oVRFLOBook_setTreasury(address newTreasury) internal asAdmin {
+        try factory.setBookTreasury(address(book), newTreasury) {} catch {}
     }
 
     // ―――――――――――――――――――― Round-trip handlers ――――――――――――――――――――
