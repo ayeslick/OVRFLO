@@ -3,8 +3,8 @@
 	   "workers": 10,
 	   "workerResetLimit": 50,
 	   "timeout": 0,
-	   "testLimit": 500000,
-	   "callSequenceLength": 100,
+	   "testLimit": 1000000,
+	   "callSequenceLength": 150,
 	   "corpusDirectory": "fizz_data/corpus_medusa",
 	   "coverageEnabled": true,
 	   "deploymentOrder": [
@@ -21,10 +21,14 @@
 	   "senderAddresses": [
 		  "0x10000",
 		  "0x20000",
-		  "0x30000"
+		  "0x30000",
+		  "0x40000",
+		  "0x50000",
+		  "0x60000",
+		  "0x70000"
 	   ],
 	   "blockNumberDelayMax": 60480,
-	   "blockTimestampDelayMax": 604800,
+	   "blockTimestampDelayMax": 31536000,
 	   "blockGasLimit": 125000000,
 	   "transactionGasLimit": 12500000,
 	   "testing": {

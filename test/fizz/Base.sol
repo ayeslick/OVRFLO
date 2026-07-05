@@ -24,7 +24,7 @@ import {MockStandardizedYield} from "./mocks/MockStandardizedYield.sol";
 abstract contract Base is StringUtils, Clamp, Deployer, Math {
     using DecimalPrinter for uint256;
 
-    string[] internal ACTOR_LABELS = ["Alice", "Bob", "Charlie"];
+    string[] internal ACTOR_LABELS = ["Alice", "Bob", "Charlie", "Dave", "Eve", "Frank", "Grace"];
     uint256 internal constant BLOCK_INTERVAL = 12 seconds;
     uint256 internal constant INITIAL_ETH_BALANCE = 1_000 ether;
     uint256 internal constant INITIAL_TOKEN_BALANCE = 10_000;
