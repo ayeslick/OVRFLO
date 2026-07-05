@@ -5,8 +5,8 @@
 ## In-scope commit
 
 - **Branch:** `main`
-- **Commit:** `92d5c41` (2026-07-01)
-- **Last updated:** This snapshot was last regenerated on 2026-07-01 against the commit above. Findings are reproducible against this commit; any post-snapshot change should be re-verified before relying on it.
+- **Commit:** `01cad7b` (2026-07-05)
+- **Last updated:** This snapshot was last regenerated on 2026-07-05 against the commit above. Findings are reproducible against this commit; any post-snapshot change should be re-verified before relying on it.
 
 > **Line-number caveat:** The `x-ray/` suite was regenerated at the current HEAD. Companion docs in this package cite **function names and invariant IDs** (e.g. `OVRFLO.deposit()`, invariant `X-1`) rather than brittle line numbers. Where a `file:line` is given, re-verify it against the pinned commit's source before relying on it.
 
@@ -20,7 +20,7 @@
 | Secondary market | `src/OVRFLOBook.sol` | Stream sale + stream-collateralized self-repaying loans via unified offers and pools |
 | Pricing | `src/StreamPricing.sol` | APR/discount math + `requireEligible` cross-contract gate |
 
-1,163 nSLOC across the three subsystems (per `x-ray/x-ray.md`).
+1,395 nSLOC across the three subsystems (per `x-ray/x-ray.md`).
 
 ## Excluded paths
 
@@ -52,5 +52,5 @@ Both deployed Pendle markets share the same underlying (wstETH) and the same ora
 
 ## Reproduction notes
 
-- Build: `forge build`. Tests: `forge test`. Fork suites require `MAINNET_RPC_URL` (an Ethereum mainnet RPC) to be set in the environment; without it, fork tests are skipped. `forge coverage` fails due to import resolution errors with `test/fizz/` relative paths (not a test absence signal — 45 test files confirmed by enumeration). Environment automation (one-command reproducible fork env, invariants-as-properties suite) is deferred to a follow-up plan.
+- Build: `forge build`. Tests: `forge test`. Fork suites require `MAINNET_RPC_URL` (an Ethereum mainnet RPC) to be set in the environment; without it, fork tests are skipped. `forge coverage` now succeeds — 100% line coverage and 99.6% branch coverage on source files (1 uncovered branch in `OVRFLOBook.sol`). Environment automation (one-command reproducible fork env, invariants-as-properties suite) is deferred to a follow-up plan.
 - License: MIT across all contracts.

@@ -50,7 +50,7 @@
 | Aspect | Detail |
 |--------|--------|
 | Visibility | external |
-| Caller | Anyone (user or protocol) |
+| Caller | Anyone |
 | Parameters | amount (user-controlled) |
 | Call chain | `→ OVRFLOToken.mint(msg.sender, amount)` |
 | State modified | `wrappedUnderlying += amount` |
@@ -76,7 +76,7 @@
 | Visibility | external |
 | Caller | PT holder |
 | Parameters | market (user-controlled), ptAmount (user-controlled), minToUser (user-controlled) |
-| Call chain | `→ IPendleOracle.getPtToSyRate()` → `OVRFLOToken.mint(user, toUser)` → `OVRFLOToken.mint(vault, toStream)` → `ISablierV2LockupLinear.createWithDurations()` |
+| Call chain | `→ _requireOracleFresh()` → `IPendleOracle.getPtToSyRate()` → `OVRFLOToken.mint(user, toUser)` → `OVRFLOToken.mint(vault, toStream)` → `ISablierV2LockupLinear.createWithDurations()` |
 | State modified | `marketTotalDeposited[market] += ptAmount` |
 | Value flow | PT: msg.sender → vault (in); underlying: msg.sender → treasury (fee, in); ovrfloToken: vault → msg.sender (out) |
 | Reentrancy guard | no |
@@ -100,10 +100,10 @@
 | Visibility | external, nonReentrant |
 | Caller | Anyone (borrower contract implementing IFlashBorrower) |
 | Parameters | ptToken (user-controlled), amount (user-controlled), data (user-controlled) |
-| Call chain | `→ IERC20(ptToken).safeTransfer(borrower, amount)` → `IFlashBorrower.onFlashLoan()` → `IERC20(ptToken).safeTransferFrom(borrower, vault, amount)` → `IERC20(underlying).safeTransferFrom(borrower, treasury, fee)` |
+| Call chain | `→ _requireOracleFresh()` → `IPendleOracle.getPtToSyRate()` → `IERC20(ptToken).safeTransfer(borrower, amount)` → `IFlashBorrower.onFlashLoan()` → `IERC20(ptToken).safeTransferFrom(borrower, vault, amount)` → `IERC20(underlying).safeTransferFrom(borrower, treasury, fee)` |
 | State modified | None (atomic loan, repaid in same tx) |
 | Value flow | PT: vault → borrower → vault (round-trip); underlying: borrower → treasury (fee, in) |
-| Reentrancy guard | yes (nonReentrant) |
+| Reentrancy guard | yes |
 
 ### `OVRFLOBook.postOffer(address market, uint16 aprBps, uint128 capacity)`
 

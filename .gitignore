@@ -48,3 +48,6 @@ AGENTS.md
 # Fuzz build artifacts (regenerated per run)
 fizz_data/
 
+# Scratch plans (treat as read-only specs, not project deliverables)
+docs/plans/
+
