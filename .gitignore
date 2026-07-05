@@ -33,6 +33,7 @@ web/.vercel
 web/.postcss-cache/
 web/reviews/
 node_modules/
+lcov.info
 
 # Agents
 .claude/
@@ -45,7 +46,5 @@ AGENTS.md
 .cursor/
 
 # Fuzz build artifacts (regenerated per run)
-fizz_data/crytic-export/
-fizz_data/corpus_medusa/coverage/
-fizz_data/corpus_medusa/call_sequences/
-fizz_data/slither_results.json
+fizz_data/
+
