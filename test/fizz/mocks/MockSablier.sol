@@ -80,6 +80,7 @@ contract MockSablier is ISablierV2LockupLinear {
     }
 
     function transferFrom(address from, address to, uint256 tokenId) external {
+        require(streams[tokenId].transferable, "not transferable");
         require(owners[tokenId] == from, "not owner");
         owners[tokenId] = to;
     }

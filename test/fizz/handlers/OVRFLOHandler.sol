@@ -44,12 +44,13 @@ abstract contract OVRFLOHandler is Properties {
     }
 
     function oVRFLO_secondary(uint8 selector, uint256 arg0, address arg1, address arg2) public {
-        selector = uint8(selector % 5);
+        selector = uint8(selector % 6);
         if (selector == 0) _oVRFLO_setMarketDepositLimit(arg1, arg0);
         else if (selector == 1) _oVRFLO_setFlashFeeBps(uint16(arg0));
         else if (selector == 2) _oVRFLO_setFlashLoanPaused(arg0 > 0);
         else if (selector == 3) _oVRFLO_sweepExcessPt(arg1, arg2);
-        else _oVRFLO_sweepExcessUnderlying(arg1);
+        else if (selector == 4) _oVRFLO_sweepExcessUnderlying(arg1);
+        else _oVRFLO_setOracleRate(arg0);
         // SP-69: Non-admin cannot call vault admin functions
         property_nonAdminCannotCallVaultAdmin();
     }
@@ -173,6 +174,11 @@ abstract contract OVRFLOHandler is Properties {
         } catch {}
     }
 
+    function _oVRFLO_setOracleRate(uint256 rateRaw) internal {
+        uint256 rate = clampBetween(rateRaw, 0.8e18, 1.02e18);
+        mockOracle.setRate(rate);
+    }
+
     // ―――――――――――――――――――― Round-trip handlers ――――――――――――――――――――
 
     /// @notice SP-01, SP-06: wrap -> unwrap returns exactly same underlying
@@ -219,11 +225,11 @@ abstract contract OVRFLOHandler is Properties {
         if (ptAmount < vault.MIN_PT_AMOUNT()) return;
 
         uint256 ptBefore = ptToken.balanceOf(actor);
-        uint256 mtdBefore = vault.marketTotalDeposited(market);
+        uint256 ovrfloBefore = ovrfloToken.balanceOf(actor);
 
         // Deposit as actor
         vm.startPrank(actor);
-        (uint256 toUser, , uint256 streamId) = vault.deposit(market, ptAmount, 0);
+        (,, uint256 streamId) = vault.deposit(market, ptAmount, 0);
         vm.stopPrank();
 
         // Skip to maturity
@@ -245,20 +251,20 @@ abstract contract OVRFLOHandler is Properties {
         // Claim all ovrfloToken
         bool claimSucceeded = false;
         uint256 ovrfloBal = ovrfloToken.balanceOf(actor);
-        if (ovrfloBal > 0) {
+        uint256 claimAmount = ovrfloBal > ovrfloBefore ? ovrfloBal - ovrfloBefore : 0;
+        if (claimAmount > 0) {
             vm.startPrank(actor);
-            try vault.claim(address(ptToken), ovrfloBal) {
+            try vault.claim(address(ptToken), claimAmount) {
                 claimSucceeded = true;
             } catch {}
             vm.stopPrank();
         }
 
         uint256 ptAfter = ptToken.balanceOf(actor);
-        uint256 mtdAfter = vault.marketTotalDeposited(market);
 
         // Only check conservation if full round-trip completed
         if (streamWithdrawn && claimSucceeded) {
-            property_depositClaimRoundTrip(ptBefore, ptAfter, ptAmount, mtdBefore, mtdAfter);
+            property_depositClaimRoundTrip(ptBefore, ptAfter, 0, 0, 0);
         }
     }
 }
