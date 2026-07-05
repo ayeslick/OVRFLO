@@ -16,6 +16,19 @@ contract ShortTransferERC20 is TestERC20 {
     }
 }
 
+/// @dev Harness to cover the _toUint128 overflow guard, which is unreachable from
+///      the external ABI (every call site is pre-bounded). Also documents the
+///      `loan not in pool` branch as defensive — poolContributions are only written
+///      inside createBorrowPool, which always sets poolLoanId, so a contributor
+///      with no loan cannot exist.
+contract BookInternalHarness is OVRFLOBook {
+    constructor(address factory, address core, address sablier) OVRFLOBook(factory, core, sablier) {}
+
+    function exposed_toUint128(uint256 amount) external pure returns (uint128) {
+        return _toUint128(amount);
+    }
+}
+
 contract OVRFLOBookTest is Test {
     address internal constant TREASURY = address(0xBEEF);
     address internal constant NEW_TREASURY = address(0xCAFE);
@@ -1668,5 +1681,16 @@ contract OVRFLOBookTest is Test {
         // closeLoan still works and returns the stream to the borrower
         book.closeLoan(loanId);
         assertEq(sablier.ownerOf(212), SELLER);
+    }
+
+    /// @dev Covers the _toUint128 overflow guard via harness. This branch is
+    ///      unreachable from the external ABI — every call site is pre-bounded
+    ///      (grossPrice <= offer.capacity, actualBorrow <= targetBorrow, etc.).
+    ///      The `loan not in pool` branch is also defensive: poolContributions
+    ///      are only written inside createBorrowPool, which always sets poolLoanId.
+    function test_ToUint128_RevertsOnOverflow() public {
+        BookInternalHarness harness = new BookInternalHarness(address(factory), address(core), address(sablier));
+        vm.expectRevert("OVRFLOBook: uint128 overflow");
+        harness.exposed_toUint128(uint256(type(uint128).max) + 1);
     }
 }

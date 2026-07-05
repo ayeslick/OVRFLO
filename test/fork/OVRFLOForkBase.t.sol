@@ -15,7 +15,9 @@ import {OVRFLOTestFixtures} from "../../script/lib/OVRFLOTestFixtures.sol";
 ///         `_prepareOracle(factory, market)`) continue to work unchanged.
 abstract contract OVRFLOForkBase is OVRFLOTestFixtures, Test {
     function setUp() public virtual {
-        vm.createSelectFork(vm.envString("MAINNET_RPC_URL"), MAINNET_FORK_BLOCK);
+        string memory rpc = vm.envOr("MAINNET_RPC_URL", string(""));
+        vm.skip(bytes(rpc).length == 0);
+        vm.createSelectFork(rpc, MAINNET_FORK_BLOCK);
     }
 
     function _deployConfiguredSystem() internal returns (OVRFLOFactory factory, OVRFLO ovrflo, OVRFLOToken token) {
