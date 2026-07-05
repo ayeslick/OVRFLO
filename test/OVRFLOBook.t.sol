@@ -1588,4 +1588,35 @@ contract OVRFLOBookTest is Test {
             ovrfloToken.balanceOf(address(book)), book.poolProceeds(poolId), "book balance >= poolProceeds after claim"
         );
     }
+
+    function test_PoolClaimLoan_RevertsWhenNothingClaimable() public {
+        (uint256 poolId,) = _originateLoanViaBorrowPool(210, 100 ether);
+        // withdrawable defaults to 0 -> streamClaimable = 0 -> drawAmount = 0
+        vm.prank(BUYER);
+        vm.expectRevert("OVRFLOBook: nothing claimable");
+        book.poolClaimLoan(poolId, 50 ether);
+    }
+
+    function test_ClaimPoolShare_RevertsWhenClaimZero() public {
+        (uint256 poolId,) = _originateLoanViaBorrowPool(211, 100 ether);
+        // BUYER is a contributor with remaining entitlement
+        vm.prank(BUYER);
+        vm.expectRevert("OVRFLOBook: claim zero");
+        book.claimPoolShare(poolId, 0);
+    }
+
+    function test_RepayLoan_RevertsWhenNothingOutstanding() public {
+        (uint256 poolId, uint256 loanId) = _originateLoanViaBorrowPool(212, 100 ether);
+        // Drain the full obligation via poolClaimLoan
+        sablier.setWithdrawable(212, 200 ether);
+        vm.prank(BUYER);
+        book.poolClaimLoan(poolId, 200 ether);
+        // outstanding is now 0 — repayLoan should revert
+        vm.prank(SELLER);
+        vm.expectRevert("OVRFLOBook: nothing outstanding");
+        book.repayLoan(loanId, 1);
+        // closeLoan still works and returns the stream to the borrower
+        book.closeLoan(loanId);
+        assertEq(sablier.ownerOf(212), SELLER);
+    }
 }
