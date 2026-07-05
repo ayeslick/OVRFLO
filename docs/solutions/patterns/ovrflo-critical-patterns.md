@@ -7,6 +7,8 @@ audience: [contributors, ai-agents]
 
 <!--
   Refresh log:
+  - 2026-07-05: Added fuzz enforcement references to patterns #5, #7, #11,
+    #13 after the fizz gap closure campaign (GL-57, GL-61, GL-62, SP-62, SP-77).
   - 2026-07-05: Fixed pattern #7 code examples — `saleOffers` → `offerState`
     after the unified offer merge renamed the view function.
   - 2026-07-01: Appended pattern #13 (sweepExcessPt must validate ptToken is
@@ -398,6 +400,8 @@ rg -A2 "function prepareOracle" src/OVRFLOFactory.sol | rg "MAX_TWAP"
 # expected: 1 match
 ```
 
+**Fuzz enforcement:** The `_oVRFLO_prepareOracle` handler in `test/fizz/` exercises both valid and invalid TWAP durations against `prepareOracle`, hitting both bound checks in coverage.
+
 ---
 
 ## 6. Standalone OVRFLOBook deployment must verify Sablier matches the vault's canonical immutable (ALWAYS REQUIRED)
@@ -492,6 +496,8 @@ rg -l "sellIntoOffer|buyListing|createBorrowPool|poolClaimLoan|claimPoolShare|cl
 ```
 
 **Documented in:** [`docs/solutions/best-practices/verify-token-balance-movement-not-just-ownership.md`](../best-practices/verify-token-balance-movement-not-just-ownership.md)
+
+**Fuzz enforcement:** `property_no_free_profit` (GL-57) in `test/fizz/Properties.sol` extends this discipline to the stateful fuzz suite by checking that total actor value (underlying + PT + ovrfloToken across all actors) never exceeds the total start value, catching misrouted payments across the full actor set.
 
 ---
 
@@ -790,6 +796,8 @@ rg "duplicate or unsorted ids" src/OVRFLOBook.sol
 
 **Documented in:** [`docs/solutions/design-patterns/solidity-batch-function-safety-patterns.md`](../design-patterns/solidity-batch-function-safety-patterns.md)
 
+**Fuzz enforcement:** The multi-offer `createBorrowPool` handler in `test/fizz/` generates 1-3 offer arrays with strictly-increasing IDs by construction, and `property_offerIdsStrictlyIncreasing` asserts the ordering invariant after each pool creation.
+
 ---
 
 ## 13. `sweepExcessPt` must validate that the passed address is a registered PT (ALWAYS REQUIRED)
@@ -847,6 +855,8 @@ rg "unknown PT" src/OVRFLO.sol
 ```
 
 **Documented in:** Fuzz campaign 2026-07-01 (GL-02 violation), `fizz_data/report.md`
+
+**Fuzz enforcement:** `property_sweepExcessPt_reverts_non_pt` (SP-77) in `test/fizz/Properties.sol` calls `sweepExcessPt` with the underlying token address and asserts it reverts, continuously validating the guard in the stateful fuzz campaign.
 
 ---
 
