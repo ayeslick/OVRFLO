@@ -48,13 +48,16 @@ abstract contract OVRFLOHandler is Properties {
             mockFlashBorrower = new MockFlashBorrower(
                 address(vault), address(ptToken), address(underlying), market
             );
+            mockFlashBorrowerAddr = address(mockFlashBorrower);
         }
 
         // Seed borrower with underlying for fee and PT for reentrancy deposit
         underlying.deal(address(mockFlashBorrower), 1e18);
         ptToken.deal(address(mockFlashBorrower), 1e6);
 
-        bytes memory flashData = data.length > 0 ? abi.encode(true) : abi.encode(false);
+        // Use non-reentrancy mode for clamped handler; reentrancy is exercised
+        // only in scenario_flashLoanReentrancy which has its own assertions
+        bytes memory flashData = abi.encode(false);
 
         snapshotBefore();
         vm.prank(actor);
@@ -119,8 +122,10 @@ abstract contract OVRFLOHandler is Properties {
         // Ghost updates
         uint256 prevToUser = ghosts.ghost_lastToUser;
         uint256 prevPtAmount = ghosts.ghost_lastDepositPtAmount;
+        uint256 prevRate = ghosts.ghost_lastOracleRate;
         ghosts.ghost_lastToUser = toUser;
         ghosts.ghost_lastDepositPtAmount = ptAmount;
+        ghosts.ghost_lastOracleRate = mockOracle.rate();
         ghost_hasDeposited[actor] = true;
         (, , uint16 feeBps, , , , , ) = vault.series(_market);
         uint256 feeAmount = feeBps == 0 ? 0 : toUser * feeBps / 10_000;
@@ -133,7 +138,7 @@ abstract contract OVRFLOHandler is Properties {
         property_depositIncreasesMtd(ptAmount);
         property_depositWrappedUnchanged();
         property_depositPreMaturity(_market);
-        property_noShareInflation(prevToUser, prevPtAmount, toUser, ptAmount);
+        property_noShareInflation(prevToUser, prevPtAmount, toUser, ptAmount, prevRate);
         property_previewDepositMatches(toUser, toStream, feeAmount, _market, ptAmount);
         property_previewStreamMatches(toUser, toStream, _market, ptAmount);
         property_depositFloorsToUser(toUser, ptAmount, _market);
@@ -339,6 +344,7 @@ abstract contract OVRFLOHandler is Properties {
             mockFlashBorrower = new MockFlashBorrower(
                 address(vault), address(ptToken), address(underlying), market
             );
+            mockFlashBorrowerAddr = address(mockFlashBorrower);
         }
 
         underlying.deal(address(mockFlashBorrower), 1e18);

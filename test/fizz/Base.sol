@@ -68,6 +68,8 @@ abstract contract Base is StringUtils, Clamp, Deployer, Math {
         uint256 ghost_poolEntitlementSum;
         // Stream tracking (for snapshots)
         uint256 ghost_lastStreamId;
+        // Oracle rate tracking (SP-63 rate-stability gate)
+        uint256 ghost_lastOracleRate;
     }
 
     Ghosts internal ghosts;
@@ -77,6 +79,7 @@ abstract contract Base is StringUtils, Clamp, Deployer, Math {
     mapping(address => bool) internal ghost_hasWrapped;
     mapping(address => uint256) internal ghost_actorStartValue;
     mapping(address => uint256) internal ghost_totalStreamWithdrawals;
+    address public mockFlashBorrowerAddr;
 
     // Monotonicity ghost mappings (section 6 of plan)
     mapping(uint256 => uint128) internal ghost_loanDrawnSnapshot;

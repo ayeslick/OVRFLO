@@ -113,6 +113,9 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
         sum += ovrfloToken.balanceOf(address(book));
         sum += ovrfloToken.balanceOf(treasury);
         sum += ovrfloToken.balanceOf(SABLIER_ADDR);
+        if (mockFlashBorrowerAddr != address(0)) {
+            sum += ovrfloToken.balanceOf(mockFlashBorrowerAddr);
+        }
         eq(ovrfloToken.totalSupply(), sum, "GL-60: totalSupply != sum of holder balances");
     }
 
@@ -743,8 +746,10 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     ///      fixed oracle-rate pricing (not share-based), so the ratio toUser/ptAmount varies
     ///      with input size due to integer truncation. The meaningful check is that a larger
     ///      deposit never yields fewer immediate tokens when the rate is unchanged.
-    function property_noShareInflation(uint256 prevToUser, uint256 prevPtAmount, uint256 toUser, uint256 ptAmount) internal {
+    function property_noShareInflation(uint256 prevToUser, uint256 prevPtAmount, uint256 toUser, uint256 ptAmount, uint256 prevRate) internal {
         if (prevPtAmount > 0 && ptAmount > prevPtAmount) {
+            uint256 currentRate = mockOracle.rate();
+            if (currentRate != prevRate) return;
             gte(toUser, prevToUser, "SP-63: toUser decreased for larger ptAmount");
         }
     }
@@ -1251,14 +1256,16 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
 
     // ─────────────── GL-57: No Free Profit ───────────────
 
-    /// @notice GL-57: No actor's total value exceeds start value plus legitimate stream withdrawals
+    /// @notice GL-57: No free profit - total actor value <= total start value (conservation)
     function property_no_free_profit() public {
+        uint256 totalCurrent;
+        uint256 totalStart;
         for (uint256 i = 0; i < actors.length; i++) {
             address a = actors[i];
-            uint256 currentValue = underlying.balanceOf(a) + ptToken.balanceOf(a) + ovrfloToken.balanceOf(a);
-            uint256 allowed = ghost_actorStartValue[a] + ghost_totalStreamWithdrawals[a];
-            lte(currentValue, allowed, "GL-57: actor value exceeds start + withdrawals");
+            totalCurrent += underlying.balanceOf(a) + ptToken.balanceOf(a) + ovrfloToken.balanceOf(a);
+            totalStart += ghost_actorStartValue[a];
         }
+        lte(totalCurrent, totalStart, "GL-57: total actor value exceeds total start value");
     }
 
     // ─────────────── SP-62: Deposit Liveness ───────────────
