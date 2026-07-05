@@ -226,6 +226,27 @@ contract OVRFLOProtocolTest is VaultMockHelpers {
         ovrflo.sweepExcessPt(address(ptOne), otherUser);
     }
 
+    function test_SweepExcessPt_RevertsForUnknownPt() public {
+        // Fund vault with underlying (simulates wrap reserve balance)
+        underlying.mint(address(ovrflo), 50 ether);
+        uint256 balBefore = underlying.balanceOf(address(ovrflo));
+
+        vm.prank(ADMIN);
+        vm.expectRevert("OVRFLO: unknown PT");
+        ovrflo.sweepExcessPt(address(underlying), TREASURY);
+
+        // Balance unchanged — the drain this guard prevents
+        assertEq(underlying.balanceOf(address(ovrflo)), balBefore);
+
+        // Unapproved PT-like token also reverts
+        MockERC20Metadata fakePt = new MockERC20Metadata("Fake PT", "FPT", 18);
+        fakePt.mint(address(ovrflo), 5 ether);
+
+        vm.prank(ADMIN);
+        vm.expectRevert("OVRFLO: unknown PT");
+        ovrflo.sweepExcessPt(address(fakePt), TREASURY);
+    }
+
     function test_Deposit_MintsTokensCreatesStreamChargesFeeAndEmitsEvents() public {
         uint256 expiry = block.timestamp + 30 days;
         _approveSeries(MARKET_ONE, ptOne, expiry, FEE_BPS);

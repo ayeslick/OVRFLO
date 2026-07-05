@@ -8,6 +8,14 @@ import {OVRFLOBook} from "../src/OVRFLOBook.sol";
 import {TestERC20} from "./mocks/TestERC20.sol";
 import {MockBookFactory, MockBookCore, MockBookSablier} from "./mocks/BookMocks.sol";
 
+contract ShortTransferERC20 is TestERC20 {
+    constructor() TestERC20("Short Transfer", "SHORT") {}
+
+    function transferFrom(address from, address to, uint256 amount) public override returns (bool) {
+        return super.transferFrom(from, to, amount - 1);
+    }
+}
+
 contract OVRFLOBookTest is Test {
     address internal constant TREASURY = address(0xBEEF);
     address internal constant NEW_TREASURY = address(0xCAFE);
@@ -788,6 +796,28 @@ contract OVRFLOBookTest is Test {
     function test_PostOffer_RevertForZeroCapacity() public {
         vm.expectRevert("OVRFLOBook: capacity zero");
         book.postOffer(MARKET, 1000, 0);
+    }
+
+    function test_PostOffer_RevertsOnTransferMismatch() public {
+        ShortTransferERC20 shortToken = new ShortTransferERC20();
+        TestERC20 shortOvrfloToken = new TestERC20("Short ovrfloToken", "ovrfloSHORT");
+
+        MockBookFactory shortFactory = new MockBookFactory();
+        MockBookCore shortCore = new MockBookCore();
+        MockBookSablier shortSablier = new MockBookSablier();
+
+        shortFactory.setInfo(address(shortCore), TREASURY, address(shortToken), address(shortOvrfloToken));
+        shortFactory.setMarketApproved(address(shortCore), MARKET, true);
+        shortCore.setSeries(MARKET, true, expiry, address(shortOvrfloToken), address(shortToken));
+
+        OVRFLOBook shortBook = new OVRFLOBook(address(shortFactory), address(shortCore), address(shortSablier));
+
+        shortToken.mint(BUYER, 100 ether);
+        vm.startPrank(BUYER);
+        shortToken.approve(address(shortBook), 100 ether);
+        vm.expectRevert("OVRFLOBook: transfer mismatch");
+        shortBook.postOffer(MARKET, 1000, 100 ether);
+        vm.stopPrank();
     }
 
     function test_CloseLoan_RevertForUnknownLoan() public {

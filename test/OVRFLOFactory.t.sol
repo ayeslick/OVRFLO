@@ -341,6 +341,12 @@ contract OVRFLOFactoryTest is Test {
         assertEq(market.lastCardinality(), 9);
     }
 
+    function test_PrepareOracle_RevertsWhenTwapTooLong() public {
+        vm.prank(OWNER);
+        vm.expectRevert("OVRFLOFactory: twap too long");
+        factory.prepareOracle(address(0xBEEF), 30 minutes + 1);
+    }
+
     function test_PrepareOracle_DoesNothingWhenCardinalityAlreadySufficient() public {
         uint256 expiry = block.timestamp + 30 days;
         MockPrincipalToken pt = new MockPrincipalToken(address(0xAAAA), 18, expiry);
