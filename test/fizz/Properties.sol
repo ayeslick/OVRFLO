@@ -68,7 +68,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
         uint256 nextOffer = book.nextOfferId();
         uint256 sum;
         for (uint256 i = 1; i < nextOffer; i++) {
-            (, , , uint128 capacity, ) = book.offers(i);
+            (,,, uint128 capacity,) = book.offers(i);
             sum += capacity;
         }
         lte(sum, underlying.balanceOf(address(book)), "GL-05: sum offer capacity > book underlying balance");
@@ -78,7 +78,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     function property_drawn_repaid_le_obligation() public {
         uint256 nextLoan = book.nextLoanId();
         for (uint256 i = 1; i < nextLoan; i++) {
-            (, , , uint128 obligation, uint128 drawn, uint128 repaid, ) = book.loans(i);
+            (,,, uint128 obligation, uint128 drawn, uint128 repaid,) = book.loans(i);
             lte(uint256(drawn) + uint256(repaid), uint256(obligation), "GL-08: drawn + repaid > obligation");
         }
     }
@@ -88,7 +88,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
         uint256 nextPool = book.nextPoolId();
         for (uint256 i = 1; i < nextPool; i++) {
             uint128 proceeds = book.poolProceeds(i);
-            (, , , , , uint128 totalObligation) = book.pools(i);
+            (,,,,, uint128 totalObligation) = book.pools(i);
             lte(proceeds, totalObligation, "GL-09: poolProceeds > totalObligation");
         }
     }
@@ -97,10 +97,10 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     function property_loan_obligation_eq_pool() public {
         uint256 nextLoan = book.nextLoanId();
         for (uint256 i = 1; i < nextLoan; i++) {
-            (, , , uint128 obligation, , , ) = book.loans(i);
+            (,,, uint128 obligation,,,) = book.loans(i);
             uint256 poolId = book.loanPoolId(i);
             if (poolId != 0) {
-                (, , , , , uint128 totalObligation) = book.pools(poolId);
+                (,,,,, uint128 totalObligation) = book.pools(poolId);
                 eq(obligation, totalObligation, "GL-10: loan obligation != pool totalObligation");
             }
         }
@@ -151,7 +151,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
         uint256 sumOutstanding;
         uint256 sumRemaining;
         for (uint256 i = 1; i < nextLoan; i++) {
-            (, , uint256 streamId, uint128 obligation, uint128 drawn, uint128 repaid, ) = book.loans(i);
+            (,, uint256 streamId, uint128 obligation, uint128 drawn, uint128 repaid,) = book.loans(i);
             uint128 outstanding = obligation - drawn - repaid;
             sumOutstanding += outstanding;
             try ISablierV2LockupLinear(SABLIER_ADDR).getDepositedAmount(streamId) returns (uint128 deposited) {
@@ -180,7 +180,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     function property_offer_active_no_revival() public {
         uint256 nextOffer = book.nextOfferId();
         for (uint256 i = 1; i < nextOffer; i++) {
-            (, , , , bool active) = book.offers(i);
+            (,,,, bool active) = book.offers(i);
             if (ghost_offerSeen[i]) {
                 t(!(ghost_offerActiveSnapshot[i] == false && active), "GL-11: offer active false->true");
             }
@@ -193,7 +193,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     function property_listing_active_no_revival() public {
         uint256 nextListing = book.nextSaleListingId();
         for (uint256 i = 1; i < nextListing; i++) {
-            (, , , , , bool active) = book.saleListings(i);
+            (,,,,, bool active) = book.saleListings(i);
             if (ghost_listingSeen[i]) {
                 t(!(ghost_listingActiveSnapshot[i] == false && active), "GL-12: listing active false->true");
             }
@@ -206,7 +206,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     function property_loan_closed_no_revival() public {
         uint256 nextLoan = book.nextLoanId();
         for (uint256 i = 1; i < nextLoan; i++) {
-            (, , , , , , bool closed) = book.loans(i);
+            (,,,,,, bool closed) = book.loans(i);
             if (ghost_loanSeen[i]) {
                 t(!(ghost_loanClosedSnapshot[i] && !closed), "GL-13: loan closed true->false");
             }
@@ -215,12 +215,14 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
         }
     }
 
-    /// @notice GL-14: pool.active always true for existing pools
-    function property_pool_active_always() public {
+    /// @notice GL-14: pool.active mirrors loan.closed (active iff loan open)
+    function property_pool_active_mirrors_loan_closed() public {
         uint256 nextPool = book.nextPoolId();
         for (uint256 i = 1; i < nextPool; i++) {
-            (, , bool active, , , ) = book.pools(i);
-            t(active, "GL-14: pool not active");
+            (,, bool active,,,) = book.pools(i);
+            uint256 loanId = book.poolLoanId(i);
+            (,,,,,, bool closed) = book.loans(loanId);
+            t(active == !closed, "GL-14: pool.active != !loan.closed");
         }
     }
 
@@ -269,7 +271,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     function property_drawn_monotonic() public {
         uint256 nextLoan = book.nextLoanId();
         for (uint256 i = 1; i < nextLoan; i++) {
-            (, , , , uint128 drawn, , ) = book.loans(i);
+            (,,,, uint128 drawn,,) = book.loans(i);
             gte(drawn, ghost_loanDrawnSnapshot[i], "GL-16: drawn decreased");
             ghost_loanDrawnSnapshot[i] = drawn;
         }
@@ -279,7 +281,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     function property_repaid_monotonic() public {
         uint256 nextLoan = book.nextLoanId();
         for (uint256 i = 1; i < nextLoan; i++) {
-            (, , , , , uint128 repaid, ) = book.loans(i);
+            (,,,,, uint128 repaid,) = book.loans(i);
             gte(repaid, ghost_loanRepaidSnapshot[i], "GL-17: repaid decreased");
             ghost_loanRepaidSnapshot[i] = repaid;
         }
@@ -305,7 +307,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     function property_pool_exists_iff_pool_loan_id() public {
         uint256 nextPool = book.nextPoolId();
         for (uint256 i = 1; i < nextPool; i++) {
-            (address creator, , , , , ) = book.pools(i);
+            (address creator,,,,,) = book.pools(i);
             uint256 loanId = book.poolLoanId(i);
             t((creator != address(0)) == (loanId != 0), "GL-22: pool exists iff poolLoanId != 0");
         }
@@ -315,7 +317,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     function property_loan_exists_iff_loan_pool_id() public {
         uint256 nextLoan = book.nextLoanId();
         for (uint256 i = 1; i < nextLoan; i++) {
-            (address borrower, , , , , , ) = book.loans(i);
+            (address borrower,,,,,,) = book.loans(i);
             uint256 poolId = book.loanPoolId(i);
             t((borrower != address(0)) == (poolId != 0), "GL-23: loan exists iff loanPoolId != 0");
         }
@@ -343,7 +345,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     function property_offer_slot_iff_id() public {
         uint256 nextOffer = book.nextOfferId();
         for (uint256 i = 1; i < nextOffer; i++) {
-            (address maker, , , , ) = book.offers(i);
+            (address maker,,,,) = book.offers(i);
             t(maker != address(0), "GL-25: offer slot not populated for id < nextOfferId");
         }
     }
@@ -352,7 +354,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     function property_loan_slot_iff_id() public {
         uint256 nextLoan = book.nextLoanId();
         for (uint256 i = 1; i < nextLoan; i++) {
-            (address borrower, , , , , , ) = book.loans(i);
+            (address borrower,,,,,,) = book.loans(i);
             t(borrower != address(0), "GL-26: loan slot not populated");
         }
     }
@@ -361,7 +363,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     function property_pool_slot_iff_id() public {
         uint256 nextPool = book.nextPoolId();
         for (uint256 i = 1; i < nextPool; i++) {
-            (address creator, , , , , ) = book.pools(i);
+            (address creator,,,,,) = book.pools(i);
             t(creator != address(0), "GL-27: pool slot not populated");
         }
     }
@@ -370,7 +372,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     function property_listing_slot_iff_id() public {
         uint256 nextListing = book.nextSaleListingId();
         for (uint256 i = 1; i < nextListing; i++) {
-            (address maker, , , , , ) = book.saleListings(i);
+            (address maker,,,,,) = book.saleListings(i);
             t(maker != address(0), "GL-28: listing slot not populated");
         }
     }
@@ -395,7 +397,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     function property_closed_implies_satisfied() public {
         uint256 nextLoan = book.nextLoanId();
         for (uint256 i = 1; i < nextLoan; i++) {
-            (, , , uint128 obligation, uint128 drawn, uint128 repaid, bool closed) = book.loans(i);
+            (,,, uint128 obligation, uint128 drawn, uint128 repaid, bool closed) = book.loans(i);
             if (closed) {
                 eq(uint256(drawn) + uint256(repaid), uint256(obligation), "GL-31: closed loan not satisfied");
             }
@@ -406,7 +408,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     function property_offer_active_iff_capacity() public {
         uint256 nextOffer = book.nextOfferId();
         for (uint256 i = 1; i < nextOffer; i++) {
-            (, , , uint128 capacity, bool active) = book.offers(i);
+            (,,, uint128 capacity, bool active) = book.offers(i);
             t(active == (capacity > 0), "GL-32: offer active != (capacity > 0)");
         }
     }
@@ -417,7 +419,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     function property_loan_obligation_immutable() public {
         uint256 nextLoan = book.nextLoanId();
         for (uint256 i = 1; i < nextLoan; i++) {
-            (, , , uint128 obligation, , , ) = book.loans(i);
+            (,,, uint128 obligation,,,) = book.loans(i);
             if (ghost_loanObligationInit[i] == 0) {
                 ghost_loanObligationInit[i] = obligation;
             } else {
@@ -430,7 +432,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     function property_loan_stream_id_immutable() public {
         uint256 nextLoan = book.nextLoanId();
         for (uint256 i = 1; i < nextLoan; i++) {
-            (, , uint256 streamId, , , , ) = book.loans(i);
+            (,, uint256 streamId,,,,) = book.loans(i);
             if (ghost_loanStreamIdInit[i] == 0) {
                 ghost_loanStreamIdInit[i] = streamId;
             } else {
@@ -443,7 +445,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     function property_loan_parties_immutable() public {
         uint256 nextLoan = book.nextLoanId();
         for (uint256 i = 1; i < nextLoan; i++) {
-            (address borrower, address lender, , , , , ) = book.loans(i);
+            (address borrower, address lender,,,,,) = book.loans(i);
             if (ghost_loanBorrowerInit[i] == address(0)) {
                 ghost_loanBorrowerInit[i] = borrower;
                 ghost_loanLenderInit[i] = lender;
@@ -458,7 +460,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     function property_offer_maker_apr_immutable() public {
         uint256 nextOffer = book.nextOfferId();
         for (uint256 i = 1; i < nextOffer; i++) {
-            (address maker, , uint16 aprBps, , ) = book.offers(i);
+            (address maker,, uint16 aprBps,,) = book.offers(i);
             if (ghost_offerMakerInit[i] == address(0)) {
                 ghost_offerMakerInit[i] = maker;
                 ghost_offerAprBpsInit[i] = aprBps;
@@ -473,7 +475,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     function property_listing_fee_immutable() public {
         uint256 nextListing = book.nextSaleListingId();
         for (uint256 i = 1; i < nextListing; i++) {
-            (, , , , uint16 feeBps, ) = book.saleListings(i);
+            (,,,, uint16 feeBps,) = book.saleListings(i);
             if (!ghost_listingFeeRecorded[i]) {
                 ghost_listingFeeBpsInit[i] = feeBps;
                 ghost_listingFeeRecorded[i] = true;
@@ -487,7 +489,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     function property_pool_total_contributed_immutable() public {
         uint256 nextPool = book.nextPoolId();
         for (uint256 i = 1; i < nextPool; i++) {
-            (, , , , uint128 totalContributed, ) = book.pools(i);
+            (,,,, uint128 totalContributed,) = book.pools(i);
             if (ghost_poolTotalContributedInit[i] == 0) {
                 ghost_poolTotalContributedInit[i] = totalContributed;
             } else {
@@ -500,7 +502,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     function property_pool_total_obligation_immutable() public {
         uint256 nextPool = book.nextPoolId();
         for (uint256 i = 1; i < nextPool; i++) {
-            (, , , , , uint128 totalObligation) = book.pools(i);
+            (,,,,, uint128 totalObligation) = book.pools(i);
             if (ghost_poolTotalObligationInit[i] == 0) {
                 ghost_poolTotalObligationInit[i] = totalObligation;
             } else {
@@ -519,11 +521,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
                     if (ghost_poolContributionsInit[p][actors[a]] == 0) {
                         ghost_poolContributionsInit[p][actors[a]] = contribution;
                     } else {
-                        eq(
-                            contribution,
-                            ghost_poolContributionsInit[p][actors[a]],
-                            "GL-40: poolContributions changed"
-                        );
+                        eq(contribution, ghost_poolContributionsInit[p][actors[a]], "GL-40: poolContributions changed");
                     }
                 }
             }
@@ -532,7 +530,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
 
     /// @notice GL-41: series ptToken/expiryCached/feeBps immutable
     function property_series_immutable() public {
-        (, , uint16 feeBps, uint256 expiryCached, address ptToken_, , , ) = vault.series(market);
+        (,, uint16 feeBps, uint256 expiryCached, address ptToken_,,,) = vault.series(market);
         if (ghost_seriesPtTokenInit[market] == address(0)) {
             ghost_seriesPtTokenInit[market] = ptToken_;
             ghost_seriesExpiryInit[market] = expiryCached;
@@ -692,13 +690,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     ///      is already verified by SP-26 (deposit increases MTD by ptAmount) and SP-29
     ///      (claim decreases MTD by amount), which run in isolation in their respective
     ///      handlers. The combined solvency invariant (GL-02) covers the global picture.
-    function property_depositClaimRoundTrip(
-        uint256 ptBefore,
-        uint256 ptAfter,
-        uint256,
-        uint256,
-        uint256
-    ) internal {
+    function property_depositClaimRoundTrip(uint256 ptBefore, uint256 ptAfter, uint256, uint256, uint256) internal {
         lte(ptAfter, ptBefore, "SP-05: actor gained PT from deposit->claim cycle");
     }
 
@@ -727,17 +719,25 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
 
     /// @notice SP-26: marketTotalDeposited increases by exactly ptAmount after deposit
     function property_depositIncreasesMtd(uint256 ptAmount) internal {
-        eq(stateAfter.vaultTotalDeposited, stateBefore.vaultTotalDeposited + ptAmount, "SP-26: MTD did not increase by ptAmount");
+        eq(
+            stateAfter.vaultTotalDeposited,
+            stateBefore.vaultTotalDeposited + ptAmount,
+            "SP-26: MTD did not increase by ptAmount"
+        );
     }
 
     /// @notice SP-27: wrappedUnderlying unchanged after deposit
     function property_depositWrappedUnchanged() internal {
-        eq(stateAfter.vaultWrappedUnderlying, stateBefore.vaultWrappedUnderlying, "SP-27: wrappedUnderlying changed in deposit");
+        eq(
+            stateAfter.vaultWrappedUnderlying,
+            stateBefore.vaultWrappedUnderlying,
+            "SP-27: wrappedUnderlying changed in deposit"
+        );
     }
 
     /// @notice SP-28: deposit only succeeds pre-maturity
     function property_depositPreMaturity(address _market) internal {
-        (, , , uint256 expiry, , , , ) = vault.series(_market);
+        (,,, uint256 expiry,,,,) = vault.series(_market);
         lt(block.timestamp, expiry, "SP-28: deposit succeeded post-maturity");
     }
 
@@ -746,7 +746,13 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     ///      fixed oracle-rate pricing (not share-based), so the ratio toUser/ptAmount varies
     ///      with input size due to integer truncation. The meaningful check is that a larger
     ///      deposit never yields fewer immediate tokens when the rate is unchanged.
-    function property_noShareInflation(uint256 prevToUser, uint256 prevPtAmount, uint256 toUser, uint256 ptAmount, uint256 prevRate) internal {
+    function property_noShareInflation(
+        uint256 prevToUser,
+        uint256 prevPtAmount,
+        uint256 toUser,
+        uint256 ptAmount,
+        uint256 prevRate
+    ) internal {
         if (prevPtAmount > 0 && ptAmount > prevPtAmount) {
             uint256 currentRate = mockOracle.rate();
             if (currentRate != prevRate) return;
@@ -755,8 +761,16 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     }
 
     /// @notice SP-11: previewDeposit matches actual deposit (same block, fixed oracle)
-    function property_previewDepositMatches(uint256 toUser, uint256 toStream, uint256 feeAmount, address _market, uint256 ptAmount) internal {
-        try vault.previewDeposit(_market, ptAmount) returns (uint256 pToUser, uint256 pToStream, uint256 pFee, uint256) {
+    function property_previewDepositMatches(
+        uint256 toUser,
+        uint256 toStream,
+        uint256 feeAmount,
+        address _market,
+        uint256 ptAmount
+    ) internal {
+        try vault.previewDeposit(_market, ptAmount) returns (
+            uint256 pToUser, uint256 pToStream, uint256 pFee, uint256
+        ) {
             eq(toUser, pToUser, "SP-11: previewDeposit toUser mismatch");
             eq(toStream, pToStream, "SP-11: previewDeposit toStream mismatch");
             eq(feeAmount, pFee, "SP-11: previewDeposit fee mismatch");
@@ -764,7 +778,9 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     }
 
     /// @notice SP-12: previewStream matches actual deposit split
-    function property_previewStreamMatches(uint256 toUser, uint256 toStream, address _market, uint256 ptAmount) internal {
+    function property_previewStreamMatches(uint256 toUser, uint256 toStream, address _market, uint256 ptAmount)
+        internal
+    {
         try vault.previewStream(_market, ptAmount) returns (uint256 pToUser, uint256 pToStream, uint256) {
             eq(toUser, pToUser, "SP-12: previewStream toUser mismatch");
             eq(toStream, pToStream, "SP-12: previewStream toStream mismatch");
@@ -782,19 +798,27 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
 
     /// @notice SP-29: marketTotalDeposited decreases by exactly amount after claim
     function property_claimDecreasesMtd(uint256 amount) internal {
-        eq(stateBefore.vaultTotalDeposited - stateAfter.vaultTotalDeposited, amount, "SP-29: MTD did not decrease by amount");
+        eq(
+            stateBefore.vaultTotalDeposited - stateAfter.vaultTotalDeposited,
+            amount,
+            "SP-29: MTD did not decrease by amount"
+        );
     }
 
     /// @notice SP-30: claim only succeeds post-maturity
     function property_claimPostMaturity(address ptToken_) internal {
         address m = vault.ptToMarket(ptToken_);
-        (, , , uint256 expiry, , , , ) = vault.series(m);
+        (,,, uint256 expiry,,,,) = vault.series(m);
         gte(block.timestamp, expiry, "SP-30: claim succeeded pre-maturity");
     }
 
     /// @notice SP-31: wrappedUnderlying unchanged after claim
     function property_claimWrappedUnchanged() internal {
-        eq(stateAfter.vaultWrappedUnderlying, stateBefore.vaultWrappedUnderlying, "SP-31: wrappedUnderlying changed in claim");
+        eq(
+            stateAfter.vaultWrappedUnderlying,
+            stateBefore.vaultWrappedUnderlying,
+            "SP-31: wrappedUnderlying changed in claim"
+        );
     }
 
     /// @notice SP-14: claim is exact 1:1 (ovrfloToken burned == PT received)
@@ -813,12 +837,20 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
 
     /// @notice SP-32: wrappedUnderlying increases by exactly amount after wrap
     function property_wrapIncreasesWrapped(uint256 amount) internal {
-        eq(stateAfter.vaultWrappedUnderlying, stateBefore.vaultWrappedUnderlying + amount, "SP-32: wrappedUnderlying did not increase by amount");
+        eq(
+            stateAfter.vaultWrappedUnderlying,
+            stateBefore.vaultWrappedUnderlying + amount,
+            "SP-32: wrappedUnderlying did not increase by amount"
+        );
     }
 
     /// @notice SP-33: wrappedUnderlying decreases by exactly amount after unwrap
     function property_unwrapDecreasesWrapped(uint256 amount) internal {
-        eq(stateBefore.vaultWrappedUnderlying - stateAfter.vaultWrappedUnderlying, amount, "SP-33: wrappedUnderlying did not decrease by amount");
+        eq(
+            stateBefore.vaultWrappedUnderlying - stateAfter.vaultWrappedUnderlying,
+            amount,
+            "SP-33: wrappedUnderlying did not decrease by amount"
+        );
     }
 
     /// @notice SP-34: marketTotalDeposited unchanged after wrap
@@ -846,7 +878,9 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
         try vault.previewRate(market) returns (uint256 rateE18) {
             // fee = floor(floor(amount * rate / WAD) * flashFeeBps / BASIS_POINTS)
             // So: fee * BASIS_POINTS * WAD <= amount * rate * flashFeeBps
-            lte(fee * BASIS_POINTS * WAD, amount * rateE18 * uint256(flashFeeBps), "SP-18: flash fee not double-floored");
+            lte(
+                fee * BASIS_POINTS * WAD, amount * rateE18 * uint256(flashFeeBps), "SP-18: flash fee not double-floored"
+            );
         } catch {}
     }
 
@@ -857,18 +891,24 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
 
     /// @notice SP-37: flash loan only succeeds pre-maturity
     function property_flashLoanPreMaturity() internal {
-        (, , , uint256 expiry, , , , ) = vault.series(market);
+        (,,, uint256 expiry,,,,) = vault.series(market);
         lt(block.timestamp, expiry, "SP-37: flash loan succeeded post-maturity");
     }
 
     /// @notice SP-38: flashLoan: wrappedUnderlying unchanged
     function property_flashLoanWrappedUnchanged() internal {
-        eq(stateAfter.vaultWrappedUnderlying, stateBefore.vaultWrappedUnderlying, "SP-38: wrappedUnderlying changed in flash loan");
+        eq(
+            stateAfter.vaultWrappedUnderlying,
+            stateBefore.vaultWrappedUnderlying,
+            "SP-38: wrappedUnderlying changed in flash loan"
+        );
     }
 
     /// @notice SP-64: flash loan borrower net value <= before (no free profit from flash)
     function property_flashLoanNoFreeProfit() internal {
-        lte(stateAfter.actorUnderlying, stateBefore.actorUnderlying, "SP-64: actor underlying increased from flash loan");
+        lte(
+            stateAfter.actorUnderlying, stateBefore.actorUnderlying, "SP-64: actor underlying increased from flash loan"
+        );
         eq(stateAfter.actorPt, stateBefore.actorPt, "SP-64: actor PT changed from flash loan");
     }
 
@@ -881,7 +921,11 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
 
     /// @notice SP-40: sweepExcessUnderlying: wrappedUnderlying unchanged
     function property_sweepExcessUnderlyingWrappedUnchanged() internal {
-        eq(stateAfter.vaultWrappedUnderlying, stateBefore.vaultWrappedUnderlying, "SP-40: wrappedUnderlying changed in sweepExcessUnderlying");
+        eq(
+            stateAfter.vaultWrappedUnderlying,
+            stateBefore.vaultWrappedUnderlying,
+            "SP-40: wrappedUnderlying changed in sweepExcessUnderlying"
+        );
     }
 
     /// @notice SP-41: setFlashFeeBps: flashFeeBps equals arg and <= FLASH_FEE_MAX_BPS
@@ -920,7 +964,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     function property_postOfferNewOfferActive() internal {
         uint256 offerId = ghosts.ghost_lastOfferId;
         if (offerId == 0) return;
-        (address maker, , , uint128 capacity, bool active) = book.offers(offerId);
+        (address maker,,, uint128 capacity, bool active) = book.offers(offerId);
         t(active, "SP-44: new offer not active");
         gt(uint256(capacity), 0, "SP-44: new offer capacity is zero");
         t(maker == actor, "SP-44: new offer maker is not the caller");
@@ -930,7 +974,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     function property_cancelOfferInactive() internal {
         uint256 offerId = ghosts.ghost_lastOfferId;
         if (offerId == 0) return;
-        (, , , uint128 capacity, bool active) = book.offers(offerId);
+        (,,, uint128 capacity, bool active) = book.offers(offerId);
         t(!active, "SP-45: cancelled offer still active");
         eq(uint256(capacity), 0, "SP-45: cancelled offer capacity not zero");
     }
@@ -945,14 +989,18 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     function property_sellIntoOfferCapacityDecreases(uint256 grossPrice) internal {
         uint256 offerId = ghosts.ghost_lastOfferId;
         if (offerId == 0) return;
-        (, , , uint128 capacityAfter, bool activeAfter) = book.offers(offerId);
-        eq(uint256(stateBefore.offerCapacity) - uint256(capacityAfter), grossPrice, "SP-46: capacity did not decrease by grossPrice");
+        (,,, uint128 capacityAfter, bool activeAfter) = book.offers(offerId);
+        eq(
+            uint256(stateBefore.offerCapacity) - uint256(capacityAfter),
+            grossPrice,
+            "SP-46: capacity did not decrease by grossPrice"
+        );
         t(activeAfter == (capacityAfter > 0), "SP-46: offer active state inconsistent with capacity");
     }
 
     /// @notice SP-71: Non-maker cannot cancel offer (sanity: caller was the maker)
     function property_nonMakerCannotCancelOffer(uint256 offerId) internal {
-        (address maker, , , , ) = book.offers(offerId);
+        (address maker,,,,) = book.offers(offerId);
         t(maker == actor, "SP-71: non-maker cancelled offer");
     }
 
@@ -969,14 +1017,18 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
 
     /// @notice SP-47: postSaleListing: nextSaleListingId increments by exactly 1
     function property_postListingIdIncrements() internal {
-        eq(stateAfter.nextSaleListingId, stateBefore.nextSaleListingId + 1, "SP-47: nextSaleListingId did not increment by 1");
+        eq(
+            stateAfter.nextSaleListingId,
+            stateBefore.nextSaleListingId + 1,
+            "SP-47: nextSaleListingId did not increment by 1"
+        );
     }
 
     /// @notice SP-48: postSaleListing: listing active, feeBps snapshotted from current book.feeBps
     function property_postListingActiveFeeSnapshotted() internal {
         uint256 listingId = ghosts.ghost_lastListingId;
         if (listingId == 0) return;
-        (, , , , uint16 feeBps, bool active) = book.saleListings(listingId);
+        (,,,, uint16 feeBps, bool active) = book.saleListings(listingId);
         t(active, "SP-48: new listing not active");
         eq(uint256(feeBps), uint256(book.feeBps()), "SP-48: listing feeBps not snapshotted from book.feeBps");
     }
@@ -985,7 +1037,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     function property_cancelSaleListingInactive() internal {
         uint256 listingId = ghosts.ghost_lastListingId;
         if (listingId == 0) return;
-        (, , , , , bool active) = book.saleListings(listingId);
+        (,,,,, bool active) = book.saleListings(listingId);
         t(!active, "SP-49: cancelled listing still active");
     }
 
@@ -998,13 +1050,13 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     function property_buyListingInactive() internal {
         uint256 listingId = ghosts.ghost_lastListingId;
         if (listingId == 0) return;
-        (, , , , , bool active) = book.saleListings(listingId);
+        (,,,,, bool active) = book.saleListings(listingId);
         t(!active, "SP-50: bought listing still active");
     }
 
     /// @notice SP-71: Non-maker cannot cancel listing (sanity: caller was the maker)
     function property_nonMakerCannotCancelListing(uint256 listingId) internal {
-        (address maker, , , , , ) = book.saleListings(listingId);
+        (address maker,,,,,) = book.saleListings(listingId);
         t(maker == actor, "SP-71: non-maker cancelled listing");
     }
 
@@ -1012,20 +1064,30 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
 
     /// @notice SP-09: borrow -> repay: obligation >= actualBorrow (factor >= WAD, obligation ceils)
     function property_obligationGeBorrow() internal {
-        gte(uint256(stateAfter.poolTotalObligation), uint256(stateAfter.poolTotalContributed), "SP-09: obligation < actualBorrow");
+        gte(
+            uint256(stateAfter.poolTotalObligation),
+            uint256(stateAfter.poolTotalContributed),
+            "SP-09: obligation < actualBorrow"
+        );
     }
 
     /// @notice SP-10: obligation <= remaining in partial-borrow path (stream covers debt)
     function property_obligationLeRemaining() internal {
-        lte(uint256(stateAfter.poolTotalObligation), uint256(stateBefore.streamRemaining), "SP-10: obligation > remaining");
+        lte(
+            uint256(stateAfter.poolTotalObligation),
+            uint256(stateBefore.streamRemaining),
+            "SP-10: obligation > remaining"
+        );
     }
 
     /// @notice SP-13: quote matches actual createBorrowPool obligation
     function property_quoteMatchesObligation(uint256 poolId, uint128 actualBorrow) internal {
-        (, uint16 aprBps, , address poolMarket, , ) = book.pools(poolId);
-        (, , uint256 streamId, , , , ) = book.loans(book.poolLoanId(poolId));
-        try book.quote(poolMarket, streamId, aprBps, actualBorrow) returns (uint256 qGrossPrice, uint128 qObligation, uint256 qFee, uint256 qNet, uint128 qResidual) {
-            (, , , , , uint128 totalObligation) = book.pools(poolId);
+        (, uint16 aprBps,, address poolMarket,,) = book.pools(poolId);
+        (,, uint256 streamId,,,,) = book.loans(book.poolLoanId(poolId));
+        try book.quote(poolMarket, streamId, aprBps, actualBorrow) returns (
+            uint256 qGrossPrice, uint128 qObligation, uint256 qFee, uint256 qNet, uint128 qResidual
+        ) {
+            (,,,,, uint128 totalObligation) = book.pools(poolId);
             eq(uint256(qObligation), uint256(totalObligation), "SP-13: quote obligation mismatch");
         } catch {}
     }
@@ -1034,13 +1096,19 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     function property_fullBorrowFastPath() internal {
         uint256 poolId = ghosts.ghost_lastPoolId;
         if (poolId == 0) return;
-        (, uint16 aprBps, , address poolMarket, uint128 totalContributed, uint128 totalObligation) = book.pools(poolId);
-        (, , uint256 streamId, , , , ) = book.loans(book.poolLoanId(poolId));
-        try book.quote(poolMarket, streamId, aprBps, 0) returns (uint256 grossPrice, uint128 qObligation, uint256 qFee, uint256 qNet, uint128 qResidual) {
+        (, uint16 aprBps,, address poolMarket, uint128 totalContributed, uint128 totalObligation) = book.pools(poolId);
+        (,, uint256 streamId,,,,) = book.loans(book.poolLoanId(poolId));
+        try book.quote(poolMarket, streamId, aprBps, 0) returns (
+            uint256 grossPrice, uint128 qObligation, uint256 qFee, uint256 qNet, uint128 qResidual
+        ) {
             if (uint256(totalContributed) == grossPrice) {
                 uint128 deposited = ISablierV2LockupLinear(SABLIER_ADDR).getDepositedAmount(streamId);
                 uint128 withdrawn = ISablierV2LockupLinear(SABLIER_ADDR).getWithdrawnAmount(streamId);
-                eq(uint256(totalObligation), uint256(deposited - withdrawn), "SP-15: full-borrow obligation != remaining");
+                eq(
+                    uint256(totalObligation),
+                    uint256(deposited - withdrawn),
+                    "SP-15: full-borrow obligation != remaining"
+                );
             }
         } catch {}
     }
@@ -1049,7 +1117,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     function property_poolContributionsSum() internal {
         uint256 poolId = ghosts.ghost_lastPoolId;
         if (poolId == 0) return;
-        (, , , , uint128 totalContributed, ) = book.pools(poolId);
+        (,,,, uint128 totalContributed,) = book.pools(poolId);
         uint256 sum;
         for (uint256 i = 0; i < actors.length; i++) {
             sum += book.poolContributions(poolId, actors[i]);
@@ -1067,11 +1135,11 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     function property_createPoolLoanState() internal {
         uint256 poolId = ghosts.ghost_lastPoolId;
         if (poolId == 0) return;
-        (, , bool active, , , ) = book.pools(poolId);
+        (,, bool active,,,) = book.pools(poolId);
         t(active, "SP-52: new pool not active");
         uint256 loanId = ghosts.ghost_lastLoanId;
         if (loanId == 0) return;
-        (, , , , uint128 drawn, uint128 repaid, bool closed) = book.loans(loanId);
+        (,,,, uint128 drawn, uint128 repaid, bool closed) = book.loans(loanId);
         t(!closed, "SP-52: new loan is closed");
         eq(uint256(drawn), 0, "SP-52: new loan drawn != 0");
         eq(uint256(repaid), 0, "SP-52: new loan repaid != 0");
@@ -1081,7 +1149,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     function property_createPoolContributionsSet() internal {
         uint256 poolId = ghosts.ghost_lastPoolId;
         if (poolId == 0) return;
-        (, , , , uint128 totalContributed, ) = book.pools(poolId);
+        (,,,, uint128 totalContributed,) = book.pools(poolId);
         if (totalContributed == 0) return;
         // At least one actor must have a non-zero contribution
         bool foundContributor;
@@ -1098,7 +1166,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     function property_noSelfMatch() internal {
         uint256 poolId = ghosts.ghost_lastPoolId;
         if (poolId == 0) return;
-        (address creator, , , , , ) = book.pools(poolId);
+        (address creator,,,,,) = book.pools(poolId);
         eq(book.poolContributions(poolId, creator), 0, "SP-77: self-match detected");
     }
 
@@ -1111,9 +1179,11 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     function property_borrowAmountLeGrossPrice() internal {
         uint256 poolId = ghosts.ghost_lastPoolId;
         if (poolId == 0) return;
-        (, uint16 aprBps, , address poolMarket, uint128 totalContributed, ) = book.pools(poolId);
-        (, , uint256 streamId, , , , ) = book.loans(book.poolLoanId(poolId));
-        try book.quote(poolMarket, streamId, aprBps, totalContributed) returns (uint256 grossPrice, uint128 qObligation, uint256 qFee, uint256 qNet, uint128 qResidual) {
+        (, uint16 aprBps,, address poolMarket, uint128 totalContributed,) = book.pools(poolId);
+        (,, uint256 streamId,,,,) = book.loans(book.poolLoanId(poolId));
+        try book.quote(poolMarket, streamId, aprBps, totalContributed) returns (
+            uint256 grossPrice, uint128 qObligation, uint256 qFee, uint256 qNet, uint128 qResidual
+        ) {
             lte(uint256(totalContributed), grossPrice, "SP-79: borrowAmount > grossPrice");
         } catch {}
     }
@@ -1129,7 +1199,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
 
     /// @notice SP-21: repayLoan equality check exact (no rounding brick, exact integer wei)
     function property_repayLoanExactCheck(uint256, uint128 amount) internal {
-        (, , , , , , bool closed) = book.loans(ghosts.ghost_lastLoanId);
+        (,,,,,, bool closed) = book.loans(ghosts.ghost_lastLoanId);
         if (closed) {
             uint128 outstandingBefore = stateBefore.loanObligation - stateBefore.loanDrawn - stateBefore.loanRepaid;
             eq(uint256(amount), uint256(outstandingBefore), "SP-21: repay equality not exact");
@@ -1142,8 +1212,16 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
         if (loanId == 0) return;
         uint128 outstanding = stateBefore.loanObligation - stateBefore.loanDrawn - stateBefore.loanRepaid;
         if (outstanding > 0) {
-            eq(uint256(stateAfter.loanDrawn), uint256(stateBefore.loanDrawn) + uint256(outstanding), "SP-54: drawn not increased by outstanding");
-            eq(uint256(stateAfter.poolProceeds), uint256(stateBefore.poolProceeds) + uint256(outstanding), "SP-54: poolProceeds not increased by outstanding");
+            eq(
+                uint256(stateAfter.loanDrawn),
+                uint256(stateBefore.loanDrawn) + uint256(outstanding),
+                "SP-54: drawn not increased by outstanding"
+            );
+            eq(
+                uint256(stateAfter.poolProceeds),
+                uint256(stateBefore.poolProceeds) + uint256(outstanding),
+                "SP-54: poolProceeds not increased by outstanding"
+            );
         }
     }
 
@@ -1153,27 +1231,43 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
         if (loanId == 0) return;
         uint128 outstanding = stateBefore.loanObligation - stateBefore.loanDrawn - stateBefore.loanRepaid;
         if (outstanding == 0) {
-            eq(uint256(stateAfter.loanDrawn), uint256(stateBefore.loanDrawn), "SP-55: drawn changed when outstanding==0");
-            eq(uint256(stateAfter.poolProceeds), uint256(stateBefore.poolProceeds), "SP-55: poolProceeds changed when outstanding==0");
+            eq(
+                uint256(stateAfter.loanDrawn),
+                uint256(stateBefore.loanDrawn),
+                "SP-55: drawn changed when outstanding==0"
+            );
+            eq(
+                uint256(stateAfter.poolProceeds),
+                uint256(stateBefore.poolProceeds),
+                "SP-55: poolProceeds changed when outstanding==0"
+            );
         }
     }
 
     /// @notice SP-56: repayLoan: repaid += amount, poolProceeds += amount
     function property_repayLoanRepaidIncreases(uint256, uint128 amount) internal {
-        eq(uint256(stateAfter.loanRepaid), uint256(stateBefore.loanRepaid) + uint256(amount), "SP-56: repaid not increased by amount");
-        eq(uint256(stateAfter.poolProceeds), uint256(stateBefore.poolProceeds) + uint256(amount), "SP-56: poolProceeds not increased by amount");
+        eq(
+            uint256(stateAfter.loanRepaid),
+            uint256(stateBefore.loanRepaid) + uint256(amount),
+            "SP-56: repaid not increased by amount"
+        );
+        eq(
+            uint256(stateAfter.poolProceeds),
+            uint256(stateBefore.poolProceeds) + uint256(amount),
+            "SP-56: poolProceeds not increased by amount"
+        );
     }
 
     /// @notice SP-57: repayLoan: closed=true iff amount==outstanding; partial stays false
     function property_repayLoanClosedIff(uint256, uint128 amount) internal {
-        (, , , , , , bool closed) = book.loans(ghosts.ghost_lastLoanId);
+        (,,,,,, bool closed) = book.loans(ghosts.ghost_lastLoanId);
         uint128 outstandingBefore = stateBefore.loanObligation - stateBefore.loanDrawn - stateBefore.loanRepaid;
         t(closed == (amount == outstandingBefore), "SP-57: closed != (amount == outstanding)");
     }
 
     /// @notice SP-72: Non-borrower cannot repayLoan (sanity: caller was the borrower)
     function property_nonBorrowerCannotRepay(uint256 loanId) internal {
-        (address borrower, , , , , , ) = book.loans(loanId);
+        (address borrower,,,,,,) = book.loans(loanId);
         t(borrower == actor, "SP-72: non-borrower repaid loan");
     }
 
@@ -1182,18 +1276,30 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     /// @notice SP-58: poolClaimLoan: drawn += drawAmount, poolReceived += drawAmount
     function property_poolClaimLoanDrawnIncreases() internal {
         uint128 drawAmount = stateAfter.loanDrawn - stateBefore.loanDrawn;
-        eq(uint256(stateAfter.poolReceived), uint256(stateBefore.poolReceived) + uint256(drawAmount), "SP-58: poolReceived not increased by drawAmount");
+        eq(
+            uint256(stateAfter.poolReceived),
+            uint256(stateBefore.poolReceived) + uint256(drawAmount),
+            "SP-58: poolReceived not increased by drawAmount"
+        );
     }
 
     /// @notice SP-59: poolClaimLoan: poolProceeds unchanged
     function property_poolClaimLoanProceedsUnchanged() internal {
-        eq(uint256(stateAfter.poolProceeds), uint256(stateBefore.poolProceeds), "SP-59: poolProceeds changed in poolClaimLoan");
+        eq(
+            uint256(stateAfter.poolProceeds),
+            uint256(stateBefore.poolProceeds),
+            "SP-59: poolProceeds changed in poolClaimLoan"
+        );
     }
 
     /// @notice SP-60: claimPoolShare: poolReceived += amount, poolProceeds -= amount
     function property_claimPoolShareReceivedIncreases() internal {
         uint128 amount = stateAfter.poolReceived - stateBefore.poolReceived;
-        eq(uint256(stateBefore.poolProceeds) - uint256(stateAfter.poolProceeds), uint256(amount), "SP-60: poolProceeds not decreased by amount");
+        eq(
+            uint256(stateBefore.poolProceeds) - uint256(stateAfter.poolProceeds),
+            uint256(amount),
+            "SP-60: poolProceeds not decreased by amount"
+        );
     }
 
     /// @notice SP-20: pro-rata entitlement floored (protocol-favorable rounding)
@@ -1202,17 +1308,21 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
         if (poolId == 0) return;
         uint128 contribution = book.poolContributions(poolId, actor);
         if (contribution == 0) return;
-        (, , , , uint128 totalContributed, uint128 totalObligation) = book.pools(poolId);
+        (,,,, uint128 totalContributed, uint128 totalObligation) = book.pools(poolId);
         uint128 received = book.poolReceived(poolId, actor);
         // received <= floor(contribution * totalObligation / totalContributed)
-        lte(uint256(received) * uint256(totalContributed), uint256(contribution) * uint256(totalObligation), "SP-20: pro-rata entitlement not floored");
+        lte(
+            uint256(received) * uint256(totalContributed),
+            uint256(contribution) * uint256(totalObligation),
+            "SP-20: pro-rata entitlement not floored"
+        );
     }
 
     /// @notice SP-23: sum(poolReceived) <= pool.totalObligation
     function property_poolReceivedLeTotalObligation() internal {
         uint256 poolId = ghosts.ghost_lastPoolId;
         if (poolId == 0) return;
-        (, , , , , uint128 totalObligation) = book.pools(poolId);
+        (,,,,, uint128 totalObligation) = book.pools(poolId);
         uint256 sumReceived;
         for (uint256 i = 0; i < actors.length; i++) {
             sumReceived += book.poolReceived(poolId, actors[i]);
@@ -1226,7 +1336,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
         if (poolId == 0) return;
         uint128 contribution = book.poolContributions(poolId, actor);
         if (contribution == 0) return;
-        (, , , , uint128 totalContributed, uint128 totalObligation) = book.pools(poolId);
+        (,,,, uint128 totalContributed, uint128 totalObligation) = book.pools(poolId);
         uint128 received = book.poolReceived(poolId, actor);
         uint256 entitlement = uint256(contribution) * uint256(totalObligation) / uint256(totalContributed);
         lte(uint256(received), entitlement, "SP-24: poolReceived > entitlement");
@@ -1242,7 +1352,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
             sumReceived += book.poolReceived(poolId, actors[i]);
         }
         uint256 loanId = book.poolLoanId(poolId);
-        (, , , , uint128 drawn, uint128 repaid, ) = book.loans(loanId);
+        (,,,, uint128 drawn, uint128 repaid,) = book.loans(loanId);
         eq(uint256(proceeds) + sumReceived, uint256(drawn) + uint256(repaid), "SP-25: pool conservation violated");
     }
 

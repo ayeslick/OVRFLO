@@ -481,6 +481,7 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
         require(withdrawable >= outstanding, "OVRFLOBook: loan not closable");
 
         loan.closed = true;
+        pools[loanPoolId[loanId]].active = false;
         if (outstanding > 0) {
             loan.drawn += outstanding;
             uint256 poolId = loanPoolId[loanId];
@@ -516,6 +517,7 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
         bool closes = amount == outstanding;
         if (closes) {
             loan.closed = true;
+            pools[loanPoolId[loanId]].active = false;
         }
 
         uint256 poolId = loanPoolId[loanId];
