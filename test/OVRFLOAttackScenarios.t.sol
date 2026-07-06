@@ -315,30 +315,31 @@ contract OVRFLOAttackScenariosTest is VaultMockHelpers {
         // Read loan state
         (,,, uint128 obligation,,,) = book.loans(loanId);
 
-        // Set partial withdrawable
-        uint128 partialClaim = obligation / 2;
-        bookSablier.setWithdrawable(streamId, partialClaim);
-
-        // Lender claims partial via pool
-        vm.prank(lender);
-        book.poolClaimLoan(poolId, partialClaim);
-
-        // Borrower repays remainder
-        uint128 outstanding = obligation - partialClaim;
+        // Borrower repays partial via repayLoan (increases recovered, poolProceeds, loan stays open)
+        uint128 partialRepay = obligation / 2;
         vm.prank(borrowerAddr);
-        book.repayLoan(loanId, outstanding);
+        book.repayLoan(loanId, partialRepay);
+
+        // Lender claims partial from poolProceeds
+        vm.prank(lender);
+        book.poolClaimLoan(poolId, partialRepay);
+
+        // Set withdrawable to full, closeLoan draws remaining (loan closes, NFT returned)
+        bookSablier.setWithdrawable(streamId, 100 ether);
+        book.closeLoan(loanId);
 
         // Loan should be closed and NFT returned
         (,,,,,, bool closed) = book.loans(loanId);
-        assertTrue(closed, "loan should be closed after full repayment");
+        assertTrue(closed, "loan should be closed after closeLoan");
 
         assertEq(bookSablier.ownerOf(streamId), borrowerAddr, "NFT should be returned to borrower");
 
-        // Lender withdraws repaid portion from pool proceeds
+        // Lender claims remaining via claimPoolShare
+        uint128 remaining = obligation - partialRepay;
         vm.prank(lender);
-        book.claimPoolShare(poolId, outstanding);
+        book.claimPoolShare(poolId, remaining);
 
-        // Lender total received: partialClaim (from stream) + outstanding (from pool proceeds) == obligation
+        // Lender total received: partialRepay (from poolProceeds) + remaining (from closeLoan proceeds) == obligation
         uint128 lenderOvrfloReceived = uint128(bookOvrfloToken.balanceOf(lender));
         assertEq(lenderOvrfloReceived, obligation, "lender total should equal obligation");
     }

@@ -610,14 +610,13 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
         emit PoolCreated(poolId, msg.sender, market, aprBps, actualBorrow128);
     }
 
-    /// @notice Lets a pool contributor draw directly from the pool's Sablier stream.
-    /// @dev OvrfloToken goes directly to the caller (not to poolProceeds), avoiding the
-    ///      commons problem. The `loanId` is derived internally from `poolId` via
-    ///      `poolLoanId`. Capped by the contributor's remaining entitlement and the
-    ///      stream's withdrawable amount. Updates `poolReceived` and `loan.drawn`.
-    ///      Any pool contributor can call (can only draw their own share).
+    /// @notice Lets a pool contributor claim their pro-rata share from an open pool loan.
+    /// @dev Claimable is capped at `contribution * (drawn + repaid) / totalContributed -
+    ///      poolReceived`, ensuring every contributor gets their fair share regardless of
+    ///      claim order. If `poolProceeds` is insufficient and the loan is open, harvests
+    ///      only the deficit from the stream. Reverts when the loan is closed.
     /// @param poolId The pool the loan belongs to.
-    /// @param amount Requested draw amount (capped at available).
+    /// @param amount Requested claim amount (capped at claimable).
     function poolClaimLoan(uint256 poolId, uint128 amount) external nonReentrant {
         require(poolContributions[poolId][msg.sender] > 0, "OVRFLOBook: not contributor");
         uint256 loanId = poolLoanId[poolId];
@@ -627,41 +626,57 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
         _requireLoanExists(loan);
         require(!loan.closed, "OVRFLOBook: loan closed");
 
-        uint256 remaining = _remainingEntitlement(poolId, msg.sender);
-
-        uint128 streamClaimable = _minUint128(sablier.withdrawableAmountOf(loan.streamId), _outstanding(loan));
-        uint128 drawAmount = _minUint128(_minUint128(amount, _toUint128(remaining)), streamClaimable);
-        require(drawAmount > 0, "OVRFLOBook: nothing claimable");
-
-        poolReceived[poolId][msg.sender] += drawAmount;
-        loan.drawn += drawAmount;
-
-        sablier.withdraw(loan.streamId, msg.sender, drawAmount);
-
-        emit PoolLoanClaimed(poolId, msg.sender, loanId, drawAmount);
+        uint128 payAmount = _claimFair(poolId, msg.sender, amount);
+        emit PoolLoanClaimed(poolId, msg.sender, loanId, payAmount);
     }
 
     /// @notice Lets a pool contributor claim ovrfloToken from accumulated pool proceeds.
-    /// @dev Proceeds accumulate from `closeLoan` and `repayLoan` on pool loans. The claim
-    ///      is capped by the contributor's remaining entitlement and the available
-    ///      `poolProceeds`. Updates `poolReceived` and decrements `poolProceeds`.
+    /// @dev Proceeds accumulate from `closeLoan` and `repayLoan` on pool loans. Claimable
+    ///      is capped at `contribution * (drawn + repaid) / totalContributed - poolReceived`,
+    ///      ensuring pro-rata fairness. Works whether the loan is open or closed. When the
+    ///      loan is open and `poolProceeds` is insufficient, harvests the deficit from the
+    ///      stream.
     /// @param poolId The pool to claim from.
-    /// @param amount Requested claim amount (capped at available).
+    /// @param amount Requested claim amount (capped at claimable).
     function claimPoolShare(uint256 poolId, uint128 amount) external nonReentrant {
-        uint256 remaining = _remainingEntitlement(poolId, msg.sender);
-
-        uint256 available = remaining;
-        if (uint256(poolProceeds[poolId]) < available) available = uint256(poolProceeds[poolId]);
-
         require(amount > 0, "OVRFLOBook: claim zero");
-        require(uint256(amount) <= available, "OVRFLOBook: exceeds available");
+        uint128 payAmount = _claimFair(poolId, msg.sender, amount);
+        emit PoolShareClaimed(poolId, msg.sender, payAmount);
+    }
 
-        poolReceived[poolId][msg.sender] += amount;
-        poolProceeds[poolId] -= amount;
+    /// @dev Shared claim logic for `poolClaimLoan` and `claimPoolShare`. Computes
+    ///      claimable as `contribution * (drawn + repaid) / totalContributed - poolReceived`,
+    ///      harvests only the deficit from the stream when `poolProceeds` is insufficient
+    ///      and the loan is open, then pays from `poolProceeds`.
+    function _claimFair(uint256 poolId, address account, uint128 amount) internal returns (uint128 payAmount) {
+        uint128 contribution = poolContributions[poolId][account];
+        require(contribution > 0, "OVRFLOBook: not contributor");
 
-        IERC20(ovrfloToken).safeTransfer(msg.sender, amount);
+        Loan storage loan = loans[poolLoanId[poolId]];
 
-        emit PoolShareClaimed(poolId, msg.sender, amount);
+        uint256 claimable = uint256(contribution) * (uint256(loan.drawn) + uint256(loan.repaid))
+            / uint256(pools[poolId].totalContributed) - poolReceived[poolId][account];
+
+        uint128 requestAmount = _minUint128(amount, _toUint128(claimable));
+
+        if (!loan.closed && poolProceeds[poolId] < requestAmount) {
+            uint128 harvestAmount = _minUint128(
+                _toUint128(uint256(requestAmount) - uint256(poolProceeds[poolId])),
+                _minUint128(sablier.withdrawableAmountOf(loan.streamId), _outstanding(loan))
+            );
+            if (harvestAmount > 0) {
+                sablier.withdraw(loan.streamId, address(this), harvestAmount);
+                loan.drawn += harvestAmount;
+                poolProceeds[poolId] += harvestAmount;
+            }
+        }
+
+        payAmount = _minUint128(requestAmount, poolProceeds[poolId]);
+        require(payAmount > 0, "OVRFLOBook: nothing claimable");
+
+        poolReceived[poolId][account] += payAmount;
+        poolProceeds[poolId] -= payAmount;
+        IERC20(ovrfloToken).safeTransfer(account, payAmount);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -880,17 +895,6 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
     /// @dev Market-level gate (no stream required); delegates to `StreamPricing.marketActive`.
     function _requireMarketActive(address market) internal view {
         StreamPricing.marketActive(address(factory), core, market);
-    }
-
-    /// @dev Contributor's remaining pool entitlement: pro-rata share of totalObligation
-    ///      minus what they already received. Reverts for non-contributors and when
-    ///      fully claimed.
-    function _remainingEntitlement(uint256 poolId, address account) internal view returns (uint256 remaining) {
-        uint128 contribution = poolContributions[poolId][account];
-        require(contribution > 0, "OVRFLOBook: not contributor");
-        uint256 entitlement = uint256(contribution) * pools[poolId].totalObligation / pools[poolId].totalContributed;
-        remaining = entitlement - poolReceived[poolId][account];
-        require(remaining > 0, "OVRFLOBook: fully claimed");
     }
 
     /// @dev Seconds from now until the series maturity.

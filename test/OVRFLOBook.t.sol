@@ -449,43 +449,50 @@ contract OVRFLOBookTest is Test {
         vm.expectRevert("OVRFLOBook: not contributor");
         book.poolClaimLoan(poolId, 200 ether);
 
-        vm.prank(BUYER);
-        book.poolClaimLoan(poolId, 200 ether);
+        book.closeLoan(loanId);
 
         (,,, uint128 obligation, uint128 drawn, uint128 repaid, bool closed) = book.loans(loanId);
         assertEq(obligation, 110 ether);
         assertEq(drawn, 110 ether);
         assertEq(repaid, 0);
-        assertFalse(closed);
-        assertEq(ovrfloToken.balanceOf(BUYER), 110 ether);
+        assertTrue(closed);
+        assertEq(book.poolProceeds(poolId), 110 ether);
         assertEq(sablier.getWithdrawnAmount(18), 110 ether);
-        assertEq(sablier.ownerOf(18), address(book));
+        assertEq(sablier.ownerOf(18), SELLER);
 
         vm.prank(BUYER);
-        vm.expectRevert("OVRFLOBook: fully claimed");
-        book.poolClaimLoan(poolId, 1);
+        book.claimPoolShare(poolId, 110 ether);
+        assertEq(ovrfloToken.balanceOf(BUYER), 110 ether);
+        assertEq(book.poolReceived(poolId, BUYER), 110 ether);
     }
 
     function test_PoolClaimLoan_AllowsMultiplePartials() public {
         (uint256 poolId, uint256 loanId) = _originateLoanViaBorrowPool(19, 100 ether);
 
-        sablier.setWithdrawable(19, 40 ether);
+        ovrfloToken.mint(SELLER, 70 ether);
+        vm.startPrank(SELLER);
+        ovrfloToken.approve(address(book), 70 ether);
+        book.repayLoan(loanId, 40 ether);
+        vm.stopPrank();
+
         vm.prank(BUYER);
         book.poolClaimLoan(poolId, 40 ether);
 
-        sablier.setWithdrawable(19, 30 ether);
+        vm.startPrank(SELLER);
+        book.repayLoan(loanId, 30 ether);
+        vm.stopPrank();
+
         vm.prank(BUYER);
         book.poolClaimLoan(poolId, 30 ether);
 
-        (,,,, uint128 drawn,,) = book.loans(loanId);
-        assertEq(drawn, 70 ether);
-        assertEq(ovrfloToken.balanceOf(BUYER), 70 ether);
-        assertEq(sablier.getWithdrawnAmount(19), 70 ether);
-        assertEq(sablier.ownerOf(19), address(book));
-
-        (,,,,, uint128 repaid, uint128 outstanding,) = book.loanState(loanId);
-        assertEq(repaid, 0);
+        (,,,, uint128 drawn, uint128 repaid, uint128 outstanding,) = book.loanState(loanId);
+        assertEq(drawn, 0);
+        assertEq(repaid, 70 ether);
         assertEq(outstanding, 40 ether);
+        assertEq(ovrfloToken.balanceOf(BUYER), 70 ether);
+        assertEq(book.poolReceived(poolId, BUYER), 70 ether);
+        assertEq(sablier.getWithdrawnAmount(19), 0);
+        assertEq(sablier.ownerOf(19), address(book));
     }
 
     function test_CloseLoan_RevertsUntilClosableThenPaysAndReturnsNft() public {
@@ -515,62 +522,73 @@ contract OVRFLOBookTest is Test {
     function test_CloseLoan_AfterPartialClaimDrawsOnlyOutstanding() public {
         (uint256 poolId, uint256 loanId) = _originateLoanViaBorrowPool(30, 100 ether);
 
-        sablier.setWithdrawable(30, 40 ether);
-        vm.prank(BUYER);
-        book.poolClaimLoan(poolId, 40 ether);
+        ovrfloToken.mint(SELLER, 40 ether);
+        vm.startPrank(SELLER);
+        ovrfloToken.approve(address(book), 40 ether);
+        book.repayLoan(loanId, 40 ether);
+        vm.stopPrank();
 
         sablier.setWithdrawable(30, 100 ether);
         book.closeLoan(loanId);
 
         (,,,, uint128 drawn,, bool closed) = book.loans(loanId);
-        assertEq(drawn, 110 ether);
+        assertEq(drawn, 70 ether);
         assertTrue(closed);
         vm.prank(BUYER);
-        book.claimPoolShare(poolId, 70 ether);
+        book.claimPoolShare(poolId, 110 ether);
         assertEq(ovrfloToken.balanceOf(BUYER), 110 ether);
-        assertEq(sablier.getWithdrawnAmount(30), 110 ether);
+        assertEq(sablier.getWithdrawnAmount(30), 70 ether);
         assertEq(sablier.ownerOf(30), SELLER);
     }
 
     function test_CloseLoan_ReturnsNftWhenAlreadySatisfiedByClaims() public {
         (uint256 poolId, uint256 loanId) = _originateLoanViaBorrowPool(21, 100 ether);
-        sablier.setWithdrawable(21, 110 ether);
 
-        vm.prank(BUYER);
-        book.poolClaimLoan(poolId, 110 ether);
+        ovrfloToken.mint(SELLER, 110 ether);
+        vm.startPrank(SELLER);
+        ovrfloToken.approve(address(book), 110 ether);
+        book.repayLoan(loanId, 110 ether);
+        vm.stopPrank();
 
+        (,,,, uint128 drawn, uint128 repaid, bool closed) = book.loans(loanId);
+        assertEq(drawn, 0);
+        assertEq(repaid, 110 ether);
+        assertTrue(closed);
+        assertEq(sablier.ownerOf(21), SELLER);
+
+        vm.expectRevert("OVRFLOBook: loan closed");
         book.closeLoan(loanId);
 
-        (,,,, uint128 drawn,, bool closed) = book.loans(loanId);
-        assertEq(drawn, 110 ether);
-        assertTrue(closed);
+        vm.prank(BUYER);
+        book.claimPoolShare(poolId, 110 ether);
         assertEq(ovrfloToken.balanceOf(BUYER), 110 ether);
-        assertEq(sablier.getWithdrawnAmount(21), 110 ether);
-        assertEq(sablier.ownerOf(21), SELLER);
     }
 
     function test_RepayLoan_FullRepaymentAfterPartialClaimClosesAndReturnsNft() public {
         (uint256 poolId, uint256 loanId) = _originateLoanViaBorrowPool(22, 100 ether);
-        sablier.setWithdrawable(22, 40 ether);
+
+        ovrfloToken.mint(SELLER, 110 ether);
+        vm.startPrank(SELLER);
+        ovrfloToken.approve(address(book), 110 ether);
+        book.repayLoan(loanId, 40 ether);
+        vm.stopPrank();
 
         vm.prank(BUYER);
         book.poolClaimLoan(poolId, 40 ether);
 
-        ovrfloToken.mint(SELLER, 70 ether);
         vm.startPrank(SELLER);
-        ovrfloToken.approve(address(book), 70 ether);
         book.repayLoan(loanId, 70 ether);
         vm.stopPrank();
 
         (,,,, uint128 drawn, uint128 repaid, bool closed) = book.loans(loanId);
-        assertEq(drawn, 40 ether);
-        assertEq(repaid, 70 ether);
+        assertEq(drawn, 0);
+        assertEq(repaid, 110 ether);
         assertTrue(closed);
         vm.prank(BUYER);
         book.claimPoolShare(poolId, 70 ether);
         assertEq(ovrfloToken.balanceOf(BUYER), 110 ether);
         assertEq(ovrfloToken.balanceOf(SELLER), 0);
-        assertEq(sablier.getWithdrawnAmount(22), 40 ether);
+        assertEq(sablier.getWithdrawnAmount(22), 0);
         assertEq(sablier.ownerOf(22), SELLER);
     }
 
@@ -1442,19 +1460,24 @@ contract OVRFLOBookTest is Test {
         loanId = 1;
     }
 
-    function test_PoolClaimLoan_DrawsDirectlyToCaller() public {
+    function test_PoolClaimLoan_PaysFromProceeds() public {
         (uint256 poolId, uint256 loanId) = _createBorrowerPool(130, 60 ether, 40 ether, 100 ether, 100 ether);
-        sablier.setWithdrawable(130, 110 ether);
+
+        ovrfloToken.mint(SELLER, 50 ether);
+        vm.startPrank(SELLER);
+        ovrfloToken.approve(address(book), 50 ether);
+        book.repayLoan(loanId, 50 ether);
+        vm.stopPrank();
 
         uint256 before = ovrfloToken.balanceOf(BUYER);
         vm.prank(BUYER);
-        book.poolClaimLoan(poolId, 66 ether);
+        book.poolClaimLoan(poolId, 30 ether);
 
-        assertEq(ovrfloToken.balanceOf(BUYER) - before, 66 ether, "caller receives directly");
-        assertEq(book.poolReceived(poolId, BUYER), 66 ether, "poolReceived updated");
+        assertEq(ovrfloToken.balanceOf(BUYER) - before, 30 ether, "caller receives from proceeds");
+        assertEq(book.poolReceived(poolId, BUYER), 30 ether, "poolReceived updated");
 
         (,,,, uint128 drawn,,) = book.loans(loanId);
-        assertEq(drawn, 66 ether, "loan.drawn updated");
+        assertEq(drawn, 0, "no stream draw when proceeds sufficient");
     }
 
     function test_ClaimPoolShare_ClaimsFromProceeds() public {
@@ -1475,18 +1498,21 @@ contract OVRFLOBookTest is Test {
         assertEq(book.poolProceeds(poolId), 44 ether, "poolProceeds decremented");
     }
 
-    function test_ClaimPoolShare_OverClaimReverts() public {
+    function test_ClaimPoolShare_AmountCappedAtClaimable() public {
         (uint256 poolId,) = _createBorrowerPool(132, 30 ether, 70 ether, 100 ether, 100 ether);
         sablier.setWithdrawable(132, 110 ether);
         book.closeLoan(1);
 
-        // BUYER's share = 30 * 110 / 100 = 33
+        // BUYER's share = 30 * 110 / 100 = 33; requesting 50 gets capped to 33
+        uint256 before = ovrfloToken.balanceOf(BUYER);
         vm.prank(BUYER);
-        vm.expectRevert("OVRFLOBook: exceeds available");
         book.claimPoolShare(poolId, 50 ether);
+
+        assertEq(ovrfloToken.balanceOf(BUYER) - before, 33 ether, "capped at claimable");
+        assertEq(book.poolReceived(poolId, BUYER), 33 ether, "poolReceived = 33");
     }
 
-    function test_ClaimPoolShare_NoProRataCap() public {
+    function test_ClaimFair_ProRataCapPreventsPotDrain() public {
         // Alice (BUYER) 60%, Bob (STRANGER) 40%, obligation = 110
         (uint256 poolId, uint256 loanId) = _createBorrowerPool(141, 60 ether, 40 ether, 100 ether, 100 ether);
 
@@ -1498,28 +1524,31 @@ contract OVRFLOBookTest is Test {
         vm.stopPrank();
         assertEq(book.poolProceeds(poolId), 50 ether, "partial proceeds");
 
-        // Alice's entitlement = 60 * 110 / 100 = 66, available = min(66, 50) = 50
-        // No pro-rata cap — Alice can claim all available proceeds
+        // Alice's claimable = 60 * 50 / 100 = 30 (pro-rata cap prevents draining all 50)
         vm.prank(BUYER);
-        book.claimPoolShare(poolId, 50 ether);
-        assertEq(ovrfloToken.balanceOf(BUYER), 50 ether, "Alice claims all available");
-        assertEq(book.poolProceeds(poolId), 0 ether, "pot drained");
+        book.claimPoolShare(poolId, 30 ether);
+        assertEq(ovrfloToken.balanceOf(BUYER), 30 ether, "Alice claims 60% of recovered");
 
-        // Bob's entitlement = 40 * 110 / 100 = 44, but poolProceeds = 0
-        // Bob cannot claim yet, but is NOT stranded
+        // Bob's claimable = 40 * 50 / 100 = 20 (can claim immediately, not stranded)
         vm.prank(STRANGER);
-        vm.expectRevert("OVRFLOBook: exceeds available");
-        book.claimPoolShare(poolId, 1 ether);
+        book.claimPoolShare(poolId, 20 ether);
+        assertEq(ovrfloToken.balanceOf(STRANGER), 20 ether, "Bob claims 40% of recovered");
+        assertEq(book.poolProceeds(poolId), 0 ether, "pot drained fairly");
 
         // More proceeds arrive via closeLoan (outstanding = 110 - 50 = 60)
         sablier.setWithdrawable(141, 110 ether);
         book.closeLoan(loanId);
-        assertEq(book.poolProceeds(poolId), 60 ether, "more proceeds accumulated");
+        assertEq(book.poolProceeds(poolId), 60 ether, "remaining drawn to proceeds");
 
-        // Now Bob can claim his entitlement
+        // Alice claims remaining: claimable = 60 * 110 / 100 - 30 = 36
+        vm.prank(BUYER);
+        book.claimPoolShare(poolId, 36 ether);
+        assertEq(ovrfloToken.balanceOf(BUYER), 66 ether, "Alice total = 66");
+
+        // Bob claims remaining: claimable = 40 * 110 / 100 - 20 = 24
         vm.prank(STRANGER);
-        book.claimPoolShare(poolId, 44 ether);
-        assertEq(ovrfloToken.balanceOf(STRANGER), 44 ether, "Bob claims after proceeds arrive");
+        book.claimPoolShare(poolId, 24 ether);
+        assertEq(ovrfloToken.balanceOf(STRANGER), 44 ether, "Bob total = 44");
     }
 
     function test_ClaimPoolShare_MinorityContributorNotStranded() public {
@@ -1577,28 +1606,37 @@ contract OVRFLOBookTest is Test {
     }
 
     function test_PoolClaimLoan_ProRataShares() public {
-        (uint256 poolId,) = _createBorrowerPool(138, 60 ether, 40 ether, 100 ether, 100 ether);
-        sablier.setWithdrawable(138, 110 ether);
+        (uint256 poolId, uint256 loanId) = _createBorrowerPool(138, 60 ether, 40 ether, 100 ether, 100 ether);
 
-        // BUYER (60%) can draw up to 66
+        ovrfloToken.mint(SELLER, 50 ether);
+        vm.startPrank(SELLER);
+        ovrfloToken.approve(address(book), 50 ether);
+        book.repayLoan(loanId, 50 ether);
+        vm.stopPrank();
+
+        // BUYER (60%) claims 30 = 60 * 50 / 100
         vm.prank(BUYER);
-        book.poolClaimLoan(poolId, 66 ether);
+        book.poolClaimLoan(poolId, 30 ether);
+        assertEq(ovrfloToken.balanceOf(BUYER), 30 ether);
+
+        // STRANGER (40%) claims 20 = 40 * 50 / 100
+        vm.prank(STRANGER);
+        book.poolClaimLoan(poolId, 20 ether);
+        assertEq(ovrfloToken.balanceOf(STRANGER), 20 ether);
+
+        // closeLoan draws remaining 60 into poolProceeds
+        sablier.setWithdrawable(138, 110 ether);
+        book.closeLoan(loanId);
+
+        // BUYER claims remaining: claimable = 60 * 110 / 100 - 30 = 36
+        vm.prank(BUYER);
+        book.claimPoolShare(poolId, 36 ether);
         assertEq(ovrfloToken.balanceOf(BUYER), 66 ether);
 
-        // BUYER is now fully claimed
-        vm.prank(BUYER);
-        vm.expectRevert("OVRFLOBook: fully claimed");
-        book.poolClaimLoan(poolId, 1);
-
-        // STRANGER (40%) can draw up to 44
+        // STRANGER claims remaining: claimable = 40 * 110 / 100 - 20 = 24
         vm.prank(STRANGER);
-        book.poolClaimLoan(poolId, 44 ether);
+        book.claimPoolShare(poolId, 24 ether);
         assertEq(ovrfloToken.balanceOf(STRANGER), 44 ether);
-
-        // STRANGER is now fully claimed
-        vm.prank(STRANGER);
-        vm.expectRevert("OVRFLOBook: fully claimed");
-        book.poolClaimLoan(poolId, 1);
     }
 
     function test_PoolClaimLoan_DoubleDipCappedAtEntitlement() public {
@@ -1614,7 +1652,12 @@ contract OVRFLOBookTest is Test {
         uint256 loanId = 1;
 
         // BUYER's entitlement = 100 * 110 / 100 = 110
-        sablier.setWithdrawable(139, 55 ether);
+        ovrfloToken.mint(SELLER, 55 ether);
+        vm.startPrank(SELLER);
+        ovrfloToken.approve(address(book), 55 ether);
+        book.repayLoan(loanId, 55 ether);
+        vm.stopPrank();
+
         vm.prank(BUYER);
         book.poolClaimLoan(poolId, 55 ether);
         assertEq(book.poolReceived(poolId, BUYER), 55 ether);
@@ -1631,7 +1674,7 @@ contract OVRFLOBookTest is Test {
 
         // Double-dip prevented
         vm.prank(BUYER);
-        vm.expectRevert("OVRFLOBook: fully claimed");
+        vm.expectRevert("OVRFLOBook: nothing claimable");
         book.claimPoolShare(poolId, 1);
     }
 
@@ -1669,18 +1712,102 @@ contract OVRFLOBookTest is Test {
     }
 
     function test_RepayLoan_RevertsWhenNothingOutstanding() public {
-        (uint256 poolId, uint256 loanId) = _originateLoanViaBorrowPool(212, 100 ether);
-        // Drain the full obligation via poolClaimLoan
-        sablier.setWithdrawable(212, 200 ether);
-        vm.prank(BUYER);
-        book.poolClaimLoan(poolId, 200 ether);
-        // outstanding is now 0 — repayLoan should revert
-        vm.prank(SELLER);
-        vm.expectRevert("OVRFLOBook: nothing outstanding");
-        book.repayLoan(loanId, 1);
-        // closeLoan still works and returns the stream to the borrower
-        book.closeLoan(loanId);
+        (, uint256 loanId) = _originateLoanViaBorrowPool(212, 100 ether);
+
+        ovrfloToken.mint(SELLER, 110 ether);
+        vm.startPrank(SELLER);
+        ovrfloToken.approve(address(book), 110 ether);
+        book.repayLoan(loanId, 110 ether);
+        vm.stopPrank();
+
         assertEq(sablier.ownerOf(212), SELLER);
+
+        vm.prank(SELLER);
+        vm.expectRevert("OVRFLOBook: loan closed");
+        book.repayLoan(loanId, 1);
+
+        vm.expectRevert("OVRFLOBook: loan closed");
+        book.closeLoan(loanId);
+    }
+
+    function test_ClaimFair_BothContributorsCanClaim() public {
+        (uint256 poolId, uint256 loanId) = _createBorrowerPool(160, 60 ether, 40 ether, 100 ether, 100 ether);
+
+        ovrfloToken.mint(SELLER, 50 ether);
+        vm.startPrank(SELLER);
+        ovrfloToken.approve(address(book), 50 ether);
+        book.repayLoan(loanId, 50 ether);
+        vm.stopPrank();
+
+        vm.prank(BUYER);
+        book.claimPoolShare(poolId, 30 ether);
+        assertEq(ovrfloToken.balanceOf(BUYER), 30 ether, "A claims 60% of 50");
+
+        vm.prank(STRANGER);
+        book.claimPoolShare(poolId, 20 ether);
+        assertEq(ovrfloToken.balanceOf(STRANGER), 20 ether, "B claims 40% of 50");
+    }
+
+    function test_ClaimFair_HarvestDeficit() public {
+        (uint256 poolId, uint256 loanId) = _createBorrowerPool(161, 60 ether, 40 ether, 100 ether, 100 ether);
+
+        ovrfloToken.mint(SELLER, 50 ether);
+        vm.startPrank(SELLER);
+        ovrfloToken.approve(address(book), 50 ether);
+        book.repayLoan(loanId, 50 ether);
+        vm.stopPrank();
+
+        vm.prank(BUYER);
+        book.poolClaimLoan(poolId, 30 ether);
+        assertEq(ovrfloToken.balanceOf(BUYER), 30 ether, "A claims from proceeds");
+        assertEq(sablier.getWithdrawnAmount(161), 0, "no stream draw needed");
+    }
+
+    function test_ClaimFair_NoHarvestWhenProceedsSufficient() public {
+        (uint256 poolId, uint256 loanId) = _originateLoanViaBorrowPool(162, 100 ether);
+        sablier.setWithdrawable(162, 110 ether);
+
+        ovrfloToken.mint(SELLER, 50 ether);
+        vm.startPrank(SELLER);
+        ovrfloToken.approve(address(book), 50 ether);
+        book.repayLoan(loanId, 50 ether);
+        vm.stopPrank();
+
+        vm.prank(BUYER);
+        book.claimPoolShare(poolId, 50 ether);
+        assertEq(ovrfloToken.balanceOf(BUYER), 50 ether, "claimed from proceeds");
+        assertEq(sablier.getWithdrawnAmount(162), 0, "stream not touched");
+        assertEq(book.poolProceeds(poolId), 0, "proceeds drained");
+    }
+
+    function test_ClaimFair_LoanClosedPoolClaimReverts() public {
+        (uint256 poolId,) = _createBorrowerPool(163, 60 ether, 40 ether, 100 ether, 100 ether);
+        sablier.setWithdrawable(163, 110 ether);
+        book.closeLoan(1);
+
+        vm.prank(BUYER);
+        vm.expectRevert("OVRFLOBook: loan closed");
+        book.poolClaimLoan(poolId, 10 ether);
+
+        vm.prank(BUYER);
+        book.claimPoolShare(poolId, 66 ether);
+        assertEq(ovrfloToken.balanceOf(BUYER), 66 ether, "claimPoolShare works after close");
+    }
+
+    function test_ClaimFair_AmountCappedAtClaimable() public {
+        (uint256 poolId, uint256 loanId) = _originateLoanViaBorrowPool(164, 100 ether);
+
+        ovrfloToken.mint(SELLER, 50 ether);
+        vm.startPrank(SELLER);
+        ovrfloToken.approve(address(book), 50 ether);
+        book.repayLoan(loanId, 50 ether);
+        vm.stopPrank();
+
+        uint256 before = ovrfloToken.balanceOf(BUYER);
+        vm.prank(BUYER);
+        book.claimPoolShare(poolId, type(uint128).max);
+
+        assertEq(ovrfloToken.balanceOf(BUYER) - before, 50 ether, "capped at claimable");
     }
 
     /// @dev Covers the _toUint128 overflow guard via harness. This branch is

@@ -8,7 +8,6 @@ import {ISablierV2LockupLinear} from "../../../interfaces/ISablierV2LockupLinear
 
 /// @notice Handles the interaction with OVRFLOBook
 abstract contract OVRFLOBookHandler is Properties {
-
     uint16 constant APR_STEP = 100;
 
     // ――――――――――――――――――――― Stream picker ―――――――――――――――――――――
@@ -67,7 +66,12 @@ abstract contract OVRFLOBookHandler is Properties {
         oVRFLOBook_buyListing(listingId, maxPriceIn);
     }
 
-    function oVRFLOBook_createBorrowPool_clamped(uint256[] memory, uint256 streamSeed, uint128 targetBorrow, uint128 poolSizeSeed) public {
+    function oVRFLOBook_createBorrowPool_clamped(
+        uint256[] memory,
+        uint256 streamSeed,
+        uint128 targetBorrow,
+        uint128 poolSizeSeed
+    ) public {
         uint256 maxOffer = book.nextOfferId();
         if (maxOffer <= 1) return;
         uint256 streamId = _pickStream(streamSeed);
@@ -80,7 +84,7 @@ abstract contract OVRFLOBookHandler is Properties {
         // Find a first valid offer (active, not owned by actor)
         uint256 firstOfferId = 0;
         for (uint256 i = 1; i < maxOffer; i++) {
-            (address maker, , , uint128 cap, bool active) = book.offers(i);
+            (address maker,,, uint128 cap, bool active) = book.offers(i);
             if (active && cap > 0 && maker != actor) {
                 firstOfferId = i;
                 break;
@@ -89,7 +93,7 @@ abstract contract OVRFLOBookHandler is Properties {
         if (firstOfferId == 0) return;
 
         // Get first offer's market and aprBps for matching
-        (, address offerMarket, uint16 offerApr, , ) = book.offers(firstOfferId);
+        (, address offerMarket, uint16 offerApr,,) = book.offers(firstOfferId);
 
         // Build offer array with matching offers (ascending order by construction)
         uint256[] memory offerIds = new uint256[](poolSize);
@@ -106,7 +110,9 @@ abstract contract OVRFLOBookHandler is Properties {
         // Trim if fewer matching offers found
         if (count < poolSize) {
             uint256[] memory trimmed = new uint256[](count);
-            for (uint256 i = 0; i < count; i++) trimmed[i] = offerIds[i];
+            for (uint256 i = 0; i < count; i++) {
+                trimmed[i] = offerIds[i];
+            }
             offerIds = trimmed;
         }
 
@@ -222,7 +228,7 @@ abstract contract OVRFLOBookHandler is Properties {
         book.buyListing(listingId, maxPriceIn);
         snapshotAfter();
         // Ghost updates
-        (, , , , uint16 listingFeeBps, ) = book.saleListings(listingId);
+        (,,,, uint16 listingFeeBps,) = book.saleListings(listingId);
         uint256 grossPrice = stateBefore.actorUnderlying - stateAfter.actorUnderlying;
         ghosts.ghost_lastGrossPrice = grossPrice;
         uint256 fee = listingFeeBps == 0 ? 0 : grossPrice * listingFeeBps / 10_000;
@@ -233,7 +239,12 @@ abstract contract OVRFLOBookHandler is Properties {
         property_bookFeeFlooredWithBps(fee, grossPrice, listingFeeBps);
     }
 
-    function oVRFLOBook_createBorrowPool(uint256[] memory offerIds, uint256 streamId, uint128 targetBorrow, uint128 minAcceptable) public asActor {
+    function oVRFLOBook_createBorrowPool(
+        uint256[] memory offerIds,
+        uint256 streamId,
+        uint128 targetBorrow,
+        uint128 minAcceptable
+    ) public asActor {
         ghosts.ghost_lastStreamId = streamId;
         snapshotBefore();
         uint256 poolId = book.createBorrowPool(offerIds, streamId, targetBorrow, minAcceptable);
@@ -302,8 +313,8 @@ abstract contract OVRFLOBookHandler is Properties {
         snapshotBefore();
         book.poolClaimLoan(poolId, amount);
         snapshotAfter();
-        // Track stream withdrawal for GL-57
-        ghost_totalStreamWithdrawals[actor] += uint256(amount);
+        // Track actual stream withdrawal (harvest amount, not input amount)
+        ghost_totalStreamWithdrawals[actor] += uint256(stateAfter.loanDrawn - stateBefore.loanDrawn);
         // Property assertions
         property_poolClaimLoanProceedsUnchanged();
         property_proRataEntitlementFloored();
@@ -318,8 +329,8 @@ abstract contract OVRFLOBookHandler is Properties {
         snapshotBefore();
         book.claimPoolShare(poolId, amount);
         snapshotAfter();
-        // Track stream withdrawal for GL-57
-        ghost_totalStreamWithdrawals[actor] += uint256(amount);
+        // Track actual stream withdrawal (harvest amount, not input amount)
+        ghost_totalStreamWithdrawals[actor] += uint256(stateAfter.loanDrawn - stateBefore.loanDrawn);
         // Property assertions
         property_claimPoolShareReceivedIncreases();
         property_proRataEntitlementFloored();
@@ -341,7 +352,7 @@ abstract contract OVRFLOBookHandler is Properties {
 
     function oVRFLOBook_cancelSaleListing(uint256 listingId) public asActor {
         ghosts.ghost_lastListingId = listingId;
-        (, , uint256 streamId, , , ) = book.saleListings(listingId);
+        (,, uint256 streamId,,,) = book.saleListings(listingId);
         ghosts.ghost_lastStreamId = streamId;
         snapshotBefore();
         book.cancelSaleListing(listingId);
@@ -358,10 +369,9 @@ abstract contract OVRFLOBookHandler is Properties {
         uint256 startId = clampBetween(offerSeed, 1, maxOffer - 1);
         // Find a valid offer to get market and aprBps
         for (uint256 i = startId; i < maxOffer; i++) {
-            (, address offerMarket, uint16 offerApr, , bool active) = book.offers(i);
+            (, address offerMarket, uint16 offerApr,, bool active) = book.offers(i);
             if (!active) continue;
-            (uint256[] memory ids, bool sufficient) =
-                book.gatherOfferCapacities(offerMarket, offerApr, targetAmount, 1);
+            (uint256[] memory ids, bool sufficient) = book.gatherOfferCapacities(offerMarket, offerApr, targetAmount, 1);
             // Verify returned IDs are active with matching market and aprBps
             uint128 sum;
             for (uint256 j = 0; j < ids.length; j++) {
@@ -427,7 +437,8 @@ abstract contract OVRFLOBookHandler is Properties {
         vm.prank(actor);
         try book.postSaleListing(market, streamId, aprBps) returns (uint256 listingId) {
             vm.prank(actor);
-            try book.cancelSaleListing(listingId) {} catch {
+            try book.cancelSaleListing(listingId) {}
+            catch {
                 return;
             }
         } catch {
@@ -468,8 +479,8 @@ abstract contract OVRFLOBookHandler is Properties {
                 for (uint256 i = 1; i < MockSablier(SABLIER_ADDR).nextStreamId() + 1; i++) {
                     try ISablierV2LockupLinear(SABLIER_ADDR).ownerOf(i) returns (address owner) {
                         if (owner == actorC) {
-                            (address maker, , , , bool active) = book.offers(offerA);
-                            (address makerB, , , , bool activeB) = book.offers(offerB);
+                            (address maker,,,, bool active) = book.offers(offerA);
+                            (address makerB,,,, bool activeB) = book.offers(offerB);
                             if (active && activeB && maker != actorC && makerB != actorC) {
                                 streamId = i;
                                 break;
@@ -505,9 +516,12 @@ abstract contract OVRFLOBookHandler is Properties {
                                 for (uint256 i = 0; i < actors.length; i++) {
                                     sumReceived += book.poolReceived(poolId, actors[i]);
                                 }
-                                (, , , , uint128 drawn, uint128 repaid, ) = book.loans(loanId);
-                                eq(uint256(proceeds) + sumReceived, uint256(drawn) + uint256(repaid),
-                                   "R15: pool conservation violated in lifecycle");
+                                (,,,, uint128 drawn, uint128 repaid,) = book.loans(loanId);
+                                eq(
+                                    uint256(proceeds) + sumReceived,
+                                    uint256(drawn) + uint256(repaid),
+                                    "R15: pool conservation violated in lifecycle"
+                                );
                             } catch {}
                         } catch {}
                     } catch {}

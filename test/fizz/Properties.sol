@@ -1273,33 +1273,25 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
 
     // ─────────────── Pool Claim Properties ───────────────
 
-    /// @notice SP-58: poolClaimLoan: drawn += drawAmount, poolReceived += drawAmount
+    /// @notice SP-58: poolClaimLoan: poolReceived increases (by payAmount, may differ from drawn delta)
     function property_poolClaimLoanDrawnIncreases() internal {
-        uint128 drawAmount = stateAfter.loanDrawn - stateBefore.loanDrawn;
-        eq(
-            uint256(stateAfter.poolReceived),
-            uint256(stateBefore.poolReceived) + uint256(drawAmount),
-            "SP-58: poolReceived not increased by drawAmount"
-        );
+        gt(uint256(stateAfter.poolReceived), uint256(stateBefore.poolReceived), "SP-58: poolReceived not increased");
     }
 
-    /// @notice SP-59: poolClaimLoan: poolProceeds unchanged
+    /// @notice SP-59: poolClaimLoan: poolProceeds conservation (proceedsDecrease = receivedDelta - drawnDelta)
     function property_poolClaimLoanProceedsUnchanged() internal {
-        eq(
-            uint256(stateAfter.poolProceeds),
-            uint256(stateBefore.poolProceeds),
-            "SP-59: poolProceeds changed in poolClaimLoan"
-        );
+        uint256 drawnDelta = uint256(stateAfter.loanDrawn) - uint256(stateBefore.loanDrawn);
+        uint256 receivedDelta = uint256(stateAfter.poolReceived) - uint256(stateBefore.poolReceived);
+        uint256 proceedsDecrease = uint256(stateBefore.poolProceeds) - uint256(stateAfter.poolProceeds);
+        eq(proceedsDecrease, receivedDelta - drawnDelta, "SP-59: poolProceeds conservation violated");
     }
 
-    /// @notice SP-60: claimPoolShare: poolReceived += amount, poolProceeds -= amount
+    /// @notice SP-60: claimPoolShare: poolProceeds conservation (same as SP-59)
     function property_claimPoolShareReceivedIncreases() internal {
-        uint128 amount = stateAfter.poolReceived - stateBefore.poolReceived;
-        eq(
-            uint256(stateBefore.poolProceeds) - uint256(stateAfter.poolProceeds),
-            uint256(amount),
-            "SP-60: poolProceeds not decreased by amount"
-        );
+        uint256 drawnDelta = uint256(stateAfter.loanDrawn) - uint256(stateBefore.loanDrawn);
+        uint256 receivedDelta = uint256(stateAfter.poolReceived) - uint256(stateBefore.poolReceived);
+        uint256 proceedsDecrease = uint256(stateBefore.poolProceeds) - uint256(stateAfter.poolProceeds);
+        eq(proceedsDecrease, receivedDelta - drawnDelta, "SP-60: poolProceeds conservation violated");
     }
 
     /// @notice SP-20: pro-rata entitlement floored (protocol-favorable rounding)
