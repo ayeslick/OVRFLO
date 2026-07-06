@@ -543,6 +543,7 @@ contract OVRFLO is ReentrancyGuard {
     function previewRate(address market) external view returns (uint256 rateE18) {
         SeriesInfo memory info = _series[market];
         require(info.approved, "OVRFLO: market not approved");
+        _requireOracleFresh(market, info.twapDurationFixed);
         rateE18 = IPendleOracle(oracle).getPtToSyRate(market, info.twapDurationFixed);
     }
 
@@ -559,6 +560,7 @@ contract OVRFLO is ReentrancyGuard {
     {
         SeriesInfo memory info = _series[market];
         require(info.approved, "OVRFLO: market not approved");
+        _requireOracleFresh(market, info.twapDurationFixed);
         rateE18 = IPendleOracle(oracle).getPtToSyRate(market, info.twapDurationFixed);
         (toUser, toStream) = _computeSplit(ptAmount, rateE18);
     }
@@ -577,6 +579,7 @@ contract OVRFLO is ReentrancyGuard {
     {
         SeriesInfo memory info = _series[market];
         require(info.approved, "OVRFLO: market not approved");
+        _requireOracleFresh(market, info.twapDurationFixed);
         rateE18 = IPendleOracle(oracle).getPtToSyRate(market, info.twapDurationFixed);
         (toUser, toStream) = _computeSplit(ptAmount, rateE18);
         feeAmount = info.feeBps == 0 ? 0 : PRBMath.mulDiv(toUser, info.feeBps, BASIS_POINTS);
