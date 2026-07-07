@@ -115,7 +115,6 @@ Secondary market book for selling OVRFLO streams or borrowing against them. Boun
 | `cancelSaleListing(listingId)` | Cancel unmatched sale listing, return stream |
 | `buyListing(listingId, maxPriceIn)` | Buy a listed stream at its discounted price |
 | `createBorrowPool(offerIds, streamId, targetBorrow, minAcceptable)` | Batch-borrow against multiple offers, pledging one stream as collateral |
-| `poolClaimLoan(poolId, amount)` | Pool contributor draws accrued ovrfloToken directly from a loan's pledged stream |
 | `claimPoolShare(poolId, amount)` | Pool contributor claims pro-rata from accumulated `poolProceeds` |
 | `closeLoan(loanId)` | Permissionless: draw remaining outstanding, return stream to borrower |
 | `repayLoan(loanId, amount)` | Borrower repays ovrfloToken to reduce or clear the obligation |
@@ -284,9 +283,6 @@ The borrower receives `borrowAmount` underlying (net of fee) and owes an `obliga
 Loan servicing routes through pool claim channels. `closeLoan` and `repayLoan` route proceeds to `poolProceeds` rather than directly to a lender:
 
 ```solidity
-// Pool contributor draws accrued ovrfloToken directly from a loan's pledged stream (capped at outstanding)
-book.poolClaimLoan(poolId, amount);
-
 // Pool contributor claims pro-rata from accumulated pool proceeds
 book.claimPoolShare(poolId, amount);
 
@@ -297,7 +293,7 @@ book.closeLoan(loanId);
 book.repayLoan(loanId, amount);
 ```
 
-`poolClaimLoan` lets a pool contributor draw directly from a loan's pledged stream, capped at the loan's outstanding obligation. `claimPoolShare` lets a contributor claim pro-rata from the pool's accumulated `poolProceeds` (fed by `closeLoan` and `repayLoan`). `closeLoan` is permissionless and requires the stream to have accrued enough to cover the outstanding. `repayLoan` lets the borrower repay early in ovrfloToken; when the obligation is fully satisfied, the stream is returned.
+`claimPoolShare` lets a contributor claim pro-rata from the pool's accumulated `poolProceeds` (fed by `closeLoan` and `repayLoan`), working for both open and closed loans. `closeLoan` is permissionless and requires the stream to have accrued enough to cover the outstanding. `repayLoan` lets the borrower repay early in ovrfloToken; when the obligation is fully satisfied, the stream is returned.
 
 ### What's Fixed Will OVRFLO
 

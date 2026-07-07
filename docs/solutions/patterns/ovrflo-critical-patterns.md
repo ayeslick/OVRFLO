@@ -480,7 +480,7 @@ pass every flag and ownership assertion and ship a fund-loss bug.
 **Placement/Context:** Any non-fork or fork test that calls a function
 transferring `underlying`, `ovrfloToken`, or a Sablier stream NFT:
 `sellIntoOffer`, `buyListing`, `createBorrowPool`,
-`cancel*` functions, `poolClaimLoan`, `claimPoolShare`, `closeLoan`, `repayLoan`. The four-party
+`cancel*` functions, `claimPoolShare`, `closeLoan`, `repayLoan`. The four-party
 check (actor, counterparty, treasury, book) is the minimum. For loan
 servicing, also assert `ovrfloToken.balanceOf`, `sablier.getWithdrawnAmount`,
 and `sablier.ownerOf` for the lender and borrower.
@@ -490,7 +490,7 @@ and `sablier.ownerOf` for the lender and borrower.
 ```bash
 # Find settlement tests that assert state/ownership but skip balanceOf
 # for treasury or the book contract:
-rg -l "sellIntoOffer|buyListing|createBorrowPool|poolClaimLoan|claimPoolShare|closeLoan|repayLoan" \
+rg -l "sellIntoOffer|buyListing|createBorrowPool|claimPoolShare|closeLoan|repayLoan" \
   test/OVRFLOBook.t.sol | \
   xargs -I{} sh -c 'rg -L "balanceOf\(TREASURY\)|balanceOf\(address\(book\)\)" "{}" && echo "REVIEW: {}"'
 ```
@@ -894,9 +894,7 @@ prevents any contributor from claiming more than their total entitlement, and
 proceeds is acceptable; permanent stranding is not.
 
 **Placement/Context:** `claimPoolShare` — the shared-pot claim channel for
-both borrower and lender pools. `poolClaimLoan` (the direct-draw channel)
-does not need this cap because it draws from a specific loan's stream, not
-from a shared accumulator.
+both borrower and lender pools.
 
 **How to detect violation:**
 
@@ -908,5 +906,66 @@ rg "poolProceeds\[poolId\] < available" src/OVRFLOBook.sol
 ```
 
 **Documented in:** [`docs/solutions/design-patterns/solidity-batch-function-safety-patterns.md`](../design-patterns/solidity-batch-function-safety-patterns.md)
+
+---
+
+## 14. Harvest branch as defense-in-depth (ALWAYS REQUIRED)
+
+**Why:** SP-24 and SP-25 guarantee `poolProceeds >= claimable >= requestAmount`
+under normal invariants, so the harvest condition (`!loan.closed &&
+poolProceeds < requestAmount`) is always false. The branch exists as a safety
+net: if those invariants are ever violated by future code changes, the harvest
+provides a graceful fallback (drawing the deficit from the stream) instead of
+leaving nothing claimable. The gas cost in the normal path is one comparison —
+negligible. Removing it would mean any future invariant violation surfaces as
+"nothing claimable" instead of a graceful fallback.
+
+**Placement/Context:** `_claimFair` in `src/OVRFLOBook.sol` — the harvest
+branch that draws from the stream when `poolProceeds < requestAmount`.
+
+---
+
+## 15. uint128 parameter types as implicit ABI-decoder bounds checks (ALWAYS REQUIRED)
+
+**Why:** The `uint128` parameter types serve as implicit ABI-decoder bounds
+checks. Values exceeding `type(uint128).max` are rejected at the ABI level
+before any contract code runs. This is a deliberate choice — the contract's
+storage structs use `uint128` for packed slots, so accepting `uint256` would
+require an explicit overflow check inside the function. The `uint128` parameter
+type moves the check to the ABI decoder, which is cheaper and catches invalid
+inputs earlier.
+
+**Placement/Context:** `createBorrowPool` in `src/OVRFLOBook.sol` — parameters
+`targetBorrow` and `minAcceptable`.
+
+---
+
+## 16. uint256/uint128 switching (ALWAYS REQUIRED)
+
+**Why:** The contract uses a deliberate uint256/uint128 switching pattern.
+Storage structs use `uint128` for packed slots (fitting multiple fields in a
+single storage slot). Intermediate math uses `uint256` to avoid overflow on
+multiplication (e.g., `contribution * (drawn + repaid)` could overflow
+`uint128`). `_toUint128` is the overflow-checked narrowing gate that safely
+converts back to `uint128` after math completes, reverting on overflow. This
+pattern is inherent to the design — storage size and math safety have
+different optimal types.
+
+**Placement/Context:** `src/OVRFLOBook.sol` — storage structs, intermediate
+math, and `_toUint128`.
+
+---
+
+## 17. _consumeOffers early-break behavior (ALWAYS REQUIRED)
+
+**Why:** The `_consumeOffers` loop breaks when `toBorrow == 0`, meaning
+trailing offers past the break point are never touched. This retains residual
+capacity and active status for unconsumed offers. The caller
+(`createBorrowPool`) may pass more offers than needed to fill `targetBorrow`;
+the excess offers are left untouched and available for future consumption.
+This is intentional — it allows borrowers to include backup offers without
+committing to all of them.
+
+**Placement/Context:** `_consumeOffers` in `src/OVRFLOBook.sol`.
 
 ---
