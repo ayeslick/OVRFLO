@@ -229,8 +229,6 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
     );
     /// @notice Emitted when a contributor claims ovrfloToken from pool proceeds.
     event PoolShareClaimed(uint256 indexed poolId, address indexed claimant, uint128 amount);
-    /// @notice Emitted when a contributor draws directly from a pool loan's stream.
-    event PoolLoanClaimed(uint256 indexed poolId, address indexed claimant, uint256 indexed loanId, uint128 amount);
 
     /*//////////////////////////////////////////////////////////////
                               CONSTRUCTOR
@@ -610,26 +608,6 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
         emit PoolCreated(poolId, msg.sender, market, aprBps, actualBorrow128);
     }
 
-    /// @notice Lets a pool contributor claim their pro-rata share from an open pool loan.
-    /// @dev Claimable is capped at `contribution * (drawn + repaid) / totalContributed -
-    ///      poolReceived`, ensuring every contributor gets their fair share regardless of
-    ///      claim order. If `poolProceeds` is insufficient and the loan is open, harvests
-    ///      only the deficit from the stream. Reverts when the loan is closed.
-    /// @param poolId The pool the loan belongs to.
-    /// @param amount Requested claim amount (capped at claimable).
-    function poolClaimLoan(uint256 poolId, uint128 amount) external nonReentrant {
-        require(poolContributions[poolId][msg.sender] > 0, "OVRFLOBook: not contributor");
-        uint256 loanId = poolLoanId[poolId];
-        require(loanId != 0, "OVRFLOBook: loan not in pool");
-
-        Loan storage loan = loans[loanId];
-        _requireLoanExists(loan);
-        require(!loan.closed, "OVRFLOBook: loan closed");
-
-        uint128 payAmount = _claimFair(poolId, msg.sender, amount);
-        emit PoolLoanClaimed(poolId, msg.sender, loanId, payAmount);
-    }
-
     /// @notice Lets a pool contributor claim ovrfloToken from accumulated pool proceeds.
     /// @dev Proceeds accumulate from `closeLoan` and `repayLoan` on pool loans. Claimable
     ///      is capped at `contribution * (drawn + repaid) / totalContributed - poolReceived`,
@@ -644,7 +622,7 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
         emit PoolShareClaimed(poolId, msg.sender, payAmount);
     }
 
-    /// @dev Shared claim logic for `poolClaimLoan` and `claimPoolShare`. Computes
+    /// @dev Shared claim logic for `claimPoolShare`. Computes
     ///      claimable as `contribution * (drawn + repaid) / totalContributed - poolReceived`,
     ///      harvests only the deficit from the stream when `poolProceeds` is insufficient
     ///      and the loan is open, then pays from `poolProceeds`.
