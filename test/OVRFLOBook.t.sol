@@ -1530,6 +1530,28 @@ contract OVRFLOBookTest is Test {
         book.claimPoolShare(poolId, 0);
     }
 
+    function test_ClaimPoolShare_RevertsWhenNothingClaimable() public {
+        (uint256 poolId,) = _originateLoanViaBorrowPool(213, 100 ether);
+        // withdrawable defaults to 0, no repay -> poolProceeds == 0, claimable == 0
+        vm.prank(BUYER);
+        vm.expectRevert("OVRFLOBook: nothing claimable");
+        book.claimPoolShare(poolId, 50 ether);
+    }
+
+    function test_ClaimPoolShare_RevertsWhenNothingClaimableAfterFullClaim() public {
+        (uint256 poolId,) = _originateLoanViaBorrowPool(214, 100 ether);
+        sablier.setWithdrawable(214, 110 ether);
+        book.closeLoan(1);
+        // Single contributor -> entitlement == 110 (100% of drawn)
+        vm.prank(BUYER);
+        book.claimPoolShare(poolId, 110 ether);
+
+        // Full entitlement claimed -> nothing left
+        vm.prank(BUYER);
+        vm.expectRevert("OVRFLOBook: nothing claimable");
+        book.claimPoolShare(poolId, 1);
+    }
+
     function test_RepayLoan_RevertsWhenNothingOutstanding() public {
         (, uint256 loanId) = _originateLoanViaBorrowPool(212, 100 ether);
 

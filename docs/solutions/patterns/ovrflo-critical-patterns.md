@@ -923,6 +923,17 @@ negligible. Removing it would mean any future invariant violation surfaces as
 **Placement/Context:** `_claimFair` in `src/OVRFLOBook.sol` — the harvest
 branch that draws from the stream when `poolProceeds < requestAmount`.
 
+**How to detect violation:**
+
+```bash
+rg "loan.closed && poolProceeds < requestAmount" src/OVRFLOBook.sol
+# expected: 0 matches (harvest guard uses !loan.closed, not loan.closed)
+rg "poolProceeds\[poolId\] < requestAmount" src/OVRFLOBook.sol
+# expected: 1 match in _claimFair harvest branch
+```
+
+**Documented in:** OVRFLOBook cleanup refactor (2026-07-07), pool claim fairness brainstorm
+
 ---
 
 ## 15. uint128 parameter types as implicit ABI-decoder bounds checks (ALWAYS REQUIRED)
@@ -937,6 +948,15 @@ inputs earlier.
 
 **Placement/Context:** `createBorrowPool` in `src/OVRFLOBook.sol` — parameters
 `targetBorrow` and `minAcceptable`.
+
+**How to detect violation:**
+
+```bash
+rg "function createBorrowPool" src/OVRFLOBook.sol
+# expected: 1 match — verify targetBorrow and minAcceptable are uint128, not uint256
+```
+
+**Documented in:** OVRFLOBook cleanup refactor (2026-07-07), pool claim fairness brainstorm
 
 ---
 
@@ -954,6 +974,17 @@ different optimal types.
 **Placement/Context:** `src/OVRFLOBook.sol` — storage structs, intermediate
 math, and `_toUint128`.
 
+**How to detect violation:**
+
+```bash
+rg "_toUint128" src/OVRFLOBook.sol
+# expected: matches at every uint256 -> uint128 narrowing gate
+rg "uint128\(uint256" src/OVRFLOBook.sol
+# expected: 0 matches — raw casts should use _toUint128 instead
+```
+
+**Documented in:** [`docs/solutions/best-practices/avoid-unnecessary-type-widening-with-invariant-guarantees.md`](../best-practices/avoid-unnecessary-type-widening-with-invariant-guarantees.md), OVRFLOBook cleanup refactor (2026-07-07)
+
 ---
 
 ## 17. _consumeOffers early-break behavior (ALWAYS REQUIRED)
@@ -967,5 +998,14 @@ This is intentional — it allows borrowers to include backup offers without
 committing to all of them.
 
 **Placement/Context:** `_consumeOffers` in `src/OVRFLOBook.sol`.
+
+**How to detect violation:**
+
+```bash
+rg "toBorrow == 0" src/OVRFLOBook.sol
+# expected: 1 match in _consumeOffers loop break condition
+```
+
+**Documented in:** [`docs/solutions/design-patterns/solidity-batch-function-safety-patterns.md`](../design-patterns/solidity-batch-function-safety-patterns.md), OVRFLOBook cleanup refactor (2026-07-07)
 
 ---
