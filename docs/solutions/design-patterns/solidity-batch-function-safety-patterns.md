@@ -38,8 +38,8 @@ listings were unified into a single `offers` mapping (`Offer` struct,
 consumable as either a sale via `sellIntoOffer` or a loan via
 `createBorrowPool`); the old split `lendOffers`/`borrowListings` mappings and
 `LendOffer`/`BorrowListing` structs no longer exist. Each pool is followed by
-two claim channels — `claimPoolShare` (draw from a shared `poolProceeds` pot)
-and `poolClaimLoan` (draw directly from the pool's single loan stream) — plus
+`claimPoolShare` (draw from a shared `poolProceeds` pot)
+plus
 one off-chain `view` gather function, `gatherOfferCapacities`, that scans the
 order book to help callers assemble the ID array to pass in.
 
@@ -155,8 +155,7 @@ function _remainingEntitlement(uint256 poolId, address account) internal view re
 }
 ```
 
-This helper is called by both `poolClaimLoan` (the direct-draw channel) and
-`claimPoolShare` (the shared-pot channel), guaranteeing the two channels share
+This helper is called by `claimPoolShare` (the sole claim channel), guaranteeing
 identical entitlement math. Using an individual `loan.obligation` instead of
 `pools[poolId].totalObligation` would break: a contributor who draws from the
 direct channel increments `poolReceived`, which would then incorrectly reduce
@@ -453,10 +452,8 @@ function _remainingEntitlement(uint256 poolId, address account) internal view re
 }
 ```
 
-`poolClaimLoan` (direct draw from the pool's single loan stream) and
-`claimPoolShare` (draw from the shared pot) both call this helper, so a draw
-via one channel correctly reduces the remaining entitlement attributable to the
-other. The anti-pattern to avoid is substituting `loans[loanId].obligation` for
+`claimPoolShare` (draw from the shared pot) calls this helper, so a draw
+correctly reduces the remaining entitlement. The anti-pattern to avoid is substituting `loans[loanId].obligation` for
 `pools[poolId].totalObligation` in either channel — that breaks the
 cross-channel reconciliation because `poolReceived` is incremented by *both*.
 
@@ -548,7 +545,7 @@ function createBorrowPool(uint256[] memory offerIds, uint256 streamId, uint128 t
 ## Related
 
 - `src/OVRFLOBook.sol` — `createBorrowPool`, `_validateOffers`,
-  `_consumeOffers`, `poolClaimLoan`, `claimPoolShare`,
+  `_consumeOffers`, `claimPoolShare`,
   `gatherOfferCapacities`, `_remainingEntitlement`.
 - Fix commits: `91df170` (duplicate IDs + gather allocation + double SSTORE),
   `ca8e248` (pro-rata cap on `claimPoolShare` — later removed by the M-01

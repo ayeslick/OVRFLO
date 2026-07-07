@@ -43,13 +43,13 @@ function _outstanding(Loan storage loan) internal view returns (uint128) {
 
 The widening looked safe but carried three hidden costs:
 
-- **Lint noise that hides real problems.** The `uint128(uint256(obligation) - _satisfied(loan))` cast fired a forge-lint `unsafe-typecast` warning. When every narrowing cast is annotated away with `disable-next-line`, the genuinely unsafe ones stop standing out. Removing the unnecessary cast here means the remaining `unsafe-typecast` annotations in the file (on `_toUint128` and the `_toUint128` callers in `poolClaimLoan`) mark real truncation checks, not boilerplate.
+- **Lint noise that hides real problems.** The `uint128(uint256(obligation) - _satisfied(loan))` cast fired a forge-lint `unsafe-typecast` warning. When every narrowing cast is annotated away with `disable-next-line`, the genuinely unsafe ones stop standing out. Removing the unnecessary cast here means the remaining `unsafe-typecast` annotations in the file (on `_toUint128` and the `_toUint128` callers in `_claimFair`) mark real truncation checks, not boilerplate.
 - **Dead code begets confusion.** `_satisfied` was a single-line view helper called by exactly one caller. Keeping it meant readers had to chase a definition to understand a one-liner, and it suggested `_satisfied` was reused elsewhere (it was not). Inlining the expression and deleting the helper made `_outstanding` self-explanatory.
 - **Misleading "defense".** The widening implied the author feared overflow that the invariant makes impossible. A future reader might copy that defensive pattern into a function where the invariant does not hold, trusting the cast as protection when it is none.
 
 The invariant `drawn + repaid <= obligation` is the load-bearing safety property, and it is enforced at every mutation site, not by the cast:
 
-- `poolClaimLoan`: `drawAmount` is clamped against `_outstanding(loan)` (and `sablier.withdrawableAmountOf`, which itself returns `uint128`) before `loan.drawn += drawAmount`.
+- `_claimFair`: harvest amount is clamped against `_outstanding(loan)` (and `sablier.withdrawableAmountOf`, which itself returns `uint128`) before `loan.drawn += harvestAmount`.
 - `closeLoan`: `outstanding = _outstanding(loan)` is computed before `loan.drawn += outstanding`, so the final `drawn` equals `obligation - repaid` at most.
 - `repayLoan`: `require(amount <= outstanding)` runs before `loan.repaid += amount`.
 
@@ -65,7 +65,7 @@ Apply this when **all** of the following hold:
 
 Do **not** apply it when:
 
-- An operand is genuinely wider than the target type and a truncation check is required. Use `_toUint128` (which `require`s the value fits) instead. The `_toUint128` callers in `poolClaimLoan` (`_toUint128(grossPrice)`, `_toUint128(remaining)`) are correct: those `uint256` results come from cross-offer batch math and must be bounds-checked before narrowing.
+- An operand is genuinely wider than the target type and a truncation check is required. Use `_toUint128` (which `require`s the value fits) instead. The `_toUint128` callers in `_claimFair` (`_toUint128(grossPrice)`, `_toUint128(remaining)`) are correct: those `uint256` results come from cross-offer batch math and must be bounds-checked before narrowing.
 - The cast exists to satisfy an external interface that mandates a specific width. Sablier V2's `createWithDurations` requires `uint128` deposit and `uint40` duration, so `OVRFLO`'s `uint128(toStream)` and `uint40(duration)` casts in `OVRFLO.sol` are necessary interface-boundary casts, not internal arithmetic to simplify.
 
 The distinction to internalize: **interface-boundary casts are necessary because the callee's API requires that width; internal arithmetic casts are usually unnecessary when operands are already the target width and an invariant bounds the result.** The first category stays; the second category should be removed.

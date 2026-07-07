@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>OVRFLO — Borrow</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- Nav -->
+<nav class="nav">
+  <div class="container nav-inner">
+    <div class="brand">OVRF<span>LO</span></div>
+    <div class="nav-links">
+      <div class="role-toggle">
+        <button class="active">Borrow</button>
+        <button onclick="location.href='lend.html'">Lend</button>
+      </div>
+      <a href="positions.html" class="btn btn-outline btn-sm">Positions</a>
+    </div>
+  </div>
+</nav>
+
+<!-- Main -->
+<section class="py-12">
+  <div class="container" style="max-width:560px">
+
+    <h1 class="hl mb-2">Advance</h1>
+    <p class="text-sm text-muted mb-8">Deposit Pendle PTs to get your principal back instantly, then borrow against the yield stream. Collateral is created automatically &mdash; the stream repays the loan.</p>
+
+    <!-- Step 1: Underlying -->
+    <div class="label mb-4">1 · Underlying</div>
+    <div class="grid grid-2 mb-6">
+      <div class="card card-select selected" style="padding:16px">
+        <div class="flex items-center gap-3">
+          <div style="width:32px;height:32px;background:var(--cyan);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;color:var(--navy)">w</div>
+          <div>
+            <div class="font-medium">wstETH</div>
+            <div class="text-xs text-secondary">Wrapped stETH</div>
+          </div>
+        </div>
+      </div>
+      <div class="card card-select" style="padding:16px;opacity:.4">
+        <div class="flex items-center gap-3">
+          <div style="width:32px;height:32px;border:1px solid var(--divider);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;color:var(--muted)">?</div>
+          <div>
+            <div class="font-medium text-muted">More soon</div>
+            <div class="text-xs text-secondary">Other underlyings</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Step 2: Series -->
+    <div class="label mb-4">2 · Series</div>
+    <div class="card card-select selected mb-6">
+      <div class="flex justify-between items-center">
+        <div>
+          <div class="font-medium">PT-wstETH-27JUN27</div>
+          <div class="text-xs text-secondary mt-2">Matures Jun 27, 2027 · 355 days</div>
+        </div>
+        <div style="text-align:right">
+          <div class="mono text-cyan">≈4.50% blended</div>
+          <div class="text-xs text-secondary mt-2">12.4 wstETH borrowable</div>
+        </div>
+      </div>
+      <!-- Mini depth ladder -->
+      <div class="mt-4 pt-4" style="border-top:1px solid var(--divider)">
+        <div class="text-xs text-secondary mb-2">OFFER DEPTH BY RATE &middot; YOU FILL CHEAPEST FIRST</div>
+        <div class="flex gap-2 items-end" style="height:32px">
+          <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px">
+            <div style="width:100%;height:20%;background:var(--divider);border-radius:2px"></div>
+            <span class="mono text-xs text-secondary">3.5%</span>
+          </div>
+          <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px">
+            <div style="width:100%;height:45%;background:var(--divider);border-radius:2px"></div>
+            <span class="mono text-xs text-secondary">4.0%</span>
+          </div>
+          <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px">
+            <div style="width:100%;height:90%;background:var(--cyan);border-radius:2px"></div>
+            <span class="mono text-xs text-cyan">4.5%</span>
+          </div>
+          <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px">
+            <div style="width:100%;height:38%;background:var(--divider);border-radius:2px"></div>
+            <span class="mono text-xs text-secondary">5.0%</span>
+          </div>
+          <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px">
+            <div style="width:100%;height:14%;background:var(--divider);border-radius:2px"></div>
+            <span class="mono text-xs text-secondary">5.5%</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Step 3: Exit choice -->
+    <div class="label mb-4">3 · Choose your exit</div>
+    <div class="card mb-6">
+      <div class="role-toggle mb-6" style="width:100%">
+        <button id="modeBorrow" class="active" style="flex:1" onclick="setMode('borrow')">Borrow against it</button>
+        <button id="modeSell" style="flex:1" onclick="setMode('sell')">Sell outright</button>
+      </div>
+
+      <div class="flex justify-between items-center mb-4">
+        <span class="text-sm text-muted">PT to deposit</span>
+        <span class="mono">95.0 PT balance</span>
+      </div>
+      <input type="range" class="slider" id="slider" min="0" max="95" value="50" step="1" oninput="updateQuote()">
+      <div class="flex justify-between mt-2">
+        <span class="mono text-xs text-secondary">0</span>
+        <span class="mono text-xs text-secondary">95.0 PT</span>
+      </div>
+
+      <div class="mt-6 pt-4" style="border-top:1px solid var(--divider)">
+        <div class="flex justify-between items-center mb-4">
+          <span class="label" id="netLabel">YOU RECEIVE &middot; ADVANCE</span>
+          <span class="mono text-xl text-cyan" id="netOut">1.89 wstETH</span>
+        </div>
+
+        <div class="qc-row">
+          <span class="qc-label">PT deposited</span>
+          <span class="qc-value" id="ptDep">50.0 PT</span>
+        </div>
+        <div class="qc-row" style="background:rgba(93,192,245,.06);margin:0 -24px;padding-left:24px;padding-right:24px">
+          <span class="qc-label">Principal returned instantly</span>
+          <span class="qc-value text-cyan" id="principal">47.90 ovrfloETH</span>
+        </div>
+        <div class="qc-row">
+          <span class="qc-label">Yield stream (collateral)</span>
+          <span class="qc-value" id="streamVal">2.10 ovrfloETH</span>
+        </div>
+        <div class="qc-row loan-row">
+          <span class="qc-label">Obligation at maturity</span>
+          <span class="qc-value" id="obligation">2.00 ovrfloETH</span>
+        </div>
+        <div class="qc-row">
+          <span class="qc-label">Protocol fee</span>
+          <span class="qc-value text-muted" id="fee">0.01 wstETH</span>
+        </div>
+        <div class="qc-row loan-row">
+          <span class="qc-label">Residual (returns to you)</span>
+          <span class="qc-value" id="residual" style="color:var(--success)">0.10 ovrfloETH</span>
+        </div>
+        <div class="qc-row loan-row">
+          <span class="qc-label">APR</span>
+          <span class="qc-value text-cyan">4.50%</span>
+        </div>
+      </div>
+    </div>
+
+    <button class="btn btn-primary btn-full" id="actionBtn">Advance Now &rarr;</button>
+    <p class="text-xs text-secondary text-center mt-4" id="actionNote">Deposit + borrow, collateral created automatically &middot; the stream repays your loan &middot; residual returns to you</p>
+  </div>
+</section>
+
+<div class="divider"><div class="container"></div></div>
+
+<!-- Your positions preview -->
+<section class="py-12">
+  <div class="container" style="max-width:560px">
+    <div class="flex justify-between items-center mb-6">
+      <h2 class="hl-sm">Your Positions</h2>
+      <a href="positions.html" class="text-sm text-cyan">View all &rarr;</a>
+    </div>
+    <div class="grid gap-4">
+
+      <!-- Loan card -->
+      <div class="card">
+        <div class="flex justify-between items-center mb-4">
+          <div class="flex items-center gap-3">
+            <span class="tag tag-cyan">LOAN</span>
+            <span class="mono text-sm">Loan #7</span>
+          </div>
+          <span class="text-xs text-secondary">~Aug 14</span>
+        </div>
+        <div class="bar-track bar-thick mb-2">
+          <div class="bar-fill bar-cyan" style="width:64%"></div>
+        </div>
+        <div class="flex justify-between mt-2">
+          <span class="mono text-sm">64% repaid</span>
+          <span class="text-sm" style="color:var(--success)">Nothing to do</span>
+        </div>
+        <p class="text-xs text-secondary mt-2">Self-repaying · stream covers obligation · closes itself</p>
+      </div>
+
+      <!-- Stream card -->
+      <div class="card">
+        <div class="flex justify-between items-center mb-4">
+          <div class="flex items-center gap-3">
+            <span class="tag tag-muted">STREAM</span>
+            <span class="mono text-sm">Stream #42</span>
+          </div>
+          <span class="text-xs text-secondary">Jun 27, 2027</span>
+        </div>
+        <div class="bar-track bar-thick mb-2">
+          <div class="bar-fill bar-success" style="width:35%"></div>
+        </div>
+        <div class="flex justify-between mt-2">
+          <span class="mono text-sm">35% streamed</span>
+          <span class="text-sm text-muted">1.37 ovrfloETH remaining</span>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<script>
+let mode='borrow';
+function setMode(m){
+  mode=m;
+  document.getElementById('modeBorrow').classList.toggle('active',m==='borrow');
+  document.getElementById('modeSell').classList.toggle('active',m==='sell');
+  document.querySelectorAll('.loan-row').forEach(r=>{r.style.display=(m==='borrow')?'flex':'none'});
+  document.getElementById('netLabel').textContent=(m==='borrow')?'YOU RECEIVE · ADVANCE':'YOU RECEIVE · SALE';
+  document.getElementById('actionBtn').innerHTML=(m==='borrow')?'Advance Now &rarr;':'Sell Stream &rarr;';
+  document.getElementById('actionNote').innerHTML=(m==='borrow')
+    ? 'Deposit + borrow, collateral created automatically &middot; the stream repays your loan &middot; residual returns to you'
+    : 'Deposit + sell in one flow &middot; the stream transfers to the buyer permanently &middot; no repayment, no residual';
+  updateQuote();
+}
+function updateQuote(){
+  const pt=parseFloat(document.getElementById('slider').value);
+  const streamVal=pt*0.042;
+  const principal=pt*0.958;
+  const fee=streamVal*0.005;
+  const obligation=streamVal*0.952;
+  const residual=streamVal-obligation;
+  const borrowNet=obligation/1.045-fee;
+  const saleNet=streamVal*0.955-fee;
+  const fmt=v=>v.toFixed(2);
+  document.getElementById('ptDep').textContent=fmt(pt)+' PT';
+  document.getElementById('principal').textContent=fmt(principal)+' ovrfloETH';
+  document.getElementById('streamVal').textContent=fmt(streamVal)+' ovrfloETH';
+  document.getElementById('obligation').textContent=fmt(obligation)+' ovrfloETH';
+  document.getElementById('fee').textContent=fmt(fee)+' wstETH';
+  document.getElementById('residual').textContent=fmt(residual)+' ovrfloETH';
+  document.getElementById('netOut').textContent=((mode==='borrow')?fmt(borrowNet):fmt(saleNet))+' wstETH';
+}
+</script>
+
+</body>
+</html>

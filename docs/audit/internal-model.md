@@ -46,7 +46,7 @@ The pledged Sablier stream is **non-cancelable** and pays a fixed asset (`ovrflo
 For every loan, **outstanding = obligation − (drawn + repaid)** (invariant **E-2**; loan state machine **I-11**; obligation bound **I-13**):
 
 - `obligation` is computed at fill via `StreamPricing.obligationForFill()` and stored.
-- `drawn` increases on `poolClaimLoan()` (contributor draws from the stream) and on `closeLoan()` (final draw to `poolProceeds`).
+- `drawn` increases on `claimPoolShare()` (when `_claimFair` harvests deficit from an open loan's stream) and on `closeLoan()` (final draw to `poolProceeds`).
 - `repaid` increases on `repayLoan()` (borrower repays directly).
 - Repay is capped at remaining outstanding (guard **G-24**); loan servicing preserves monotonic outstanding reduction.
 

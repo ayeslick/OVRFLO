@@ -58,7 +58,7 @@ in the companion practice
 **Fix test-first.** For each accepted finding, write the test that proves the
 bug and locks the post-fix behavior before the fix is committed. The test is
 the spec: it states the invariant the fix must establish. Five fixes produced
-tests like `test_ClaimPoolShare_NoProRataCap`, `test_Deposit_RevertsWhenOracleStale`,
+tests like `test_ClaimFair_ProRataCapPreventsPotDrain`, `test_Deposit_RevertsWhenOracleStale`,
 and `test_Quote_RevertsForZeroPrice` — each named for the property it locks,
 not the function it calls.
 
@@ -142,7 +142,7 @@ require(uint256(amount) <= available, "OVRFLOBook: exceeds available");
 Pattern #12 was rewritten in the same campaign to read "cap shared-pool claims
 at `min(remaining, poolProceeds)` — no pro-rata distribution," with the
 pro-rata block moved to the WRONG example. Tests
-`test_ClaimPoolShare_NoProRataCap` and
+`test_ClaimFair_ProRataCapPreventsPotDrain` and
 `test_ClaimPoolShare_MinorityContributorNotStranded` lock the behavior.
 
 ### M-02: Net slippage check in `createBorrowPool`

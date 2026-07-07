@@ -32,7 +32,7 @@ The highest-value audit targets are the items marked **On-chain: No** — these 
 ## Adversary ranking (from `x-ray/x-ray.md`)
 
 1. **Oracle manipulator / flash loan attacker** — stale/misaligned TWAP propagates into settlement (X-1, M-4); flash loan capital can move Pendle prices within a single tx. Low staleness risk in practice: external Pendle activity keeps observations fresh; keeper bot via `prepareOracle()` as fallback.
-2. **Pool claim accounting attacker** — dual claim channels (poolClaimLoan + claimPoolShare) share a single entitlement cap; interactions deserve scrutiny (I-14, I-15, I-16).
+2. **Pool claim accounting attacker** — claimPoolShare handles both open and closed loans; _claimFair harvests deficit from open loan streams before paying from poolProceeds. The poolReceived cap and poolProceeds balance must stay correct across harvest + claim. (I-14, I-15, I-16).
 3. **Compromised admin key-holder** — market onboarding and critical configuration (I-6, X-4); all operational powers are instant (no on-chain timelock).
 4. **Order book griefing attacker** — can post and cancel offers/listings to lock liquidity or front-run other traders.
 

@@ -29,7 +29,7 @@ coverage:
 1. **`createBorrowPool` only ever used single-offer arrays**, so pattern #11
    (strictly-increasing offer IDs) and the multi-contributor pro-rata claim
    path in `_consumeOffers` were dead code in the harness.
-2. **No handler advanced time randomly**, so `closeLoan` and `poolClaimLoan`
+2. **No handler advanced time randomly**, so `closeLoan` and `claimPoolShare`
    success paths (which require stream vesting) almost never fired.
 3. **No `IFlashBorrower` implementation existed**, so the PT flash loan
    callback and its reentrancy window were entirely untested.
@@ -161,7 +161,7 @@ hit one of them.
 The end state matters: 118 tests passing, 0 failures, coverage at or above
 target on every contract (OVRFLO 92%, OVRFLOBook 90%, OVRFLOFactory 88%,
 OVRFLOToken 88%, StreamPricing 100%). The previously-dead paths
-(`closeLoan` success, `poolClaimLoan` success, flash loan callback,
+(`closeLoan` success, `claimPoolShare` success, flash loan callback,
 multi-offer `_consumeOffers`, `prepareOracle` TWAP bounds) are now hit in the
 coverage report. The suite is green for the right reason.
 
@@ -330,7 +330,7 @@ After all 8 units and 4 triage fixes, the final Medusa campaign reported 118
 tests passed with 0 failures. Coverage held or improved on every contract:
 OVRFLO 92%, OVRFLOBook 90% (up from 84%), OVRFLOFactory 88% (up from 85%),
 OVRFLOToken 88%, StreamPricing 100%. The previously-unreachable paths
-(`closeLoan` success, `poolClaimLoan` success, flash loan callback,
+(`closeLoan` success, `claimPoolShare` success, flash loan callback,
 multi-offer `_consumeOffers`, `prepareOracle` TWAP bounds) all appear in the
 coverage report. `PROPERTIES.md` checkboxes were flipped from `[-]` to `[x]`
 for GL-57, GL-61, GL-62, SP-62, and the new pattern #13 (SP-77) property.

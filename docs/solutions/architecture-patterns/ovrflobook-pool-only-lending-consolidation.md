@@ -24,7 +24,7 @@ tags: [ovrflobook, lending, pools, architecture, refactor, consolidation, loan-s
 
 1. **Sales** (`sellIntoOffer`, `buyListing`) — active, immediate trading of a stream for underlying.
 2. **Single-party lending** (`borrowAgainstOffer`, `lendAgainstListing`, `claimLoan`) — one borrower paired with one lender, repaid via direct token transfer to the lender.
-3. **Pools** (`createBorrowPool`, `poolClaimLoan`, `claimPoolShare`) — batch lending across many offers with pro-rata claims against a shared `poolProceeds` pot.
+3. **Pools** (`createBorrowPool`, `claimPoolShare`) — batch lending across many offers with pro-rata claims against a shared `poolProceeds` pot.
 
 The single-party path was an awkward middle ground. It duplicated the pool semantics ("a pool of one") while carrying its own entry points, its own events (`BorrowedAgainstOffer`, `LentAgainstListing`, `LoanClaimed`), its own test functions, and its own branching inside the shared loan-servicing functions. Every pool loan sets `loanPoolId[loanId] = poolId` and routes repayments through `poolProceeds`; a single-party loan left `loanPoolId` at zero and routed tokens directly to `loan.lender`. That `if (poolId != 0)` fork existed *only* to support the single-party case, and it forced every test, every invariant handler, and every fork test to maintain a parallel set of assertions. A pool created with a single offer or a single listing achieves the exact same economic outcome as single-party lending, so the separate path added surface area and test burden without adding capability.
 
@@ -186,14 +186,13 @@ book.claimPoolShare(poolId, 110 ether);
 assertEq(ovrfloToken.balanceOf(BUYER), 110 ether);
 ```
 
-Note the asymmetry with `poolClaimLoan`: that function draws *directly* from the Sablier stream to the caller (`sablier.withdraw(loan.streamId, msg.sender, drawAmount)`), so it does **not** require a follow-up `claimPoolShare`. Only `closeLoan` and `repayLoan` route into `poolProceeds` and thus need the extra claim step before a balance assertion.
 
 ## Why This Matters
 
 - **Smaller contract surface.** Three external functions, three events, and their internal helpers are gone. The order-book contract shrank by a meaningful chunk of bytecode, which lowers deployment cost and the audit review perimeter.
 - **No dead code paths.** The `if (poolId != 0) { ... } else { ... }` fork in `closeLoan` and `repayLoan` existed only to serve single-party loans. With every loan now pool-backed, `loanPoolId` is always non-zero for a live loan, so the branch collapses to a straight line. Fewer branches means fewer places for a subtle routing bug to hide.
 - **Lighter test burden.** Twelve single-party test functions were deleted. The invariant harness lost three handler functions and two dead helpers. Fork tests lost four direct references. Every remaining loan test now exercises the same pool path that production uses, so coverage is concentrated rather than split across two equivalent paths.
-- **Single mental model.** Lenders always claim via `claimPoolShare` (proceeds from `closeLoan`/`repayLoan`) or `poolClaimLoan` (direct stream draw). There is no third "direct to lender" path to remember. A pool with one offer and one stream is a single-party loan; the generality is free because the batch primitive already had to handle the `n = 1` case correctly.
+- **Single mental model.** Lenders always claim via `claimPoolShare`, which handles both open loans (harvesting stream deficit via `_claimFair`) and closed loans (paying from accumulated `poolProceeds`). There is no separate direct-draw path. A pool with one offer and one stream is a single-party loan; the generality is free because the batch primitive already had to handle the `n = 1` case correctly.
 - **Invariant integrity.** With one lending path, invariant handlers can focus on the pool claim channels without maintaining a parallel single-party claim handler that must track the same invariants.
 - **Eliminates patches for fragile edge cases.** The single-party path required zero-amount guards in `closeLoan` (Sablier V2 reverts on `withdraw(amount=0)`) and careful CEI ordering across three functions (session history). The pool path inherits the same guards but the branching complexity that motivated them is gone.
 

@@ -79,13 +79,14 @@ gas net *cost* per extra slot zeroed (pre-London's 15000 refund made zeroing
 profitable; that era is over). So a full `delete` charges the canceller more
 gas to destroy data that is neither needed nor harmful.
 
-Concretely for `Offer` (2 packed slots):
-- slot 1: `maker` (20B) + `aprBps` (2B)
+Concretely for `Offer` (3 packed slots):
+- slot 0: `maker` (20B)
+- slot 1: `market` (20B) + `aprBps` (2B)
 - slot 2: `capacity` (16B) + `active` (1B)
 
-`cancelOffer` must zero slot 2 (`capacity` + `active`) for safety. Slot 1 is
-left alone, saving the ~200 gas of zeroing it. `delete offers[offerId]`
-would also zero slot 1 — paying gas to erase `maker`/`aprBps` that nobody reads
+`cancelOffer` must zero slot 2 (`capacity` + `active`) for safety. Slots 0-1 are
+left alone, saving the ~400 gas of zeroing them. `delete offers[offerId]`
+would also zero slots 0-1 — paying gas to erase `maker`/`market`/`aprBps` that nobody reads
 after `active == false`.
 
 Listings follow the same logic (only `active` flips; the rest stays). Loans

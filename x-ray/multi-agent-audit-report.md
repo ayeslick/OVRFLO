@@ -31,7 +31,7 @@ The rejected/downgraded findings and the reclassifications below are now canonic
 
 ## Sablier V2 integration (verified)
 
-The verified v1.1 withdraw-ACL table, the NFT-ownership-through-the-Book lifecycle, and the version caveat (v1.1 vs later Sablier Lockup docs) are now canonicalized in [`docs/audit/sablier-interface-contract.md`](../docs/audit/sablier-interface-contract.md), pinned to the deployed address `0xAFb979d9afAd1aD27C5eFf4E27226E3AB9e5dCC9` (v2-core tag `v1.1`). Key fact retained here: OVRFLO deposits create streams with `sender = OVRFLO` and `recipient = depositor`; when `OVRFLOBook` takes custody via `transferFrom` the book becomes recipient/owner, and lender recovery uses `poolClaimLoan`/`closeLoan` where **the book** calls `sablier.withdraw(streamId, lender, amount)` — not the lender directly. Book flows require user `approve(book, streamId)` before `transferFrom` (exercised in `test/fork/OVRFLOBookMainnetFork.t.sol`).
+The verified v1.1 withdraw-ACL table, the NFT-ownership-through-the-Book lifecycle, and the version caveat (v1.1 vs later Sablier Lockup docs) are now canonicalized in [`docs/audit/sablier-interface-contract.md`](../docs/audit/sablier-interface-contract.md), pinned to the deployed address `0xAFb979d9afAd1aD27C5eFf4E27226E3AB9e5dCC9` (v2-core tag `v1.1`). Key fact retained here: OVRFLO deposits create streams with `sender = OVRFLO` and `recipient = depositor`; when `OVRFLOBook` takes custody via `transferFrom` the book becomes recipient/owner, and lender recovery uses `claimPoolShare`/`closeLoan` where **the book** calls `sablier.withdraw(streamId, lender, amount)` — not the lender directly. Book flows require user `approve(book, streamId)` before `transferFrom` (exercised in `test/fork/OVRFLOBookMainnetFork.t.sol`).
 
 **Pre-custody note:** Original recipient may withdraw vested `ovrfloToken` before listing/borrowing; pricing uses `deposited − withdrawn` at fill time (documented in book plan). After NFT transfer to the book, former holder cannot withdraw.
 
@@ -193,7 +193,7 @@ The full rejected-findings decision record — H-2 (Sablier v1.1 ACL, no permiss
 | Stream eligibility vs `OVRFLO.deposit` creation | Sender, asset, end time, non-cancelable aligned |
 | Reentrancy on book mutators | `nonReentrant` on state-changing externals |
 | Admin APR drift on resting offers | Governance/trust boundary ([I-7](invariants.md#i-7)), not unprivileged exploit |
-| Book `poolClaimLoan` / `closeLoan` Sablier calls | Book as NFT owner/recipient withdraws to `poolProceeds`; fork-tested |
+| Book `claimPoolShare` / `closeLoan` Sablier calls | Book as NFT owner/recipient withdraws to `poolProceeds`; fork-tested |
 
 ---
 
@@ -214,7 +214,7 @@ The full rejected-findings decision record — H-2 (Sablier v1.1 ACL, no permiss
 | Priority | Gap | Suggested test | Status |
 |----------|-----|----------------|--------|
 | P1 | No negative auth tests on book cancel paths | Prank non-maker; assert revert + unchanged escrow | **Done** — `test_Cancel*_RevertForWrong*` in `OVRFLOBook.t.sol` |
-| P1 | No invariant/fuzz on loan lifecycle interleaving | Random `poolClaimLoan` / `repayLoan` / `closeLoan` sequences | **Done** — `OVRFLOBookInvariant.t.sol` (R6-R9) |
+| P1 | No invariant/fuzz on loan lifecycle interleaving | Random `claimPoolShare` / `repayLoan` / `closeLoan` sequences | **Done** — `OVRFLOBookInvariant.t.sol` (R6-R9) |
 | P2 | `toStream > uint128.max` deposit path | Assert revert, not silent truncation | Open (L-1 / R-03 rejected) |
 | P2 | `expiryCached > uint40.max` at deposit | Assert revert (or align deposit with eligibility bound) | Open (L-1 / R-03 rejected) |
 | P2 | Sablier `Unauthorized` on pranked withdraw during book escrow | Fork test: stranger, former borrower, lender prank `withdraw` → revert | **Done** — `test_BookEscrow_StrangerCannotWithdrawFromEscrowedStream` in `OVRFLOBookMainnetFork.t.sol` |

@@ -34,7 +34,7 @@ confirmed that the sale offer's `capacity` dropped to `0` and that
 *left the book*, that the *fee was paid*, or that the upfront-liquidity provider
 ended up at zero. The same shape recurred across `sellIntoOffer`, `buyListing`,
 `createBorrowPool`, `createLenderPool`, and the loan-servicing paths
-(`poolClaimLoan`, `claimPoolShare`, `closeLoan`, `repayLoan`).
+(`claimPoolShare`, `closeLoan`, `repayLoan`).
 
 The friction this created: a future refactor that breaks `_payUnderlying` (wrong
 payee, skipped fee, value stranded in the book, double-pay) would pass every
@@ -74,7 +74,7 @@ Per-flow checklist (all amounts are `underlying` unless noted):
   - buyer (lender) balance == `0` (they paid `borrowAmount`)
   - book balance == `0` (all paid out)
 
-- **`poolClaimLoan` / `claimPoolShare` / `closeLoan` / `repayLoan` (loan servicing):**
+- **`claimPoolShare` / `closeLoan` / `repayLoan` (loan servicing):**
   - `ovrfloToken.balanceOf` for the lender reflects accumulated draws (and
     repayments, where applicable)
   - `sablier.getWithdrawnAmount` reflects the total withdrawn from the stream
@@ -124,7 +124,7 @@ measurable runtime cost, and all 240 non-fork tests still pass.
   `ovrfloToken`, or a Sablier stream NFT.
 - New tests written for `OVRFLOBook` entry/teardown functions: `sellIntoOffer`,
   `buyListing`, `createBorrowPool`, `createLenderPool`, the `cancel*`
-  functions, and `poolClaimLoan` / `claimPoolShare` / `closeLoan` / `repayLoan`.
+  functions, and `claimPoolShare` / `closeLoan` / `repayLoan`.
 - During test PR review: if a balance assertion is missing for a party that
   touched value, request it before approving. The four-party check (actor,
   counterparty, treasury, book) is the minimum, not a nice-to-have.
@@ -201,7 +201,7 @@ money actually moved to the right places."
 
 - `test/OVRFLOBook.t.sol` — the ~15 tests updated with full balance assertions
   (`sellIntoOffer`, `buyListing`, `createBorrowPool`, `createLenderPool`,
-  `poolClaimLoan`, `claimPoolShare`, `closeLoan`, `repayLoan` paths).
+  `claimPoolShare`, `closeLoan`, `repayLoan` paths).
 - `src/OVRFLOBook.sol` — the entry/teardown and loan-servicing functions whose
   value routing these assertions guard (`_payUnderlying`, `_pullExact`, and the
   per-flow payout logic).

@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>OVRFLO — Positions</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- Nav -->
+<nav class="nav">
+  <div class="container nav-inner">
+    <div class="brand">OVRF<span>LO</span></div>
+    <div class="nav-links">
+      <div class="role-toggle">
+        <button onclick="location.href='borrow.html'">Borrow</button>
+        <button onclick="location.href='lend.html'">Lend</button>
+      </div>
+      <a href="#" class="btn btn-outline btn-sm" style="border-color:var(--cyan);color:var(--cyan)">Positions</a>
+    </div>
+  </div>
+</nav>
+
+<!-- Summary -->
+<section class="py-12">
+  <div class="container">
+    <h1 class="hl mb-8">Positions</h1>
+
+    <div class="grid grid-4 mb-12">
+      <div class="card">
+        <div class="label mb-2">STREAM VALUE</div>
+        <div class="mono text-xl">3.47 ovrfloETH</div>
+        <div class="text-xs text-secondary mt-2">2 active streams</div>
+      </div>
+      <div class="card">
+        <div class="label label-cyan mb-2">BORROWED</div>
+        <div class="mono text-xl text-cyan">1.89 wstETH</div>
+        <div class="text-xs text-secondary mt-2">1 active loan</div>
+      </div>
+      <div class="card">
+        <div class="label label-lend mb-2">DEPLOYED</div>
+        <div class="mono text-xl text-lend">80.0 wstETH</div>
+        <div class="text-xs text-secondary mt-2">2 active offers</div>
+      </div>
+      <div class="card">
+        <div class="label mb-2" style="color:var(--success)">CLAIMABLE</div>
+        <div class="mono text-xl" style="color:var(--success)">4.4 ovrfloETH</div>
+        <div class="text-xs text-secondary mt-2">from pool shares</div>
+      </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="flex gap-2 mb-8">
+      <button class="btn btn-outline btn-sm" style="background:var(--surface);border-color:var(--cyan);color:var(--cyan)">All</button>
+      <button class="btn btn-outline btn-sm">Streams</button>
+      <button class="btn btn-outline btn-sm">Loans</button>
+      <button class="btn btn-outline btn-sm">Offers</button>
+    </div>
+
+    <!-- Position cards -->
+    <div class="grid grid-2 gap-4">
+
+      <!-- Loan: in progress, nothing to do -->
+      <div class="card">
+        <div class="flex justify-between items-center mb-4">
+          <div class="flex items-center gap-3">
+            <span class="tag tag-cyan">LOAN</span>
+            <span class="mono text-sm">Loan #7</span>
+          </div>
+          <span class="text-xs text-secondary">PT-wstETH-27JUN27</span>
+        </div>
+        <div class="bar-track bar-thick mb-3">
+          <div class="bar-fill bar-cyan" style="width:64%"></div>
+        </div>
+        <div class="flex justify-between mb-3">
+          <span class="mono text-sm">64% repaid · 0.72 ovrfloETH left</span>
+          <span class="text-sm" style="color:var(--success)">&#10003; Nothing to do</span>
+        </div>
+        <p class="text-sm text-muted">Self-repaying · closes itself ~Aug 14, 2026</p>
+        <p class="text-xs text-secondary mt-2">Stream #42 is paying this down automatically. When the obligation is covered, the residual (0.10 ovrfloETH) returns to you.</p>
+      </div>
+
+      <!-- Offer: partially consumed, claimable -->
+      <div class="card">
+        <div class="flex justify-between items-center mb-4">
+          <div class="flex items-center gap-3">
+            <span class="tag tag-lend">OFFER</span>
+            <span class="mono text-sm">Offer #12</span>
+          </div>
+          <span class="mono text-sm text-lend">4.50% APR</span>
+        </div>
+        <div class="bar-track bar-thick mb-3">
+          <div class="bar-fill bar-lend" style="width:45%"></div>
+        </div>
+        <div class="flex justify-between mb-3">
+          <span class="mono text-sm">22.5 consumed · 27.5 remaining</span>
+          <span class="text-sm" style="color:var(--success)">1.0 ovrfloETH claimable</span>
+        </div>
+        <p class="text-sm text-muted">Standing liquidity · borrowers consuming as loans</p>
+        <div class="flex gap-2 mt-4">
+          <button class="btn btn-lend btn-sm">Claim 1.0 ovrfloETH</button>
+          <button class="btn btn-outline btn-sm">Cancel</button>
+        </div>
+      </div>
+
+      <!-- Stream: actively streaming -->
+      <div class="card">
+        <div class="flex justify-between items-center mb-4">
+          <div class="flex items-center gap-3">
+            <span class="tag tag-muted">STREAM</span>
+            <span class="mono text-sm">Stream #42</span>
+          </div>
+          <span class="text-xs text-secondary">Jun 27, 2027</span>
+        </div>
+        <div class="bar-track bar-thick mb-3">
+          <div class="bar-fill bar-success" style="width:35%"></div>
+        </div>
+        <div class="flex justify-between mb-3">
+          <span class="mono text-sm">35% streamed · 1.37 ovrfloETH left</span>
+          <span class="text-sm text-muted">355 days</span>
+        </div>
+        <p class="text-sm text-muted">Sablier stream · pledged to Loan #7</p>
+        <p class="text-xs text-secondary mt-2">This stream is automatically repaying your loan. No action needed.</p>
+      </div>
+
+      <!-- Loan: ready to close (permissionless) -->
+      <div class="card" style="border-color:var(--success)">
+        <div class="flex justify-between items-center mb-4">
+          <div class="flex items-center gap-3">
+            <span class="tag tag-success">LOAN · READY</span>
+            <span class="mono text-sm">Loan #3</span>
+          </div>
+          <span class="text-xs text-secondary">PT-wstETH-25DEC26</span>
+        </div>
+        <div class="bar-track bar-thick mb-3">
+          <div class="bar-fill bar-success" style="width:100%"></div>
+        </div>
+        <div class="flex justify-between mb-3">
+          <span class="mono text-sm">100% repaid</span>
+          <span class="text-sm" style="color:var(--success)">Residual: 0.08 ovrfloETH</span>
+        </div>
+        <p class="text-sm text-muted">Obligation covered · close to claim your residual</p>
+        <p class="text-xs text-secondary mt-2">Permissionless — anyone can close this, including us.</p>
+        <button class="btn btn-primary btn-full mt-4">Close Now &rarr;</button>
+      </div>
+
+      <!-- Offer: fully consumed -->
+      <div class="card" style="opacity:.6">
+        <div class="flex justify-between items-center mb-4">
+          <div class="flex items-center gap-3">
+            <span class="tag tag-muted">OFFER · FILLED</span>
+            <span class="mono text-sm">Offer #8</span>
+          </div>
+          <span class="mono text-sm text-lend">5.00% APR</span>
+        </div>
+        <div class="bar-track bar-thick mb-3">
+          <div class="bar-fill bar-lend" style="width:100%"></div>
+        </div>
+        <div class="flex justify-between mb-3">
+          <span class="mono text-sm">30.0 consumed · fully deployed</span>
+          <span class="text-sm" style="color:var(--success)">2.2 ovrfloETH claimable</span>
+        </div>
+        <p class="text-sm text-muted">All capacity consumed · claim your pool share</p>
+        <button class="btn btn-lend btn-sm mt-4">Claim 2.2 ovrfloETH</button>
+      </div>
+
+      <!-- Stream: matured, claim available -->
+      <div class="card">
+        <div class="flex justify-between items-center mb-4">
+          <div class="flex items-center gap-3">
+            <span class="tag tag-success">STREAM · MATURED</span>
+            <span class="mono text-sm">Stream #38</span>
+          </div>
+          <span class="text-xs text-secondary">Dec 25, 2026</span>
+        </div>
+        <div class="bar-track bar-thick mb-3">
+          <div class="bar-fill bar-success" style="width:100%"></div>
+        </div>
+        <div class="flex justify-between mb-3">
+          <span class="mono text-sm">100% streamed</span>
+          <span class="text-sm" style="color:var(--success)">1.10 ovrfloETH claimable</span>
+        </div>
+        <p class="text-sm text-muted">Stream complete · withdraw your yield</p>
+        <button class="btn btn-primary btn-sm mt-4">Withdraw 1.10 ovrfloETH</button>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<div class="divider"><div class="container"></div></div>
+
+<!-- Empty state hint -->
+<section class="py-12">
+  <div class="container" style="max-width:560px;text-align:center">
+    <div class="label mb-4">NO POSITIONS YET?</div>
+    <p class="text-sm text-muted mb-6">Deposit Pendle PTs to create a stream, then advance against it. Or provide liquidity for lenders.</p>
+    <div class="flex gap-4 justify-center" style="flex-wrap:wrap">
+      <a href="borrow.html" class="btn btn-primary">Borrow &rarr;</a>
+      <a href="lend.html" class="btn btn-lend">Lend &rarr;</a>
+    </div>
+  </div>
+</section>
+
+</body>
+</html>

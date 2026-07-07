@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang='en'>
+<head>
+<meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1'>
+<title>OVRFLO — The Lending Market</title>
+<link href='https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;600&display=swap' rel='stylesheet'>
+<link rel='stylesheet' href='styles.css'>
+<style>
+  .w-full { width: 100%; }
+  .text-center { text-align: center; }
+  .text-right { text-align: right; }
+  .p-8 { padding: 32px; }
+  .list-check { list-style: none; padding: 0; line-height: 2.2; }
+  .list-check li::before { content: "✓ "; color: var(--cyan); font-weight: bold; margin-right: 8px; }
+</style>
+</head>
+<body>
+<nav class='nav'>
+  <div class='container nav-inner'>
+    <div class='brand'>OVRF<span>LO</span></div>
+    <div class='nav-links'>
+      <a href='app-tables.html'>App</a>
+      <a href='#'>Docs</a>
+      <a href='app-tables.html' class='btn btn-outline btn-sm'>Launch App</a>
+    </div>
+  </div>
+</nav>
+
+<section class='py-16 text-center'>
+  <div class='container' style='max-width:800px'>
+    <div class='label mb-4 text-cyan'>THE PROTOCOL</div>
+    <h1 class='hl-lg mb-6'>The Self-Repaying<br>Lending Market</h1>
+    <p class='text-lg text-muted mb-8'>Supply wstETH for secure fixed yield, or borrow against your Pendle PTs with zero liquidation risk. Your yield repays your loan automatically.</p>
+    
+    <div class='flex gap-4 justify-center mb-12'>
+      <a href='app-tables.html' class='btn btn-primary'>Launch App &rarr;</a>
+      <a href='#' class='btn btn-outline'>Read Docs</a>
+    </div>
+
+    <div class='card flex justify-between p-8 text-left'>
+      <div>
+        <div class='label mb-2'>TOTAL SUPPLIED</div>
+        <div class='mono text-xl'>12,450 wstETH</div>
+      </div>
+      <div>
+        <div class='label mb-2' style='color:var(--lend)'>AVG SUPPLY APY</div>
+        <div class='mono text-xl text-lend'>4.50%</div>
+      </div>
+      <div>
+        <div class='label mb-2 text-cyan'>AVG BORROW APY</div>
+        <div class='mono text-xl text-cyan'>4.62%</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class='py-12'>
+  <div class='container'>
+    <div class='grid grid-2 gap-6'>
+       <div class='card p-8'>
+         <div class='label mb-4' style='color:var(--lend)'>FOR LENDERS</div>
+         <h3 class='hl-sm mb-4'>Earn Predictable Yield</h3>
+         <p class='text-muted mb-6'>Earn predictable yield on your wstETH. Your liquidity is backed by deterministic Sablier streams from Pendle PT deposits. Claim your pro-rata share anytime as the streams pay down.</p>
+         <ul class='list-check text-sm text-secondary'>
+           <li>High fixed or variable APY</li>
+           <li>Backed by immutable smart contracts</li>
+           <li>Zero bad debt risk</li>
+         </ul>
+         <div class='mt-8'>
+           <a href='app-tables.html' class='btn btn-lend btn-full'>Supply Liquidity</a>
+         </div>
+       </div>
+       <div class='card p-8'>
+         <div class='label mb-4 text-cyan'>FOR BORROWERS</div>
+         <h3 class='hl-sm mb-4'>Self-Repaying Loans</h3>
+         <p class='text-muted mb-6'>Unlock upfront liquidity without selling your PTs. We automatically create a collateral stream from your PT's yield, which pays off your debt over time. Keep the residual.</p>
+         <ul class='list-check text-sm text-secondary'>
+           <li>Zero liquidation risk</li>
+           <li>No health factors to monitor</li>
+           <li>Zero price oracles at runtime</li>
+         </ul>
+         <div class='mt-8'>
+           <a href='app-tables.html' class='btn btn-primary btn-full'>Borrow against PTs</a>
+         </div>
+       </div>
+    </div>
+  </div>
+</section>
+</body>
+</html>

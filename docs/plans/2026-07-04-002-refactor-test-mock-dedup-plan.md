@@ -3,7 +3,7 @@
 Date: 2026-07-04
 Status: proposed
 Scope: `test/*.t.sol` (Foundry unit/fuzz/invariant/attack suites)
-Out of scope: `test/fork/` (already shares `OVRFLOForkBase` + `OVRFLOTestFixtures`), `test/fizz/` (Echidna/Medusa suite, must stay self-contained), `src/`, coverage gaps (tracked separately in `SOLIDITY_TEST_REVIEW.md`)
+Out of scope: `test/fork/` (already shares `OVRFLOForkBase` + `OVRFLOTestFixtures`), `test/fizz/` (Echidna/Medusa suite, must stay self-contained), `src/`, coverage gaps (tracked separately in `docs/solutions/best-practices/solidity-test-coverage-review.md`)
 
 ## Motivation
 
@@ -151,7 +151,7 @@ Notes:
 - **Fork suites:** already properly factored through `OVRFLOForkBase` /
   `script/lib/OVRFLOTestFixtures.sol`. No changes.
 - **Adding missing tests (G-01..G-08):** coverage work, tracked in
-  `SOLIDITY_TEST_REVIEW.md`, not part of this refactor.
+  `docs/solutions/best-practices/solidity-test-coverage-review.md`, not part of this refactor.
 
 ## Migration order (one commit per step is fine)
 

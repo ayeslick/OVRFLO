@@ -18,7 +18,7 @@ OVRFLO uses Sablier only for linear vesting streams created on PT deposit and th
 - **Assumed property:** `withdrawableAmountOf(streamId)` increases monotonically with time and drops only by the amount withdrawn on a successful `withdraw`.
 - **Enforced?** **External (trusted).** OVRFLO depends on Sablier v1.1 behavior it cannot enforce locally. `OVRFLOBook.closeLoan()` uses `withdrawableAmountOf()` to gate closability (guard **G-23**).
 - **If violated:** Closability and lender draw paths deviate from local bookkeeping. See `x-ray/invariants.md` and the trust-assumption ledger.
-- **OVRFLO call site:** `OVRFLOBook.closeLoan()`, `OVRFLOBook.poolClaimLoan()`.
+- **OVRFLO call site:** `OVRFLOBook.closeLoan()`, `OVRFLOBook.claimPoolShare()` (via _claimFair harvest).
 
 ### S3. `transferFrom` moves the stream NFT and changes recipient/ownership
 
@@ -32,7 +32,7 @@ OVRFLO uses Sablier only for linear vesting streams created on PT deposit and th
 - **Assumed property:** `SablierV2Lockup.withdraw(streamId, to, amount)` reverts `SablierV2Lockup_Unauthorized` unless `msg.sender` is the stream **sender**, the **NFT owner (recipient)**, or an **ERC-721 approved operator**. There is **no permissionless public withdraw** in v1.1.
 - **Enforced?** **External (trusted).** This is the exact distinction that flipped audit finding **H-2** from High to Rejected — see the ACL table and `rejected-findings-record.md`.
 - **If violated:** A permissionless withdraw path would let a third party drain an escrowed stream. Verified not to exist in v1.1 bytecode at the pinned address.
-- **OVRFLO call site:** `OVRFLOBook.poolClaimLoan()` / `closeLoan()` (book, as NFT owner, withdraws to contributor or `poolProceeds`).
+- **OVRFLO call site:** `OVRFLOBook.claimPoolShare()` (via _claimFair harvest) / `closeLoan()` (book, as NFT owner, withdraws to contributor or `poolProceeds`).
 
 ## Verified v1.1 withdraw-ACL table
 
@@ -42,7 +42,7 @@ Keyed to deployed `0xAFb979d9afAd1aD27C5eFf4E27226E3AB9e5dCC9` (v2-core tag `v1.
 |--------|----------------------|----------------------|
 | Random third party | `Unauthorized` revert | `Unauthorized` revert |
 | User (owner/recipient) | withdraw to any `to` | N/A (no longer owner) |
-| Book (owner/recipient) | N/A | withdraw to any `to` (e.g. contributor in `poolClaimLoan`) |
+| Book (owner/recipient) | N/A | withdraw to any `to` (e.g. book in `_claimFair` harvest) |
 | Approved operator | withdraw to any `to` | depends on approval state |
 | OVRFLO vault (sender) | only `to == recipient` | only `to == book` (trusted) |
 

@@ -206,9 +206,9 @@
 
 `Conservation` · On-chain: **Yes**
 
-> `loan.drawn + loan.repaid == poolProceeds[poolId] + Σ directDraws` for every pool loan
+> `loan.drawn + loan.repaid >= poolProceeds[poolId]` for every pool loan
 
-**Derivation** — Δ-pair: `OVRFLOBook.sol:488` (`Δ(loan.drawn) = +outstanding` ↔ `Δ(poolProceeds) = +outstanding` in `closeLoan`); `:519` (`Δ(loan.repaid) = +amount` ↔ `Δ(poolProceeds) = +amount` in `repayLoan`); `:633` (`Δ(loan.drawn) = +drawAmount` in `poolClaimLoan` — direct draw, NOT to poolProceeds).
+**Derivation** — Δ-pair: `OVRFLOBook.sol:488` (`Δ(loan.drawn) = +outstanding` ↔ `Δ(poolProceeds) = +outstanding` in `closeLoan`); `:519` (`Δ(loan.repaid) = +amount` ↔ `Δ(poolProceeds) = +amount` in `repayLoan`); `claimPoolShare` via `_claimFair` may harvest deficit from the open loan's stream (`Δ(loan.drawn) = +harvestAmount` ↔ `Δ(poolProceeds) = +harvestAmount`), then the claim payout reduces `poolProceeds` (`Δ(poolProceeds) = -claimAmount`) without changing `loan.drawn` or `loan.repaid`. Since harvest adds to both sides equally and claim reduces only `poolProceeds`, `loan.drawn + loan.repaid >= poolProceeds[poolId]` holds.
 
 **If violated** — Lenders could claim more than their entitlement, or proceeds would be stranded.
 
@@ -220,7 +220,7 @@
 
 > `poolReceived[poolId][contributor] <= entitlement` where `entitlement = poolContributions * totalObligation / totalContributed`
 
-**Derivation** — Guard-lift: `OVRFLOBook._remainingEntitlement:910-916` computes `remaining = entitlement - poolReceived` and reverts if `remaining == 0`. Both `poolClaimLoan` and `claimPoolShare` call this before any claim. The pro-rata cap was removed in M-01 fix; `poolReceived` now prevents over-claiming, and `claimPoolShare` caps at `min(remaining, poolProceeds)`.
+**Derivation** — Guard-lift: `OVRFLOBook._remainingEntitlement:910-916` computes `remaining = entitlement - poolReceived` and reverts if `remaining == 0`. `claimPoolShare` calls this before any claim. The pro-rata cap was removed in M-01 fix; `poolReceived` now prevents over-claiming, and `claimPoolShare` caps at `min(remaining, poolProceeds)`.
 
 **If violated** — A contributor could claim more than their pro-rata share, stealing from other contributors.
 
@@ -456,7 +456,7 @@ On-chain: **Yes**
 
 On-chain: **Yes**
 
-> Pool claim fairness: no contributor can claim more than their pro-rata share of total obligation, across both claim channels combined.
+> Pool claim fairness: no contributor can claim more than their pro-rata share of total obligation.
 
 **Follows from** — I-4 (poolReceived <= entitlement) + I-2 (Σ poolContributions == totalContributed) + G-46 (claimPoolShare capped at min(remaining, poolProceeds))
 

@@ -62,7 +62,7 @@ This artificial distinction produced three kinds of friction:
    — it could be derived from the pool itself. Carrying it forward kept a
    caller-supplied ID in scope that could drift from the pool's real loan,
    forcing a defensive `loanPoolId[loanId] == poolId` cross-check that
-   served no purpose once the relationship became 1:1.
+   served no purpose once the relationship became 1:1. (Note: `poolClaimLoan` was subsequently removed; `claimPoolShare` is now the sole pool claim function.)
 
 The contract is pre-launch (no deployments), so storage layout changes are
 free. This was the moment to collapse the duplication rather than let it
@@ -235,6 +235,8 @@ reverse mapping so the function can derive the ID internally, and drop the
 parameter. This removes a caller-supplied value that could be wrong and the
 defensive check that guarded against it being wrong.
 
+**Historical context:** `poolClaimLoan` was later removed entirely. `claimPoolShare` is now the sole pool claim function.
+
 **Before — `poolClaimLoan` took both IDs and cross-checked them:**
 
 ```solidity
@@ -284,8 +286,8 @@ guard. The `0` sentinel is safe because loan IDs are monotonic from `1`
 
 One field was *not* removed even though it became derivable: `pools[poolId].totalObligation`. After `createLenderPool` was removed, every pool has exactly one loan, so `pool.totalObligation == loans[poolLoanId[poolId]].obligation` by construction. It would be "cleaner" to delete it and read the loan's obligation directly.
 
-Keep it. The pro-rata claim math in `poolClaimLoan` and `claimPoolShare`
-both read `pools[poolId].totalObligation` and `pools[poolId].totalContributed`
+Keep it. The pro-rata claim math in `claimPoolShare` (via `_claimFair`)
+reads `pools[poolId].totalObligation` and `pools[poolId].totalContributed`
 to compute a contributor's entitlement:
 
 ```solidity
@@ -339,7 +341,7 @@ endpoint instead of two to assemble a batch.
 removes a class of caller error (passing a `loanId` that belongs to a
 different pool) that the old cross-check only *detected*, never *prevented*
 — it reverted, but only after the caller had already constructed a wrong
-call. Deriving the ID internally makes the wrong call unconstructable.
+call. Deriving the ID internally makes the wrong call unconstructable. (Note: `poolClaimLoan` was later removed entirely; `claimPoolShare` is now the sole pool claim function.)
 
 **Review and test cost drop, and the dropped surface is real.** The diff
 deleted 1146 lines and added 369. The test suite (67 unit, 4 invariant at
@@ -400,7 +402,7 @@ canonical posting path; the sale/loan fork happens later, at consumption.
 See the Guidance section's practice 4. The 3-arg → 2-arg change is the
 cleanest illustration of "derive, don't accept": the caller no longer names
 the loan, the pool names its own loan, and the guard becomes an existence
-check instead of a cross-check.
+check instead of a cross-check. (Note: `poolClaimLoan` was later removed entirely; `claimPoolShare` is now the sole pool claim function.)
 
 ### Example 4 — Keeping a redundant field on purpose
 
@@ -409,7 +411,7 @@ check instead of a cross-check.
 pro-rata entitlement math in both claim channels reads it directly:
 
 ```solidity
-// poolClaimLoan — direct-draw channel
+// poolClaimLoan — direct-draw channel (removed; claimPoolShare is now the sole claim channel)
 uint256 entitlement = uint256(poolContributions[poolId][msg.sender])
     * pools[poolId].totalObligation / pools[poolId].totalContributed;
 

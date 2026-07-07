@@ -1,6 +1,6 @@
 # X-Ray Report
 
-> OVRFLO | ~1,395 nSLOC | 01cad7b (`main`) | Foundry | 05/07/26
+> OVRFLO | ~1,395 nSLOC | 01cad7b (`main`) | Foundry | 07/07/26
 
 ---
 
@@ -88,13 +88,13 @@ Stream-backed self-repaying loans are the core primitive (lending). The vault to
 | OVRFLOBook | Bounded (factory is owner) | Holds escrowed streams + underlying liquidity. All stateful functions `nonReentrant`. |
 | User/Depositor | Untrusted | Permissionless deposit, claim, wrap, unwrap, flash loan. |
 | Stream Seller/Borrower | Untrusted | Permissionless sell, list, buy, borrow, close loan. Must own the stream. |
-| Pool Contributor | Bounded (by contribution) | Can claim pro-rata from pool proceeds or draw directly from the loan's stream. |
+| Pool Contributor | Bounded (by contribution) | Can claim pro-rata from pool proceeds; `claimPoolShare` harvests deficit from the open loan's stream via `_claimFair` before paying out. |
 
 **Adversary Ranking** (ordered by threat level):
 
 1. **Flash loan attacker** — Can borrow unlimited underlying to swap for PT, run the deposit→unwrap→sell cycle, and repay in one tx.
 2. **Oracle manipulator** — Pendle TWAP oracle determines the deposit split (immediate vs streamed). A manipulated rate could shift value between `toUser` and `toStream`.
-3. **Pool claim racer** — Two claim channels (`poolClaimLoan` direct draw, `claimPoolShare` from proceeds) with pro-rata caps. Worth confirming caps hold under concurrent claims.
+3. **Pool claim racer** — Single claim channel (`claimPoolShare` from proceeds) with pro-rata caps. When `poolProceeds` is insufficient, `_claimFair` harvests withdrawable stream value into `poolProceeds` before paying out. Worth confirming caps hold under concurrent claims.
 4. **Compromised admin** — Multisig key compromise gives instant control over fees, APR bounds, flash loan pause, and sweep functions.
 
 See [entry-points.md](entry-points.md) for the full permissionless entry point map.
@@ -112,7 +112,7 @@ See [entry-points.md](entry-points.md) for the full permissionless entry point m
 
 - **StreamPricing rounding direction** &nbsp;[I-7](invariants.md#i-7), [E-2](invariants.md#e-2) — `StreamPricing.sol:147-157`: `grossPrice` floors, `obligation` ceils by 1 wei. The invariant `obligation <= remaining` depends on this asymmetry. Worth confirming at boundary values.
 
-- **Pool dual-channel claim accounting** &nbsp;[I-3](invariants.md#i-3), [I-4](invariants.md#i-4), [E-3](invariants.md#e-3) — `poolClaimLoan` draws directly from the stream (bypasses `poolProceeds`), while `claimPoolShare` draws from `poolProceeds`. The pro-rata cap was removed in M-01 fix; `poolReceived` now prevents over-claiming, and `claimPoolShare` caps at `min(remaining, poolProceeds)`. Worth tracing that no contributor can over-claim across both channels.
+- **Pool single-channel claim accounting** &nbsp;[I-3](invariants.md#i-3), [I-4](invariants.md#i-4), [E-3](invariants.md#e-3) — `claimPoolShare` now handles both open and closed loans. The `_claimFair` internal harvests withdrawable stream value when the loan is open and `poolProceeds` is insufficient, increasing both `loan.drawn` and `poolProceeds` before the claim payout reduces `poolProceeds`. The `poolReceived` cap still prevents over-claiming. Worth tracing that no contributor can over-claim.
 
 - **Oracle freshness at runtime** &nbsp;[I-17](invariants.md#i-17), [X-1](invariants.md#x-1) — `OVRFLO._requireOracleFresh:347-350` checks `oldestObservationSatisfied` before every `getPtToSyRate` read (added in M-03 fix). Cardinality is intentionally NOT rechecked at runtime. Worth confirming the asymmetry is safe.
 
@@ -184,7 +184,7 @@ See [entry-points.md](entry-points.md) for the full permissionless entry point m
 | README | Present | `README.md` — comprehensive protocol spec with flows, architecture diagrams, security analysis |
 | NatSpec | ~130 annotations | Thorough on all 5 contracts; every public function documented with `@notice`, `@dev`, `@param` |
 | Spec/Whitepaper | Present | `README.md` serves as the spec; `docs/solutions/` contains 14+ writeups with YAML frontmatter |
-| Inline Comments | Thorough | `docs/solutions/patterns/ovrflo-critical-patterns.md` documents 13 enforceable rules; `CONCEPTS.md` has domain vocabulary |
+| Inline Comments | Thorough | `docs/solutions/patterns/ovrflo-critical-patterns.md` documents 17 enforceable rules; `CONCEPTS.md` has domain vocabulary |
 
 ---
 
@@ -286,11 +286,11 @@ See [entry-points.md](entry-points.md) for the full permissionless entry point m
 - **3a7b06a fix without test changes** — code review fixes spanning access control and accounting, 12 lines changed, no test co-modification. *Git signal: 10% fix-without-test rate overall.*
 - **No tech debt markers** — zero TODO/FIXME/HACK comments in source files.
 - **OVFL.sol hotspot is legacy** — 28 modifications to `src/OVFL.sol` (pre-rename); current code is `src/OVRFLO.sol` with 26 modifications.
-- **Audit campaign completed** — 5 findings (M-01, M-02, M-03, L-01, L-02) found, fixed test-first, and documented in `AUDIT_FINDINGS.md`. Pattern #12 resynced.
+- **Audit campaign completed** — 5 findings (M-01, M-02, M-03, L-01, L-02) found, fixed test-first, and documented in `docs/audit/audit-findings.md`. Pattern #12 resynced.
 
 ### Cross-Reference Synthesis
 
-- **`OVRFLOBook.sol` is #1 in BOTH churn AND attack-surface priority** — pool dual-channel claims, rounding math, and 5 audit fixes all route through it → highest-leverage review target.
+- **`OVRFLOBook.sol` is #1 in BOTH churn AND attack-surface priority** — pool single-channel claims, rounding math, and 5 audit fixes all route through it → highest-leverage review target.
 - **59 access_control + 59 fund_flows + 59 oracle_price commits** — all three security areas have identical commit counts because every functional change touches all three (access gating, fund movement, and oracle-dependent pricing). This is structural, not coincidental.
 - **M-03 fix (oracle freshness) directly addresses X-1 attack surface** — the oracle was previously checked only at onboarding; now `oldestObservationSatisfied` is verified before every rate read (I-17).
 - **M-01 fix (pro-rata cap removal) changes I-4 mechanism** — the invariant `poolReceived <= entitlement` still holds, but enforcement shifted from a pro-rata cap on a shrinking pot to `min(remaining, poolProceeds)`.
@@ -306,4 +306,4 @@ See [entry-points.md](entry-points.md) for the full permissionless entry point m
 2. 0 upgradeable contracts — all vaults, books, and tokens are deployed via `new` (no proxies).
 3. 1 developer wrote 100% of source code over 324 days.
 4. 100% line coverage and 99.6% branch coverage on source files (via `forge coverage`); 133 fuzz properties via Medusa/Echidna; 3 Foundry invariant test suites (500 runs, depth 25).
-5. 13 enforceable critical patterns documented in `docs/solutions/patterns/ovrflo-critical-patterns.md`; 5 audit findings found and fixed in `AUDIT_FINDINGS.md`.
+5. 17 enforceable critical patterns documented in `docs/solutions/patterns/ovrflo-critical-patterns.md`; 5 audit findings found and fixed in `docs/audit/audit-findings.md`.

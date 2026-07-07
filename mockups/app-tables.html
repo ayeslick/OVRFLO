@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang='en'>
+<head>
+<meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1'>
+<title>OVRFLO — Tables UI</title>
+<link href='https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;600&display=swap' rel='stylesheet'>
+<link rel='stylesheet' href='styles.css'>
+<style>
+  .w-full { width: 100%; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { padding: 16px 24px; text-align: left; border-bottom: 1px solid var(--divider); }
+  th { color: var(--secondary); font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.05em; }
+  tbody tr:hover { background: var(--surface2); }
+  tbody tr:last-child td { border-bottom: none; }
+  .action-cell { text-align: right; }
+  .p-0 { padding: 0; }
+  .text-right { text-align: right; }
+</style>
+</head>
+<body>
+<nav class='nav'>
+  <div class='container nav-inner'>
+    <div class='brand'>OVRF<span>LO</span> <span class='text-xs text-secondary ml-2'>TABLES UI</span></div>
+    <div class='nav-links'>
+      <a href='landing-v2.html' class='text-secondary'>&larr; Back to Landing</a>
+    </div>
+  </div>
+</nav>
+
+<section class='py-12'>
+  <div class='container'>
+    
+    <div class='flex justify-between items-center mb-6'>
+      <h2 class='hl-sm'>Dashboard</h2>
+      <div class='flex gap-2'>
+         <a href='app-tables.html' class='btn btn-outline btn-sm active' style='border-color:var(--cyan); color:var(--cyan)'>Tables UI</a>
+         <a href='app-split.html' class='btn btn-outline btn-sm'>Split-Pane UI</a>
+         <a href='app-widget.html' class='btn btn-outline btn-sm'>Widget UI</a>
+      </div>
+    </div>
+
+    <!-- User Balances -->
+    <div class='grid grid-2 gap-4 mb-8'>
+       <div class='card'>
+         <div class='flex justify-between items-center mb-2'>
+           <div class='label' style='color:var(--lend)'>YOUR SUPPLIES</div>
+           <div class='mono text-sm text-lend'>4.50% Net APY</div>
+         </div>
+         <div class='mono text-xl'>120.50 wstETH</div>
+         <div class='text-xs text-secondary mt-2'>Claimable: 1.20 ovrfloETH</div>
+       </div>
+       <div class='card'>
+         <div class='flex justify-between items-center mb-2'>
+           <div class='label text-cyan'>YOUR BORROWS</div>
+           <div class='mono text-sm text-cyan'>4.62% Net APY</div>
+         </div>
+         <div class='mono text-xl'>45.00 wstETH</div>
+         <div class='text-xs text-secondary mt-2'>Obligation: 47.10 ovrfloETH</div>
+       </div>
+    </div>
+
+    <!-- Markets Table -->
+    <h3 class='font-medium mb-4 text-muted'>Markets</h3>
+    <div class='card p-0 mb-8' style='overflow:hidden;'>
+      <table>
+        <thead>
+          <tr>
+            <th>Asset</th>
+            <th>Market Depth</th>
+            <th>Supply APY</th>
+            <th>Borrow APY</th>
+            <th class='action-cell'>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>
+              <div class='font-medium'>PT-wstETH-27JUN27</div>
+              <div class='text-xs text-secondary mt-1'>Matures Jun 27, 2027</div>
+            </td>
+            <td class='mono'>2,450 wstETH</td>
+            <td class='mono text-lend'>4.50%</td>
+            <td class='mono text-cyan'>4.62%</td>
+            <td class='action-cell flex gap-2' style='justify-content:flex-end'>
+              <button class='btn btn-lend btn-sm'>Supply</button>
+              <button class='btn btn-primary btn-sm'>Borrow</button>
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <div class='font-medium'>PT-wstETH-25DEC26</div>
+              <div class='text-xs text-secondary mt-1'>Matures Dec 25, 2026</div>
+            </td>
+            <td class='mono'>850 wstETH</td>
+            <td class='mono text-lend'>4.10%</td>
+            <td class='mono text-cyan'>4.25%</td>
+            <td class='action-cell flex gap-2' style='justify-content:flex-end'>
+              <button class='btn btn-lend btn-sm'>Supply</button>
+              <button class='btn btn-primary btn-sm'>Borrow</button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+  </div>
+</section>
+</body>
+</html>

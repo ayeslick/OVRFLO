@@ -1,6 +1,6 @@
 # Entry Point Map
 
-> OVRFLO | 42 entry points | 11 permissionless | 5 role-gated | 26 admin-only
+> OVRFLO | 41 entry points | 11 permissionless | 4 role-gated | 26 admin-only
 
 ---
 
@@ -35,7 +35,7 @@
                   → `OVRFLOBook.createBorrowPool()` ◄── borrower pledges stream
                       ├─→ `OVRFLOBook.closeLoan()` ◄── permissionless, stream accrued enough
                       ├─→ `OVRFLOBook.repayLoan()` ◄── borrower only
-                      └─→ Pool claims: `poolClaimLoan()` | `claimPoolShare()` ◄── contributors only
+                      └─→ Pool claims: `claimPoolShare()` ◄── contributors only
 
 ### Flash Loan Flow
 
@@ -222,17 +222,6 @@
 
 ### Pool Contributor
 
-#### `OVRFLOBook.poolClaimLoan(uint256 poolId, uint128 amount)`
-
-| Aspect | Detail |
-|--------|--------|
-| Visibility | external, nonReentrant |
-| Caller | Pool contributor (`poolContributions[poolId][msg.sender] > 0`) |
-| Parameters | poolId (user-controlled), amount (user-controlled) |
-| State modified | `poolReceived[poolId][msg.sender] += drawAmount`, `loan.drawn += drawAmount` |
-| Value flow | ovrfloToken: stream → contributor (direct draw, out) |
-| Reentrancy guard | yes |
-
 #### `OVRFLOBook.claimPoolShare(uint256 poolId, uint128 amount)`
 
 | Aspect | Detail |
@@ -240,8 +229,8 @@
 | Visibility | external, nonReentrant |
 | Caller | Pool contributor (`poolContributions[poolId][msg.sender] > 0`) |
 | Parameters | poolId (user-controlled), amount (user-controlled) |
-| State modified | `poolReceived[poolId][msg.sender] += amount`, `poolProceeds[poolId] -= amount` |
-| Value flow | ovrfloToken: book → contributor (out) |
+| State modified | `poolReceived[poolId][msg.sender] += amount`, `poolProceeds[poolId] -= amount`; potentially `loan.drawn += harvestAmount`, `poolProceeds[poolId] += harvestAmount` when `_claimFair` harvests deficit from the open loan's stream |
+| Value flow | ovrfloToken: stream → book (harvest) then book → contributor (out) |
 | Reentrancy guard | yes |
 
 ---

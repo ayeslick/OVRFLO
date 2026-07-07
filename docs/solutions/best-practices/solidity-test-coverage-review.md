@@ -1,3 +1,19 @@
+---
+title: Solidity test coverage review - suite audit and gap tracking
+category: best-practices
+module: test/
+date: 2026-07-03
+problem_type: best_practice
+component: test_suite
+severity: low
+applies_when:
+  - "Auditing Solidity test coverage for regression hardening"
+  - "Evaluating whether CI should run Medusa/Echidna explicitly or add Foundry invariant wrappers"
+  - "Locking oracle freshness, sweep guard, and APR boundary tests"
+tags: [test-coverage, regression, foundry, fuzz, fork-tests, ovrflo]
+
+---
+
 # Solidity Test Coverage Review
 
 ## Scope
@@ -94,8 +110,7 @@ No critical coverage gap was found. The gaps below are mostly regression hardeni
 - **Current coverage:** Pool claim happy paths, over-claim, non-contributor, closed-loan rejection, direct draw pro-rata shares, double-dip caps, and book-balance invariants are covered.
 - **Gap:** Direct tests are missing for:
   - `claimPoolShare(poolId, 0)` -> `OVRFLOBook: claim zero`
-  - `poolClaimLoan(poolId, 0)` when otherwise claimable -> `OVRFLOBook: nothing claimable`
-  - `repayLoan()` with outstanding already reduced to zero by `poolClaimLoan()` but before `closeLoan()` -> `OVRFLOBook: nothing outstanding`
+  - `repayLoan()` with outstanding already reduced to zero by `claimPoolShare()` harvesting but before `closeLoan()` -> `OVRFLOBook: nothing outstanding`
 - **Why it matters:** These guard branches are small, but deterministic tests make future refactors safer.
 
 ### G-08: Fork tests require `MAINNET_RPC_URL` and are not self-skipping

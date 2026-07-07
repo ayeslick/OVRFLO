@@ -62,7 +62,7 @@ _outstanding = obligation - (drawn + repaid)
 All three terms are integer wei values:
 - `obligation` is a `uint128` (the ceiling above).
 - `drawn` accumulates exact integer wei from `sablier.withdraw` amounts
-  (`poolClaimLoan`/`closeLoan` draw whole-wei amounts).
+  (`claimPoolShare` via `_claimFair` harvest / `closeLoan` draw whole-wei amounts).
 - `repaid` accumulates exact integer wei from `_pullExact` transfers.
 
 So `outstanding` is always an exact integer `>= 1` at the point the equality
@@ -105,7 +105,7 @@ Even setting aside the equality being reachable, the loan cannot be stranded:
   `withdrawable` eventually reaches `remaining - drawn`, the inequality
   `withdrawable >= outstanding` is eventually satisfiable, so `closeLoan`
   is always callable in the limit.
-- `poolClaimLoan` lets a pool contributor draw `outstanding` down to `0`; once
+- `claimPoolShare` (via `_claimFair` harvest) can draw `outstanding` down to `0`; once
   `outstanding == 0`, anyone calls `closeLoan` to return the (possibly
   empty) stream.
 
@@ -139,7 +139,7 @@ re-introduce a real residual that the equality cannot match.
 
 - [patterns/ovrflo-critical-patterns.md](../patterns/ovrflo-critical-patterns.md)
   — enforceable rules distilled from writeups.
-- `src/OVRFLOBook.sol` — `repayLoan`, `closeLoan`, `poolClaimLoan`,
+- `src/OVRFLOBook.sol` — `repayLoan`, `closeLoan`, `claimPoolShare`,
   `_outstanding`.
 - `src/StreamPricing.sol` — `grossPrice`, `obligation`,
   `obligationForFill`, `requireEligible`, `marketActive`.

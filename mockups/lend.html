@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>OVRFLO — Lend</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- Nav -->
+<nav class="nav">
+  <div class="container nav-inner">
+    <div class="brand">OVRF<span>LO</span></div>
+    <div class="nav-links">
+      <div class="role-toggle">
+        <button onclick="location.href='borrow.html'">Borrow</button>
+        <button class="active">Lend</button>
+      </div>
+      <a href="positions.html" class="btn btn-outline btn-sm">Positions</a>
+    </div>
+  </div>
+</nav>
+
+<!-- Main -->
+<section class="py-12">
+  <div class="container" style="max-width:560px">
+
+    <h1 class="hl mb-2">Provide Liquidity</h1>
+    <p class="text-sm text-muted mb-8">Post standing offers in wstETH at your chosen rate. Borrowers consume them as loans (or buyers as sales). You are repaid in ovrfloETH as streams pay down &mdash; claim pro-rata anytime, no race.</p>
+
+    <!-- Market selection -->
+    <div class="label label-lend mb-4">MARKET</div>
+    <div class="card card-select selected mb-6">
+      <div class="flex justify-between items-center">
+        <div>
+          <div class="font-medium">PT-wstETH-27JUN27</div>
+          <div class="text-xs text-secondary mt-2">wstETH · Matures Jun 27, 2027</div>
+        </div>
+        <div style="text-align:right">
+          <div class="mono text-lend">4.50% APR</div>
+          <div class="text-xs text-secondary mt-2">29.8 wstETH total depth</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Amount input -->
+    <div class="label label-lend mb-4">AMOUNT TO DEPLOY</div>
+    <div class="card mb-6">
+      <div class="flex items-center gap-3 mb-4">
+        <input type="number" value="50.0" step="0.1" style="font-size:24px;font-family:'IBM Plex Mono',monospace;border:none;background:transparent;padding:0;color:var(--white);width:100%">
+        <span class="mono text-muted">wstETH</span>
+      </div>
+      <div class="flex justify-between text-xs">
+        <span class="text-secondary">Balance: 120.0 wstETH</span>
+        <a href="#" class="text-lend">Max</a>
+      </div>
+    </div>
+
+    <!-- Rate selection with depth curve -->
+    <div class="label label-lend mb-4">CHOOSE YOUR RATE</div>
+    <div class="card mb-6">
+      <div class="text-xs text-secondary mb-3">DEPTH PER RATE · BAR = AVAILABLE CAPACITY</div>
+      <div class="flex gap-3 items-end" style="height:80px;margin-bottom:8px">
+        <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer" onclick="selectRate(3.5,this)">
+          <div style="width:100%;height:14%;background:var(--divider);border-radius:3px" class="rate-bar"></div>
+          <span class="mono text-xs text-secondary">3.5%</span>
+          <span class="mono text-xs text-secondary">2.1</span>
+        </div>
+        <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer" onclick="selectRate(4.0,this)">
+          <div style="width:100%;height:28%;background:var(--divider);border-radius:3px" class="rate-bar"></div>
+          <span class="mono text-xs text-secondary">4.0%</span>
+          <span class="mono text-xs text-secondary">8.3</span>
+        </div>
+        <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer" onclick="selectRate(4.5,this)">
+          <div style="width:100%;height:72%;background:var(--lend);border-radius:3px" class="rate-bar"></div>
+          <span class="mono text-xs text-lend">4.5%</span>
+          <span class="mono text-xs text-lend">12.4</span>
+        </div>
+        <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer" onclick="selectRate(5.0,this)">
+          <div style="width:100%;height:30%;background:var(--divider);border-radius:3px" class="rate-bar"></div>
+          <span class="mono text-xs text-secondary">5.0%</span>
+          <span class="mono text-xs text-secondary">5.2</span>
+        </div>
+        <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer" onclick="selectRate(5.5,this)">
+          <div style="width:100%;height:10%;background:var(--divider);border-radius:3px" class="rate-bar"></div>
+          <span class="mono text-xs text-secondary">5.5%</span>
+          <span class="mono text-xs text-secondary">1.8</span>
+        </div>
+      </div>
+      <div class="mt-4 pt-4" style="border-top:1px solid var(--divider)">
+        <div class="flex justify-between items-center">
+          <div>
+            <span class="text-sm text-muted">Your rate</span>
+            <div class="mono text-xl text-lend" id="selectedRate">4.50% APR</div>
+          </div>
+          <div style="text-align:right">
+            <span class="text-sm text-muted">Projected yield</span>
+            <div class="mono text-lg" id="projectedYield">2.25 ovrfloETH/yr</div>
+          </div>
+        </div>
+        <p class="text-xs text-secondary mt-2" id="rateHint">Most depth here — likely to fill fastest</p>
+      </div>
+    </div>
+
+    <!-- Summary -->
+    <div class="card mb-6">
+      <div class="qc-row">
+        <span class="qc-label">Deploying</span>
+        <span class="qc-value">50.0 wstETH</span>
+      </div>
+      <div class="qc-row">
+        <span class="qc-label">Rate</span>
+        <span class="qc-value text-lend">4.50% APR</span>
+      </div>
+      <div class="qc-row">
+        <span class="qc-label">Consumable as</span>
+        <span class="qc-value text-sm">Loan or sale</span>
+      </div>
+      <div class="qc-row">
+        <span class="qc-label">Repaid in</span>
+        <span class="qc-value text-sm">ovrfloETH (unwrap 1:1)</span>
+      </div>
+      <div class="qc-row">
+        <span class="qc-label">Claims</span>
+        <span class="qc-value text-sm">Pro-rata via claimPoolShare</span>
+      </div>
+    </div>
+
+    <button class="btn btn-lend btn-full">Post Offer &rarr;</button>
+    <p class="text-xs text-secondary text-center mt-4">Standing liquidity · borrowers consume as needed · cancel anytime</p>
+  </div>
+</section>
+
+<div class="divider"><div class="container"></div></div>
+
+<!-- Your offers shelf -->
+<section class="py-12">
+  <div class="container" style="max-width:560px">
+    <div class="flex justify-between items-center mb-6">
+      <h2 class="hl-sm">Your Liquidity</h2>
+    </div>
+
+    <!-- Summary shelf -->
+    <div class="card mb-6" style="background:var(--surface2)">
+      <div class="grid grid-2">
+        <div>
+          <div class="label label-lend mb-2">TOTAL DEPLOYED</div>
+          <div class="mono text-xl">80.0 wstETH</div>
+        </div>
+        <div>
+          <div class="label mb-2" style="color:var(--success)">CLAIMABLE</div>
+          <div class="mono text-xl" style="color:var(--success)">3.2 ovrfloETH</div>
+        </div>
+      </div>
+      <button class="btn btn-lend btn-full mt-6">Claim All &rarr;</button>
+      <p class="text-xs text-secondary text-center mt-4">Pro-rata via claimPoolShare &middot; works whether loans are open or closed &middot; unwrap ovrfloETH 1:1 to wstETH</p>
+    </div>
+
+    <!-- Individual offers -->
+    <div class="label label-lend mb-4">ACTIVE OFFERS</div>
+    <div class="grid gap-4">
+
+      <div class="card">
+        <div class="flex justify-between items-center mb-4">
+          <div class="flex items-center gap-3">
+            <span class="tag tag-lend">OFFER</span>
+            <span class="mono text-sm">#12</span>
+          </div>
+          <span class="mono text-sm text-lend">4.50% APR</span>
+        </div>
+        <div class="bar-track bar-thick mb-2">
+          <div class="bar-fill bar-lend" style="width:45%"></div>
+        </div>
+        <div class="flex justify-between mt-2">
+          <span class="mono text-sm">22.5 consumed · 27.5 remaining</span>
+          <span class="text-sm" style="color:var(--success)">1.0 ovrfloETH claimable</span>
+        </div>
+        <div class="flex gap-2 mt-4">
+          <button class="btn btn-outline btn-sm">Claim 1.0</button>
+          <button class="btn btn-outline btn-sm">Cancel</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="flex justify-between items-center mb-4">
+          <div class="flex items-center gap-3">
+            <span class="tag tag-lend">OFFER</span>
+            <span class="mono text-sm">#15</span>
+          </div>
+          <span class="mono text-sm text-lend">5.00% APR</span>
+        </div>
+        <div class="bar-track bar-thick mb-2">
+          <div class="bar-fill bar-lend" style="width:40%"></div>
+        </div>
+        <div class="flex justify-between mt-2">
+          <span class="mono text-sm">12.0 consumed · 18.0 remaining</span>
+          <span class="text-sm" style="color:var(--success)">2.2 ovrfloETH claimable</span>
+        </div>
+        <div class="flex gap-2 mt-4">
+          <button class="btn btn-outline btn-sm">Claim 2.2</button>
+          <button class="btn btn-outline btn-sm">Cancel</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<script>
+function selectRate(rate,el){
+  document.querySelectorAll('.rate-bar').forEach(b=>{
+    b.style.background='var(--divider)';
+    b.parentElement.querySelectorAll('span').forEach(s=>{s.classList.remove('text-lend');s.classList.add('text-secondary')})
+  })
+  const bar=el.querySelector('.rate-bar');
+  bar.style.background='var(--lend)';
+  el.querySelectorAll('span').forEach(s=>{s.classList.remove('text-secondary');s.classList.add('text-lend')})
+  document.getElementById('selectedRate').textContent=rate.toFixed(2)+'% APR';
+  const amount=50;
+  document.getElementById('projectedYield').textContent=(amount*rate/100).toFixed(2)+' ovrfloETH/yr';
+  const hints={3.5:'Lowest rate — may fill slowly',4.0:'Below market — moderate fill speed',4.5:'Most depth here — likely to fill fastest',5.0:'Above market — higher yield, slower fill',5.5:'Highest rate — slowest to fill'};
+  document.getElementById('rateHint').textContent=hints[rate]||'';
+}
+</script>
+
+</body>
+</html>

@@ -135,7 +135,7 @@ confirm the distinction before re-raising.
 - `x-ray/multi-agent-audit-report.md` — the source audit report whose
   rejected findings are recorded in the decision record.
 - [patterns/ovrflo-critical-patterns.md](../patterns/ovrflo-critical-patterns.md)
-  — the "Considered and rejected" section (R-01 through R-04) follows the same
+  — the "Considered and rejected" section (R-01 through R-05) follows the same
   pattern in distilled form.
 - ethskills.com audit guidance — "record what you checked and why it's safe"
   is the upstream principle this practice implements.

@@ -106,7 +106,7 @@ flowchart TB
 | `evm-audit-general` | Overall code quality, event emission, error handling, state-machine completeness | All 45 entry points; I-9, I-11, I-13, I-17 |
 | `evm-audit-precision-math` | `StreamPricing` mulDiv, rounding direction in `obligationForFill` and `grossPrice`, basis-point math, `MIN_PT_AMOUNT` | I-3, I-5, E-2; G-17, G-18, G-19, G-20 |
 | `evm-audit-erc20` | `ovrfloToken` mint/burn, PT transfers, SafeERC20 usage, `sweepExcess` correctness | I-1, I-7; G-11, G-16, G-15 |
-| `evm-audit-defi-lending` | Self-repaying loans, no health check, no liquidation, `createBorrowPool`/`repayLoan`/`closeLoan` lifecycle, `outstanding` relation | I-11, I-13, E-2; G-24, G-23; `closeLoan()`, `poolClaimLoan()`, `repayLoan()` |
+| `evm-audit-defi-lending` | Self-repaying loans, no health check, no liquidation, `createBorrowPool`/`repayLoan`/`closeLoan` lifecycle, `outstanding` relation | I-11, I-13, E-2; G-24, G-23; `closeLoan()`, `claimPoolShare()`, `repayLoan()` |
 | `evm-audit-erc4626` | Vault-inflation via wrap-reserve donation (not standard 4626), `wrap()`/`unwrap()` reserve model, `sweepExcessUnderlying` | I-7, E-1; G-16, G-15; `wrap()`, `unwrap()`, `sweepExcessUnderlying()` |
 | `evm-audit-oracles` | Pendle TWAP freshness, flash loan manipulation, `getPtToSyRate` consumption, `twapDurationFixed` bounds, deposit split skewing | X-1; G-29; G-6, G-7, G-8, G-9; `deposit()` |
 | `evm-audit-erc721` | Sablier stream NFT custody, `transferFrom` escrow, `requireEligible` checks, NFT ownership through loan lifecycle | X-1; `sellIntoOffer()`, `postSaleListing()`, `buyListing()`, `createBorrowPool()`, `closeLoan()` |

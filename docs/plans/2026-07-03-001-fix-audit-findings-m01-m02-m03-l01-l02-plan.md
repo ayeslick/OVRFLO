@@ -10,9 +10,9 @@ type: fix
 
 ## Goal Capsule
 
-Fix all five findings from `AUDIT_FINDINGS.md`: three Medium (M-01 pool proceeds stranding, M-02 gross-vs-net slippage, M-03 oracle freshness) and two Low (L-01 quote validation gaps, L-02 APR bounds footgun). Each fix is independent and can be committed separately.
+Fix all five findings from `docs/audit/audit-findings.md`: three Medium (M-01 pool proceeds stranding, M-02 gross-vs-net slippage, M-03 oracle freshness) and two Low (L-01 quote validation gaps, L-02 APR bounds footgun). Each fix is independent and can be committed separately.
 
-**Authority hierarchy:** Audit findings in `AUDIT_FINDINGS.md` are the source. Code in `src/OVRFLOBook.sol` and `src/OVRFLO.sol` is the target. Tests in `test/OVRFLOBook.t.sol` and `test/OVRFLOBookInvariant.t.sol` verify. Existing patterns in `docs/solutions/patterns/ovrflo-critical-patterns.md` guide.
+**Authority hierarchy:** Audit findings in `docs/audit/audit-findings.md` are the source. Code in `src/OVRFLOBook.sol` and `src/OVRFLO.sol` is the target. Tests in `test/OVRFLOBook.t.sol` and `test/OVRFLOBookInvariant.t.sol` verify. Existing patterns in `docs/solutions/patterns/ovrflo-critical-patterns.md` guide.
 
 **Stop conditions:** All 5 findings fixed, all tests pass (unit + invariant + fork), `forge build` clean, `forge fmt` clean.
 
@@ -194,18 +194,18 @@ Fix all five findings from `AUDIT_FINDINGS.md`: three Medium (M-01 pool proceeds
 **Requirements:** R1-R5 (documentation)
 
 **Files:**
-- `AUDIT_FINDINGS.md` — mark M-01, M-02, M-03, L-01, L-02 as resolved with fix references
+- `docs/audit/audit-findings.md` — mark M-01, M-02, M-03, L-01, L-02 as resolved with fix references
 - `docs/solutions/patterns/ovrflo-critical-patterns.md` — update pattern #12 (pro-rata cap) to reflect removal
 - `docs/audit/rejected-findings-record.md` — no changes needed (none of the 5 findings were rejected)
 
 **Approach:**
-1. Add "Fixed" status to each finding in `AUDIT_FINDINGS.md` with a brief note on the fix applied
+1. Add "Fixed" status to each finding in `docs/audit/audit-findings.md` with a brief note on the fix applied
 2. Update pattern #12 — the pro-rata cap is removed, not replaced. Update the pattern to reflect that `claimPoolShare` uses `min(remaining, poolProceeds)` without pro-rata distribution
 3. No storage layout changes to document in pattern #7
 
 **Test scenarios:** None — documentation only.
 
-**Verification:** `AUDIT_FINDINGS.md` shows all 5 findings as resolved. Pattern docs are consistent with the new code.
+**Verification:** `docs/audit/audit-findings.md` shows all 5 findings as resolved. Pattern docs are consistent with the new code.
 
 ## Verification Contract
 
@@ -247,5 +247,5 @@ MAINNET_RPC_URL=$RPC forge test --match-path "test/fork/*"
 - [ ] L-02: `setAprBounds` requires both bounds step-aligned; non-aligned bounds revert
 - [ ] All test suites pass (unit, invariant, attack, flash loan, fork)
 - [ ] `forge build` clean, `forge fmt` clean
-- [ ] `AUDIT_FINDINGS.md` marks all 5 findings as resolved
+- [ ] `docs/audit/audit-findings.md` marks all 5 findings as resolved
 - [ ] Pattern docs updated if guidance changed
