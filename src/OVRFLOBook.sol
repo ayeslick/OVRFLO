@@ -145,7 +145,6 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
     struct Pool {
         address creator;
         uint16 aprBps;
-        bool active;
         address market;
         uint128 totalContributed;
         uint128 totalObligation;
@@ -479,7 +478,6 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
         require(withdrawable >= outstanding, "OVRFLOBook: loan not closable");
 
         loan.closed = true;
-        pools[loanPoolId[loanId]].active = false;
         if (outstanding > 0) {
             loan.drawn += outstanding;
             uint256 poolId = loanPoolId[loanId];
@@ -515,7 +513,6 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
         bool closes = amount == outstanding;
         if (closes) {
             loan.closed = true;
-            pools[loanPoolId[loanId]].active = false;
         }
 
         uint256 poolId = loanPoolId[loanId];
@@ -589,7 +586,6 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
         pools[poolId] = Pool({
             creator: msg.sender,
             aprBps: aprBps,
-            active: true,
             market: market,
             totalContributed: actualBorrow128,
             totalObligation: obligation

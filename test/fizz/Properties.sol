@@ -88,7 +88,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
         uint256 nextPool = book.nextPoolId();
         for (uint256 i = 1; i < nextPool; i++) {
             uint128 proceeds = book.poolProceeds(i);
-            (,,,,, uint128 totalObligation) = book.pools(i);
+            (,,,, uint128 totalObligation) = book.pools(i);
             lte(proceeds, totalObligation, "GL-09: poolProceeds > totalObligation");
         }
     }
@@ -100,7 +100,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
             (,,, uint128 obligation,,,) = book.loans(i);
             uint256 poolId = book.loanPoolId(i);
             if (poolId != 0) {
-                (,,,,, uint128 totalObligation) = book.pools(poolId);
+                (,,,, uint128 totalObligation) = book.pools(poolId);
                 eq(obligation, totalObligation, "GL-10: loan obligation != pool totalObligation");
             }
         }
@@ -215,17 +215,6 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
         }
     }
 
-    /// @notice GL-14: pool.active mirrors loan.closed (active iff loan open)
-    function property_pool_active_mirrors_loan_closed() public {
-        uint256 nextPool = book.nextPoolId();
-        for (uint256 i = 1; i < nextPool; i++) {
-            (,, bool active,,,) = book.pools(i);
-            uint256 loanId = book.poolLoanId(i);
-            (,,,,,, bool closed) = book.loans(loanId);
-            t(active == !closed, "GL-14: pool.active != !loan.closed");
-        }
-    }
-
     // ─────────────── ID Counter Monotonicity ───────────────
 
     /// @notice GL-15: All 4 ID counters monotonically non-decreasing
@@ -307,7 +296,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     function property_pool_exists_iff_pool_loan_id() public {
         uint256 nextPool = book.nextPoolId();
         for (uint256 i = 1; i < nextPool; i++) {
-            (address creator,,,,,) = book.pools(i);
+            (address creator,,,,) = book.pools(i);
             uint256 loanId = book.poolLoanId(i);
             t((creator != address(0)) == (loanId != 0), "GL-22: pool exists iff poolLoanId != 0");
         }
@@ -363,7 +352,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     function property_pool_slot_iff_id() public {
         uint256 nextPool = book.nextPoolId();
         for (uint256 i = 1; i < nextPool; i++) {
-            (address creator,,,,,) = book.pools(i);
+            (address creator,,,,) = book.pools(i);
             t(creator != address(0), "GL-27: pool slot not populated");
         }
     }
@@ -489,7 +478,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     function property_pool_total_contributed_immutable() public {
         uint256 nextPool = book.nextPoolId();
         for (uint256 i = 1; i < nextPool; i++) {
-            (,,,, uint128 totalContributed,) = book.pools(i);
+            (,,, uint128 totalContributed,) = book.pools(i);
             if (ghost_poolTotalContributedInit[i] == 0) {
                 ghost_poolTotalContributedInit[i] = totalContributed;
             } else {
@@ -502,7 +491,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     function property_pool_total_obligation_immutable() public {
         uint256 nextPool = book.nextPoolId();
         for (uint256 i = 1; i < nextPool; i++) {
-            (,,,,, uint128 totalObligation) = book.pools(i);
+            (,,,, uint128 totalObligation) = book.pools(i);
             if (ghost_poolTotalObligationInit[i] == 0) {
                 ghost_poolTotalObligationInit[i] = totalObligation;
             } else {
@@ -1082,12 +1071,12 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
 
     /// @notice SP-13: quote matches actual createBorrowPool obligation
     function property_quoteMatchesObligation(uint256 poolId, uint128 actualBorrow) internal {
-        (, uint16 aprBps,, address poolMarket,,) = book.pools(poolId);
+        (, uint16 aprBps, address poolMarket,,) = book.pools(poolId);
         (,, uint256 streamId,,,,) = book.loans(book.poolLoanId(poolId));
         try book.quote(poolMarket, streamId, aprBps, actualBorrow) returns (
             uint256, uint128 qObligation, uint256, uint256, uint128
         ) {
-            (,,,,, uint128 totalObligation) = book.pools(poolId);
+            (,,,, uint128 totalObligation) = book.pools(poolId);
             eq(uint256(qObligation), uint256(totalObligation), "SP-13: quote obligation mismatch");
         } catch {}
     }
@@ -1096,7 +1085,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     function property_fullBorrowFastPath() internal {
         uint256 poolId = ghosts.ghost_lastPoolId;
         if (poolId == 0) return;
-        (, uint16 aprBps,, address poolMarket, uint128 totalContributed, uint128 totalObligation) = book.pools(poolId);
+        (, uint16 aprBps, address poolMarket, uint128 totalContributed, uint128 totalObligation) = book.pools(poolId);
         (,, uint256 streamId,,,,) = book.loans(book.poolLoanId(poolId));
         try book.quote(poolMarket, streamId, aprBps, 0) returns (
             uint256 grossPrice, uint128, uint256, uint256, uint128
@@ -1117,7 +1106,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     function property_poolContributionsSum() internal {
         uint256 poolId = ghosts.ghost_lastPoolId;
         if (poolId == 0) return;
-        (,,,, uint128 totalContributed,) = book.pools(poolId);
+        (,,, uint128 totalContributed,) = book.pools(poolId);
         uint256 sum;
         for (uint256 i = 0; i < actors.length; i++) {
             sum += book.poolContributions(poolId, actors[i]);
@@ -1131,12 +1120,10 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
         eq(stateAfter.nextLoanId, stateBefore.nextLoanId + 1, "SP-51: nextLoanId did not increment by 1");
     }
 
-    /// @notice SP-52: createBorrowPool: pool active, loan closed=false, drawn=0, repaid=0
+    /// @notice SP-52: createBorrowPool: loan closed=false, drawn=0, repaid=0
     function property_createPoolLoanState() internal {
         uint256 poolId = ghosts.ghost_lastPoolId;
         if (poolId == 0) return;
-        (,, bool active,,,) = book.pools(poolId);
-        t(active, "SP-52: new pool not active");
         uint256 loanId = ghosts.ghost_lastLoanId;
         if (loanId == 0) return;
         (,,,, uint128 drawn, uint128 repaid, bool closed) = book.loans(loanId);
@@ -1149,7 +1136,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     function property_createPoolContributionsSet() internal {
         uint256 poolId = ghosts.ghost_lastPoolId;
         if (poolId == 0) return;
-        (,,,, uint128 totalContributed,) = book.pools(poolId);
+        (,,, uint128 totalContributed,) = book.pools(poolId);
         if (totalContributed == 0) return;
         // At least one actor must have a non-zero contribution
         bool foundContributor;
@@ -1166,7 +1153,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     function property_noSelfMatch() internal {
         uint256 poolId = ghosts.ghost_lastPoolId;
         if (poolId == 0) return;
-        (address creator,,,,,) = book.pools(poolId);
+        (address creator,,,,) = book.pools(poolId);
         eq(book.poolContributions(poolId, creator), 0, "SP-77: self-match detected");
     }
 
@@ -1179,7 +1166,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     function property_borrowAmountLeGrossPrice() internal {
         uint256 poolId = ghosts.ghost_lastPoolId;
         if (poolId == 0) return;
-        (, uint16 aprBps,, address poolMarket, uint128 totalContributed,) = book.pools(poolId);
+        (, uint16 aprBps, address poolMarket, uint128 totalContributed,) = book.pools(poolId);
         (,, uint256 streamId,,,,) = book.loans(book.poolLoanId(poolId));
         try book.quote(poolMarket, streamId, aprBps, totalContributed) returns (
             uint256 grossPrice, uint128, uint256, uint256, uint128
@@ -1287,7 +1274,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
         if (poolId == 0) return;
         uint128 contribution = book.poolContributions(poolId, actor);
         if (contribution == 0) return;
-        (,,,, uint128 totalContributed, uint128 totalObligation) = book.pools(poolId);
+        (,,, uint128 totalContributed, uint128 totalObligation) = book.pools(poolId);
         uint128 received = book.poolReceived(poolId, actor);
         // received <= floor(contribution * totalObligation / totalContributed)
         lte(
@@ -1301,7 +1288,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     function property_poolReceivedLeTotalObligation() internal {
         uint256 poolId = ghosts.ghost_lastPoolId;
         if (poolId == 0) return;
-        (,,,,, uint128 totalObligation) = book.pools(poolId);
+        (,,,, uint128 totalObligation) = book.pools(poolId);
         uint256 sumReceived;
         for (uint256 i = 0; i < actors.length; i++) {
             sumReceived += book.poolReceived(poolId, actors[i]);
@@ -1315,7 +1302,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
         if (poolId == 0) return;
         uint128 contribution = book.poolContributions(poolId, actor);
         if (contribution == 0) return;
-        (,,,, uint128 totalContributed, uint128 totalObligation) = book.pools(poolId);
+        (,,, uint128 totalContributed, uint128 totalObligation) = book.pools(poolId);
         uint128 received = book.poolReceived(poolId, actor);
         uint256 entitlement = uint256(contribution) * uint256(totalObligation) / uint256(totalContributed);
         lte(uint256(received), entitlement, "SP-24: poolReceived > entitlement");

@@ -1032,10 +1032,9 @@ contract OVRFLOBookTest is Test {
         vm.stopPrank();
 
         // Pool state
-        (address creator, uint16 aprBps, bool active, address market, uint128 totalContributed,) = book.pools(poolId);
+        (address creator, uint16 aprBps, address market, uint128 totalContributed,) = book.pools(poolId);
         assertEq(creator, SELLER);
         assertEq(aprBps, 1000);
-        assertTrue(active);
         assertEq(market, MARKET);
         assertEq(totalContributed, 100 ether);
 
@@ -1105,7 +1104,7 @@ contract OVRFLOBookTest is Test {
         uint256 poolId = book.createBorrowPool(offerIds, 102, 100 ether, 70 ether);
         vm.stopPrank();
 
-        (, uint16 aprBps,,, uint128 totalContributed,) = book.pools(poolId);
+        (, uint16 aprBps,, uint128 totalContributed,) = book.pools(poolId);
         assertEq(aprBps, 1000);
         assertEq(totalContributed, 80 ether, "actual borrow = available, not target");
 

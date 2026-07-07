@@ -194,7 +194,7 @@ contract OVRFLOBookInvariantHandler is Test {
 
         vm.prank(borrower);
         try book.createBorrowPool(offerIds, streamId, targetBorrow, minAcceptable) returns (uint256 poolId) {
-            (,,,, uint128 totalContributed,) = book.pools(poolId);
+            (,,, uint128 totalContributed,) = book.pools(poolId);
             totalActiveOfferCapacity -= totalContributed;
 
             uint256 loanId = book.poolLoanId(poolId);

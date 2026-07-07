@@ -69,7 +69,7 @@ abstract contract Snapshots is Base {
         // Entity-specific state (defaults to 0/false for non-existent entities)
         state.poolProceeds = book.poolProceeds(ghosts.ghost_lastPoolId);
         if (ghosts.ghost_lastPoolId > 0) {
-            (, , , , uint128 totalContributed, uint128 totalObligation) = book.pools(ghosts.ghost_lastPoolId);
+            (, , , uint128 totalContributed, uint128 totalObligation) = book.pools(ghosts.ghost_lastPoolId);
             state.poolTotalObligation = totalObligation;
             state.poolTotalContributed = totalContributed;
         } else {
