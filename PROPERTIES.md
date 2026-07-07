@@ -125,7 +125,7 @@ Consolidated from 5 invariant discovery agents (Conservation Auditor, Round-Trip
 - [x] **SP-04** postSaleListing -> cancelSaleListing returns stream unchanged. HIGH_LEVEL, SHOULD-HOLD, MEDIUM. Sources: RT-04. Called after: roundTrip_postListingCancel, cancelSaleListing.
 - [x] **SP-05** deposit -> claim cycle conserves value (PT recovered, fee is only loss). HIGH_LEVEL, SHOULD-HOLD, HIGH. Sources: RT-05. Called after: roundTrip_depositClaim.
 - [x] **SP-06** N cycles of wrap -> unwrap do not increase balance (C2 dust extraction). HIGH_LEVEL, SHOULD-HOLD, HIGH. Sources: RT-06. Called after: roundTrip_wrapUnwrap. NOT merged with single round-trip.
-- [x] **SP-25** poolProceeds + sum(poolReceived) == drawn + repaid (exact conservation per pool). HIGH_LEVEL, SHOULD-HOLD, HIGH. Sources: CON-08. Called after: closeLoan, repayLoan, poolClaimLoan, claimPoolShare.
+- [x] **SP-25** poolProceeds + sum(poolReceived) == drawn + repaid (exact conservation per pool). HIGH_LEVEL, SHOULD-HOLD, HIGH. Sources: CON-08. Called after: closeLoan, repayLoan, claimPoolShare.
 
 ### Deposit Properties
 
@@ -197,8 +197,8 @@ Consolidated from 5 invariant discovery agents (Conservation Auditor, Round-Trip
 - [x] **SP-13** quote matches actual createBorrowPool obligation. VALID_STATE, SHOULD-HOLD, MEDIUM. Sources: RD-03. Called after: createBorrowPool.
 - [x] **SP-15** full-borrow fast-path (borrowAmount == grossPrice) returns remaining exactly. VALID_STATE, SHOULD-HOLD, HIGH. Sources: RD-09. Called after: createBorrowPool.
 - [x] **SP-22** sum(poolContributions) == pool.totalContributed after createBorrowPool. VALID_STATE, SHOULD-HOLD, HIGH. Sources: CON-04, SPEC-L05. Called after: createBorrowPool.
-- [x] **SP-23** sum(poolReceived) <= pool.totalObligation. VALID_STATE, SHOULD-HOLD, HIGH. Sources: CON-05, ADV-19. Called after: poolClaimLoan, claimPoolShare.
-- [x] **SP-24** poolReceived[poolId][contributor] <= entitlement (contribution * totalObligation / totalContributed). VALID_STATE, SHOULD-HOLD, HIGH. Sources: CON-06, ADV-12, ADV-19. Called after: poolClaimLoan, claimPoolShare.
+- [x] **SP-23** sum(poolReceived) <= pool.totalObligation. VALID_STATE, SHOULD-HOLD, HIGH. Sources: CON-05, ADV-19. Called after: claimPoolShare.
+- [x] **SP-24** poolReceived[poolId][contributor] <= entitlement (contribution * totalObligation / totalContributed). VALID_STATE, SHOULD-HOLD, HIGH. Sources: CON-06, ADV-12, ADV-19. Called after: claimPoolShare.
 - [x] **SP-51** createBorrowPool: nextPoolId and nextLoanId each increment by 1. STATE_TRANSITION, SHOULD-HOLD, HIGH. Sources: ST-28. Called after: createBorrowPool.
 - [x] **SP-52** createBorrowPool: pool active, loan closed=false, drawn=0, repaid=0. STATE_TRANSITION, SHOULD-HOLD, HIGH. Sources: ST-29. Called after: createBorrowPool.
 - [x] **SP-53** createBorrowPool: poolContributions set for consumed offer makers. STATE_TRANSITION, SHOULD-HOLD, HIGH. Sources: ST-30. Called after: createBorrowPool.
@@ -216,15 +216,13 @@ Consolidated from 5 invariant discovery agents (Conservation Auditor, Round-Trip
 - [x] **SP-55** closeLoan with outstanding==0: drawn and poolProceeds unchanged. STATE_TRANSITION, SHOULD-HOLD, MEDIUM. Sources: ST-33. Called after: closeLoan.
 - [x] **SP-56** repayLoan: repaid += amount, poolProceeds += amount. STATE_TRANSITION, SHOULD-HOLD, HIGH. Sources: ST-34. Called after: repayLoan. Ghosts: ghost_repayPaid.
 - [x] **SP-57** repayLoan: closed=true iff amount==outstanding; partial repay stays closed=false. STATE_TRANSITION, SHOULD-HOLD, HIGH. Sources: ST-35, ST-36. Called after: repayLoan.
-- [x] **SP-58** poolClaimLoan: drawn += drawAmount, poolReceived += drawAmount. STATE_TRANSITION, SHOULD-HOLD, HIGH. Sources: ST-37. Called after: poolClaimLoan.
-- [x] **SP-59** poolClaimLoan: poolProceeds unchanged. STATE_TRANSITION, EXPLORATORY, MEDIUM. Sources: ST-38. Called after: poolClaimLoan.
 - [x] **SP-60** claimPoolShare: poolReceived += amount, poolProceeds -= amount. STATE_TRANSITION, SHOULD-HOLD, HIGH. Sources: ST-39. Called after: claimPoolShare.
 - [x] **SP-72** Non-borrower cannot repayLoan. VALID_STATE, SHOULD-HOLD, HIGH. Sources: ADV-16. Called after: repayLoan.
 - [-] **SP-74** closeLoan no grief: poolProceeds sufficient for lender after close. VALID_STATE, EXPLORATORY, MEDIUM. Sources: ADV-21. Called after: closeLoan.
 
 ### Pool Claim Properties
 
-- [x] **SP-20** pro-rata entitlement floored (protocol-favorable rounding). VALID_STATE, EXPLORATORY, MEDIUM. Sources: RD-17. Called after: poolClaimLoan, claimPoolShare. Ghosts: ghost_poolEntitlementSum.
+- [x] **SP-20** pro-rata entitlement floored (protocol-favorable rounding). VALID_STATE, EXPLORATORY, MEDIUM. Sources: RD-17. Called after: claimPoolShare. Ghosts: ghost_poolEntitlementSum.
 
 ### Access Control
 

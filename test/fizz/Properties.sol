@@ -1273,20 +1273,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
 
     // ─────────────── Pool Claim Properties ───────────────
 
-    /// @notice SP-58: poolClaimLoan: poolReceived increases (by payAmount, may differ from drawn delta)
-    function property_poolClaimLoanDrawnIncreases() internal {
-        gt(uint256(stateAfter.poolReceived), uint256(stateBefore.poolReceived), "SP-58: poolReceived not increased");
-    }
-
-    /// @notice SP-59: poolClaimLoan: poolProceeds conservation (proceedsDecrease = receivedDelta - drawnDelta)
-    function property_poolClaimLoanProceedsUnchanged() internal {
-        uint256 drawnDelta = uint256(stateAfter.loanDrawn) - uint256(stateBefore.loanDrawn);
-        uint256 receivedDelta = uint256(stateAfter.poolReceived) - uint256(stateBefore.poolReceived);
-        uint256 proceedsDecrease = uint256(stateBefore.poolProceeds) - uint256(stateAfter.poolProceeds);
-        eq(proceedsDecrease, receivedDelta - drawnDelta, "SP-59: poolProceeds conservation violated");
-    }
-
-    /// @notice SP-60: claimPoolShare: poolProceeds conservation (same as SP-59)
+    /// @notice SP-60: claimPoolShare: poolProceeds conservation (proceedsDecrease = receivedDelta - drawnDelta)
     function property_claimPoolShareReceivedIncreases() internal {
         uint256 drawnDelta = uint256(stateAfter.loanDrawn) - uint256(stateBefore.loanDrawn);
         uint256 receivedDelta = uint256(stateAfter.poolReceived) - uint256(stateBefore.poolReceived);

@@ -136,14 +136,6 @@ abstract contract OVRFLOBookHandler is Properties {
         oVRFLOBook_repayLoan(loanId, amount);
     }
 
-    function oVRFLOBook_poolClaimLoan_clamped(uint256 poolId, uint128 amount) public {
-        uint256 maxPool = book.nextPoolId();
-        if (maxPool <= 1) return;
-        poolId = clampBetween(poolId, 1, maxPool - 1);
-        amount = uint128(clampBetween(uint256(amount), 1, type(uint128).max));
-        oVRFLOBook_poolClaimLoan(poolId, amount);
-    }
-
     function oVRFLOBook_claimPoolShare_clamped(uint256 poolId, uint128 amount) public {
         uint256 maxPool = book.nextPoolId();
         if (maxPool <= 1) return;
@@ -305,22 +297,6 @@ abstract contract OVRFLOBookHandler is Properties {
         property_repayLoanRepaidIncreases(loanId, amount);
         property_repayLoanClosedIff(loanId, amount);
         property_nonBorrowerCannotRepay(loanId);
-    }
-
-    function oVRFLOBook_poolClaimLoan(uint256 poolId, uint128 amount) public asActor {
-        ghosts.ghost_lastPoolId = poolId;
-        ghosts.ghost_lastLoanId = book.poolLoanId(poolId);
-        snapshotBefore();
-        book.poolClaimLoan(poolId, amount);
-        snapshotAfter();
-        // Track actual stream withdrawal (harvest amount, not input amount)
-        ghost_totalStreamWithdrawals[actor] += uint256(stateAfter.loanDrawn - stateBefore.loanDrawn);
-        // Property assertions
-        property_poolClaimLoanProceedsUnchanged();
-        property_proRataEntitlementFloored();
-        property_poolReceivedLeTotalObligation();
-        property_poolReceivedLeEntitlement();
-        property_poolConservation();
     }
 
     function oVRFLOBook_claimPoolShare(uint256 poolId, uint128 amount) public asActor {

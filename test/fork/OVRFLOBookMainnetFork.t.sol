@@ -68,7 +68,7 @@ contract OVRFLOBookMainnetForkTest is OVRFLOForkBase {
         assertLt(partialClaim, outstandingBeforeClaim);
 
         vm.prank(LENDER);
-        book.poolClaimLoan(poolId, partialClaim);
+        book.claimPoolShare(poolId, partialClaim);
         assertEq(token.balanceOf(LENDER), partialClaim);
 
         vm.warp(PRIMARY_EXPIRY);

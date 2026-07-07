@@ -322,7 +322,7 @@ contract OVRFLOAttackScenariosTest is VaultMockHelpers {
 
         // Lender claims partial from poolProceeds
         vm.prank(lender);
-        book.poolClaimLoan(poolId, partialRepay);
+        book.claimPoolShare(poolId, partialRepay);
 
         // Set withdrawable to full, closeLoan draws remaining (loan closes, NFT returned)
         bookSablier.setWithdrawable(streamId, 100 ether);
