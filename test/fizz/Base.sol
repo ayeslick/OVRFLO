@@ -3,14 +3,9 @@ pragma solidity >=0.6.2 <0.9.0;
 
 import {Actor} from "./Actor.sol";
 import {Clamp} from "./utils/Clamp.sol";
-import {DecimalPrinter} from "./utils/DecimalPrinter.sol";
-import {Deployer} from "./utils/Deployer.sol";
 import {vm} from "./utils/Hevm.sol";
-import {Logger} from "./utils/Logger.sol";
-import {Math} from "./utils/Math.sol";
 import {MockERC20} from "./utils/MockERC20.sol";
 import {StringUtils} from "./utils/StringUtils.sol";
-import {EnumerableSet} from "./utils/EnumerableSet.sol";
 import {OVRFLO} from "../../src/OVRFLO.sol";
 import {OVRFLOToken} from "../../src/OVRFLOToken.sol";
 import {OVRFLOBook} from "../../src/OVRFLOBook.sol";
@@ -21,13 +16,10 @@ import {MockPendleMarket} from "./mocks/MockPendleMarket.sol";
 import {MockStandardizedYield} from "./mocks/MockStandardizedYield.sol";
 
 /// @notice Base contract with state variables and setup functions
-abstract contract Base is StringUtils, Clamp, Deployer, Math {
-    using DecimalPrinter for uint256;
-
+abstract contract Base is StringUtils, Clamp {
     string[] internal ACTOR_LABELS = ["Alice", "Bob", "Charlie", "Dave", "Eve", "Frank", "Grace"];
     uint256 internal constant BLOCK_INTERVAL = 12 seconds;
     uint256 internal constant INITIAL_ETH_BALANCE = 1_000 ether;
-    uint256 internal constant INITIAL_TOKEN_BALANCE = 10_000;
 
     // ―――――――――――――――――――――――――― Ghosts ――――――――――――――――――――――――――
 
@@ -37,35 +29,14 @@ abstract contract Base is StringUtils, Clamp, Deployer, Math {
         uint256 ghost_lastNextSaleListingId;
         uint256 ghost_lastNextLoanId;
         uint256 ghost_lastNextPoolId;
-        // Cumulative fee tracking (SP-17, SP-18, SP-19)
-        uint256 ghost_totalDepositFees;
-        uint256 ghost_totalFlashFees;
-        uint256 ghost_totalBookFees;
         // Deposit tracking (SP-07, GL-51, SP-63)
         uint256 ghost_lastToUser;
         uint256 ghost_lastDepositPtAmount;
-        // Pricing tracking (GL-52, GL-54, GL-53)
-        uint256 ghost_lastGrossPrice;
-        uint128 ghost_lastGrossPriceRemaining;
-        uint256 ghost_lastGrossPriceTtm;
-        uint128 ghost_lastObligation;
-        uint256 ghost_lastObligationBorrowAmount;
         // Entity ID tracking (SP-*)
         uint256 ghost_lastPoolId;
         uint256 ghost_lastLoanId;
         uint256 ghost_lastOfferId;
         uint256 ghost_lastListingId;
-        // Round-trip and fee tracking (SP-03, SP-17, SP-18, SP-19)
-        uint128 ghost_offerFundedCapacity;
-        uint256 ghost_depositFeePaid;
-        uint256 ghost_flashFeePaid;
-        uint256 ghost_bookFeePaid;
-        // Borrow tracking (SP-09, SP-10, SP-56)
-        uint128 ghost_borrowReceived;
-        uint128 ghost_repayPaid;
-        uint128 ghost_streamRemainingBeforeBorrow;
-        // Pool claim tracking (SP-20)
-        uint256 ghost_poolEntitlementSum;
         // Stream tracking (for snapshots)
         uint256 ghost_lastStreamId;
         // Oracle rate tracking (SP-63 rate-stability gate)
@@ -75,10 +46,7 @@ abstract contract Base is StringUtils, Clamp, Deployer, Math {
     Ghosts internal ghosts;
 
     // Mapping ghosts from the property plan
-    mapping(address => bool) internal ghost_hasDeposited;
-    mapping(address => bool) internal ghost_hasWrapped;
     mapping(address => uint256) internal ghost_actorStartValue;
-    mapping(address => uint256) internal ghost_totalStreamWithdrawals;
     address public mockFlashBorrowerAddr;
 
     // Monotonicity ghost mappings (section 6 of plan)
@@ -236,22 +204,6 @@ abstract contract Base is StringUtils, Clamp, Deployer, Math {
         return actors[uint256(uint160(addy)) % actors.length];
     }
 
-    // Maps an arbitrary address to an actor address that is different from the current actor
-    function toActorNotCurrent(address addy) internal view returns (address) {
-        address _actor = actors[uint256(uint160(addy)) % actors.length];
-        if (_actor == actor) {
-            _actor = actors[(uint256(uint160(addy)) + 1) % actors.length];
-        }
-        return _actor;
-    }
-
-    // Sums the native token balances of all actors
-    function sumActorsBalances() internal view returns (uint256 sumOfBalances) {
-        for (uint256 i; i < actors.length; i++) {
-            sumOfBalances += actors[i].balance;
-        }
-    }
-
     // Sums the ERC-20 token balances of all actors for a given token
     function sumActorsERC20Balances(address _token) internal view returns (uint256 sumOfBalances) {
         for (uint256 i; i < actors.length; i++) {
@@ -260,11 +212,6 @@ abstract contract Base is StringUtils, Clamp, Deployer, Math {
             require(success, "sumActorsERC20Balances: failed to get balance");
             sumOfBalances += abi.decode(result, (uint256));
         }
-    }
-
-    function skipBlocks(uint256 blocks) internal {
-        vm.roll(block.number + blocks);
-        vm.warp(block.timestamp + blocks * BLOCK_INTERVAL);
     }
 
     function skipTime(uint256 time) internal {

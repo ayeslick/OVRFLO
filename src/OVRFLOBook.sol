@@ -624,7 +624,7 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
         emit PoolShareClaimed(poolId, msg.sender, payAmount);
     }
 
-    /// @dev Shared claim logic for `claimPoolShare`. Computes claimable as
+    /// @dev Claim logic for `claimPoolShare`. Computes claimable as
     ///      `contribution * recovered / totalContributed - poolReceived`, where
     ///      `recovered = drawn + repaid + min(withdrawable, outstanding)` for open
     ///      loans (including the stream's not-yet-drawn accrual), and `recovered =
@@ -636,6 +636,7 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
         require(contribution > 0, "OVRFLOBook: not contributor");
 
         Loan storage loan = loans[poolLoanId[poolId]];
+        _requireLoanExists(loan);
 
         uint256 recovered = uint256(loan.drawn) + uint256(loan.repaid);
         if (!loan.closed) {

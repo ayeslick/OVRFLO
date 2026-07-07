@@ -1,16 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity >=0.6.2 <0.9.0;
 
-contract ForceSendETH {
-    constructor(address dst) payable {
-        // Use assembly to stay compatible across Solidity versions where
-        // selfdestruct is deprecated or removed
-        assembly {
-            selfdestruct(dst)
-        }
-    }
-}
-
 /// @notice Represents an actor interacting with the system
 contract Actor {
     constructor() payable {
@@ -18,10 +8,6 @@ contract Actor {
     }
 
     receive() external payable {}
-
-    function forceSendETH(address recipient, uint256 amount) public {
-        new ForceSendETH{value: amount}(recipient);
-    }
 
     // ――――――――――――――――――― Flash loan borrower ――――――――――――――――――――
 

@@ -64,7 +64,6 @@ abstract contract OVRFLOHandler is Properties {
         mockFlashBorrower.executeFlashLoan(amount, flashData);
         snapshotAfter();
 
-        ghosts.ghost_flashFeePaid = 0;
         property_flashLoanAtomicRepay();
         property_flashLoanMtdUnchanged();
         property_flashLoanPreMaturity();
@@ -126,11 +125,8 @@ abstract contract OVRFLOHandler is Properties {
         ghosts.ghost_lastToUser = toUser;
         ghosts.ghost_lastDepositPtAmount = ptAmount;
         ghosts.ghost_lastOracleRate = mockOracle.rate();
-        ghost_hasDeposited[actor] = true;
         (, , uint16 feeBps, , , , , ) = vault.series(_market);
         uint256 feeAmount = feeBps == 0 ? 0 : toUser * feeBps / 10_000;
-        ghosts.ghost_depositFeePaid = feeAmount;
-        ghosts.ghost_totalDepositFees += feeAmount;
         // Property assertions
         property_depositConservesSplit(toUser, toStream, ptAmount);
         property_depositToUserCapped(toUser, ptAmount);
@@ -161,8 +157,6 @@ abstract contract OVRFLOHandler is Properties {
         snapshotBefore();
         vault.wrap(amount);
         snapshotAfter();
-        // Ghost updates
-        ghost_hasWrapped[actor] = true;
         // Property assertions
         property_wrapIncreasesWrapped(amount);
         property_wrapMtdUnchanged();
@@ -184,10 +178,7 @@ abstract contract OVRFLOHandler is Properties {
         underlying.approve(address(vault), type(uint256).max);
         vault.flashLoan(ptToken_, amount, data);
         snapshotAfter();
-        // Ghost updates
         uint256 fee = stateBefore.actorUnderlying - stateAfter.actorUnderlying;
-        ghosts.ghost_flashFeePaid = fee;
-        ghosts.ghost_totalFlashFees += fee;
         // Property assertions
         property_flashLoanAtomicRepay();
         property_flashLoanFeeFloored(fee, amount);
@@ -284,7 +275,7 @@ abstract contract OVRFLOHandler is Properties {
         property_unwrapWrapRoundTrip(ovrfloBefore, ovrfloAfter);
     }
 
-    /// @notice SP-05, SP-61: deposit -> claim cycle conserves value, MTD returns to pre-deposit
+    /// @notice SP-05: deposit -> claim cycle conserves value
     function roundTrip_depositClaim(uint256 ptAmount) public {
         ptAmount = clampBetween(ptAmount, vault.MIN_PT_AMOUNT(), ptToken.balanceOf(actor));
         if (ptAmount < vault.MIN_PT_AMOUNT()) return;

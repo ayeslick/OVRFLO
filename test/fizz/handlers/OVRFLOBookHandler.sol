@@ -174,8 +174,6 @@ abstract contract OVRFLOBookHandler is Properties {
         uint256 offerId = book.postOffer(_market, aprBps, capacity);
         ghosts.ghost_lastOfferId = offerId;
         snapshotAfter();
-        // Ghost updates
-        ghosts.ghost_offerFundedCapacity = capacity;
         // Property assertions
         property_postOfferIdIncrements();
         property_postOfferNewOfferActive();
@@ -187,15 +185,9 @@ abstract contract OVRFLOBookHandler is Properties {
         snapshotBefore();
         book.sellIntoOffer(offerId, streamId, minNetOut);
         snapshotAfter();
-        // Ghost updates
         uint256 grossPrice = uint256(stateBefore.offerCapacity) - uint256(stateAfter.offerCapacity);
-        ghosts.ghost_lastGrossPrice = grossPrice;
         uint256 feeBps = book.feeBps();
         uint256 fee = feeBps == 0 ? 0 : grossPrice * feeBps / 10_000;
-        ghosts.ghost_bookFeePaid = fee;
-        ghosts.ghost_totalBookFees += fee;
-        // Track sale proceeds for GL-57
-        ghost_totalStreamWithdrawals[actor] += grossPrice - fee;
         // Property assertions
         property_sellIntoOfferCapacityDecreases(grossPrice);
         property_bookFeeFlooredWithBps(fee, grossPrice, uint16(feeBps));
@@ -219,13 +211,9 @@ abstract contract OVRFLOBookHandler is Properties {
         snapshotBefore();
         book.buyListing(listingId, maxPriceIn);
         snapshotAfter();
-        // Ghost updates
         (,,,, uint16 listingFeeBps,) = book.saleListings(listingId);
         uint256 grossPrice = stateBefore.actorUnderlying - stateAfter.actorUnderlying;
-        ghosts.ghost_lastGrossPrice = grossPrice;
         uint256 fee = listingFeeBps == 0 ? 0 : grossPrice * listingFeeBps / 10_000;
-        ghosts.ghost_bookFeePaid = fee;
-        ghosts.ghost_totalBookFees += fee;
         // Property assertions
         property_buyListingInactive();
         property_bookFeeFlooredWithBps(fee, grossPrice, listingFeeBps);
@@ -243,19 +231,10 @@ abstract contract OVRFLOBookHandler is Properties {
         ghosts.ghost_lastPoolId = poolId;
         ghosts.ghost_lastLoanId = book.poolLoanId(poolId);
         snapshotAfter();
-        // Ghost updates
         uint128 actualBorrow = stateAfter.poolTotalContributed;
         uint128 obligation = stateAfter.poolTotalObligation;
-        ghosts.ghost_borrowReceived = actualBorrow;
-        ghosts.ghost_streamRemainingBeforeBorrow = stateBefore.streamRemaining;
-        ghosts.ghost_lastObligation = obligation;
-        ghosts.ghost_lastObligationBorrowAmount = uint256(actualBorrow);
         uint256 feeBps = book.feeBps();
         uint256 fee = feeBps == 0 ? 0 : uint256(actualBorrow) * feeBps / 10_000;
-        ghosts.ghost_bookFeePaid = fee;
-        ghosts.ghost_totalBookFees += fee;
-        // Track borrow proceeds for GL-57
-        ghost_totalStreamWithdrawals[actor] += uint256(actualBorrow) - fee;
         // Property assertions
         property_obligationGeBorrow();
         property_obligationLeRemaining();
@@ -290,8 +269,6 @@ abstract contract OVRFLOBookHandler is Properties {
         snapshotBefore();
         book.repayLoan(loanId, amount);
         snapshotAfter();
-        // Ghost updates
-        ghosts.ghost_repayPaid = amount;
         // Property assertions
         property_repayLoanExactCheck(loanId, amount);
         property_repayLoanRepaidIncreases(loanId, amount);
@@ -305,8 +282,6 @@ abstract contract OVRFLOBookHandler is Properties {
         snapshotBefore();
         book.claimPoolShare(poolId, amount);
         snapshotAfter();
-        // Track actual stream withdrawal (harvest amount, not input amount)
-        ghost_totalStreamWithdrawals[actor] += uint256(stateAfter.loanDrawn - stateBefore.loanDrawn);
         // Property assertions
         property_claimPoolShareReceivedIncreases();
         property_proRataEntitlementFloored();

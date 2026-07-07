@@ -65,7 +65,6 @@ contract OVRFLOProtocolTest is VaultMockHelpers {
     MockERC20Metadata internal underlying;
     MockERC20Metadata internal ptOne;
     MockERC20Metadata internal ptTwo;
-    MockERC20Metadata internal ptMismatch;
 
     address internal user;
     address internal otherUser;
@@ -77,7 +76,6 @@ contract OVRFLOProtocolTest is VaultMockHelpers {
         underlying = new MockERC20Metadata("Underlying", "UND", 18);
         ptOne = new MockERC20Metadata("PT One", "PT1", 18);
         ptTwo = new MockERC20Metadata("PT Two", "PT2", 18);
-        ptMismatch = new MockERC20Metadata("PT Mismatch", "PTM", 6);
 
         ovrfloToken = new OVRFLOToken("OVRFLO Underlying", "ovrUND");
         ovrflo = new OVRFLO(ADMIN, TREASURY, address(underlying), address(ovrfloToken), PENDLE_ORACLE);
