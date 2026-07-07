@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OVRFLO | Markets</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body class="grid-bg">
+    <!--
+      CONTRACT WIRING MAP (source of truth for the web/ implementation)
+
+      YOUR LENDING panel
+        - Posted capacity ....... sum of OVRFLOBook.offers[id].capacity where maker == user && active (indexer)
+        - Open as lender ........ sum of loans[id].obligation - drawn - repaid where lender == user && !closed
+        - Claimable ............. claimPoolShare preview: poolContributions[poolId][user] pro-rata vs poolProceeds
+        - Net APR ............... weighted avg aprBps across user's active offers/loans (indexer)
+
+      YOUR BORROWS panel
+        - Outstanding ........... sum over user's open loans of obligation - (drawn + repaid)
+        - Obligation ............ loans[id].obligation (fixed at origination, ovrfloToken-denominated)
+        - APR ................... aprBps agreed at origination (Pool.aprBps / offer aprBps)
+
+      MARKETS table (one row per approved series)
+        - Asset / maturity ...... OVRFLO series registry: SeriesInfo.ptToken, SeriesInfo.expiryCached
+        - Offer depth ........... OVRFLOBook.gatherOfferCapacities(market) — sum of active offer capacity
+        - Lend APR .............. top-of-book offer aprBps for the market (indexer sort)
+        - Borrow APR ............ same aprBps grossed up by SeriesInfo.feeBps (borrower pays the fee)
+        - All amounts are ovrfloToken (1:1 with underlying); display symbol per market's ovrfloToken
+    -->
+    <div class="container">
+        <header>
+            <div class="logo">OVRFLO</div>
+            <nav>
+                <a href="landing-v3.html">Protocol</a>
+                <a href="app-tables-v2.html" class="active">Markets</a>
+                <a href="#">Dashboard</a>
+            </nav>
+        </header>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; margin-bottom: 3rem;">
+            <div style="border: var(--grid-line); padding: 2rem; background: var(--obsidian);">
+                <div style="display: flex; justify-content: space-between; margin-bottom: 1rem;">
+                    <div class="stat-label text-gold">YOUR LENDING</div>
+                    <div class="mono text-gold" style="font-size: 0.875rem;">4.50% Net APR</div>
+                </div>
+                <div class="mono" style="font-size: 1.5rem;">120.50 ovrfloETH</div>
+                <div class="mono text-dim" style="font-size: 0.75rem; margin-top: 0.5rem;">Posted: 75.50 &middot; Lent: 45.00 &middot; Claimable: 1.20 ovrfloETH</div>
+            </div>
+            <div style="border: var(--grid-line); padding: 2rem; background: var(--obsidian);">
+                <div style="display: flex; justify-content: space-between; margin-bottom: 1rem;">
+                    <div class="stat-label text-cyan">YOUR BORROWS</div>
+                    <div class="mono text-cyan" style="font-size: 0.875rem;">4.62% APR</div>
+                </div>
+                <div class="mono" style="font-size: 1.5rem;">45.00 ovrfloETH</div>
+                <div class="mono text-dim" style="font-size: 0.75rem; margin-top: 0.5rem;">Obligation: 47.10 &middot; Stream-repaid: 12.40 ovrfloETH</div>
+            </div>
+        </div>
+
+        <h2 style="margin-bottom: 1.5rem; font-size: 1.25rem;">Markets</h2>
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Asset</th>
+                        <th>Offer Depth</th>
+                        <th>Lend APR</th>
+                        <th>Borrow APR</th>
+                        <th style="text-align: right;">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>
+                            <div style="font-weight: 500;">PT-wstETH-27JUN27</div>
+                            <div class="text-dim mono" style="font-size: 0.75rem; margin-top: 0.25rem;">Matures Jun 27, 2027</div>
+                        </td>
+                        <td class="mono">2,450 ovrfloETH</td>
+                        <td class="mono text-gold">4.50%</td>
+                        <td class="mono text-cyan">4.62%</td>
+                        <td style="text-align: right;">
+                            <button class="btn btn-gold" style="margin-right: 0.5rem;">Lend</button>
+                            <button class="btn btn-cyan">Borrow</button>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>
+                            <div style="font-weight: 500;">PT-wstETH-25DEC26</div>
+                            <div class="text-dim mono" style="font-size: 0.75rem; margin-top: 0.25rem;">Matures Dec 25, 2026</div>
+                        </td>
+                        <td class="mono">850 ovrfloETH</td>
+                        <td class="mono text-gold">4.10%</td>
+                        <td class="mono text-cyan">4.25%</td>
+                        <td style="text-align: right;">
+                            <button class="btn btn-gold" style="margin-right: 0.5rem;">Lend</button>
+                            <button class="btn btn-cyan">Borrow</button>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</body>
+</html>

@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OVRFLO | Self-Repaying Lending</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body class="grid-bg">
+    <div class="container">
+        <header>
+            <div class="logo">OVRFLO</div>
+            <nav>
+                <a href="landing-v3.html" class="active">Protocol</a>
+                <a href="app-tables-v2.html">Markets</a>
+                <a href="#">Docs</a>
+            </nav>
+        </header>
+
+        <section class="hero" style="grid-template-columns: 1.2fr 1fr; gap: 0; padding-bottom: 4rem;">
+            <div style="padding-right: 4rem;">
+                <h1>The Self-Repaying<br>Lending Market.</h1>
+                <p style="margin-bottom: 2rem;">
+                    Deposit Pendle principal tokens. Receive a liquid token plus a Sablier
+                    stream of your fixed yield. Sell the stream, or borrow against it and
+                    let it pay your debt down block by block. Fixed obligations. No
+                    liquidations. No health factors. No loan-time oracles.
+                </p>
+                <div style="display: flex; gap: 1rem;">
+                    <a href="app-tables-v2.html" class="btn btn-cyan" style="text-decoration: none; display: inline-block;">Borrow</a>
+                    <a href="app-tables-v2.html" class="btn btn-gold" style="text-decoration: none; display: inline-block;">Lend</a>
+                </div>
+            </div>
+            <div style="border-left: var(--grid-line); padding-left: 4rem;">
+                <div class="stat-label">System Architecture</div>
+                <pre class="mono text-dim" style="font-size: 0.875rem; line-height: 1.4; margin-top: 1rem; color: var(--chalk);">
+ [PT DEPOSIT] --> [OVRFLO TOKEN]
+                      |
+                      v
+                [SABLIER STREAM]
+                      |
+              [OVRFLO BOOK MARKET]
+                      |
+             +--------+--------+
+             |                 |
+        [BORROWER]          [LENDER]
+             |                 |
+       (Self-Repaying)   (Yield Capture)
+                </pre>
+            </div>
+        </section>
+
+        <section class="stats-grid">
+            <div class="stat-box">
+                <div class="stat-label">Total Value Locked</div>
+                <div class="stat-value text-chalk">$142.5M</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-label">Active Loans</div>
+                <div class="stat-value text-cyan">1,204</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-label">Yield Streams</div>
+                <div class="stat-value text-gold">3,492</div>
+            </div>
+        </section>
+
+        <section style="padding: 4rem 0; border-bottom: var(--grid-line);">
+            <div class="stat-label" style="margin-bottom: 2rem;">The OVRFLO Cycle</div>
+            <div style="display: grid; grid-template-columns: repeat(3, 1fr); border: var(--grid-line);">
+                <div style="padding: 2rem; border-right: var(--grid-line);">
+                    <div class="mono text-dim" style="font-size: 0.75rem; margin-bottom: 1rem;">01 / TOKENIZE</div>
+                    <h3 style="font-size: 1.125rem; margin-bottom: 0.75rem;">Deposit PT, unlock the discount</h3>
+                    <p class="text-dim" style="font-size: 0.875rem; margin: 0;">
+                        Deposit a Pendle principal token and mint ovrfloToken 1:1 against
+                        its face value. The fixed discount you bought the PT at is paid
+                        back to you as a Sablier stream that vests until maturity.
+                    </p>
+                </div>
+                <div style="padding: 2rem; border-right: var(--grid-line);">
+                    <div class="mono text-dim" style="font-size: 0.75rem; margin-bottom: 1rem;">02 / TRADE OR BORROW</div>
+                    <h3 style="font-size: 1.125rem; margin-bottom: 0.75rem;">Put the stream to work</h3>
+                    <p class="text-dim" style="font-size: 0.875rem; margin: 0;">
+                        List the stream for sale on the book, or pledge it as collateral
+                        for a loan. The stream itself repays the lender: debt is drawn
+                        from it as it vests, and the residual returns to you at close.
+                    </p>
+                </div>
+                <div style="padding: 2rem;">
+                    <div class="mono text-dim" style="font-size: 0.75rem; margin-bottom: 1rem;">03 / EXIT</div>
+                    <h3 style="font-size: 1.125rem; margin-bottom: 0.75rem;">Leave whenever you want</h3>
+                    <p class="text-dim" style="font-size: 0.875rem; margin: 0;">
+                        ovrfloToken is fully liquid: unwrap it 1:1 for underlying, claim
+                        PT at maturity, or swap it out. Every holder always has an exit
+                        path, backed by the vault's combined solvency invariant.
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <section style="padding: 4rem 0; border-bottom: var(--grid-line); display: grid; grid-template-columns: 1fr 1fr; gap: 0;">
+            <div style="padding-right: 4rem;">
+                <div class="stat-label text-cyan" style="margin-bottom: 1.5rem;">For Borrowers</div>
+                <h2 style="font-size: 1.5rem; margin-bottom: 1rem;">Debt that pays itself.</h2>
+                <p class="text-dim" style="font-size: 0.9375rem;">
+                    Your obligation is fixed at origination: principal plus a rate agreed
+                    up front, denominated in ovrfloToken. Because the collateral is a
+                    deterministic yield stream, not a volatile asset, there is nothing to
+                    liquidate and no health factor to watch. Repay early, or do nothing
+                    and let the stream settle it.
+                </p>
+            </div>
+            <div style="border-left: var(--grid-line); padding-left: 4rem;">
+                <div class="stat-label text-gold" style="margin-bottom: 1.5rem;">For Lenders</div>
+                <h2 style="font-size: 1.5rem; margin-bottom: 1rem;">Fixed-rate yield, stream-secured.</h2>
+                <p class="text-dim" style="font-size: 0.9375rem;">
+                    Post an offer at your rate and size. When a borrower takes it, their
+                    stream is escrowed by the book and your recovery draws directly from
+                    it as it vests, capped at the obligation. Pool with other lenders to
+                    fund larger loans and claim your share pro-rata.
+                </p>
+            </div>
+        </section>
+    </div>
+</body>
+</html>

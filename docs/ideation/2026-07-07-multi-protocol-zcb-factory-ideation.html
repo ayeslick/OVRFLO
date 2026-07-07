@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ideation: Multi-Protocol ZCB Factory Modularization</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --bg-card: #161b22;
+    --bg-soft: #1c2330;
+    --border: #30363d;
+    --border-soft: #21262d;
+    --text: #e6edf3;
+    --text-muted: #8b949e;
+    --accent: #58a6ff;
+    --accent-soft: rgba(88, 166, 255, 0.12);
+    --accent-text: #79c0ff;
+    --green: #3fb950;
+    --green-soft: rgba(63, 185, 80, 0.12);
+    --green-text: #56d364;
+    --yellow: #d29922;
+    --yellow-soft: rgba(210, 153, 34, 0.12);
+    --yellow-text: #e3b341;
+    --red: #f85149;
+    --red-soft: rgba(248, 81, 73, 0.10);
+    --red-text: #ff7b72;
+    --purple: #bc8cff;
+    --purple-soft: rgba(188, 140, 255, 0.10);
+    --purple-text: #bc8cff;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    font-size: 15px;
+    padding: 0;
+  }
+  .container { max-width: 880px; margin: 0 auto; padding: 40px 24px 80px; }
+  h1 { font-size: 1.7rem; font-weight: 700; margin-bottom: 4px; line-height: 1.3; }
+  h2 { font-size: 1.25rem; font-weight: 600; margin: 48px 0 16px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+  h3 { font-size: 1.05rem; font-weight: 600; margin: 0; }
+  p { margin-bottom: 12px; }
+  code { font-family: "SF Mono", "Fira Code", "Consolas", monospace; font-size: 0.85em; background: var(--bg-soft); padding: 2px 6px; border-radius: 4px; color: var(--accent-text); }
+  pre { background: var(--bg-soft); padding: 12px 16px; border-radius: 8px; overflow-x: auto; margin: 12px 0; }
+  pre code { background: none; padding: 0; }
+  ul, ol { margin: 8px 0 12px 20px; }
+  li { margin-bottom: 4px; }
+  strong { color: inherit; font-weight: 600; }
+  a { color: var(--accent); text-decoration: none; }
+
+  .meta-bar { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0 0; }
+  .meta-chip { font-size: 0.78rem; padding: 3px 10px; border-radius: 12px; background: var(--bg-soft); border: 1px solid var(--border-soft); color: var(--text-muted); }
+  .meta-chip.mode { color: var(--green-text); border-color: rgba(63, 185, 80, 0.3); }
+
+  .grounding { background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; padding: 20px 24px; margin: 16px 0; }
+  .grounding h3 { font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); margin-bottom: 8px; }
+  .grounding p, .grounding li { font-size: 0.9rem; color: var(--text-muted); }
+  .grounding strong { color: var(--text); }
+
+  .axes { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+  .axis-chip { font-size: 0.82rem; padding: 6px 14px; border-radius: 8px; background: var(--accent-soft); border: 1px solid rgba(88, 166, 255, 0.2); color: var(--accent-text); }
+
+  .jump-list { background: var(--bg-soft); border: 1px solid var(--border-soft); border-radius: 8px; padding: 14px 20px; margin: 16px 0 24px; }
+  .jump-list h4 { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); margin-bottom: 8px; }
+  .jump-list ol { margin: 0 0 0 20px; }
+  .jump-list li { margin-bottom: 3px; font-size: 0.88rem; }
+  .jump-list a { color: var(--accent-text); }
+
+  .idea-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; padding: 24px 28px; margin: 16px 0; }
+  .idea-card .idea-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 4px; }
+  .idea-card .idea-num { font-size: 0.78rem; font-weight: 700; color: var(--text-muted); flex-shrink: 0; padding-top: 2px; }
+  .idea-card h3 { font-size: 1.08rem; font-weight: 600; line-height: 1.35; }
+  .idea-card .idea-meta { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 14px; }
+  .tag { font-size: 0.74rem; padding: 3px 10px; border-radius: 12px; font-weight: 500; }
+  .tag.axis { background: var(--accent-soft); color: var(--accent-text); border: 1px solid rgba(88, 166, 255, 0.15); }
+  .tag.conf-high { background: var(--green-soft); color: var(--green-text); border: 1px solid rgba(63, 185, 80, 0.15); }
+  .tag.conf-med { background: var(--yellow-soft); color: var(--yellow-text); border: 1px solid rgba(210, 153, 34, 0.15); }
+  .tag.cx-l { background: var(--bg-soft); color: var(--text-muted); border: 1px solid var(--border-soft); }
+  .tag.cx-m { background: var(--purple-soft); color: var(--purple-text); border: 1px solid rgba(188, 140, 255, 0.15); }
+  .idea-card .field { margin: 10px 0; }
+  .idea-card .field-label { font-size: 0.76rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); margin-bottom: 2px; }
+  .idea-card .field-body { font-size: 0.92rem; }
+  .idea-card .basis-tag { font-family: monospace; font-size: 0.78rem; padding: 1px 5px; border-radius: 3px; }
+  .basis-direct { background: var(--green-soft); color: var(--green-text); }
+  .basis-external { background: var(--purple-soft); color: var(--purple-text); }
+  .basis-reasoned { background: var(--yellow-soft); color: var(--yellow-text); }
+
+  .diagram { margin: 16px 0; text-align: center; }
+  .diagram svg { max-width: 100%; height: auto; }
+  .diagram-caption { font-size: 0.8rem; color: var(--text-muted); margin-top: 6px; }
+
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 0.88rem; }
+  th { text-align: left; padding: 8px 12px; border-bottom: 2px solid var(--border); color: var(--text-muted); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.04em; }
+  td { padding: 8px 12px; border-bottom: 1px solid var(--border-soft); color: var(--text-muted); }
+  td:first-child { color: var(--text); }
+
+  footer.composition-signal { margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--border); font-size: 0.78rem; color: var(--text-muted); }
+  footer.composition-signal code { font-size: 0.85em; }
+
+  @media (max-width: 600px) {
+    .container { padding: 24px 16px 60px; }
+    .idea-card { padding: 18px 20px; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>Ideation: Multi-Protocol ZCB Factory Modularization</h1>
+<p style="color: var(--text-muted); font-size: 0.95rem;">How to support multiple zero-coupon bond protocols (Pendle, Frax Bonds, Notional fCash) beyond the current Pendle-only architecture, and whether a modular factory or a wrapper/adapter approach is the right path.</p>
+
+<div class="meta-bar">
+  <span class="meta-chip">2026-07-07</span>
+  <span class="meta-chip">topic: multi-protocol-zcb-factory</span>
+  <span class="meta-chip mode">repo-grounded</span>
+</div>
+
+<!-- ==================== GROUNDING CONTEXT ==================== -->
+
+<h2>Grounding Context</h2>
+<div class="grounding">
+  <h3>Codebase Context</h3>
+  <p>OVRFLO is a Foundry/Solidity vault system for yield tokenization, currently hard-coupled to <strong>Pendle Finance</strong>. Users deposit Pendle Principal Tokens (PTs), receive ovrfloTokens (immediate portion) + a Sablier V2 stream (discount portion), and claim PT 1:1 after maturity. A secondary market (OVRFLOBook) allows selling/lending against streams. The factory (OVRFLOFactory) is owned by a timelocked multisig and is the single admin hub.</p>
+  <p>The Pendle coupling is concentrated in <strong>4 call sites</strong>: <code>IPendleOracle.getOracleState</code> (freshness), <code>IPendleOracle.getPtToSyRate</code> (pricing, at 5 locations in the vault), <code>IPendleMarket.readTokens</code> (SY/PT/YT introspection), and <code>IStandardizedYield.yieldToken</code> (underlying validation). The oracle is an <strong>immutable singleton</strong> at both factory and vault level. The claim path (<code>IERC20(ptToken).safeTransfer</code>) and StreamPricing's <code>marketActive</code> / <code>requireEligible</code> are <strong>already protocol-agnostic</strong>. The registry interfaces (<code>IOVRFLOSeriesRegistry</code>) leak two Pendle fields: <code>twapDurationFixed</code> and <code>oracle</code>.</p>
+</div>
+<div class="grounding">
+  <h3>External Prior Art</h3>
+  <p><strong>Frax Bonds (FXB):</strong> ERC20 ZCB, 1:1 to FRAX at maturity, GDA pricing, per-series oracle, single underlying. <strong>Notional fCash:</strong> ERC1155, internal AMM pricing, multiple currencies/decimals. <strong>wrapped-fcash</strong> (closest prior art): ERC20+ERC4626 wrapper per (currencyId, maturity) via CREATE2+BeaconProxy. <strong>Yearn V3:</strong> ERC4626 tokenized strategies, thin 3-function adapter. <strong>Morpho V2:</strong> allocate/deallocate adapters, timelocked, per-adapter caps, frontrun risk on removal. ERC4626 is the convergent adapter seam. Survivor bias: Pendle dominates; Element and Yield Protocol both exited.</p>
+</div>
+<div class="grounding">
+  <h3>Institutional Learnings</h3>
+  <p>AGENTS.md: <em>"Keep code Pendle-specific... use a wrapper/adapter contract if another protocol is ever needed."</em> Pattern #9: factory owns every dependent; admin forwarded. Pattern #10: one vault per underlying; cross-market ovrfloToken fungibility is a design feature. R-05: protocol-level redemption rejected (SY asset != yield token breaks 1:1 invariant); decision was <em>"keep vault Pendle-specific and thin, push variability to outer layer."</em> StreamPricing + registry interfaces are the existing abstraction seam.</p>
+</div>
+
+<!-- ==================== TOPIC AXES ==================== -->
+
+<h2>Topic Axes</h2>
+<div class="axes">
+  <span class="axis-chip">1. Protocol abstraction surface</span>
+  <span class="axis-chip">2. Factory deployment &amp; series routing</span>
+  <span class="axis-chip">3. Oracle/pricing normalization</span>
+  <span class="axis-chip">4. Vault-level decoupling</span>
+  <span class="axis-chip">5. Claim/redemption path</span>
+</div>
+
+<!-- ==================== RANKED IDEAS ==================== -->
+
+<h2>Ranked Ideas</h2>
+
+<div class="jump-list">
+  <h4>Jump to idea</h4>
+  <ol>
+    <li><a href="#idea-1">Adapter-per-series, vault-per-underlying: the USB class-driver model</a></li>
+    <li><a href="#idea-2">Ship the ~5-function IZcbSource interface &mdash; the seam already exists</a></li>
+    <li><a href="#idea-3">Per-series adapter replaces the immutable oracle singleton</a></li>
+    <li><a href="#idea-4">R-05 reframed: the invariant is "ERC20-ZCB," not "Pendle PT"</a></li>
+    <li><a href="#idea-5">The uniqueness key is an irreversible product decision</a></li>
+    <li><a href="#idea-6">Adapters make multi-protocol rationally attemptable</a></li>
+    <li><a href="#idea-7">Duplication may beat abstraction at N&le;3: force the crossover</a></li>
+  </ol>
+</div>
+
+<!-- IDEA 1 -->
+<div class="idea-card" id="idea-1">
+  <div class="idea-header">
+    <span class="idea-num">1.</span>
+    <h3>Adapter-per-series, vault-per-underlying: the USB class-driver model</h3>
+  </div>
+  <div class="idea-meta">
+    <span class="tag axis">Axis 2: Factory &amp; routing</span>
+    <span class="tag conf-high">Conf 88%</span>
+    <span class="tag cx-m">Cx Medium-High</span>
+  </div>
+  <div class="field">
+    <div class="field-label">Description</div>
+    <div class="field-body">The answer to "modular factory vs wrapper/adapter" is <strong>neither in its pure form</strong>. It's a third option modeled on USB device classes: one vault (class driver) per underlying, many adapters (devices) feeding series into it. The factory routes adapters to vaults by underlying via <code>adapter.underlying()</code>, preserving pattern #10's one-vault-per-underlying and cross-market ovrfloToken fungibility. A Pendle wstETH adapter and a Notional wstETH adapter both feed series into the same wstETH vault. <code>addMarket</code> collapses to <code>addSeries(ovrflo, adapter, feeBps)</code> &mdash; the adapter supplies pt/maturity/oracle-internals.</div>
+  </div>
+  <div class="diagram">
+    <svg viewBox="0 0 720 280" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <marker id="arrow1" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+          <path d="M0,0 L6,3 L0,6" fill="none" stroke="#8b949e" stroke-width="1.2"/>
+        </marker>
+      </defs>
+      <!-- Factory -->
+      <rect x="20" y="10" width="140" height="40" rx="6" fill="#161b22" stroke="#58a6ff" stroke-width="1.5"/>
+      <text x="90" y="35" text-anchor="middle" fill="#79c0ff" font-size="11" font-family="monospace">OVRFLOFactory</text>
+      <text x="90" y="64" text-anchor="middle" fill="#8b949e" font-size="9">routes by underlying</text>
+      <!-- Vault 1 -->
+      <rect x="240" y="50" width="160" height="50" rx="6" fill="#161b22" stroke="#3fb950" stroke-width="1.5"/>
+      <text x="320" y="72" text-anchor="middle" fill="#56d364" font-size="11" font-family="monospace">wstETH Vault</text>
+      <text x="320" y="88" text-anchor="middle" fill="#8b949e" font-size="9">1 ovrfloToken, fungible</text>
+      <!-- Adapters for vault 1 -->
+      <rect x="480" y="15" width="120" height="32" rx="5" fill="#1c2330" stroke="#bc8cff" stroke-width="1"/>
+      <text x="540" y="36" text-anchor="middle" fill="#bc8cff" font-size="10" font-family="monospace">PendleAdapter</text>
+      <rect x="480" y="55" width="120" height="32" rx="5" fill="#1c2330" stroke="#bc8cff" stroke-width="1"/>
+      <text x="540" y="76" text-anchor="middle" fill="#bc8cff" font-size="10" font-family="monospace">NotionalAdapter</text>
+      <rect x="480" y="95" width="120" height="32" rx="5" fill="#1c2330" stroke="#bc8cff" stroke-width="1" stroke-dasharray="4,3"/>
+      <text x="540" y="116" text-anchor="middle" fill="#8b949e" font-size="10" font-family="monospace">FutureAdapter</text>
+      <!-- Vault 2 -->
+      <rect x="240" y="170" width="160" height="50" rx="6" fill="#161b22" stroke="#3fb950" stroke-width="1.5"/>
+      <text x="320" y="192" text-anchor="middle" fill="#56d364" font-size="11" font-family="monospace">FRAX Vault</text>
+      <text x="320" y="208" text-anchor="middle" fill="#8b949e" font-size="9">1 ovrfloToken, fungible</text>
+      <!-- Adapter for vault 2 -->
+      <rect x="480" y="178" width="120" height="32" rx="5" fill="#1c2330" stroke="#bc8cff" stroke-width="1"/>
+      <text x="540" y="199" text-anchor="middle" fill="#bc8cff" font-size="10" font-family="monospace">FxbAdapter</text>
+      <!-- Lines -->
+      <line x1="160" y1="30" x2="235" y2="70" stroke="#8b949e" stroke-width="1" marker-end="url(#arrow1)"/>
+      <line x1="160" y1="35" x2="235" y2="190" stroke="#8b949e" stroke-width="1" marker-end="url(#arrow1)"/>
+      <line x1="400" y1="65" x2="475" y2="31" stroke="#8b949e" stroke-width="1" marker-end="url(#arrow1)"/>
+      <line x1="400" y1="72" x2="475" y2="71" stroke="#8b949e" stroke-width="1" marker-end="url(#arrow1)"/>
+      <line x1="400" y1="80" x2="475" y2="111" stroke="#8b949e" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrow1)"/>
+      <line x1="400" y1="195" x2="475" y2="194" stroke="#8b949e" stroke-width="1" marker-end="url(#arrow1)"/>
+      <!-- Labels -->
+      <text x="430" y="240" text-anchor="middle" fill="#8b949e" font-size="9">1 vault per underlying (class driver) &middot; N adapters per vault (devices)</text>
+    </svg>
+    <div class="diagram-caption">USB class model: one vault (class driver) per underlying, many adapters (devices) feeding series. Fungibility preserved within each vault.</div>
+  </div>
+  <div class="field">
+    <div class="field-label">Basis</div>
+    <div class="field-body"><span class="basis-tag basis-direct">direct:</span> <code>OVRFLOFactory.sol</code> <code>mapping(address => address) public underlyingToOvrflo</code> (1:1, prevents duplicates); AGENTS.md pattern #10: "cross-market ovrfloToken fungibility under one underlying is a design feature." <span class="basis-tag basis-external">external:</span> USB 2.0 spec class drivers: one class driver handles many devices of the same class. <span class="basis-tag basis-reasoned">reasoned:</span> if PTs from different protocols both redeem 1:1 to the same underlying at maturity, their ovrfloTokens are economically fungible regardless of originating protocol.</div>
+  </div>
+  <div class="field">
+    <div class="field-label">Rationale</div>
+    <div class="field-body">This is the non-obvious resolution to the modular-factory-vs-adapter question. A modular factory that creates protocol-specific vaults breaks pattern #10 (fragmented liquidity). A wrapper external to the vault doesn't solve the oracle singleton. The USB model preserves the fungibility feature, the admin-forwarding pattern (#9), and the 1:1 invariant while making the vault protocol-agnostic. Each new protocol adds an adapter, not a vault.</div>
+  </div>
+  <div class="field">
+    <div class="field-label">Downsides</div>
+    <div class="field-body">Requires vault restructuring (SeriesInfo gains an <code>adapter</code> field, loses <code>twapDurationFixed</code>). The factory must validate adapter-underlying matching. If the uniqueness key stays <code>underlying</code> (see idea #5), different protocols' PTs commingle in one vault's claim path, which works only if every adapter's PT is a transferable ERC20.</div>
+  </div>
+</div>
+
+<!-- IDEA 2 -->
+<div class="idea-card" id="idea-2">
+  <div class="idea-header">
+    <span class="idea-num">2.</span>
+    <h3>Ship the ~5-function IZcbSource interface &mdash; the seam already exists</h3>
+  </div>
+  <div class="idea-meta">
+    <span class="tag axis">Axis 1: Abstraction surface</span>
+    <span class="tag conf-high">Conf 90%</span>
+    <span class="tag cx-m">Cx Medium</span>
+  </div>
+  <div class="field">
+    <div class="field-label">Description</div>
+    <div class="field-body">The vault's entire Pendle surface reduces to one scalar (<code>rateE18</code>) fed into pure math (<code>_computeSplit</code>), plus a freshness gate and three onboarding fields. The coupling table's "Protocol-Agnostic Equivalent" column <strong>is literally the spec</strong>: <code>principalToken()</code>, <code>maturity()</code>, <code>ptRate()</code> / <code>convertToUnderlying(ptAmount)</code>, <code>isPriceFresh()</code>, <code>underlying()</code>. The adapter is a ~40-line renaming of call paths that already exist. The vault is already 60% protocol-agnostic (claim + StreamPricing are generic). The OVRFLOBook inherits multi-protocol for free once two registry leaks (<code>twapDurationFixed</code>, <code>oracle</code>) are cleaned. Aligning with ERC4626 means <strong>wrapped-fcash IS already the Notional adapter</strong> &mdash; zero new code for that protocol.</div>
+  </div>
+  <div class="diagram">
+    <svg viewBox="0 0 680 200" xmlns="http://www.w3.org/2000/svg">
+      <!-- Before -->
+      <text x="150" y="20" text-anchor="middle" fill="#f85149" font-size="11" font-weight="600">BEFORE (Pendle-coupled)</text>
+      <rect x="40" y="30" width="220" height="150" rx="6" fill="#161b22" stroke="#f85149" stroke-width="1.2" stroke-dasharray="5,3"/>
+      <text x="60" y="52" fill="#ff7b72" font-size="10" font-family="monospace">IPendleOracle.getOracleState()</text>
+      <text x="60" y="70" fill="#ff7b72" font-size="10" font-family="monospace">IPendleOracle.getPtToSyRate()</text>
+      <text x="60" y="88" fill="#ff7b72" font-size="10" font-family="monospace">IPendleMarket.readTokens()</text>
+      <text x="60" y="106" fill="#ff7b72" font-size="10" font-family="monospace">IStandardizedYield.yieldToken()</text>
+      <text x="60" y="124" fill="#ff7b72" font-size="10" font-family="monospace">IPendleMarket.expiry()</text>
+      <text x="60" y="148" fill="#8b949e" font-size="9">4 Pendle interfaces, 5+ call sites</text>
+      <text x="60" y="162" fill="#8b949e" font-size="9">immutable oracle singleton</text>
+      <!-- Arrow -->
+      <text x="340" y="105" text-anchor="middle" fill="#58a6ff" font-size="20">&rarr;</text>
+      <!-- After -->
+      <text x="510" y="20" text-anchor="middle" fill="#3fb950" font-size="11" font-weight="600">AFTER (adapter-driven)</text>
+      <rect x="400" y="30" width="220" height="150" rx="6" fill="#161b22" stroke="#3fb950" stroke-width="1.5"/>
+      <text x="420" y="52" fill="#56d364" font-size="10" font-family="monospace">adapter.underlying()</text>
+      <text x="420" y="70" fill="#56d364" font-size="10" font-family="monospace">adapter.principalToken()</text>
+      <text x="420" y="88" fill="#56d364" font-size="10" font-family="monospace">adapter.maturity()</text>
+      <text x="420" y="106" fill="#56d364" font-size="10" font-family="monospace">adapter.ptRate()</text>
+      <text x="420" y="124" fill="#56d364" font-size="10" font-family="monospace">adapter.isPriceFresh()</text>
+      <text x="420" y="148" fill="#8b949e" font-size="9">1 interface, per-series adapter</text>
+      <text x="420" y="162" fill="#8b949e" font-size="9">protocol-specifics encapsulated</text>
+    </svg>
+    <div class="diagram-caption">Before: 4 Pendle interfaces across factory + vault. After: 1 IZcbSource interface, protocol-specifics inside adapters.</div>
+  </div>
+  <div class="field">
+    <div class="field-label">Basis</div>
+    <div class="field-body"><span class="basis-tag basis-direct">direct:</span> <code>OVRFLO.sol</code> <code>_computeSplit(uint256 ptAmount, uint256 rateE18)</code> is pure math; <code>claim</code> does <code>IERC20(ptToken).safeTransfer</code> (generic, no Pendle); <code>StreamPricing.sol</code> <code>marketActive</code> calls only registry interfaces (no Pendle). <span class="basis-tag basis-external">external:</span> wrapped-fcash is already an ERC20+ERC4626 wrapper for Notional fCash; Yearn V3 uses a thin 3-function adapter pattern. <span class="basis-tag basis-reasoned">reasoned:</span> the "deliberately lossy" LLVM-IR principle: the interface captures only the common subset (5 functions), preventing bloat when someone wants to add protocol-specific features.</div>
+  </div>
+  <div class="field">
+    <div class="field-label">Rationale</div>
+    <div class="field-body">Reframes the decision from "should we do a big modular refactor?" to "should we extract 4 calls into a named interface?" The cost is small and one-time; the payoff is permanent protocol extensibility. The risk is much lower than it appears &mdash; the agnostic boundary already exists, it just hasn't been formalized. The half-abstracted registry interfaces (Pendle fields in "generic" interfaces) are technical debt that should be resolved one way or the other.</div>
+  </div>
+  <div class="field">
+    <div class="field-label">Downsides</div>
+    <div class="field-body">The registry interface change (<code>IOVRFLOSeriesRegistry.series()</code> drops <code>twapDurationFixed</code> + <code>oracle</code>) ripples into StreamPricing and the OVRFLOBook &mdash; a 3-contract interface refactor. The "deliberately lossy" discipline must be enforced: every time someone wants a 6th function "just for Notional," the answer is no &mdash; that stays inside the adapter.</div>
+  </div>
+</div>
+
+<!-- IDEA 3 -->
+<div class="idea-card" id="idea-3">
+  <div class="idea-header">
+    <span class="idea-num">3.</span>
+    <h3>Per-series adapter replaces the immutable oracle singleton</h3>
+  </div>
+  <div class="idea-meta">
+    <span class="tag axis">Axis 3/4: Oracle &amp; vault decoupling</span>
+    <span class="tag conf-high">Conf 85%</span>
+    <span class="tag cx-m">Cx Medium</span>
+  </div>
+  <div class="field">
+    <div class="field-label">Description</div>
+    <div class="field-body">The oracle is <code>address public immutable oracle</code> at both the factory (singleton for all markets) and the vault (constructor-set, constant per vault). This is the <strong>deepest coupling</strong> &mdash; once a vault is deployed, it can never use a different price source, making a non-Pendle series literally impossible on an existing vault. The fix: store an <code>adapter</code> address per-series in <code>SeriesInfo</code>; deposit/flashLoan call <code>adapter.ptRate()</code> + <code>adapter.isPriceFresh()</code> instead of the vault-level oracle. Remove the vault <code>oracle</code> immutable, remove <code>_requireOracleFresh</code>, remove <code>twapDurationFixed</code> from the struct. Immutability migrates from "Pendle oracle address" to "which adapter" &mdash; the same security property (no post-deposit price-source change) at finer granularity.</div>
+  </div>
+  <div class="field">
+    <div class="field-label">Basis</div>
+    <div class="field-body"><span class="basis-tag basis-direct">direct:</span> <code>OVRFLOFactory.sol:62</code> <code>address public immutable oracle;</code> ("Pendle TWAP oracle address, singleton, same for all markets"); <code>OVRFLO.sol:51</code> <code>address public immutable oracle;</code> ("constant per vault"); <code>OVRFLO.sol</code> <code>_requireOracleFresh</code> calls <code>IPendleOracle(oracle).getOracleState</code> (Pendle-specific); <code>SeriesInfo.twapDurationFixed</code> is a Pendle TWAP window stored per-series. <span class="basis-tag basis-reasoned">reasoned:</span> the security property is "pricing logic can't be swapped post-deploy" &mdash; an immutable adapter reference per series satisfies this identically while allowing different series in the same vault to use different price sources.</div>
+  </div>
+  <div class="field">
+    <div class="field-label">Rationale</div>
+    <div class="field-body">This is the prerequisite for everything else. Without breaking the oracle singleton, no other idea works &mdash; a vault deployed with Pendle's TWAP oracle can never host an FXB GDA series or a Notional AMM series. The rate call appears at 5 sites in the vault (deposit, flashLoan, preview functions), each paired with a freshness check &mdash; 10 places to keep consistent per protocol. An adapter-owned <code>ptRate()</code> + <code>isPriceFresh()</code> collapses all 10 to 2 single calls and guarantees consistency by construction.</div>
+  </div>
+  <div class="field">
+    <div class="field-label">Downsides</div>
+    <div class="field-body">Removing the vault-level <code>oracle</code> immutable is a constructor signature change affecting deployment scripts and the factory's <code>deploy()</code>. Each adapter must be independently audited for price manipulation resistance. The <code>prepareOracle</code> ceremony (Pendle cardinality provisioning) moves into <code>adapter.prepare()</code> &mdash; a no-op for non-TWAP protocols but a new interface function.</div>
+  </div>
+</div>
+
+<!-- IDEA 4 -->
+<div class="idea-card" id="idea-4">
+  <div class="idea-header">
+    <span class="idea-num">4.</span>
+    <h3>R-05 reframed: the invariant is "ERC20-ZCB-with-fixed-maturity," not "Pendle PT"</h3>
+  </div>
+  <div class="idea-meta">
+    <span class="tag axis">Axis 5: Claim &amp; redemption</span>
+    <span class="tag conf-med">Conf 82%</span>
+    <span class="tag cx-m">Cx Medium</span>
+  </div>
+  <div class="field">
+    <div class="field-label">Description</div>
+    <div class="field-body">R-05 rejected protocol-level redemption because Pendle's SY accounting-asset (stETH) != yield token (wstETH), breaking the 1:1 invariant. But that mismatch is <strong>Pendle-specific, not universal</strong>. The real invariant is: the vault transfers an ERC20 ZCB token 1:1, it <strong>never redeems</strong>. This forbids the R-05 mistake by construction while permitting multi-protocol. Adapters declare a <strong>redemption capability</strong>: <code>canRedeemToUnderlying()</code> returns false for Pendle (user claims raw PT, redeems on Pendle themselves), true for FXB (clean 1:1 to FRAX). R-05 becomes a per-adapter guardrail, not a global wall. Notional fCash (ERC1155) requires the wrapped-fcash ERC20 wrapper as its adapter &mdash; the adapter IS the token-shape normalizer.</div>
+  </div>
+  <div class="field">
+    <div class="field-label">Basis</div>
+    <div class="field-body"><span class="basis-tag basis-direct">direct:</span> <code>OVRFLO.sol</code> <code>claim</code>: <code>OVRFLOToken(ovrfloToken).burn(msg.sender, amount); IERC20(ptToken).safeTransfer(msg.sender, amount);</code> &mdash; hardcoded 1:1 ERC20 transfer, no Pendle call, no redemption. R-05 decision doc: "Do not add a protocol-level redemption path... build it as an off-chain or zap-layer concern, never as a vault accounting change." <span class="basis-tag basis-external">external:</span> FXB is 1:1 redeemable to FRAX at maturity; wrapped-fcash mints ERC20 1:1 against fCash. <span class="basis-tag basis-reasoned">reasoned:</span> R-05's concern is SY-logic contamination of the vault; an invariant defined as "transfer the ZCB, never redeem" forbids that for all protocols, not just Pendle.</div>
+  </div>
+  <div class="field">
+    <div class="field-label">Rationale</div>
+    <div class="field-body">This is the idea that unblocks the whole direction despite the project's documented resistance to generalization (R-01, R-05). It doesn't reverse R-05 &mdash; it generalizes the invariant R-05 was protecting. The vault stays "thin" (R-05's prescription), but "thin" now means "transfer-only, protocol-agnostic" instead of "Pendle-specific." The adapter is the outer layer R-05 said to push variability to. The capability descriptor is the non-obvious edge-case guardrail: the happy path (deposit) is uniform, but the error/edge path (redemption) leaks protocol identity if the interface doesn't surface it.</div>
+  </div>
+  <div class="field">
+    <div class="field-label">Downsides</div>
+    <div class="field-body">Adding an opt-in adapter-mediated redemption path (for FXB) revisits R-05 and needs explicit team buy-in. The capability descriptor adds interface complexity (a bool + a conditional code path). If <code>canRedeemToUnderlying()</code> is ever true for a protocol where the 1:1 doesn't hold, the invariant breaks &mdash; the adapter must be trusted on this claim. Raw Notional fCash (ERC1155) cannot use the current claim path at all; the ERC20 wrapper is mandatory, adding a dependency.</div>
+  </div>
+</div>
+
+<!-- IDEA 5 -->
+<div class="idea-card" id="idea-5">
+  <div class="idea-header">
+    <span class="idea-num">5.</span>
+    <h3>The uniqueness key is an irreversible product decision: fungibility vs isolation</h3>
+  </div>
+  <div class="idea-meta">
+    <span class="tag axis">Axis 2: Factory &amp; routing</span>
+    <span class="tag conf-med">Conf 80%</span>
+    <span class="tag cx-l">Cx Low (decision)</span>
+  </div>
+  <div class="field">
+    <div class="field-label">Description</div>
+    <div class="field-body">Pattern #10 keys vaults by <code>underlying</code> alone (<code>underlyingToOvrflo</code>, 1:1, prevents duplicates). The moment a second protocol is added on the same underlying, the key collides: a Pendle wstETH vault and a Notional wstETH vault cannot coexist. Two options, no free lunch: <strong>(A) Keep key as <code>underlying</code></strong> &mdash; cross-protocol ovrfloToken fungibility, deeper liquidity, multi-protocol as a unified ZCB aggregator, but commingles PTs with different redemption mechanics in one vault. <strong>(B) Promote key to <code>(underlying, adapter)</code></strong> &mdash; isolation per protocol, pattern #10 preserved per-adapter, but ovrfloToken fungibility is lost across protocols (a Pendle-wstETH ovrfloToken != a Notional-wstETH ovrfloToken). This is a product-level call, not a refactor.</div>
+  </div>
+  <div class="field">
+    <div class="field-label">Basis</div>
+    <div class="field-body"><span class="basis-tag basis-direct">direct:</span> <code>OVRFLOFactory.sol</code> <code>mapping(address => address) public underlyingToOvrflo;</code> ("Maps an underlying asset to its deployed OVRFLO vault, 1:1, prevents duplicates"); AGENTS.md: "cross-market ovrfloToken fungibility under one underlying is a design feature, not a bug." <span class="basis-tag basis-reasoned">reasoned:</span> fungibility requires identical redemption mechanics; two protocols over the same underlying have different mechanics (Pendle SY vs FXB direct vs Notional AMM settlement), so the fungibility boundary must track either the asset (option A, commingled) or the adapter (option B, isolated).</div>
+  </div>
+  <div class="field">
+    <div class="field-label">Rationale</div>
+    <div class="field-body">This is the one place where the modular-factory-vs-adapter choice forces an irreversible product-level call. Option A turns OVRFLO from a Pendle wrapper into a unified ZCB yield aggregator &mdash; each new protocol deepens liquidity rather than fragmenting it, creating a network effect. But it requires trusting that all adapters' PTs are ERC20-ZCB-shaped (idea #4's invariant). Option B is safer but sacrifices the liquidity-aggregation thesis. The team must decide before the first adapter is built, because it determines deployment topology, token fungibility, and the product narrative.</div>
+  </div>
+  <div class="field">
+    <div class="field-label">Downsides</div>
+    <div class="field-body">Option A's commingling risk: if one protocol's PT has a non-1:1 redemption (like Pendle's stETH/wstETH gap), it pollutes the fungibility of the shared ovrfloToken. Option B's fragmentation: loses the "unified liquidity" value proposition that might be the main reason to go multi-protocol. There is no hybrid that preserves both fungibility and isolation.</div>
+  </div>
+</div>
+
+<!-- IDEA 6 -->
+<div class="idea-card" id="idea-6">
+  <div class="idea-header">
+    <span class="idea-num">6.</span>
+    <h3>Adapters make multi-protocol rationally attemptable: marginal, retractable, bounded-risk</h3>
+  </div>
+  <div class="idea-meta">
+    <span class="tag axis">Axis 2: Factory &amp; routing</span>
+    <span class="tag conf-high">Conf 85%</span>
+    <span class="tag cx-l">Cx Low (argument)</span>
+  </div>
+  <div class="field">
+    <div class="field-label">Description</div>
+    <div class="field-body">Today, supporting protocol N is a <strong>binary lumpy cost</strong>: factory changes, vault changes, oracle integration, full re-audit &mdash; all before a single depositor. Element Finance and Yield Protocol both exited. If the onboarded protocol dies in 6 months, all that work is stranded and the audit spend is sunk. An adapter model converts this to <strong>marginal, retractable cost</strong>: ship a thin adapter, measure demand, delist if the protocol dies with zero vault/factory changes. The adapter's blast radius is <strong>split-only</strong> &mdash; <code>claim</code> is a hardcoded <code>burn(amount) + safeTransfer(amount)</code> that never calls the adapter, so a malicious adapter can mis-split the deposit (rate manipulation) but <strong>cannot steal principal</strong>. Audit economics flip: 1 vault + N thin adapters is cheaper to audit than N protocol-specific vaults.</div>
+  </div>
+  <div class="field">
+    <div class="field-label">Basis</div>
+    <div class="field-body"><span class="basis-tag basis-direct">direct:</span> <code>OVRFLO.sol</code> <code>claim</code>: <code>burn(msg.sender, amount) + IERC20(ptToken).safeTransfer(msg.sender, amount)</code> &mdash; no adapter/oracle call; <code>_computeSplit</code>: <code>toUser + toStream = ptAmount</code> &mdash; the rate only affects the split, not the total minted. <span class="basis-tag basis-external">external:</span> Element and Yield Protocol both exited (observed protocol mortality); Morpho V2 uses per-adapter caps with timelocked removal. <span class="basis-tag basis-reasoned">reasoned:</span> if claim never consults the adapter, the adapter's blast radius is the split, not principal custody &mdash; a much lower trust bar that could even be insured/contested off-chain.</div>
+  </div>
+  <div class="field">
+    <div class="field-label">Rationale</div>
+    <div class="field-body">This is the dominant economic argument and it's invisible in pure code analysis. For a multisig-governed project that moves slowly and re-audits expensively, retractability is the feature that makes multi-protocol rationally attemptable at all. Without it, the team would be betting a flagship-grade audit on each protocol's survival. With adapters, each protocol bears its own survival risk, scoped to its own adapter audit. The bounded-risk analysis (split-only, not principal) is the prerequisite for eventually allowing permissionless adapter onboarding.</div>
+  </div>
+  <div class="field">
+    <div class="field-label">Downsides</div>
+    <div class="field-body">A malicious adapter can still grief depositors by returning a bad rate (over-splitting to immediate mint, depriving the stream; or under-splitting, locking too much in the stream). Per-series deposit caps (already a pattern) bound this. The "split-only" blast radius assumes <code>claim</code> stays hardcoded &mdash; if idea #4's adapter-mediated redemption is added, the blast radius expands to principal, raising the trust requirement.</div>
+  </div>
+</div>
+
+<!-- IDEA 7 -->
+<div class="idea-card" id="idea-7">
+  <div class="idea-header">
+    <span class="idea-num">7.</span>
+    <h3>Duplication may beat abstraction at N&le;3: force the crossover analysis</h3>
+  </div>
+  <div class="idea-meta">
+    <span class="tag axis">Axis 4: Vault decoupling</span>
+    <span class="tag conf-med">Conf 75%</span>
+    <span class="tag cx-l">Cx Low (analysis)</span>
+  </div>
+  <div class="field">
+    <div class="field-label">Description</div>
+    <div class="field-body">The honest counterargument to the adapter direction. For N=2-3 protocols, full duplication (a vault copy per protocol, protocol-optimally simple, no adapter indirection) may be <strong>cheaper and clearer</strong> than a shared agnostic vault + adapters. Duplication cost is O(N x vault_size); adapter cost is O(interface_fixed + N x adapter_size). A crossover exists and is small. AGENTS.md's "favor simplicity and minimal abstractions" and "this is solidity not python" arguably favor duplication at small N. The forcing question: <strong>what is the crossover N?</strong> If the honest answer is "N>=4 and we'll have 3," duplication wins. If "we expect 5+ eventually," the adapter investment pays off.</div>
+  </div>
+  <div class="field">
+    <div class="field-label">Basis</div>
+    <div class="field-body"><span class="basis-tag basis-direct">direct:</span> AGENTS.md: "Favor simplicity and minimal abstractions; pushback on added complexity ('this is solidity not python')"; "Keep code Pendle-specific... use a wrapper/adapter contract if another protocol is ever needed" &mdash; contemplates the adapter as a contingency, consistent with "duplicate first, adapter if it recurs." <span class="basis-tag basis-reasoned">reasoned:</span> duplication cost is O(N x ~600 lines); adapter cost is O(interface design + indirection gas + N x ~40 lines); crossover exists and is small (likely N=3-4).</div>
+  </div>
+  <div class="field">
+    <div class="field-label">Rationale</div>
+    <div class="field-body">This is the strongest steelman of the "don't abstract" position and the team should hear it before defaulting to adapters. It gives AGENTS.md's simplicity preference a concrete architectural expression and forces a quantitative crossover analysis instead of a vibes-level "modular is good." Even if the team chooses adapters, this idea ensures the choice is deliberate and the crossover N is known, not assumed. It also frames the adapter work as an investment with a break-even point, not a free good.</div>
+  </div>
+  <div class="field">
+    <div class="field-label">Downsides</div>
+    <div class="field-body">Duplication means N vault bytecodes to audit, N deployment flows, N admin surfaces &mdash; the audit-economics argument (idea #6) cuts against it. If the team duplicates at N=3 and then needs N=5, the migration from duplicated vaults to a shared+adapter vault is more painful than starting with adapters. The crossover analysis itself is speculative (protocol count is a product forecast, not a technical measurement).</div>
+  </div>
+</div>
+
+<!-- ==================== REJECTION SUMMARY ==================== -->
+
+<h2>Rejection Summary</h2>
+<table>
+  <thead>
+    <tr>
+      <th>#</th>
+      <th>Idea</th>
+      <th>Reason Rejected</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td>1</td><td>Decimal normalization via adapter wrapping</td><td>Tactical sub-component of survivor #2 (interface design); important but not a standalone direction</td></tr>
+    <tr><td>2</td><td>Adapter-gated price freshness replaces TWAP cardinality</td><td>Mechanism within survivor #3 (per-series adapter); not a standalone direction</td></tr>
+    <tr><td>3</td><td>Adapter as configuration closure (eliminate twapDurationFixed)</td><td>Verifiable proof-point of decoupling, folded into survivors #2/#3</td></tr>
+    <tr><td>4</td><td>ERC4626 convergence: wrapped-fcash IS the adapter</td><td>Concrete data point folded into survivor #2 as supporting evidence; not standalone</td></tr>
+    <tr><td>5</td><td>Off-chain-signed-rate adapter</td><td>Expands scope beyond asked protocols (Pendle/FXB/Notional all have on-chain pricing)</td></tr>
+    <tr><td>6</td><td>Sablier boundary is fixed (flip fails)</td><td>Scope guard, not a direction-changing idea; valuable as a constraint but not a candidate</td></tr>
+    <tr><td>7</td><td>Adapter registry freezes factory bytecode</td><td>Implied by survivor #1 topology; registry is a sub-component of adapter-per-series model</td></tr>
+    <tr><td>8</td><td>Counterfactual CREATE2 deployment</td><td>Implementation detail of factory routing; sub-component of survivor #1</td></tr>
+    <tr><td>9</td><td>Permissionless adapters + caps at 100 protocols</td><td>Speculative for asked scope (3 protocols); interesting extreme but premature</td></tr>
+    <tr><td>10</td><td>Commit to a pole (kill the half-abstraction)</td><td>Meta-framing absorbed into survivor #2's rationale; not a concrete direction</td></tr>
+    <tr><td>11</td><td>prepareOracle is a Pendle ceremony with no analog</td><td>Operational detail within survivor #3; not standalone</td></tr>
+    <tr><td>12</td><td>Rate call is 5 sites, not 2 (coupling multiplier)</td><td>Amplifies survivor #3's argument but not a standalone direction</td></tr>
+    <tr><td>13</td><td>Adapter owns maturity freshness (isMature + withdraw)</td><td>Sub-component of survivor #4 (claim path); generalization of maturity gate</td></tr>
+    <tr><td>14</td><td>Fully protocol-agnostic vault is the strongest audit story</td><td>Folded into survivor #6 (economic argument); supports the audit-economics flip</td></tr>
+    <tr><td>15</td><td>Permissionless adapters are bounded-risk (split-only)</td><td>Folded into survivor #6 (economic argument); supports the bounded-risk claim</td></tr>
+  </tbody>
+</table>
+
+<p style="margin-top: 16px; font-size: 0.85rem; color: var(--text-muted);"><strong>Basis verification:</strong> orchestrator-only filtering (degraded from fresh-context verifier). All 5 generating agents performed verification reads against actual source files, confirming file:line pointers and code patterns. The dossier's line numbers were slightly stale relative to the current 588-line <code>OVRFLO.sol</code>, but all code patterns were verified at their actual locations.</p>
+
+<footer class="composition-signal">
+  Composed 2026-07-07 by ce-ideate from <code>OVRFLO</code> repo grounding + web research (Frax Bonds, Notional fCash, wrapped-fcash, Yearn V3, Morpho V2) + institutional learnings (<code>docs/solutions/</code>)
+</footer>
+
+</div>
+</body>
+</html>

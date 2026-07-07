@@ -627,6 +627,53 @@ terms.
 
 **Documented in:** [`docs/solutions/architecture-patterns/ovrflo-claim-per-user-pt-transfer-not-protocol-redemption.md`](../architecture-patterns/ovrflo-claim-per-user-pt-transfer-not-protocol-redemption.md)
 
+### R-06: Claim-time fee on posters (makers/lenders) in OVRFLOBook
+
+**Finding:** A proposal to charge makers a fee when their position is
+claimed/settled (i.e. when a lender calls `claimPoolShare` to recover pool
+proceeds), in addition to the existing fill-time fee.
+
+**Rejected because:** The book's fee model is already coherent and optimally
+placed. `feeBps` is taken once, in underlying, at fill time, and consistently
+taxes the side extracting liquidity or immediacy:
+- `sellIntoOffer` — the seller pays (net of `grossPrice`)
+- `buyListing` — the seller pays (net of `grossPrice`, at the listing's
+  snapshotted `feeBps`)
+- `createBorrowPool` — the borrower pays (net of proceeds)
+
+Lenders and claimants never pay; the fee taxes demand for capital, not the
+provision of it. A claim-time fee on the poster is worse on every axis:
+
+1. **Taxes resting liquidity.** Offer depth is the whole market. Charging
+   makers on recovery lowers their realized APR below the posted `aprBps`,
+   so either books thin out or makers demand wider APRs to compensate. The
+   protocol earns roughly the same either way, with worse UX.
+2. **Breaks rate transparency.** Today "posted APR = lender's realized yield"
+   is exactly true — a rare, marketable property the UI relies on (one BOOK
+   APR column, no supply/borrow spread). A claim fee turns every displayed
+   rate into "10%, but actually 9.85% depending on when you claim."
+3. **Lands inside `_claimFair`.** That function is the most delicate
+   accounting in the book (pro-rata caps, deficit harvesting from open
+   streams, `poolProceeds` conservation; see patterns #12 and #14). Threading
+   fee extraction through `recovered`/`entitled`/`poolReceived` adds rounding
+   dust across many small pro-rata claims and new invariants to fuzz — large
+   audit surface for a second-order revenue stream. Contradicts the
+   "this is Solidity, not Python" simplicity preference.
+4. **Retroactivity.** Listings already snapshot `feeBps` at post time to
+   protect makers from fee changes. A claim-time fee is inherently exposed to
+   governance changing the fee between fill and claim unless it is snapshotted
+   per pool — more state, no new capability.
+5. **Double taxation of the same notional.** The borrow fee at origination
+   already priced the protocol's take on that principal. Taxing the lender's
+   recovery of the same principal charges the same flow twice.
+
+**If more fee surface is ever wanted**, the one defensible variant is a
+performance fee on the lender's *interest only* (`obligation - principal`),
+taken once at pool settlement rather than per claim. That preserves principal
+integrity and leaves `_claimFair`'s per-claim math untouched. Even that is
+deferred: at 10% APR and 25bps fill fees the spread is thin, and the simpler
+pitch ("makers keep every bps they post") is worth more than the revenue.
+
 ---
 
 ## 9. The factory owns every deployed book — book admin is forwarded, not direct (ALWAYS REQUIRED)
