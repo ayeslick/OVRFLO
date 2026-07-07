@@ -12,11 +12,11 @@ contract MockStandardizedYield is IStandardizedYield {
 
     // Minimal stubs for interface compliance
     function deposit(address, address, uint256, uint256) external payable returns (uint256) { return 0; }
-    function redeem(address, uint256, address, uint256, bool) external returns (uint256) { return 0; }
+    function redeem(address, uint256, address, uint256, bool) external pure returns (uint256) { return 0; }
     function exchangeRate() external pure returns (uint256) { return 1e18; }
-    function claimRewards(address) external returns (uint256[] memory) { return new uint256[](0); }
+    function claimRewards(address) external pure returns (uint256[] memory) { return new uint256[](0); }
     function accruedRewards(address) external pure returns (uint256[] memory) { return new uint256[](0); }
-    function rewardIndexesCurrent() external returns (uint256[] memory) { return new uint256[](0); }
+    function rewardIndexesCurrent() external pure returns (uint256[] memory) { return new uint256[](0); }
     function rewardIndexesStored() external pure returns (uint256[] memory) { return new uint256[](0); }
     function getRewardTokens() external pure returns (address[] memory) { return new address[](0); }
     function getTokensIn() external pure returns (address[] memory) { return new address[](0); }
@@ -33,8 +33,8 @@ contract MockStandardizedYield is IStandardizedYield {
     function decimals() external pure returns (uint8) { return 18; }
     function totalSupply() external pure returns (uint256) { return 0; }
     function balanceOf(address) external pure returns (uint256) { return 0; }
-    function transfer(address, uint256) external returns (bool) { return true; }
+    function transfer(address, uint256) external pure returns (bool) { return true; }
     function allowance(address, address) external pure returns (uint256) { return 0; }
-    function approve(address, uint256) external returns (bool) { return true; }
-    function transferFrom(address, address, uint256) external returns (bool) { return true; }
+    function approve(address, uint256) external pure returns (bool) { return true; }
+    function transferFrom(address, address, uint256) external pure returns (bool) { return true; }
 }

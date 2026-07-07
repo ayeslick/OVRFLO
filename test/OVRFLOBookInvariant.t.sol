@@ -137,7 +137,7 @@ contract OVRFLOBookInvariantHandler is Test {
     function buyListing(uint256 listingIdSeed, uint256 actorSeed) public {
         if (book.nextSaleListingId() == 1) return;
         uint256 listingId = bound(listingIdSeed, 1, book.nextSaleListingId() - 1);
-        (address maker,,,,, bool active) = book.saleListings(listingId);
+        (,,,,, bool active) = book.saleListings(listingId);
         if (!active) return;
 
         address buyer = _actor(actorSeed);
@@ -220,7 +220,7 @@ contract OVRFLOBookInvariantHandler is Test {
 
         vm.prank(borrower);
         try book.repayLoan(loanId, amount) {
-            (,,, uint128 obligation2, uint128 drawn2, uint128 repaid2, bool closed2) = book.loans(loanId);
+            (,,,,,, bool closed2) = book.loans(loanId);
             if (closed2) {
                 loanGhosts[loanId].closed = true;
             }
@@ -232,7 +232,7 @@ contract OVRFLOBookInvariantHandler is Test {
         uint256 loanId = bound(loanIdSeed, 1, book.nextLoanId() - 1);
         (
             address borrower,
-            address lender,
+            ,
             uint256 streamId,
             uint128 obligation,
             uint128 drawn,

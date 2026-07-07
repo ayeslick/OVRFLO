@@ -47,7 +47,7 @@ contract StreamPricingTest is Test {
         _configureEligible(MARKET_ONE, streamId, expiry, 100 ether, 30 ether);
     }
 
-    function test_GrossPriceObligationAndFee_KnownInputs() public {
+    function test_GrossPriceObligationAndFee_KnownInputs() public pure {
         uint128 remaining = 110 ether;
         uint16 aprBps = 1000;
         uint256 timeToMaturity = 365 days;
@@ -58,14 +58,14 @@ contract StreamPricingTest is Test {
         assertEq(StreamPricing.fee(10 ether, 100), 0.1 ether);
     }
 
-    function test_ZeroAprAndZeroTimeUseNoDiscountLimit() public {
+    function test_ZeroAprAndZeroTimeUseNoDiscountLimit() public pure {
         assertEq(StreamPricing.grossPrice(100 ether, 0, 365 days), 100 ether);
         assertEq(StreamPricing.obligation(25 ether, 0, 365 days), 25 ether);
         assertEq(StreamPricing.grossPrice(100 ether, 1000, 0), 100 ether);
         assertEq(StreamPricing.obligation(25 ether, 1000, 0), 25 ether);
     }
 
-    function test_ObligationForFill_MaxBorrowConsumesRemainingEvenWithRoundingDust() public {
+    function test_ObligationForFill_MaxBorrowConsumesRemainingEvenWithRoundingDust() public pure {
         uint128 remaining = 100 ether;
         uint16 aprBps = 1000;
         uint256 timeToMaturity = 365 days;
@@ -75,11 +75,11 @@ contract StreamPricingTest is Test {
         assertEq(StreamPricing.obligationForFill(grossPrice, grossPrice, remaining, aprBps, timeToMaturity), remaining);
     }
 
-    function test_DustCanFloorGrossPriceToZero() public {
+    function test_DustCanFloorGrossPriceToZero() public pure {
         assertEq(StreamPricing.grossPrice(1, type(uint16).max, 10 * 365 days), 0);
     }
 
-    function test_FeeFloors() public {
+    function test_FeeFloors() public pure {
         assertEq(StreamPricing.fee(99, 100), 0);
         assertEq(StreamPricing.fee(100, 100), 1);
         assertEq(StreamPricing.fee(100 ether, 0), 0);
@@ -90,7 +90,7 @@ contract StreamPricingTest is Test {
         uint16 aprBps,
         uint256 timeToMaturity,
         uint256 borrowSeed
-    ) public {
+    ) public pure {
         remaining = uint128(bound(uint256(remaining), 1, type(uint128).max));
         timeToMaturity = bound(timeToMaturity, 0, 100 * 365 days);
 

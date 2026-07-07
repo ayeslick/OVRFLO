@@ -59,23 +59,23 @@ contract StreamPricingMathTest is Test {
         assertEq(StreamPricing.factor(aprBps, 0), WAD);
     }
 
-    function test_Factor_KnownValue_10pct_1yr() public {
+    function test_Factor_KnownValue_10pct_1yr() public view {
         // f = 1 + 0.10 * 1 = 1.1
         assertEq(h.factor(1000, 365 days), 1.1e18);
     }
 
-    function test_Factor_KnownValue_25pct_6mo() public {
+    function test_Factor_KnownValue_25pct_6mo() public view {
         // f = 1 + 0.25 * 0.5 = 1.125
         assertEq(h.factor(2500, 182 days + 12 hours), 1.125e18);
     }
 
-    function test_Factor_GrowsMonotonicallyWithApr() public {
+    function test_Factor_GrowsMonotonicallyWithApr() public view {
         uint256 ttm = 180 days;
         assertLt(h.factor(500, ttm), h.factor(1000, ttm));
         assertLt(h.factor(1000, ttm), h.factor(5000, ttm));
     }
 
-    function test_Factor_GrowsMonotonicallyWithTtm() public {
+    function test_Factor_GrowsMonotonicallyWithTtm() public view {
         uint16 apr = 1000;
         assertLt(h.factor(apr, 30 days), h.factor(apr, 90 days));
         assertLt(h.factor(apr, 90 days), h.factor(apr, 365 days));
@@ -85,38 +85,38 @@ contract StreamPricingMathTest is Test {
                      GROSSPRICE PROPERTIES
     //////////////////////////////////////////////////////////////*/
 
-    function test_GrossPrice_NeverExceedsRemaining(uint128 remaining, uint16 aprBps, uint256 ttm) public {
+    function test_GrossPrice_NeverExceedsRemaining(uint128 remaining, uint16 aprBps, uint256 ttm) public view {
         ttm = ttm % (1000 * 365 days); // bound to avoid PRBMath mulDiv overflow
         vm.assume(remaining > 0);
         uint256 price = h.grossPrice(remaining, aprBps, ttm);
         assertLe(price, uint256(remaining));
     }
 
-    function test_GrossPrice_EqualsRemainingWhenNoDiscount() public {
+    function test_GrossPrice_EqualsRemainingWhenNoDiscount() public view {
         // apr = 0 → f = WAD → price = remaining
         assertEq(h.grossPrice(100 ether, 0, 365 days), 100 ether);
         // ttm = 0 → f = WAD → price = remaining
         assertEq(h.grossPrice(100 ether, 1000, 0), 100 ether);
     }
 
-    function test_GrossPrice_KnownValue_10pct_1yr() public {
+    function test_GrossPrice_KnownValue_10pct_1yr() public view {
         // remaining = 110 ether, f = 1.1 → price = 100 ether
         assertEq(h.grossPrice(110 ether, 1000, 365 days), 100 ether);
     }
 
-    function test_GrossPrice_FloorsToZeroWithDustAndExtremeRate() public {
+    function test_GrossPrice_FloorsToZeroWithDustAndExtremeRate() public view {
         // 1 wei remaining, 655.35% APR, 10 years → price = 0
         assertEq(h.grossPrice(1, type(uint16).max, 10 * 365 days), 0);
     }
 
-    function test_GrossPrice_DecreasesAsAprIncreases() public {
+    function test_GrossPrice_DecreasesAsAprIncreases() public view {
         uint128 remaining = 100 ether;
         uint256 ttm = 180 days;
         assertGt(h.grossPrice(remaining, 100, ttm), h.grossPrice(remaining, 500, ttm));
         assertGt(h.grossPrice(remaining, 500, ttm), h.grossPrice(remaining, 2500, ttm));
     }
 
-    function test_GrossPrice_DecreasesAsTtmIncreases() public {
+    function test_GrossPrice_DecreasesAsTtmIncreases() public view {
         uint128 remaining = 100 ether;
         uint16 apr = 1000;
         assertGt(h.grossPrice(remaining, apr, 30 days), h.grossPrice(remaining, apr, 180 days));
@@ -127,7 +127,7 @@ contract StreamPricingMathTest is Test {
                      OBLIGATION PROPERTIES
     //////////////////////////////////////////////////////////////*/
 
-    function test_Obligation_NeverBelowBorrowAmount(uint256 borrowAmount, uint16 aprBps, uint256 ttm) public {
+    function test_Obligation_NeverBelowBorrowAmount(uint256 borrowAmount, uint16 aprBps, uint256 ttm) public view {
         ttm = ttm % (1000 * 365 days); // bound to avoid PRBMath mulDiv overflow
         vm.assume(borrowAmount > 0 && borrowAmount <= type(uint128).max);
         // Skip cases that overflow uint128 (tested separately)
@@ -136,17 +136,17 @@ contract StreamPricingMathTest is Test {
         assertGe(uint256(h.obligation(borrowAmount, aprBps, ttm)), borrowAmount);
     }
 
-    function test_Obligation_EqualsBorrowAmountWhenNoAccrual() public {
+    function test_Obligation_EqualsBorrowAmountWhenNoAccrual() public view {
         assertEq(h.obligation(50 ether, 0, 365 days), 50 ether);
         assertEq(h.obligation(50 ether, 1000, 0), 50 ether);
     }
 
-    function test_Obligation_KnownValue_10pct_1yr() public {
+    function test_Obligation_KnownValue_10pct_1yr() public view {
         // borrowAmount = 100 ether, f = 1.1 → obligation = 110 ether
         assertEq(h.obligation(100 ether, 1000, 365 days), 110 ether);
     }
 
-    function test_Obligation_CeilIsAtMostOneWeiAboveFloor() public {
+    function test_Obligation_CeilIsAtMostOneWeiAboveFloor() public view {
         // For any inputs, ceil(x) - floor(x) <= 1
         uint256 borrowAmount = 97 ether;
         uint16 apr = 333;
@@ -172,7 +172,7 @@ contract StreamPricingMathTest is Test {
                      OBLIGATIONFORFULL — THE CRITICAL INVARIANT
     //////////////////////////////////////////////////////////////*/
 
-    function test_ObligationForFill_FullBorrowReturnsRemainingExactly() public {
+    function test_ObligationForFill_FullBorrowReturnsRemainingExactly() public view {
         uint128 remaining = 100 ether;
         uint16 apr = 1000;
         uint256 ttm = 365 days;
@@ -182,7 +182,7 @@ contract StreamPricingMathTest is Test {
         assertEq(h.obligationForFill(gp, gp, remaining, apr, ttm), remaining);
     }
 
-    function test_ObligationForFill_FullBorrowAvoidsRoundingDust() public {
+    function test_ObligationForFill_FullBorrowAvoidsRoundingDust() public view {
         uint128 remaining = 100 ether;
         uint16 apr = 1000;
         uint256 ttm = 365 days;
@@ -194,7 +194,7 @@ contract StreamPricingMathTest is Test {
         assertEq(h.obligationForFill(gp, gp, remaining, apr, ttm), remaining);
     }
 
-    function test_ObligationForFill_Boundary_OneWeiBelowGrossPrice() public {
+    function test_ObligationForFill_Boundary_OneWeiBelowGrossPrice() public view {
         uint128 remaining = 100 ether;
         uint16 apr = 1000;
         uint256 ttm = 365 days;
@@ -216,7 +216,7 @@ contract StreamPricingMathTest is Test {
         uint16 aprBps,
         uint256 ttm,
         uint256 borrowSeed
-    ) public {
+    ) public view {
         remaining = uint128(bound(uint256(remaining), 1, type(uint128).max));
         ttm = bound(ttm, 0, 100 * 365 days);
 
@@ -230,7 +230,7 @@ contract StreamPricingMathTest is Test {
     }
 
     function test_Fuzz_ObligationForFill_FastPathOnlyWhenExactMatch(uint128 remaining, uint16 aprBps, uint256 ttm)
-        public
+        public view
     {
         remaining = uint128(bound(uint256(remaining), 1, type(uint128).max));
         ttm = bound(ttm, 0, 100 * 365 days);
@@ -260,7 +260,7 @@ contract StreamPricingMathTest is Test {
         uint16 aprBps,
         uint256 ttmSeed,
         uint256 borrowSeed
-    ) public {
+    ) public view {
         uint128 remaining = uint128(bound(uint256(remainingSeed), 1 ether, 10_000 ether));
         uint16 apr = uint16(bound(uint256(aprBps), 0, 5000));
         uint256 ttm = bound(ttmSeed, 0, 2 * 365 days);
@@ -275,7 +275,7 @@ contract StreamPricingMathTest is Test {
         assertGe(uint256(ob), borrowAmount, "obligation below borrow");
     }
 
-    function test_Fuzz_RealisticRange_GrossPricePositive(uint128 remainingSeed, uint16 aprBps, uint256 ttmSeed) public {
+    function test_Fuzz_RealisticRange_GrossPricePositive(uint128 remainingSeed, uint16 aprBps, uint256 ttmSeed) public view {
         uint128 remaining = uint128(bound(uint256(remainingSeed), 1 ether, 10_000 ether));
         uint16 apr = uint16(bound(uint256(aprBps), 0, 5000));
         uint256 ttm = bound(ttmSeed, 1, 2 * 365 days);
@@ -285,7 +285,7 @@ contract StreamPricingMathTest is Test {
         assertLe(gp, uint256(remaining), "grossPrice exceeds remaining");
     }
 
-    function test_Fuzz_RealisticRange_FactorReasonable(uint16 aprBps, uint256 ttmSeed) public {
+    function test_Fuzz_RealisticRange_FactorReasonable(uint16 aprBps, uint256 ttmSeed) public view {
         uint16 apr = uint16(bound(uint256(aprBps), 0, 5000));
         uint256 ttm = bound(ttmSeed, 0, 2 * 365 days);
         uint256 f = h.factor(apr, ttm);
@@ -300,7 +300,7 @@ contract StreamPricingMathTest is Test {
         uint16 aprBps,
         uint256 ttmSeed,
         uint256 borrowSeed
-    ) public {
+    ) public view {
         uint128 remaining = uint128(bound(uint256(remainingSeed), 1 ether, 10_000 ether));
         uint16 apr = uint16(bound(uint256(aprBps), 0, 5000));
         uint256 ttm = bound(ttmSeed, 0, 2 * 365 days);
@@ -325,7 +325,7 @@ contract StreamPricingMathTest is Test {
     ///      always 1 wei — it can be up to floor(F/W) - 1 when the factor is
     ///      large. But the invariant obligation <= remaining always holds.
     function test_Fuzz_RoundTrip_ObligationOfGrossPriceLeRemaining(uint128 remaining, uint16 aprBps, uint256 ttm)
-        public
+        public view
     {
         remaining = uint128(bound(uint256(remaining), 1, type(uint128).max));
         ttm = bound(ttm, 0, 100 * 365 days);
@@ -344,7 +344,7 @@ contract StreamPricingMathTest is Test {
         uint16 aprBps,
         uint256 ttm,
         uint256 borrowSeed
-    ) public {
+    ) public view {
         remaining = uint128(bound(uint256(remaining), 1, type(uint128).max));
         ttm = bound(ttm, 0, 100 * 365 days);
 
@@ -369,18 +369,18 @@ contract StreamPricingMathTest is Test {
                      FEE PROPERTIES
     //////////////////////////////////////////////////////////////*/
 
-    function test_Fee_ZeroBpsIsZero(uint256 amount) public {
+    function test_Fee_ZeroBpsIsZero(uint256 amount) public view {
         assertEq(h.fee(amount, 0), 0);
     }
 
-    function test_Fee_FloorsCorrectly() public {
+    function test_Fee_FloorsCorrectly() public view {
         // 99 * 100 / 10000 = 0.99 → floors to 0
         assertEq(h.fee(99, 100), 0);
         // 100 * 100 / 10000 = 1
         assertEq(h.fee(100, 100), 1);
     }
 
-    function test_Fuzz_FeeNeverExceedsInput(uint256 amount, uint16 feeBps) public {
+    function test_Fuzz_FeeNeverExceedsInput(uint256 amount, uint16 feeBps) public view {
         vm.assume(amount <= type(uint128).max);
         feeBps = uint16(bound(uint256(feeBps), 0, BPS)); // cap at 100%
         uint256 f = h.fee(amount, feeBps);

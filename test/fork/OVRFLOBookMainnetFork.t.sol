@@ -137,7 +137,7 @@ contract OVRFLOBookMainnetForkTest is OVRFLOForkBase {
     }
 
     function test_BookSellIntoOffer_RealStream() public {
-        (OVRFLOFactory factory, OVRFLO ovrflo, OVRFLOToken token) = _deployApprovedPrimarySeries(0);
+        (OVRFLOFactory factory, OVRFLO ovrflo,) = _deployApprovedPrimarySeries(0);
         OVRFLOBook book = _deployBook(factory, ovrflo);
         ISablierV2LockupLinear sablier = ISablierV2LockupLinear(address(ovrflo.sablierLL()));
         (,, uint256 streamId) = _depositPrimary(ovrflo, PT_AMOUNT);

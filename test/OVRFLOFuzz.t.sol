@@ -31,7 +31,7 @@ contract FuzzFlashBorrower is IFlashBorrower {
         vault.flashLoan(ptToken, amount, data);
     }
 
-    function onFlashLoan(address, address, uint256, uint256, bytes calldata) external returns (bytes32) {
+    function onFlashLoan(address, address, uint256, uint256, bytes calldata) external view returns (bytes32) {
         require(msg.sender == address(vault), "not vault");
         return CALLBACK_SUCCESS;
     }

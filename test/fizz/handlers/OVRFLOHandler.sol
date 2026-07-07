@@ -39,7 +39,7 @@ abstract contract OVRFLOHandler is Properties {
         oVRFLO_unwrap(amount);
     }
 
-    function oVRFLO_flashLoan_clamped(address, uint256 amount, bytes memory data) public {
+    function oVRFLO_flashLoan_clamped(address, uint256 amount, bytes memory) public {
         uint256 vaultPt = ptToken.balanceOf(address(vault));
         amount = clampBetween(amount, 1, vaultPt);
         if (amount == 0) return;
@@ -341,9 +341,7 @@ abstract contract OVRFLOHandler is Properties {
         underlying.deal(address(mockFlashBorrower), 1e18);
         ptToken.deal(address(mockFlashBorrower), 1e6);
 
-        uint256 mtdBefore = vault.marketTotalDeposited(market);
         uint256 wrappedBefore = vault.wrappedUnderlying();
-        uint256 supplyBefore = ovrfloToken.totalSupply();
 
         snapshotBefore();
         vm.prank(actor);

@@ -1085,7 +1085,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
         (, uint16 aprBps,, address poolMarket,,) = book.pools(poolId);
         (,, uint256 streamId,,,,) = book.loans(book.poolLoanId(poolId));
         try book.quote(poolMarket, streamId, aprBps, actualBorrow) returns (
-            uint256 qGrossPrice, uint128 qObligation, uint256 qFee, uint256 qNet, uint128 qResidual
+            uint256, uint128 qObligation, uint256, uint256, uint128
         ) {
             (,,,,, uint128 totalObligation) = book.pools(poolId);
             eq(uint256(qObligation), uint256(totalObligation), "SP-13: quote obligation mismatch");
@@ -1099,7 +1099,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
         (, uint16 aprBps,, address poolMarket, uint128 totalContributed, uint128 totalObligation) = book.pools(poolId);
         (,, uint256 streamId,,,,) = book.loans(book.poolLoanId(poolId));
         try book.quote(poolMarket, streamId, aprBps, 0) returns (
-            uint256 grossPrice, uint128 qObligation, uint256 qFee, uint256 qNet, uint128 qResidual
+            uint256 grossPrice, uint128, uint256, uint256, uint128
         ) {
             if (uint256(totalContributed) == grossPrice) {
                 uint128 deposited = ISablierV2LockupLinear(SABLIER_ADDR).getDepositedAmount(streamId);
@@ -1182,7 +1182,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
         (, uint16 aprBps,, address poolMarket, uint128 totalContributed,) = book.pools(poolId);
         (,, uint256 streamId,,,,) = book.loans(book.poolLoanId(poolId));
         try book.quote(poolMarket, streamId, aprBps, totalContributed) returns (
-            uint256 grossPrice, uint128 qObligation, uint256 qFee, uint256 qNet, uint128 qResidual
+            uint256 grossPrice, uint128, uint256, uint256, uint128
         ) {
             lte(uint256(totalContributed), grossPrice, "SP-79: borrowAmount > grossPrice");
         } catch {}

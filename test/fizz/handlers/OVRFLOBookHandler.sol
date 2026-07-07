@@ -232,7 +232,6 @@ abstract contract OVRFLOBookHandler is Properties {
         ghosts.ghost_lastLoanId = book.poolLoanId(poolId);
         snapshotAfter();
         uint128 actualBorrow = stateAfter.poolTotalContributed;
-        uint128 obligation = stateAfter.poolTotalObligation;
         uint256 feeBps = book.feeBps();
         uint256 fee = feeBps == 0 ? 0 : uint256(actualBorrow) * feeBps / 10_000;
         // Property assertions

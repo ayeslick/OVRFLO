@@ -398,7 +398,7 @@ contract OVRFLOProtocolTest is VaultMockHelpers {
     function test_Claim_BurnsTokensTransfersPtAndUpdatesAccounting() public {
         uint256 expiry = block.timestamp + 30 days;
         _approveSeries(MARKET_ONE, ptOne, expiry, 0);
-        (uint256 toUser, uint256 toStream) = _deposit(MARKET_ONE, ptOne, 10 ether, 0.8e18, 0, expiry, 11);
+        (, uint256 toStream) = _deposit(MARKET_ONE, ptOne, 10 ether, 0.8e18, 0, expiry, 11);
 
         vm.prank(address(ovrflo));
         // forge-lint: disable-next-line(erc20-unchecked-transfer)
@@ -586,7 +586,7 @@ contract OVRFLOProtocolTest is VaultMockHelpers {
     function test_Claim_RevertsWhenExceedsDepositedAccounting() public {
         uint256 expiry = block.timestamp + 30 days;
         _approveSeries(MARKET_ONE, ptOne, expiry, 0);
-        (uint256 toUser,) = _deposit(MARKET_ONE, ptOne, 10 ether, 0.8e18, 0, expiry, 11);
+        _deposit(MARKET_ONE, ptOne, 10 ether, 0.8e18, 0, expiry, 11);
         // marketTotalDeposited = 10, user has 8 ovrfloToken
 
         // Wrap extra underlying to get more ovrfloToken beyond deposited PT
