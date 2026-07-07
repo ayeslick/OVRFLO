@@ -909,16 +909,15 @@ rg "poolProceeds\[poolId\] < available" src/OVRFLOBook.sol
 
 ---
 
-## 14. Harvest branch as defense-in-depth (ALWAYS REQUIRED)
+## 14. Harvest branch for stream-accrued claims (ALWAYS REQUIRED)
 
-**Why:** SP-24 and SP-25 guarantee `poolProceeds >= claimable >= requestAmount`
-under normal invariants, so the harvest condition (`!loan.closed &&
-poolProceeds < requestAmount`) is always false. The branch exists as a safety
-net: if those invariants are ever violated by future code changes, the harvest
-provides a graceful fallback (drawing the deficit from the stream) instead of
-leaving nothing claimable. The gas cost in the normal path is one comparison —
-negligible. Removing it would mean any future invariant violation surfaces as
-"nothing claimable" instead of a graceful fallback.
+**Why:** The `claimable` formula in `_claimFair` includes `min(withdrawable, outstanding)`
+for open loans, so a contributor can claim their pro-rata share of stream accrual
+even when `poolProceeds == 0` and `drawn == 0`. The harvest branch draws the deficit
+(`requestAmount - poolProceeds`) from the stream, depositing it into `poolProceeds`
+before paying the contributor. This is the primary mechanism for claiming accrued
+stream value from open pool loans — not a defense-in-depth fallback. Without it,
+contributors could only claim after `closeLoan` or `repayLoan`, not from live accrual.
 
 **Placement/Context:** `_claimFair` in `src/OVRFLOBook.sol` — the harvest
 branch that draws from the stream when `poolProceeds < requestAmount`.
@@ -932,7 +931,7 @@ rg "poolProceeds\[poolId\] < requestAmount" src/OVRFLOBook.sol
 # expected: 1 match in _claimFair harvest branch
 ```
 
-**Documented in:** OVRFLOBook cleanup refactor (2026-07-07), pool claim fairness brainstorm
+**Documented in:** OVRFLOBook pool claim fairness fix (2026-07-06), `_claimFair` harvest fix (2026-07-07)
 
 ---
 

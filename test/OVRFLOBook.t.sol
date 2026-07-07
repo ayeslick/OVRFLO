@@ -468,46 +468,45 @@ contract OVRFLOBookTest is Test {
     function test_CloseLoan_AfterPartialClaimDrawsOnlyOutstanding() public {
         (uint256 poolId, uint256 loanId) = _originateLoanViaBorrowPool(30, 100 ether);
 
-        ovrfloToken.mint(SELLER, 40 ether);
-        vm.startPrank(SELLER);
-        ovrfloToken.approve(address(book), 40 ether);
-        book.repayLoan(loanId, 40 ether);
-        vm.stopPrank();
+        // Partial claim harvests 40 from the stream
+        sablier.setWithdrawable(30, 40 ether);
+        vm.prank(BUYER);
+        book.claimPoolShare(poolId, 40 ether);
 
+        // closeLoan draws remaining outstanding (110 - 40 = 70)
         sablier.setWithdrawable(30, 100 ether);
         book.closeLoan(loanId);
 
         (,,,, uint128 drawn,, bool closed) = book.loans(loanId);
-        assertEq(drawn, 70 ether);
+        assertEq(drawn, 110 ether, "40 harvested + 70 drawn by closeLoan");
         assertTrue(closed);
         vm.prank(BUYER);
-        book.claimPoolShare(poolId, 110 ether);
-        assertEq(ovrfloToken.balanceOf(BUYER), 110 ether);
-        assertEq(sablier.getWithdrawnAmount(30), 70 ether);
-        assertEq(sablier.ownerOf(30), SELLER);
+        book.claimPoolShare(poolId, 70 ether);
+        assertEq(ovrfloToken.balanceOf(BUYER), 110 ether, "total claimed = obligation");
+        assertEq(sablier.getWithdrawnAmount(30), 110 ether, "40 + 70 drawn from stream");
+        assertEq(sablier.ownerOf(30), SELLER, "NFT returned to borrower");
     }
 
     function test_CloseLoan_ReturnsNftWhenAlreadySatisfiedByClaims() public {
         (uint256 poolId, uint256 loanId) = _originateLoanViaBorrowPool(21, 100 ether);
 
-        ovrfloToken.mint(SELLER, 110 ether);
-        vm.startPrank(SELLER);
-        ovrfloToken.approve(address(book), 110 ether);
-        book.repayLoan(loanId, 110 ether);
-        vm.stopPrank();
-
-        (,,,, uint128 drawn, uint128 repaid, bool closed) = book.loans(loanId);
-        assertEq(drawn, 0);
-        assertEq(repaid, 110 ether);
-        assertTrue(closed);
-        assertEq(sablier.ownerOf(21), SELLER);
-
-        vm.expectRevert("OVRFLOBook: loan closed");
-        book.closeLoan(loanId);
-
+        // Full claim harvests the entire obligation from the stream
+        sablier.setWithdrawable(21, 110 ether);
         vm.prank(BUYER);
         book.claimPoolShare(poolId, 110 ether);
-        assertEq(ovrfloToken.balanceOf(BUYER), 110 ether);
+
+        (,,,, uint128 drawn, uint128 repaid, bool closed) = book.loans(loanId);
+        assertEq(drawn, 110 ether);
+        assertEq(repaid, 0);
+        assertFalse(closed, "loan not auto-closed by claim");
+        assertEq(sablier.ownerOf(21), address(book), "book still holds NFT");
+
+        // closeLoan reclaims the empty stream (outstanding == 0, no draw needed)
+        book.closeLoan(loanId);
+
+        (,,,,, , bool closedAfter) = book.loans(loanId);
+        assertTrue(closedAfter);
+        assertEq(sablier.ownerOf(21), SELLER, "NFT returned to borrower");
     }
 
     function test_RepayLoan_FullRepaymentAfterPartialClaimClosesAndReturnsNft() public {
@@ -1589,7 +1588,7 @@ contract OVRFLOBookTest is Test {
         assertEq(ovrfloToken.balanceOf(STRANGER), 20 ether, "B claims 40% of 50");
     }
 
-    function test_ClaimFair_HarvestDeficit() public {
+    function test_ClaimPoolShare_ProRataFromProceedsNoHarvest() public {
         (uint256 poolId, uint256 loanId) = _createBorrowerPool(161, 60 ether, 40 ether, 100 ether, 100 ether);
 
         ovrfloToken.mint(SELLER, 50 ether);
@@ -1602,6 +1601,37 @@ contract OVRFLOBookTest is Test {
         book.claimPoolShare(poolId, 30 ether);
         assertEq(ovrfloToken.balanceOf(BUYER), 30 ether, "A claims from proceeds");
         assertEq(sablier.getWithdrawnAmount(161), 0, "no stream draw needed");
+    }
+
+    function test_ClaimPoolShare_HarvestsFromOpenLoanStream() public {
+        (uint256 poolId,) = _originateLoanViaBorrowPool(215, 100 ether);
+        sablier.setWithdrawable(215, 50 ether);
+        // drawn = 0, repaid = 0, poolProceeds = 0, but stream has 50 withdrawable
+        // recovered = 0 + 0 + min(50, 110) = 50, claimable = 100 * 50 / 100 = 50
+        vm.prank(BUYER);
+        book.claimPoolShare(poolId, 50 ether);
+        assertEq(ovrfloToken.balanceOf(BUYER), 50 ether, "harvested from stream");
+        assertEq(sablier.getWithdrawnAmount(215), 50 ether, "stream drawn");
+        assertEq(book.poolProceeds(poolId), 0, "proceeds drained after payout");
+    }
+
+    function test_ClaimPoolShare_HarvestsOnlyDeficit() public {
+        (uint256 poolId, uint256 loanId) = _originateLoanViaBorrowPool(216, 100 ether);
+        // Partial repay creates some proceeds
+        ovrfloToken.mint(SELLER, 30 ether);
+        vm.startPrank(SELLER);
+        ovrfloToken.approve(address(book), 30 ether);
+        book.repayLoan(loanId, 30 ether);
+        vm.stopPrank();
+        // poolProceeds = 30, withdrawable = 50, outstanding = 80
+        // recovered = 0 + 30 + min(50, 80) = 80, claimable = 100 * 80 / 100 = 80
+        // requestAmount = min(50, 80) = 50, deficit = 50 - 30 = 20
+        sablier.setWithdrawable(216, 50 ether);
+        vm.prank(BUYER);
+        book.claimPoolShare(poolId, 50 ether);
+        assertEq(ovrfloToken.balanceOf(BUYER), 50 ether, "50 claimed");
+        assertEq(sablier.getWithdrawnAmount(216), 20 ether, "only 20 deficit harvested");
+        assertEq(book.poolProceeds(poolId), 0, "proceeds drained");
     }
 
     function test_ClaimFair_NoHarvestWhenProceedsSufficient() public {

@@ -609,11 +609,13 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
     }
 
     /// @notice Lets a pool contributor claim ovrfloToken from accumulated pool proceeds.
-    /// @dev Proceeds accumulate from `closeLoan` and `repayLoan` on pool loans. Claimable
-    ///      is capped at `contribution * (drawn + repaid) / totalContributed - poolReceived`,
-    ///      ensuring pro-rata fairness. Works whether the loan is open or closed. When the
-    ///      loan is open and `poolProceeds` is insufficient, harvests the deficit from the
-    ///      stream.
+    /// @dev Proceeds accumulate from `closeLoan` and `repayLoan` on pool loans, and
+    ///      from stream harvests during claims. Claimable is capped at
+    ///      `contribution * recovered / totalContributed - poolReceived`, where
+    ///      `recovered = drawn + repaid + min(withdrawable, outstanding)` for open
+    ///      loans and `recovered = drawn + repaid` for closed loans. When the loan
+    ///      is open and `poolProceeds` is insufficient, harvests the deficit from
+    ///      the stream. Works whether the loan is open or closed.
     /// @param poolId The pool to claim from.
     /// @param amount Requested claim amount (capped at claimable).
     function claimPoolShare(uint256 poolId, uint128 amount) external nonReentrant {
@@ -622,17 +624,25 @@ contract OVRFLOBook is Ownable2Step, ReentrancyGuard, Multicall {
         emit PoolShareClaimed(poolId, msg.sender, payAmount);
     }
 
-    /// @dev Shared claim logic for `claimPoolShare`. Computes
-    ///      claimable as `contribution * (drawn + repaid) / totalContributed - poolReceived`,
-    ///      harvests only the deficit from the stream when `poolProceeds` is insufficient
-    ///      and the loan is open, then pays from `poolProceeds`.
+    /// @dev Shared claim logic for `claimPoolShare`. Computes claimable as
+    ///      `contribution * recovered / totalContributed - poolReceived`, where
+    ///      `recovered = drawn + repaid + min(withdrawable, outstanding)` for open
+    ///      loans (including the stream's not-yet-drawn accrual), and `recovered =
+    ///      drawn + repaid` for closed loans (outstanding == 0, stream returned).
+    ///      Harvests only the deficit from the stream when `poolProceeds` is
+    ///      insufficient and the loan is open, then pays from `poolProceeds`.
     function _claimFair(uint256 poolId, address account, uint128 amount) internal returns (uint128 payAmount) {
         uint128 contribution = poolContributions[poolId][account];
         require(contribution > 0, "OVRFLOBook: not contributor");
 
         Loan storage loan = loans[poolLoanId[poolId]];
 
-        uint256 claimable = uint256(contribution) * (uint256(loan.drawn) + uint256(loan.repaid))
+        uint256 recovered = uint256(loan.drawn) + uint256(loan.repaid);
+        if (!loan.closed) {
+            recovered += uint256(_minUint128(sablier.withdrawableAmountOf(loan.streamId), _outstanding(loan)));
+        }
+
+        uint256 claimable = uint256(contribution) * recovered
             / uint256(pools[poolId].totalContributed) - poolReceived[poolId][account];
 
         uint128 requestAmount = _minUint128(amount, _toUint128(claimable));
