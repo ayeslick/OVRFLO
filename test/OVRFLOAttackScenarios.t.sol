@@ -6,13 +6,13 @@ import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {OVRFLO} from "../src/OVRFLO.sol";
 import {OVRFLOToken} from "../src/OVRFLOToken.sol";
-import {OVRFLOBook} from "../src/OVRFLOBook.sol";
+import {OVRFLOLENDING} from "../src/OVRFLOLENDING.sol";
 import {IPendleOracle} from "../interfaces/IPendleOracle.sol";
 import {ISablierV2LockupLinear} from "../interfaces/ISablierV2LockupLinear.sol";
 import {IFlashBorrower} from "../interfaces/IFlashBorrower.sol";
 import {VaultMockHelpers} from "./helpers/VaultMockHelpers.sol";
 import {TestERC20} from "./mocks/TestERC20.sol";
-import {MockBookFactory, MockBookCore, MockBookSablier} from "./mocks/BookMocks.sol";
+import {MockLendingFactory, MockLendingCore, MockLendingSablier} from "./mocks/LendingMocks.sol";
 
 // --- Attack FlashBorrower with configurable callbacks ---
 
@@ -257,43 +257,43 @@ contract OVRFLOAttackScenariosTest is VaultMockHelpers {
     //////////////////////////////////////////////////////////////*/
 
     function test_R17_StreamWithdrawalDuringActiveLoan() public {
-        // Set up Book with its own mock tokens (separate from vault's ovrfloToken)
-        MockBookFactory factory = new MockBookFactory();
-        MockBookCore core = new MockBookCore();
-        MockBookSablier bookSablier = new MockBookSablier();
-        TestERC20 bookUnderlying = new TestERC20("BookUnderlying", "BUND");
-        TestERC20 bookOvrfloToken = new TestERC20("BookOvrflo", "bovRFLO");
+        // Set up Lending with its own mock tokens (separate from vault's ovrfloToken)
+        MockLendingFactory factory = new MockLendingFactory();
+        MockLendingCore core = new MockLendingCore();
+        MockLendingSablier lendingSablier = new MockLendingSablier();
+        TestERC20 lendingUnderlying = new TestERC20("LendingUnderlying", "BUND");
+        TestERC20 lendingOvrfloToken = new TestERC20("LendingOvrflo", "bovRFLO");
         uint256 expiry = block.timestamp + 365 days;
 
-        factory.setInfo(address(core), TREASURY, address(bookUnderlying), address(bookOvrfloToken));
+        factory.setInfo(address(core), TREASURY, address(lendingUnderlying), address(lendingOvrfloToken));
         factory.setMarketApproved(address(core), BOOK_MARKET, true);
-        core.setSeries(BOOK_MARKET, true, expiry, address(bookOvrfloToken), address(bookUnderlying));
+        core.setSeries(BOOK_MARKET, true, expiry, address(lendingOvrfloToken), address(lendingUnderlying));
 
-        OVRFLOBook book = new OVRFLOBook(address(factory), address(core), address(bookSablier));
+        OVRFLOLENDING lending = new OVRFLOLENDING(address(factory), address(core), address(lendingSablier));
 
         address lender = makeAddr("lender");
         address borrowerAddr = makeAddr("loanBorrower");
 
         // Fund actors
-        bookUnderlying.mint(lender, 200 ether);
-        bookOvrfloToken.mint(borrowerAddr, 200 ether);
+        lendingUnderlying.mint(lender, 200 ether);
+        lendingOvrfloToken.mint(borrowerAddr, 200 ether);
 
         vm.startPrank(lender);
-        bookUnderlying.approve(address(book), type(uint256).max);
+        lendingUnderlying.approve(address(lending), type(uint256).max);
         vm.stopPrank();
 
         vm.startPrank(borrowerAddr);
-        bookOvrfloToken.approve(address(book), type(uint256).max);
-        bookSablier.setApprovalForAll(address(book), true);
+        lendingOvrfloToken.approve(address(lending), type(uint256).max);
+        lendingSablier.setApprovalForAll(address(lending), true);
         vm.stopPrank();
 
         // Create an eligible stream
         uint256 streamId = 1;
-        bookSablier.setStream(
+        lendingSablier.setStream(
             streamId,
             borrowerAddr,
             address(core),
-            IERC20(address(bookOvrfloToken)),
+            IERC20(address(lendingOvrfloToken)),
             uint40(expiry),
             0,
             false,
@@ -301,46 +301,46 @@ contract OVRFLOAttackScenariosTest is VaultMockHelpers {
             0
         );
 
-        // Post offer
+        // Post liquidity
         vm.prank(lender);
-        uint256 offerId = book.postOffer(BOOK_MARKET, 1000, 50 ether);
+        uint256 liquidityId = lending.supplyLiquidity(BOOK_MARKET, 1000, 50 ether);
 
-        // Create borrow pool with single offer
+        // Create borrow pool with single liquidity
         vm.startPrank(borrowerAddr);
-        bookSablier.approve(address(book), streamId);
-        uint256 poolId = book.createBorrowPool(_singletonArray(offerId), streamId, 50 ether, 0);
+        lendingSablier.approve(address(lending), streamId);
+        uint256 loanPoolId = lending.createBorrowerLoanPool(_singletonArray(liquidityId), streamId, 50 ether, 0);
         vm.stopPrank();
         uint256 loanId = 1;
 
         // Read loan state
-        (,,, uint128 obligation,,,) = book.loans(loanId);
+        (,,, uint128 obligation,,,) = lending.loans(loanId);
 
-        // Borrower repays partial via repayLoan (increases recovered, poolProceeds, loan stays open)
+        // Borrower repays partial via repayLoan (increases recovered, loanPoolProceeds, loan stays open)
         uint128 partialRepay = obligation / 2;
         vm.prank(borrowerAddr);
-        book.repayLoan(loanId, partialRepay);
+        lending.repayLoan(loanId, partialRepay);
 
-        // Lender claims partial from poolProceeds
+        // Lender claims partial from loanPoolProceeds
         vm.prank(lender);
-        book.claimPoolShare(poolId, partialRepay);
+        lending.claimLoanPoolShare(loanPoolId, partialRepay);
 
         // Set withdrawable to full, closeLoan draws remaining (loan closes, NFT returned)
-        bookSablier.setWithdrawable(streamId, 100 ether);
-        book.closeLoan(loanId);
+        lendingSablier.setWithdrawable(streamId, 100 ether);
+        lending.closeLoan(loanId);
 
         // Loan should be closed and NFT returned
-        (,,,,,, bool closed) = book.loans(loanId);
+        (,,,,,, bool closed) = lending.loans(loanId);
         assertTrue(closed, "loan should be closed after closeLoan");
 
-        assertEq(bookSablier.ownerOf(streamId), borrowerAddr, "NFT should be returned to borrower");
+        assertEq(lendingSablier.ownerOf(streamId), borrowerAddr, "NFT should be returned to borrower");
 
-        // Lender claims remaining via claimPoolShare
+        // Lender claims remaining via claimLoanPoolShare
         uint128 remaining = obligation - partialRepay;
         vm.prank(lender);
-        book.claimPoolShare(poolId, remaining);
+        lending.claimLoanPoolShare(loanPoolId, remaining);
 
-        // Lender total received: partialRepay (from poolProceeds) + remaining (from closeLoan proceeds) == obligation
-        uint128 lenderOvrfloReceived = uint128(bookOvrfloToken.balanceOf(lender));
+        // Lender total received: partialRepay (from loanPoolProceeds) + remaining (from closeLoan proceeds) == obligation
+        uint128 lenderOvrfloReceived = uint128(lendingOvrfloToken.balanceOf(lender));
         assertEq(lenderOvrfloReceived, obligation, "lender total should equal obligation");
     }
 

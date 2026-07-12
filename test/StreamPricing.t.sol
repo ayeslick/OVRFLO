@@ -4,7 +4,7 @@ pragma solidity ^0.8.20;
 import {Test} from "forge-std/Test.sol";
 import {StreamPricing} from "../src/StreamPricing.sol";
 import {TestERC20} from "./mocks/TestERC20.sol";
-import {MockBookFactory, MockBookCore, MockBookSablier} from "./mocks/BookMocks.sol";
+import {MockLendingFactory, MockLendingCore, MockLendingSablier} from "./mocks/LendingMocks.sol";
 
 contract StreamPricingHarness {
     function requireEligible(address factory, address sablier, address core, address market, uint256 streamId)
@@ -23,9 +23,9 @@ contract StreamPricingTest is Test {
     address internal constant PT_TOKEN = address(0x2001);
     address internal constant ORACLE = address(0x3001);
 
-    MockBookFactory internal factory;
-    MockBookCore internal core;
-    MockBookSablier internal sablier;
+    MockLendingFactory internal factory;
+    MockLendingCore internal core;
+    MockLendingSablier internal sablier;
     StreamPricingHarness internal harness;
     TestERC20 internal underlying;
     TestERC20 internal ovrfloToken;
@@ -35,9 +35,9 @@ contract StreamPricingTest is Test {
     uint256 internal expiry;
 
     function setUp() public {
-        factory = new MockBookFactory();
-        core = new MockBookCore();
-        sablier = new MockBookSablier();
+        factory = new MockLendingFactory();
+        core = new MockLendingCore();
+        sablier = new MockLendingSablier();
         harness = new StreamPricingHarness();
         underlying = new TestERC20("Underlying", "UND");
         ovrfloToken = new TestERC20("OVRFLO Underlying", "ovrfloUND");
@@ -111,7 +111,7 @@ contract StreamPricingTest is Test {
     }
 
     function test_EligibilityRejectsUnregisteredCore() public {
-        MockBookCore unknownCore = new MockBookCore();
+        MockLendingCore unknownCore = new MockLendingCore();
 
         vm.expectRevert(StreamPricing.CoreNotRegistered.selector);
         harness.requireEligible(address(factory), address(sablier), address(unknownCore), MARKET_ONE, streamId);
@@ -219,7 +219,7 @@ contract StreamPricingTest is Test {
         harness.requireEligible(address(factory), address(sablier), address(core), MARKET_TWO, streamId);
     }
 
-    function test_PoolSeam_CallsPricingAndEligibilityWithoutBookStorage() public view {
+    function test_PoolSeam_CallsPricingAndEligibilityWithoutLendingStorage() public view {
         StreamPricing.Eligibility memory eligibility =
             harness.requireEligible(address(factory), address(sablier), address(core), MARKET_ONE, streamId);
         uint256 grossPrice = StreamPricing.grossPrice(eligibility.remaining, 1000, 30 days);

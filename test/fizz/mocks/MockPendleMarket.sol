@@ -16,7 +16,9 @@ contract MockPendleMarket is IPendleMarket {
         yt = _yt;
     }
 
-    function expiry() external view returns (uint256) { return expiryTime; }
+    function expiry() external view returns (uint256) {
+        return expiryTime;
+    }
 
     function readTokens() external view returns (address, address, address) {
         return (sy, pt, yt);

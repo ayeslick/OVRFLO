@@ -3,18 +3,18 @@ pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {OVRFLOBook} from "../src/OVRFLOBook.sol";
+import {OVRFLOLENDING} from "../src/OVRFLOLENDING.sol";
 import {TestERC20} from "./mocks/TestERC20.sol";
-import {MockBookFactory, MockBookCore, MockBookSablier} from "./mocks/BookMocks.sol";
+import {MockLendingFactory, MockLendingCore, MockLendingSablier} from "./mocks/LendingMocks.sol";
 
-/// @notice Handler that randomly calls Book operations to test loan/offer invariants.
-contract OVRFLOBookInvariantHandler is Test {
-    OVRFLOBook internal book;
-    MockBookSablier internal sablier;
+/// @notice Handler that randomly calls Lending operations to test loan/liquidity invariants.
+contract OVRFLOLENDINGInvariantHandler is Test {
+    OVRFLOLENDING internal lending;
+    MockLendingSablier internal sablier;
     TestERC20 internal underlying;
     TestERC20 internal ovrfloToken;
-    MockBookFactory internal factory;
-    MockBookCore internal core;
+    MockLendingFactory internal factory;
+    MockLendingCore internal core;
 
     address internal constant MARKET = address(0x5555);
     uint256 internal expiry;
@@ -23,8 +23,8 @@ contract OVRFLOBookInvariantHandler is Test {
     address[3] internal actors;
     uint256 internal nextStreamId = 10_000;
 
-    // Ghost state: track escrowed offer capacity (unified offers)
-    uint256 public totalActiveOfferCapacity;
+    // Ghost state: track escrowed liquidity availableLiquidity (unified liquidityPositions)
+    uint256 public totalActiveLiquidityCapacity;
 
     // Ghost state for R6/R7/R8: per-loan tracking
     struct LoanGhost {
@@ -39,15 +39,15 @@ contract OVRFLOBookInvariantHandler is Test {
     mapping(uint256 => LoanGhost) public loanGhosts;
 
     constructor(
-        OVRFLOBook book_,
-        MockBookSablier sablier_,
+        OVRFLOLENDING lending_,
+        MockLendingSablier sablier_,
         TestERC20 underlying_,
         TestERC20 ovrfloToken_,
-        MockBookFactory factory_,
-        MockBookCore core_,
+        MockLendingFactory factory_,
+        MockLendingCore core_,
         uint256 expiry_
     ) {
-        book = book_;
+        lending = lending_;
         sablier = sablier_;
         underlying = underlying_;
         ovrfloToken = ovrfloToken_;
@@ -55,15 +55,15 @@ contract OVRFLOBookInvariantHandler is Test {
         core = core_;
         expiry = expiry_;
 
-        actors = [makeAddr("bookActorA"), makeAddr("bookActorB"), makeAddr("bookActorC")];
+        actors = [makeAddr("lendingActorA"), makeAddr("lendingActorB"), makeAddr("lendingActorC")];
 
         for (uint256 i = 0; i < 3; i++) {
             underlying.mint(actors[i], 10_000 ether);
             ovrfloToken.mint(actors[i], 10_000 ether);
             vm.startPrank(actors[i]);
-            underlying.approve(address(book), type(uint256).max);
-            ovrfloToken.approve(address(book), type(uint256).max);
-            sablier.setApprovalForAll(address(book), true);
+            underlying.approve(address(lending), type(uint256).max);
+            ovrfloToken.approve(address(lending), type(uint256).max);
+            sablier.setApprovalForAll(address(lending), true);
             vm.stopPrank();
         }
     }
@@ -72,44 +72,45 @@ contract OVRFLOBookInvariantHandler is Test {
                             OFFERS
     //////////////////////////////////////////////////////////////*/
 
-    function postOffer(uint256 actorSeed, uint256 capSeed) public {
+    function supplyLiquidity(uint256 actorSeed, uint256 capSeed) public {
         address actor = _actor(actorSeed);
-        uint128 capacity = uint128(bound(capSeed, 1, 50 ether));
+        uint128 availableLiquidity = uint128(bound(capSeed, 1, 50 ether));
 
         vm.prank(actor);
-        book.postOffer(MARKET, APR, capacity);
+        lending.supplyLiquidity(MARKET, APR, availableLiquidity);
 
-        totalActiveOfferCapacity += capacity;
+        totalActiveLiquidityCapacity += availableLiquidity;
     }
 
-    function cancelOffer(uint256 offerIdSeed) public {
-        if (book.nextOfferId() == 1) return;
-        uint256 offerId = bound(offerIdSeed, 1, book.nextOfferId() - 1);
-        (address maker,,, uint128 capacity, bool active) = book.offers(offerId);
+    function withdrawLiquidity(uint256 liquidityIdSeed) public {
+        if (lending.nextLiquidityId() == 1) return;
+        uint256 liquidityId = bound(liquidityIdSeed, 1, lending.nextLiquidityId() - 1);
+        (address lender,,, uint128 availableLiquidity, bool active) = lending.liquidityPositions(liquidityId);
         if (!active) return;
 
-        vm.prank(maker);
-        book.cancelOffer(offerId);
+        vm.prank(lender);
+        lending.withdrawLiquidity(liquidityId);
 
-        totalActiveOfferCapacity -= capacity;
+        totalActiveLiquidityCapacity -= availableLiquidity;
     }
 
-    function sellIntoOffer(uint256 offerIdSeed) public {
-        if (book.nextOfferId() == 1) return;
-        uint256 offerId = bound(offerIdSeed, 1, book.nextOfferId() - 1);
-        (, address market, uint16 aprBps, uint128 capacity, bool active) = book.offers(offerId);
-        if (!active || capacity == 0) return;
+    function sellStreamToLiquidity(uint256 liquidityIdSeed) public {
+        if (lending.nextLiquidityId() == 1) return;
+        uint256 liquidityId = bound(liquidityIdSeed, 1, lending.nextLiquidityId() - 1);
+        (, address market, uint16 aprBps, uint128 availableLiquidity, bool active) =
+            lending.liquidityPositions(liquidityId);
+        if (!active || availableLiquidity == 0) return;
 
-        address actor = _actor(offerIdSeed);
+        address actor = _actor(liquidityIdSeed);
         uint256 streamId = _createStream(actor);
 
-        (uint256 grossPrice,,,,) = book.quote(market, streamId, aprBps, 0);
-        if (grossPrice == 0 || grossPrice > capacity) return;
+        (uint256 grossPrice,,,,) = lending.quote(market, streamId, aprBps, 0);
+        if (grossPrice == 0 || grossPrice > availableLiquidity) return;
 
         vm.prank(actor);
-        book.sellIntoOffer(offerId, streamId, 0);
+        lending.sellStreamToLiquidity(liquidityId, streamId, 0);
 
-        totalActiveOfferCapacity -= grossPrice;
+        totalActiveLiquidityCapacity -= grossPrice;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -121,61 +122,61 @@ contract OVRFLOBookInvariantHandler is Test {
         uint256 streamId = _createStream(actor);
 
         vm.prank(actor);
-        book.postSaleListing(MARKET, streamId, APR);
+        lending.postSaleListing(MARKET, streamId, APR);
     }
 
     function cancelSaleListing(uint256 listingIdSeed) public {
-        if (book.nextSaleListingId() == 1) return;
-        uint256 listingId = bound(listingIdSeed, 1, book.nextSaleListingId() - 1);
-        (address maker,,,,, bool active) = book.saleListings(listingId);
+        if (lending.nextSaleListingId() == 1) return;
+        uint256 listingId = bound(listingIdSeed, 1, lending.nextSaleListingId() - 1);
+        (address lender,,,,, bool active) = lending.saleListings(listingId);
         if (!active) return;
 
-        vm.prank(maker);
-        book.cancelSaleListing(listingId);
+        vm.prank(lender);
+        lending.cancelSaleListing(listingId);
     }
 
     function buyListing(uint256 listingIdSeed, uint256 actorSeed) public {
-        if (book.nextSaleListingId() == 1) return;
-        uint256 listingId = bound(listingIdSeed, 1, book.nextSaleListingId() - 1);
-        (,,,,, bool active) = book.saleListings(listingId);
+        if (lending.nextSaleListingId() == 1) return;
+        uint256 listingId = bound(listingIdSeed, 1, lending.nextSaleListingId() - 1);
+        (,,,,, bool active) = lending.saleListings(listingId);
         if (!active) return;
 
         address buyer = _actor(actorSeed);
         vm.prank(buyer);
-        try book.buyListing(listingId, type(uint256).max) {} catch {}
+        try lending.buyListing(listingId, type(uint256).max) {} catch {}
     }
 
     /*//////////////////////////////////////////////////////////////
                         BORROW POOLS
     //////////////////////////////////////////////////////////////*/
 
-    /// @dev R13: posts offers from a non-borrower actor, pledges an eligible stream,
-    ///      and borrows against a subset. A different actor posts the offers than the
-    ///      one calling `createBorrowPool` to avoid the self-match guard (pattern #4).
-    ///      Offer IDs are strictly increasing by construction (pattern #11). Ghost
-    ///      variables track escrowed offer capacity and total pool obligations.
-    function createBorrowPool(
+    /// @dev R13: posts liquidityPositions from a non-borrower actor, pledges an eligible stream,
+    ///      and borrows against a subset. A different actor posts the liquidityPositions than the
+    ///      one calling `createBorrowerLoanPool` to avoid the self-match guard (pattern #4).
+    ///      LiquidityPosition IDs are strictly increasing by construction (pattern #11). Ghost
+    ///      variables track escrowed liquidity availableLiquidity and total pool obligations.
+    function createBorrowerLoanPool(
         uint256 borrowerSeed,
-        uint256 numOffersSeed,
+        uint256 numLiquiditysSeed,
         uint256 capSeed,
         uint256 targetSeed,
         uint256 minSeed
     ) public {
         address borrower = _actor(borrowerSeed);
 
-        uint256[] memory offerIds;
+        uint256[] memory liquidityIds;
         uint256 totalCapacity;
         {
-            address maker = actors[((borrowerSeed % actors.length) + 1) % actors.length];
-            uint256 numOffers = bound(numOffersSeed, 1, 3);
-            uint128 capacity = uint128(bound(capSeed, 1, 50 ether));
-            offerIds = new uint256[](numOffers);
-            for (uint256 i = 0; i < numOffers; i++) {
-                if (underlying.balanceOf(maker) < capacity) return;
-                vm.prank(maker);
-                offerIds[i] = book.postOffer(MARKET, APR, capacity);
-                totalCapacity += capacity;
-                totalActiveOfferCapacity += capacity;
+            address lender = actors[((borrowerSeed % actors.length) + 1) % actors.length];
+            uint256 numLiquiditys = bound(numLiquiditysSeed, 1, 3);
+            uint128 availableLiquidity = uint128(bound(capSeed, 1, 50 ether));
+            liquidityIds = new uint256[](numLiquiditys);
+            for (uint256 i = 0; i < numLiquiditys; i++) {
+                if (underlying.balanceOf(lender) < availableLiquidity) return;
+                vm.prank(lender);
+                liquidityIds[i] = lending.supplyLiquidity(MARKET, APR, availableLiquidity);
+                totalCapacity += availableLiquidity;
+                totalActiveLiquidityCapacity += availableLiquidity;
             }
         }
 
@@ -184,7 +185,7 @@ contract OVRFLOBookInvariantHandler is Test {
         uint128 targetBorrow;
         uint128 minAcceptable;
         {
-            (uint256 grossPrice,,,,) = book.quote(MARKET, streamId, APR, 0);
+            (uint256 grossPrice,,,,) = lending.quote(MARKET, streamId, APR, 0);
             if (grossPrice == 0) return;
             uint256 maxBorrow = _min(totalCapacity, grossPrice);
             if (maxBorrow == 0) return;
@@ -193,12 +194,14 @@ contract OVRFLOBookInvariantHandler is Test {
         }
 
         vm.prank(borrower);
-        try book.createBorrowPool(offerIds, streamId, targetBorrow, minAcceptable) returns (uint256 poolId) {
-            (,,, uint128 totalContributed,) = book.pools(poolId);
-            totalActiveOfferCapacity -= totalContributed;
+        try lending.createBorrowerLoanPool(liquidityIds, streamId, targetBorrow, minAcceptable) returns (
+            uint256 loanPoolId
+        ) {
+            (,,, uint128 totalContributed,) = lending.loanPools(loanPoolId);
+            totalActiveLiquidityCapacity -= totalContributed;
 
-            uint256 loanId = book.poolLoanId(poolId);
-            (,,, uint128 obligation,,,) = book.loans(loanId);
+            uint256 loanId = lending.loanPoolLoanId(loanPoolId);
+            (,,, uint128 obligation,,,) = lending.loans(loanId);
             _recordLoanGhost(loanId, borrower, streamId, obligation);
         } catch {}
     }
@@ -208,9 +211,9 @@ contract OVRFLOBookInvariantHandler is Test {
     //////////////////////////////////////////////////////////////*/
 
     function repayLoan(uint256 loanIdSeed, uint256 amountSeed) public {
-        if (book.nextLoanId() == 1) return;
-        uint256 loanId = bound(loanIdSeed, 1, book.nextLoanId() - 1);
-        (address borrower,,, uint128 obligation, uint128 drawn, uint128 repaid, bool closed) = book.loans(loanId);
+        if (lending.nextLoanId() == 1) return;
+        uint256 loanId = bound(loanIdSeed, 1, lending.nextLoanId() - 1);
+        (address borrower,,, uint128 obligation, uint128 drawn, uint128 repaid, bool closed) = lending.loans(loanId);
         if (borrower == address(0) || closed) return;
 
         uint128 outstanding = obligation - drawn - repaid;
@@ -219,8 +222,8 @@ contract OVRFLOBookInvariantHandler is Test {
         uint128 amount = uint128(bound(amountSeed, 1, outstanding));
 
         vm.prank(borrower);
-        try book.repayLoan(loanId, amount) {
-            (,,,,,, bool closed2) = book.loans(loanId);
+        try lending.repayLoan(loanId, amount) {
+            (,,,,,, bool closed2) = lending.loans(loanId);
             if (closed2) {
                 loanGhosts[loanId].closed = true;
             }
@@ -228,24 +231,17 @@ contract OVRFLOBookInvariantHandler is Test {
     }
 
     function closeLoan(uint256 loanIdSeed) public {
-        if (book.nextLoanId() == 1) return;
-        uint256 loanId = bound(loanIdSeed, 1, book.nextLoanId() - 1);
-        (
-            address borrower,
-            ,
-            uint256 streamId,
-            uint128 obligation,
-            uint128 drawn,
-            uint128 repaid,
-            bool closed
-        ) = book.loans(loanId);
+        if (lending.nextLoanId() == 1) return;
+        uint256 loanId = bound(loanIdSeed, 1, lending.nextLoanId() - 1);
+        (address borrower,, uint256 streamId, uint128 obligation, uint128 drawn, uint128 repaid, bool closed) =
+            lending.loans(loanId);
         if (borrower == address(0) || closed) return;
 
         uint128 outstanding = obligation - drawn - repaid;
         // Set withdrawable so close can succeed
         sablier.setWithdrawable(streamId, outstanding);
 
-        try book.closeLoan(loanId) {
+        try lending.closeLoan(loanId) {
             loanGhosts[loanId].closed = true;
             loanGhosts[loanId].lenderReceived += outstanding;
         } catch {}
@@ -261,7 +257,7 @@ contract OVRFLOBookInvariantHandler is Test {
         ghost.remainingAtOrigination = sablier.getDepositedAmount(streamId) - sablier.getWithdrawnAmount(streamId);
         ghost.lenderReceived = 0;
         ghost.borrower = borrower;
-        ghost.lender = address(book);
+        ghost.lender = address(lending);
         ghost.streamId = streamId;
         ghost.closed = false;
     }
@@ -282,24 +278,24 @@ contract OVRFLOBookInvariantHandler is Test {
     }
 }
 
-contract OVRFLOBookInvariantTest is Test {
+contract OVRFLOLENDINGInvariantTest is Test {
     address internal constant TREASURY = address(0xBEEF);
     address internal constant MARKET = address(0x5555);
 
-    MockBookFactory internal factory;
-    MockBookCore internal core;
-    MockBookSablier internal sablier;
+    MockLendingFactory internal factory;
+    MockLendingCore internal core;
+    MockLendingSablier internal sablier;
     TestERC20 internal underlying;
     TestERC20 internal ovrfloToken;
-    OVRFLOBook internal book;
+    OVRFLOLENDING internal lending;
     uint256 internal expiry;
 
-    OVRFLOBookInvariantHandler internal handler;
+    OVRFLOLENDINGInvariantHandler internal handler;
 
     function setUp() public {
-        factory = new MockBookFactory();
-        core = new MockBookCore();
-        sablier = new MockBookSablier();
+        factory = new MockLendingFactory();
+        core = new MockLendingCore();
+        sablier = new MockLendingSablier();
         underlying = new TestERC20("Underlying", "UND");
         ovrfloToken = new TestERC20("OVRFLO", "ovrfloUND");
         expiry = block.timestamp + 365 days;
@@ -308,9 +304,9 @@ contract OVRFLOBookInvariantTest is Test {
         factory.setMarketApproved(address(core), MARKET, true);
         core.setSeries(MARKET, true, expiry, address(ovrfloToken), address(underlying));
 
-        book = new OVRFLOBook(address(factory), address(core), address(sablier));
+        lending = new OVRFLOLENDING(address(factory), address(core), address(sablier));
 
-        handler = new OVRFLOBookInvariantHandler(book, sablier, underlying, ovrfloToken, factory, core, expiry);
+        handler = new OVRFLOLENDINGInvariantHandler(lending, sablier, underlying, ovrfloToken, factory, core, expiry);
         targetContract(address(handler));
     }
 
@@ -320,7 +316,7 @@ contract OVRFLOBookInvariantTest is Test {
 
     /// @notice R6: loan obligation <= stream remaining at origination
     function invariant_ObligationNeverExceedsRemaining() public view {
-        uint256 nextLoan = book.nextLoanId();
+        uint256 nextLoan = lending.nextLoanId();
         for (uint256 i = 1; i < nextLoan; i++) {
             (uint128 obligation, uint128 remainingAtOrigination,,,,,) = handler.loanGhosts(i);
             if (obligation == 0 && remainingAtOrigination == 0) continue;
@@ -330,7 +326,7 @@ contract OVRFLOBookInvariantTest is Test {
 
     /// @notice R7: lender total received <= obligation
     function invariant_LenderReceivedNeverExceedsObligation() public view {
-        uint256 nextLoan = book.nextLoanId();
+        uint256 nextLoan = lending.nextLoanId();
         for (uint256 i = 1; i < nextLoan; i++) {
             (uint128 obligation,, uint128 lenderReceived,,,,) = handler.loanGhosts(i);
             if (obligation == 0) continue;
@@ -340,7 +336,7 @@ contract OVRFLOBookInvariantTest is Test {
 
     /// @notice R8: stream NFT with borrower when loan is closed
     function invariant_NftReturnedToBorrowerOnClose() public view {
-        uint256 nextLoan = book.nextLoanId();
+        uint256 nextLoan = lending.nextLoanId();
         for (uint256 i = 1; i < nextLoan; i++) {
             (,,, address borrower,, uint256 streamId, bool closed) = handler.loanGhosts(i);
             if (!closed) continue;
@@ -348,9 +344,11 @@ contract OVRFLOBookInvariantTest is Test {
         }
     }
 
-    /// @notice book underlying balance == escrowed offer capacity
-    function invariant_BookBalanceEqualsEscrowedCapacity() public view {
-        uint256 expected = handler.totalActiveOfferCapacity();
-        assertEq(underlying.balanceOf(address(book)), expected, "book balance != escrowed offer capacity");
+    /// @notice lending underlying balance == escrowed liquidity availableLiquidity
+    function invariant_LendingBalanceEqualsEscrowedCapacity() public view {
+        uint256 expected = handler.totalActiveLiquidityCapacity();
+        assertEq(
+            underlying.balanceOf(address(lending)), expected, "lending balance != escrowed liquidity availableLiquidity"
+        );
     }
 }

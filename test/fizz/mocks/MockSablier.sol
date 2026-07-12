@@ -44,14 +44,37 @@ contract MockSablier is ISablierV2LockupLinear {
         params.asset.safeTransferFrom(params.sender, address(this), params.totalAmount);
     }
 
-    function getSender(uint256 streamId) external view returns (address) { return streams[streamId].sender; }
-    function getAsset(uint256 streamId) external view returns (IERC20) { return streams[streamId].asset; }
-    function getEndTime(uint256 streamId) external view returns (uint40) { return streams[streamId].endTime; }
-    function getStartTime(uint256 streamId) external view returns (uint40) { return streams[streamId].startTime; }
-    function getCliffTime(uint256 streamId) external view returns (uint40) { return streams[streamId].cliffTime; }
-    function isCancelable(uint256 streamId) external view returns (bool) { return streams[streamId].cancelable; }
-    function getDepositedAmount(uint256 streamId) external view returns (uint128) { return streams[streamId].depositedAmount; }
-    function getWithdrawnAmount(uint256 streamId) external view returns (uint128) { return streams[streamId].withdrawnAmount; }
+    function getSender(uint256 streamId) external view returns (address) {
+        return streams[streamId].sender;
+    }
+
+    function getAsset(uint256 streamId) external view returns (IERC20) {
+        return streams[streamId].asset;
+    }
+
+    function getEndTime(uint256 streamId) external view returns (uint40) {
+        return streams[streamId].endTime;
+    }
+
+    function getStartTime(uint256 streamId) external view returns (uint40) {
+        return streams[streamId].startTime;
+    }
+
+    function getCliffTime(uint256 streamId) external view returns (uint40) {
+        return streams[streamId].cliffTime;
+    }
+
+    function isCancelable(uint256 streamId) external view returns (bool) {
+        return streams[streamId].cancelable;
+    }
+
+    function getDepositedAmount(uint256 streamId) external view returns (uint128) {
+        return streams[streamId].depositedAmount;
+    }
+
+    function getWithdrawnAmount(uint256 streamId) external view returns (uint128) {
+        return streams[streamId].withdrawnAmount;
+    }
 
     function withdrawableAmountOf(uint256 streamId) public view returns (uint128) {
         Stream memory s = streams[streamId];
@@ -63,7 +86,9 @@ contract MockSablier is ISablierV2LockupLinear {
         uint256 vested = (uint256(s.depositedAmount) * elapsed) / total;
         if (vested > s.depositedAmount) vested = s.depositedAmount;
         uint256 withdrawable = vested - s.withdrawnAmount;
-        return withdrawable > s.depositedAmount - s.withdrawnAmount ? s.depositedAmount - s.withdrawnAmount : uint128(withdrawable);
+        return withdrawable > s.depositedAmount - s.withdrawnAmount
+            ? s.depositedAmount - s.withdrawnAmount
+            : uint128(withdrawable);
     }
 
     function withdraw(uint256 streamId, address to, uint128 amount) public {

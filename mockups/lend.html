@@ -30,7 +30,7 @@
   <div class="container" style="max-width:560px">
 
     <h1 class="hl mb-2">Provide Liquidity</h1>
-    <p class="text-sm text-muted mb-8">Post standing offers in wstETH at your chosen rate. Borrowers consume them as loans (or buyers as sales). You are repaid in ovrfloETH as streams pay down &mdash; claim pro-rata anytime, no race.</p>
+    <p class="text-sm text-muted mb-8">Post standing liquidityPositions in wstETH at your chosen rate. Borrowers consume them as loans (or buyers as sales). You are repaid in ovrfloETH as streams pay down &mdash; claim pro-rata anytime, no race.</p>
 
     <!-- Market selection -->
     <div class="label label-lend mb-4">MARKET</div>
@@ -126,18 +126,18 @@
       </div>
       <div class="qc-row">
         <span class="qc-label">Claims</span>
-        <span class="qc-value text-sm">Pro-rata via claimPoolShare</span>
+        <span class="qc-value text-sm">Pro-rata via claimLoanPoolShare</span>
       </div>
     </div>
 
-    <button class="btn btn-lend btn-full">Post Offer &rarr;</button>
+    <button class="btn btn-lend btn-full">Post LiquidityPosition &rarr;</button>
     <p class="text-xs text-secondary text-center mt-4">Standing liquidity · borrowers consume as needed · cancel anytime</p>
   </div>
 </section>
 
 <div class="divider"><div class="container"></div></div>
 
-<!-- Your offers shelf -->
+<!-- Your liquidityPositions shelf -->
 <section class="py-12">
   <div class="container" style="max-width:560px">
     <div class="flex justify-between items-center mb-6">
@@ -157,10 +157,10 @@
         </div>
       </div>
       <button class="btn btn-lend btn-full mt-6">Claim All &rarr;</button>
-      <p class="text-xs text-secondary text-center mt-4">Pro-rata via claimPoolShare &middot; works whether loans are open or closed &middot; unwrap ovrfloETH 1:1 to wstETH</p>
+      <p class="text-xs text-secondary text-center mt-4">Pro-rata via claimLoanPoolShare &middot; works whether loans are open or closed &middot; unwrap ovrfloETH 1:1 to wstETH</p>
     </div>
 
-    <!-- Individual offers -->
+    <!-- Individual liquidityPositions -->
     <div class="label label-lend mb-4">ACTIVE OFFERS</div>
     <div class="grid gap-4">
 

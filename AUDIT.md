@@ -61,66 +61,66 @@ The package reuses the stable IDs already in `x-ray/` — guard codes `G-1..G-56
 | `OVRFLO.wrap()` | G-2/3, I-1, I-13, E-1 | #1 | ✗ | |
 | `OVRFLO.unwrap()` | G-4, I-1, I-13, E-1 | #1 | ✗ | |
 | `OVRFLO.flashLoan()` | G-5/15/16/17, I-5, I-17 | #1 | ✓ | |
-| `OVRFLOBook.postOffer()` | G-28/29, I-6, I-8 | #3 | ✓ | ◆ X-2 |
-| `OVRFLOBook.sellIntoOffer()` | G-30/32/33, I-7, I-8, X-3 | #3 | ✓ | ◆ X-2 |
-| `OVRFLOBook.postSaleListing()` | G-28/29, I-6, I-10, X-3 | #3 | ✓ | ◆ X-2 |
-| `OVRFLOBook.buyListing()` | G-34/36, I-7, I-10, X-3 | #3 | ✓ | ◆ X-2 |
-| `OVRFLOBook.closeLoan()` | G-37/38, I-7, I-9, X-3 | #3 | ✓ | ◆ X-2 |
-| `OVRFLOBook.createBorrowPool()` | G-41/42/43/44, I-2, I-4, I-7, I-8, I-9, E-2, E-3, X-3 | #3 | ✓ | ◆ X-2 |
+| `OVRFLOLENDING.supplyLiquidity()` | G-28/29, I-6, I-8 | #3 | ✓ | ◆ X-2 |
+| `OVRFLOLENDING.sellStreamToLiquidity()` | G-30/32/33, I-7, I-8, X-3 | #3 | ✓ | ◆ X-2 |
+| `OVRFLOLENDING.postSaleListing()` | G-28/29, I-6, I-10, X-3 | #3 | ✓ | ◆ X-2 |
+| `OVRFLOLENDING.buyListing()` | G-34/36, I-7, I-10, X-3 | #3 | ✓ | ◆ X-2 |
+| `OVRFLOLENDING.closeLoan()` | G-37/38, I-7, I-9, X-3 | #3 | ✓ | ◆ X-2 |
+| `OVRFLOLENDING.createBorrowerLoanPool()` | G-41/42/43/44, I-2, I-4, I-7, I-8, I-9, E-2, E-3, X-3 | #3 | ✓ | ◆ X-2 |
 
-> `deposit()` and `closeLoan()` are the two costliest flows. `deposit()` carries the oracle split (adversary #2 — Pendle TWAP rate determines value distribution; I-17 now enforces freshness at runtime). `closeLoan()` is permissionless and Sablier-withdrawability-gated (adversary #3). `deposit()` lacks a reentrancy guard; book paths are `nonReentrant`. `flashLoan()` is `nonReentrant` but the callback can call unguarded `deposit`/`wrap`/`unwrap` — see `x-ray/x-ray.md` attack surface "Flash loan wrap-claim-redeem cycle". X-3 (requireEligible) is enforced — but probe for bypass/stale-cache. X-2 (book cached immutables: treasury, underlying, ovrfloToken) is not re-validated post-construction — all book fund flows depend on it.
+> `deposit()` and `closeLoan()` are the two costliest flows. `deposit()` carries the oracle split (adversary #2 — Pendle TWAP rate determines value distribution; I-17 now enforces freshness at runtime). `closeLoan()` is permissionless and Sablier-withdrawability-gated (adversary #3). `deposit()` lacks a reentrancy guard; lending paths are `nonReentrant`. `flashLoan()` is `nonReentrant` but the callback can call unguarded `deposit`/`wrap`/`unwrap` — see `x-ray/x-ray.md` attack surface "Flash loan wrap-claim-redeem cycle". X-3 (requireEligible) is enforced — but probe for bypass/stale-cache. X-2 (lending cached immutables: treasury, underlying, ovrfloToken) is not re-validated post-construction — all lending fund flows depend on it.
 
-### Role-gated — maker/lender/borrower only
+### Role-gated — lender/lender/borrower only
 
 | Entry point | Gate | Invariant IDs |
 |-------------|------|---------------|
-| `OVRFLOBook.cancelOffer()` | `offer.maker` (G-30/31) | I-8 |
-| `OVRFLOBook.cancelSaleListing()` | `listing.maker` (G-34/35) | I-10 |
-| `OVRFLOBook.claimPoolShare()` | pool contributor (G-45/46) | I-3, I-4, E-3 |
-| `OVRFLOBook.repayLoan()` | `loan.borrower` (G-39) | G-37/40, I-3, I-9 |
+| `OVRFLOLENDING.withdrawLiquidity()` | `liquidity.lender` (G-30/31) | I-8 |
+| `OVRFLOLENDING.cancelSaleListing()` | `listing.lender` (G-34/35) | I-10 |
+| `OVRFLOLENDING.claimLoanPoolShare()` | pool lender (G-45/46) | I-3, I-4, E-3 |
+| `OVRFLOLENDING.repayLoan()` | `loan.borrower` (G-39) | G-37/40, I-3, I-9 |
 
 ### Admin-only — multisig → factory → vault
 
 | Entry point | Invariant IDs | ◆ |
 |-------------|---------------|---|
 | `OVRFLOFactory.configureDeployment()` / `cancelDeployment()` / `deploy()` | G-49, I-16 | |
-| `OVRFLOFactory.deployBook()` | — | |
+| `OVRFLOFactory.deployLending()` | — | |
 | `OVRFLOFactory.addMarket()` | G-50/51/52/53/54/55, I-11, I-15, X-1 | |
 | `OVRFLOFactory.setMarketDepositLimit()` | G-9 | |
 | `OVRFLOFactory.prepareOracle()` | G-50/51 | |
 | `OVRFLOFactory.sweepExcessPt()` / `sweepExcessUnderlying()` | G-18, I-1, I-13 | |
 | `OVRFLOFactory.setFlashFeeBps()` / `setFlashLoanPaused()` | G-21, I-5 | |
-| `OVRFLOFactory.setBookAprBounds()` | G-22/23/24/25, I-6 | |
-| `OVRFLOFactory.setBookFee()` / `setBookTreasury()` | G-26/27, I-14 | ◆ X-2 |
+| `OVRFLOFactory.setLendingAprBounds()` | G-22/23/24/25, I-6 | |
+| `OVRFLOFactory.setLendingFee()` / `setLendingTreasury()` | G-26/27, I-14 | ◆ X-2 |
 | `OVRFLO.setSeriesApproved()` | G-19/20, I-11 | |
 | `OVRFLO.setMarketDepositLimit()` | G-9 | |
 | `OVRFLO.sweepExcessPt()` / `sweepExcessUnderlying()` | G-18, I-1, I-13 | |
 | `OVRFLO.setFlashFeeBps()` / `setFlashLoanPaused()` | G-21, I-5 | |
 | `OVRFLOToken.transferOwnership()` / `mint()` / `burn()` | — | |
-| `OVRFLOBook.setAprBounds()` | G-22/23/24/25, I-6 | |
-| `OVRFLOBook.setFee()` | G-26, I-14 | |
-| `OVRFLOBook.setTreasury()` | G-27 | ◆ X-2 |
+| `OVRFLOLENDING.setAprBounds()` | G-22/23/24/25, I-6 | |
+| `OVRFLOLENDING.setFee()` | G-26, I-14 | |
+| `OVRFLOLENDING.setTreasury()` | G-27 | ◆ X-2 |
 
 > Note: counts match `x-ray/entry-points.md` (11 permissionless / 4 role-gated / 26 admin = 41). `OVRFLOToken` standard ERC20 (`transfer`/`transferFrom`/`approve`) are inherited and not listed.
 
 ## Testing baseline
 
-19 test files, 195 test functions. **Coverage now available** — `forge coverage` succeeds with 100% line coverage and 99.6% branch coverage on source files (1 uncovered branch in `OVRFLOBook.sol`). All 167 test functions in the coverage run passed (0 failed). 195 tests pass (92 unit, 6 attack, 13 fuzz, 52 pricing, 4 invariant/100 runs, 28 fork).
+19 test files, 195 test functions. **Coverage now available** — `forge coverage` succeeds with 100% line coverage and 99.6% branch coverage on source files (1 uncovered branch in `OVRFLOLENDING.sol`). All 167 test functions in the coverage run passed (0 failed). 195 tests pass (92 unit, 6 attack, 13 fuzz, 52 pricing, 4 invariant/100 runs, 28 fork).
 
 | Category | Count | Notes |
 |----------|-------|-------|
 | Unit tests | ~25 files | All in-scope contracts covered |
-| Mainnet fork tests | 6 files | Vault, book, factory, flash loan, wrap/unwrap |
+| Mainnet fork tests | 6 files | Vault, lending, factory, flash loan, wrap/unwrap |
 | Stateless fuzz | 1 suite (1000 runs) | OVRFLOFuzz |
-| Stateful fuzz (Foundry) | 3 suites (500 runs, depth 25) | OVRFLOBook invariant, OVRFLO invariant, wrap/unwrap invariant |
+| Stateful fuzz (Foundry) | 3 suites (500 runs, depth 25) | OVRFLOLENDING invariant, OVRFLO invariant, wrap/unwrap invariant |
 | Attack scenarios | 1 suite | Flash-loan griefing, wrap/claim/redeem loops |
 | Math stress | 1 suite | StreamPricing rounding, overflow, boundary |
 | Audit fix tests | 7 files (U1-U7) | Guard tests, boundary reverts, edge cases, fork self-skip, defensive branch harness |
 | Stateful fuzz (Echidna) | 1 config (`echidna.yaml`) | 133 properties across 5 contracts |
 | Stateful fuzz (Medusa) | 1 config (`medusa.json`) | 133 properties, 500K test limit, 10 workers |
-| Fuzz campaign results | 5 violations found and fixed | M-01 (claimPoolShare pro-rata cap removed), M-02 (net slippage), M-03 (oracle freshness), L-01 (quote validation), L-02 (step-aligned APR bounds). All fixed test-first. See `docs/audit/audit-findings.md`. |
+| Fuzz campaign results | 5 violations found and fixed | M-01 (claimLoanPoolShare pro-rata cap removed), M-02 (net slippage), M-03 (oracle freshness), L-01 (quote validation), L-02 (step-aligned APR bounds). All fixed test-first. See `docs/audit/audit-findings.md`. |
 | Line coverage | 100% (source files) | 593/593 instrumented lines hit |
-| Branch coverage | 99.6% (source files) | 267/268 branches hit (1 uncovered in OVRFLOBook) |
+| Branch coverage | 99.6% (source files) | 267/268 branches hit (1 uncovered in OVRFLOLENDING) |
 | Formal verification | 0 | Not yet implemented. Three properties identified: I-7, I-4/E-3, I-2/I-3. Halmos recommended. |
 
 ## Where to start
@@ -130,7 +130,7 @@ The package reuses the stable IDs already in `x-ray/` — guard codes `G-1..G-56
 3. Skim the two dependency contracts — note every row where "Enforced?" says **No** or **Onboarding only**.
 4. Read the internal model — tie out the dual-backing identity (I-1 + I-13) and the loan `outstanding` relation (I-7 + G-38).
 5. Read `docs/audit/audit-findings.md` — 5 findings were found and fixed in the internal campaign. Understand what was found before raising a duplicate.
-6. Open the trust-assumption ledger. X-2 (book cached immutables, not re-validated post-construction) is the only On-chain=No invariant — all book fund flows depend on it. Also probe I-7 (obligation <= remaining) at the closeLoan boundary and the flash loan reentrancy path via unguarded `deposit`/`wrap`/`unwrap`.
+6. Open the trust-assumption ledger. X-2 (lending cached immutables, not re-validated post-construction) is the only On-chain=No invariant — all lending fund flows depend on it. Also probe I-7 (obligation <= remaining) at the closeLoan boundary and the flash loan reentrancy path via unguarded `deposit`/`wrap`/`unwrap`.
 7. Before raising a finding, check the rejected-findings record — especially H-2 (Sablier v1.1 ACL) and M-5 (cross-market fungibility). Also check `docs/solutions/patterns/ovrflo-critical-patterns.md` — if your probe target intersects a documented pattern (13 rules), the fix may already be in place.
 8. Drill into `x-ray/invariants.md` and `x-ray/entry-points.md` for derivations and full call chains.
 
@@ -142,7 +142,7 @@ The package reuses the stable IDs already in `x-ray/` — guard codes `G-1..G-56
 - Every invariant in `x-ray/invariants.md` has been attacked, not just confirmed — for each, the auditor has either produced a counterexample (finding) or articulated why no sequence of calls can violate it
 - The 11 permissionless entry points have been composed into multi-step attack paths, not audited in isolation — at minimum: flash loan → deposit → wrap/unwrap → claim cycles, pool creation → claim races, and oracle-dependent deposit splits under adversarial conditions
 - Every "Enforced? No" or "Onboarding only" row in the dependency interface contracts has been challenged with a concrete failure scenario or confirmed with reasoning
-- The ◆ X-2 invariant (book cached immutables, On-chain=No) has been probed for construction-time mismatch and post-deployment drift
+- The ◆ X-2 invariant (lending cached immutables, On-chain=No) has been probed for construction-time mismatch and post-deployment drift
 - Trust assumptions in the trust-assumption ledger have been independently evaluated, not just read — each is either ACCEPTED with stated reasoning or CHALLENGED with a finding
 - The 5 fixed audit findings in `docs/audit/audit-findings.md` have been reviewed — no finding raised that duplicates a fixed issue without new evidence
 - Findings cite invariant IDs and entry-point names, duplicate no settled rejection without new evidence, and are scored against the severity rubric in the methodology overlay

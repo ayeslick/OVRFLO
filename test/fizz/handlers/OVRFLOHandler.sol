@@ -9,7 +9,6 @@ import {MockFlashBorrower} from "../mocks/MockFlashBorrower.sol";
 
 /// @notice Handles the interaction with OVRFLO
 abstract contract OVRFLOHandler is Properties {
-
     MockFlashBorrower public mockFlashBorrower;
 
     // ――――――――――――――――――――――――― Clamped ――――――――――――――――――――――――――
@@ -45,9 +44,7 @@ abstract contract OVRFLOHandler is Properties {
         if (amount == 0) return;
 
         if (address(mockFlashBorrower) == address(0)) {
-            mockFlashBorrower = new MockFlashBorrower(
-                address(vault), address(ptToken), address(underlying), market
-            );
+            mockFlashBorrower = new MockFlashBorrower(address(vault), address(ptToken), address(underlying), market);
             mockFlashBorrowerAddr = address(mockFlashBorrower);
         }
 
@@ -125,7 +122,7 @@ abstract contract OVRFLOHandler is Properties {
         ghosts.ghost_lastToUser = toUser;
         ghosts.ghost_lastDepositPtAmount = ptAmount;
         ghosts.ghost_lastOracleRate = mockOracle.rate();
-        (, , uint16 feeBps, , , , , ) = vault.series(_market);
+        (,, uint16 feeBps,,,,,) = vault.series(_market);
         uint256 feeAmount = feeBps == 0 ? 0 : toUser * feeBps / 10_000;
         // Property assertions
         property_depositConservesSplit(toUser, toStream, ptAmount);
@@ -289,7 +286,7 @@ abstract contract OVRFLOHandler is Properties {
         vm.stopPrank();
 
         // Skip to maturity
-        (, , , uint256 expiry, , , , ) = vault.series(market);
+        (,,, uint256 expiry,,,,) = vault.series(market);
         if (block.timestamp < expiry) {
             skipTime(expiry - block.timestamp + 1);
         }
@@ -332,9 +329,7 @@ abstract contract OVRFLOHandler is Properties {
         if (amount == 0) return;
 
         if (address(mockFlashBorrower) == address(0)) {
-            mockFlashBorrower = new MockFlashBorrower(
-                address(vault), address(ptToken), address(underlying), market
-            );
+            mockFlashBorrower = new MockFlashBorrower(address(vault), address(ptToken), address(underlying), market);
             mockFlashBorrowerAddr = address(mockFlashBorrower);
         }
 
@@ -348,8 +343,11 @@ abstract contract OVRFLOHandler is Properties {
         try mockFlashBorrower.executeFlashLoan(amount, abi.encode(true)) {
             snapshotAfter();
             // Assert vault state consistency after reentrant deposit
-            eq(ovrfloToken.totalSupply(), vault.marketTotalDeposited(market) + vault.wrappedUnderlying(),
-               "R16: totalSupply != MTD + wrapped after reentrancy");
+            eq(
+                ovrfloToken.totalSupply(),
+                vault.marketTotalDeposited(market) + vault.wrappedUnderlying(),
+                "R16: totalSupply != MTD + wrapped after reentrancy"
+            );
             // MTD may increase from the reentrant deposit, wrappedUnderlying should not change
             eq(vault.wrappedUnderlying(), wrappedBefore, "R16: wrappedUnderlying changed in reentrancy");
         } catch {}

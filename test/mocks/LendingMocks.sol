@@ -6,7 +6,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {TestERC20} from "./TestERC20.sol";
 
 /// @notice Shared mock factory implementing IOVRFLOFactoryRegistry.
-contract MockBookFactory {
+contract MockLendingFactory {
     struct Info {
         address treasury;
         address underlying;
@@ -36,7 +36,7 @@ contract MockBookFactory {
 
 /// @notice Shared mock core implementing IOVRFLOSeriesRegistry.
 /// @dev Includes both 5-arg (hardcoded ptToken/oracle) and 7-arg (explicit) setSeries overloads.
-contract MockBookCore {
+contract MockLendingCore {
     struct Series {
         bool approved;
         uint32 twapDurationFixed;
@@ -115,10 +115,10 @@ contract MockBookCore {
 }
 
 /// @notice Shared mock Sablier with NFT ownership, withdraw, and stream management.
-/// @dev Superset of all Book and StreamPricing mock variants. StreamPricing tests
-///      use the 8-arg setStream and setStreamWithStartTime; Book tests use the
+/// @dev Superset of all Lending and StreamPricing mock variants. StreamPricing tests
+///      use the 8-arg setStream and setStreamWithStartTime; Lending tests use the
 ///      9-arg setStream with owner, setWithdrawable, withdraw, and NFT methods.
-contract MockBookSablier {
+contract MockLendingSablier {
     struct Stream {
         address sender;
         IERC20 asset;

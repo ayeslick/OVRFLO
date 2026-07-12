@@ -3,114 +3,114 @@ pragma solidity ^0.8.20;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {OVRFLO} from "../../src/OVRFLO.sol";
-import {OVRFLOBook} from "../../src/OVRFLOBook.sol";
+import {OVRFLOLENDING} from "../../src/OVRFLOLENDING.sol";
 import {OVRFLOFactory} from "../../src/OVRFLOFactory.sol";
 import {OVRFLOToken} from "../../src/OVRFLOToken.sol";
 import {ISablierV2LockupLinear} from "../../interfaces/ISablierV2LockupLinear.sol";
 import {OVRFLOForkBase} from "./OVRFLOForkBase.t.sol";
 
-contract OVRFLOBookMainnetForkTest is OVRFLOForkBase {
+contract OVRFLOLENDINGMainnetForkTest is OVRFLOForkBase {
     address internal constant USER = address(0xB0B);
     address internal constant BUYER = address(0xA11CE);
     address internal constant LENDER = address(0xCAFE);
     uint32 internal constant PROTOCOL_TWAP_DURATION = 30 minutes;
     uint256 internal constant PT_AMOUNT = 10 ether;
 
-    function test_BookSale_RealStreamTransfersToBuyer() public {
+    function test_LendingSale_RealStreamTransfersToBuyer() public {
         (OVRFLOFactory factory, OVRFLO ovrflo,) = _deployApprovedPrimarySeries(0);
-        OVRFLOBook book = _deployBook(factory, ovrflo);
+        OVRFLOLENDING lending = _deployLending(factory, ovrflo);
         ISablierV2LockupLinear sablier = ISablierV2LockupLinear(address(ovrflo.sablierLL()));
         (,, uint256 streamId) = _depositPrimary(ovrflo, PT_AMOUNT);
 
         vm.prank(USER);
-        _approveStream(address(sablier), address(book), streamId);
+        _approveStream(address(sablier), address(lending), streamId);
 
         // Cache LAUNCH_APR_BPS before prank to avoid argument-evaluation consuming the prank
-        uint16 launchApr = book.LAUNCH_APR_BPS();
+        uint16 launchApr = lending.LAUNCH_APR_BPS();
         vm.prank(USER);
-        uint256 listingId = book.postSaleListing(PRIMARY_MARKET, streamId, launchApr);
+        uint256 listingId = lending.postSaleListing(PRIMARY_MARKET, streamId, launchApr);
 
-        (uint256 grossPrice,,,,) = book.quote(PRIMARY_MARKET, streamId, launchApr, 0);
+        (uint256 grossPrice,,,,) = lending.quote(PRIMARY_MARKET, streamId, launchApr, 0);
         _seedWstEth(BUYER, grossPrice);
         vm.startPrank(BUYER);
-        IERC20(WSTETH).approve(address(book), grossPrice);
-        book.buyListing(listingId, grossPrice);
+        IERC20(WSTETH).approve(address(lending), grossPrice);
+        lending.buyListing(listingId, grossPrice);
         vm.stopPrank();
 
         assertEq(sablier.ownerOf(streamId), BUYER);
     }
 
-    function test_BookLoan_RealStreamClaimsAndCloses() public {
+    function test_LendingLoan_RealStreamClaimsAndCloses() public {
         (OVRFLOFactory factory, OVRFLO ovrflo, OVRFLOToken token) = _deployApprovedPrimarySeries(0);
-        OVRFLOBook book = _deployBook(factory, ovrflo);
+        OVRFLOLENDING lending = _deployLending(factory, ovrflo);
         ISablierV2LockupLinear sablier = ISablierV2LockupLinear(address(ovrflo.sablierLL()));
         (,, uint256 streamId) = _depositPrimary(ovrflo, PT_AMOUNT);
-        (uint256 grossPrice,,,,) = book.quote(PRIMARY_MARKET, streamId, book.LAUNCH_APR_BPS(), 0);
+        (uint256 grossPrice,,,,) = lending.quote(PRIMARY_MARKET, streamId, lending.LAUNCH_APR_BPS(), 0);
         uint128 borrowAmount = uint128(grossPrice / 2);
 
         _seedWstEth(LENDER, borrowAmount);
         vm.startPrank(LENDER);
-        IERC20(WSTETH).approve(address(book), borrowAmount);
-        uint256 offerId = book.postOffer(PRIMARY_MARKET, book.LAUNCH_APR_BPS(), borrowAmount);
+        IERC20(WSTETH).approve(address(lending), borrowAmount);
+        uint256 liquidityId = lending.supplyLiquidity(PRIMARY_MARKET, lending.LAUNCH_APR_BPS(), borrowAmount);
         vm.stopPrank();
 
         vm.prank(USER);
-        _approveStream(address(sablier), address(book), streamId);
+        _approveStream(address(sablier), address(lending), streamId);
         vm.prank(USER);
-        uint256 poolId = book.createBorrowPool(_singletonArray(offerId), streamId, borrowAmount, 0);
+        uint256 loanPoolId = lending.createBorrowerLoanPool(_singletonArray(liquidityId), streamId, borrowAmount, 0);
         uint256 loanId = 1;
 
         uint256 claimTimestamp = block.timestamp + (PRIMARY_EXPIRY - block.timestamp) / 4;
         vm.warp(claimTimestamp);
         uint128 partialClaim = sablier.withdrawableAmountOf(streamId);
-        (,,,,,, uint128 outstandingBeforeClaim,) = book.loanState(loanId);
+        (,,,,,, uint128 outstandingBeforeClaim,) = lending.loanState(loanId);
         assertGt(partialClaim, 0);
         assertLt(partialClaim, outstandingBeforeClaim);
 
         vm.prank(LENDER);
-        book.claimPoolShare(poolId, partialClaim);
+        lending.claimLoanPoolShare(loanPoolId, partialClaim);
         assertEq(token.balanceOf(LENDER), partialClaim);
 
         vm.warp(PRIMARY_EXPIRY);
-        book.closeLoan(loanId);
+        lending.closeLoan(loanId);
 
-        _assertLoanClosedAfterClaim(book, token, sablier, loanId, streamId, poolId);
+        _assertLoanClosedAfterClaim(lending, token, sablier, loanId, streamId, loanPoolId);
     }
 
-    function test_BookLoan_RealEarlyRepayViaWrapAndUnwrap() public {
+    function test_LendingLoan_RealEarlyRepayViaWrapAndUnwrap() public {
         (OVRFLOFactory factory, OVRFLO ovrflo, OVRFLOToken token) = _deployApprovedPrimarySeries(0);
-        OVRFLOBook book = _deployBook(factory, ovrflo);
+        OVRFLOLENDING lending = _deployLending(factory, ovrflo);
         ISablierV2LockupLinear sablier = ISablierV2LockupLinear(address(ovrflo.sablierLL()));
         (,, uint256 streamId) = _depositPrimary(ovrflo, PT_AMOUNT);
-        (uint256 grossPrice,,,,) = book.quote(PRIMARY_MARKET, streamId, book.LAUNCH_APR_BPS(), 0);
+        (uint256 grossPrice,,,,) = lending.quote(PRIMARY_MARKET, streamId, lending.LAUNCH_APR_BPS(), 0);
         uint128 borrowAmount = uint128(grossPrice / 2);
 
         _seedWstEth(LENDER, borrowAmount);
         vm.startPrank(LENDER);
-        IERC20(WSTETH).approve(address(book), borrowAmount);
-        uint256 offerId = book.postOffer(PRIMARY_MARKET, book.LAUNCH_APR_BPS(), borrowAmount);
+        IERC20(WSTETH).approve(address(lending), borrowAmount);
+        uint256 liquidityId = lending.supplyLiquidity(PRIMARY_MARKET, lending.LAUNCH_APR_BPS(), borrowAmount);
         vm.stopPrank();
 
         vm.prank(USER);
-        _approveStream(address(sablier), address(book), streamId);
+        _approveStream(address(sablier), address(lending), streamId);
         vm.prank(USER);
-        uint256 poolId = book.createBorrowPool(_singletonArray(offerId), streamId, borrowAmount, 0);
+        uint256 loanPoolId = lending.createBorrowerLoanPool(_singletonArray(liquidityId), streamId, borrowAmount, 0);
         uint256 loanId = 1;
 
-        (,,,,,, uint128 outstanding,) = book.loanState(loanId);
+        (,,,,,, uint128 outstanding,) = lending.loanState(loanId);
         _seedWstEth(USER, outstanding);
         vm.startPrank(USER);
         IERC20(WSTETH).approve(address(ovrflo), outstanding);
         ovrflo.wrap(outstanding);
-        token.approve(address(book), outstanding);
-        book.repayLoan(loanId, outstanding);
+        token.approve(address(lending), outstanding);
+        lending.repayLoan(loanId, outstanding);
         vm.stopPrank();
 
         assertEq(sablier.ownerOf(streamId), USER);
 
         // Lender withdraws repaid amount from pool proceeds
         vm.prank(LENDER);
-        book.claimPoolShare(poolId, outstanding);
+        lending.claimLoanPoolShare(loanPoolId, outstanding);
         assertEq(token.balanceOf(LENDER), outstanding);
 
         uint256 lenderWstEthBefore = IERC20(WSTETH).balanceOf(LENDER);
@@ -119,56 +119,56 @@ contract OVRFLOBookMainnetForkTest is OVRFLOForkBase {
         assertEq(IERC20(WSTETH).balanceOf(LENDER), lenderWstEthBefore + outstanding);
     }
 
-    function test_BookEligibility_RejectsForeignCoreStream() public {
+    function test_LendingEligibility_RejectsForeignCoreStream() public {
         (OVRFLOFactory factory, OVRFLO ovrflo,) = _deployApprovedPrimarySeries(0);
-        OVRFLOBook book = _deployBook(factory, ovrflo);
+        OVRFLOLENDING lending = _deployLending(factory, ovrflo);
         (, OVRFLO foreignOvrflo,) = _deployApprovedPrimarySeries(0);
         ISablierV2LockupLinear foreignSablier = ISablierV2LockupLinear(address(foreignOvrflo.sablierLL()));
         (,, uint256 foreignStreamId) = _depositPrimary(foreignOvrflo, PT_AMOUNT);
 
         vm.prank(USER);
-        _approveStream(address(foreignSablier), address(book), foreignStreamId);
+        _approveStream(address(foreignSablier), address(lending), foreignStreamId);
 
         // Cache LAUNCH_APR_BPS before expectRevert to avoid argument-evaluation gotcha
-        uint16 launchApr = book.LAUNCH_APR_BPS();
+        uint16 launchApr = lending.LAUNCH_APR_BPS();
         vm.prank(USER);
         vm.expectRevert();
-        book.postSaleListing(PRIMARY_MARKET, foreignStreamId, launchApr);
+        lending.postSaleListing(PRIMARY_MARKET, foreignStreamId, launchApr);
     }
 
-    function test_BookSellIntoOffer_RealStream() public {
+    function test_LendingSellStreamToLiquidity_RealStream() public {
         (OVRFLOFactory factory, OVRFLO ovrflo,) = _deployApprovedPrimarySeries(0);
-        OVRFLOBook book = _deployBook(factory, ovrflo);
+        OVRFLOLENDING lending = _deployLending(factory, ovrflo);
         ISablierV2LockupLinear sablier = ISablierV2LockupLinear(address(ovrflo.sablierLL()));
         (,, uint256 streamId) = _depositPrimary(ovrflo, PT_AMOUNT);
 
-        // Quote to determine required offer capacity
-        uint16 launchApr = book.LAUNCH_APR_BPS();
-        (uint256 grossPrice,,,,) = book.quote(PRIMARY_MARKET, streamId, launchApr, 0);
+        // Quote to determine required liquidity availableLiquidity
+        uint16 launchApr = lending.LAUNCH_APR_BPS();
+        (uint256 grossPrice,,,,) = lending.quote(PRIMARY_MARKET, streamId, launchApr, 0);
 
-        // Buyer posts a sale offer with enough capacity
+        // Buyer posts a sale liquidity with enough availableLiquidity
         _seedWstEth(BUYER, grossPrice);
         vm.startPrank(BUYER);
-        IERC20(WSTETH).approve(address(book), grossPrice);
-        uint256 offerId = book.postOffer(PRIMARY_MARKET, launchApr, uint128(grossPrice));
+        IERC20(WSTETH).approve(address(lending), grossPrice);
+        uint256 liquidityId = lending.supplyLiquidity(PRIMARY_MARKET, launchApr, uint128(grossPrice));
         vm.stopPrank();
 
-        // User sells stream into the offer
+        // User sells stream into the liquidity
         vm.prank(USER);
-        _approveStream(address(sablier), address(book), streamId);
+        _approveStream(address(sablier), address(lending), streamId);
         vm.prank(USER);
-        book.sellIntoOffer(offerId, streamId, 0);
+        lending.sellStreamToLiquidity(liquidityId, streamId, 0);
 
-        // Stream transferred to buyer (offer maker)
-        assertEq(sablier.ownerOf(streamId), BUYER, "stream should transfer to offer maker");
+        // Stream transferred to buyer (liquidity lender)
+        assertEq(sablier.ownerOf(streamId), BUYER, "stream should transfer to liquidity lender");
 
         // User received wstETH (net of fee; feeBps=0 so net == gross)
         assertEq(IERC20(WSTETH).balanceOf(USER), grossPrice, "seller should receive full gross price");
 
-        // Offer capacity consumed
-        (,,, uint128 remainingCapacity, bool active) = book.offers(offerId);
-        assertFalse(active, "offer should be inactive after full consumption");
-        assertEq(remainingCapacity, 0, "capacity should be 0 after full fill");
+        // LiquidityPosition availableLiquidity consumed
+        (,,, uint128 remainingCapacity, bool active) = lending.liquidityPositions(liquidityId);
+        assertFalse(active, "liquidity should be inactive after full consumption");
+        assertEq(remainingCapacity, 0, "availableLiquidity should be 0 after full fill");
     }
 
     function _deployApprovedPrimarySeries(uint16 feeBps)
@@ -183,20 +183,20 @@ contract OVRFLOBookMainnetForkTest is OVRFLOForkBase {
         vm.stopPrank();
     }
 
-    function _deployBook(OVRFLOFactory factory, OVRFLO ovrflo) internal returns (OVRFLOBook book) {
-        book = new OVRFLOBook(address(factory), address(ovrflo), address(ovrflo.sablierLL()));
+    function _deployLending(OVRFLOFactory factory, OVRFLO ovrflo) internal returns (OVRFLOLENDING lending) {
+        lending = new OVRFLOLENDING(address(factory), address(ovrflo), address(ovrflo.sablierLL()));
     }
 
     function _assertLoanClosedAfterClaim(
-        OVRFLOBook book,
+        OVRFLOLENDING lending,
         OVRFLOToken token,
         ISablierV2LockupLinear sablier,
         uint256 loanId,
         uint256 streamId,
-        uint256 poolId
+        uint256 loanPoolId
     ) internal {
         (,,, uint128 obligation, uint128 drawn, uint128 repaid, uint128 outstanding, bool closed) =
-            book.loanState(loanId);
+            lending.loanState(loanId);
         assertEq(drawn, obligation);
         assertEq(repaid, 0);
         assertEq(outstanding, 0);
@@ -206,7 +206,7 @@ contract OVRFLOBookMainnetForkTest is OVRFLOForkBase {
         uint128 lenderReceived = uint128(token.balanceOf(LENDER));
         if (obligation > lenderReceived) {
             vm.prank(LENDER);
-            book.claimPoolShare(poolId, obligation - lenderReceived);
+            lending.claimLoanPoolShare(loanPoolId, obligation - lenderReceived);
         }
 
         assertEq(token.balanceOf(LENDER), obligation);
@@ -235,21 +235,21 @@ contract OVRFLOBookMainnetForkTest is OVRFLOForkBase {
         SABLIER V2 v1.1 WITHDRAW ACL DURING BOOK ESCROW (P2 GAP)
     //////////////////////////////////////////////////////////////*/
 
-    function test_BookEscrow_StrangerCannotWithdrawFromEscrowedStream() public {
+    function test_LendingEscrow_StrangerCannotWithdrawFromEscrowedStream() public {
         (OVRFLOFactory factory, OVRFLO ovrflo,) = _deployApprovedPrimarySeries(0);
-        OVRFLOBook book = _deployBook(factory, ovrflo);
+        OVRFLOLENDING lending = _deployLending(factory, ovrflo);
         ISablierV2LockupLinear sablier = ISablierV2LockupLinear(address(ovrflo.sablierLL()));
         (,, uint256 streamId) = _depositPrimary(ovrflo, PT_AMOUNT);
 
         // Escrow the stream via a sale listing
-        uint16 launchApr = book.LAUNCH_APR_BPS();
+        uint16 launchApr = lending.LAUNCH_APR_BPS();
 
         vm.prank(USER);
-        _approveStream(address(sablier), address(book), streamId);
+        _approveStream(address(sablier), address(lending), streamId);
         vm.prank(USER);
-        book.postSaleListing(PRIMARY_MARKET, streamId, launchApr);
+        lending.postSaleListing(PRIMARY_MARKET, streamId, launchApr);
 
-        assertEq(sablier.ownerOf(streamId), address(book), "book should hold the NFT");
+        assertEq(sablier.ownerOf(streamId), address(lending), "lending should hold the NFT");
 
         // Warp forward so the stream has withdrawable value
         uint256 claimTimestamp = block.timestamp + (PRIMARY_EXPIRY - block.timestamp) / 4;

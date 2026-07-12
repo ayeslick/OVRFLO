@@ -1,6 +1,6 @@
 # OVRFLO Internal Protocol Model
 
-> The two subtlest OVRFLO mechanics, framed for an auditor as checkable accounting identities rather than happy-path prose. Insolvency-first: the thesis is "here is every way the books could stop balancing," not "here is the happy path." Links to `x-ray/invariants.md` for derivations instead of restating them.
+> The two subtlest OVRFLO mechanics, framed for an auditor as checkable accounting identities rather than happy-path prose. Insolvency-first: the thesis is "here is every way the lending markets could stop balancing," not "here is the happy path." Links to `x-ray/invariants.md` for derivations instead of restating them.
 
 ## Part 1 — Dual-backing solvency tie-out
 
@@ -33,7 +33,7 @@ One `ovrfloToken` per underlying across approved maturities is an intentional pr
 
 ## Part 2 — Self-repaying-loan economics
 
-OVRFLOBook loans are **not** standard collateralized debt. They depart from auditor priors in three ways that pre-empt a whole class of false-positive findings:
+OVRFLOLENDING loans are **not** standard collateralized debt. They depart from auditor priors in three ways that pre-empt a whole class of false-positive findings:
 
 1. **No health check.** There is no loan-to-value ratio, no health factor, no liquidation threshold.
 2. **No loan-time oracle.** Loan origination and servicing use `StreamPricing` time/factor math against the series maturity, not a live price feed.
@@ -46,7 +46,7 @@ The pledged Sablier stream is **non-cancelable** and pays a fixed asset (`ovrflo
 For every loan, **outstanding = obligation − (drawn + repaid)** (invariant **E-2**; loan state machine **I-11**; obligation bound **I-13**):
 
 - `obligation` is computed at fill via `StreamPricing.obligationForFill()` and stored.
-- `drawn` increases on `claimPoolShare()` (when `_claimFair` harvests deficit from an open loan's stream) and on `closeLoan()` (final draw to `poolProceeds`).
+- `drawn` increases on `claimLoanPoolShare()` (when `_claimFair` harvests deficit from an open loan's stream) and on `closeLoan()` (final draw to `loanPoolProceeds`).
 - `repaid` increases on `repayLoan()` (borrower repays directly).
 - Repay is capped at remaining outstanding (guard **G-24**); loan servicing preserves monotonic outstanding reduction.
 
@@ -54,11 +54,11 @@ Derivation: `x-ray/invariants.md#e-2`.
 
 ### Permissionless `closeLoan()` is liveness, not exploit
 
-`closeLoan()` is callable by **anyone** once `Sablier.withdrawableAmountOf(streamId) >= outstanding`. This is intentional liveness (book plan R15; audit-report **I-3 (ex-M-3)**): it removes borrower timing optionality on when to finish via `repayLoan`, but it does not misroute funds — the lender receives the final draw, the borrower receives the residual stream. An auditor anchored to standard lending will flag "no liquidation logic" or "permissionless close" — both are by design. See `rejected-findings-record.md` (I-3) and the resolved Q&A on `closeLoan` intent.
+`closeLoan()` is callable by **anyone** once `Sablier.withdrawableAmountOf(streamId) >= outstanding`. This is intentional liveness (lending plan R15; audit-report **I-3 (ex-M-3)**): it removes borrower timing optionality on when to finish via `repayLoan`, but it does not misroute funds — the lender receives the final draw, the borrower receives the residual stream. An auditor anchored to standard lending will flag "no liquidation logic" or "permissionless close" — both are by design. See `rejected-findings-record.md` (I-3) and the resolved Q&A on `closeLoan` intent.
 
 ### Pricing at fill
 
-At trade/loan fill, the stream's already-withdrawn value is excluded: pricing uses `deposited − withdrawn` so the buyer/lender pays only for remaining stream value. Fee is snapshotted at listing/offer post time (maker protection), so a later `setFee()` does not retroactively change resting orders (audit-report resolved Q&A #5).
+At trade/loan fill, the stream's already-withdrawn value is excluded: pricing uses `deposited − withdrawn` so the buyer/lender pays only for remaining stream value. Fee is snapshotted at listing/liquidity post time (lender protection), so a later `setFee()` does not retroactively change resting orders (audit-report resolved Q&A #5).
 
 ### Economic invariants
 

@@ -7,8 +7,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 /// @notice Minimal vault interface for deposit during reentrancy test
 interface IVaultFlash {
     function flashLoan(address ptToken, uint256 amount, bytes calldata data) external;
-    function deposit(address market, uint256 ptAmount, uint256 minToUser)
-        external returns (uint256, uint256, uint256);
+    function deposit(address market, uint256 ptAmount, uint256 minToUser) external returns (uint256, uint256, uint256);
 }
 
 /// @notice Mock flash loan borrower that repays PT plus fee, with optional reentrancy mode
@@ -29,10 +28,7 @@ contract MockFlashBorrower is IFlashBorrower {
         IERC20(_underlying).approve(_vault, type(uint256).max);
     }
 
-    function onFlashLoan(address, address, uint256, uint256, bytes calldata data)
-        external
-        returns (bytes32)
-    {
+    function onFlashLoan(address, address, uint256, uint256, bytes calldata data) external returns (bytes32) {
         if (data.length > 0) {
             bool reenter = abi.decode(data, (bool));
             if (reenter) {

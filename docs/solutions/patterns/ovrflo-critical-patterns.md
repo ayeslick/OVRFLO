@@ -2,15 +2,15 @@
 kind: required_reading
 scope: ovrflo
 last_updated: 2026-07-05
-audience: [contributors, ai-agents]
+audience: [lenders, ai-agents]
 ---
 
 <!--
   Refresh log:
   - 2026-07-05: Added fuzz enforcement references to patterns #5, #7, #11,
     #13 after the fizz gap closure campaign (GL-57, GL-61, GL-62, SP-62, SP-77).
-  - 2026-07-05: Fixed pattern #7 code examples — `saleOffers` → `offerState`
-    after the unified offer merge renamed the view function.
+  - 2026-07-05: Fixed pattern #7 code examples — `saleLiquidityPositions` → `liquidityState`
+    after the unified liquidity merge renamed the view function.
   - 2026-07-01: Appended pattern #13 (sweepExcessPt must validate ptToken is
     a registered PT) from the fuzz campaign GL-02 violation. The guard
     prevents draining the wrap reserve when a non-PT address is passed.
@@ -18,10 +18,10 @@ audience: [contributors, ai-agents]
     the claim redesign fork-test findings. Updated pattern #4 and #7 to
     reference pool-only functions after single-party lending removal.
   - 2026-06-29: Appended patterns #11 (strictly-increasing IDs in batch
-    arrays) and #12 (cap shared-pool claims at min(remaining, poolProceeds)) from the OVRFLOBook
+    arrays) and #12 (cap shared-pool claims at min(remaining, loanPoolProceeds)) from the OVRFLOLENDING
     Pool feature review (commits 91df170, ca8e248).
   - 2026-06-28: Updated R-02 to note natspec codification. Appended patterns
-    #9 (factory owns all deployed books) and #10 (one vault per underlying)
+    #9 (factory owns all deployed lending markets) and #10 (one vault per underlying)
     from the factory deployment/management pattern review.
   - 2026-06-28: Appended patterns #4 (self-match prevention), #5 (TWAP bound
     consistency in prepareOracle), #6 (Sablier binding verification in
@@ -317,24 +317,24 @@ complementary safety net, not a replacement. Do **not** pull in
 
 ---
 
-## 4. Prevent self-matched loans in OVRFLOBook (ALWAYS REQUIRED)
+## 4. Prevent self-matched loans in OVRFLOLENDING (ALWAYS REQUIRED)
 
 ### ❌ WRONG (borrower == lender breaks `repayLoan`)
 
 ```solidity
-// createBorrowPool — no self-match guard on offer makers.
-Offer storage offer = offers[offerIds[i]];
-require(offer.active, "OVRFLOBook: offer inactive");
-// msg.sender could be offer.maker, creating a loan where from == to
+// createBorrowerLoanPool — no self-match guard on liquidity lenders.
+LiquidityPosition storage liquidity = liquidityPositions[liquidityIds[i]];
+require(liquidity.active, "OVRFLOLENDING: liquidity inactive");
+// msg.sender could be liquidity.lender, creating a loan where from == to
 // in _pullExact, which reverts on the balance-delta check.
 ```
 
 ### ✅ CORRECT (reject at loan creation)
 
 ```solidity
-Offer storage offer = offers[offerIds[i]];
-require(offer.active, "OVRFLOBook: offer inactive");
-require(offer.maker != borrower, "OVRFLOBook: self-match");
+LiquidityPosition storage liquidity = liquidityPositions[liquidityIds[i]];
+require(liquidity.active, "OVRFLOLENDING: liquidity inactive");
+require(liquidity.lender != borrower, "OVRFLOLENDING: self-match");
 ```
 
 **Why:** If `borrower == lender`, `repayLoan`'s `_pullExact` does a
@@ -347,17 +347,17 @@ fee to yourself), so this is a correctness guard, not a value-loss
 prevention.
 
 **Placement/Context:** The pool-creation entry point that pairs a borrower
-with an offer maker: `createBorrowPool` (borrower = `msg.sender`, checked
-against each `offer.maker` in `_validateOffers`).
+with an liquidity lender: `createBorrowerLoanPool` (borrower = `msg.sender`, checked
+against each `liquidity.lender` in `_validateLiquidityPositions`).
 
 **How to detect violation:**
 
 ```bash
-rg -n "self-match" src/OVRFLOBook.sol
-# expected: match in createBorrowPool (_validateOffers); createLenderPool removed
+rg -n "self-match" src/OVRFLOLENDING.sol
+# expected: match in createBorrowerLoanPool (_validateLiquidityPositions); createLenderPool removed
 ```
 
-**Documented in:** [`docs/solutions/security-issues/repayloan-equality-rounding-no-brick-OVRFLOBook-20260624.md`](../security-issues/repayloan-equality-rounding-no-brick-OVRFLOBook-20260624.md) — companion finding section.
+**Documented in:** [`docs/solutions/security-issues/repayloan-equality-rounding-no-brick-OVRFLOLENDING-20260624.md`](../security-issues/repayloan-equality-rounding-no-brick-OVRFLOLENDING-20260624.md) — companion finding section.
 
 ---
 
@@ -404,71 +404,34 @@ rg -A2 "function prepareOracle" src/OVRFLOFactory.sol | rg "MAX_TWAP"
 
 ---
 
-## 6. Standalone OVRFLOBook deployment must verify Sablier matches the vault's canonical immutable (ALWAYS REQUIRED)
-
-### ❌ WRONG (blindly trusts env var)
-
-```solidity
-address sablier = vm.envOr("SABLIER_ADDRESS", DEFAULT_SABLIER_LL);
-// no verification that sablier matches the core vault's sablierLL
-```
-
-### ✅ CORRECT (assert against the vault immutable)
-
-```solidity
-address sablier = vm.envOr("SABLIER_ADDRESS", DEFAULT_SABLIER_LL);
-require(sablier == address(OVRFLO(core).sablierLL()), "OVRFLOBookScript: sablier mismatch");
-```
-
-**Why:** The canonical production path is `OVRFLOFactory.deployBook()`, which
-reads `address(OVRFLO(ovrflo).sablierLL())` (an immutable hardcoded constant)
-and passes it to the `OVRFLOBook` constructor. The standalone
-`OVRFLOBook.s.sol` script allows a `SABLIER_ADDRESS` override for flexibility.
-Without a verification assertion, a misconfigured env var could bind the book
-to the wrong Sablier instance, breaking all stream eligibility checks. The
-assert ensures even the standalone path self-verifies.
-
-**Placement/Context:** `script/OVRFLOBook.s.sol` — the standalone deployment
-script. The factory path (`OVRFLOFactory.deployBook`) is already safe by
-construction.
-
-**How to detect violation:**
-
-```bash
-rg "sablier mismatch" script/OVRFLOBook.s.sol
-# expected: 1 match
-```
-
----
-
 ## 7. Assert all-party token balances in every money-movement test (ALWAYS REQUIRED)
 
 ### ❌ WRONG (state flags and NFT ownership pass while value misroutes silently)
 
 ```solidity
-// test/OVRFLOBook.t.sol — proves the offer was consumed and the stream moved,
-// not that the underlying left the book, the fee was paid, or the buyer
+// test/OVRFLOLENDING.t.sol — proves the liquidity was consumed and the stream moved,
+// not that the underlying left the lending, the fee was paid, or the buyer
 // (who posted liquidity upfront) is back to zero.
-(,,, uint128 capacity,) = book.offerState(offerId);
+(,,, uint128 capacity,) = lending.liquidityState(liquidityId);
 assertEq(capacity, 0);
 assertEq(underlying.balanceOf(SELLER), 100 ether);
 assertEq(sablier.ownerOf(28), BUYER);
-// missing: balanceOf(TREASURY), balanceOf(address(book)), balanceOf(BUYER)
+// missing: balanceOf(TREASURY), balanceOf(address(lending)), balanceOf(BUYER)
 ```
 
 ### ✅ CORRECT (every party that touched value is checked)
 
 ```solidity
-(,,, uint128 capacity,) = book.offerState(offerId);
+(,,, uint128 capacity,) = lending.liquidityState(liquidityId);
 assertEq(capacity, 0);
 assertEq(underlying.balanceOf(SELLER), 100 ether);
 assertEq(underlying.balanceOf(TREASURY), 0);
-assertEq(underlying.balanceOf(address(book)), 0);
+assertEq(underlying.balanceOf(address(lending)), 0);
 assertEq(underlying.balanceOf(BUYER), 0);
 assertEq(sablier.ownerOf(28), BUYER);
 ```
 
-**Why:** The highest-severity bug class in `OVRFLOBook` is a misrouted
+**Why:** The highest-severity bug class in `OVRFLOLENDING` is a misrouted
 payment: value sent to the wrong address, a fee skipped or double-charged,
 or funds stranded in the contract after teardown. State flags (`capacity ==
 0`, `active == false`, `loan.closed == true`) and NFT ownership
@@ -479,9 +442,9 @@ pass every flag and ownership assertion and ship a fund-loss bug.
 
 **Placement/Context:** Any non-fork or fork test that calls a function
 transferring `underlying`, `ovrfloToken`, or a Sablier stream NFT:
-`sellIntoOffer`, `buyListing`, `createBorrowPool`,
-`cancel*` functions, `claimPoolShare`, `closeLoan`, `repayLoan`. The four-party
-check (actor, counterparty, treasury, book) is the minimum. For loan
+`sellStreamToLiquidity`, `buyListing`, `createBorrowerLoanPool`,
+`cancel*` functions, `claimLoanPoolShare`, `closeLoan`, `repayLoan`. The four-party
+check (actor, counterparty, treasury, lending) is the minimum. For loan
 servicing, also assert `ovrfloToken.balanceOf`, `sablier.getWithdrawnAmount`,
 and `sablier.ownerOf` for the lender and borrower.
 
@@ -489,10 +452,10 @@ and `sablier.ownerOf` for the lender and borrower.
 
 ```bash
 # Find settlement tests that assert state/ownership but skip balanceOf
-# for treasury or the book contract:
-rg -l "sellIntoOffer|buyListing|createBorrowPool|claimPoolShare|closeLoan|repayLoan" \
-  test/OVRFLOBook.t.sol | \
-  xargs -I{} sh -c 'rg -L "balanceOf\(TREASURY\)|balanceOf\(address\(book\)\)" "{}" && echo "REVIEW: {}"'
+# for treasury or the lending contract:
+rg -l "sellStreamToLiquidity|buyListing|createBorrowerLoanPool|claimLoanPoolShare|closeLoan|repayLoan" \
+  test/OVRFLOLENDING.t.sol | \
+  xargs -I{} sh -c 'rg -L "balanceOf\(TREASURY\)|balanceOf\(address\(lending\)\)" "{}" && echo "REVIEW: {}"'
 ```
 
 **Documented in:** [`docs/solutions/best-practices/verify-token-balance-movement-not-just-ownership.md`](../best-practices/verify-token-balance-movement-not-just-ownership.md)
@@ -506,43 +469,43 @@ rg -l "sellIntoOffer|buyListing|createBorrowPool|claimPoolShare|closeLoan|repayL
 ### ❌ WRONG (silent zero defaults for a non-existent ID)
 
 ```solidity
-function offerState(uint256 offerId) external view returns (...) {
-    Offer storage offer = offers[offerId];
+function liquidityState(uint256 liquidityId) external view returns (...) {
+    LiquidityPosition storage liquidity = liquidityPositions[liquidityId];
     // no existence check — returns (address(0), address(0), 0, 0, false)
     // for an ID that was never created
-    return (offer.maker, offer.market, offer.aprBps, offer.capacity, offer.active);
+    return (liquidity.lender, liquidity.market, liquidity.aprBps, liquidity.capacity, liquidity.active);
 }
 ```
 
 ### ✅ CORRECT (revert with a sentinel check)
 
 ```solidity
-function offerState(uint256 offerId) external view returns (...) {
-    Offer storage offer = offers[offerId];
-    require(offer.maker != address(0), "OVRFLOBook: unknown offer");
-    return (offer.maker, offer.market, offer.aprBps, offer.capacity, offer.active);
+function liquidityState(uint256 liquidityId) external view returns (...) {
+    LiquidityPosition storage liquidity = liquidityPositions[liquidityId];
+    require(liquidity.lender != address(0), "OVRFLOLENDING: unknown liquidity");
+    return (liquidity.lender, liquidity.market, liquidity.aprBps, liquidity.capacity, liquidity.active);
 }
 ```
 
 **Why:** Returning zero defaults for a non-existent ID is silent garbage. An
-indexer or frontend cannot distinguish "this offer was cancelled" (real entry,
+indexer or frontend cannot distinguish "this liquidity was cancelled" (real entry,
 `active == false`) from "this ID was never created" (no entry, default
 struct). Reverting makes the distinction explicit. The sentinel is the
-`maker`/`borrower` field, which is `address(0)` in a
+`lender`/`borrower` field, which is `address(0)` in a
 default-initialized struct and always non-zero for a real entry. Torn-down
-entries (cancelled/filled) retain `maker`/`borrower` (only
+entries (cancelled/filled) retain `lender`/`borrower` (only
 `capacity`/`active` are zeroed), so the sentinel succeeds for dead entries
 and fails only for non-existent ones.
 
-**Placement/Context:** Every view function in `OVRFLOBook` that resolves a
-struct by ID: `offerState`, `saleListingState`, `loanState`. Also applies to any future view function
-added to the book or vault that resolves by ID.
+**Placement/Context:** Every view function in `OVRFLOLENDING` that resolves a
+struct by ID: `liquidityState`, `saleListingState`, `loanState`. Also applies to any future view function
+added to the lending or vault that resolves by ID.
 
 **How to detect violation:**
 
 ```bash
 # Find view functions that return a struct from a mapping without a sentinel check:
-rg -A5 "function .*State\(.*\) external view" src/OVRFLOBook.sol | \
+rg -A5 "function .*State\(.*\) external view" src/OVRFLOLENDING.sol | \
   rg -L "require.*address\(0\)|unknown" && echo "REVIEW: missing existence check"
 ```
 
@@ -627,40 +590,40 @@ terms.
 
 **Documented in:** [`docs/solutions/architecture-patterns/ovrflo-claim-per-user-pt-transfer-not-protocol-redemption.md`](../architecture-patterns/ovrflo-claim-per-user-pt-transfer-not-protocol-redemption.md)
 
-### R-06: Claim-time fee on posters (makers/lenders) in OVRFLOBook
+### R-06: Claim-time fee on posters (lenders/lenders) in OVRFLOLENDING
 
-**Finding:** A proposal to charge makers a fee when their position is
-claimed/settled (i.e. when a lender calls `claimPoolShare` to recover pool
+**Finding:** A proposal to charge lenders a fee when their position is
+claimed/settled (i.e. when a lender calls `claimLoanPoolShare` to recover pool
 proceeds), in addition to the existing fill-time fee.
 
-**Rejected because:** The book's fee model is already coherent and optimally
+**Rejected because:** The lending's fee model is already coherent and optimally
 placed. `feeBps` is taken once, in underlying, at fill time, and consistently
 taxes the side extracting liquidity or immediacy:
-- `sellIntoOffer` — the seller pays (net of `grossPrice`)
+- `sellStreamToLiquidity` — the seller pays (net of `grossPrice`)
 - `buyListing` — the seller pays (net of `grossPrice`, at the listing's
   snapshotted `feeBps`)
-- `createBorrowPool` — the borrower pays (net of proceeds)
+- `createBorrowerLoanPool` — the borrower pays (net of proceeds)
 
 Lenders and claimants never pay; the fee taxes demand for capital, not the
 provision of it. A claim-time fee on the poster is worse on every axis:
 
-1. **Taxes resting liquidity.** Offer depth is the whole market. Charging
-   makers on recovery lowers their realized APR below the posted `aprBps`,
-   so either books thin out or makers demand wider APRs to compensate. The
+1. **Taxes resting liquidity.** LiquidityPosition depth is the whole market. Charging
+   lenders on recovery lowers their realized APR below the posted `aprBps`,
+   so either lending markets thin out or lenders demand wider APRs to compensate. The
    protocol earns roughly the same either way, with worse UX.
 2. **Breaks rate transparency.** Today "posted APR = lender's realized yield"
    is exactly true — a rare, marketable property the UI relies on (one BOOK
    APR column, no supply/borrow spread). A claim fee turns every displayed
    rate into "10%, but actually 9.85% depending on when you claim."
 3. **Lands inside `_claimFair`.** That function is the most delicate
-   accounting in the book (pro-rata caps, deficit harvesting from open
-   streams, `poolProceeds` conservation; see patterns #12 and #14). Threading
-   fee extraction through `recovered`/`entitled`/`poolReceived` adds rounding
+   accounting in the lending (pro-rata caps, deficit harvesting from open
+   streams, `loanPoolProceeds` conservation; see patterns #12 and #14). Threading
+   fee extraction through `recovered`/`entitled`/`loanPoolReceived` adds rounding
    dust across many small pro-rata claims and new invariants to fuzz — large
    audit surface for a second-order revenue stream. Contradicts the
    "this is Solidity, not Python" simplicity preference.
 4. **Retroactivity.** Listings already snapshot `feeBps` at post time to
-   protect makers from fee changes. A claim-time fee is inherently exposed to
+   protect lenders from fee changes. A claim-time fee is inherently exposed to
    governance changing the fee between fill and claim unless it is snapshotted
    per pool — more state, no new capability.
 5. **Double taxation of the same notional.** The borrow fee at origination
@@ -672,63 +635,63 @@ performance fee on the lender's *interest only* (`obligation - principal`),
 taken once at pool settlement rather than per claim. That preserves principal
 integrity and leaves `_claimFair`'s per-claim math untouched. Even that is
 deferred: at 10% APR and 25bps fill fees the spread is thin, and the simpler
-pitch ("makers keep every bps they post") is worth more than the revenue.
+pitch ("lenders keep every bps they post") is worth more than the revenue.
 
 ---
 
-## 9. The factory owns every deployed book — book admin is forwarded, not direct (ALWAYS REQUIRED)
+## 9. The factory owns every deployed lending — lending admin is forwarded, not direct (ALWAYS REQUIRED)
 
-### ❌ WRONG (multisig calls the book directly, bypassing the factory)
+### ❌ WRONG (multisig calls the lending directly, bypassing the factory)
 
 ```solidity
-// deployBook transfers ownership to the multisig
+// deployLending transfers ownership to the multisig
 b.transferOwnership(owner());
 
-// multisig calls OVRFLOBook.setAprBounds directly
-OVRFLOBook(book).setAprBounds(500, 2000);
-// Now a factory ownership transfer does NOT move book governance.
-// Books stay owned by the old multisig address.
+// multisig calls OVRFLOLENDING.setAprBounds directly
+OVRFLOLENDING(lending).setAprBounds(500, 2000);
+// Now a factory ownership transfer does NOT move lending governance.
+// Lending markets stay owned by the old multisig address.
 ```
 
 ### ✅ CORRECT (factory stays the owner; admin flows through forwarders)
 
 ```solidity
-// deployBook — no transferOwnership call; factory is the book's owner
-OVRFLOBook b = new OVRFLOBook(address(this), ovrflo, sablierAddr);
+// deployLending — no transferOwnership call; factory is the lending's owner
+OVRFLOLENDING b = new OVRFLOLENDING(address(this), ovrflo, sablierAddr);
 // factory remains owner
 
 // factory exposes forwarding functions
-function setBookAprBounds(address book, uint16 aprMinBps_, uint16 aprMaxBps_)
+function setLendingAprBounds(address lending, uint16 aprMinBps_, uint16 aprMaxBps_)
     external onlyOwner
 {
-    _requireKnownBook(book);
-    OVRFLOBook(book).setAprBounds(aprMinBps_, aprMaxBps_);
-    emit BookAprBoundsSet(book, aprMinBps_, aprMaxBps_);
+    _requireKnownLending(lending);
+    OVRFLOLENDING(lending).setAprBounds(aprMinBps_, aprMaxBps_);
+    emit LendingAprBoundsSet(lending, aprMinBps_, aprMaxBps_);
 }
 ```
 
 **Why:** The factory is the single admin hub. If it owns every vault and
-every book, a single factory ownership transfer moves governance for all
-dependents atomically. If books are owned directly by the multisig, a factory
-ownership rotation silently abandons book governance — the books stay owned by
+every lending, a single factory ownership transfer moves governance for all
+dependents atomically. If lending markets are owned directly by the multisig, a factory
+ownership rotation silently abandons lending governance — the lending markets stay owned by
 the old multisig address while the factory moves to the new one. This is an
 operational incident in a timelocked-multisig context, not a refactor.
 
-**Placement/Context:** `OVRFLOFactory.deployBook` (must not transfer
-ownership away from the factory) and every admin action on `OVRFLOBook`
+**Placement/Context:** `OVRFLOFactory.deployLending` (must not transfer
+ownership away from the factory) and every admin action on `OVRFLOLENDING`
 (`setAprBounds`, `setFee`, `setTreasury` — must be forwarded through a
-factory function, not called directly on the book).
+factory function, not called directly on the lending).
 
 **How to detect violation:**
 
 ```bash
-# deployBook must NOT call transferOwnership
+# deployLending must NOT call transferOwnership
 rg "transferOwnership" src/OVRFLOFactory.sol | rg -v "token.transferOwnership(ovrflo)"
 # expected: no matches (the only transferOwnership is for OVRFLOToken -> vault)
 
-# Book admin functions must not be called directly by the multisig
+# Lending admin functions must not be called directly by the multisig
 rg "setAprBounds|setFee|setTreasury" src/OVRFLOFactory.sol
-# expected: 3 forwarding functions (setBookAprBounds, setBookFee, setBookTreasury)
+# expected: 3 forwarding functions (setLendingAprBounds, setLendingFee, setLendingTreasury)
 ```
 
 **Documented in:** [`docs/solutions/architecture-patterns/ovrflo-factory-deployment-admin-management-pattern.md`](../architecture-patterns/ovrflo-factory-deployment-admin-management-pattern.md)
@@ -801,24 +764,24 @@ rg "underlyingToOvrflo\[config.underlying\]" src/OVRFLOFactory.sol
 ### ❌ WRONG (duplicate IDs double-count capacity or create double loans)
 
 ```solidity
-// createBorrowPool — no ordering check
-for (uint256 i = 0; i < offerIds.length; i++) {
-    Offer storage offer = offers[offerIds[i]];
-    require(offer.active, "OVRFLOBook: offer inactive");
-    totalAvailable += offer.capacity; // duplicate ID => counted twice
+// createBorrowerLoanPool — no ordering check
+for (uint256 i = 0; i < liquidityIds.length; i++) {
+    LiquidityPosition storage liquidity = liquidityPositions[liquidityIds[i]];
+    require(liquidity.active, "OVRFLOLENDING: liquidity inactive");
+    totalAvailable += liquidity.capacity; // duplicate ID => counted twice
 }
 // Borrower receives more underlying than was actually consumed from any
-// single offer — fund theft from other offers' escrowed funds.
+// single liquidity — fund theft from other liquidityPositions' escrowed funds.
 ```
 
 ### ✅ CORRECT (strict-increasing guard rejects duplicates and unsorted input)
 
 ```solidity
-for (uint256 i = 0; i < offerIds.length; i++) {
-    if (i > 0) require(offerIds[i] > offerIds[i - 1], "OVRFLOBook: duplicate or unsorted ids");
-    Offer storage offer = offers[offerIds[i]];
-    require(offer.active, "OVRFLOBook: offer inactive");
-    totalAvailable += offer.capacity;
+for (uint256 i = 0; i < liquidityIds.length; i++) {
+    if (i > 0) require(liquidityIds[i] > liquidityIds[i - 1], "OVRFLOLENDING: duplicate or unsorted ids");
+    LiquidityPosition storage liquidity = liquidityPositions[liquidityIds[i]];
+    require(liquidity.active, "OVRFLOLENDING: liquidity inactive");
+    totalAvailable += liquidity.capacity;
 }
 ```
 
@@ -826,24 +789,24 @@ for (uint256 i = 0; i < offerIds.length; i++) {
 separate fill loop, duplicate IDs cause double-counting in validation
 (inflated `totalAvailable` or `totalDeployable`) and double-execution in the
 fill (two loans against the same escrowed stream, or funds drawn twice from
-the same offer). `require(ids[i] > ids[i-1])` rejects both duplicates and
+the same liquidity). `require(ids[i] > ids[i-1])` rejects both duplicates and
 unsorted input in a single check. As defense-in-depth, also re-assert the
 `active` flag inside the fill loop.
 
 **Placement/Context:** Any function that accepts an array of IDs and
-iterates them more than once: `createBorrowPool` (offer IDs), and any
+iterates them more than once: `createBorrowerLoanPool` (liquidity IDs), and any
 future batch primitive.
 
 **How to detect violation:**
 
 ```bash
-rg "duplicate or unsorted ids" src/OVRFLOBook.sol
-# expected: 1 match (createBorrowPool only; createLenderPool removed)
+rg "duplicate or unsorted ids" src/OVRFLOLENDING.sol
+# expected: 1 match (createBorrowerLoanPool only; createLenderPool removed)
 ```
 
 **Documented in:** [`docs/solutions/design-patterns/solidity-batch-function-safety-patterns.md`](../design-patterns/solidity-batch-function-safety-patterns.md)
 
-**Fuzz enforcement:** The multi-offer `createBorrowPool` handler in `test/fizz/` generates 1-3 offer arrays with strictly-increasing IDs by construction, and `property_offerIdsStrictlyIncreasing` asserts the ordering invariant after each pool creation.
+**Fuzz enforcement:** The multi-liquidity `createBorrowerLoanPool` handler in `test/fizz/` generates 1-3 liquidity arrays with strictly-increasing IDs by construction, and `property_liquidityIdsStrictlyIncreasing` asserts the ordering invariant after each pool creation.
 
 ---
 
@@ -907,19 +870,19 @@ rg "unknown PT" src/OVRFLO.sol
 
 ---
 
-## 12. Cap shared-pool claims at `min(remaining, poolProceeds)` — no pro-rata distribution (ALWAYS REQUIRED)
+## 12. Cap shared-pool claims at `min(remaining, loanPoolProceeds)` — no pro-rata distribution (ALWAYS REQUIRED)
 
-### ❌ WRONG (pro-rata cap on shrinking pot strands minority contributors)
+### ❌ WRONG (pro-rata cap on shrinking pot strands minority lenders)
 
 ```solidity
-// claimPoolShare — pro-rata share of current (shrinking) poolProceeds
+// claimLoanPoolShare — pro-rata share of current (shrinking) loanPoolProceeds
 uint256 proRataShare =
-    uint256(poolProceeds[poolId]) * poolContributions[poolId][msg.sender]
+    uint256(loanPoolProceeds[poolId]) * loanPoolContributions[poolId][msg.sender]
         / pools[poolId].totalContributed;
 uint256 available = proRataShare;
 if (remaining < available) available = remaining;
-// After a majority contributor drains the pot, minority pro-rata floors to 0.
-// totalContributed=100, A=99, B=1, poolProceeds=1 after A claims:
+// After a majority lender drains the pot, minority pro-rata floors to 0.
+// totalContributed=100, A=99, B=1, loanPoolProceeds=1 after A claims:
 //   B's proRataShare = 1 * 1 / 100 = 0 → permanently stranded.
 ```
 
@@ -927,29 +890,29 @@ if (remaining < available) available = remaining;
 
 ```solidity
 uint256 available = remaining;
-if (uint256(poolProceeds[poolId]) < available) available = uint256(poolProceeds[poolId]);
-require(uint256(amount) <= available, "OVRFLOBook: exceeds available");
+if (uint256(loanPoolProceeds[poolId]) < available) available = uint256(loanPoolProceeds[poolId]);
+require(uint256(amount) <= available, "OVRFLOLENDING: exceeds available");
 ```
 
-**Why:** The pro-rata cap was intended to prevent a majority contributor from
-draining `poolProceeds` before others can claim. But it caused the opposite
-problem: as the pot shrank, minority contributors' pro-rata share floored to
+**Why:** The pro-rata cap was intended to prevent a majority lender from
+draining `loanPoolProceeds` before others can claim. But it caused the opposite
+problem: as the pot shrank, minority lenders' pro-rata share floored to
 zero, permanently stranding their proceeds. The correct approach is to cap
-each claim by `min(remaining, poolProceeds)` — `poolReceived` already
-prevents any contributor from claiming more than their total entitlement, and
-`poolProceeds` caps at what's actually in the pot. First-come-first-served on
+each claim by `min(remaining, loanPoolProceeds)` — `loanPoolReceived` already
+prevents any lender from claiming more than their total entitlement, and
+`loanPoolProceeds` caps at what's actually in the pot. First-come-first-served on
 proceeds is acceptable; permanent stranding is not.
 
-**Placement/Context:** `claimPoolShare` — the shared-pot claim channel for
+**Placement/Context:** `claimLoanPoolShare` — the shared-pot claim channel for
 both borrower and lender pools.
 
 **How to detect violation:**
 
 ```bash
-rg "proRataShare" src/OVRFLOBook.sol
+rg "proRataShare" src/OVRFLOLENDING.sol
 # expected: 0 matches — pro-rata cap removed
-rg "poolProceeds\[poolId\] < available" src/OVRFLOBook.sol
-# expected: 1 match in claimPoolShare
+rg "loanPoolProceeds\[poolId\] < available" src/OVRFLOLENDING.sol
+# expected: 1 match in claimLoanPoolShare
 ```
 
 **Documented in:** [`docs/solutions/design-patterns/solidity-batch-function-safety-patterns.md`](../design-patterns/solidity-batch-function-safety-patterns.md)
@@ -959,26 +922,26 @@ rg "poolProceeds\[poolId\] < available" src/OVRFLOBook.sol
 ## 14. Harvest branch for stream-accrued claims (ALWAYS REQUIRED)
 
 **Why:** The `claimable` formula in `_claimFair` includes `min(withdrawable, outstanding)`
-for open loans, so a contributor can claim their pro-rata share of stream accrual
-even when `poolProceeds == 0` and `drawn == 0`. The harvest branch draws the deficit
-(`requestAmount - poolProceeds`) from the stream, depositing it into `poolProceeds`
-before paying the contributor. This is the primary mechanism for claiming accrued
+for open loans, so a lender can claim their pro-rata share of stream accrual
+even when `loanPoolProceeds == 0` and `drawn == 0`. The harvest branch draws the deficit
+(`requestAmount - loanPoolProceeds`) from the stream, depositing it into `loanPoolProceeds`
+before paying the lender. This is the primary mechanism for claiming accrued
 stream value from open pool loans — not a defense-in-depth fallback. Without it,
-contributors could only claim after `closeLoan` or `repayLoan`, not from live accrual.
+lenders could only claim after `closeLoan` or `repayLoan`, not from live accrual.
 
-**Placement/Context:** `_claimFair` in `src/OVRFLOBook.sol` — the harvest
-branch that draws from the stream when `poolProceeds < requestAmount`.
+**Placement/Context:** `_claimFair` in `src/OVRFLOLENDING.sol` — the harvest
+branch that draws from the stream when `loanPoolProceeds < requestAmount`.
 
 **How to detect violation:**
 
 ```bash
-rg "loan.closed && poolProceeds < requestAmount" src/OVRFLOBook.sol
+rg "loan.closed && loanPoolProceeds < requestAmount" src/OVRFLOLENDING.sol
 # expected: 0 matches (harvest guard uses !loan.closed, not loan.closed)
-rg "poolProceeds\[poolId\] < requestAmount" src/OVRFLOBook.sol
+rg "loanPoolProceeds\[poolId\] < requestAmount" src/OVRFLOLENDING.sol
 # expected: 1 match in _claimFair harvest branch
 ```
 
-**Documented in:** OVRFLOBook pool claim fairness fix (2026-07-06), `_claimFair` harvest fix (2026-07-07)
+**Documented in:** OVRFLOLENDING pool claim fairness fix (2026-07-06), `_claimFair` harvest fix (2026-07-07)
 
 ---
 
@@ -992,17 +955,17 @@ require an explicit overflow check inside the function. The `uint128` parameter
 type moves the check to the ABI decoder, which is cheaper and catches invalid
 inputs earlier.
 
-**Placement/Context:** `createBorrowPool` in `src/OVRFLOBook.sol` — parameters
+**Placement/Context:** `createBorrowerLoanPool` in `src/OVRFLOLENDING.sol` — parameters
 `targetBorrow` and `minAcceptable`.
 
 **How to detect violation:**
 
 ```bash
-rg "function createBorrowPool" src/OVRFLOBook.sol
+rg "function createBorrowerLoanPool" src/OVRFLOLENDING.sol
 # expected: 1 match — verify targetBorrow and minAcceptable are uint128, not uint256
 ```
 
-**Documented in:** OVRFLOBook cleanup refactor (2026-07-07), pool claim fairness brainstorm
+**Documented in:** OVRFLOLENDING cleanup refactor (2026-07-07), pool claim fairness brainstorm
 
 ---
 
@@ -1017,41 +980,41 @@ converts back to `uint128` after math completes, reverting on overflow. This
 pattern is inherent to the design — storage size and math safety have
 different optimal types.
 
-**Placement/Context:** `src/OVRFLOBook.sol` — storage structs, intermediate
+**Placement/Context:** `src/OVRFLOLENDING.sol` — storage structs, intermediate
 math, and `_toUint128`.
 
 **How to detect violation:**
 
 ```bash
-rg "_toUint128" src/OVRFLOBook.sol
+rg "_toUint128" src/OVRFLOLENDING.sol
 # expected: matches at every uint256 -> uint128 narrowing gate
-rg "uint128\(uint256" src/OVRFLOBook.sol
+rg "uint128\(uint256" src/OVRFLOLENDING.sol
 # expected: 0 matches — raw casts should use _toUint128 instead
 ```
 
-**Documented in:** [`docs/solutions/best-practices/avoid-unnecessary-type-widening-with-invariant-guarantees.md`](../best-practices/avoid-unnecessary-type-widening-with-invariant-guarantees.md), OVRFLOBook cleanup refactor (2026-07-07)
+**Documented in:** [`docs/solutions/best-practices/avoid-unnecessary-type-widening-with-invariant-guarantees.md`](../best-practices/avoid-unnecessary-type-widening-with-invariant-guarantees.md), OVRFLOLENDING cleanup refactor (2026-07-07)
 
 ---
 
-## 17. _consumeOffers early-break behavior (ALWAYS REQUIRED)
+## 17. _consumeLiquidityPositions early-break behavior (ALWAYS REQUIRED)
 
-**Why:** The `_consumeOffers` loop breaks when `toBorrow == 0`, meaning
-trailing offers past the break point are never touched. This retains residual
-capacity and active status for unconsumed offers. The caller
-(`createBorrowPool`) may pass more offers than needed to fill `targetBorrow`;
-the excess offers are left untouched and available for future consumption.
-This is intentional — it allows borrowers to include backup offers without
+**Why:** The `_consumeLiquidityPositions` loop breaks when `toBorrow == 0`, meaning
+trailing liquidityPositions past the break point are never touched. This retains residual
+capacity and active status for unconsumed liquidityPositions. The caller
+(`createBorrowerLoanPool`) may pass more liquidityPositions than needed to fill `targetBorrow`;
+the excess liquidityPositions are left untouched and available for future consumption.
+This is intentional — it allows borrowers to include backup liquidityPositions without
 committing to all of them.
 
-**Placement/Context:** `_consumeOffers` in `src/OVRFLOBook.sol`.
+**Placement/Context:** `_consumeLiquidityPositions` in `src/OVRFLOLENDING.sol`.
 
 **How to detect violation:**
 
 ```bash
-rg "toBorrow == 0" src/OVRFLOBook.sol
-# expected: 1 match in _consumeOffers loop break condition
+rg "toBorrow == 0" src/OVRFLOLENDING.sol
+# expected: 1 match in _consumeLiquidityPositions loop break condition
 ```
 
-**Documented in:** [`docs/solutions/design-patterns/solidity-batch-function-safety-patterns.md`](../design-patterns/solidity-batch-function-safety-patterns.md), OVRFLOBook cleanup refactor (2026-07-07)
+**Documented in:** [`docs/solutions/design-patterns/solidity-batch-function-safety-patterns.md`](../design-patterns/solidity-batch-function-safety-patterns.md), OVRFLOLENDING cleanup refactor (2026-07-07)
 
 ---
