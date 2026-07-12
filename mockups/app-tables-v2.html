@@ -11,20 +11,20 @@
       CONTRACT WIRING MAP (source of truth for the web/ implementation)
 
       YOUR LENDING panel
-        - Posted capacity ....... sum of OVRFLOBook.offers[id].capacity where maker == user && active (indexer)
+        - Posted capacity ....... sum of OVRFLOLENDING.liquidityPositions[id].capacity where lender == user && active (indexer)
         - Open as lender ........ sum of loans[id].obligation - drawn - repaid where lender == user && !closed
-        - Claimable ............. claimPoolShare preview: poolContributions[poolId][user] pro-rata vs poolProceeds
-        - Net APR ............... weighted avg aprBps across user's active offers/loans (indexer)
+        - Claimable ............. claimLoanPoolShare preview: loanPoolContributions[poolId][user] pro-rata vs loanPoolProceeds
+        - Net APR ............... weighted avg aprBps across user's active liquidityPositions/loans (indexer)
 
       YOUR BORROWS panel
         - Outstanding ........... sum over user's open loans of obligation - (drawn + repaid)
         - Obligation ............ loans[id].obligation (fixed at origination, ovrfloToken-denominated)
-        - APR ................... aprBps agreed at origination (Pool.aprBps / offer aprBps)
+        - APR ................... aprBps agreed at origination (Pool.aprBps / liquidity aprBps)
 
       MARKETS table (one row per approved series)
         - Asset / maturity ...... OVRFLO series registry: SeriesInfo.ptToken, SeriesInfo.expiryCached
-        - Offer depth ........... OVRFLOBook.gatherOfferCapacities(market) — sum of active offer capacity
-        - Lend APR .............. top-of-book offer aprBps for the market (indexer sort)
+        - LiquidityPosition depth ........... OVRFLOLENDING.gatherLiquidity(market) — sum of active liquidity capacity
+        - Lend APR .............. top-of-lending liquidity aprBps for the market (indexer sort)
         - Borrow APR ............ same aprBps grossed up by SeriesInfo.feeBps (borrower pays the fee)
         - All amounts are ovrfloToken (1:1 with underlying); display symbol per market's ovrfloToken
     -->
@@ -63,7 +63,7 @@
                 <thead>
                     <tr>
                         <th>Asset</th>
-                        <th>Offer Depth</th>
+                        <th>LiquidityPosition Depth</th>
                         <th>Lend APR</th>
                         <th>Borrow APR</th>
                         <th style="text-align: right;">Actions</th>

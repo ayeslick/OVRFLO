@@ -25,14 +25,14 @@ Curated from [ethskills.com/security](https://ethskills.com/security/SKILL.md). 
 | Pattern | OVRFLO surface | Status / probe | Invariant ID |
 |---------|---------------|----------------|--------------|
 | **No floating point / precision** | `StreamPricing` uses PRB-Math `mulDiv`; fees and APR in basis points; obligation/price rounding is directional (floor price, ceil obligation) | Enforced: mulDiv avoids precision loss. Probe: verify multiply-before-divide in every calculation path; confirm rounding directions in `obligationForFill` favor the protocol, not the borrower. | I-3, I-5, E-2 |
-| **Reentrancy (CEI)** | `OVRFLOBook` uses `nonReentrant` on all entry points. `OVRFLO` vault (`deposit`, `claim`, `wrap`, `unwrap`) does **not**. | Partial: Book is guarded; vault is not. Probe: trace external calls in vault paths (`safeTransferFrom`, `createWithDurations`) — can a malicious PT or Sablier callback re-enter? State updates before or after external calls? | — (gap) |
+| **Reentrancy (CEI)** | `OVRFLOLENDING` uses `nonReentrant` on all entry points. `OVRFLO` vault (`deposit`, `claim`, `wrap`, `unwrap`) does **not**. | Partial: Lending is guarded; vault is not. Probe: trace external calls in vault paths (`safeTransferFrom`, `createWithDurations`) — can a malicious PT or Sablier callback re-enter? State updates before or after external calls? | — (gap) |
 | **SafeERC20** | All token transfers use `safeTransfer` / `safeTransferFrom` (OpenZeppelin SafeERC20) | Enforced. Probe: grep for raw `transfer` / `transferFrom` / `approve` calls that bypass SafeERC20. | — |
 | **Oracle safety (no DEX spot)** | Uses Pendle TWAP (`getPtToSyRate`) with `twapDurationFixed` in `[15m, 30m]` (G-29). Not a DEX spot price. | TWAP is manipulation-resistant over the window. Freshness/cardinality checked at onboarding only — not revalidated per deposit (X-1). Low practical risk: external Pendle activity keeps observations fresh; keeper bot via `prepareOracle()` as fallback. Probe: flash loan manipulation across the TWAP window; extreme staleness if market becomes completely inactive. | X-1 |
 | **Vault inflation** | OVRFLO is **not** ERC-4626, but `wrap()`/`unwrap()` have a reserve model: `wrappedUnderlying` tracks exact deposits (G-16 balance-delta). Donating underlying directly to the vault increases `balanceOf` but not `wrappedUnderlying`. | Donation does not inflate shares: `unwrap` is bounded by `wrappedUnderlying` (G-15), not raw balance. `sweepExcessUnderlying` removes the excess. Probe: confirm no path lets a donor inflate the claimable reserve. | I-7, E-1 |
-| **Access control** | Multisig → `OVRFLOFactory` → `OVRFLO` vault (`onlyAdmin`, G-1). `OVRFLOBook` has `onlyOwner`. Two-step ownership on factory and book. No on-chain timelock. | Enforced via ownership chain. But `setMarketDepositLimit` can lower below current deposits (I-6) and `setAprBounds` does not revalidate existing orders (I-4, I-5). Probe: what can the multisig do without delay that harms users? | I-6, I-4, I-5, G-1 |
-| **MEV / sandwich** | Book pricing is time-dependent (`block.timestamp` vs `expiryCached`). Deposit split depends on oracle rate. | Deposit is not a swap (no AMM slippage), but the `toUser`/`toStream` split depends on the TWAP rate. Probe: can a sandwich attacker manipulate the rate within a block to skew the split? | X-1 |
+| **Access control** | Multisig → `OVRFLOFactory` → `OVRFLO` vault (`onlyAdmin`, G-1). `OVRFLOLENDING` has `onlyOwner`. Two-step ownership on factory and lending. No on-chain timelock. | Enforced via ownership chain. But `setMarketDepositLimit` can lower below current deposits (I-6) and `setAprBounds` does not revalidate existing orders (I-4, I-5). Probe: what can the multisig do without delay that harms users? | I-6, I-4, I-5, G-1 |
+| **MEV / sandwich** | Lending pricing is time-dependent (`block.timestamp` vs `expiryCached`). Deposit split depends on oracle rate. | Deposit is not a swap (no AMM slippage), but the `toUser`/`toStream` split depends on the TWAP rate. Probe: can a sandwich attacker manipulate the rate within a block to skew the split? | X-1 |
 | **Input validation** | Guards G-5 (dust gate), G-6/G-10 (maturity gates), G-7 (deposit limit), G-8/G-9 (slippage), G-17/G-18 (APR bounds), G-19 (fee ceiling), G-20 (per-post APR) | Enforced at call sites. Probe: check for missing zero-address or zero-amount validation on admin paths (`setTreasury`, `setSeriesApproved` parameters). | various G-* |
-| **Infinite approvals** | `OVRFLOBook` approves Sablier for `transferFrom` (escrow of stream NFTs). | Probe: check whether the approval to Sablier is `type(uint256).max` or scoped. If max, a Sablier vulnerability could drain escrowed NFTs. | — |
+| **Infinite approvals** | `OVRFLOLENDING` approves Sablier for `transferFrom` (escrow of stream NFTs). | Probe: check whether the approval to Sablier is `type(uint256).max` or scoped. If max, a Sablier vulnerability could drain escrowed NFTs. | — |
 
 ### Patterns considered but not applicable
 
@@ -51,7 +51,7 @@ Curated from [ethskills.com/security](https://ethskills.com/security/SKILL.md). 
 Light reference to [ethskills.com/standards](https://ethskills.com/standards/SKILL.md) for live EIP awareness.
 
 - **ERC-20**: `ovrfloToken` is a standard OpenZeppelin ERC20. PT and underlying tokens are ERC20. `mint`/`burn` are owner-restricted (vault only). Standard `transfer`/`transferFrom`/`approve` are inherited.
-- **ERC-721**: Sablier Lockup Linear streams are ERC721 NFTs. `transferFrom` moves custody into/out of the Book escrow. Eligibility checks (`StreamPricing.requireEligible`, X-1) validate stream properties at pledge time.
+- **ERC-721**: Sablier Lockup Linear streams are ERC721 NFTs. `transferFrom` moves custody into/out of the Lending escrow. Eligibility checks (`StreamPricing.requireEligible`, X-1) validate stream properties at pledge time.
 - **ERC-4626**: **Not used.** OVRFLO's vault uses a custom `deposit`/`claim`/`wrap`/`unwrap` model, not the 4626 `deposit`/`redeem`/`convertToShares` interface. The vault-inflation attack pattern still applies via the wrap reserve (see security-pattern table above), but the standard 4626 share-price manipulation does not because `wrap()` uses a balance-delta check (G-16) and `unwrap()` is bounded by `wrappedUnderlying` (G-15), not by `totalSupply`-to-`totalAssets` ratio.
 
 ---
@@ -106,20 +106,20 @@ flowchart TB
 | `evm-audit-general` | Overall code quality, event emission, error handling, state-machine completeness | All 45 entry points; I-9, I-11, I-13, I-17 |
 | `evm-audit-precision-math` | `StreamPricing` mulDiv, rounding direction in `obligationForFill` and `grossPrice`, basis-point math, `MIN_PT_AMOUNT` | I-3, I-5, E-2; G-17, G-18, G-19, G-20 |
 | `evm-audit-erc20` | `ovrfloToken` mint/burn, PT transfers, SafeERC20 usage, `sweepExcess` correctness | I-1, I-7; G-11, G-16, G-15 |
-| `evm-audit-defi-lending` | Self-repaying loans, no health check, no liquidation, `createBorrowPool`/`repayLoan`/`closeLoan` lifecycle, `outstanding` relation | I-11, I-13, E-2; G-24, G-23; `closeLoan()`, `claimPoolShare()`, `repayLoan()` |
+| `evm-audit-defi-lending` | Self-repaying loans, no health check, no liquidation, `createBorrowerLoanPool`/`repayLoan`/`closeLoan` lifecycle, `outstanding` relation | I-11, I-13, E-2; G-24, G-23; `closeLoan()`, `claimLoanPoolShare()`, `repayLoan()` |
 | `evm-audit-erc4626` | Vault-inflation via wrap-reserve donation (not standard 4626), `wrap()`/`unwrap()` reserve model, `sweepExcessUnderlying` | I-7, E-1; G-16, G-15; `wrap()`, `unwrap()`, `sweepExcessUnderlying()` |
 | `evm-audit-oracles` | Pendle TWAP freshness, flash loan manipulation, `getPtToSyRate` consumption, `twapDurationFixed` bounds, deposit split skewing | X-1; G-29; G-6, G-7, G-8, G-9; `deposit()` |
-| `evm-audit-erc721` | Sablier stream NFT custody, `transferFrom` escrow, `requireEligible` checks, NFT ownership through loan lifecycle | X-1; `sellIntoOffer()`, `postSaleListing()`, `buyListing()`, `createBorrowPool()`, `closeLoan()` |
+| `evm-audit-erc721` | Sablier stream NFT custody, `transferFrom` escrow, `requireEligible` checks, NFT ownership through loan lifecycle | X-1; `sellStreamToLiquidity()`, `postSaleListing()`, `buyListing()`, `createBorrowerLoanPool()`, `closeLoan()` |
 | `evm-audit-access-control` | Multisig → factory → vault chain, `onlyAdmin`/`onlyOwner`/`onlyOwner` gating, two-step ownership, no on-chain timelock, `setMarketDepositLimit` lowering, `setAprBounds` non-retroactivity | I-6, I-4, I-5, I-9; G-1, G-2, G-3; admin entry points |
 | `evm-audit-flashloans` | Flash loan manipulation of Pendle TWAP, deposit split skewing within a single transaction, cross-market flash loan paths | X-1; `deposit()` |
-| `evm-audit-dos` | Unbounded offer/listing/loan ID growth, dust griefing via `MIN_PT_AMOUNT`, gas limits in `multicall` loops, stale-order accumulation | I-17; G-5; `postOffer()`, `multicall()` |
+| `evm-audit-dos` | Unbounded liquidity/listing/loan ID growth, dust griefing via `MIN_PT_AMOUNT`, gas limits in `multicall` loops, stale-order accumulation | I-17; G-5; `supplyLiquidity()`, `multicall()` |
 | `evm-audit-governance` | Multisig + two-step ownership, no on-chain timelock/pause, admin key compromise, no vault admin migration path | I-6, I-4, I-5; `transferOwnership()`, `acceptOwnership()` |
 
 ### Excluded domains — not routed
 
 | Domain | Reason |
 |--------|--------|
-| `evm-audit-defi-amm` | OVRFLO has no AMM; the Book is an orderbook, not a liquidity pool. |
+| `evm-audit-defi-amm` | OVRFLO has no AMM; the Lending is an orderlending, not a liquidity pool. |
 | `evm-audit-defi-staking` | No staking, liquid staking, or restaking. |
 | `evm-audit-erc4337` | No account abstraction, paymasters, or session keys. |
 | `evm-audit-bridges` | Mainnet only; no cross-chain interactions. |

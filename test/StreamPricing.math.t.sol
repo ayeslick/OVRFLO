@@ -230,7 +230,8 @@ contract StreamPricingMathTest is Test {
     }
 
     function test_Fuzz_ObligationForFill_FastPathOnlyWhenExactMatch(uint128 remaining, uint16 aprBps, uint256 ttm)
-        public view
+        public
+        view
     {
         remaining = uint128(bound(uint256(remaining), 1, type(uint128).max));
         ttm = bound(ttm, 0, 100 * 365 days);
@@ -275,7 +276,10 @@ contract StreamPricingMathTest is Test {
         assertGe(uint256(ob), borrowAmount, "obligation below borrow");
     }
 
-    function test_Fuzz_RealisticRange_GrossPricePositive(uint128 remainingSeed, uint16 aprBps, uint256 ttmSeed) public view {
+    function test_Fuzz_RealisticRange_GrossPricePositive(uint128 remainingSeed, uint16 aprBps, uint256 ttmSeed)
+        public
+        view
+    {
         uint128 remaining = uint128(bound(uint256(remainingSeed), 1 ether, 10_000 ether));
         uint16 apr = uint16(bound(uint256(aprBps), 0, 5000));
         uint256 ttm = bound(ttmSeed, 1, 2 * 365 days);
@@ -325,7 +329,8 @@ contract StreamPricingMathTest is Test {
     ///      always 1 wei — it can be up to floor(F/W) - 1 when the factor is
     ///      large. But the invariant obligation <= remaining always holds.
     function test_Fuzz_RoundTrip_ObligationOfGrossPriceLeRemaining(uint128 remaining, uint16 aprBps, uint256 ttm)
-        public view
+        public
+        view
     {
         remaining = uint128(bound(uint256(remaining), 1, type(uint128).max));
         ttm = bound(ttm, 0, 100 * 365 days);

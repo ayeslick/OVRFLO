@@ -44,24 +44,24 @@ enums have been widened to reflect our stack; everything else matches the upstre
   1. ERC-721 current ownership comes from the token, not from derived protocol events.
   2. Do not use `forge script --broadcast` against an Anvil mainnet fork (foundry#11714); use `forge create` + `cast send` via `script/seed-local.sh`.
   3. Modal bodies — and only modal bodies — are wrapped in a class-component error boundary with an `onReset` contract (header/close button stay outside).
-  4. Prevent self-matched loans in OVRFLOBook (`createBorrowPool` / `createLenderPool`).
+  4. Prevent self-matched loans in OVRFLOLENDING (`createBorrowerLoanPool` / `createLenderPool`).
   5. TWAP duration bounds must be consistent across `prepareOracle` and `addMarket`.
-  6. Standalone OVRFLOBook deployment must verify Sablier matches the vault's canonical immutable.
+  6. Standalone OVRFLOLENDING deployment must verify Sablier matches the vault's canonical immutable.
   7. Assert all-party token balances in every money-movement test (not just state flags and NFT ownership).
   8. View functions that resolve by ID must revert on non-existent IDs, not return zero defaults.
-  9. The factory owns every deployed book — book admin is forwarded, not direct.
+  9. The factory owns every deployed lending — lending admin is forwarded, not direct.
   10. One vault per underlying — `configureDeployment` must reject duplicates.
   11. Require strictly-increasing IDs in batch functions that accept ID arrays.
-  12. Cap shared-pool claims at the contributor's pro-rata share of current `poolProceeds`.
+  12. Cap shared-pool claims at the lender's pro-rata share of current `loanPoolProceeds`.
   - Also includes a "Considered and rejected" section documenting 4 findings from the 2026-06-28 full-contract review that were explicitly dismissed (18-decimal underlying check, sweep zero-address guard, unchecked downcasts in deposit, registeredToken equality check).
 
 ### Best practices
 
 - [best-practices/verify-token-balance-movement-not-just-ownership.md](best-practices/verify-token-balance-movement-not-just-ownership.md) —
-  Non-fork tests for OVRFLOBook must assert `underlying.balanceOf` (and
+  Non-fork tests for OVRFLOLENDING must assert `underlying.balanceOf` (and
   `ovrfloToken.balanceOf` / `sablier.getWithdrawnAmount` / `sablier.ownerOf`
   where applicable) for every party that touched value (seller, buyer,
-  treasury, book), not just state flags and NFT ownership. State flags prove
+  treasury, lending), not just state flags and NFT ownership. State flags prove
   an entry changed hands; balance assertions prove the money moved correctly.
 - [best-practices/record-rejected-findings-with-rationale.md](best-practices/record-rejected-findings-with-rationale.md) —
   Rejected audit and code-review findings should be recorded in a persistent
@@ -100,9 +100,9 @@ enums have been widened to reflect our stack; everything else matches the upstre
   AMM, Pendle's pool disabled post-expiry, no cross-series swaps), and only costs
   the attacker gas. Lists the trust assumptions and the conditions that would
   reopen it.
-- [security-issues/repayloan-equality-rounding-no-brick-OVRFLOBook-20260624.md](security-issues/repayloan-equality-rounding-no-brick-OVRFLOBook-20260624.md) —
+- [security-issues/repayloan-equality-rounding-no-brick-OVRFLOLENDING-20260624.md](security-issues/repayloan-equality-rounding-no-brick-OVRFLOLENDING-20260624.md) —
   Audit note. Concern that `bool closes = amount == outstanding;` in
-  `OVRFLOBook.repayLoan` could brick loan closure via a rounding off-by-one.
+  `OVRFLOLENDING.repayLoan` could brick loan closure via a rounding off-by-one.
   Dismissed: `outstanding` is always an exact integer wei
   (`obligation - drawn - repaid`), the borrower controls `amount` and can match
   it exactly on an 18-decimal token, and `obligation <= remaining` (ceiling debt
@@ -111,7 +111,7 @@ enums have been widened to reflect our stack; everything else matches the upstre
   `StreamPricing` edits must preserve. Includes a companion finding (fixed
   2026-06-28): self-matched loans (`borrower == lender`) broke `repayLoan`
   because `_pullExact`'s balance-delta check reverts on self-transfer; fixed by
-  rejecting self-matching at loan creation in `createBorrowPool` and
+  rejecting self-matching at loan creation in `createBorrowerLoanPool` and
   `createLenderPool`.
 
 ### Architecture patterns
@@ -119,35 +119,35 @@ enums have been widened to reflect our stack; everything else matches the upstre
 - [architecture-patterns/ovrflo-wrap-unwrap-reserve-accounting.md](architecture-patterns/ovrflo-wrap-unwrap-reserve-accounting.md) —
   How the OVRFLO wrap/unwrap reserve is accounted and why deposit-origin
   ovrfloToken cannot consume the wrap reserve.
-- [architecture-patterns/ovrflobook-entry-teardown-zero-what-matters.md](architecture-patterns/ovrflobook-entry-teardown-zero-what-matters.md) —
-  OVRFLOBook tears down cancelled/filled entries by zeroing only the
+- [architecture-patterns/ovrflolending-entry-teardown-zero-what-matters.md](architecture-patterns/ovrflolending-entry-teardown-zero-what-matters.md) —
+  OVRFLOLENDING tears down cancelled/filled entries by zeroing only the
   security-critical fields (`capacity`/`active`) and leaving identity/context
   fields populated. Post-EIP-3529 a full `delete` costs net gas to zero extra
   slots, and loans must never be erased (`loanState` history is a feature).
-- [architecture-patterns/ovrflobook-offer-market-active-gate.md](architecture-patterns/ovrflobook-offer-market-active-gate.md) —
-  OVRFLOBook offer posts (`postSaleOffer`/`postLendOffer`) front-load
-  market/series/maturity validation via `_requireMarketActive` so makers fail
+- [architecture-patterns/ovrflolending-liquidity-market-active-gate.md](architecture-patterns/ovrflolending-liquidity-market-active-gate.md) —
+  OVRFLOLENDING liquidity posts (`postSaleLiquidityPosition`/`postLendLiquidityPosition`) front-load
+  market/series/maturity validation via `_requireMarketActive` so lenders fail
   fast before locking liquidity behind a dead market. The shared checks live in
   one `StreamPricing.marketActive` helper that `requireEligible` also delegates
   to — single source of truth, no hot-path gas regression.
 - [architecture-patterns/view-functions-revert-on-nonexistent-ids.md](architecture-patterns/view-functions-revert-on-nonexistent-ids.md) —
-  View functions that resolve a struct by ID (offer, listing, loan) must
+  View functions that resolve a struct by ID (liquidity, listing, loan) must
   revert when the ID does not exist rather than returning zero defaults.
-  The sentinel is `maker`/`lender`/`borrower != address(0)`, which survives
+  The sentinel is `lender`/`lender`/`borrower != address(0)`, which survives
   teardown (only `capacity`/`active` are zeroed) and fails only for IDs that
   were never created.
 - [architecture-patterns/ovrflo-factory-deployment-admin-management-pattern.md](architecture-patterns/ovrflo-factory-deployment-admin-management-pattern.md) —
-  The factory owns every deployed vault and book; admin is forwarded through
+  The factory owns every deployed vault and lending; admin is forwarded through
   factory functions, not called directly. One vault per underlying is enforced
   at `configureDeployment` time.
 
 ### Design patterns
 
 - [design-patterns/solidity-batch-function-safety-patterns.md](design-patterns/solidity-batch-function-safety-patterns.md) —
-  Five function-level design patterns distilled from the OVRFLOBook Pool
+  Five function-level design patterns distilled from the OVRFLOLENDING Pool
   implementation: (1) strictly-increasing IDs in batch arrays to prevent
   duplicate-ID fund theft, (2) pro-rata cap on shared-pool claims to prevent
-  majority-contributor draining, (3) aggregate `totalObligation` for
+  majority-lender draining, (3) aggregate `totalObligation` for
   multi-loan pool entitlement, (4) no artificial caps on `view`-function
   results (eth_call has high gas limits), (5) stack-too-deep workarounds
   (memory arrays, block scoping, helper factoring).

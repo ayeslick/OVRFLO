@@ -26,14 +26,14 @@ The highest-value audit targets are the items marked **On-chain: No** — these 
 |----------|----------------|----------------|
 | Multisig / Factory | Owner-gated factory calls are the sole admin ingress | `OVRFLOFactory` ownership; `onlyAdmin` (G-1) |
 | Factory / Vault registry | `ovrfloInfo` + market approvals define canonical asset/market routing | `OVRFLOFactory.deploy()`, `OVRFLO.setSeriesApproved()` (one-shot, I-9) |
-| Book / Stream | `StreamPricing.requireEligible()` gates all stream-collateral operations | `StreamPricing.requireEligible()` (enforced via X-1 — probe for bypass/stale-cache) |
+| Lending / Stream | `StreamPricing.requireEligible()` gates all stream-collateral operations | `StreamPricing.requireEligible()` (enforced via X-1 — probe for bypass/stale-cache) |
 | Oracle / Valuation | Deposit split and financing obligations derive from oracle/time functions | `OVRFLO.deposit()`, `StreamPricing` (X-1 not revalidated per call) |
 
 ## Adversary ranking (from `x-ray/x-ray.md`)
 
 1. **Oracle manipulator / flash loan attacker** — stale/misaligned TWAP propagates into settlement (X-1, M-4); flash loan capital can move Pendle prices within a single tx. Low staleness risk in practice: external Pendle activity keeps observations fresh; keeper bot via `prepareOracle()` as fallback.
-2. **Pool claim accounting attacker** — claimPoolShare handles both open and closed loans; _claimFair harvests deficit from open loan streams before paying from poolProceeds. The poolReceived cap and poolProceeds balance must stay correct across harvest + claim. (I-14, I-15, I-16).
+2. **Pool claim accounting attacker** — claimLoanPoolShare handles both open and closed loans; _claimFair harvests deficit from open loan streams before paying from loanPoolProceeds. The loanPoolReceived cap and loanPoolProceeds balance must stay correct across harvest + claim. (I-14, I-15, I-16).
 3. **Compromised admin key-holder** — market onboarding and critical configuration (I-6, X-4); all operational powers are instant (no on-chain timelock).
-4. **Order book griefing attacker** — can post and cancel offers/listings to lock liquidity or front-run other traders.
+4. **Order lending griefing attacker** — can post and cancel liquidityPositions/listings to lock liquidity or front-run other traders.
 
 Start the audit here, then work outward.

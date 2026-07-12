@@ -4,7 +4,7 @@ pragma solidity ^0.8.20;
 import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 import {OVRFLO} from "./OVRFLO.sol";
 import {OVRFLOToken} from "./OVRFLOToken.sol";
-import {OVRFLOBook} from "./OVRFLOBook.sol";
+import {OVRFLOLENDING} from "./OVRFLOLENDING.sol";
 import {IPendleMarket} from "../interfaces/IPendleMarket.sol";
 import {IPendleOracle} from "../interfaces/IPendleOracle.sol";
 import {IStandardizedYield} from "../interfaces/IStandardizedYield.sol";
@@ -47,17 +47,17 @@ contract OVRFLOFactory is Ownable2Step {
     mapping(address ovrflo => mapping(uint256 index => address)) public approvedMarketAt;
     mapping(address ovrflo => mapping(address market => bool)) public isMarketApproved;
 
-    /// @notice Maps an OVRFLO vault to its deployed OVRFLOBook (1:1).
-    mapping(address => address) public ovrfloToBook;
+    /// @notice Maps an OVRFLO vault to its deployed OVRFLOLENDING (1:1).
+    mapping(address => address) public ovrfloToLending;
 
-    /// @notice Reverse lookup: OVRFLOBook address => OVRFLO vault address.
-    mapping(address => address) public bookToOvrflo;
+    /// @notice Reverse lookup: OVRFLOLENDING address => OVRFLO vault address.
+    mapping(address => address) public lendingToOvrflo;
 
-    /// @notice Total number of OVRFLOBooks deployed by this factory.
-    uint256 public bookCount;
+    /// @notice Total number of OVRFLOLENDING markets deployed by this factory.
+    uint256 public lendingCount;
 
-    /// @notice Enumerable list of all OVRFLOBook addresses deployed by this factory.
-    mapping(uint256 => address) public books;
+    /// @notice Enumerable list of all OVRFLOLENDING addresses deployed by this factory.
+    mapping(uint256 => address) public lendings;
 
     /// @notice Maps an underlying asset to its deployed OVRFLO vault (1:1, prevents duplicates).
     mapping(address => address) public underlyingToOvrflo;
@@ -72,10 +72,10 @@ contract OVRFLOFactory is Ownable2Step {
     event DeploymentConfigured(address indexed treasury, address indexed underlying);
     event DeploymentCancelled();
     event OvrfloDeployed(address indexed ovrflo, address indexed ovrfloToken, address treasury, address underlying);
-    event BookDeployed(address indexed ovrflo, address indexed book);
-    event BookAprBoundsSet(address indexed book, uint16 aprMinBps, uint16 aprMaxBps);
-    event BookFeeSet(address indexed book, uint16 feeBps);
-    event BookTreasurySet(address indexed book, address treasury);
+    event LendingDeployed(address indexed ovrflo, address indexed lending);
+    event LendingAprBoundsSet(address indexed lending, uint16 aprMinBps, uint16 aprMaxBps);
+    event LendingFeeSet(address indexed lending, uint16 feeBps);
+    event LendingTreasurySet(address indexed lending, address treasury);
 
     /*//////////////////////////////////////////////////////////////
                               CONSTRUCTOR
@@ -157,26 +157,26 @@ contract OVRFLOFactory is Ownable2Step {
         emit OvrfloDeployed(ovrflo, ovrfloToken, config.treasury, config.underlying);
     }
 
-    /// @notice Deploy an OVRFLOBook for an existing vault (1:1, one book per vault)
+    /// @notice Deploy an OVRFLOLENDING for an existing vault (1:1, one lending market per vault)
     /// @dev Reads the Sablier address from the vault's sablierLL immutable.
-    ///      The factory remains the book's owner so all book admin calls flow through
+    ///      The factory remains the lending market's owner so all lending admin calls flow through
     ///      the factory (consistent with the vault admin model).
     /// @param ovrflo The OVRFLO core vault address
-    /// @return book The deployed OVRFLOBook address
-    function deployBook(address ovrflo) external onlyOwner returns (address book) {
+    /// @return lending The deployed OVRFLOLENDING address
+    function deployLending(address ovrflo) external onlyOwner returns (address lending) {
         _requireKnownOvrflo(ovrflo);
-        require(ovrfloToBook[ovrflo] == address(0), "OVRFLOFactory: book exists");
+        require(ovrfloToLending[ovrflo] == address(0), "OVRFLOFactory: lending exists");
 
         address sablierAddr = address(OVRFLO(ovrflo).sablierLL());
-        OVRFLOBook b = new OVRFLOBook(address(this), ovrflo, sablierAddr);
-        book = address(b);
+        OVRFLOLENDING lendingMarket = new OVRFLOLENDING(address(this), ovrflo, sablierAddr);
+        lending = address(lendingMarket);
 
-        ovrfloToBook[ovrflo] = book;
-        bookToOvrflo[book] = ovrflo;
-        books[bookCount] = book;
-        bookCount += 1;
+        ovrfloToLending[ovrflo] = lending;
+        lendingToOvrflo[lending] = ovrflo;
+        lendings[lendingCount] = lending;
+        lendingCount += 1;
 
-        emit BookDeployed(ovrflo, book);
+        emit LendingDeployed(ovrflo, lending);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -270,35 +270,35 @@ contract OVRFLOFactory is Ownable2Step {
     }
 
     /*//////////////////////////////////////////////////////////////
-                    BOOK ADMIN (FACTORY-FORWARDED)
+                  LENDING ADMIN (FACTORY-FORWARDED)
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Set the APR bounds on an OVRFLOBook (factory is the book's owner)
-    /// @param book The OVRFLOBook address
+    /// @notice Set the APR bounds on an OVRFLOLENDING (factory is the lending market's owner)
+    /// @param lending The OVRFLOLENDING address
     /// @param aprMinBps_ New minimum APR in basis points
     /// @param aprMaxBps_ New maximum APR in basis points
-    function setBookAprBounds(address book, uint16 aprMinBps_, uint16 aprMaxBps_) external onlyOwner {
-        _requireKnownBook(book);
-        OVRFLOBook(book).setAprBounds(aprMinBps_, aprMaxBps_);
-        emit BookAprBoundsSet(book, aprMinBps_, aprMaxBps_);
+    function setLendingAprBounds(address lending, uint16 aprMinBps_, uint16 aprMaxBps_) external onlyOwner {
+        _requireKnownLending(lending);
+        OVRFLOLENDING(lending).setAprBounds(aprMinBps_, aprMaxBps_);
+        emit LendingAprBoundsSet(lending, aprMinBps_, aprMaxBps_);
     }
 
-    /// @notice Set the protocol fee on an OVRFLOBook
-    /// @param book The OVRFLOBook address
+    /// @notice Set the protocol fee on an OVRFLOLENDING
+    /// @param lending The OVRFLOLENDING address
     /// @param feeBps_ New fee in basis points
-    function setBookFee(address book, uint16 feeBps_) external onlyOwner {
-        _requireKnownBook(book);
-        OVRFLOBook(book).setFee(feeBps_);
-        emit BookFeeSet(book, feeBps_);
+    function setLendingFee(address lending, uint16 feeBps_) external onlyOwner {
+        _requireKnownLending(lending);
+        OVRFLOLENDING(lending).setFee(feeBps_);
+        emit LendingFeeSet(lending, feeBps_);
     }
 
-    /// @notice Set the fee treasury on an OVRFLOBook
-    /// @param book The OVRFLOBook address
+    /// @notice Set the fee treasury on an OVRFLOLENDING
+    /// @param lending The OVRFLOLENDING address
     /// @param treasury_ New treasury address
-    function setBookTreasury(address book, address treasury_) external onlyOwner {
-        _requireKnownBook(book);
-        OVRFLOBook(book).setTreasury(treasury_);
-        emit BookTreasurySet(book, treasury_);
+    function setLendingTreasury(address lending, address treasury_) external onlyOwner {
+        _requireKnownLending(lending);
+        OVRFLOLENDING(lending).setTreasury(treasury_);
+        emit LendingTreasurySet(lending, treasury_);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -321,7 +321,7 @@ contract OVRFLOFactory is Ownable2Step {
         require(ovrfloInfo[ovrflo].treasury != address(0), "OVRFLOFactory: unknown ovrflo");
     }
 
-    function _requireKnownBook(address book) internal view {
-        require(bookToOvrflo[book] != address(0), "OVRFLOFactory: unknown book");
+    function _requireKnownLending(address lending) internal view {
+        require(lendingToOvrflo[lending] != address(0), "OVRFLOFactory: unknown lending");
     }
 }

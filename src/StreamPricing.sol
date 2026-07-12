@@ -53,7 +53,7 @@ interface IOVRFLOSeriesRegistry {
 }
 
 /// @title StreamPricing
-/// @notice Pure/shared pricing and eligibility primitives for the OVRFLOBook secondary market.
+/// @notice Pure/shared pricing and eligibility primitives for the OVRFLOLENDING secondary market.
 /// @dev All discounting uses a linear APR factor `f = 1 + apr * ttm / (YEAR * BPS)` in WAD.
 ///      Rounding is directional and load-bearing:
 ///        - `grossPrice` floors (buyer pays the lower discounted value; seller-favorable
@@ -61,7 +61,7 @@ interface IOVRFLOSeriesRegistry {
 ///        - `obligation` ceils (lender is owed the rounded-up accrued amount).
 ///      This keeps `obligation <= remaining` in the partial-borrow path so the pledged
 ///      stream can always cover the debt; see
-///      `docs/solutions/security-issues/repayloan-equality-rounding-no-brick-OVRFLOBook-20260624.md`.
+///      `docs/solutions/security-issues/repayloan-equality-rounding-no-brick-OVRFLOLENDING-20260624.md`.
 ///      Do not flip either rounding direction without re-checking that analysis.
 library StreamPricing {
     /// @notice WAD scale (1e18) used for fixed-point math.
@@ -142,7 +142,7 @@ library StreamPricing {
         return uint128(value);
     }
 
-    /// @notice Obligation for a book fill, fast-pathing the full-borrow case.
+    /// @notice Obligation for a lending fill, fast-pathing the full-borrow case.
     /// @dev When `borrowAmount == grossPrice_` the borrower takes the entire discounted
     ///      value, so the lender is owed the whole stream (`remaining`) and no separate
     ///      accrual is computed (avoids any floor/ceil mismatch at the boundary).
@@ -175,8 +175,8 @@ library StreamPricing {
     }
 
     /// @notice Validates that a market is approved, its series is approved, and it has not matured.
-    /// @dev Lightweight, stream-agnostic check used to front-load rejection at offer-post
-    ///      time (offers carry no `streamId`). The full stream-level validation lives in
+    /// @dev Lightweight, stream-agnostic check used to front-load rejection at liquidity-post
+    ///      time (liquidityPositions carry no `streamId`). The full stream-level validation lives in
     ///      `requireEligible`, which calls this internally; both share this single source
     ///      of truth for the market/series/maturity gating.
     /// @param factory The OVRFLOFactory registry address.

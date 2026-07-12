@@ -6,7 +6,7 @@ import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {OVRFLO} from "../src/OVRFLO.sol";
 import {OVRFLOFactory} from "../src/OVRFLOFactory.sol";
 import {OVRFLOToken} from "../src/OVRFLOToken.sol";
-import {OVRFLOBook} from "../src/OVRFLOBook.sol";
+import {OVRFLOLENDING} from "../src/OVRFLOLENDING.sol";
 import {IPPrincipalToken} from "../interfaces/IPPrincipalToken.sol";
 import {IPendleMarket} from "../interfaces/IPendleMarket.sol";
 
@@ -103,13 +103,13 @@ contract OVRFLOFactoryTest is Test {
     event DeploymentConfigured(address indexed treasury, address indexed underlying);
     event DeploymentCancelled();
     event OvrfloDeployed(address indexed ovrflo, address indexed ovrfloToken, address treasury, address underlying);
-    event BookDeployed(address indexed ovrflo, address indexed book);
-    event BookAprBoundsSet(address indexed book, uint16 aprMinBps, uint16 aprMaxBps);
-    event BookFeeSet(address indexed book, uint16 feeBps);
-    event BookTreasurySet(address indexed book, address treasury);
-    event AprBoundsSet(uint16 aprMinBps, uint16 aprMaxBps);
-    event FeeSet(uint16 feeBps);
-    event TreasurySet(address indexed treasury);
+    event LendingDeployed(address indexed ovrflo, address indexed lending);
+    event LendingAprBoundsSet(address indexed lending, uint16 aprMinBps, uint16 aprMaxBps);
+    event LendingFeeSet(address indexed lending, uint16 feeBps);
+    event LendingTreasurySet(address indexed lending, address treasury);
+    event LendingAprBoundsSet(uint16 aprMinBps, uint16 aprMaxBps);
+    event LendingFeeSet(uint16 feeBps);
+    event LendingTreasurySet(address indexed treasury);
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
     event OwnershipTransferStarted(address indexed previousOwner, address indexed newOwner);
     event SeriesApproved(
@@ -310,19 +310,19 @@ contract OVRFLOFactoryTest is Test {
 
         vm.prank(STRANGER);
         vm.expectRevert("Ownable: caller is not the owner");
-        factory.deployBook(address(ovrflo));
+        factory.deployLending(address(ovrflo));
 
         vm.prank(STRANGER);
         vm.expectRevert("Ownable: caller is not the owner");
-        factory.setBookAprBounds(address(ovrflo), 500, 2000);
+        factory.setLendingAprBounds(address(ovrflo), 500, 2000);
 
         vm.prank(STRANGER);
         vm.expectRevert("Ownable: caller is not the owner");
-        factory.setBookFee(address(ovrflo), 50);
+        factory.setLendingFee(address(ovrflo), 50);
 
         vm.prank(STRANGER);
         vm.expectRevert("Ownable: caller is not the owner");
-        factory.setBookTreasury(address(ovrflo), NEW_OWNER);
+        factory.setLendingTreasury(address(ovrflo), NEW_OWNER);
     }
 
     function test_PrepareOracle_RevertsForShortDurationAndIncreasesCardinalityWhenRequired() public {
@@ -645,22 +645,22 @@ contract OVRFLOFactoryTest is Test {
         assertEq(factory.pendingOwner(), NEW_OWNER);
     }
 
-    function test_DeployBook_DeploysBookRegistersAndKeepsFactoryAsOwner() public {
+    function test_DeployLending_DeploysLendingRegistersAndKeepsFactoryAsOwner() public {
         (OVRFLO ovrflo,) = _deployConfiguredSystem();
 
         vm.expectEmit(true, false, false, false, address(factory));
-        emit BookDeployed(address(ovrflo), address(0));
+        emit LendingDeployed(address(ovrflo), address(0));
 
         vm.prank(OWNER);
-        address book = factory.deployBook(address(ovrflo));
+        address lending = factory.deployLending(address(ovrflo));
 
-        assertTrue(book != address(0));
-        assertEq(factory.ovrfloToBook(address(ovrflo)), book);
-        assertEq(factory.bookToOvrflo(book), address(ovrflo));
-        assertEq(factory.bookCount(), 1);
-        assertEq(factory.books(0), book);
+        assertTrue(lending != address(0));
+        assertEq(factory.ovrfloToLending(address(ovrflo)), lending);
+        assertEq(factory.lendingToOvrflo(lending), address(ovrflo));
+        assertEq(factory.lendingCount(), 1);
+        assertEq(factory.lendings(0), lending);
 
-        OVRFLOBook b = OVRFLOBook(book);
+        OVRFLOLENDING b = OVRFLOLENDING(lending);
         assertEq(address(b.factory()), address(factory));
         assertEq(address(b.core()), address(ovrflo));
         assertEq(address(b.sablier()), address(OVRFLO(address(ovrflo)).sablierLL()));
@@ -668,21 +668,32 @@ contract OVRFLOFactoryTest is Test {
         assertEq(b.pendingOwner(), address(0));
     }
 
-    function test_DeployBook_RevertsForDuplicate() public {
+    function test_DeployLending_RevertsForDuplicate() public {
         (OVRFLO ovrflo,) = _deployConfiguredSystem();
 
         vm.prank(OWNER);
-        factory.deployBook(address(ovrflo));
+        factory.deployLending(address(ovrflo));
 
         vm.prank(OWNER);
-        vm.expectRevert("OVRFLOFactory: book exists");
-        factory.deployBook(address(ovrflo));
+        vm.expectRevert("OVRFLOFactory: lending exists");
+        factory.deployLending(address(ovrflo));
     }
 
-    function test_DeployBook_RevertsForUnknownVault() public {
+    function test_DeployLending_RevertsForUnknownVault() public {
         vm.prank(OWNER);
         vm.expectRevert("OVRFLOFactory: unknown ovrflo");
-        factory.deployBook(address(0xDEAD));
+        factory.deployLending(address(0xDEAD));
+    }
+
+    function test_DirectLendingConstruction_RemainsUnregisteredAndDirectlyOwned() public {
+        (OVRFLO ovrflo,) = _deployConfiguredSystem();
+
+        OVRFLOLENDING lending =
+            new OVRFLOLENDING(address(factory), address(ovrflo), address(OVRFLO(address(ovrflo)).sablierLL()));
+
+        assertEq(lending.owner(), address(this));
+        assertEq(factory.ovrfloToLending(address(ovrflo)), address(0));
+        assertEq(factory.lendingToOvrflo(address(lending)), address(0));
     }
 
     /* ---------- Duplicate underlying prevention ---------- */
@@ -727,99 +738,99 @@ contract OVRFLOFactoryTest is Test {
         assertEq(factory.ovrfloCount(), 2);
     }
 
-    /* ---------- Book admin forwarding ---------- */
+    /* ---------- Lending admin forwarding ---------- */
 
-    function test_BookAdmin_RevertForUnauthorizedCallers() public {
+    function test_LendingAdmin_RevertForUnauthorizedCallers() public {
         (OVRFLO ovrflo,) = _deployConfiguredSystem();
 
         vm.prank(OWNER);
-        address book = factory.deployBook(address(ovrflo));
+        address lending = factory.deployLending(address(ovrflo));
 
         vm.prank(STRANGER);
         vm.expectRevert("Ownable: caller is not the owner");
-        factory.setBookAprBounds(book, 500, 2000);
+        factory.setLendingAprBounds(lending, 500, 2000);
 
         vm.prank(STRANGER);
         vm.expectRevert("Ownable: caller is not the owner");
-        factory.setBookFee(book, 50);
+        factory.setLendingFee(lending, 50);
 
         vm.prank(STRANGER);
         vm.expectRevert("Ownable: caller is not the owner");
-        factory.setBookTreasury(book, NEW_OWNER);
+        factory.setLendingTreasury(lending, NEW_OWNER);
     }
 
-    function test_BookAdmin_RevertsForUnknownBook() public {
+    function test_LendingAdmin_RevertsForUnknownLending() public {
         vm.prank(OWNER);
-        vm.expectRevert("OVRFLOFactory: unknown book");
-        factory.setBookAprBounds(address(0xDEAD), 500, 2000);
+        vm.expectRevert("OVRFLOFactory: unknown lending");
+        factory.setLendingAprBounds(address(0xDEAD), 500, 2000);
 
         vm.prank(OWNER);
-        vm.expectRevert("OVRFLOFactory: unknown book");
-        factory.setBookFee(address(0xDEAD), 50);
+        vm.expectRevert("OVRFLOFactory: unknown lending");
+        factory.setLendingFee(address(0xDEAD), 50);
 
         vm.prank(OWNER);
-        vm.expectRevert("OVRFLOFactory: unknown book");
-        factory.setBookTreasury(address(0xDEAD), NEW_OWNER);
+        vm.expectRevert("OVRFLOFactory: unknown lending");
+        factory.setLendingTreasury(address(0xDEAD), NEW_OWNER);
     }
 
-    function test_BookAdmin_ForwardsToBookAndEmitsEvents() public {
+    function test_LendingAdmin_ForwardsToLendingAndEmitsEvents() public {
         (OVRFLO ovrflo,) = _deployConfiguredSystem();
 
         vm.prank(OWNER);
-        address book = factory.deployBook(address(ovrflo));
-        OVRFLOBook b = OVRFLOBook(book);
+        address lending = factory.deployLending(address(ovrflo));
+        OVRFLOLENDING b = OVRFLOLENDING(lending);
 
-        // setAprBounds — book event fires first (inside the call), then factory event
-        vm.expectEmit(address(book));
-        emit AprBoundsSet(500, 2000);
+        // setAprBounds — lending event fires first (inside the call), then factory event
+        vm.expectEmit(address(lending));
+        emit LendingAprBoundsSet(500, 2000);
         vm.expectEmit(true, false, false, false, address(factory));
-        emit BookAprBoundsSet(book, 500, 2000);
+        emit LendingAprBoundsSet(lending, 500, 2000);
 
         vm.prank(OWNER);
-        factory.setBookAprBounds(book, 500, 2000);
+        factory.setLendingAprBounds(lending, 500, 2000);
 
         assertEq(b.aprMinBps(), 500);
         assertEq(b.aprMaxBps(), 2000);
 
         // setFee
-        vm.expectEmit(address(book));
-        emit FeeSet(50);
+        vm.expectEmit(address(lending));
+        emit LendingFeeSet(50);
         vm.expectEmit(true, false, false, false, address(factory));
-        emit BookFeeSet(book, 50);
+        emit LendingFeeSet(lending, 50);
 
         vm.prank(OWNER);
-        factory.setBookFee(book, 50);
+        factory.setLendingFee(lending, 50);
 
         assertEq(b.feeBps(), 50);
 
         // setTreasury
-        vm.expectEmit(true, false, false, false, address(book));
-        emit TreasurySet(NEW_OWNER);
+        vm.expectEmit(true, false, false, false, address(lending));
+        emit LendingTreasurySet(NEW_OWNER);
         vm.expectEmit(true, true, false, false, address(factory));
-        emit BookTreasurySet(book, NEW_OWNER);
+        emit LendingTreasurySet(lending, NEW_OWNER);
 
         vm.prank(OWNER);
-        factory.setBookTreasury(book, NEW_OWNER);
+        factory.setLendingTreasury(lending, NEW_OWNER);
 
         assertEq(b.treasury(), NEW_OWNER);
     }
 
-    function test_BookAdmin_BookOnlyOwnerRevertsForNonFactory() public {
+    function test_LendingAdmin_LendingOnlyOwnerRevertsForNonFactory() public {
         (OVRFLO ovrflo,) = _deployConfiguredSystem();
 
         vm.prank(OWNER);
-        address book = factory.deployBook(address(ovrflo));
-        OVRFLOBook b = OVRFLOBook(book);
+        address lending = factory.deployLending(address(ovrflo));
+        OVRFLOLENDING b = OVRFLOLENDING(lending);
 
-        // The multisig (OWNER) is NOT the book's owner — factory is
+        // The multisig (OWNER) is NOT the lending's owner — factory is
         vm.prank(OWNER);
         vm.expectRevert("Ownable: caller is not the owner");
         b.setAprBounds(500, 2000);
     }
 
-    /* ---------- Book enumeration ---------- */
+    /* ---------- Lending enumeration ---------- */
 
-    function test_DeployBook_EnumeratesMultipleBooks() public {
+    function test_DeployLending_EnumeratesMultipleLendings() public {
         // Deploy two vaults with different underlyings
         (OVRFLO ovrflo1,) = _deployConfiguredSystem();
 
@@ -830,15 +841,15 @@ contract OVRFLOFactoryTest is Test {
         vm.stopPrank();
 
         vm.startPrank(OWNER);
-        address book1 = factory.deployBook(address(ovrflo1));
-        address book2 = factory.deployBook(ovrflo2Addr);
+        address lending1 = factory.deployLending(address(ovrflo1));
+        address lending2 = factory.deployLending(ovrflo2Addr);
         vm.stopPrank();
 
-        assertEq(factory.bookCount(), 2);
-        assertEq(factory.books(0), book1);
-        assertEq(factory.books(1), book2);
-        assertEq(factory.bookToOvrflo(book1), address(ovrflo1));
-        assertEq(factory.bookToOvrflo(book2), ovrflo2Addr);
+        assertEq(factory.lendingCount(), 2);
+        assertEq(factory.lendings(0), lending1);
+        assertEq(factory.lendings(1), lending2);
+        assertEq(factory.lendingToOvrflo(lending1), address(ovrflo1));
+        assertEq(factory.lendingToOvrflo(lending2), ovrflo2Addr);
     }
 
     function _deployConfiguredSystem() internal returns (OVRFLO ovrflo, OVRFLOToken token) {

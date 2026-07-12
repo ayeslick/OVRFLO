@@ -10,13 +10,13 @@ OVRFLO operates in two layers:
 
 **Layer 1 — Collateral Creation (Core Vault):** Deposit a Pendle PT and immediately receive ovrfloTokens (your principal at current market value) plus a Sablier stream that vests the remaining discount until PT maturity. The stream is deterministic and non-cancelable — it pays exactly what it promises, on schedule.
 
-**Layer 2 — The Market (OVRFLOBook):** Use that Sablier stream as collateral. Sell it outright for discounted underlying, or pledge it to borrow underlying and let the stream repay the loan at maturity. Because the stream is deterministic, there are no liquidations, no health factors, and no price oracles needed at loan time.
+**Layer 2 — The Market (OVRFLOLENDING):** Use that Sablier stream as collateral. Sell it outright for discounted underlying, or pledge it to borrow underlying and let the stream repay the loan at maturity. Because the stream is deterministic, there are no liquidations, no health factors, and no price oracles needed at loan time.
 
 ### Example
 
 1. User deposits **100 PT-stETH** (currently trading at 95% of face value)
 2. User immediately receives **95 ovrfloETH** (their principal) and a **Sablier stream** vesting **5 ovrfloETH** until PT maturity
-3. User pledges the stream on OVRFLOBook to borrow **4 WETH** against it at a 10% APR
+3. User pledges the stream on OVRFLOLENDING to borrow **4 WETH** against it at a 10% APR
 4. At maturity, the stream has vested **5 ovrfloETH**; the lender draws the owed **4.4 ovrfloETH** obligation, and the **0.6 ovrfloETH** residual returns to the borrower
 
 ```
@@ -42,7 +42,7 @@ OVRFLO operates in two layers:
 │                          │                                           │
 │                          ▼                                           │
 │   ┌──────────────────────────────────────┐                           │
-│   │           OVRFLOBook                 │                           │
+│   │           OVRFLOLENDING                 │                           │
 │   │  Sell stream ──▶ receive WETH now    │                           │
 │   │  Pledge stream ──▶ borrow WETH now   │                           │
 │   │  Stream repays loan at maturity      │                           │
@@ -81,7 +81,7 @@ OVRFLO operates in two layers:
 │           │                            └──────────────────────┘          │
 │           │                                                              │
 │           │         ┌──────────────┐    ┌───────────────────┐            │
-│           │ deploys │  OVRFLOBook  │───▶│  StreamPricing    │            │
+│           │ deploys │  OVRFLOLENDING  │───▶│  StreamPricing    │            │
 │           └────────▶│  (lending)   │    │  (pricing library)│            │
 │                     │ - sell       │    │ - factor          │            │
 │                     │ - borrow     │    │ - grossPrice      │            │
@@ -101,43 +101,43 @@ OVRFLO operates in two layers:
 
 ## Contracts
 
-### OVRFLOBook.sol
+### OVRFLOLENDING.sol
 
-Secondary market book for selling OVRFLO streams or borrowing against them. Bound to one core vault and one Sablier V2 LL instance at deploy time. Two primitives: unified offers (consumable as sale or loan) and sale listings. All pricing uses `StreamPricing` with a linear APR discount to series maturity. Offers front-load market gating; listings and all fills run full stream validation. Fees are snapshotted per listing at post time (maker-protective); the global `feeBps` applies to offers.
+Lending market for selling OVRFLO streams or borrowing against them. Bound to one core vault and one Sablier V2 LL instance at deployment. Two primitives: unified liquidity positions (consumable as sale or loan) and sale listings. All pricing uses `StreamPricing` with a linear APR discount to series maturity. Liquidity positions front-load market gating; listings and all fills run full stream validation. Fees are snapshotted per listing at post time to protect sellers; the global `feeBps` applies to liquidity positions.
 
 | Function | Description |
 |----------|-------------|
-| `constructor(factory, core, sablier)` | Deploy book bound to one vault and Sablier instance; pulls treasury/underlying/ovrfloToken from factory |
-| `postOffer(market, aprBps, capacity)` | Fund standing buy-side liquidity for any eligible stream from `market` (consumable as sale or loan) |
-| `cancelOffer(offerId)` | Cancel unmatched offer, refund remaining capacity |
-| `sellIntoOffer(offerId, streamId, minNetOut)` | Sell a stream into a standing offer for discounted underlying |
+| `constructor(factory, core, sablier)` | Deploy lending market bound to one vault and Sablier instance; pulls treasury/underlying/ovrfloToken from factory |
+| `supplyLiquidity(market, aprBps, availableLiquidity)` | Supply standing liquidity for any eligible stream from `market` (consumable as sale or loan) |
+| `withdrawLiquidity(liquidityId)` | Withdraw unmatched liquidity and refund the remaining amount |
+| `sellStreamToLiquidity(liquidityId, streamId, minNetOut)` | Sell a stream into a standing liquidity for discounted underlying |
 | `postSaleListing(market, streamId, aprBps)` | List a specific stream for sale (escrows stream, snapshots fee) |
 | `cancelSaleListing(listingId)` | Cancel unmatched sale listing, return stream |
 | `buyListing(listingId, maxPriceIn)` | Buy a listed stream at its discounted price |
-| `createBorrowPool(offerIds, streamId, targetBorrow, minAcceptable)` | Batch-borrow against multiple offers, pledging one stream as collateral |
-| `claimPoolShare(poolId, amount)` | Pool contributor claims pro-rata from accumulated `poolProceeds` |
+| `createBorrowerLoanPool(liquidityIds, streamId, targetBorrow, minAcceptable)` | Batch-borrow against multiple liquidity positions, pledging one stream as collateral |
+| `claimLoanPoolShare(loanPoolId, amount)` | Loan-pool lender claims pro-rata from accumulated `loanPoolProceeds` |
 | `closeLoan(loanId)` | Permissionless: draw remaining outstanding, return stream to borrower |
 | `repayLoan(loanId, amount)` | Borrower repays ovrfloToken to reduce or clear the obligation |
 | `quote(market, streamId, aprBps, borrowAmount)` | Preview price, obligation, fee, net, and residual (pass `0` for full borrow) |
 | `loanState(loanId)` | View full loan state (reverts for non-existent loan) |
-| `offerState(offerId)` | View offer state (reverts for non-existent offer) |
+| `liquidityState(liquidityId)` | View liquidity state (reverts for non-existent liquidity) |
 | `saleListingState(listingId)` | View sale listing state (reverts for non-existent listing) |
 | `setAprBounds(aprMinBps, aprMaxBps)` | Set accepted APR range for new posts (owner) |
-| `setFee(feeBps)` | Set protocol fee on offer fills (owner) |
+| `setFee(feeBps)` | Set protocol fee on liquidity fills (owner) |
 | `setTreasury(treasury)` | Set fee recipient (owner) |
 
 **Constants:** `APR_MAX_CEILING = 10_000` (100%), `MAX_FEE_BPS = 10_000` (100%), `LAUNCH_APR_BPS = 1000` (10%). APR bounds and fee are owner-governed but cannot exceed these hardcoded ceilings.
 
 ### StreamPricing.sol
 
-Pure library providing shared pricing and eligibility primitives for OVRFLOBook. All discounting uses a linear APR factor `f = 1 + apr * ttm / (YEAR * BPS)` in WAD. Rounding is directional and load-bearing: `grossPrice` floors (buyer-favorable), `obligation` ceils (lender-favorable). The invariant `obligation <= remaining` holds for all partial borrows, ensuring the pledged stream can always cover the debt. See `plans/streampricing-math-analysis.md` for the full proof and stress-test results.
+Pure library providing shared pricing and eligibility primitives for OVRFLOLENDING. All discounting uses a linear APR factor `f = 1 + apr * ttm / (YEAR * BPS)` in WAD. Rounding is directional and load-bearing: `grossPrice` floors (buyer-favorable), `obligation` ceils (lender-favorable). The invariant `obligation <= remaining` holds for all partial borrows, ensuring the pledged stream can always cover the debt. See `plans/streampricing-math-analysis.md` for the full proof and stress-test results.
 
 | Function | Description |
 |----------|-------------|
 | `factor(aprBps, timeToMaturity)` | Linear accrual factor `f = 1 + apr * ttm / (YEAR * BPS)`, in WAD |
 | `grossPrice(remaining, aprBps, timeToMaturity)` | Discounted present value of `remaining` face (floors) |
 | `obligation(borrowAmount, aprBps, timeToMaturity)` | Future value at maturity of a borrowed amount (ceils) |
-| `obligationForFill(borrowAmount, grossPrice_, remaining, aprBps, ttm)` | Obligation for a book fill; fast-paths full-borrow to `remaining` |
+| `obligationForFill(borrowAmount, grossPrice_, remaining, aprBps, ttm)` | Obligation for a lending fill; fast-paths full-borrow to `remaining` |
 | `fee(amount, feeBps)` | Protocol fee: `amount * feeBps / BPS` |
 | `marketActive(factory, core, market)` | Validate market is approved, series approved, and not matured |
 | `requireEligible(factory, sablier, core, market, streamId)` | Full stream validation: sender, asset, end time, no cliff, non-cancelable, remaining > 0 |
@@ -153,7 +153,7 @@ Factory and admin hub for deploying and managing OVRFLO vaults. Owned by a timel
 | `constructor(owner, oracle)` | Deploy factory with multisig owner and Pendle oracle (both immutable) |
 | `configureDeployment(treasury, underlying, nameSuffix, symbolSuffix)` | Stage deployment parameters; factory prepends `OVRFLO ` to name and `ovrflo` to symbol |
 | `deploy()` | Deploy OVRFLO + OVRFLOToken from stored config; returns both addresses |
-| `deployBook(ovrflo)` | Deploy an OVRFLOBook for an existing vault (1:1, one book per vault); reads Sablier from vault, nominates multisig as pending owner |
+| `deployLending(ovrflo)` | Deploy an OVRFLOLENDING for an existing vault (1:1, one lending market per vault); reads Sablier from the vault and retains factory ownership |
 | `cancelDeployment()` | Cancel a pending deployment |
 | `addMarket(ovrflo, market, twapDuration, feeBps)` | Add a PT maturity; reads PT address and expiry from Pendle market; requires ready oracle and exact underlying match |
 | `prepareOracle(market, twapDuration)` | Increase oracle cardinality before `addMarket`; duration must be 15-30 min (separate transaction) |
@@ -244,72 +244,72 @@ ovrflo.wrap(amount);
 ovrflo.unwrap(amount);
 ```
 
-### Selling a Stream (Book)
+### Selling a Stream
 
 Two paths to sell a Sablier stream for discounted underlying:
 
-**Path A — Sell into a standing offer:**
+**Path A — Sell into a standing liquidity:**
 ```solidity
-// Seller hits an existing offer
-book.sellIntoOffer(offerId, streamId, minNetOut);
-// Stream transfers to offer maker, seller receives net underlying
+// Seller hits an existing liquidity
+lending.sellStreamToLiquidity(liquidityId, streamId, minNetOut);
+// Stream transfers to liquidity lender, seller receives net underlying
 ```
 
 **Path B — List for sale:**
 ```solidity
 // List the stream
-uint256 listingId = book.postSaleListing(market, streamId, aprBps);
+uint256 listingId = lending.postSaleListing(market, streamId, aprBps);
 // Buyer purchases it
-book.buyListing(listingId, maxPriceIn);
+lending.buyListing(listingId, maxPriceIn);
 // Stream transfers to buyer, seller receives net underlying
 ```
 
 Both paths transfer the stream permanently. The sale price is the stream's remaining face value discounted by the APR over the time to maturity.
 
-### Borrowing Against a Stream (Book)
+### Borrowing Against a Stream
 
-Borrowing is handled via the borrower pool primitive that batches across multiple offers in a single transaction:
+Borrowing is handled via the borrower loan-pool primitive that batches across multiple liquidity positions in a single transaction:
 
-**Borrower pool — batch borrow against multiple offers:**
+**Borrower loan pool, batch borrow against multiple liquidity positions:**
 ```solidity
-// Borrower pledges stream, borrows underlying from several offers at once
-uint256 poolId = book.createBorrowPool(offerIds, streamId, targetBorrow, minAcceptable);
+// Borrower pledges a stream and borrows underlying from several liquidity positions.
+uint256 loanPoolId = lending.createBorrowerLoanPool(liquidityIds, streamId, targetBorrow, minAcceptable);
 ```
 
-The borrower receives `borrowAmount` underlying (net of fee) and owes an `obligation` in ovrfloToken at maturity. The stream is escrowed by the book. The obligation is computed via `StreamPricing.obligationForFill`, which guarantees `obligation <= remaining` so the stream can always cover the debt. No liquidations — the stream is deterministic and non-cancelable.
+The borrower receives `borrowAmount` underlying (net of fee) and owes an `obligation` in ovrfloToken at maturity. The stream is escrowed by the lending market. The obligation is computed via `StreamPricing.obligationForFill`, which guarantees `obligation <= remaining` so the stream can always cover the debt. No liquidations, the stream is deterministic and non-cancelable.
 
-### Loan Servicing (Book)
+### Loan Servicing
 
-Loan servicing routes through pool claim channels. `closeLoan` and `repayLoan` route proceeds to `poolProceeds` rather than directly to a lender:
+Loan servicing routes through loan-pool claim channels. `closeLoan` and `repayLoan` route proceeds to `loanPoolProceeds` rather than directly to a lender:
 
 ```solidity
-// Pool contributor claims pro-rata from accumulated pool proceeds
-book.claimPoolShare(poolId, amount);
+// Loan-pool lender claims pro-rata from accumulated proceeds.
+lending.claimLoanPoolShare(loanPoolId, amount);
 
-// Permissionless: draw remaining outstanding, return stream to borrower (proceeds to poolProceeds)
-book.closeLoan(loanId);
+// Permissionless: draw remaining outstanding, return stream to borrower (proceeds to loanPoolProceeds)
+lending.closeLoan(loanId);
 
-// Borrower repays early in ovrfloToken to reduce or clear the obligation (proceeds to poolProceeds)
-book.repayLoan(loanId, amount);
+// Borrower repays early in ovrfloToken to reduce or clear the obligation (proceeds to loanPoolProceeds)
+lending.repayLoan(loanId, amount);
 ```
 
-`claimPoolShare` lets a contributor claim pro-rata from the pool's accumulated `poolProceeds` (fed by `closeLoan` and `repayLoan`), working for both open and closed loans. `closeLoan` is permissionless and requires the stream to have accrued enough to cover the outstanding. `repayLoan` lets the borrower repay early in ovrfloToken; when the obligation is fully satisfied, the stream is returned.
+`claimLoanPoolShare` lets a lender claim pro-rata from a loan pool's accumulated `loanPoolProceeds` (fed by `closeLoan` and `repayLoan`), working for both open and closed loans. `closeLoan` is permissionless and requires the stream to have accrued enough to cover the outstanding. `repayLoan` lets the borrower repay early in ovrfloToken; when the obligation is fully satisfied, the stream is returned.
 
 ### What's Fixed Will OVRFLO
 
-The PT discount is fixed at deposit -- the oracle splits principal from yield deterministically. What's fixed will overflow: the yield portion vests through a Sablier stream, and the composition of deposit, book sale, and unwrap or swap lets that fixed yield flow out of the PT and into extractable value. Every participant benefits:
+The PT discount is fixed at deposit -- the oracle splits principal from yield deterministically. What's fixed will overflow: the yield portion vests through a Sablier stream, and the composition of deposit, lending sale, and unwrap or swap lets that fixed yield flow out of the PT and into extractable value. Every participant benefits:
 
 **With held PT:**
 1. **Deposit 100 PT** (pre-maturity, PT trading at 95% of face) -- receive 95 ovrfloToken + Sablier stream vesting 5 ovrfloToken
 2. **Exit the 95 ovrfloToken** -- `unwrap()` for 95 underlying or swap on a DEX
-3. **Sell the stream on the book** into an offer -- receive ~4.5 underlying
+3. **Sell the stream on the lending market** into liquidity, receive ~4.5 underlying
 
 **With zero capital (flash-loan underlying, available today):**
 1. **Flash-loan 95 underlying** from Aave, Balancer, etc.
 2. **Swap for 100 PT** on the Pendle AMM (at 0.95 rate)
 3. **Deposit 100 PT** -- receive 95 ovrfloToken + Sablier stream vesting 5 ovrfloToken
 4. **Exit the 95 ovrfloToken** -- `unwrap()` for 95 underlying or swap on a DEX
-5. **Sell the stream on the book** -- receive ~4.5 underlying
+5. **Sell the stream on the lending market** -- receive ~4.5 underlying
 6. **Repay the flash loan** -- return 95 underlying + fee
 
 **Net result:** ~4.5 underlying of PT yield captured. The flash-loan path works today -- you borrow underlying (widely flash-loanable), not PT, and the Pendle AMM swap replaces the PT acquisition.
@@ -335,7 +335,7 @@ The PT discount is fixed at deposit -- the oracle splits principal from yield de
 │         ▼                     ▼                                      │
 │   ┌────────────┐     ┌──────────────┐                                │
 │   │ unwrap()   │     │  sellInto    │                                │
-│   │   or swap  │     │  Offer()     │                                │
+│   │   or swap  │     │  LiquidityPosition()     │                                │
 │   │  → ~95     │     │  → ~4.5      │                                │
 │   │  underly   │     │    underly   │                                │
 │   └────┬───────┘     └──────┬───────┘                                │
@@ -356,7 +356,7 @@ The PT discount is fixed at deposit -- the oracle splits principal from yield de
 |-------------|---------|
 | **Extractor** | Captures ~4.5 underlying of PT yield -- with held PT or zero capital via underlying flash loan |
 | **Wrap reserve funder** | If unwrap is used: reserve drained by 95 underlying, but deposit added 100 PT backing -- can `claim` 100 ovrfloToken for 100 PT at maturity. Economically whole. If swap is used: reserve untouched. |
-| **Book offer maker** | Bought a stream worth 5 ovrfloToken at maturity for ~4.5 underlying today. Fair trade at their chosen APR. |
+| **Lending liquidity lender** | Bought a stream worth 5 ovrfloToken at maturity for ~4.5 underlying today. Fair trade at their chosen APR. |
 | **Protocol** | Remains solvent (E-1 holds: net ovrfloToken supply = net backing). No funds stolen. |
 
 Any PT holder can do this today, or use a flash loan on the underlying (available on Aave/Balancer) to execute with zero capital -- swap underlying for PT on the Pendle AMM, run the cycle, repay in underlying. See `docs/audit/rejected-findings-record.md` for the full security analysis of why this is accepted by design.
@@ -384,22 +384,20 @@ The factory:
 - Transfers OVRFLOToken ownership to OVRFLO
 - Registers the OVRFLO in its registry
 
-### Deploying the Book
+### Deploying the Lending Market
 
 ```solidity
-// Preferred: factory deploys the book, enforces 1:1, and nominates multisig as pending owner
+// Factory deploys and remains the owner of the lending market.
 vm.prank(multisig);
-address book = factory.deployBook(ovrflo);
+address lendingMarket = factory.deployLending(ovrflo);
 
-// Multisig accepts ownership (two-step)
-OVRFLOBook(book).acceptOwnership();
-
-// Optionally configure fee and APR bounds
-OVRFLOBook(book).setFee(feeBps);
-OVRFLOBook(book).setAprBounds(aprMin, aprMax);
+// Multisig configures the market through factory forwarders.
+factory.setLendingFee(lendingMarket, feeBps);
+factory.setLendingAprBounds(lendingMarket, aprMin, aprMax);
+factory.setLendingTreasury(lendingMarket, treasury);
 ```
 
-The factory reads the Sablier address from the vault's `sablierLL` immutable, enforces 1:1 (one book per vault), registers the book in `ovrfloToBook`, and nominates the multisig as pending owner. The book pulls treasury, underlying, and ovrfloToken from the factory registry at construction. APR bounds initialize to the launch APR (10%). A standalone script (`script/OVRFLOBook.s.sol`) remains available for flexible deployment but does not register in the factory's `ovrfloToBook` mapping.
+The factory reads the Sablier address from the vault's `sablierLL` immutable, enforces 1:1 (one lending market per vault), registers it in `ovrfloToLending` and `lendingToOvrflo`, and remains its owner. The lending market pulls treasury, underlying, and ovrfloToken from the factory registry at construction. APR bounds initialize to the launch APR (10%). Factory deployment is the only supported production path.
 
 ### Onboarding a New Market
 
@@ -420,7 +418,7 @@ factory.addMarket(ovrflo, market, twapDuration, feeBps);
 Two separate fees operate at different layers:
 
 - **Core deposit fee**: Charged on the immediate portion (`toUser`), paid in underlying, sent to the vault's treasury. Capped at 1% (`FEE_MAX_BPS = 100` on `OVRFLOFactory`). Set per-market via `addMarket`.
-- **Book protocol fee**: Charged on the sale price or borrow amount, paid in underlying, sent to the book's treasury. Capped at 100% (`MAX_FEE_BPS = 10_000` on `OVRFLOBook`). Set globally via `setFee`. Listings snapshot the fee at post time to protect makers from retroactive changes; offers use the current global fee.
+- **Lending protocol fee**: Charged on the sale price or borrow amount, paid in underlying, and sent to the lending market treasury. Capped at 100% (`MAX_FEE_BPS = 10_000` on `OVRFLOLENDING`). Configure it through `OVRFLOFactory.setLendingFee`. Listings snapshot the fee at post time to protect sellers from retroactive changes; liquidity positions use the current global fee.
 
 ## Security
 
@@ -429,19 +427,19 @@ Two separate fees operate at different layers:
 - **OVRFLOFactory**: Owned by timelocked multisig, serves as immutable `factory` (admin) for all deployed OVRFLOs
 - **OVRFLO**: Controlled by factory (admin functions gated by `onlyAdmin` modifier)
 - **OVRFLOToken**: Owned by OVRFLO (mint/burn restricted)
-- **OVRFLOBook**: Owned by multisig (two-step ownership transfer), bound to one vault + Sablier instance at construction
+- **OVRFLOLENDING**: Owned by `OVRFLOFactory`, bound to one vault and Sablier instance at construction, and administered through factory forwarders
 
 ### Safeguards
 
 - **Multisig + Timelock**: All admin operations require multisig consensus and timelock delay
-- **APR ceiling**: Hardcoded at 100% (`APR_MAX_CEILING = 10_000` on `OVRFLOBook`) — cannot be raised past 100% even by the owner
-- **Fee ceilings**: Core deposit fee capped at 1% (`FEE_MAX_BPS = 100` on factory), book protocol fee capped at 100% (`MAX_FEE_BPS = 10_000` on book) — both hardcoded constants
+- **APR ceiling**: Hardcoded at 100% (`APR_MAX_CEILING = 10_000` on `OVRFLOLENDING`) — cannot be raised past 100% even by the owner
+- **Fee ceilings**: Core deposit fee capped at 1% (`FEE_MAX_BPS = 100` on factory), lending protocol fee capped at 100% (`MAX_FEE_BPS = 10_000` on lending) — both hardcoded constants
 - **No liquidations**: Deterministic, non-cancelable Sablier streams cannot underperform — the stream itself repays the loan
 - **StreamPricing math**: Floor/ceil rounding is directional and load-bearing. The invariant `obligation <= remaining` is proven and stress-tested (see `plans/streampricing-math-analysis.md`)
 - **Oracle**: TWAP pricing for PT valuation prevents manipulation; oracle is a vault immutable set at factory construction
-- **Slippage**: `minToUser` on deposits, `minNetOut` on book fills, `minAcceptable` on borrow pools, `maxPriceIn` on buy-listing
+- **Slippage**: `minToUser` on deposits, `minNetOut` on lending fills, `minAcceptable` on borrow pools, `maxPriceIn` on buy-listing
 - **Deposit limits**: Per-market caps available (set limit to 0 to freeze new deposits)
-- **Two-step ownership**: `transferOwnership` on factory and book only nominates a pending owner; the new owner must call `acceptOwnership` to finalize
+- **Two-step ownership**: `transferOwnership` on the factory nominates a pending owner; the new owner must call `acceptOwnership` to finalize
 
 ### Design Notes
 
@@ -454,7 +452,7 @@ A single `OVRFLOToken` is shared by every PT market that resolves to the same un
 
 ## Roadmap
 
-**The Pool** — passive, closed-end, sealed, pro-rata aggregation of loans over the same StreamPricing core. Many lenders pool underlying, many borrowers each pledge a stream, residuals return per borrower, and lenders own a pro-rata share of the sum of obligations. Built after the Book establishes a market APR.
+**The Pool** — passive, closed-end, sealed, pro-rata aggregation of loans over the same StreamPricing core. Many lenders pool underlying, many borrowers each pledge a stream, residuals return per borrower, and lenders own a pro-rata share of the sum of obligations. Built after the Lending establishes a market APR.
 
 ## External Dependencies
 
@@ -465,7 +463,7 @@ A single `OVRFLOToken` is shared by every PT market that resolves to the same un
 
 ## Deployments
 
-| Network | OVRFLOFactory | OVRFLO | OVRFLOBook |
+| Network | OVRFLOFactory | OVRFLO | OVRFLOLENDING |
 |---------|---------------|--------|------------|
 | Mainnet | TBD | TBD | TBD |
 
@@ -473,7 +471,7 @@ A single `OVRFLOToken` is shared by every PT market that resolves to the same un
 
 ### Prerequisites
 
-- [Foundry](https://book.getfoundry.sh/getting-started/installation)
+- [Foundry](https://lending.getfoundry.sh/getting-started/installation)
 
 ### Build
 
@@ -599,17 +597,17 @@ uint256 deposited = ovrflo.marketTotalDeposited(market);
 uint256 available = limit == 0 ? type(uint256).max : limit - deposited;
 ```
 
-### For Book Integrators
+### For Lending Integrators
 
 ```solidity
 // Quote a borrow against a stream
 (uint256 grossPrice, uint128 obligation, uint256 fee, uint256 netToBorrower, uint128 residual) =
-    book.quote(market, streamId, aprBps, borrowAmount);
+    lending.quote(market, streamId, aprBps, borrowAmount);
 
 // Check loan state
 (address borrower, address lender, uint256 streamId, uint128 obligation,
  uint128 drawn, uint128 repaid, uint128 outstanding, bool closed) =
-    book.loanState(loanId);
+    lending.loanState(loanId);
 ```
 
 ## License

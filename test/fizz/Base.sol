@@ -8,7 +8,7 @@ import {MockERC20} from "./utils/MockERC20.sol";
 import {StringUtils} from "./utils/StringUtils.sol";
 import {OVRFLO} from "../../src/OVRFLO.sol";
 import {OVRFLOToken} from "../../src/OVRFLOToken.sol";
-import {OVRFLOBook} from "../../src/OVRFLOBook.sol";
+import {OVRFLOLENDING} from "../../src/OVRFLOLENDING.sol";
 import {OVRFLOFactory} from "../../src/OVRFLOFactory.sol";
 import {MockSablier} from "./mocks/MockSablier.sol";
 import {MockPendleOracle} from "./mocks/MockPendleOracle.sol";
@@ -25,7 +25,7 @@ abstract contract Base is StringUtils, Clamp {
 
     struct Ghosts {
         // ID counter tracking (GL-15)
-        uint256 ghost_lastNextOfferId;
+        uint256 ghost_lastNextLiquidityId;
         uint256 ghost_lastNextSaleListingId;
         uint256 ghost_lastNextLoanId;
         uint256 ghost_lastNextPoolId;
@@ -35,7 +35,7 @@ abstract contract Base is StringUtils, Clamp {
         // Entity ID tracking (SP-*)
         uint256 ghost_lastPoolId;
         uint256 ghost_lastLoanId;
-        uint256 ghost_lastOfferId;
+        uint256 ghost_lastLiquidityId;
         uint256 ghost_lastListingId;
         // Stream tracking (for snapshots)
         uint256 ghost_lastStreamId;
@@ -55,10 +55,10 @@ abstract contract Base is StringUtils, Clamp {
     mapping(uint256 => mapping(address => uint128)) internal ghost_poolReceivedSnapshot;
 
     // One-way flag tracking (GL-11, GL-12, GL-13)
-    mapping(uint256 => bool) internal ghost_offerActiveSnapshot;
+    mapping(uint256 => bool) internal ghost_liquidityActiveSnapshot;
     mapping(uint256 => bool) internal ghost_listingActiveSnapshot;
     mapping(uint256 => bool) internal ghost_loanClosedSnapshot;
-    mapping(uint256 => bool) internal ghost_offerSeen;
+    mapping(uint256 => bool) internal ghost_liquiditySeen;
     mapping(uint256 => bool) internal ghost_listingSeen;
     mapping(uint256 => bool) internal ghost_loanSeen;
 
@@ -67,8 +67,8 @@ abstract contract Base is StringUtils, Clamp {
     mapping(uint256 => uint256) internal ghost_loanStreamIdInit;
     mapping(uint256 => address) internal ghost_loanBorrowerInit;
     mapping(uint256 => address) internal ghost_loanLenderInit;
-    mapping(uint256 => address) internal ghost_offerMakerInit;
-    mapping(uint256 => uint16) internal ghost_offerAprBpsInit;
+    mapping(uint256 => address) internal ghost_liquidityMakerInit;
+    mapping(uint256 => uint16) internal ghost_liquidityAprBpsInit;
     mapping(uint256 => uint16) internal ghost_listingFeeBpsInit;
     mapping(uint256 => bool) internal ghost_listingFeeRecorded;
     mapping(uint256 => uint128) internal ghost_poolTotalContributedInit;
@@ -81,7 +81,7 @@ abstract contract Base is StringUtils, Clamp {
 
     // Factory counter tracking (GL-19, GL-20, GL-21)
     uint256 internal ghost_lastOvrfloCount;
-    uint256 internal ghost_lastBookCount;
+    uint256 internal ghost_lastLendingCount;
     uint256 internal ghost_lastApprovedMarketCount;
 
     // ―――――――――――――――――――――――――― Actors ――――――――――――――――――――――――――
@@ -107,7 +107,7 @@ abstract contract Base is StringUtils, Clamp {
     OVRFLOFactory public factory;
     OVRFLO public vault;
     OVRFLOToken public ovrfloToken;
-    OVRFLOBook public book;
+    OVRFLOLENDING public lending;
     MockERC20 public underlying;
     MockERC20 public ptToken;
     MockPendleOracle public mockOracle;
@@ -156,15 +156,15 @@ abstract contract Base is StringUtils, Clamp {
         factory.addMarket(vaultAddr, market, TWAP_DURATION, 10);
         vm.label(market, "MockPendleMarket");
 
-        // 7. Deploy book
-        address bookAddr = factory.deployBook(vaultAddr);
-        book = OVRFLOBook(bookAddr);
-        vm.label(bookAddr, "OVRFLOBook");
+        // 7. Deploy lending
+        address lendingAddr = factory.deployLending(vaultAddr);
+        lending = OVRFLOLENDING(lendingAddr);
+        vm.label(lendingAddr, "OVRFLOLENDING");
 
         // 8. Configure limits and bounds
         factory.setMarketDepositLimit(vaultAddr, market, type(uint256).max);
-        factory.setBookAprBounds(bookAddr, 0, 10_000); // 0% to 100% APR
-        factory.setBookFee(bookAddr, 0); // 0% book fee
+        factory.setLendingAprBounds(lendingAddr, 0, 10_000); // 0% to 100% APR
+        factory.setLendingFee(lendingAddr, 0); // 0% lending fee
 
         // Fund this contract for Actor creation (Medusa doesn't fund during construction)
         vm.deal(address(this), INITIAL_ETH_BALANCE * ACTOR_LABELS.length);
@@ -176,8 +176,8 @@ abstract contract Base is StringUtils, Clamp {
         admin = address(this);
         vm.label(admin, "Admin");
 
-		for (uint256 i; i < ACTOR_LABELS.length; i++) {
-			address _actor = address(new Actor{value: INITIAL_ETH_BALANCE}());
+        for (uint256 i; i < ACTOR_LABELS.length; i++) {
+            address _actor = address(new Actor{value: INITIAL_ETH_BALANCE}());
             actors.push(_actor);
             if (ACTOR_LABELS.length > i) {
                 vm.label(_actor, ACTOR_LABELS[i]);
@@ -185,15 +185,15 @@ abstract contract Base is StringUtils, Clamp {
             // Mint tokens to actor
             underlying.deal(_actor, INITIAL_TOKEN_AMOUNT);
             ptToken.deal(_actor, INITIAL_TOKEN_AMOUNT);
-            // Set approvals: vault (deposit + wrap), book (postOffer + buyListing + repayLoan)
+            // Set approvals: vault (deposit + wrap), lending (supplyLiquidity + buyListing + repayLoan)
             vm.startPrank(_actor);
             ptToken.approve(address(vault), type(uint256).max);
             underlying.approve(address(vault), type(uint256).max);
-            underlying.approve(address(book), type(uint256).max);
-            ovrfloToken.approve(address(book), type(uint256).max);
+            underlying.approve(address(lending), type(uint256).max);
+            ovrfloToken.approve(address(lending), type(uint256).max);
             vm.stopPrank();
             ghost_actorStartValue[_actor] = INITIAL_TOKEN_AMOUNT * 2; // underlying + PT
-		}
+        }
         actor = actors[0];
     }
 
