@@ -1,19 +1,19 @@
 ---
-title: OVRFLOBook offer-post market-active gate and shared eligibility dedup
+title: OVRFLOLENDING liquidity-post market-active gate and shared eligibility dedup
 date: 2026-06-24
 last_updated: 2026-06-30
 category: architecture-patterns
-module: OVRFLOBook
+module: OVRFLOLENDING
 problem_type: architecture_pattern
 component: solidity_contracts
 severity: low
 applies_when:
-  - "Posting standing offers (unified, consumable as sale or loan) in OVRFLOBook against a market"
-  - "Refactoring shared market/series/maturity eligibility checks across fill and offer code paths"
-  - "Deciding whether to validate a market at offer-creation time versus only at fill time"
+  - "Supplying standing liquidity (unified, consumable as sale or loan) in OVRFLOLENDING against a market"
+  - "Refactoring shared market/series/maturity eligibility checks across fill and liquidity code paths"
+  - "Deciding whether to validate a market at liquidity-supply time versus only at fill time"
 tags:
-  - ovrflobook
-  - offer-posting
+  - ovrflolending
+  - liquidity-supply
   - market-validation
   - eligibility
   - dedup
@@ -21,12 +21,12 @@ tags:
   - streampricing
 ---
 
-# OVRFLOBook offer-post market-active gate and shared eligibility dedup
+# OVRFLOLENDING liquidity-post market-active gate and shared eligibility dedup
 
 ## Context
 
-`OVRFLOBook` has two order types. One is an **offer** (maker posts
-standing liquidity in underlying, no stream bound): `postOffer` — unified,
+`OVRFLOLENDING` has two order types. One is a **liquidity position** (maker posts
+standing liquidity in underlying, no stream bound): `supplyLiquidity` — unified,
 consumable as sale or loan. The other is a **sale listing** (maker posts a
 specific Sablier stream): `postSaleListing`. All fills and all listings validate
 the stream + market via
@@ -34,17 +34,17 @@ the stream + market via
 series approved, not matured, stream sender == core, asset == ovrfloToken,
 end time == expiry, no cliff, non-cancelable, remaining > 0).
 
-The offer posting function previously validated only the APR and
-capacity — it accepted ANY `market` argument and pulled funds, deferring all
-market/series/maturity checks to fill time (`sellIntoOffer` /
-`createBorrowPool`). So a maker could lock up underlying behind a dead or
+The liquidity supply function previously validated only the APR and
+available liquidity — it accepted ANY `market` argument and pulled funds, deferring all
+market/series/maturity checks to fill time (`sellStreamToLiquidity` /
+`createBorrowerLoanPool`). So a maker could lock up underlying behind a dead or
 unapproved market and only discover the rejection when someone tried to fill it.
 
 ## Guidance
 
-Front-load the stream-agnostic subset of `requireEligible` at offer-post time,
+Front-load the stream-agnostic subset of `requireEligible` at liquidity-supply time,
 and extract that subset into a single shared library function so the same checks
-are not duplicated between offer-post and `requireEligible`.
+are not duplicated between liquidity-supply and `requireEligible`.
 
 In `src/StreamPricing.sol`, a new library function holds the three checks that do
 not need a `streamId`:
@@ -73,39 +73,39 @@ if (treasury == address(0) || registeredToken == address(0)) revert CoreNotRegis
 // ... stream-specific checks follow ...
 ```
 
-In `src/OVRFLOBook.sol`, a thin internal helper and its call site:
+In `src/OVRFLOLENDING.sol`, a thin internal helper and its call site:
 
 ```solidity
 function _requireMarketActive(address market) internal view {
     StreamPricing.marketActive(address(factory), core, market);
 }
 
-function postOffer(...) external nonReentrant returns (uint256 offerId) {
+function supplyLiquidity(...) external nonReentrant returns (uint256 liquidityId) {
     _validateApr(aprBps);
     _requireMarketActive(market);          // fail fast before pulling funds
-    require(capacity > 0, "OVRFLOBook: capacity zero");
+    require(availableLiquidity > 0, "OVRFLOLENDING: availableLiquidity zero");
     ...
 }
 ```
 
-The `IOVRFLOSeriesRegistry` import was removed from `OVRFLOBook.sol` — the book
+The `IOVRFLOSeriesRegistry` import was removed from `OVRFLOLENDING.sol` — the lending market
 no longer reads `series()` directly; the pricing library does.
 
 ## Why This Matters
 
-- **Maker UX / gas:** funds are no longer pulled for an offer that can never be
-  filled (unapproved or already-matured market). Fail-fast at post.
+- **Maker UX / gas:** funds are no longer pulled for a liquidity position that can never be
+  filled (unapproved or already-matured market). Fail-fast at supply.
 - **Single source of truth:** the three market/series/maturity checks live in
   exactly one place (`StreamPricing.marketActive`). `requireEligible` calls it;
   `_requireMarketActive` calls it. No duplication.
 - **No hot-path gas regression:** `requireEligible` still does exactly one
   `series()` read and one `isMarketApproved` read (it just delegates the
-  checks). Offer-post adds the same single read. The alternative of "strip the
+  checks). Liquidity-supply adds the same single read. The alternative of "strip the
   checks from `requireEligible` and call both helpers at fill time" was rejected
   because it would have made every listing/fill do TWO `series()` reads plus two
   `isMarketApproved` calls — a regression on the hot path — just to dedup with
-  the rare offer-post path.
-- **Reduced import surface:** the book no longer imports
+  the rare liquidity-supply path.
+- **Reduced import surface:** the lending market no longer imports
   `IOVRFLOSeriesRegistry` directly; series reads are centralized in the pricing
   library.
 
@@ -119,26 +119,27 @@ no longer reads `series()` directly; the pricing library does.
   function and have both delegate to it, rather than duplicating or stripping
   the full check.
 - Do NOT front-load stream-specific checks (sender, asset, end time,
-  cancelability) at offer-post time — those require a `streamId` the offer does
-  not have; keep them in `requireEligible` at fill time.
+  cancelability) at liquidity-supply time — those require a `streamId` the
+  liquidity position does not have; keep them in `requireEligible` at fill time.
 
 ## Examples
 
-- **Before:** `postOffer(market = unapprovedMarket, ...)` succeeded and
-  pulled 100 underlying; the first `createBorrowPool` against it reverted with
-  `MarketNotApproved`, stranding the lender's capital until `cancelOffer`.
-- **After:** `postOffer(market = unapprovedMarket, ...)` reverts immediately
+- **Before:** `supplyLiquidity(market = unapprovedMarket, ...)` succeeded and
+  pulled 100 underlying; the first `createBorrowerLoanPool` against it reverted with
+  `MarketNotApproved`, stranding the lender's capital until `withdrawLiquidity`.
+- **After:** `supplyLiquidity(market = unapprovedMarket, ...)` reverts immediately
   with `MarketNotApproved` before any transfer.
-- **Test update:** `test_CreateBorrowPool_CancelledOfferReverts`
-  had to be updated. It used to unapprove the market BEFORE posting an offer
-  (relying on post not checking), then expect `createBorrowPool` to revert.
-  Now post rejects unapproved markets, so the test posts while approved, then
-  unapproves, then expects the fill to revert — preserving the fill-time
-  ineligibility intent.
+- **Test update:** `test_Maturity_NewPositionsBlocked_ExitsLive`
+  superseded the old `test_CreateBorrowPool_CancelledOfferReverts`. The old test
+  used to unapprove the market BEFORE supplying liquidity (relying on supply not
+  checking), then expect `createBorrowerLoanPool` to revert. Now supply rejects
+  unapproved markets, so the new test verifies that after maturity, all new
+  position creation paths (`supplyLiquidity`, `postSaleListing`,
+  `createBorrowerLoanPool`) revert — preserving the fill-time ineligibility intent.
 
 ## Related
 
-- `src/OVRFLOBook.sol` — `postOffer`, `cancelOffer`, `_requireMarketActive`.
+- `src/OVRFLOLENDING.sol` — `supplyLiquidity`, `withdrawLiquidity`, `_requireMarketActive`.
 - `src/StreamPricing.sol` — `marketActive`, `requireEligible`.
 - [security-issues/repayloan-equality-rounding-no-brick-OVRFLOBook-20260624.md](../security-issues/repayloan-equality-rounding-no-brick-OVRFLOBook-20260624.md)
   — companion note on `StreamPricing` rounding invariants; its Related section

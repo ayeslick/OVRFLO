@@ -7,9 +7,9 @@ problem_type: architecture_pattern
 component: service_object
 severity: medium
 applies_when:
-  - Deploying or extending a factory contract that owns and administers child vaults and books
+  - Deploying or extending a factory contract that owns and administers child vaults and lending markets
   - Adding admin forwarding functions so all governance flows through a single factory entry point
-  - Introducing reverse lookups, enumeration, and duplicate-prevention mappings for deployed vaults and books
+  - Introducing reverse lookups, enumeration, and duplicate-prevention mappings for deployed vaults and lending markets
   - Making admin references immutable to save gas and enforce a single-owner admin model
 tags:
   - ovrflofactory
@@ -26,9 +26,9 @@ tags:
 
 ## Context
 
-OVRFLOFactory is the admin hub for every deployed OVRFLO vault and OVRFLOBook. It is owned by a timelocked multisig and is intended to be the **single admin entry point** for all vaults and books: every governance action flows multisig -> factory -> vault (or book). A review of the factory's deployment and management surface revealed six concrete gaps where the implementation drifted from that intended design, from stale documentation describing features that were never built, to inconsistent admin routing that broke the single-surface invariant, to a missing duplicate-deployment guard that contradicted a documented fungibility guarantee.
+OVRFLOFactory is the admin hub for every deployed OVRFLO vault and OVRFLOLENDING. It is owned by a timelocked multisig and is intended to be the **single admin entry point** for all vaults and lending markets: every governance action flows multisig -> factory -> vault (or lending market). A review of the factory's deployment and management surface revealed six concrete gaps where the implementation drifted from that intended design, from stale documentation describing features that were never built, to inconsistent admin routing that broke the single-surface invariant, to a missing duplicate-deployment guard that contradicted a documented fungibility guarantee.
 
-These gaps were not theoretical. Each one was either actively misleading future developers (dead docs), creating operational risk (book ownership drift on factory ownership transfer), or silently violating an invariant the project relied on (cross-market `ovrfloToken` fungibility under one underlying). The fix work touched `src/OVRFLOFactory.sol`, `src/OVRFLO.sol`, and a broad set of documentation and plan files, and was validated by 292 passing tests including 13 new ones targeting the gaps.
+These gaps were not theoretical. Each one was either actively misleading future developers (dead docs), creating operational risk (lending ownership drift on factory ownership transfer), or silently violating an invariant the project relied on (cross-market `ovrfloToken` fungibility under one underlying). The fix work touched `src/OVRFLOFactory.sol`, `src/OVRFLO.sol`, and a broad set of documentation and plan files, and was validated by 362 passing tests including 13 new ones targeting the gaps.
 
 ## Guidance
 
@@ -40,69 +40,69 @@ These gaps were not theoretical. Each one was either actively misleading future 
 
 ### 2. Route every dependent contract's admin actions through the factory
 
-OVRFLOBook exposed `setAprBounds`, `setFee`, and `setTreasury` as `onlyOwner` on the book itself. The factory's `deployBook()` transferred book ownership straight to the multisig:
+OVRFLOLENDING exposed `setAprBounds`, `setFee`, and `setTreasury` as `onlyOwner` on the lending market itself. The factory's `deployLending()` transferred lending ownership straight to the multisig:
 
 ```solidity
 b.transferOwnership(owner()); // removed
 ```
 
-This created two admin surfaces: vaults went multisig -> factory -> vault, but books went multisig -> book directly. Worse, when the factory's own ownership was transferred via the two-step `transferOwnership` / `acceptOwnership` flow, book ownership did **not** follow. The books stayed owned by the old multisig address while the factory moved to the new one, silently splitting governance.
+This created two admin surfaces: vaults went multisig -> factory -> vault, but lending markets went multisig -> lending market directly. Worse, when the factory's own ownership was transferred via the two-step `transferOwnership` / `acceptOwnership` flow, lending ownership did **not** follow. The lending markets stayed owned by the old multisig address while the factory moved to the new one, silently splitting governance.
 
-**Guidance**: If the factory is the single admin hub, the factory must **own** every dependent contract it deploys, and it must expose forwarding functions for every admin action on those dependents. Remove any `transferOwnership` to the multisig from inside `deployBook()`. Add thin forwarders that re-check the caller is the factory owner and re-emit an event:
+**Guidance**: If the factory is the single admin hub, the factory must **own** every dependent contract it deploys, and it must expose forwarding functions for every admin action on those dependents. Remove any `transferOwnership` to the multisig from inside `deployLending()`. Add thin forwarders that re-check the caller is the factory owner and re-emit an event:
 
 ```solidity
-function setBookAprBounds(address book, uint16 aprMinBps_, uint16 aprMaxBps_) external onlyOwner {
-    _requireKnownBook(book);
-    OVRFLOBook(book).setAprBounds(aprMinBps_, aprMaxBps_);
-    emit BookAprBoundsSet(book, aprMinBps_, aprMaxBps_);
+function setLendingAprBounds(address lending, uint16 aprMinBps_, uint16 aprMaxBps_) external onlyOwner {
+    _requireKnownLending(lending);
+    OVRFLOLENDING(lending).setAprBounds(aprMinBps_, aprMaxBps_);
+    emit LendingAprBoundsSet(lending, aprMinBps_, aprMaxBps_);
 }
 
-function setBookFee(address book, uint16 feeBps_) external onlyOwner {
-    _requireKnownBook(book);
-    OVRFLOBook(book).setFee(feeBps_);
-    emit BookFeeSet(book, feeBps_);
+function setLendingFee(address lending, uint16 feeBps_) external onlyOwner {
+    _requireKnownLending(lending);
+    OVRFLOLENDING(lending).setFee(feeBps_);
+    emit LendingFeeSet(lending, feeBps_);
 }
 
-function setBookTreasury(address book, address treasury_) external onlyOwner {
-    _requireKnownBook(book);
-    OVRFLOBook(book).setTreasury(treasury_);
-    emit BookTreasurySet(book, treasury_);
+function setLendingTreasury(address lending, address treasury_) external onlyOwner {
+    _requireKnownLending(lending);
+    OVRFLOLENDING(lending).setTreasury(treasury_);
+    emit LendingTreasurySet(lending, treasury_);
 }
 ```
 
-Guard each forwarder with a known-book check so a stale or arbitrary book address cannot be driven through the forwarder:
+Guard each forwarder with a known-lending check so a stale or arbitrary lending address cannot be driven through the forwarder:
 
 ```solidity
-function _requireKnownBook(address book) internal view {
-    require(bookToOvrflo[book] != address(0), "OVRFLOFactory: unknown book");
+function _requireKnownLending(address lending) internal view {
+    require(lendingToOvrflo[lending] != address(0), "OVRFLOFactory: unknown lending");
 }
 ```
 
-This keeps the multisig -> factory -> book chain intact and means a single factory ownership transfer moves governance for vaults **and** books in one step.
+This keeps the multisig -> factory -> lending chain intact and means a single factory ownership transfer moves governance for vaults **and** lending markets in one step.
 
 ### 3. Provide reverse lookups and enumeration for every deployable contract type
 
-The factory had `ovrfloToBook` (vault -> book) but no reverse mapping and no enumeration for books. Vaults had `ovrflos[uint256]` + `ovrfloCount`; books had nothing. Off-chain tooling and on-chain readers could not list books or answer "which vault owns this book?".
+The factory had `ovrfloToLending` (vault -> lending) but no reverse mapping and no enumeration for lending markets. Vaults had `ovrflos[uint256]` + `ovrfloCount`; lending markets had nothing. Off-chain tooling and on-chain readers could not list lending markets or answer "which vault owns this lending market?"
 
 **Guidance**: For each deployable contract type, maintain the symmetric set of mappings:
 
 ```solidity
-mapping(address => address) public ovrfloToBook;   // vault -> book
-mapping(address => address) public bookToOvrflo;    // book -> vault (reverse)
-uint256 public bookCount;                           // total deployed
-mapping(uint256 => address) public books;           // index -> book (enumeration)
+mapping(address => address) public ovrfloToLending;   // vault -> lending
+mapping(address => address) public lendingToOvrflo;    // lending -> vault (reverse)
+uint256 public lendingCount;                           // total deployed
+mapping(uint256 => address) public lendings;           // index -> lending (enumeration)
 ```
 
 Populate them together at deploy time so they can never drift:
 
 ```solidity
-ovrfloToBook[ovrflo] = book;
-bookToOvrflo[book] = ovrflo;
-books[bookCount] = book;
-bookCount += 1;
+ovrfloToLending[ovrflo] = lending;
+lendingToOvrflo[lending] = ovrflo;
+lendings[lendingCount] = lending;
+lendingCount += 1;
 ```
 
-The reverse map doubles as the trust anchor for `_requireKnownBook`, so the enumeration and the admin-forwarder guard share one source of truth.
+The reverse map doubles as the trust anchor for `_requireKnownLending`, so the enumeration and the admin-forwarder guard share one source of truth.
 
 ### 4. Enforce one-vault-per-underlying at configure time
 
@@ -165,7 +165,7 @@ Then sweep every doc, x-ray, plan, and brainstorm file for the old name and upda
 These six gaps share a root cause: the factory's **intended** design (single admin surface, one vault per underlying, immutable admin reference, documented trust model) had drifted from its **implemented** design, and the documentation had drifted further still, describing features that were never built. Each gap has a concrete cost:
 
 - **Dead docs** mislead every new contributor and every auditor. An auditor who reads "vault admin migration via `transferVaultAdmin`" will look for the setter, not find it, and either flag a missing-feature finding or, worse, assume it exists and reason about its security properties. Removing the references closes that loop.
-- **Split book admin** means a factory ownership transfer silently abandons book governance. In a timelocked-multisig context, discovering that books are owned by the old multisig address **after** a rotation is an operational incident, not a refactor. Routing through the factory makes the rotation atomic.
+- **Split lending admin** means a factory ownership transfer silently abandons lending governance. In a timelocked-multisig context, discovering that lending markets are owned by the old multisig address **after** a rotation is an operational incident, not a refactor. Routing through the factory makes the rotation atomic.
 - **Missing reverse lookup and enumeration** forces off-chain tooling to reconstruct state from events, which is fragile and easy to get wrong. The mappings are cheap (two SSTOREs at deploy time) and make the factory self-describing.
 - **Duplicate underlying deployment** breaks a fungibility invariant the project explicitly relies on and documents as a feature. Two `OVRFLOToken` contracts for the same underlying are not fungible with each other, and a user who deposits into the second vault expecting parity with the first gets a different token. The guard turns a silent invariant violation into a loud revert.
 - **Undocumented trust assumptions** look like bugs. An explicit `@dev` note converts a potential audit finding into a documented design choice and protects the omission from being "fixed" into redundancy.
@@ -178,10 +178,10 @@ The unifying principle: **the factory's admin model must be consistent end-to-en
 Apply this guidance whenever you are designing or reviewing a **factory + dependent contract** pattern in Solidity, particularly when:
 
 - The factory is owned by a timelocked multisig and is intended to be the **only** admin entry point for the contracts it deploys.
-- Dependent contracts (vaults, books, tokens, oracles) have their own `onlyOwner` admin functions that governance needs to call.
+- Dependent contracts (vaults, lending markets, tokens, oracles) have their own `onlyOwner` admin functions that governance needs to call.
 - The factory supports a two-step ownership transfer (`transferOwnership` / `acceptOwnership`), so ownership of dependents must move in lockstep.
 - The same underlying asset must map to at most one vault, because downstream tokens or positions assume one-vault-per-asset fungibility.
-- Off-chain tooling or on-chain readers need to enumerate deployed instances or resolve book-to-vault / vault-to-book relationships.
+- Off-chain tooling or on-chain readers need to enumerate deployed instances or resolve lending-to-vault / vault-to-lending relationships.
 - A constructor-set reference is logically constant for the contract's lifetime.
 - The project has an explicit stance of trusting multisig validation off-chain rather than duplicating it on-chain.
 
@@ -189,7 +189,7 @@ It does **not** apply when the factory is a thin deployer with no admin forwardi
 
 ## Examples
 
-### Before: split book admin, no duplicate guard, mutable admin reference
+### Before: split lending admin, no duplicate guard, mutable admin reference
 
 ```solidity
 // OVRFLO.sol
@@ -207,16 +207,16 @@ modifier onlyAdmin() {
 
 ```solidity
 // OVRFLOFactory.sol
-function deployBook(address ovrflo) external onlyOwner returns (address book) {
-    // ...deploy OVRFLOBook b...
-    b.transferOwnership(owner()); // book owned by multisig directly, NOT the factory
-    ovrfloToBook[ovrflo] = book;  // forward map only, no reverse, no enumeration
-    emit BookDeployed(ovrflo, book);
+function deployLending(address ovrflo) external onlyOwner returns (address lending) {
+    // ...deploy OVRFLOLENDING b...
+    b.transferOwnership(owner()); // lending market owned by multisig directly, NOT the factory
+    ovrfloToLending[ovrflo] = lending;  // forward map only, no reverse, no enumeration
+    emit LendingDeployed(ovrflo, lending);
 }
 
 // deploy() has no check for an existing vault on the same underlying.
-// setAprBounds / setFee / setTreasury on OVRFLOBook are onlyOwner on the book,
-// so the multisig calls the book directly, bypassing the factory.
+// setAprBounds / setFee / setTreasury on OVRFLOLENDING are onlyOwner on the lending market,
+// so the multisig calls the lending market directly, bypassing the factory.
 ```
 
 Documentation at this point claimed `transferVaultAdmin` existed for migration. It did not.
@@ -239,10 +239,10 @@ modifier onlyAdmin() {
 
 ```solidity
 // OVRFLOFactory.sol
-mapping(address => address) public ovrfloToBook;     // vault -> book
-mapping(address => address) public bookToOvrflo;      // book -> vault
-uint256 public bookCount;
-mapping(uint256 => address) public books;
+mapping(address => address) public ovrfloToLending;     // vault -> lending
+mapping(address => address) public lendingToOvrflo;      // lending -> vault
+uint256 public lendingCount;
+mapping(uint256 => address) public lendings;
 mapping(address => address) public underlyingToOvrflo; // underlying -> vault
 
 function configureDeployment(...) external onlyOwner {
@@ -256,58 +256,58 @@ function deploy() external onlyOwner returns (address ovrflo) {
     // ...existing ovrflos[] enumeration...
 }
 
-function deployBook(address ovrflo) external onlyOwner returns (address book) {
+function deployLending(address ovrflo) external onlyOwner returns (address lending) {
     _requireKnownOvrflo(ovrflo);
-    require(ovrfloToBook[ovrflo] == address(0), "OVRFLOFactory: book exists");
-    // ...deploy OVRFLOBook b...
+    require(ovrfloToLending[ovrflo] == address(0), "OVRFLOFactory: lending exists");
+    // ...deploy OVRFLOLENDING b...
     // NOTE: no b.transferOwnership(owner()) — factory stays the owner
-    ovrfloToBook[ovrflo] = book;
-    bookToOvrflo[book] = ovrflo;
-    books[bookCount] = book;
-    bookCount += 1;
-    emit BookDeployed(ovrflo, book);
+    ovrfloToLending[ovrflo] = lending;
+    lendingToOvrflo[lending] = ovrflo;
+    lendings[lendingCount] = lending;
+    lendingCount += 1;
+    emit LendingDeployed(ovrflo, lending);
 }
 
-function setBookAprBounds(address book, uint16 aprMinBps_, uint16 aprMaxBps_) external onlyOwner {
-    _requireKnownBook(book);
-    OVRFLOBook(book).setAprBounds(aprMinBps_, aprMaxBps_);
-    emit BookAprBoundsSet(book, aprMinBps_, aprMaxBps_);
+function setLendingAprBounds(address lending, uint16 aprMinBps_, uint16 aprMaxBps_) external onlyOwner {
+    _requireKnownLending(lending);
+    OVRFLOLENDING(lending).setAprBounds(aprMinBps_, aprMaxBps_);
+    emit LendingAprBoundsSet(lending, aprMinBps_, aprMaxBps_);
 }
 
-function setBookFee(address book, uint16 feeBps_) external onlyOwner {
-    _requireKnownBook(book);
-    OVRFLOBook(book).setFee(feeBps_);
-    emit BookFeeSet(book, feeBps_);
+function setLendingFee(address lending, uint16 feeBps_) external onlyOwner {
+    _requireKnownLending(lending);
+    OVRFLOLENDING(lending).setFee(feeBps_);
+    emit LendingFeeSet(lending, feeBps_);
 }
 
-function setBookTreasury(address book, address treasury_) external onlyOwner {
-    _requireKnownBook(book);
-    OVRFLOBook(book).setTreasury(treasury_);
-    emit BookTreasurySet(book, treasury_);
+function setLendingTreasury(address lending, address treasury_) external onlyOwner {
+    _requireKnownLending(lending);
+    OVRFLOLENDING(lending).setTreasury(treasury_);
+    emit LendingTreasurySet(lending, treasury_);
 }
 
-function _requireKnownBook(address book) internal view {
-    require(bookToOvrflo[book] != address(0), "OVRFLOFactory: unknown book");
+function _requireKnownLending(address lending) internal view {
+    require(lendingToOvrflo[lending] != address(0), "OVRFLOFactory: unknown lending");
 }
 ```
 
 ### Behavioral consequences
 
-- A factory ownership transfer now moves governance for vaults **and** books atomically. There is no separate "rotate book ownership" step to forget.
+- A factory ownership transfer now moves governance for vaults **and** lending markets atomically. There is no separate "rotate lending ownership" step to forget.
 - Calling `deploy()` twice for the same underlying reverts at `configureDeployment()` with `OVRFLOFactory: underlying already deployed`, preserving one-vault-per-underlying and the fungibility guarantee that depends on it.
 - Reconfiguring a pending (never-deployed) config is still allowed: the guard only fires when a vault already exists for that underlying.
-- `books(0)`, `books(1)`, ... and `bookCount()` let off-chain tooling enumerate every book, and `bookToOvrflo(book)` resolves the owning vault in one call.
+- `lendings(0)`, `lendings(1)`, ... and `lendingCount()` let off-chain tooling enumerate every lending market, and `lendingToOvrflo(lending)` resolves the owning vault in one call.
 - Every admin-gated vault call reads `factory` as an immutable instead of a storage slot, saving ~2100 gas per call.
 - A reader of `sweepExcessPt` sees the `@dev` note and understands the missing zero-address check is intentional, not an oversight.
 
 ### Test coverage that locks the invariants
 
-Thirteen new tests were added alongside the fixes, covering: duplicate underlying prevention (revert on already-deployed, allow reconfigure if not deployed, allow different underlyings), book admin forwarding (unauthorized callers revert, unknown book reverts, forwarding succeeds and emits, book `onlyOwner` reverts for non-factory callers), book enumeration (multiple books enumerated correctly), and the updated `deployBook` flow (factory remains owner, no pending owner nomination is left behind). All 292 tests pass.
+Thirteen new tests were added alongside the fixes, covering: duplicate underlying prevention (revert on already-deployed, allow reconfigure if not deployed, allow different underlyings), lending admin forwarding (unauthorized callers revert, unknown lending reverts, forwarding succeeds and emits, lending `onlyOwner` reverts for non-factory callers), lending enumeration (multiple lending markets enumerated correctly), and the updated `deployLending` flow (factory remains owner, no pending owner nomination is left behind). All 362 tests pass.
 
 ## Related
 
 - `docs/solutions/patterns/ovrflo-critical-patterns.md` — required-reading patterns for the project; patterns #5/#6 and rejected findings R-01/R-02 reference the same factory functions this work modified.
-- `docs/solutions/architecture-patterns/ovrflobook-offer-market-active-gate.md` — documents the factory-as-book-factory relationship; the admin boundary changed (factory now forwards book admin and retains ownership).
+- `docs/solutions/architecture-patterns/ovrflobook-offer-market-active-gate.md` — documents the factory-as-lending-factory relationship; the admin boundary changed (factory now forwards lending admin and retains ownership).
 - `docs/solutions/architecture-patterns/ovrflo-wrap-unwrap-reserve-accounting.md` — references the factory immutable for wrap/unwrap reads; the `adminContract` -> `factory` rename is adjacent.
 - `src/OVRFLOFactory.sol` — the factory contract where the forwarding functions, reverse lookup, enumeration, and duplicate-underlying guard live.
 - `src/OVRFLO.sol` — the vault where `adminContract` was renamed to `immutable factory` and the `onlyAdmin` modifier was updated.
