@@ -94,7 +94,7 @@ Listings bind a stream at creation and run full stream eligibility validation at
 
 A borrow in the OVRFLOLENDING backed by a pledged Sablier stream, where the obligation is denominated in the stream's payout asset (ovrfloToken) and the lender recovers by drawing from the stream or by direct repayment.
 
-Total lender recovery is capped at the obligation; the pledged stream is returned to the borrower once the loan closes.
+Total lender recovery is capped at the obligation; the pledged stream is returned to the borrower once the loan closes. A returned stream can be re-pledged to a new loan — the stream's cumulative withdrawn amount spans all loans that have used it, not just the most recent.
 
 ### Self-repaying loan
 
@@ -102,7 +102,7 @@ A loan against a pledged Sablier stream where the stream's deterministic payouts
 
 ### Pool
 
-The only lending mechanism in the OVRFLOLENDING: an atomic batch primitive where a borrower aggregates multiple liquidityPositions into a single transaction. A borrower pool (`createBorrowerLoanPool`) batches borrows across multiple liquidityPositions; the borrower is the only pooling actor. The pool becomes the virtual lender on the loan it creates (`loan.lender = address(lending)`, tracked via `loanToLoanPool`). Each pool has exactly one loan. Claims are address-based (no NFTs): lenders claim pro-rata proceeds via `claimLoanPoolShare`, which works for both open and closed loans. A single `loanPoolReceived` variable caps total received at the lender's pro-rata entitlement.
+The only lending mechanism in the OVRFLOLENDING: an atomic batch primitive where a borrower aggregates multiple liquidityPositions into a single transaction. A borrower pool (`createBorrowerLoanPool`) batches borrows across multiple liquidityPositions; the borrower is the only pooling actor. The pool becomes the virtual lender on the loan it creates (`loan.lender = address(lending)`, tracked via `loanToLoanPool`). Each pool has exactly one loan. Claims are address-based (no NFTs): lenders claim pro-rata proceeds via `claimLoanPoolShare`, which works for both open and closed loans. Claimable amount is the lender's pro-rata share of total recovery (drawn plus repaid, plus stream withdrawable for open loans) minus cumulative prior receipts, ensuring order-independent fairness.
 
 ### OVRFLO cycle
 

@@ -335,8 +335,31 @@ multi-offer `_consumeOffers`, `prepareOracle` TWAP bounds) all appear in the
 coverage report. `PROPERTIES.md` checkboxes were flipped from `[-]` to `[x]`
 for GL-57, GL-61, GL-62, SP-62, and the new pattern #13 (SP-77) property.
 
+### Later campaign continuation (2026-07-13)
+
+Two additional gaps surfaced in a subsequent campaign phase after the
+MockSablier ACL was tightened further:
+
+1. **Sablier NFT setApprovalForAll reachability gap**: `Base.setupActors()`
+   granted ERC20 approvals but never called `setApprovalForAll` for Sablier
+   NFT transfers. All stream-custody transitions reverted silently, making
+   147/147 Medusa passes vacuous for lending paths (66.3% coverage). After the
+   fix, coverage jumped to 91.8% (281/306 lines) and the first real property
+   violation (GL-70) surfaced. See
+   [`sablier-nft-approval-fuzz-reachability-gap.md`](../test-failures/sablier-nft-approval-fuzz-reachability-gap.md).
+
+2. **GL-70 stream reuse after loan close**: The property
+   `loan.drawn == getWithdrawnAmount - creationSnapshot` broke when a returned
+   stream was re-pledged to a new loan or withdrawn externally. Fix: snapshot
+   `getWithdrawnAmount` at close time. See
+   [`stream-reuse-after-loan-close-property-fix.md`](../logic-errors/stream-reuse-after-loan-close-property-fix.md).
+
+Final Medusa campaign: 147 passed, 0 failed, OVRFLOLENDING.sol 91.8% coverage.
+
 ## Related
 
 - [Triage audit findings by trust boundary, then fix test-first and sync pattern docs](../best-practices/triage-fix-and-document-audit-findings.md) - same triage discipline applied to static audit findings rather than fuzz violations
 - [OVRFLO critical patterns](../patterns/ovrflo-critical-patterns.md) - the enforceable rules (pattern #11 strictly-increasing IDs, pattern #12 pro-rata cap, pattern #13 sweepExcessPt guard) the properties encode
 - The Fizz gap closure plan at `docs/plans/2026-07-05-002-feat-fizz-gap-closure-plan.md` - the read-only spec governing the 8 implementation units
+- [Sablier NFT setApprovalForAll fuzz reachability gap](../test-failures/sablier-nft-approval-fuzz-reachability-gap.md) - a 13th gap discovered in a later campaign phase; same root cause (mock/harness missing a capability)
+- [GL-70 stream reuse after loan close](../logic-errors/stream-reuse-after-loan-close-property-fix.md) - a 5th triage case from the same campaign; property snapshot baseline breaks under stream reuse

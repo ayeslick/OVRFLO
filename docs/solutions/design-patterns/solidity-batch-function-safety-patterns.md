@@ -89,54 +89,48 @@ a duplicate ID from being consumed twice in the fill pass; the fill pass itself
 does not re-assert `offer.active`, so the ordering guard plus the validation
 pass are the complete defense — do not drop either when refactoring.
 
-### 2. Cap shared-pool claims at `min(remaining, poolProceeds)` — no pro-rata distribution
+### 2. Cap shared-pool claims at pro-rata share of cumulative recovery
 
-When several contributors share a single `poolProceeds` accumulator, a claim
-must be bounded by the smaller of (a) the contributor's remaining total
-entitlement and (b) what is actually in the pot right now. The current code
-does exactly this, with no pro-rata slice:
+When several contributors share a single `loanPoolProceeds` accumulator, a
+claim must be bounded by the contributor's pro-rata share of *total* recovery
+minus what they've already received. The current code uses a
+cumulative-recovered formula in `_claimFair`:
 
 ```solidity
-function claimPoolShare(uint256 poolId, uint128 amount) external nonReentrant {
-    uint256 remaining = _remainingEntitlement(poolId, msg.sender);
-
-    uint256 available = remaining;
-    if (uint256(poolProceeds[poolId]) < available) available = uint256(poolProceeds[poolId]);
-
-    require(amount > 0, "OVRFLOBook: claim zero");
-    require(uint256(amount) <= available, "OVRFLOBook: exceeds available");
-
-    poolReceived[poolId][msg.sender] += amount;
-    poolProceeds[poolId] -= amount;
-
-    IERC20(ovrfloToken).safeTransfer(msg.sender, amount);
-
-    emit PoolShareClaimed(poolId, msg.sender, amount);
+uint256 recovered = uint256(loan.drawn) + uint256(loan.repaid);
+if (!loan.closed) {
+    recovered += uint256(_minUint128(sablier.withdrawableAmountOf(loan.streamId), _outstanding(loan)));
 }
+uint256 claimable = uint256(contribution) * recovered / uint256(totalContributed)
+    - loanPoolReceived[loanPoolId][account];
 ```
 
-The formula is `available = min(remaining, poolProceeds)`. The `remaining`
-term (`entitlement - poolReceived`, computed by the `_remainingEntitlement`
-helper) caps the *total* a contributor can ever pull across both claim
-channels, so no one can over-claim their true share. `poolProceeds` caps each
-claim at what is actually in the pot. First-come-first-served on proceeds is
-acceptable; permanent stranding is not.
+For open loans, `recovered` includes `min(withdrawable, outstanding)` — the
+stream's not-yet-drawn accrual. For closed loans, `recovered = drawn + repaid`.
+`loanPoolReceived` tracks cumulative per-lender receipts, so `claimable` is
+the delta between pro-rata entitlement and what's already been received. When
+`loanPoolProceeds` is insufficient for an open loan, the harvest branch draws
+the deficit from the stream. This is order-independent — every lender can
+claim up to their pro-rata share regardless of when they claim.
 
-**Why the pro-rata cap was removed.** An earlier version (commit `ca8e248`)
-capped each claim at `proRataShare = poolProceeds * contribution /
-totalContributed`, intending to prevent a majority contributor from draining
-the pot before others could claim. It caused the opposite problem: as the pot
-shrank, minority contributors' pro-rata share floored to zero, permanently
-stranding their proceeds. Concretely, with `totalContributed = 100`, A = 99,
-B = 1, and `poolProceeds = 1` after A claims, B's `proRataShare = 1 * 1 / 100
-= 0` — B can never draw from the shared pot even though their `remaining`
-entitlement is positive. The M-01 audit fix removed the pro-rata cap so that
-`available = min(remaining, poolProceeds)` lets any contributor with a
-positive remaining entitlement draw whatever is currently in the pot. This is
-codified as pattern #12 in
-[`ovrflo-critical-patterns.md`](../patterns/ovrflo-critical-patterns.md):
-"Cap shared-pool claims at `min(remaining, poolProceeds)` — no pro-rata
-distribution."
+**Evolution of the claim formula.** Two prior approaches both failed:
+1. **Pro-rata cap on shrinking pot** (commit `ca8e248`): capped each claim at
+   `proRataShare = poolProceeds * contribution / totalContributed`. As the pot
+   shrank, minority contributors' share floored to zero, permanently stranding
+   their proceeds. Removed in the M-01 audit fix.
+2. **FCFS with `min(remaining, poolProceeds)`** (M-01 fix): let the first
+   claimant drain the entire pot, leaving later claimants with nothing even
+   though they contributed equally.
+3. **Cumulative-recovered pro-rata** (current): `claimable = contribution *
+   recovered / totalContributed - loanPoolReceived`. Uses total recovery
+   (including stream accrual for open loans), not current pot balance,
+   ensuring order-independent fairness without stranding minorities.
+
+This is codified as pattern #12 in
+[`ovrflo-critical-patterns.md`](../patterns/ovrflo-critical-patterns.md).
+See also
+[`cumulative-recovered-pro-rata-pool-claims.md`](../architecture-patterns/cumulative-recovered-pro-rata-pool-claims.md)
+for the full architecture pattern.
 
 ### 3. Use the pool's `totalObligation`, not a single loan's `obligation`, for entitlement
 
@@ -423,14 +417,18 @@ if (remaining < available) available = remaining;
 require(uint256(amount) <= available, "OVRFLOBook: exceeds available");
 ```
 
-**After (no stranding):** the claim is the smaller of the remaining total
-entitlement and the current pot balance — no pro-rata distribution.
+**After (cumulative-recovered pro-rata):** the claim is the lender's pro-rata
+share of total recovery (drawn + repaid + stream withdrawable for open loans)
+minus cumulative prior receipts — order-independent, no stranding.
 
 ```solidity
-// FIXED — min(remaining, poolProceeds); no pro-rata, no stranding
-uint256 remaining = _remainingEntitlement(poolId, msg.sender);
-uint256 available = remaining;
-if (uint256(poolProceeds[poolId]) < available) available = uint256(poolProceeds[poolId]);
+// FIXED — cumulative-recovered pro-rata; order-independent, no stranding
+uint256 recovered = uint256(loan.drawn) + uint256(loan.repaid);
+if (!loan.closed) {
+    recovered += uint256(_minUint128(sablier.withdrawableAmountOf(loan.streamId), _outstanding(loan)));
+}
+uint256 claimable = uint256(contribution) * recovered / uint256(totalContributed)
+    - loanPoolReceived[loanPoolId][account];
 
 require(amount > 0, "OVRFLOBook: claim zero");
 require(uint256(amount) <= available, "OVRFLOBook: exceeds available");
@@ -555,8 +553,8 @@ function createBorrowPool(uint256[] memory offerIds, uint256 streamId, uint128 t
   the slippage check to net proceeds (`netToBorrower >= minAcceptable`).
 - [patterns/ovrflo-critical-patterns.md](../patterns/ovrflo-critical-patterns.md)
   — enforceable rules distilled from writeups. Pattern #11 (strictly-increasing
-  IDs) and pattern #12 (cap shared-pool claims at `min(remaining, poolProceeds)`
-  — no pro-rata distribution) are the codified forms of Sections 1 and 2.
+  IDs) and pattern #12 (pro-rata share of cumulative recovery) are the codified
+  forms of Sections 1 and 2.
 - [architecture-patterns/ovrflobook-entry-teardown-zero-what-matters.md](../architecture-patterns/ovrflobook-entry-teardown-zero-what-matters.md)
   — companion note on the `active`/`capacity` teardown that the validation-pass
   `require(offer.active)` check relies on.

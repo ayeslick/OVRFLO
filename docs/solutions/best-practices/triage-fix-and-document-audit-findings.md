@@ -145,6 +145,14 @@ pro-rata block moved to the WRONG example. Tests
 `test_ClaimFair_ProRataCapPreventsPotDrain` and
 `test_ClaimPoolShare_MinorityContributorNotStranded` lock the behavior.
 
+> **Update 2026-07-13:** The FCFS `min(remaining, poolProceeds)` approach was
+> itself superseded by a cumulative-recovered pro-rata formula that guarantees
+> order-independent fairness without stranding minorities. Pattern #12 was
+> rewritten again. See
+> [`cumulative-recovered-pro-rata-pool-claims.md`](../architecture-patterns/cumulative-recovered-pro-rata-pool-claims.md)
+> for the current approach. The triage discipline (test-first, sync pattern doc)
+> remains valid — this is the third iteration of the same fix cycle.
+
 ### M-02: Net slippage check in `createBorrowPool`
 
 Slippage must be checked on the net amount the borrower receives (after fees),

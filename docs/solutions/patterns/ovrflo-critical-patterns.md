@@ -18,8 +18,10 @@ audience: [lenders, ai-agents]
     the claim redesign fork-test findings. Updated pattern #4 and #7 to
     reference pool-only functions after single-party lending removal.
   - 2026-06-29: Appended patterns #11 (strictly-increasing IDs in batch
-    arrays) and #12 (cap shared-pool claims at min(remaining, loanPoolProceeds)) from the OVRFLOLENDING
-    Pool feature review (commits 91df170, ca8e248).
+    arrays) and #12 (pro-rata share of cumulative recovery) from the OVRFLOLENDING
+    Pool feature review (commits 91df170, ca8e248). Pattern #12 was later
+    rewritten twice: M-01 audit fix (FCFS min(remaining, proceeds)), then
+    2026-07-13 (cumulative-recovered pro-rata formula).
   - 2026-06-28: Updated R-02 to note natspec codification. Appended patterns
     #9 (factory owns all deployed lending markets) and #10 (one vault per underlying)
     from the factory deployment/management pattern review.
@@ -870,7 +872,17 @@ rg "unknown PT" src/OVRFLO.sol
 
 ---
 
-## 12. Cap shared-pool claims at `min(remaining, loanPoolProceeds)` — no pro-rata distribution (ALWAYS REQUIRED)
+## 12. Cap shared-pool claims at pro-rata share of cumulative recovery (ALWAYS REQUIRED)
+
+### ❌ WRONG (FCFS on shrinking pot — no pro-rata guarantee)
+
+```solidity
+// claimLoanPoolShare — min(remaining, loanPoolProceeds) with no pro-rata
+uint256 available = remaining;
+if (uint256(loanPoolProceeds[poolId]) < available) available = uint256(loanPoolProceeds[poolId]);
+// First claimant can drain the entire pot, leaving later claimants with
+// nothing even though they contributed equally.
+```
 
 ### ❌ WRONG (pro-rata cap on shrinking pot strands minority lenders)
 
@@ -886,36 +898,41 @@ if (remaining < available) available = remaining;
 //   B's proRataShare = 1 * 1 / 100 = 0 → permanently stranded.
 ```
 
-### ✅ CORRECT (cap by remaining entitlement and available pot)
+### ✅ CORRECT (pro-rata share of total recovery minus prior receipts)
 
 ```solidity
-uint256 available = remaining;
-if (uint256(loanPoolProceeds[poolId]) < available) available = uint256(loanPoolProceeds[poolId]);
-require(uint256(amount) <= available, "OVRFLOLENDING: exceeds available");
+uint256 recovered = uint256(loan.drawn) + uint256(loan.repaid);
+if (!loan.closed) {
+    recovered += uint256(_minUint128(sablier.withdrawableAmountOf(loan.streamId), _outstanding(loan)));
+}
+uint256 claimable = uint256(contribution) * recovered / uint256(totalContributed)
+    - loanPoolReceived[loanPoolId][account];
 ```
 
-**Why:** The pro-rata cap was intended to prevent a majority lender from
-draining `loanPoolProceeds` before others can claim. But it caused the opposite
-problem: as the pot shrank, minority lenders' pro-rata share floored to
-zero, permanently stranding their proceeds. The correct approach is to cap
-each claim by `min(remaining, loanPoolProceeds)` — `loanPoolReceived` already
-prevents any lender from claiming more than their total entitlement, and
-`loanPoolProceeds` caps at what's actually in the pot. First-come-first-served on
-proceeds is acceptable; permanent stranding is not.
+**Why:** Two prior approaches both failed. The pro-rata cap on the *current*
+pot stranded minorities when the pot shrank. The FCFS approach
+(`min(remaining, loanPoolProceeds)`) let the first claimant drain everything.
+The cumulative-recovered formula solves both: `recovered` includes all drawn
+plus repaid plus stream-accrual for open loans, so `claimable` is the lender's
+pro-rata share of *total* recovery minus what they've already received. This
+is order-independent — every lender can claim up to their pro-rata share
+regardless of when they claim. `loanPoolReceived` prevents over-claiming.
 
-**Placement/Context:** `claimLoanPoolShare` — the shared-pot claim channel for
-both borrower and lender pools.
+**Placement/Context:** `claimLoanPoolShare` / `_claimFair` — the shared-pot
+claim channel for borrower loan pools.
 
 **How to detect violation:**
 
 ```bash
 rg "proRataShare" src/OVRFLOLENDING.sol
-# expected: 0 matches — pro-rata cap removed
-rg "loanPoolProceeds\[poolId\] < available" src/OVRFLOLENDING.sol
-# expected: 1 match in claimLoanPoolShare
+# expected: 0 matches — old pro-rata cap removed
+rg "contribution.*recovered.*totalContributed" src/OVRFLOLENDING.sol
+# expected: 1 match in _claimFair
 ```
 
-**Documented in:** [`docs/solutions/design-patterns/solidity-batch-function-safety-patterns.md`](../design-patterns/solidity-batch-function-safety-patterns.md)
+**Documented in:** [`docs/solutions/architecture-patterns/cumulative-recovered-pro-rata-pool-claims.md`](../architecture-patterns/cumulative-recovered-pro-rata-pool-claims.md)
+
+**Last updated:** 2026-07-13
 
 ---
 
