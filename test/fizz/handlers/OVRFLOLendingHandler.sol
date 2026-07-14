@@ -61,14 +61,14 @@ abstract contract OVRFLOLendingHandler is Properties {
 
     // ――――――――――――――――――――――――― Clamped ――――――――――――――――――――――――――
 
-    function oVRFLOLENDING_supplyLiquidity_clamped(address, uint16 aprBps, uint128 availableLiquidity) public {
+    function oVRFLOLending_supplyLiquidity_clamped(address, uint16 aprBps, uint128 availableLiquidity) public {
         availableLiquidity = uint128(clampBetween(uint256(availableLiquidity), 1, underlying.balanceOf(actor)));
         if (availableLiquidity == 0) return;
         aprBps = _clampApr(aprBps);
-        oVRFLOLENDING_supplyLiquidity(market, aprBps, availableLiquidity);
+        oVRFLOLending_supplyLiquidity(market, aprBps, availableLiquidity);
     }
 
-    function oVRFLOLENDING_sellStreamToLiquidity_clamped(uint256 liquidityId, uint256 streamSeed, uint256) public {
+    function oVRFLOLending_sellStreamToLiquidity_clamped(uint256 liquidityId, uint256 streamSeed, uint256) public {
         uint256 maxLiquidity = lending.nextLiquidityId();
         if (maxLiquidity <= 1) return;
         uint256 streamId = _pickStream(streamSeed);
@@ -83,21 +83,21 @@ abstract contract OVRFLOLendingHandler is Properties {
                 uint256 grossPrice, uint128, uint256, uint256, uint128
             ) {
                 if (grossPrice > 0 && grossPrice <= capacity) {
-                    oVRFLOLENDING_sellStreamToLiquidity(candidate, streamId, 0);
+                    oVRFLOLending_sellStreamToLiquidity(candidate, streamId, 0);
                     return;
                 }
             } catch {}
         }
     }
 
-    function oVRFLOLENDING_postSaleListing_clamped(address, uint256 streamSeed, uint16 aprBps) public {
+    function oVRFLOLending_postSaleListing_clamped(address, uint256 streamSeed, uint16 aprBps) public {
         uint256 streamId = _pickStream(streamSeed);
         if (streamId == 0) return;
         aprBps = _clampApr(aprBps);
-        oVRFLOLENDING_postSaleListing(market, streamId, aprBps);
+        oVRFLOLending_postSaleListing(market, streamId, aprBps);
     }
 
-    function oVRFLOLENDING_buyListing_clamped(uint256 listingId, uint256 maxPriceIn) public {
+    function oVRFLOLending_buyListing_clamped(uint256 listingId, uint256 maxPriceIn) public {
         uint256 maxListing = lending.nextSaleListingId();
         if (maxListing <= 1) return;
         uint256 start = clampBetween(listingId, 1, maxListing - 1);
@@ -108,12 +108,12 @@ abstract contract OVRFLOLendingHandler is Properties {
             uint256 balance = underlying.balanceOf(actor);
             if (grossPrice == 0 || grossPrice > balance) continue;
             maxPriceIn = clampBetween(maxPriceIn, grossPrice, balance);
-            oVRFLOLENDING_buyListing(candidate, maxPriceIn);
+            oVRFLOLending_buyListing(candidate, maxPriceIn);
             return;
         }
     }
 
-    function oVRFLOLENDING_createBorrowerLoanPool_clamped(
+    function oVRFLOLending_createBorrowerLoanPool_clamped(
         uint256[] memory,
         uint256 streamSeed,
         uint128 targetBorrow,
@@ -178,10 +178,10 @@ abstract contract OVRFLOLendingHandler is Properties {
         }
         if (maxBorrow == 0) return;
         targetBorrow = uint128(clampBetween(uint256(targetBorrow), 1, maxBorrow));
-        oVRFLOLENDING_createBorrowerLoanPool(liquidityIds, streamId, targetBorrow, 0);
+        oVRFLOLending_createBorrowerLoanPool(liquidityIds, streamId, targetBorrow, 0);
     }
 
-    function oVRFLOLENDING_closeLoan_clamped(uint256 loanId) public {
+    function oVRFLOLending_closeLoan_clamped(uint256 loanId) public {
         uint256 maxLoan = lending.nextLoanId();
         if (maxLoan <= 1) return;
         uint256 start = clampBetween(loanId, 1, maxLoan - 1);
@@ -191,13 +191,13 @@ abstract contract OVRFLOLendingHandler is Properties {
             uint128 outstanding = obligation - drawn - repaid;
             (,, uint256 streamId,,,,) = lending.loans(candidate);
             if (!closed && MockSablier(SABLIER_ADDR).withdrawableAmountOf(streamId) >= outstanding) {
-                oVRFLOLENDING_closeLoan(candidate);
+                oVRFLOLending_closeLoan(candidate);
                 return;
             }
         }
     }
 
-    function oVRFLOLENDING_repayLoan_clamped(uint256 loanId, uint128 amount) public {
+    function oVRFLOLending_repayLoan_clamped(uint256 loanId, uint128 amount) public {
         uint256 maxLoan = lending.nextLoanId();
         if (maxLoan <= 1) return;
         uint256 start = clampBetween(loanId, 1, maxLoan - 1);
@@ -209,14 +209,19 @@ abstract contract OVRFLOLendingHandler is Properties {
             uint256 balance = ovrfloToken.balanceOf(actor);
             if (!closed && borrower == actor && maxRepay > 0 && balance > 0) {
                 if (maxRepay > balance) maxRepay = balance;
-                amount = uint128(clampBetween(uint256(amount), 1, maxRepay));
-                oVRFLOLENDING_repayLoan(candidate, amount);
+                // Occasionally repay exact outstanding to exercise loan-close path
+                if (amount % 3 == 0) {
+                    amount = uint128(maxRepay);
+                } else {
+                    amount = uint128(clampBetween(uint256(amount), 1, maxRepay));
+                }
+                oVRFLOLending_repayLoan(candidate, amount);
                 return;
             }
         }
     }
 
-    function oVRFLOLENDING_claimLoanPoolShare_clamped(uint256 loanPoolId, uint128 amount) public {
+    function oVRFLOLending_claimLoanPoolShare_clamped(uint256 loanPoolId, uint128 amount) public {
         uint256 maxPool = lending.nextLoanPoolId();
         if (maxPool <= 1) return;
         uint256 start = clampBetween(loanPoolId, 1, maxPool - 1);
@@ -225,13 +230,13 @@ abstract contract OVRFLOLendingHandler is Properties {
             uint256 claimable = _claimable(candidate, actor);
             if (claimable > 0) {
                 amount = uint128(clampBetween(uint256(amount), 1, claimable));
-                oVRFLOLENDING_claimLoanPoolShare(candidate, amount);
+                oVRFLOLending_claimLoanPoolShare(candidate, amount);
                 return;
             }
         }
     }
 
-    function oVRFLOLENDING_withdrawLiquidity_clamped(uint256 liquidityId) public {
+    function oVRFLOLending_withdrawLiquidity_clamped(uint256 liquidityId) public {
         uint256 maxLiquidity = lending.nextLiquidityId();
         if (maxLiquidity <= 1) return;
         uint256 start = clampBetween(liquidityId, 1, maxLiquidity - 1);
@@ -239,13 +244,13 @@ abstract contract OVRFLOLendingHandler is Properties {
             uint256 candidate = (start - 1 + offset) % (maxLiquidity - 1) + 1;
             (address lender,,,, bool active) = lending.liquidityPositions(candidate);
             if (active && lender == actor) {
-                oVRFLOLENDING_withdrawLiquidity(candidate);
+                oVRFLOLending_withdrawLiquidity(candidate);
                 return;
             }
         }
     }
 
-    function oVRFLOLENDING_cancelSaleListing_clamped(uint256 listingId) public {
+    function oVRFLOLending_cancelSaleListing_clamped(uint256 listingId) public {
         uint256 maxListing = lending.nextSaleListingId();
         if (maxListing <= 1) return;
         uint256 start = clampBetween(listingId, 1, maxListing - 1);
@@ -253,36 +258,38 @@ abstract contract OVRFLOLendingHandler is Properties {
             uint256 candidate = (start - 1 + offset) % (maxListing - 1) + 1;
             (address seller,,,,, bool active) = lending.saleListings(candidate);
             if (active && seller == actor) {
-                oVRFLOLENDING_cancelSaleListing(candidate);
+                oVRFLOLending_cancelSaleListing(candidate);
                 return;
             }
         }
     }
 
-    function oVRFLOLENDING_secondary(uint8 selector, uint256 arg0, uint256 arg1) public {
+    function oVRFLOLending_secondary(uint8 selector, uint256 arg0, uint256 arg1) public {
         selector = uint8(selector % 3);
-        if (selector == 0) _oVRFLOLENDING_setAprBounds(uint16(arg0), uint16(arg1));
-        else if (selector == 1) _oVRFLOLENDING_setFee(uint16(arg0));
-        else _oVRFLOLENDING_setTreasury(address(uint160(arg0)));
+        if (selector == 0) _oVRFLOLending_setAprBounds(uint16(arg0), uint16(arg1));
+        else if (selector == 1) _oVRFLOLending_setFee(uint16(arg0));
+        else _oVRFLOLending_setTreasury(address(uint160(arg0)));
         // SP-70: Non-owner cannot call lending admin functions
         property_nonOwnerCannotCallLendingAdmin();
     }
 
     // ―――――――――――――――――――――――― Unclamped ―――――――――――――――――――――――――
 
-    function oVRFLOLENDING_supplyLiquidity(address _market, uint16 aprBps, uint128 availableLiquidity) public asActor {
+    function oVRFLOLending_supplyLiquidity(address _market, uint16 aprBps, uint128 availableLiquidity) public asActor {
         snapshotBefore();
         uint256 liquidityId = lending.supplyLiquidity(_market, aprBps, availableLiquidity);
         ghosts.ghost_lastLiquidityId = liquidityId;
         // Ghost: record initial capacity for GL-71, GL-81
         ghost_liquidityInitialCapacity[liquidityId] = availableLiquidity;
         snapshotAfter();
+        // Cover liquidityState view
+        lending.liquidityState(liquidityId);
         // Property assertions
         property_supplyLiquidityIdIncrements();
         property_supplyLiquidityNewLiquidityActive();
     }
 
-    function oVRFLOLENDING_sellStreamToLiquidity(uint256 liquidityId, uint256 streamId, uint256 minNetOut)
+    function oVRFLOLending_sellStreamToLiquidity(uint256 liquidityId, uint256 streamId, uint256 minNetOut)
         public
         asActor
     {
@@ -307,12 +314,14 @@ abstract contract OVRFLOLendingHandler is Properties {
         property_stream_escrow_withdraw_acl();
     }
 
-    function oVRFLOLENDING_postSaleListing(address _market, uint256 streamId, uint16 aprBps) public asActor {
+    function oVRFLOLending_postSaleListing(address _market, uint256 streamId, uint16 aprBps) public asActor {
         ghosts.ghost_lastStreamId = streamId;
         snapshotBefore();
         uint256 listingId = lending.postSaleListing(_market, streamId, aprBps);
         ghosts.ghost_lastListingId = listingId;
         snapshotAfter();
+        // Cover saleListingState view
+        lending.saleListingState(listingId);
         // Property assertions
         property_postListingIdIncrements();
         property_postListingActiveFeeSnapshotted();
@@ -321,7 +330,7 @@ abstract contract OVRFLOLendingHandler is Properties {
         property_stream_escrow_withdraw_acl();
     }
 
-    function oVRFLOLENDING_buyListing(uint256 listingId, uint256 maxPriceIn) public asActor {
+    function oVRFLOLending_buyListing(uint256 listingId, uint256 maxPriceIn) public asActor {
         ghosts.ghost_lastListingId = listingId;
         (,, uint256 streamId,,,) = lending.saleListings(listingId);
         ghosts.ghost_lastStreamId = streamId;
@@ -342,7 +351,7 @@ abstract contract OVRFLOLendingHandler is Properties {
         property_sale_settlement_conservation(grossPrice, fee, grossPrice - fee);
     }
 
-    function oVRFLOLENDING_createBorrowerLoanPool(
+    function oVRFLOLending_createBorrowerLoanPool(
         uint256[] memory liquidityIds,
         uint256 streamId,
         uint128 targetBorrow,
@@ -357,6 +366,8 @@ abstract contract OVRFLOLendingHandler is Properties {
         ghost_loanStreamWithdrawnAtCreation[ghosts.ghost_lastLoanId] =
             ISablierV2LockupLinear(SABLIER_ADDR).getWithdrawnAmount(streamId);
         snapshotAfter();
+        // Cover loanState view
+        lending.loanState(ghosts.ghost_lastLoanId);
         uint128 actualBorrow = stateAfter.poolTotalContributed;
         uint256 feeBps = lending.feeBps();
         uint256 fee = feeBps == 0 ? 0 : uint256(actualBorrow) * feeBps / 10_000;
@@ -379,11 +390,14 @@ abstract contract OVRFLOLendingHandler is Properties {
         property_repledge_bounded_by_residual();
         property_createPool_zero_reverts();
         property_quote_full_correspondence();
-        property_borrow_disbursement_conservation(actualBorrow, fee);
+        // SP-100 only valid when actor is not the treasury (otherwise actor receives fee too)
+        if (lending.treasury() != actor) {
+            property_borrow_disbursement_conservation(actualBorrow, fee);
+        }
         property_stream_escrow_withdraw_acl();
     }
 
-    function oVRFLOLENDING_closeLoan(uint256 loanId) public asActor {
+    function oVRFLOLending_closeLoan(uint256 loanId) public asActor {
         ghosts.ghost_lastLoanId = loanId;
         ghosts.ghost_lastPoolId = lending.loanToLoanPool(loanId);
         (,, uint256 streamId,,,,) = lending.loans(loanId);
@@ -402,7 +416,7 @@ abstract contract OVRFLOLendingHandler is Properties {
         property_harvest_no_block_close();
     }
 
-    function oVRFLOLENDING_repayLoan(uint256 loanId, uint128 amount) public asActor {
+    function oVRFLOLending_repayLoan(uint256 loanId, uint128 amount) public asActor {
         ghosts.ghost_lastLoanId = loanId;
         ghosts.ghost_lastPoolId = lending.loanToLoanPool(loanId);
         (,, uint256 streamId,,,,) = lending.loans(loanId);
@@ -420,7 +434,7 @@ abstract contract OVRFLOLendingHandler is Properties {
         property_repayLoan_zero_reverts();
     }
 
-    function oVRFLOLENDING_claimLoanPoolShare(uint256 loanPoolId, uint128 amount) public asActor {
+    function oVRFLOLending_claimLoanPoolShare(uint256 loanPoolId, uint128 amount) public asActor {
         ghosts.ghost_lastPoolId = loanPoolId;
         ghosts.ghost_lastLoanId = lending.loanPoolLoanId(loanPoolId);
         (,, uint256 streamId,,,,) = lending.loans(ghosts.ghost_lastLoanId);
@@ -439,7 +453,7 @@ abstract contract OVRFLOLendingHandler is Properties {
         property_non_contributor_cannot_claim();
     }
 
-    function oVRFLOLENDING_withdrawLiquidity(uint256 liquidityId) public asActor {
+    function oVRFLOLending_withdrawLiquidity(uint256 liquidityId) public asActor {
         ghosts.ghost_lastLiquidityId = liquidityId;
         snapshotBefore();
         lending.withdrawLiquidity(liquidityId);
@@ -451,7 +465,7 @@ abstract contract OVRFLOLendingHandler is Properties {
         property_withdraw_post_maturity();
     }
 
-    function oVRFLOLENDING_cancelSaleListing(uint256 listingId) public asActor {
+    function oVRFLOLending_cancelSaleListing(uint256 listingId) public asActor {
         ghosts.ghost_lastListingId = listingId;
         (,, uint256 streamId,,,) = lending.saleListings(listingId);
         ghosts.ghost_lastStreamId = streamId;
@@ -465,8 +479,17 @@ abstract contract OVRFLOLendingHandler is Properties {
         property_cancel_post_maturity();
     }
 
-    function oVRFLOLENDING_gatherLiquidity(uint256 liquiditySeed, uint128 targetAmount) public {
+    function oVRFLOLending_gatherLiquidity(uint256 liquiditySeed, uint128 targetAmount) public {
         uint256 maxLiquidity = lending.nextLiquidityId();
+        // Sometimes pass startId >= nextLiquidityId to cover the early-return path
+        if (liquiditySeed % 3 == 0) {
+            try lending.gatherLiquidity(market, 1000, targetAmount, maxLiquidity + 1) returns (
+                uint256[] memory ids, bool sufficient
+            ) {
+                assert(ids.length == 0 && !sufficient);
+            } catch {}
+            return;
+        }
         if (maxLiquidity <= 1) return;
         uint256 startId = clampBetween(liquiditySeed, 1, maxLiquidity - 1);
         // Find a valid liquidity to get market and aprBps
@@ -491,16 +514,16 @@ abstract contract OVRFLOLendingHandler is Properties {
 
     // ――――――――――――――――――― Admin (via factory) ―――――――――――――――――――
 
-    function _oVRFLOLENDING_setAprBounds(uint16 aprMinBps_, uint16 aprMaxBps_) internal asAdmin {
+    function _oVRFLOLending_setAprBounds(uint16 aprMinBps_, uint16 aprMaxBps_) internal asAdmin {
         if (aprMinBps_ > aprMaxBps_) return;
         factory.setLendingAprBounds(address(lending), aprMinBps_, aprMaxBps_);
     }
 
-    function _oVRFLOLENDING_setFee(uint16 feeBps_) internal asAdmin {
+    function _oVRFLOLending_setFee(uint16 feeBps_) internal asAdmin {
         factory.setLendingFee(address(lending), feeBps_);
     }
 
-    function _oVRFLOLENDING_setTreasury(address newTreasury) internal asAdmin {
+    function _oVRFLOLending_setTreasury(address newTreasury) internal asAdmin {
         try factory.setLendingTreasury(address(lending), newTreasury) {} catch {}
     }
 
@@ -638,6 +661,33 @@ abstract contract OVRFLOLendingHandler is Properties {
                     } catch {}
                 } catch {}
             } catch {}
+        } catch {}
+    }
+
+    /// @dev Scenario: sell a stream to a liquidity position with exactly matching capacity,
+    ///      covering the `availableLiquidity == 0` deactivation branch (line 379).
+    function scenario_sellExactsLiquidity(uint256 streamSeed, uint16 aprBps) public {
+        uint256 streamId = _pickStream(streamSeed);
+        if (streamId == 0) return;
+        aprBps = _clampApr(aprBps);
+        try lending.quote(market, streamId, aprBps, 0) returns (
+            uint256 grossPrice, uint128, uint256, uint256, uint128
+        ) {
+            if (grossPrice == 0 || grossPrice > type(uint128).max) return;
+            uint128 cap = uint128(grossPrice);
+            // Supply liquidity with exactly the gross price as capacity
+            underlying.deal(actor, grossPrice);
+            ghost_actorStartValue[actor] += grossPrice; // keep GL-57 conservation honest
+            vm.startPrank(actor);
+            underlying.approve(address(lending), grossPrice);
+            uint256 liquidityId = lending.supplyLiquidity(market, aprBps, cap);
+            // Sell the stream to this liquidity position, exhausting it
+            MockSablier(SABLIER_ADDR).approve(address(lending), streamId);
+            lending.sellStreamToLiquidity(liquidityId, streamId, 0);
+            vm.stopPrank();
+            // Verify the position is now inactive
+            (,,, uint128 remaining, bool active) = lending.liquidityPositions(liquidityId);
+            assert(!active && remaining == 0);
         } catch {}
     }
 }

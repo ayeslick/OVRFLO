@@ -2068,4 +2068,39 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     function property_stream_escrow_withdraw_acl() internal {
         // No-op: retired due to MockSablier ACL divergence from Sablier V2
     }
+
+    // ──── View function coverage properties ────
+
+    /// @notice Covers loanState() view and asserts closed loans have zero outstanding
+    function property_loanState_view() public {
+        uint256 nextLoan = lending.nextLoanId();
+        uint256 limit = nextLoan < 5 ? nextLoan : 5;
+        for (uint256 i = 0; i < limit; i++) {
+            (, , , , , , uint128 outstanding, bool closed) = lending.loanState(i);
+            if (closed) {
+                eq(outstanding, 0, "loanState: closed loan has nonzero outstanding");
+            }
+        }
+    }
+
+    /// @notice Covers liquidityState() view and asserts inactive positions have zero capacity
+    function property_liquidityState_view() public {
+        uint256 nextLiquidity = lending.nextLiquidityId();
+        uint256 limit = nextLiquidity < 5 ? nextLiquidity : 5;
+        for (uint256 i = 0; i < limit; i++) {
+            (, , , uint128 availableLiquidity, bool active) = lending.liquidityState(i);
+            if (!active) {
+                eq(availableLiquidity, 0, "liquidityState: inactive position has nonzero capacity");
+            }
+        }
+    }
+
+    /// @notice Covers saleListingState() view for all listings
+    function property_saleListingState_view() public {
+        uint256 nextListing = lending.nextSaleListingId();
+        uint256 limit = nextListing < 5 ? nextListing : 5;
+        for (uint256 i = 0; i < limit; i++) {
+            lending.saleListingState(i);
+        }
+    }
 }

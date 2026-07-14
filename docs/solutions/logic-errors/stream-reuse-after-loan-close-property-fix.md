@@ -37,7 +37,7 @@ The fuzz property `property_loan_drawn_eq_stream_withdrawals` verified that `loa
 Added a close-time snapshot of the stream's withdrawn amount:
 
 1. Added `mapping(uint256 => uint128) internal ghost_loanStreamWithdrawnAtClose;` to `Base.sol`
-2. In `oVRFLOLENDING_closeLoan` handler: after `lending.closeLoan(loanId)` succeeds, record `ghost_loanStreamWithdrawnAtClose[loanId] = ISablierV2LockupLinear(SABLIER_ADDR).getWithdrawnAmount(streamId)`
+2. In `oVRFLOLending_closeLoan` handler: after `lending.closeLoan(loanId)` succeeds, record `ghost_loanStreamWithdrawnAtClose[loanId] = ISablierV2LockupLinear(SABLIER_ADDR).getWithdrawnAmount(streamId)`
 3. In `scenario_poolLifecycle`: same snapshot after `closeLoan` succeeds
 4. Updated the property:
 
