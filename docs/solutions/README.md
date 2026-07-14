@@ -44,9 +44,9 @@ enums have been widened to reflect our stack; everything else matches the upstre
   1. ERC-721 current ownership comes from the token, not from derived protocol events.
   2. Do not use `forge script --broadcast` against an Anvil mainnet fork (foundry#11714); use `forge create` + `cast send` via `script/seed-local.sh`.
   3. Modal bodies — and only modal bodies — are wrapped in a class-component error boundary with an `onReset` contract (header/close button stay outside).
-  4. Prevent self-matched loans in OVRFLOLENDING (`createBorrowerLoanPool` / `createLenderPool`).
+  4. Prevent self-matched loans in OVRFLOLending (`createBorrowerLoanPool` / `createLenderPool`).
   5. TWAP duration bounds must be consistent across `prepareOracle` and `addMarket`.
-  6. Standalone OVRFLOLENDING deployment must verify Sablier matches the vault's canonical immutable.
+  6. Standalone OVRFLOLending deployment must verify Sablier matches the vault's canonical immutable.
   7. Assert all-party token balances in every money-movement test (not just state flags and NFT ownership).
   8. View functions that resolve by ID must revert on non-existent IDs, not return zero defaults.
   9. The factory owns every deployed lending — lending admin is forwarded, not direct.
@@ -58,7 +58,7 @@ enums have been widened to reflect our stack; everything else matches the upstre
 ### Best practices
 
 - [best-practices/verify-token-balance-movement-not-just-ownership.md](best-practices/verify-token-balance-movement-not-just-ownership.md) —
-  Non-fork tests for OVRFLOLENDING must assert `underlying.balanceOf` (and
+  Non-fork tests for OVRFLOLending must assert `underlying.balanceOf` (and
   `ovrfloToken.balanceOf` / `sablier.getWithdrawnAmount` / `sablier.ownerOf`
   where applicable) for every party that touched value (seller, buyer,
   treasury, lending), not just state flags and NFT ownership. State flags prove
@@ -102,7 +102,7 @@ enums have been widened to reflect our stack; everything else matches the upstre
   reopen it.
 - [security-issues/repayloan-equality-rounding-no-brick-OVRFLOLENDING-20260624.md](security-issues/repayloan-equality-rounding-no-brick-OVRFLOLENDING-20260624.md) —
   Audit note. Concern that `bool closes = amount == outstanding;` in
-  `OVRFLOLENDING.repayLoan` could brick loan closure via a rounding off-by-one.
+  `OVRFLOLending.repayLoan` could brick loan closure via a rounding off-by-one.
   Dismissed: `outstanding` is always an exact integer wei
   (`obligation - drawn - repaid`), the borrower controls `amount` and can match
   it exactly on an 18-decimal token, and `obligation <= remaining` (ceiling debt
@@ -120,12 +120,12 @@ enums have been widened to reflect our stack; everything else matches the upstre
   How the OVRFLO wrap/unwrap reserve is accounted and why deposit-origin
   ovrfloToken cannot consume the wrap reserve.
 - [architecture-patterns/ovrflolending-entry-teardown-zero-what-matters.md](architecture-patterns/ovrflolending-entry-teardown-zero-what-matters.md) —
-  OVRFLOLENDING tears down cancelled/filled entries by zeroing only the
+  OVRFLOLending tears down cancelled/filled entries by zeroing only the
   security-critical fields (`capacity`/`active`) and leaving identity/context
   fields populated. Post-EIP-3529 a full `delete` costs net gas to zero extra
   slots, and loans must never be erased (`loanState` history is a feature).
 - [architecture-patterns/ovrflolending-liquidity-market-active-gate.md](architecture-patterns/ovrflolending-liquidity-market-active-gate.md) —
-  OVRFLOLENDING liquidity posts (`postSaleLiquidityPosition`/`postLendLiquidityPosition`) front-load
+  OVRFLOLending liquidity posts (`postSaleLiquidityPosition`/`postLendLiquidityPosition`) front-load
   market/series/maturity validation via `_requireMarketActive` so lenders fail
   fast before locking liquidity behind a dead market. The shared checks live in
   one `StreamPricing.marketActive` helper that `requireEligible` also delegates
@@ -144,7 +144,7 @@ enums have been widened to reflect our stack; everything else matches the upstre
 ### Design patterns
 
 - [design-patterns/solidity-batch-function-safety-patterns.md](design-patterns/solidity-batch-function-safety-patterns.md) —
-  Five function-level design patterns distilled from the OVRFLOLENDING Pool
+  Five function-level design patterns distilled from the OVRFLOLending Pool
   implementation: (1) strictly-increasing IDs in batch arrays to prevent
   duplicate-ID fund theft, (2) pro-rata cap on shared-pool claims to prevent
   majority-lender draining, (3) aggregate `totalObligation` for

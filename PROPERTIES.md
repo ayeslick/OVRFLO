@@ -113,6 +113,58 @@ Consolidated from 5 invariant discovery agents (Conservation Auditor, Round-Trip
 - [x] **GL-61** Self-transfer doesn't change balance/supply. VALID_STATE, SHOULD-HOLD, MEDIUM. Evidence: ERC-20 standard. Sources: SPEC-T02. Called after: transfer.
 - [x] **GL-62** Zero-amount transfer doesn't change state. VALID_STATE, SHOULD-HOLD, MEDIUM. Evidence: ERC-20 standard. Sources: SPEC-T03. Called after: transfer.
 
+### Per-Entity Conservation (Wave 2)
+
+- [x] **GL-64** Per-loan outstanding <= stream remaining (per-entity conservation; GL-63 only checks the sum). VALID_STATE, SHOULD-HOLD, HIGH. Evidence: each loan's outstanding must be backed by its pledged stream's remaining face value; GL-63 is the aggregate and can mask a single over-obligated loan. Sources: CON-01. Iteration: 1..nextLoanId-1 with stream lookups.
+- [x] **GL-65** availableLiquidity never increases after creation (one-way capacity). VARIABLE_TRANSITION, SHOULD-HOLD, MEDIUM. Evidence: capacity only decreases via sellStreamToLiquidity/createBorrowerLoanPool consumption and is set once at supplyLiquidity; withdrawLiquidity zeros it. Sources: CON-02, VT-01. Ghosts: ghost_liquidityCapacitySnapshot, ghost_liquidityCapacitySeen. Iteration: 1..nextLiquidityId-1.
+- [x] **GL-66** Open loan stream escrowed at lending market (stream.ownerOf == address(lending)). VALID_STATE, SHOULD-HOLD, HIGH. Evidence: createBorrowerLoanPool transfers the pledged stream to the lending contract; closeLoan/full-repayLoan returns it to the borrower. Sources: CON-04, VS-01, SPEC-06. Iteration: 1..nextLoanId-1, only non-closed loans.
+- [x] **GL-67** Active listing stream escrowed at lending market. VALID_STATE, SHOULD-HOLD, MEDIUM. Evidence: postSaleListing transfers the stream to lending; buyListing transfers to buyer, cancelSaleListing returns to seller. Sources: CON-03, VS-02. Iteration: 1..nextSaleListingId-1, only active listings.
+- [x] **GL-68** Pool loan lender == address(lending) (loan held by market, not individual). VALID_STATE, SHOULD-HOLD, MEDIUM. Evidence: createBorrowerLoanPool stores the lending address as loan.lender so the market services the pool claim channel. Sources: CON-05. Iteration: 1..nextLoanId-1 for pool loans.
+- [x] **GL-69** pool.borrower == loan.borrower (pool and loan share the same borrower). VALID_STATE, SHOULD-HOLD, MEDIUM. Evidence: both set from msg.sender in createBorrowerLoanPool; never modified. Sources: CON-06. Iteration: 1..nextLoanPoolId-1.
+- [x] **GL-70** loan.drawn == stream withdrawals since creation (no external drain). VARIABLE_TRANSITION, EXPLORATORY, MEDIUM. Evidence: closeLoan/_claimFair draw from the stream and increment loan.drawn; an external withdrawal would break the equality. Exploratory because MockSablier permits direct withdrawals in the harness. Sources: CON-07. Ghosts: ghost_loanStreamWithdrawnAtCreation. Iteration: 1..nextLoanId-1.
+- [x] **GL-71** contributions <= consumed capacity (no over-contribution). VALID_STATE, EXPLORATORY, LOW. Evidence: a liquidity can only be consumed up to its capacity; contributions should never exceed the capacity snapshot at pool creation. Exploratory because partial consumption and rounding make the bound soft. Sources: CON-08. Ghosts: ghost_liquidityInitialCapacity. Iteration: 1..nextLoanPoolId-1, per contributor.
+- [x] **GL-72** loan.drawn <= stream withdrawn amount (drawn never exceeds what was actually pulled). VALID_STATE, SHOULD-HOLD, MEDIUM. Evidence: drawn accumulates only via _claimFair which withdraws from the stream first; drawn cannot exceed total withdrawn since creation. Sources: VS-03. Iteration: 1..nextLoanId-1.
+
+### All-Pool Generalizations (Wave 2)
+
+- [x] **GL-73** All pools: sum(loanPoolContributions) == pool.totalContributed (generalizes SP-22 to every pool at rest). VALID_STATE, SHOULD-HOLD, HIGH. Evidence: SP-22 checks the just-created pool; this checks every pool after every call. Sources: SPEC-07. Iteration: 1..nextLoanPoolId-1, per actor.
+- [x] **GL-74** All pools: loanPoolProceeds + sum(loanPoolReceived) == drawn + repaid (generalizes SP-25 to every pool at rest). VALID_STATE, SHOULD-HOLD, HIGH. Evidence: SP-25 checks the just-claimed pool; this checks every pool after every call. Sources: SPEC-08, ADV-08. Iteration: 1..nextLoanPoolId-1.
+- [x] **GL-75** All pools: loanPoolReceived[poolId][lender] <= entitlement (generalizes SP-24 to every pool at rest). VALID_STATE, SHOULD-HOLD, HIGH. Evidence: pro-rata cap (pattern #12) enforced per claim; this checks it holds across all pools at rest. Sources: SPEC-09. Iteration: 1..nextLoanPoolId-1, per actor.
+- [x] **GL-76** All pools: sum(loanPoolReceived) <= pool.totalObligation (generalizes SP-23 to every pool at rest). VALID_STATE, SHOULD-HOLD, MEDIUM. Evidence: SP-23 checks the just-claimed pool; this checks every pool after every call. Sources: SPEC-10. Iteration: 1..nextLoanPoolId-1.
+
+### Admin Config Validity (Wave 2)
+
+- [x] **GL-77** APR bounds well-formed: aprMinBps <= aprMaxBps and both within APR_STEP_BPS multiples. VALID_STATE, SHOULD-HOLD, MEDIUM. Evidence: setLendingAprBounds validates min <= max; bounds persist. Sources: VT-02, SPEC-12. Single read of lending.aprMinBps/aprMaxBps.
+- [x] **GL-78** Lending fee bounded: feeBps <= MAX_FEE_BPS. VALID_STATE, SHOULD-HOLD, MEDIUM. Evidence: setLendingFee validates <= MAX_FEE_BPS. Sources: VT-03, SPEC-13. Single read of lending.feeBps.
+- [x] **GL-79** Lending treasury non-zero. VALID_STATE, SHOULD-HOLD, LOW. Evidence: setLendingTreasury rejects address(0). Sources: VT-04, SPEC-14. Single read of lending.treasury.
+
+### Donation Resistance (Wave 2)
+
+- [x] **GL-80** Direct ovrfloToken donation to lending does not inflate claimable pool proceeds. VALID_STATE, SHOULD-HOLD, MEDIUM. Evidence: loanPoolProceeds is an internal mapping, not a balance read; direct ovrfloToken transfer to lending cannot increase any lender's claim. Sources: ADV-04. Distinct from GL-04 (balance bound).
+- [x] **GL-81** Direct underlying donation to lending does not inflate liquidity capacity. VALID_STATE, SHOULD-HOLD, LOW. Evidence: liquidityPositions[].availableLiquidity is internal, not derived from balance; direct underlying transfer cannot increase any maker's capacity. Sources: ADV-05. Distinct from GL-05 (balance bound).
+
+### Token & Identity Invariants (Wave 2)
+
+- [x] **GL-82** Non-owner cannot mint/burn ovrfloToken (only vault can). VALID_STATE, SHOULD-HOLD, HIGH. Evidence: OVRFLOToken mint/burn restricted to owner (the vault). Sources: SPEC-03.
+- [x] **GL-83** Lending identity matches vault: factory.lendingToOvrflo(lending) == vault and factory.ovrfloToLending(vault) == lending. VALID_STATE, SHOULD-HOLD, MEDIUM. Evidence: deployLending sets the pair; immutable. Sources: SPEC-04.
+- [x] **GL-84** Open loan stream eligibility persists (requireEligible still passes for an open loan's stream). VALID_STATE, SHOULD-HOLD, MEDIUM. Evidence: an open loan's stream must remain eligible for the market so closeLoan/_claimFair can draw it. Sources: SPEC-05. Iteration: 1..nextLoanId-1, non-closed loans.
+- [x] **GL-85** Direct PT transfer to vault does not inflate marketTotalDeposited. VALID_STATE, EXPLORATORY, LOW. Evidence: MTD is an internal mapping, not balance-derived; direct PT transfer cannot increase MTD. Sources: SPEC-01. Distinct from GL-03 (balance bound).
+- [x] **GL-86** Direct underlying transfer to vault does not inflate wrappedUnderlying. VALID_STATE, EXPLORATORY, LOW. Evidence: wrappedUnderlying is an internal mapping, not balance-derived; direct underlying transfer cannot increase it. Sources: SPEC-02. Distinct from GL-02/GL-59.
+
+### Oracle Safety (Wave 2)
+
+- [x] **GL-87** Oracle zero rate safety: previewRate/quote do not revert or produce nonsensical output when the oracle rate is zero or near-zero. VALID_STATE, EXPLORATORY, LOW. Evidence: pricing math should degrade gracefully at the rate floor; exploratory because the harness clamps the rate away from zero by default. Sources: ADV-18.
+
+### Pure-Function Monotonicity & Bounds (Wave 2)
+
+- [x] **GL-88** fee <= amount for all feeBps <= MAX_FEE_BPS (fee never exceeds the principal). VALID_STATE, SHOULD-HOLD, MEDIUM. Evidence: fee = floor(amount * feeBps / BPS) and feeBps <= MAX_FEE_BPS <= BPS, so fee <= amount. Sources: RD-01. Pure function over random inputs.
+- [x] **GL-89** grossPrice non-increasing in aprBps (higher APR discounts the stream more). VARIABLE_TRANSITION, SHOULD-HOLD, LOW. Evidence: factor increases with aprBps, so grossPrice = remaining * WAD / factor decreases. Sources: RD-02. Pure function over random inputs.
+- [x] **GL-90** obligation non-decreasing in aprBps (higher APR accrues more debt). VARIABLE_TRANSITION, SHOULD-HOLD, LOW. Evidence: factor increases with aprBps, so obligation = borrowAmount * factor / WAD increases. Sources: RD-03. Pure function over random inputs.
+- [x] **GL-91** obligation non-decreasing in ttm (longer maturity accrues more debt). VARIABLE_TRANSITION, SHOULD-HOLD, LOW. Evidence: factor increases with ttm. Sources: RD-04. Pure function over random inputs.
+- [x] **GL-92** factor non-decreasing in aprBps. VARIABLE_TRANSITION, SHOULD-HOLD, LOW. Evidence: factor = WAD + aprBps * ttm / (BPS * YEAR); linear in aprBps. Sources: RD-05. Pure function over random inputs.
+- [x] **GL-93** factor non-decreasing in ttm. VARIABLE_TRANSITION, SHOULD-HOLD, LOW. Evidence: factor linear in ttm. Sources: RD-06. Pure function over random inputs.
+- [x] **GL-94** obligation <= remaining for all borrowAmount <= grossPrice (pure-function generalization of SP-10). VALID_STATE, SHOULD-HOLD, HIGH. Evidence: SP-10 checks the single instance from a handler; this sweeps borrowAmount in [0, grossPrice] and asserts obligation <= remaining for every value. Sources: RD-11. Pure function over random inputs.
+
 ---
 
 ## Specific Properties
@@ -234,3 +286,57 @@ Consolidated from 5 invariant discovery agents (Conservation Auditor, Round-Trip
 
 - [-] **SP-65** Dust ovrfloToken position has exit path (can unwrap or claim small amounts). VALID_STATE, EXPLORATORY, MEDIUM. Sources: ADV-08. Called after: wrap, deposit.
 - [-] **SP-68** Full-amount operations safe (entire balance in one call). VALID_STATE, SHOULD-HOLD, MEDIUM. Sources: ADV-11. Called after: all clamped handlers.
+
+### Stream Escrow Transitions (Wave 2)
+
+- [x] **SP-81** closeLoan returns the pledged stream to the borrower. STATE_TRANSITION, SHOULD-HOLD, HIGH. Evidence: closeLoan calls _claimFair for the outstanding then transfers the stream back to loan.borrower. Sources: RT-01, ST-02, ADV-01, SPEC-15. Called after: closeLoan.
+- [x] **SP-82** Full repayLoan returns the pledged stream to the borrower. STATE_TRANSITION, SHOULD-HOLD, HIGH. Evidence: repayLoan with amount == outstanding sets closed=true and returns the stream to loan.borrower. Sources: RT-02, ST-03, ADV-02, SPEC-16. Called after: repayLoan (when closed).
+- [x] **SP-83** createBorrowerLoanPool escrows the pledged stream to the lending market. STATE_TRANSITION, SHOULD-HOLD, HIGH. Evidence: createBorrowerLoanPool transfers the stream to address(lending). Sources: ST-04. Called after: createBorrowerLoanPool.
+- [x] **SP-84** sellStreamToLiquidity transfers the stream to the liquidity lender. STATE_TRANSITION, SHOULD-HOLD, HIGH. Evidence: sellStreamToLiquidity transfers the stream to liquidity.lender. Sources: ST-05. Called after: sellStreamToLiquidity.
+- [x] **SP-85** postSaleListing escrows the stream to the lending market. STATE_TRANSITION, SHOULD-HOLD, MEDIUM. Evidence: postSaleListing transfers the stream to address(lending). Sources: ST-06. Called after: postSaleListing.
+- [x] **SP-86** buyListing transfers the stream to the buyer. STATE_TRANSITION, SHOULD-HOLD, HIGH. Evidence: buyListing transfers the escrowed stream to msg.sender (the buyer). Sources: ST-07. Called after: buyListing.
+
+### Loan Servicing Transitions (Wave 2)
+
+- [x] **SP-87** closeLoan sets loan.closed = true. STATE_TRANSITION, SHOULD-HOLD, HIGH. Evidence: closeLoan writes closed=true after drawing the outstanding. Sources: ST-01. Called after: closeLoan. Distinct from SP-57 (which covers repayLoan's closed flag).
+- [x] **SP-88** closeLoan on an invalid/already-closed loan reverts. VALID_STATE, SHOULD-HOLD, MEDIUM. Evidence: closeLoan requires !closed and withdrawable >= outstanding; calling on a closed or insufficient-stream loan must revert. Sources: ADV-14. Called after: closeLoan (try/catch for invalid inputs).
+- [x] **SP-89** Multi-partial repay eventually closes the loan (sum of partial repays == outstanding -> closed). STATE_TRANSITION, SHOULD-HOLD, MEDIUM. Evidence: repayLoan accumulates repaid until outstanding is met; a sequence of partial repays must close the loan exactly. Sources: ADV-16. Called after: repayLoan.
+- [x] **SP-90** Harvest (claimLoanPoolShare/_claimFair) does not block a subsequent closeLoan. VALID_STATE, EXPLORATORY, MEDIUM. Evidence: closeLoan draws the remaining outstanding; prior harvests reduce outstanding but should not prevent the close. Exploratory because the interaction depends on stream vesting timing. Sources: ADV-03. Called after: closeLoan following a claim.
+- [x] **SP-91** Repledge obligation bounded by residual stream value. VALID_STATE, EXPLORATORY, MEDIUM. Evidence: re-pledging a partially-drawn stream should produce an obligation <= the new remaining. Exploratory because re-pledge requires a fresh stream from a re-deposited position. Sources: ADV-07. Called after: createBorrowerLoanPool on a previously-drawn stream.
+
+### Lending Zero-Input Reverts (Wave 2)
+
+- [x] **SP-92** createBorrowerLoanPool with targetBorrow == 0 reverts. VALID_STATE, SHOULD-HOLD, LOW. Evidence: require targetBorrow > 0 in createBorrowerLoanPool. Sources: RD-07, ADV-13. Called after: createBorrowerLoanPool (try/catch).
+- [x] **SP-93** claimLoanPoolShare with amount == 0 reverts. VALID_STATE, SHOULD-HOLD, LOW. Evidence: require amount > 0 in claimLoanPoolShare. Sources: RD-08, ADV-13. Called after: claimLoanPoolShare (try/catch).
+- [x] **SP-94** repayLoan with amount == 0 reverts. VALID_STATE, SHOULD-HOLD, LOW. Evidence: require amount > 0 in repayLoan. Sources: RD-09, ADV-13. Called after: repayLoan (try/catch).
+
+### Quote & Preview Correspondence (Wave 2)
+
+- [x] **SP-95** quote returns full correspondence: grossPrice, fee, net, residual are mutually consistent (grossPrice == net + fee, residual == remaining - grossPrice for full borrow). VALID_STATE, SHOULD-HOLD, MEDIUM. Evidence: quote computes all four from the same factor; the parts must reconcile. Sources: RT-03. Called after: createBorrowerLoanPool (via quote).
+- [x] **SP-96** previewRate matches the rate used by the actual deposit (same block). VALID_STATE, SHOULD-HOLD, LOW. Evidence: deposit reads previewRate at execution; previewRate is deterministic within a block. Sources: RT-04. Called after: deposit.
+
+### Pool Claim Bounds (Wave 2)
+
+- [x] **SP-97** loanPoolReceived[poolId][lender] <= pro-rata of actual recovered (drawn + repaid + withdrawable-capped), not just obligation. VALID_STATE, SHOULD-HOLD, MEDIUM. Evidence: SP-24 caps received at pro-rata of obligation; this tighter bound caps at pro-rata of what was actually recovered. Sources: RD-10. Called after: claimLoanPoolShare. Distinct from SP-24 (obligation vs recovered).
+- [x] **SP-98** Non-contributor cannot claim a pool share (claimLoanPoolShare reverts or transfers zero). VALID_STATE, SHOULD-HOLD, HIGH. Evidence: claimLoanPoolShare reads contribution; zero contribution yields zero claimable. Sources: ADV-06. Called after: claimLoanPoolShare. Distinct from SP-71/SP-72 (which cover non-maker withdraw and non-borrower repay).
+
+### Settlement Conservation (Wave 2)
+
+- [x] **SP-99** Sale settlement conservation: grossPrice == netToSeller + fee (buyListing and sellStreamToLiquidity split grossPrice exactly). VALID_STATE, SHOULD-HOLD, HIGH. Evidence: the fee is subtracted from grossPrice and the remainder is credited to the seller; the sum must reconcile. Sources: SPEC-11. Called after: buyListing, sellStreamToLiquidity. Ghosts: ghost_lastGrossPrice, ghost_lastFeeAmount, ghost_lastNetToSeller. Snapshot: treasuryUnderlying.
+- [x] **SP-100** Borrow disbursement conservation: borrower receives targetBorrow underlying and owes totalObligation ovrfloToken; the disbursement equals the sum of consumed liquidity capacities. VALID_STATE, SHOULD-HOLD, HIGH. Evidence: createBorrowerLoanPool transfers targetBorrow underlying to the borrower and records totalObligation; the consumed capacities must sum to targetBorrow. Sources: SPEC-17. Called after: createBorrowerLoanPool.
+
+### Admin Setter Echo (Wave 2)
+
+- [x] **SP-101** setMarketDepositLimit: the stored limit equals the argument. STATE_TRANSITION, SHOULD-HOLD, LOW. Evidence: factory.setMarketDepositLimit writes the arg verbatim. Sources: VT-05. Called after: setMarketDepositLimit.
+
+### Liveness & Boundary (Wave 2)
+
+- [x] **SP-102** Flash loan at max available PT amount succeeds (no off-by-one in the cap). VALID_STATE, SHOULD-HOLD, MEDIUM. Evidence: flashLoan caps amount at marketTotalDeposited; borrowing the full vault PT balance must succeed and repay atomically. Sources: ADV-09. Called after: flashLoan.
+- [x] **SP-103** deposit near the par-rate boundary (rate ~ 1e18) does not revert or over-credit. VALID_STATE, SHOULD-HOLD, MEDIUM. Evidence: toStream > 0 guard and toUser <= ptAmount cap must hold at rate = WAD where rounding could flip the split. Sources: ADV-10. Called after: deposit.
+- [x] **SP-104** cancelSaleListing succeeds post-maturity (stream return path still valid). VALID_STATE, SHOULD-HOLD, MEDIUM. Evidence: cancelSaleListing does not depend on market active state; it returns the escrowed stream regardless of maturity. Sources: ADV-11. Called after: cancelSaleListing.
+- [x] **SP-105** withdrawLiquidity succeeds post-maturity (capacity refund path still valid). VALID_STATE, SHOULD-HOLD, MEDIUM. Evidence: withdrawLiquidity does not depend on market active state; it refunds remaining capacity regardless of maturity. Sources: ADV-12. Called after: withdrawLiquidity.
+- [x] **SP-106** Stream escrow withdraw ACL: only the lending market (as stream owner) can withdraw from an escrowed stream; a random actor cannot. VALID_STATE, EXPLORATORY, MEDIUM. Evidence: Sablier withdraw is gated by ownerOf; once escrowed, only lending can call withdraw. Exploratory because MockSablier's ACL differs from mainnet Sablier. Sources: ADV-15. Called after: sellStreamToLiquidity, postSaleListing, createBorrowerLoanPool.
+
+### Note on Covered/Superseded Candidate
+
+- ADV-17 (repay no profit cycle) is transitively covered by SP-09 (obligation >= actualBorrow) and GL-57 (no free profit). No new ID assigned; documented for traceability.

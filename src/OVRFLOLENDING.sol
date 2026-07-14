@@ -434,7 +434,7 @@ contract OVRFLOLENDING is Ownable2Step, ReentrancyGuard, Multicall {
         emit StreamSaleListingCancelled(listingId, msg.sender, listing.streamId);
     }
 
-    /// @notice Buys a sale listing (taker side).
+    /// @notice Buys a sale listing.
     /// @dev Re-prices the stream at fill time (remaining may have changed since post),
     ///      charges the listing's snapshotted `feeBps`, pays the seller net, and
     ///      transfers the stream to the buyer. Reverts if the price exceeds `maxPriceIn`.
@@ -562,7 +562,7 @@ contract OVRFLOLENDING is Ownable2Step, ReentrancyGuard, Multicall {
         address market;
         uint16 aprBps;
         {
-            LiquidityPosition storage firstLiquidity = liquidityPositions[liquidityIds[0]];
+            LiquidityPosition memory firstLiquidity = liquidityPositions[liquidityIds[0]];
             require(firstLiquidity.active, "OVRFLOLENDING: liquidity inactive");
             market = firstLiquidity.market;
             aprBps = firstLiquidity.aprBps;
@@ -847,7 +847,7 @@ contract OVRFLOLENDING is Ownable2Step, ReentrancyGuard, Multicall {
         view
         returns (uint256 totalAvailable)
     {
-        for (uint256 i = 0; i < liquidityIds.length; i++) {
+        for (uint256 i; i < liquidityIds.length; i++) {
             if (i > 0) require(liquidityIds[i] > liquidityIds[i - 1], "OVRFLOLENDING: duplicate or unsorted ids");
             LiquidityPosition storage liquidity = liquidityPositions[liquidityIds[i]];
             require(liquidity.active, "OVRFLOLENDING: liquidity inactive");
@@ -861,7 +861,7 @@ contract OVRFLOLENDING is Ownable2Step, ReentrancyGuard, Multicall {
     /// @dev Consumes liquidity positions up to `actualBorrow`, recording per-lender contributions.
     function _consumeLiquidity(uint256[] memory liquidityIds, uint256 loanPoolId, uint256 actualBorrow) internal {
         uint256 toBorrow = actualBorrow;
-        for (uint256 i = 0; i < liquidityIds.length; i++) {
+        for (uint256 i; i < liquidityIds.length; i++) {
             if (toBorrow == 0) break;
             LiquidityPosition storage liquidity = liquidityPositions[liquidityIds[i]];
             uint256 consumed = toBorrow < liquidity.availableLiquidity ? toBorrow : liquidity.availableLiquidity;

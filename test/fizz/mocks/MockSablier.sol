@@ -23,6 +23,8 @@ contract MockSablier is ISablierV2LockupLinear {
 
     mapping(uint256 => Stream) private streams;
     mapping(uint256 => address) private owners;
+    mapping(uint256 => address) public getApproved;
+    mapping(address => mapping(address => bool)) public isApprovedForAll;
     uint256 public nextStreamId; // starts at 0, pre-increment gives ID 1 first
 
     function createWithDurations(CreateWithDurations calldata params) external returns (uint256 streamId) {
@@ -92,7 +94,15 @@ contract MockSablier is ISablierV2LockupLinear {
     }
 
     function withdraw(uint256 streamId, address to, uint128 amount) public {
-        require(owners[streamId] == msg.sender || streams[streamId].sender == msg.sender, "not authorized");
+        address owner = owners[streamId];
+        bool isOwner = owner == msg.sender;
+        bool isApproved = getApproved[streamId] == msg.sender || isApprovedForAll[owner][msg.sender];
+        bool isSender = streams[streamId].sender == msg.sender;
+        require(isOwner || isApproved || isSender, "SablierV2Lockup_Unauthorized");
+        // v1.1 ACL: sender may only withdraw to the current recipient (NFT owner)
+        if (isSender && !isOwner && !isApproved) {
+            require(to == owner, "SablierV2Lockup_WithdrawToNonRecipient");
+        }
         require(withdrawableAmountOf(streamId) >= amount, "insufficient");
         streams[streamId].withdrawnAmount += amount;
         streams[streamId].asset.safeTransfer(to, amount);
@@ -104,10 +114,24 @@ contract MockSablier is ISablierV2LockupLinear {
         }
     }
 
+    function approve(address to, uint256 streamId) external {
+        require(owners[streamId] == msg.sender, "not owner");
+        getApproved[streamId] = to;
+    }
+
+    function setApprovalForAll(address operator, bool approved) external {
+        isApprovedForAll[msg.sender][operator] = approved;
+    }
+
     function transferFrom(address from, address to, uint256 tokenId) external {
         require(streams[tokenId].transferable, "not transferable");
         require(owners[tokenId] == from, "not owner");
+        require(
+            msg.sender == from || getApproved[tokenId] == msg.sender || isApprovedForAll[from][msg.sender],
+            "not approved"
+        );
         owners[tokenId] = to;
+        delete getApproved[tokenId];
     }
 
     function ownerOf(uint256 tokenId) external view returns (address) {

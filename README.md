@@ -10,13 +10,13 @@ OVRFLO operates in two layers:
 
 **Layer 1 — Collateral Creation (Core Vault):** Deposit a Pendle PT and immediately receive ovrfloTokens (your principal at current market value) plus a Sablier stream that vests the remaining discount until PT maturity. The stream is deterministic and non-cancelable — it pays exactly what it promises, on schedule.
 
-**Layer 2 — The Market (OVRFLOLENDING):** Use that Sablier stream as collateral. Sell it outright for discounted underlying, or pledge it to borrow underlying and let the stream repay the loan at maturity. Because the stream is deterministic, there are no liquidations, no health factors, and no price oracles needed at loan time.
+**Layer 2 — The Market (OVRFLOLending):** Use that Sablier stream as collateral. Sell it outright for discounted underlying, or pledge it to borrow underlying and let the stream repay the loan at maturity. Because the stream is deterministic, there are no liquidations, no health factors, and no price oracles needed at loan time.
 
 ### Example
 
 1. User deposits **100 PT-stETH** (currently trading at 95% of face value)
 2. User immediately receives **95 ovrfloETH** (their principal) and a **Sablier stream** vesting **5 ovrfloETH** until PT maturity
-3. User pledges the stream on OVRFLOLENDING to borrow **4 WETH** against it at a 10% APR
+3. User pledges the stream on OVRFLOLending to borrow **4 WETH** against it at a 10% APR
 4. At maturity, the stream has vested **5 ovrfloETH**; the lender draws the owed **4.4 ovrfloETH** obligation, and the **0.6 ovrfloETH** residual returns to the borrower
 
 ```
@@ -42,7 +42,7 @@ OVRFLO operates in two layers:
 │                          │                                           │
 │                          ▼                                           │
 │   ┌──────────────────────────────────────┐                           │
-│   │           OVRFLOLENDING                 │                           │
+│   │           OVRFLOLending              │                           │
 │   │  Sell stream ──▶ receive WETH now    │                           │
 │   │  Pledge stream ──▶ borrow WETH now   │                           │
 │   │  Stream repays loan at maturity      │                           │
@@ -81,7 +81,7 @@ OVRFLO operates in two layers:
 │           │                            └──────────────────────┘          │
 │           │                                                              │
 │           │         ┌──────────────┐    ┌───────────────────┐            │
-│           │ deploys │  OVRFLOLENDING  │───▶│  StreamPricing    │            │
+│           │ deploys │  OVRFLOLending───▶│  StreamPricing    │            │
 │           └────────▶│  (lending)   │    │  (pricing library)│            │
 │                     │ - sell       │    │ - factor          │            │
 │                     │ - borrow     │    │ - grossPrice      │            │
@@ -335,7 +335,7 @@ The PT discount is fixed at deposit -- the oracle splits principal from yield de
 │         ▼                     ▼                                      │
 │   ┌────────────┐     ┌──────────────┐                                │
 │   │ unwrap()   │     │  sellInto    │                                │
-│   │   or swap  │     │  LiquidityPosition()     │                                │
+│   │   or swap  │     │  LiquidityPosition()                          │
 │   │  → ~95     │     │  → ~4.5      │                                │
 │   │  underly   │     │    underly   │                                │
 │   └────┬───────┘     └──────┬───────┘                                │
@@ -438,7 +438,7 @@ Two separate fees operate at different layers:
 - **StreamPricing math**: Floor/ceil rounding is directional and load-bearing. The invariant `obligation <= remaining` is proven and stress-tested (see `plans/streampricing-math-analysis.md`)
 - **Oracle**: TWAP pricing for PT valuation prevents manipulation; oracle is a vault immutable set at factory construction
 - **Slippage**: `minToUser` on deposits, `minNetOut` on lending fills, `minAcceptable` on borrow pools, `maxPriceIn` on buy-listing
-- **Deposit limits**: Per-market caps available (set limit to 0 to freeze new deposits)
+- **Deposit limits**: Per-market caps available (0 = unlimited; set a positive limit to cap deposits)
 - **Two-step ownership**: `transferOwnership` on the factory nominates a pending owner; the new owner must call `acceptOwnership` to finalize
 
 ### Design Notes

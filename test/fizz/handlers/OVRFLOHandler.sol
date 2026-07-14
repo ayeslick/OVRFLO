@@ -136,6 +136,8 @@ abstract contract OVRFLOHandler is Properties {
         property_previewStreamMatches(toUser, toStream, _market, ptAmount);
         property_depositFloorsToUser(toUser, ptAmount, _market);
         property_deposit_liveness(ptAmount);
+        property_previewRate_matches_deposit(toUser, ptAmount);
+        property_deposit_par_rate_boundary(toUser, toStream, ptAmount);
     }
 
     function oVRFLO_claim(address ptToken_, uint256 amount) public asActor {
@@ -183,12 +185,14 @@ abstract contract OVRFLOHandler is Properties {
         property_flashLoanPreMaturity();
         property_flashLoanWrappedUnchanged();
         property_flashLoanNoFreeProfit();
+        property_flashLoan_max_succeeds(amount);
     }
 
     // ――――――――――――――――――― Admin (via factory) ―――――――――――――――――――
 
     function _oVRFLO_setMarketDepositLimit(address _market, uint256 limit) internal asAdmin {
         factory.setMarketDepositLimit(address(vault), _market, limit);
+        property_setDepositLimitEcho(_market, limit);
     }
 
     function _oVRFLO_setFlashFeeBps(uint16 feeBps) internal asAdmin {

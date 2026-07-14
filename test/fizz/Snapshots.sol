@@ -45,6 +45,8 @@ abstract contract Snapshots is Base {
         bool flashLoanPaused; // 27
         // LoanPool received for current actor
         uint128 loanPoolReceived; // 28: loanPoolReceived[loanPoolId][actor]
+        // Lending treasury underlying balance (SP-99, SP-100)
+        uint256 treasuryUnderlying; // 29: underlying.balanceOf(lending.treasury())
     }
 
     State internal stateBefore;
@@ -140,6 +142,9 @@ abstract contract Snapshots is Base {
 
         // LoanPool received for current actor
         state.loanPoolReceived = lending.loanPoolReceived(ghosts.ghost_lastPoolId, actor);
+
+        // Lending treasury underlying balance
+        state.treasuryUnderlying = underlying.balanceOf(lending.treasury());
     }
 
     function snapshotBefore() internal {

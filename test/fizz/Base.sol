@@ -84,6 +84,16 @@ abstract contract Base is StringUtils, Clamp {
     uint256 internal ghost_lastLendingCount;
     uint256 internal ghost_lastApprovedMarketCount;
 
+    // Wave 2 ghosts (GL-65, GL-70, GL-71, GL-81, SP-99)
+    mapping(uint256 => uint128) internal ghost_liquidityCapacitySnapshot;
+    mapping(uint256 => bool) internal ghost_liquidityCapacitySeen;
+    mapping(uint256 => uint128) internal ghost_liquidityInitialCapacity;
+    mapping(uint256 => uint128) internal ghost_loanStreamWithdrawnAtCreation;
+    mapping(uint256 => uint128) internal ghost_loanStreamWithdrawnAtClose;
+    uint256 internal ghost_lastSaleGrossPrice;
+    uint256 internal ghost_lastSaleFeeAmount;
+    uint256 internal ghost_lastSaleNetToSeller;
+
     // ―――――――――――――――――――――――――― Actors ――――――――――――――――――――――――――
 
     address[] internal actors;
@@ -131,7 +141,8 @@ abstract contract Base is StringUtils, Clamp {
         // 2. Deploy mock infrastructure
         mockOracle = new MockPendleOracle();
         mockSY = new MockStandardizedYield(address(underlying));
-        mockMarket = new MockPendleMarket(block.timestamp + 365 days, address(mockSY), address(ptToken), address(0));
+        mockMarket =
+            new MockPendleMarket(block.timestamp + 1000 * 365 days, address(mockSY), address(ptToken), address(0));
         mockSablier = new MockSablier();
         market = address(mockMarket);
 
@@ -186,11 +197,14 @@ abstract contract Base is StringUtils, Clamp {
             underlying.deal(_actor, INITIAL_TOKEN_AMOUNT);
             ptToken.deal(_actor, INITIAL_TOKEN_AMOUNT);
             // Set approvals: vault (deposit + wrap), lending (supplyLiquidity + buyListing + repayLoan)
+            // Also approve lending for Sablier NFT transfers (sellStreamToLiquidity, postSaleListing,
+            // createBorrowerLoanPool all call sablier.transferFrom from msg.sender).
             vm.startPrank(_actor);
             ptToken.approve(address(vault), type(uint256).max);
             underlying.approve(address(vault), type(uint256).max);
             underlying.approve(address(lending), type(uint256).max);
             ovrfloToken.approve(address(lending), type(uint256).max);
+            MockSablier(SABLIER_ADDR).setApprovalForAll(address(lending), true);
             vm.stopPrank();
             ghost_actorStartValue[_actor] = INITIAL_TOKEN_AMOUNT * 2; // underlying + PT
         }

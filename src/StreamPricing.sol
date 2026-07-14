@@ -222,7 +222,6 @@ library StreamPricing {
         (uint256 expiryCached, address ovrfloToken) = marketActive(factory, core, market);
         if (lockup.getSender(streamId) != core) revert WrongSender();
         if (address(lockup.getAsset(streamId)) != ovrfloToken) revert WrongAsset();
-        if (expiryCached > type(uint40).max) revert WrongEndTime();
         // forge-lint: disable-next-line(unsafe-typecast)
         if (lockup.getEndTime(streamId) != uint40(expiryCached)) revert WrongEndTime();
         if (lockup.getCliffTime(streamId) != lockup.getStartTime(streamId)) revert CliffPresent();

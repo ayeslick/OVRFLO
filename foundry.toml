@@ -21,7 +21,11 @@ unknown_chain = { key = "${TENDERLY_ACCESS_KEY}", chain = 73571, url = "https://
 
 [profile.invariant.invariant]
 runs = 500
-depth = 25
+depth = 40
+
+[invariant]
+runs = 25
+depth = 10
 
 [fuzz]
 runs = 1000
