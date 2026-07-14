@@ -94,11 +94,9 @@ library StreamPricing {
 
     /// @notice Result of validating a stream against a series.
     /// @param seriesMaturity The cached series expiry timestamp (also the stream end time).
-    /// @param ovrfloToken The series' ovrflo token address.
     /// @param remaining `deposited - withdrawn`; the undiscounted face value still payable.
     struct Eligibility {
         uint256 seriesMaturity;
-        address ovrfloToken;
         uint128 remaining;
     }
 
@@ -232,6 +230,6 @@ library StreamPricing {
         if (deposited <= withdrawn) revert RemainingZero();
 
         eligibility =
-            Eligibility({seriesMaturity: expiryCached, ovrfloToken: ovrfloToken, remaining: deposited - withdrawn});
+            Eligibility({seriesMaturity: expiryCached, remaining: deposited - withdrawn});
     }
 }

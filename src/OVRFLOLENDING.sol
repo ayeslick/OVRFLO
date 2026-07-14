@@ -367,11 +367,7 @@ contract OVRFLOLENDING is Ownable2Step, ReentrancyGuard, Multicall {
         LiquidityPosition storage liquidity = liquidityPositions[liquidityId];
         require(liquidity.active, "OVRFLOLENDING: liquidity inactive");
 
-        StreamPricing.Eligibility memory eligibility = _requireEligible(liquidity.market, streamId);
-        uint256 grossPrice = StreamPricing.grossPrice(
-            eligibility.remaining, liquidity.aprBps, _timeToMaturity(eligibility.seriesMaturity)
-        );
-        require(grossPrice > 0, "OVRFLOLENDING: price zero");
+        (, uint256 grossPrice,) = _priceStream(liquidity.market, streamId, liquidity.aprBps);
         require(grossPrice <= liquidity.availableLiquidity, "OVRFLOLENDING: insufficient availableLiquidity");
 
         uint256 feeAmount = StreamPricing.fee(grossPrice, feeBps);
@@ -445,11 +441,7 @@ contract OVRFLOLENDING is Ownable2Step, ReentrancyGuard, Multicall {
         SaleListing storage listing = saleListings[listingId];
         require(listing.active, "OVRFLOLENDING: listing inactive");
 
-        StreamPricing.Eligibility memory eligibility = _requireEligible(listing.market, listing.streamId);
-        uint256 grossPrice = StreamPricing.grossPrice(
-            eligibility.remaining, listing.aprBps, _timeToMaturity(eligibility.seriesMaturity)
-        );
-        require(grossPrice > 0, "OVRFLOLENDING: price zero");
+        (, uint256 grossPrice,) = _priceStream(listing.market, listing.streamId, listing.aprBps);
         require(grossPrice <= maxPriceIn, "OVRFLOLENDING: slippage");
 
         uint256 feeAmount = StreamPricing.fee(grossPrice, listing.feeBps);
@@ -575,12 +567,9 @@ contract OVRFLOLENDING is Ownable2Step, ReentrancyGuard, Multicall {
         uint256 netToBorrower;
         uint256 feeAmount;
         {
-            StreamPricing.Eligibility memory eligibility = _requireEligible(market, streamId);
-            uint256 timeToMaturity = _timeToMaturity(eligibility.seriesMaturity);
-            uint256 grossPrice = StreamPricing.grossPrice(eligibility.remaining, aprBps, timeToMaturity);
-            require(grossPrice > 0, "OVRFLOLENDING: price zero");
-
             uint256 totalAvailable = _validateLiquidity(liquidityIds, market, aprBps, msg.sender);
+            (StreamPricing.Eligibility memory eligibility, uint256 grossPrice, uint256 timeToMaturity) =
+                _priceStream(market, streamId, aprBps);
             uint256 actualBorrow = targetBorrow < totalAvailable ? uint256(targetBorrow) : totalAvailable;
             require(actualBorrow <= grossPrice, "OVRFLOLENDING: borrow above price");
 
@@ -659,23 +648,24 @@ contract OVRFLOLENDING is Ownable2Step, ReentrancyGuard, Multicall {
 
         uint128 requestAmount = _minUint128(amount, _toUint128(claimable));
 
-        if (!loan.closed && loanPoolProceeds[loanPoolId] < requestAmount) {
+        uint128 proceeds = loanPoolProceeds[loanPoolId];
+        if (!loan.closed && proceeds < requestAmount) {
             uint128 harvestAmount = _minUint128(
-                _toUint128(uint256(requestAmount) - uint256(loanPoolProceeds[loanPoolId])),
+                _toUint128(uint256(requestAmount) - uint256(proceeds)),
                 _minUint128(withdrawable, outstanding)
             );
             if (harvestAmount > 0) {
                 sablier.withdraw(loan.streamId, address(this), harvestAmount);
                 loan.drawn += harvestAmount;
-                loanPoolProceeds[loanPoolId] += harvestAmount;
+                proceeds += harvestAmount;
             }
         }
 
-        payAmount = _minUint128(requestAmount, loanPoolProceeds[loanPoolId]);
+        payAmount = _minUint128(requestAmount, proceeds);
         require(payAmount > 0, "OVRFLOLENDING: nothing claimable");
 
         loanPoolReceived[loanPoolId][account] += payAmount;
-        loanPoolProceeds[loanPoolId] -= payAmount;
+        loanPoolProceeds[loanPoolId] = proceeds - payAmount;
         IERC20(ovrfloToken).safeTransfer(account, payAmount);
     }
 
@@ -700,12 +690,10 @@ contract OVRFLOLENDING is Ownable2Step, ReentrancyGuard, Multicall {
         view
         returns (uint256 grossPrice, uint128 obligation, uint256 feeAmount, uint256 netToBorrower, uint128 residual)
     {
-        StreamPricing.Eligibility memory eligibility = _requireEligible(market, streamId);
         _validateApr(aprBps);
-        uint256 timeToMaturity = _timeToMaturity(eligibility.seriesMaturity);
-
-        grossPrice = StreamPricing.grossPrice(eligibility.remaining, aprBps, timeToMaturity);
-        require(grossPrice > 0, "OVRFLOLENDING: price zero");
+        StreamPricing.Eligibility memory eligibility;
+        uint256 timeToMaturity;
+        (eligibility, grossPrice, timeToMaturity) = _priceStream(market, streamId, aprBps);
         uint256 effectiveBorrowAmount = borrowAmount == 0 ? grossPrice : borrowAmount;
         require(effectiveBorrowAmount <= grossPrice, "OVRFLOLENDING: borrow above price");
 
@@ -903,6 +891,18 @@ contract OVRFLOLENDING is Ownable2Step, ReentrancyGuard, Multicall {
     /// @dev Seconds from now until the series maturity.
     function _timeToMaturity(uint256 seriesMaturity) internal view returns (uint256) {
         return seriesMaturity - block.timestamp;
+    }
+
+    /// @dev Prices a stream: eligibility check, gross price, and zero guard.
+    function _priceStream(address market, uint256 streamId, uint16 aprBps)
+        internal
+        view
+        returns (StreamPricing.Eligibility memory eligibility, uint256 grossPrice, uint256 timeToMaturity)
+    {
+        eligibility = _requireEligible(market, streamId);
+        timeToMaturity = _timeToMaturity(eligibility.seriesMaturity);
+        grossPrice = StreamPricing.grossPrice(eligibility.remaining, aprBps, timeToMaturity);
+        require(grossPrice > 0, "OVRFLOLENDING: price zero");
     }
 
     /// @dev Pulls `amount` of `token` from `from` to `to` with a strict balance-delta check.

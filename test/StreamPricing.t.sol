@@ -106,7 +106,6 @@ contract StreamPricingTest is Test {
             harness.requireEligible(address(factory), address(sablier), address(core), MARKET_ONE, streamId);
 
         assertEq(eligibility.seriesMaturity, expiry);
-        assertEq(eligibility.ovrfloToken, address(ovrfloToken));
         assertEq(eligibility.remaining, 70 ether);
     }
 

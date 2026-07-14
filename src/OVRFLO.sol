@@ -465,7 +465,7 @@ contract OVRFLO is ReentrancyGuard {
         address market = ptToMarket[ptToken];
         require(market != address(0), "OVRFLO: unknown PT");
 
-        SeriesInfo memory info = _series[market];
+        SeriesInfo storage info = _series[market];
         require(!flashLoanPaused, "OVRFLO: flash paused");
         require(block.timestamp < info.expiryCached, "OVRFLO: matured");
         require(amount > 0, "OVRFLO: zero flash");
