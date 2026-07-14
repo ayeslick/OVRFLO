@@ -1692,7 +1692,7 @@ contract OVRFLOLENDINGTest is Test {
     ///      are only written inside createBorrowerLoanPool, which always sets loanPoolLoanId.
     function test_ToUint128_RevertsOnOverflow() public {
         LendingInternalHarness harness = new LendingInternalHarness(address(factory), address(core), address(sablier));
-        vm.expectRevert("OVRFLOLENDING: uint128 overflow");
+        vm.expectRevert("SafeCast: value doesn't fit in 128 bits");
         harness.exposed_toUint128(uint256(type(uint128).max) + 1);
     }
 

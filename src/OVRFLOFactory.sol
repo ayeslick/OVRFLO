@@ -190,8 +190,7 @@ contract OVRFLOFactory is Ownable2Step {
     /// @param feeBps Fee in basis points (max FEE_MAX_BPS)
     function addMarket(address ovrflo, address market, uint32 twapDuration, uint16 feeBps) external onlyOwner {
         _requireKnownOvrflo(ovrflo);
-        require(twapDuration <= MAX_TWAP_DURATION, "OVRFLOFactory: twap too long");
-        require(twapDuration >= MIN_TWAP_DURATION, "OVRFLOFactory: twap too short");
+        _validateTwapBounds(twapDuration);
         require(feeBps <= FEE_MAX_BPS, "OVRFLOFactory: fee too high");
 
         {
@@ -260,8 +259,7 @@ contract OVRFLOFactory is Ownable2Step {
     /// @param market The Pendle market address
     /// @param twapDuration TWAP duration in seconds
     function prepareOracle(address market, uint32 twapDuration) external onlyOwner {
-        require(twapDuration >= MIN_TWAP_DURATION, "OVRFLOFactory: twap too short");
-        require(twapDuration <= MAX_TWAP_DURATION, "OVRFLOFactory: twap too long");
+        _validateTwapBounds(twapDuration);
         (bool increaseCardinalityRequired, uint16 cardinalityRequired,) =
             IPendleOracle(oracle).getOracleState(market, twapDuration);
         if (increaseCardinalityRequired) {
@@ -323,5 +321,10 @@ contract OVRFLOFactory is Ownable2Step {
 
     function _requireKnownLending(address lending) internal view {
         require(lendingToOvrflo[lending] != address(0), "OVRFLOFactory: unknown lending");
+    }
+
+    function _validateTwapBounds(uint32 twapDuration) internal pure {
+        require(twapDuration >= MIN_TWAP_DURATION, "OVRFLOFactory: twap too short");
+        require(twapDuration <= MAX_TWAP_DURATION, "OVRFLOFactory: twap too long");
     }
 }

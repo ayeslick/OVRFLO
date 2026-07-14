@@ -6,6 +6,7 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/security/ReentrancyGuard.
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Multicall} from "@openzeppelin/contracts/utils/Multicall.sol";
+import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {ISablierV2LockupLinear} from "../interfaces/ISablierV2LockupLinear.sol";
 import {IOVRFLOFactoryRegistry, StreamPricing} from "./StreamPricing.sol";
 
@@ -482,17 +483,18 @@ contract OVRFLOLENDING is Ownable2Step, ReentrancyGuard, Multicall {
         require(!loan.closed, "OVRFLOLENDING: loan closed");
 
         uint128 outstanding = _outstanding(loan);
-        uint128 withdrawable = sablier.withdrawableAmountOf(loan.streamId);
+        uint256 streamId = loan.streamId;
+        uint128 withdrawable = sablier.withdrawableAmountOf(streamId);
         require(withdrawable >= outstanding, "OVRFLOLENDING: loan not closable");
 
         loan.closed = true;
         if (outstanding > 0) {
             loan.drawn += outstanding;
             uint256 loanPoolId = loanToLoanPool[loanId];
-            sablier.withdraw(loan.streamId, address(this), outstanding);
+            sablier.withdraw(streamId, address(this), outstanding);
             loanPoolProceeds[loanPoolId] += outstanding;
         }
-        sablier.transferFrom(address(this), loan.borrower, loan.streamId);
+        sablier.transferFrom(address(this), loan.borrower, streamId);
 
         emit LoanClosed(loanId, loan.borrower, loan.lender, outstanding);
     }
@@ -644,8 +646,12 @@ contract OVRFLOLENDING is Ownable2Step, ReentrancyGuard, Multicall {
         _requireLoanExists(loan);
 
         uint256 recovered = uint256(loan.drawn) + uint256(loan.repaid);
+        uint128 withdrawable;
+        uint128 outstanding;
         if (!loan.closed) {
-            recovered += uint256(_minUint128(sablier.withdrawableAmountOf(loan.streamId), _outstanding(loan)));
+            outstanding = _outstanding(loan);
+            withdrawable = sablier.withdrawableAmountOf(loan.streamId);
+            recovered += uint256(_minUint128(withdrawable, outstanding));
         }
 
         uint256 claimable = uint256(contribution) * recovered / uint256(loanPools[loanPoolId].totalContributed)
@@ -656,7 +662,7 @@ contract OVRFLOLENDING is Ownable2Step, ReentrancyGuard, Multicall {
         if (!loan.closed && loanPoolProceeds[loanPoolId] < requestAmount) {
             uint128 harvestAmount = _minUint128(
                 _toUint128(uint256(requestAmount) - uint256(loanPoolProceeds[loanPoolId])),
-                _minUint128(sablier.withdrawableAmountOf(loan.streamId), _outstanding(loan))
+                _minUint128(withdrawable, outstanding)
             );
             if (harvestAmount > 0) {
                 sablier.withdraw(loan.streamId, address(this), harvestAmount);
@@ -948,8 +954,6 @@ contract OVRFLOLENDING is Ownable2Step, ReentrancyGuard, Multicall {
 
     /// @dev Casts to uint128, reverting on overflow.
     function _toUint128(uint256 amount) internal pure returns (uint128) {
-        require(amount <= type(uint128).max, "OVRFLOLENDING: uint128 overflow");
-        // forge-lint: disable-next-line(unsafe-typecast)
-        return uint128(amount);
+        return SafeCast.toUint128(amount);
     }
 }

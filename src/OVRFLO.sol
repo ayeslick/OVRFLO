@@ -282,9 +282,10 @@ contract OVRFLO is ReentrancyGuard {
     /// @param ptToken The PT token address to sweep
     /// @param to The recipient address
     function sweepExcessPt(address ptToken, address to) external onlyAdmin {
-        require(ptToMarket[ptToken] != address(0), "OVRFLO: unknown PT");
+        address market = ptToMarket[ptToken];
+        require(market != address(0), "OVRFLO: unknown PT");
         uint256 balance = IERC20(ptToken).balanceOf(address(this));
-        uint256 deposited = marketTotalDeposited[ptToMarket[ptToken]];
+        uint256 deposited = marketTotalDeposited[market];
         uint256 excess = balance > deposited ? balance - deposited : 0;
 
         require(excess > 0, "OVRFLO: no excess");
@@ -541,10 +542,7 @@ contract OVRFLO is ReentrancyGuard {
     /// @param market The Pendle market address
     /// @return rateE18 The rate in 1e18 scale (e.g., 0.95e18 = PT at 95% of SY value)
     function previewRate(address market) external view returns (uint256 rateE18) {
-        SeriesInfo memory info = _series[market];
-        require(info.approved, "OVRFLO: market not approved");
-        _requireOracleFresh(market, info.twapDurationFixed);
-        rateE18 = IPendleOracle(oracle).getPtToSyRate(market, info.twapDurationFixed);
+        (, rateE18) = _approvedRate(market);
     }
 
     /// @notice Previews the immediate vs streamed split for a deposit
@@ -558,10 +556,7 @@ contract OVRFLO is ReentrancyGuard {
         view
         returns (uint256 toUser, uint256 toStream, uint256 rateE18)
     {
-        SeriesInfo memory info = _series[market];
-        require(info.approved, "OVRFLO: market not approved");
-        _requireOracleFresh(market, info.twapDurationFixed);
-        rateE18 = IPendleOracle(oracle).getPtToSyRate(market, info.twapDurationFixed);
+        (, rateE18) = _approvedRate(market);
         (toUser, toStream) = _computeSplit(ptAmount, rateE18);
     }
 
@@ -577,11 +572,16 @@ contract OVRFLO is ReentrancyGuard {
         view
         returns (uint256 toUser, uint256 toStream, uint256 feeAmount, uint256 rateE18)
     {
-        SeriesInfo memory info = _series[market];
+        SeriesInfo memory info;
+        (info, rateE18) = _approvedRate(market);
+        (toUser, toStream) = _computeSplit(ptAmount, rateE18);
+        feeAmount = info.feeBps == 0 ? 0 : PRBMath.mulDiv(toUser, info.feeBps, BASIS_POINTS);
+    }
+
+    function _approvedRate(address market) internal view returns (SeriesInfo memory info, uint256 rateE18) {
+        info = _series[market];
         require(info.approved, "OVRFLO: market not approved");
         _requireOracleFresh(market, info.twapDurationFixed);
         rateE18 = IPendleOracle(oracle).getPtToSyRate(market, info.twapDurationFixed);
-        (toUser, toStream) = _computeSplit(ptAmount, rateE18);
-        feeAmount = info.feeBps == 0 ? 0 : PRBMath.mulDiv(toUser, info.feeBps, BASIS_POINTS);
     }
 }
