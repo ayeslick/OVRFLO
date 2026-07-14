@@ -3,6 +3,7 @@ title: Closing stateful fuzz coverage gaps - handler expansion, mock fidelity, a
 category: best-practices
 module: test/fizz/
 date: 2026-07-05
+last_updated: 2026-07-14
 problem_type: best_practice
 component: testing_framework
 severity: medium
@@ -328,7 +329,7 @@ mock that lets the harness pass and a mock that lets the harness find bugs.
 
 After all 8 units and 4 triage fixes, the final Medusa campaign reported 118
 tests passed with 0 failures. Coverage held or improved on every contract:
-OVRFLO 92%, OVRFLOBook 90% (up from 84%), OVRFLOFactory 88% (up from 85%),
+OVRFLO 92%, OVRFLOLending 90% (up from 84%), OVRFLOFactory 88% (up from 85%),
 OVRFLOToken 88%, StreamPricing 100%. The previously-unreachable paths
 (`closeLoan` success, `claimPoolShare` success, flash loan callback,
 multi-offer `_consumeOffers`, `prepareOracle` TWAP bounds) all appear in the
@@ -354,7 +355,66 @@ MockSablier ACL was tightened further:
    `getWithdrawnAmount` at close time. See
    [`stream-reuse-after-loan-close-property-fix.md`](../logic-errors/stream-reuse-after-loan-close-property-fix.md).
 
-Final Medusa campaign: 147 passed, 0 failed, OVRFLOLending.sol 91.8% coverage.
+Intermediate Medusa campaign: 147 passed, 0 failed, OVRFLOLending.sol 91.8% coverage. A subsequent phase pushed coverage to 98.7% — see the second continuation below.
+
+### Second continuation (2026-07-14): 91.8% to 98.7%
+
+A line-by-line read of the 25 uncovered lines sorted them into four classes,
+each demanding a different remedy:
+
+1. **View functions never called.** `loanState`, `liquidityState`, and
+   `saleListingState` had zero callers — no handler, no property. Fixed by
+   adding properties that call the views and assert structural invariants, and
+   by inserting direct view calls inside existing handlers right after the
+   state they describe is created (`supplyLiquidity` calls `liquidityState`,
+   `createBorrowerLoanPool` calls `loanState`, `postSaleListing` calls
+   `saleListingState`). The handler calls guarantee coverage on every
+   state-creating path; the properties exercise the views as first-class
+   assertions.
+
+2. **Exact-exhaustion branches.** The liquidity deactivation
+   (`if (availableLiquidity == 0) { active = false; }`, line 379) and the
+   `repayLoan` close path (`if (closes) { loan.closed = true; }` plus
+   `sablier.transferFrom`, lines 517/524) fire only when an amount lands
+   *exactly* on a boundary. Random fuzz on 18-decimal tokens almost never
+   matches. Fixed with a constructed scenario (`scenario_sellExactsLiquidity`)
+   that quotes the stream, posts liquidity with capacity == grossPrice, and
+   sells into it to hit the deactivation branch exactly; and a clamped
+   `repayLoan` handler that uses `amount % 3 == 0` to select the exact
+   outstanding amount one-third of the time.
+
+3. **Early-return guard.** `gatherLiquidity` short-circuits when
+   `startId >= nextLiquidityId` (line 804). The handler always passed
+   `startId = 1`, so the guard never fired. Fixed by adding a branch that
+   sometimes passes `startId = nextLiquidityId + 1`.
+
+4. **Immutable declarations (uncoverable).** Lines 47, 49, 53, 55 are
+   `immutable` variable declarations — storage layout, not executable
+   statements. LCOV marks them uncovered, but no test can "execute" a
+   declaration. This is a Solidity LCOV tooling artifact; the practical ceiling
+   is 98.7% (302/306).
+
+Three false positives surfaced during the widened campaign, each triaged
+against the source:
+
+- **SP-100 treasury-as-actor:** `property_borrow_disbursement_conservation`
+  asserts the borrower's underlying increase equals `actualBorrow - fee`. When
+  the admin handler sets the treasury to an actor address and that actor is
+  also the borrower, the actor receives both net disbursement and fee
+  (= `actualBorrow`), breaking the assertion. Fix: gate the property on
+  `lending.treasury() != actor`.
+- **GL-57 ghost start-value after setup mint:** `scenario_sellExactsLiquidity`
+  mints tokens via `underlying.deal()` without updating
+  `ghost_actorStartValue`, triggering the no-free-profit property. Fix:
+  `ghost_actorStartValue[actor] += grossPrice` after any test-only mint.
+- **Handler prefix rename blind spot:** the `OVRFLOLENDING` to `OVRFLOLending`
+  rename missed handler prefixes like `oVRFLOLENDING_` because the lowercase
+  leading `o` means the prefix does not contain the search string as a
+  substring. Fixed with a targeted replacement.
+
+Final Medusa campaign: 151 passed, 0 failed, OVRFLOLending.sol 98.7% coverage
+(302/306 lines). Forge: 362/362 passing. The four remaining lines are the
+documented immutable-declaration artifact.
 
 ## Related
 
@@ -363,3 +423,4 @@ Final Medusa campaign: 147 passed, 0 failed, OVRFLOLending.sol 91.8% coverage.
 - The Fizz gap closure plan at `docs/plans/2026-07-05-002-feat-fizz-gap-closure-plan.md` - the read-only spec governing the 8 implementation units
 - [Sablier NFT setApprovalForAll fuzz reachability gap](../test-failures/sablier-nft-approval-fuzz-reachability-gap.md) - a 13th gap discovered in a later campaign phase; same root cause (mock/harness missing a capability)
 - [GL-70 stream reuse after loan close](../logic-errors/stream-reuse-after-loan-close-property-fix.md) - a 5th triage case from the same campaign; property snapshot baseline breaks under stream reuse
+- [View functions revert on non-existent IDs](../architecture-patterns/view-functions-revert-on-nonexistent-ids.md) - pattern #8, the safety contract the new view-function coverage properties validate
