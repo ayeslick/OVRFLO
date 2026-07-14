@@ -1,5 +1,5 @@
 ---
-title: OVRFLOLENDING Rebrand - Plan
+title: OVRFLOLending Rebrand - Plan
 type: refactor
 date: 2026-07-11
 topic: ovrflo-lending-rebrand
@@ -10,11 +10,11 @@ execution: code
 deepened: 2026-07-11
 ---
 
-# OVRFLOLENDING Rebrand - Plan
+# OVRFLOLending Rebrand - Plan
 
 ## Goal Capsule
 
-- **Objective:** Rebrand the secondary market as `OVRFLOLENDING`, making liquidity provision and self-repaying loans the primary product language without changing any protocol behavior.
+- **Objective:** Rebrand the secondary market as `OVRFLOLending`, making liquidity provision and self-repaying loans the primary product language without changing any protocol behavior.
 - **Product authority:** The lending-first model retains the existing unified-liquidity design: supplied liquidity may fund either a stream-backed loan or a direct stream purchase.
 - **Open blockers:** None.
 
@@ -24,7 +24,7 @@ deepened: 2026-07-11
 
 ### Summary
 
-`OVRFLOLENDING` will replace `OVRFLOBook` as the public name for OVRFLO's secondary lending market.
+`OVRFLOLending` will replace `OVRFLOBook` as the public name for OVRFLO's secondary lending market.
 The public surface will use lender, borrower, loan-pool, and liquidity terminology while retaining clear buyer and seller terminology for direct stream-sales actions.
 
 ### Problem Frame
@@ -34,7 +34,7 @@ That framing obscures the primary lender and borrower roles, despite the market'
 
 ### Key Decisions
 
-- **Complete public rebrand.** The contract identity, factory-facing identity, deployment surface, events, revert prefixes, public API names, tests, and current documentation will adopt `OVRFLOLENDING`; no legacy ABI aliases are required.
+- **Complete public rebrand.** The contract identity, factory-facing identity, deployment surface, events, revert prefixes, public API names, tests, and current documentation will adopt `OVRFLOLending`; no legacy ABI aliases are required.
 - **Lending-first vocabulary.** Liquidity providers are lenders, stream owners borrowing against their stream are borrowers, and batched debt is a loan pool.
 - **Preserve unified liquidity.** Supplied lender liquidity remains eligible to fund either a loan or a direct stream purchase, preserving the existing economic behavior.
 - **Preserve sale clarity.** Direct-sale actions continue to use buyer and seller terminology rather than forcing lending words onto a sale.
@@ -50,7 +50,7 @@ That framing obscures the primary lender and borrower roles, despite the market'
 
 **Public identity**
 
-- R1. The secondary-market contract and its deployable public identity must be named `OVRFLOLENDING`.
+- R1. The secondary-market contract and its deployable public identity must be named `OVRFLOLending`.
 - R2. The factory's registry, deployment, administrative, event, and documentation terminology must identify each secondary market as lending rather than a book.
 - R3. Public error and event naming must use the new lending identity consistently.
 
@@ -68,7 +68,7 @@ That framing obscures the primary lender and borrower roles, despite the market'
 
 **Documentation**
 
-- R10. Current protocol, architecture, deployment, developer, and frontend-facing documentation must describe the market as `OVRFLOLENDING` and explain its lending-first unified-liquidity model.
+- R10. Current protocol, architecture, deployment, developer, and frontend-facing documentation must describe the market as `OVRFLOLending` and explain its lending-first unified-liquidity model.
 - R11. Dated audits, solution records, and other historical documentation must preserve their original `OVRFLOBook` references.
 
 ### Key Flows
@@ -85,10 +85,10 @@ That framing obscures the primary lender and borrower roles, despite the market'
 
 ### Acceptance Examples
 
-- AE1. **Covers R1-R3.** Given a fresh deployment, when the factory deploys its secondary market, then the deployed contract, factory registry, emitted events, and public failure prefixes use `OVRFLOLENDING` terminology.
+- AE1. **Covers R1-R3.** Given a fresh deployment, when the factory deploys its secondary market, then the deployed contract, factory registry, emitted events, and public failure prefixes use `OVRFLOLending` terminology.
 - AE2. **Covers R4-R7.** Given a lender has supplied liquidity, when an eligible borrower originates a loan pool or an eligible seller executes a direct sale, then both paths consume the same supplied capacity and preserve their respective borrower or buyer/seller language.
 - AE3. **Covers R8-R9.** Given the rebranded surface, when the full Solidity validation suite runs, then all existing behavioral, invariant, fuzz, adversarial, and applicable fork assertions pass without changed economics.
-- AE4. **Covers R10-R11.** Given current and historical documentation, when terminology is reviewed, then current materials use `OVRFLOLENDING` while dated historical records retain `OVRFLOBook`.
+- AE4. **Covers R10-R11.** Given current and historical documentation, when terminology is reviewed, then current materials use `OVRFLOLending` while dated historical records retain `OVRFLOBook`.
 
 ### Scope Boundaries
 
@@ -120,7 +120,7 @@ Product Contract unchanged.
 
 ### Key Technical Decisions
 
-- **KTD1. Treat the rebrand as a clean-break release.** Rename the contract, source file, factory ABI, public selectors, autogenerated mapping getters, events, and `OVRFLOLENDING:` revert prefix with no compatibility aliases. This intentionally changes selectors and event topics for future deployments.
+- **KTD1. Treat the rebrand as a clean-break release.** Rename the contract, source file, factory ABI, public selectors, autogenerated mapping getters, events, and `OVRFLOLending:` revert prefix with no compatibility aliases. This intentionally changes selectors and event topics for future deployments.
 - **KTD2. Preserve every economic and state-transition behavior.** Keep storage declaration order and field types, ID initialization and increments, validation order, transfer order, event payload types and ordering, access checks, and `nonReentrant` placement. The change is naming and deployment-surface scope only.
 - **KTD3. Use liquidity language for the unified primitive.** Rename offers to liquidity positions and use liquidity-oriented supply, withdrawal, state, and gathering functions. Retain explicit buyer/seller terms for direct stream sales and the existing `Loan`, `closeLoan`, `repayLoan`, `loanState`, and `quote` semantics where their names already match the lending model.
 - **KTD4. Make factory deployment the sole supported path.** Delete the standalone deployment script rather than renaming it. Keep the factory as owner of every factory-deployed lending market and preserve its one-market-per-vault registry and admin forwarders.
@@ -130,7 +130,7 @@ Product Contract unchanged.
 
 | Current surface | Rebranded surface |
 | --- | --- |
-| `OVRFLOBook` | `OVRFLOLENDING` |
+| `OVRFLOBook` | `OVRFLOLending` |
 | `ovrfloToBook` / `bookToOvrflo` | `ovrfloToLending` / `lendingToOvrflo` |
 | `bookCount` / `books` | `lendingCount` / `lendings` |
 | `deployBook` | `deployLending` |
@@ -165,7 +165,7 @@ Product Contract unchanged.
 
 ```mermaid
 flowchart TB
-  F[OVRFLOFactory] -->|deployLending and admin forwarding| L[OVRFLOLENDING]
+  F[OVRFLOFactory] -->|deployLending and admin forwarding| L[OVRFLOLending]
   L -->|factory registry reads| F
   B[Lender supplies liquidity] --> L
   S[Seller sells a stream] -->|uses same liquidity capacity| L
@@ -179,7 +179,7 @@ flowchart TB
 - Retain the factory-mediated ownership and administration model. The removed standalone script must not leave a second deployment or ownership path.
 - Retain current test value-conservation assertions for every transfer path, including actor, counterparty, treasury, and lending-market balances.
 - Do not rename dated historical source paths referenced by current code. Update current prose around such references while retaining the original historical filename.
-- Reword every public revert that identifies an offer, maker, pool, or claim role to its corresponding liquidity, lender, loan-pool, or borrower term. Tests must assert the complete final reason, not merely the `OVRFLOLENDING:` prefix.
+- Reword every public revert that identifies an offer, maker, pool, or claim role to its corresponding liquidity, lender, loan-pool, or borrower term. Tests must assert the complete final reason, not merely the `OVRFLOLending:` prefix.
 - Preserve direct constructor availability as an unchanged EVM property. “Sole deployment path” means the only supported and documented production path is the factory, not a new constructor authorization restriction.
 
 ### Sequencing
@@ -207,15 +207,15 @@ flowchart TB
 
 ### U1. Rename the lending-market contract and public ABI
 
-- **Goal:** Replace `OVRFLOBook` with `OVRFLOLENDING` and expose the lending-first ABI without changing market mechanics.
+- **Goal:** Replace `OVRFLOBook` with `OVRFLOLending` and expose the lending-first ABI without changing market mechanics.
 - **Requirements:** R1, R3-R8, F1-F2, AE1-AE3.
 - **Dependencies:** None.
-- **Files:** `src/OVRFLOBook.sol` (rename to `src/OVRFLOLENDING.sol`), `src/StreamPricing.sol`.
-- **Approach:** Rename the contract, source identity, storage symbols, public methods, events, NatSpec, and revert prefix according to the Public Naming Map. Preserve struct field order and types, operational ordering, event argument types/order, and all existing internal arithmetic, validations, and access-control behavior. Update StreamPricing's current-market prose to use `OVRFLOLENDING` while leaving links to dated historical solution files unchanged.
+- **Files:** `src/OVRFLOBook.sol` (rename to `src/OVRFLOLending.sol`), `src/StreamPricing.sol`.
+- **Approach:** Rename the contract, source identity, storage symbols, public methods, events, NatSpec, and revert prefix according to the Public Naming Map. Preserve struct field order and types, operational ordering, event argument types/order, and all existing internal arithmetic, validations, and access-control behavior. Update StreamPricing's current-market prose to use `OVRFLOLending` while leaving links to dated historical solution files unchanged.
 - **Execution note:** Add characterization coverage before or alongside selector renames so every money-moving and state-transition path proves the same post-state under the new ABI.
 - **Patterns to follow:** `docs/solutions/patterns/ovrflo-critical-patterns.md` patterns 4, 7, 8, 11, 12, and 14-17.
 - **Test scenarios:**
-  - Covers AE1. Each constructor and public validation failure returns the rebranded `OVRFLOLENDING:` prefix.
+  - Covers AE1. Each constructor and public validation failure returns the rebranded `OVRFLOLending:` prefix.
   - Covers F1 / AE2. Supplied liquidity can be partially consumed by a direct sale and then by a borrower loan pool, with identical capacity, escrow, stream-ownership, and all-party balance outcomes.
   - Covers F2 / AE3. Direct repayment, permissionless close, and open-loan claim harvesting preserve obligation caps, stream return, and lender recovery.
   - Unknown liquidity, listing, and loan IDs still revert rather than returning default state.
@@ -224,7 +224,7 @@ flowchart TB
 
 ### U2. Rebrand factory registry and remove standalone deployment
 
-- **Goal:** Make factory deployment and administration the sole `OVRFLOLENDING` lifecycle surface.
+- **Goal:** Make factory deployment and administration the sole `OVRFLOLending` lifecycle surface.
 - **Requirements:** R1-R3, R8-R9, A4, AE1-AE3.
 - **Dependencies:** U1.
 - **Files:** `src/OVRFLOFactory.sol`, `script/OVRFLOBook.s.sol` (delete), `test/OVRFLOFactory.t.sol`.
@@ -243,7 +243,7 @@ flowchart TB
 - **Goal:** Carry the full unit, invariant, attack-scenario, fuzz, and fork coverage forward to the rebranded ABI.
 - **Requirements:** R3-R9, AE1-AE3.
 - **Dependencies:** U1, U2.
-- **Files:** `test/OVRFLOBook.t.sol` (rename to `test/OVRFLOLENDING.t.sol`), `test/OVRFLOBookInvariant.t.sol` (rename to `test/OVRFLOLENDINGInvariant.t.sol`), `test/fork/OVRFLOBookMainnetFork.t.sol` (rename to `test/fork/OVRFLOLENDINGMainnetFork.t.sol`), `test/OVRFLOAttackScenarios.t.sol`, `test/StreamPricing.t.sol`, `test/mocks/BookMocks.sol` (rename to `test/mocks/LendingMocks.sol`), `test/fizz/Base.sol`, `test/fizz/Properties.sol`, `test/fizz/Snapshots.sol`, `test/fizz/handlers/Handlers.sol`, `test/fizz/handlers/OVRFLOBookHandler.sol` (rename to `test/fizz/handlers/OVRFLOLENDINGHandler.sol`).
+- **Files:** `test/OVRFLOBook.t.sol` (rename to `test/OVRFLOLending.t.sol`), `test/OVRFLOBookInvariant.t.sol` (rename to `test/OVRFLOLendingInvariant.t.sol`), `test/fork/OVRFLOBookMainnetFork.t.sol` (rename to `test/fork/OVRFLOLendingMainnetFork.t.sol`), `test/OVRFLOAttackScenarios.t.sol`, `test/StreamPricing.t.sol`, `test/mocks/BookMocks.sol` (rename to `test/mocks/LendingMocks.sol`), `test/fizz/Base.sol`, `test/fizz/Properties.sol`, `test/fizz/Snapshots.sol`, `test/fizz/handlers/Handlers.sol`, `test/fizz/handlers/OVRFLOBookHandler.sol` (rename to `test/fizz/handlers/OVRFLOLendingHandler.sol`).
 - **Approach:** Rename test contracts, harnesses, handlers, helper methods, labels, ghost state, imports, `abi.encodeCall` fixtures, event expectations, and revert expectations to match the clean-break ABI. Preserve the test scenarios and invariant meanings rather than weakening them to accommodate renamed symbols.
 - **Execution note:** Treat the pre-rebrand suites as characterization coverage. Do not change an expected economic assertion unless it is identifier-only.
 - **Patterns to follow:** Existing all-party balance assertions in `test/OVRFLOBook.t.sol`, factory registry tests in `test/OVRFLOFactory.t.sol`, and invariant properties documented in `PROPERTIES.md`.
@@ -257,7 +257,7 @@ flowchart TB
 
 ### U4. Update living documentation and enforceable terminology
 
-- **Goal:** Make the current project documentation describe OVRFLOLENDING accurately and distinguish it from preserved historical evidence.
+- **Goal:** Make the current project documentation describe OVRFLOLending accurately and distinguish it from preserved historical evidence.
 - **Requirements:** R2, R4-R7, R10-R11, AE4.
 - **Dependencies:** U1-U3.
 - **Files:** `README.md`, `CONCEPTS.md`, `AGENTS.md`, `CLAUDE.md`, `PROPERTIES.md`, `AUDIT.md`, `docs/audit/**/*.md` (living documents only), `mockups/**/*.html`, `docs/solutions/README.md`, `docs/solutions/patterns/ovrflo-critical-patterns.md`.
@@ -296,7 +296,7 @@ flowchart TB
 
 ## Documentation and Operational Notes
 
-- Current documentation names the market `OVRFLOLENDING`, describes unified lender liquidity as usable for both loans and stream purchases, and names factory deployment as the sole supported path.
+- Current documentation names the market `OVRFLOLending`, describes unified lender liquidity as usable for both loans and stream purchases, and names factory deployment as the sole supported path.
 - Historical artifacts keep their `OVRFLOBook` identity, including dated solution filenames and evidence references.
 - No production migration is planned for already deployed `OVRFLOBook` instances. Operators deploy a new factory/market release, call `deployLending` for each supported vault, and publish the resulting factory and lending-market addresses when adopting the rebranded API.
 - Local seeding and release-artifact schema changes are deferred. This rebrand must not silently expand into repairing unrelated `script/seed-local.sh` behavior.
@@ -310,13 +310,13 @@ flowchart TB
 | Formatting | U1-U4 | `forge fmt --check` reports no formatting drift. |
 | Compilation | U1-U4 | `forge build` succeeds without diagnostics. |
 | Full local suite | U1-U4 | `forge test` passes after a clean build. |
-| Focused unit suite | U1, U3 | `forge test --match-contract OVRFLOLENDINGTest` passes. |
+| Focused unit suite | U1, U3 | `forge test --match-contract OVRFLOLendingTest` passes. |
 | Factory suite | U2-U3 | `forge test --match-contract OVRFLOFactoryTest` passes deployment, registry, and admin-forwarding coverage. |
-| Invariant suite | U1-U3 | `FOUNDRY_PROFILE=invariant forge test --match-contract OVRFLOLENDINGInvariantTest -vvv` passes at 500 runs and depth 25. |
+| Invariant suite | U1-U3 | `FOUNDRY_PROFILE=invariant forge test --match-contract OVRFLOLendingInvariantTest -vvv` passes at 500 runs and depth 25. |
 | Foundry stateful fuzz | U1-U3 | `forge test --match-contract FoundryTester` passes the renamed lending handlers and properties. |
 | Echidna stateful fuzz | U1-U3 | `echidna . --contract FuzzTester --config echidna.yaml` completes and passes the lending property suite under the repository configuration. |
 | Medusa stateful fuzz | U1-U3 | `medusa fuzz --config medusa.json` completes and passes the lending property suite under the repository configuration. |
-| Fork suite | U3 | A nonempty `MAINNET_RPC_URL` preflight precedes `forge test --match-path "test/fork/OVRFLOLENDINGMainnetFork.t.sol" --fork-url "$MAINNET_RPC_URL"`; unavailable RPC credentials block, rather than skip, this gate. |
+| Fork suite | U3 | A nonempty `MAINNET_RPC_URL` preflight precedes `forge test --match-path "test/fork/OVRFLOLendingMainnetFork.t.sol" --fork-url "$MAINNET_RPC_URL"`; unavailable RPC credentials block, rather than skip, this gate. |
 | Clean-break audit | U1-U4 | Searches confirm `src/OVRFLOBook.sol` and `script/OVRFLOBook.s.sol` are absent and that remaining Book references are limited to the reviewed historical allowlist. |
 | Documentation audit | U4 | Targeted searches find rebranded current references only and retain intentional historical references. |
 
@@ -324,7 +324,7 @@ flowchart TB
 
 ## Definition of Done
 
-- U1. `OVRFLOLENDING` and its lender-facing API implement the complete naming map without changing accounting, validation, lifecycle, or direct-sale behavior.
+- U1. `OVRFLOLending` and its lender-facing API implement the complete naming map without changing accounting, validation, lifecycle, or direct-sale behavior.
 - U2. `OVRFLOFactory` exposes only the rebranded deployment and administration surface, preserves factory ownership, and the standalone deployment script is removed.
 - U3. Unit, factory, invariant, fuzz, attack-scenario, and applicable fork tests use the rebranded ABI and prove the existing behavioral baseline.
 - U4. Living documentation, contributor guidance, property references, mockup wiring, and active critical patterns use the new terminology, while dated historical evidence remains unchanged.

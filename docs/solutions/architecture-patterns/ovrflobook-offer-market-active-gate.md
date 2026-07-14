@@ -1,14 +1,14 @@
 ---
-title: OVRFLOLENDING liquidity-post market-active gate and shared eligibility dedup
+title: OVRFLOLending liquidity-post market-active gate and shared eligibility dedup
 date: 2026-06-24
 last_updated: 2026-06-30
 category: architecture-patterns
-module: OVRFLOLENDING
+module: OVRFLOLending
 problem_type: architecture_pattern
 component: solidity_contracts
 severity: low
 applies_when:
-  - "Supplying standing liquidity (unified, consumable as sale or loan) in OVRFLOLENDING against a market"
+  - "Supplying standing liquidity (unified, consumable as sale or loan) in OVRFLOLending against a market"
   - "Refactoring shared market/series/maturity eligibility checks across fill and liquidity code paths"
   - "Deciding whether to validate a market at liquidity-supply time versus only at fill time"
 tags:
@@ -21,11 +21,11 @@ tags:
   - streampricing
 ---
 
-# OVRFLOLENDING liquidity-post market-active gate and shared eligibility dedup
+# OVRFLOLending liquidity-post market-active gate and shared eligibility dedup
 
 ## Context
 
-`OVRFLOLENDING` has two order types. One is a **liquidity position** (maker posts
+`OVRFLOLending` has two order types. One is a **liquidity position** (maker posts
 standing liquidity in underlying, no stream bound): `supplyLiquidity` — unified,
 consumable as sale or loan. The other is a **sale listing** (maker posts a
 specific Sablier stream): `postSaleListing`. All fills and all listings validate
@@ -73,7 +73,7 @@ if (treasury == address(0) || registeredToken == address(0)) revert CoreNotRegis
 // ... stream-specific checks follow ...
 ```
 
-In `src/OVRFLOLENDING.sol`, a thin internal helper and its call site:
+In `src/OVRFLOLending.sol`, a thin internal helper and its call site:
 
 ```solidity
 function _requireMarketActive(address market) internal view {
@@ -83,12 +83,12 @@ function _requireMarketActive(address market) internal view {
 function supplyLiquidity(...) external nonReentrant returns (uint256 liquidityId) {
     _validateApr(aprBps);
     _requireMarketActive(market);          // fail fast before pulling funds
-    require(availableLiquidity > 0, "OVRFLOLENDING: availableLiquidity zero");
+    require(availableLiquidity > 0, "OVRFLOLending: availableLiquidity zero");
     ...
 }
 ```
 
-The `IOVRFLOSeriesRegistry` import was removed from `OVRFLOLENDING.sol` — the lending market
+The `IOVRFLOSeriesRegistry` import was removed from `OVRFLOLending.sol` — the lending market
 no longer reads `series()` directly; the pricing library does.
 
 ## Why This Matters
@@ -139,7 +139,7 @@ no longer reads `series()` directly; the pricing library does.
 
 ## Related
 
-- `src/OVRFLOLENDING.sol` — `supplyLiquidity`, `withdrawLiquidity`, `_requireMarketActive`.
+- `src/OVRFLOLending.sol` — `supplyLiquidity`, `withdrawLiquidity`, `_requireMarketActive`.
 - `src/StreamPricing.sol` — `marketActive`, `requireEligible`.
 - [security-issues/repayloan-equality-rounding-no-brick-OVRFLOBook-20260624.md](../security-issues/repayloan-equality-rounding-no-brick-OVRFLOBook-20260624.md)
   — companion note on `StreamPricing` rounding invariants; its Related section

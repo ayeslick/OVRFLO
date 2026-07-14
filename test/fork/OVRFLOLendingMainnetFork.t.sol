@@ -3,13 +3,13 @@ pragma solidity ^0.8.20;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {OVRFLO} from "../../src/OVRFLO.sol";
-import {OVRFLOLENDING} from "../../src/OVRFLOLENDING.sol";
+import {OVRFLOLending} from "../../src/OVRFLOLending.sol";
 import {OVRFLOFactory} from "../../src/OVRFLOFactory.sol";
 import {OVRFLOToken} from "../../src/OVRFLOToken.sol";
 import {ISablierV2LockupLinear} from "../../interfaces/ISablierV2LockupLinear.sol";
 import {OVRFLOForkBase} from "./OVRFLOForkBase.t.sol";
 
-contract OVRFLOLENDINGMainnetForkTest is OVRFLOForkBase {
+contract OVRFLOLendingMainnetForkTest is OVRFLOForkBase {
     address internal constant USER = address(0xB0B);
     address internal constant BUYER = address(0xA11CE);
     address internal constant LENDER = address(0xCAFE);
@@ -18,7 +18,7 @@ contract OVRFLOLENDINGMainnetForkTest is OVRFLOForkBase {
 
     function test_LendingSale_RealStreamTransfersToBuyer() public {
         (OVRFLOFactory factory, OVRFLO ovrflo,) = _deployApprovedPrimarySeries(0);
-        OVRFLOLENDING lending = _deployLending(factory, ovrflo);
+        OVRFLOLending lending = _deployLending(factory, ovrflo);
         ISablierV2LockupLinear sablier = ISablierV2LockupLinear(address(ovrflo.sablierLL()));
         (,, uint256 streamId) = _depositPrimary(ovrflo, PT_AMOUNT);
 
@@ -42,7 +42,7 @@ contract OVRFLOLENDINGMainnetForkTest is OVRFLOForkBase {
 
     function test_LendingLoan_RealStreamClaimsAndCloses() public {
         (OVRFLOFactory factory, OVRFLO ovrflo, OVRFLOToken token) = _deployApprovedPrimarySeries(0);
-        OVRFLOLENDING lending = _deployLending(factory, ovrflo);
+        OVRFLOLending lending = _deployLending(factory, ovrflo);
         ISablierV2LockupLinear sablier = ISablierV2LockupLinear(address(ovrflo.sablierLL()));
         (,, uint256 streamId) = _depositPrimary(ovrflo, PT_AMOUNT);
         (uint256 grossPrice,,,,) = lending.quote(PRIMARY_MARKET, streamId, lending.LAUNCH_APR_BPS(), 0);
@@ -79,7 +79,7 @@ contract OVRFLOLENDINGMainnetForkTest is OVRFLOForkBase {
 
     function test_LendingLoan_RealEarlyRepayViaWrapAndUnwrap() public {
         (OVRFLOFactory factory, OVRFLO ovrflo, OVRFLOToken token) = _deployApprovedPrimarySeries(0);
-        OVRFLOLENDING lending = _deployLending(factory, ovrflo);
+        OVRFLOLending lending = _deployLending(factory, ovrflo);
         ISablierV2LockupLinear sablier = ISablierV2LockupLinear(address(ovrflo.sablierLL()));
         (,, uint256 streamId) = _depositPrimary(ovrflo, PT_AMOUNT);
         (uint256 grossPrice,,,,) = lending.quote(PRIMARY_MARKET, streamId, lending.LAUNCH_APR_BPS(), 0);
@@ -121,7 +121,7 @@ contract OVRFLOLENDINGMainnetForkTest is OVRFLOForkBase {
 
     function test_LendingEligibility_RejectsForeignCoreStream() public {
         (OVRFLOFactory factory, OVRFLO ovrflo,) = _deployApprovedPrimarySeries(0);
-        OVRFLOLENDING lending = _deployLending(factory, ovrflo);
+        OVRFLOLending lending = _deployLending(factory, ovrflo);
         (, OVRFLO foreignOvrflo,) = _deployApprovedPrimarySeries(0);
         ISablierV2LockupLinear foreignSablier = ISablierV2LockupLinear(address(foreignOvrflo.sablierLL()));
         (,, uint256 foreignStreamId) = _depositPrimary(foreignOvrflo, PT_AMOUNT);
@@ -138,7 +138,7 @@ contract OVRFLOLENDINGMainnetForkTest is OVRFLOForkBase {
 
     function test_LendingSellStreamToLiquidity_RealStream() public {
         (OVRFLOFactory factory, OVRFLO ovrflo,) = _deployApprovedPrimarySeries(0);
-        OVRFLOLENDING lending = _deployLending(factory, ovrflo);
+        OVRFLOLending lending = _deployLending(factory, ovrflo);
         ISablierV2LockupLinear sablier = ISablierV2LockupLinear(address(ovrflo.sablierLL()));
         (,, uint256 streamId) = _depositPrimary(ovrflo, PT_AMOUNT);
 
@@ -183,12 +183,12 @@ contract OVRFLOLENDINGMainnetForkTest is OVRFLOForkBase {
         vm.stopPrank();
     }
 
-    function _deployLending(OVRFLOFactory factory, OVRFLO ovrflo) internal returns (OVRFLOLENDING lending) {
-        lending = new OVRFLOLENDING(address(factory), address(ovrflo), address(ovrflo.sablierLL()));
+    function _deployLending(OVRFLOFactory factory, OVRFLO ovrflo) internal returns (OVRFLOLending lending) {
+        lending = new OVRFLOLending(address(factory), address(ovrflo), address(ovrflo.sablierLL()));
     }
 
     function _assertLoanClosedAfterClaim(
-        OVRFLOLENDING lending,
+        OVRFLOLending lending,
         OVRFLOToken token,
         ISablierV2LockupLinear sablier,
         uint256 loanId,
@@ -237,7 +237,7 @@ contract OVRFLOLENDINGMainnetForkTest is OVRFLOForkBase {
 
     function test_LendingEscrow_StrangerCannotWithdrawFromEscrowedStream() public {
         (OVRFLOFactory factory, OVRFLO ovrflo,) = _deployApprovedPrimarySeries(0);
-        OVRFLOLENDING lending = _deployLending(factory, ovrflo);
+        OVRFLOLending lending = _deployLending(factory, ovrflo);
         ISablierV2LockupLinear sablier = ISablierV2LockupLinear(address(ovrflo.sablierLL()));
         (,, uint256 streamId) = _depositPrimary(ovrflo, PT_AMOUNT);
 

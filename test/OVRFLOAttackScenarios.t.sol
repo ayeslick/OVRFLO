@@ -6,7 +6,7 @@ import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {OVRFLO} from "../src/OVRFLO.sol";
 import {OVRFLOToken} from "../src/OVRFLOToken.sol";
-import {OVRFLOLENDING} from "../src/OVRFLOLENDING.sol";
+import {OVRFLOLending} from "../src/OVRFLOLending.sol";
 import {IPendleOracle} from "../interfaces/IPendleOracle.sol";
 import {ISablierV2LockupLinear} from "../interfaces/ISablierV2LockupLinear.sol";
 import {IFlashBorrower} from "../interfaces/IFlashBorrower.sol";
@@ -269,7 +269,7 @@ contract OVRFLOAttackScenariosTest is VaultMockHelpers {
         factory.setMarketApproved(address(core), BOOK_MARKET, true);
         core.setSeries(BOOK_MARKET, true, expiry, address(lendingOvrfloToken), address(lendingUnderlying));
 
-        OVRFLOLENDING lending = new OVRFLOLENDING(address(factory), address(core), address(lendingSablier));
+        OVRFLOLending lending = new OVRFLOLending(address(factory), address(core), address(lendingSablier));
 
         address lender = makeAddr("lender");
         address borrowerAddr = makeAddr("loanBorrower");

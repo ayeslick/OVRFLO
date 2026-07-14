@@ -6,7 +6,7 @@ Shared domain vocabulary for this project — entities, named processes, and sta
 
 ### Factory
 
-The admin hub that deploys OVRFLO vaults, OVRFLOTokens, and OVRFLOLENDINGs, and serves as the single governance entry point for every contract it creates.
+The admin hub that deploys OVRFLO vaults, OVRFLOTokens, and OVRFLOLendings, and serves as the single governance entry point for every contract it creates.
 
 The factory is owned by a timelocked multisig and is the permanent admin on every deployed vault and the owner of every deployed lending. All admin actions flow multisig -> factory -> vault or lending; no dependent contract is administered directly. A factory ownership transfer moves governance for all vaults and lending markets atomically. One vault per underlying is enforced; duplicate deployment for the same underlying is rejected before any vault is created.
 
@@ -76,23 +76,23 @@ A per-deposit linear vesting stream used by OVRFLO to deliver the discount betwe
 
 Sablier streams belong to the PT deposit path. Wrap and unwrap do not create, modify, or settle streams.
 
-## OVRFLOLENDING
+## OVRFLOLending
 
 ### LiquidityPosition
 
-A standing order in the OVRFLOLENDING secondary market where a lender posts underlying liquidity at a discount rate (APR), not bound to a specific stream, consumable by any eligible stream from a chosen market. An liquidity can be consumed as a sale (stream transfers permanently to the lender via `sellStreamToLiquidity`) or as a loan (stream pledged with obligation via `createBorrowerLoanPool`); the lender cannot restrict which.
+A standing order in the OVRFLOLending secondary market where a lender posts underlying liquidity at a discount rate (APR), not bound to a specific stream, consumable by any eligible stream from a chosen market. An liquidity can be consumed as a sale (stream transfers permanently to the lender via `sellStreamToLiquidity`) or as a loan (stream pledged with obligation via `createBorrowerLoanPool`); the lender cannot restrict which.
 
 LiquidityPositions carry no stream at creation, so they front-load only market-level validation (market approved, series approved, not matured); full stream eligibility is checked per-fill.
 
 ### Listing
 
-A sell-side order in the OVRFLOLENDING secondary market where a lender escrows a specific Sablier stream, priced at a discount rate until the series maturity.
+A sell-side order in the OVRFLOLending secondary market where a lender escrows a specific Sablier stream, priced at a discount rate until the series maturity.
 
 Listings bind a stream at creation and run full stream eligibility validation at post time.
 
 ### Loan
 
-A borrow in the OVRFLOLENDING backed by a pledged Sablier stream, where the obligation is denominated in the stream's payout asset (ovrfloToken) and the lender recovers by drawing from the stream or by direct repayment.
+A borrow in the OVRFLOLending backed by a pledged Sablier stream, where the obligation is denominated in the stream's payout asset (ovrfloToken) and the lender recovers by drawing from the stream or by direct repayment.
 
 Total lender recovery is capped at the obligation; the pledged stream is returned to the borrower once the loan closes. A returned stream can be re-pledged to a new loan — the stream's cumulative withdrawn amount spans all loans that have used it, not just the most recent.
 
@@ -102,7 +102,7 @@ A loan against a pledged Sablier stream where the stream's deterministic payouts
 
 ### Pool
 
-The only lending mechanism in the OVRFLOLENDING: an atomic batch primitive where a borrower aggregates multiple liquidityPositions into a single transaction. A borrower pool (`createBorrowerLoanPool`) batches borrows across multiple liquidityPositions; the borrower is the only pooling actor. The pool becomes the virtual lender on the loan it creates (`loan.lender = address(lending)`, tracked via `loanToLoanPool`). Each pool has exactly one loan. Claims are address-based (no NFTs): lenders claim pro-rata proceeds via `claimLoanPoolShare`, which works for both open and closed loans. Claimable amount is the lender's pro-rata share of total recovery (drawn plus repaid, plus stream withdrawable for open loans) minus cumulative prior receipts, ensuring order-independent fairness.
+The only lending mechanism in the OVRFLOLending: an atomic batch primitive where a borrower aggregates multiple liquidityPositions into a single transaction. A borrower pool (`createBorrowerLoanPool`) batches borrows across multiple liquidityPositions; the borrower is the only pooling actor. The pool becomes the virtual lender on the loan it creates (`loan.lender = address(lending)`, tracked via `loanToLoanPool`). Each pool has exactly one loan. Claims are address-based (no NFTs): lenders claim pro-rata proceeds via `claimLoanPoolShare`, which works for both open and closed loans. Claimable amount is the lender's pro-rata share of total recovery (drawn plus repaid, plus stream withdrawable for open loans) minus cumulative prior receipts, ensuring order-independent fairness.
 
 ### OVRFLO cycle
 

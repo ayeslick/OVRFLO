@@ -2,7 +2,7 @@
 title: Cumulative-recovered pro-rata pool claims
 date: 2026-07-13
 category: docs/solutions/architecture-patterns/
-module: OVRFLOLENDING (pool claims)
+module: OVRFLOLending (pool claims)
 problem_type: architecture_pattern
 component: service_object
 severity: high
@@ -18,7 +18,7 @@ tags: [pro-rata, pool-claims, fcfs-drainage, cumulative-recovered, claim-fair, l
 
 ## Context
 
-OVRFLOLENDING's `claimLoanPoolShare` function used a first-come-first-served (FCFS) approach where lenders could claim from `loanPoolProceeds` without a pro-rata cap. Early claimants could drain more than their fair share, leaving later claimants with nothing even though they contributed equally. Additionally, `_claimFair` computed `recovered = drawn + repaid` which didn't account for the stream's withdrawable amount on open loans, understating the true recoverable value.
+OVRFLOLending's `claimLoanPoolShare` function used a first-come-first-served (FCFS) approach where lenders could claim from `loanPoolProceeds` without a pro-rata cap. Early claimants could drain more than their fair share, leaving later claimants with nothing even though they contributed equally. Additionally, `_claimFair` computed `recovered = drawn + repaid` which didn't account for the stream's withdrawable amount on open loans, understating the true recoverable value.
 
 ## Guidance
 

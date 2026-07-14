@@ -2,7 +2,7 @@
 pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
-import {OVRFLOLENDING} from "../src/OVRFLOLENDING.sol";
+import {OVRFLOLending} from "../src/OVRFLOLending.sol";
 import {TestERC20} from "./mocks/TestERC20.sol";
 import {MockLendingFactory, MockLendingCore, MockLendingSablier} from "./mocks/LendingMocks.sol";
 
@@ -19,15 +19,15 @@ contract ShortTransferERC20 is TestERC20 {
 ///      `loan not in pool` branch as defensive — loanPoolContributions are only written
 ///      inside createBorrowerLoanPool, which always sets loanPoolLoanId, so a contributor
 ///      with no loan cannot exist.
-contract LendingInternalHarness is OVRFLOLENDING {
-    constructor(address factory, address core, address sablier) OVRFLOLENDING(factory, core, sablier) {}
+contract LendingInternalHarness is OVRFLOLending {
+    constructor(address factory, address core, address sablier) OVRFLOLending(factory, core, sablier) {}
 
     function exposed_toUint128(uint256 amount) external pure returns (uint128) {
         return _toUint128(amount);
     }
 }
 
-contract OVRFLOLENDINGTest is Test {
+contract OVRFLOLendingTest is Test {
     address internal constant TREASURY = address(0xBEEF);
     address internal constant NEW_TREASURY = address(0xCAFE);
     address internal constant STRANGER = address(0x3333);
@@ -54,7 +54,7 @@ contract OVRFLOLENDINGTest is Test {
     MockLendingSablier internal sablier;
     TestERC20 internal underlying;
     TestERC20 internal ovrfloToken;
-    OVRFLOLENDING internal lending;
+    OVRFLOLending internal lending;
     uint256 internal expiry;
 
     function setUp() public {
@@ -69,7 +69,7 @@ contract OVRFLOLENDINGTest is Test {
         factory.setMarketApproved(address(core), MARKET, true);
         core.setSeries(MARKET, true, expiry, address(ovrfloToken), address(underlying));
 
-        lending = new OVRFLOLENDING(address(factory), address(core), address(sablier));
+        lending = new OVRFLOLending(address(factory), address(core), address(sablier));
     }
 
     function test_Constructor_CachesRegistryInfoAndLaunchSettings() public view {
@@ -87,17 +87,17 @@ contract OVRFLOLENDINGTest is Test {
     }
 
     function test_Constructor_RevertsForZeroAddressesOrUnregisteredCore() public {
-        vm.expectRevert("OVRFLOLENDING: factory zero");
-        new OVRFLOLENDING(address(0), address(core), address(sablier));
+        vm.expectRevert("OVRFLOLending: factory zero");
+        new OVRFLOLending(address(0), address(core), address(sablier));
 
-        vm.expectRevert("OVRFLOLENDING: core zero");
-        new OVRFLOLENDING(address(factory), address(0), address(sablier));
+        vm.expectRevert("OVRFLOLending: core zero");
+        new OVRFLOLending(address(factory), address(0), address(sablier));
 
-        vm.expectRevert("OVRFLOLENDING: sablier zero");
-        new OVRFLOLENDING(address(factory), address(core), address(0));
+        vm.expectRevert("OVRFLOLending: sablier zero");
+        new OVRFLOLending(address(factory), address(core), address(0));
 
-        vm.expectRevert("OVRFLOLENDING: unknown core");
-        new OVRFLOLENDING(address(factory), address(0xDEAD), address(sablier));
+        vm.expectRevert("OVRFLOLending: unknown core");
+        new OVRFLOLending(address(factory), address(0xDEAD), address(sablier));
     }
 
     function test_Admin_SetAprBounds() public {
@@ -112,10 +112,10 @@ contract OVRFLOLENDINGTest is Test {
         assertEq(lending.aprMinBps(), 500);
         assertEq(lending.aprMaxBps(), 2500);
 
-        vm.expectRevert("OVRFLOLENDING: bad apr bounds");
+        vm.expectRevert("OVRFLOLending: bad apr bounds");
         lending.setAprBounds(2501, 2500);
 
-        vm.expectRevert("OVRFLOLENDING: apr too high");
+        vm.expectRevert("OVRFLOLending: apr too high");
         lending.setAprBounds(0, 10_001);
     }
 
@@ -126,15 +126,15 @@ contract OVRFLOLENDINGTest is Test {
         assertEq(lending.aprMaxBps(), 5000);
 
         // Min not aligned
-        vm.expectRevert("OVRFLOLENDING: aprMin not step-aligned");
+        vm.expectRevert("OVRFLOLending: aprMin not step-aligned");
         lending.setAprBounds(50, 5000);
 
         // Max not aligned
-        vm.expectRevert("OVRFLOLENDING: aprMax not step-aligned");
+        vm.expectRevert("OVRFLOLending: aprMax not step-aligned");
         lending.setAprBounds(1000, 5050);
 
         // Both not aligned — min check fires first
-        vm.expectRevert("OVRFLOLENDING: aprMin not step-aligned");
+        vm.expectRevert("OVRFLOLending: aprMin not step-aligned");
         lending.setAprBounds(50, 99);
     }
 
@@ -144,7 +144,7 @@ contract OVRFLOLENDINGTest is Test {
         lending.setFee(100);
         assertEq(lending.feeBps(), 100);
 
-        vm.expectRevert("OVRFLOLENDING: fee too high");
+        vm.expectRevert("OVRFLOLending: fee too high");
         lending.setFee(10_001);
 
         vm.expectEmit(true, false, false, true, address(lending));
@@ -152,7 +152,7 @@ contract OVRFLOLENDINGTest is Test {
         lending.setTreasury(NEW_TREASURY);
         assertEq(lending.treasury(), NEW_TREASURY);
 
-        vm.expectRevert("OVRFLOLENDING: treasury zero");
+        vm.expectRevert("OVRFLOLending: treasury zero");
         lending.setTreasury(address(0));
     }
 
@@ -191,22 +191,22 @@ contract OVRFLOLENDINGTest is Test {
 
     function test_Multicall_BatchesAdminCallsAndBubblesRevert() public {
         bytes[] memory data = new bytes[](2);
-        data[0] = abi.encodeCall(OVRFLOLENDING.setFee, (50));
-        data[1] = abi.encodeCall(OVRFLOLENDING.setTreasury, (NEW_TREASURY));
+        data[0] = abi.encodeCall(OVRFLOLending.setFee, (50));
+        data[1] = abi.encodeCall(OVRFLOLending.setTreasury, (NEW_TREASURY));
 
         lending.multicall(data);
 
         assertEq(lending.feeBps(), 50);
         assertEq(lending.treasury(), NEW_TREASURY);
 
-        data[0] = abi.encodeCall(OVRFLOLENDING.setFee, (10_001));
-        vm.expectRevert("OVRFLOLENDING: fee too high");
+        data[0] = abi.encodeCall(OVRFLOLending.setFee, (10_001));
+        vm.expectRevert("OVRFLOLending: fee too high");
         lending.multicall(data);
     }
 
     function test_Multicall_IsNonPayable() public {
         bytes[] memory data = new bytes[](1);
-        data[0] = abi.encodeCall(OVRFLOLENDING.setFee, (1));
+        data[0] = abi.encodeCall(OVRFLOLending.setFee, (1));
 
         vm.deal(address(this), 1 ether);
         (bool success,) = address(lending).call{value: 1}(abi.encodeWithSignature("multicall(bytes[])", data));
@@ -218,7 +218,7 @@ contract OVRFLOLENDINGTest is Test {
         underlying.mint(BUYER, 100 ether);
         underlying.approve(address(lending), 100 ether);
 
-        vm.expectRevert("OVRFLOLENDING: apr out of bounds");
+        vm.expectRevert("OVRFLOLending: apr out of bounds");
         lending.supplyLiquidity(MARKET, 999, 100 ether);
 
         uint256 liquidityId = lending.supplyLiquidity(MARKET, 1000, 100 ether);
@@ -280,18 +280,18 @@ contract OVRFLOLENDINGTest is Test {
         vm.prank(SELLER);
         sablier.approve(address(lending), 2);
         vm.prank(SELLER);
-        vm.expectRevert("OVRFLOLENDING: slippage");
+        vm.expectRevert("OVRFLOLending: slippage");
         lending.sellStreamToLiquidity(slippageLiquidityId, 2, 100 ether);
 
         uint256 smallLiquidityId = _supplyLiquidity(BUYER, 50 ether);
         vm.prank(SELLER);
-        vm.expectRevert("OVRFLOLENDING: insufficient availableLiquidity");
+        vm.expectRevert("OVRFLOLending: insufficient availableLiquidity");
         lending.sellStreamToLiquidity(smallLiquidityId, 2, 0);
 
         vm.prank(BUYER);
         lending.withdrawLiquidity(slippageLiquidityId);
         vm.prank(SELLER);
-        vm.expectRevert("OVRFLOLENDING: liquidity inactive");
+        vm.expectRevert("OVRFLOLending: liquidity inactive");
         lending.sellStreamToLiquidity(slippageLiquidityId, 2, 0);
 
         uint256 dustLiquidityId = _supplyLiquidity(BUYER, 1 ether);
@@ -299,7 +299,7 @@ contract OVRFLOLENDINGTest is Test {
         vm.prank(SELLER);
         sablier.approve(address(lending), 3);
         vm.prank(SELLER);
-        vm.expectRevert("OVRFLOLENDING: price zero");
+        vm.expectRevert("OVRFLOLending: price zero");
         lending.sellStreamToLiquidity(dustLiquidityId, 3, 0);
 
         uint256 maturedLiquidityId = _supplyLiquidity(BUYER, 100 ether);
@@ -342,7 +342,7 @@ contract OVRFLOLENDINGTest is Test {
 
         vm.startPrank(SELLER);
         sablier.approve(address(lending), 6);
-        vm.expectRevert("OVRFLOLENDING: apr out of bounds");
+        vm.expectRevert("OVRFLOLending: apr out of bounds");
         lending.postSaleListing(MARKET, 6, 999);
         vm.stopPrank();
 
@@ -423,20 +423,20 @@ contract OVRFLOLENDINGTest is Test {
         underlying.mint(BUYER, 200 ether);
         vm.startPrank(BUYER);
         underlying.approve(address(lending), 200 ether);
-        vm.expectRevert("OVRFLOLENDING: slippage");
+        vm.expectRevert("OVRFLOLending: slippage");
         lending.buyListing(listingId, 99 ether);
         vm.stopPrank();
 
         vm.prank(SELLER);
         lending.cancelSaleListing(listingId);
         vm.prank(BUYER);
-        vm.expectRevert("OVRFLOLENDING: listing inactive");
+        vm.expectRevert("OVRFLOLending: listing inactive");
         lending.buyListing(listingId, 100 ether);
 
         _mintEligibleStream(10, SELLER, 1, 0);
         uint256 dustListingId = _postSaleListing(SELLER, 10);
         vm.prank(BUYER);
-        vm.expectRevert("OVRFLOLENDING: price zero");
+        vm.expectRevert("OVRFLOLending: price zero");
         lending.buyListing(dustListingId, 1);
     }
 
@@ -444,7 +444,7 @@ contract OVRFLOLENDINGTest is Test {
         (uint256 loanPoolId, uint256 loanId) = _originateLoanViaBorrowPool(20, 100 ether);
 
         sablier.setWithdrawable(20, 109 ether);
-        vm.expectRevert("OVRFLOLENDING: loan not closable");
+        vm.expectRevert("OVRFLOLending: loan not closable");
         lending.closeLoan(loanId);
 
         sablier.setWithdrawable(20, 110 ether);
@@ -460,7 +460,7 @@ contract OVRFLOLENDINGTest is Test {
         assertEq(sablier.getWithdrawnAmount(20), 110 ether);
         assertEq(sablier.ownerOf(20), SELLER);
 
-        vm.expectRevert("OVRFLOLENDING: loan closed");
+        vm.expectRevert("OVRFLOLending: loan closed");
         lending.closeLoan(loanId);
     }
 
@@ -554,7 +554,7 @@ contract OVRFLOLENDINGTest is Test {
         assertEq(ovrfloToken.balanceOf(BUYER), 25 ether);
 
         sablier.setWithdrawable(23, 84 ether);
-        vm.expectRevert("OVRFLOLENDING: loan not closable");
+        vm.expectRevert("OVRFLOLending: loan not closable");
         lending.closeLoan(loanId);
 
         sablier.setWithdrawable(23, 85 ether);
@@ -574,26 +574,26 @@ contract OVRFLOLENDINGTest is Test {
         (, uint256 loanId) = _originateLoanViaBorrowPool(24, 100 ether);
 
         vm.prank(BUYER);
-        vm.expectRevert("OVRFLOLENDING: not borrower");
+        vm.expectRevert("OVRFLOLending: not borrower");
         lending.repayLoan(loanId, 1);
 
         vm.prank(SELLER);
-        vm.expectRevert("OVRFLOLENDING: repay zero");
+        vm.expectRevert("OVRFLOLending: repay zero");
         lending.repayLoan(loanId, 0);
 
         vm.prank(SELLER);
-        vm.expectRevert("OVRFLOLENDING: repay too much");
+        vm.expectRevert("OVRFLOLending: repay too much");
         lending.repayLoan(loanId, 111 ether);
 
         ovrfloToken.mint(SELLER, 110 ether);
         vm.startPrank(SELLER);
         ovrfloToken.approve(address(lending), 110 ether);
         lending.repayLoan(loanId, 110 ether);
-        vm.expectRevert("OVRFLOLENDING: loan closed");
+        vm.expectRevert("OVRFLOLending: loan closed");
         lending.repayLoan(loanId, 1);
         vm.stopPrank();
 
-        vm.expectRevert("OVRFLOLENDING: loan closed");
+        vm.expectRevert("OVRFLOLending: loan closed");
         lending.closeLoan(loanId);
     }
 
@@ -655,7 +655,7 @@ contract OVRFLOLENDINGTest is Test {
 
     function test_Quote_RevertsForAprOutOfBounds() public {
         _mintEligibleStream(32, SELLER, 110 ether, 0);
-        vm.expectRevert("OVRFLOLENDING: apr out of bounds");
+        vm.expectRevert("OVRFLOLending: apr out of bounds");
         lending.quote(MARKET, 32, 500, 0);
     }
 
@@ -663,14 +663,14 @@ contract OVRFLOLENDINGTest is Test {
         // Widen bounds to include 50 bps
         lending.setAprBounds(0, 1000);
         _mintEligibleStream(33, SELLER, 110 ether, 0);
-        vm.expectRevert("OVRFLOLENDING: apr not whole");
+        vm.expectRevert("OVRFLOLending: apr not whole");
         lending.quote(MARKET, 33, 50, 0);
     }
 
     function test_Quote_RevertsForZeroPrice() public {
         // remaining = 1 wei, grossPrice = 1e18 / factor ≈ 0 (floors to 0)
         _mintEligibleStream(34, SELLER, 2, 1);
-        vm.expectRevert("OVRFLOLENDING: price zero");
+        vm.expectRevert("OVRFLOLending: price zero");
         lending.quote(MARKET, 34, 1000, 0);
     }
 
@@ -691,7 +691,7 @@ contract OVRFLOLENDINGTest is Test {
     function test_Quote_RevertsWhenBorrowAbovePrice() public {
         _mintEligibleStream(36, SELLER, 110 ether, 0);
         // grossPrice = 100 ether, borrowAmount = 101 ether -> reverts
-        vm.expectRevert("OVRFLOLENDING: borrow above price");
+        vm.expectRevert("OVRFLOLending: borrow above price");
         lending.quote(MARKET, 36, 1000, 101 ether);
     }
 
@@ -764,21 +764,21 @@ contract OVRFLOLENDINGTest is Test {
     function test_Constructor_RevertForZeroUnderlying() public {
         MockLendingFactory badFactory = new MockLendingFactory();
         badFactory.setInfo(address(core), TREASURY, address(0), address(ovrfloToken));
-        vm.expectRevert("OVRFLOLENDING: underlying zero");
-        new OVRFLOLENDING(address(badFactory), address(core), address(sablier));
+        vm.expectRevert("OVRFLOLending: underlying zero");
+        new OVRFLOLending(address(badFactory), address(core), address(sablier));
     }
 
     function test_Constructor_RevertForZeroToken() public {
         MockLendingFactory badFactory = new MockLendingFactory();
         badFactory.setInfo(address(core), TREASURY, address(underlying), address(0));
-        vm.expectRevert("OVRFLOLENDING: token zero");
-        new OVRFLOLENDING(address(badFactory), address(core), address(sablier));
+        vm.expectRevert("OVRFLOLending: token zero");
+        new OVRFLOLending(address(badFactory), address(core), address(sablier));
     }
 
     function test_WithdrawLiquidity_RevertForWrongMaker() public {
         uint256 liquidityId = _supplyLiquidity(BUYER, 100 ether);
         vm.prank(SELLER);
-        vm.expectRevert("OVRFLOLENDING: not lender");
+        vm.expectRevert("OVRFLOLending: not lender");
         lending.withdrawLiquidity(liquidityId);
     }
 
@@ -786,12 +786,12 @@ contract OVRFLOLENDINGTest is Test {
         _mintEligibleStream(40, SELLER, 110 ether, 0);
         uint256 listingId = _postSaleListing(SELLER, 40);
         vm.prank(BUYER);
-        vm.expectRevert("OVRFLOLENDING: not listing seller");
+        vm.expectRevert("OVRFLOLending: not listing seller");
         lending.cancelSaleListing(listingId);
     }
 
     function test_SupplyLiquidity_RevertForZeroCapacity() public {
-        vm.expectRevert("OVRFLOLENDING: availableLiquidity zero");
+        vm.expectRevert("OVRFLOLending: availableLiquidity zero");
         lending.supplyLiquidity(MARKET, 1000, 0);
     }
 
@@ -807,33 +807,33 @@ contract OVRFLOLENDINGTest is Test {
         shortFactory.setMarketApproved(address(shortCore), MARKET, true);
         shortCore.setSeries(MARKET, true, expiry, address(shortOvrfloToken), address(shortToken));
 
-        OVRFLOLENDING shortLending = new OVRFLOLENDING(address(shortFactory), address(shortCore), address(shortSablier));
+        OVRFLOLending shortLending = new OVRFLOLending(address(shortFactory), address(shortCore), address(shortSablier));
 
         shortToken.mint(BUYER, 100 ether);
         vm.startPrank(BUYER);
         shortToken.approve(address(shortLending), 100 ether);
-        vm.expectRevert("OVRFLOLENDING: transfer mismatch");
+        vm.expectRevert("OVRFLOLending: transfer mismatch");
         shortLending.supplyLiquidity(MARKET, 1000, 100 ether);
         vm.stopPrank();
     }
 
     function test_CloseLoan_RevertForUnknownLoan() public {
-        vm.expectRevert("OVRFLOLENDING: unknown loan");
+        vm.expectRevert("OVRFLOLending: unknown loan");
         lending.closeLoan(999);
     }
 
     function test_RepayLoan_RevertForUnknownLoan() public {
-        vm.expectRevert("OVRFLOLENDING: unknown loan");
+        vm.expectRevert("OVRFLOLending: unknown loan");
         lending.repayLoan(999, 1);
     }
 
     function test_LiquidityState_RevertsForUnknownId() public {
-        vm.expectRevert("OVRFLOLENDING: unknown liquidity");
+        vm.expectRevert("OVRFLOLending: unknown liquidity");
         lending.liquidityState(999);
     }
 
     function test_SaleListingState_RevertsForUnknownId() public {
-        vm.expectRevert("OVRFLOLENDING: unknown listing");
+        vm.expectRevert("OVRFLOLending: unknown listing");
         lending.saleListingState(999);
     }
 
@@ -842,7 +842,7 @@ contract OVRFLOLENDINGTest is Test {
         vm.prank(BUYER);
         lending.withdrawLiquidity(liquidityId);
         vm.prank(BUYER);
-        vm.expectRevert("OVRFLOLENDING: liquidity inactive");
+        vm.expectRevert("OVRFLOLending: liquidity inactive");
         lending.withdrawLiquidity(liquidityId);
     }
 
@@ -852,7 +852,7 @@ contract OVRFLOLENDINGTest is Test {
         vm.prank(SELLER);
         lending.cancelSaleListing(listingId);
         vm.prank(SELLER);
-        vm.expectRevert("OVRFLOLENDING: listing inactive");
+        vm.expectRevert("OVRFLOLending: listing inactive");
         lending.cancelSaleListing(listingId);
     }
 
@@ -866,7 +866,7 @@ contract OVRFLOLENDINGTest is Test {
         vm.startPrank(BUYER);
         underlying.mint(BUYER, 100 ether);
         underlying.approve(address(lending), 100 ether);
-        vm.expectRevert("OVRFLOLENDING: apr not whole");
+        vm.expectRevert("OVRFLOLending: apr not whole");
         lending.supplyLiquidity(MARKET, 550, 100 ether);
         vm.stopPrank();
     }
@@ -1084,7 +1084,7 @@ contract OVRFLOLENDINGTest is Test {
 
         vm.startPrank(SELLER);
         sablier.approve(address(lending), 101);
-        vm.expectRevert("OVRFLOLENDING: slippage");
+        vm.expectRevert("OVRFLOLending: slippage");
         lending.createBorrowerLoanPool(liquidityIds, 101, 100 ether, 90 ether);
         vm.stopPrank();
 
@@ -1130,7 +1130,7 @@ contract OVRFLOLENDINGTest is Test {
 
         vm.startPrank(SELLER);
         sablier.approve(address(lending), 103);
-        vm.expectRevert("OVRFLOLENDING: self-match");
+        vm.expectRevert("OVRFLOLending: self-match");
         lending.createBorrowerLoanPool(liquidityIds, 103, 100 ether, 90 ether);
         vm.stopPrank();
     }
@@ -1154,7 +1154,7 @@ contract OVRFLOLENDINGTest is Test {
 
         vm.startPrank(SELLER);
         sablier.approve(address(lending), 104);
-        vm.expectRevert("OVRFLOLENDING: market mismatch");
+        vm.expectRevert("OVRFLOLending: market mismatch");
         lending.createBorrowerLoanPool(liquidityIds, 104, 100 ether, 90 ether);
         vm.stopPrank();
     }
@@ -1171,7 +1171,7 @@ contract OVRFLOLENDINGTest is Test {
 
         vm.startPrank(SELLER);
         sablier.approve(address(lending), 105);
-        vm.expectRevert("OVRFLOLENDING: apr mismatch");
+        vm.expectRevert("OVRFLOLending: apr mismatch");
         lending.createBorrowerLoanPool(liquidityIds, 105, 100 ether, 90 ether);
         vm.stopPrank();
     }
@@ -1190,7 +1190,7 @@ contract OVRFLOLENDINGTest is Test {
 
         vm.startPrank(SELLER);
         sablier.approve(address(lending), 106);
-        vm.expectRevert("OVRFLOLENDING: liquidity inactive");
+        vm.expectRevert("OVRFLOLending: liquidity inactive");
         lending.createBorrowerLoanPool(liquidityIds, 106, 100 ether, 90 ether);
         vm.stopPrank();
     }
@@ -1205,7 +1205,7 @@ contract OVRFLOLENDINGTest is Test {
 
         vm.startPrank(SELLER);
         sablier.approve(address(lending), 107);
-        vm.expectRevert("OVRFLOLENDING: duplicate or unsorted ids");
+        vm.expectRevert("OVRFLOLending: duplicate or unsorted ids");
         lending.createBorrowerLoanPool(liquidityIds, 107, 100 ether, 90 ether);
         vm.stopPrank();
     }
@@ -1246,7 +1246,7 @@ contract OVRFLOLENDINGTest is Test {
         // minAcceptable = 100 — old code would pass (100 >= 100), new code reverts (99 < 100)
         vm.startPrank(SELLER);
         sablier.approve(address(lending), 109);
-        vm.expectRevert("OVRFLOLENDING: slippage");
+        vm.expectRevert("OVRFLOLending: slippage");
         lending.createBorrowerLoanPool(liquidityIds, 109, 100 ether, 100 ether);
         vm.stopPrank();
     }
@@ -1267,7 +1267,7 @@ contract OVRFLOLENDINGTest is Test {
         // minAcceptable = 1 — reverts because 0 < 1
         vm.startPrank(SELLER);
         sablier.approve(address(lending), 110);
-        vm.expectRevert("OVRFLOLENDING: slippage");
+        vm.expectRevert("OVRFLOLending: slippage");
         lending.createBorrowerLoanPool(liquidityIds, 110, 100 ether, 1);
         vm.stopPrank();
 
@@ -1279,13 +1279,13 @@ contract OVRFLOLENDINGTest is Test {
         uint256 liquidity1 = _supplyLiquidity(BUYER, 50 ether);
         uint256[] memory liquidityIds = new uint256[](1);
         liquidityIds[0] = liquidity1;
-        vm.expectRevert("OVRFLOLENDING: borrow zero");
+        vm.expectRevert("OVRFLOLending: borrow zero");
         lending.createBorrowerLoanPool(liquidityIds, 200, 0, 0);
     }
 
     function test_CreateBorrowerLoanPool_RevertsWhenLiquiditysEmpty() public {
         uint256[] memory liquidityIds = new uint256[](0);
-        vm.expectRevert("OVRFLOLENDING: empty liquidity");
+        vm.expectRevert("OVRFLOLending: empty liquidity");
         lending.createBorrowerLoanPool(liquidityIds, 201, 100 ether, 90 ether);
     }
 
@@ -1297,7 +1297,7 @@ contract OVRFLOLENDINGTest is Test {
         liquidityIds[0] = liquidity1;
         vm.startPrank(SELLER);
         sablier.approve(address(lending), 202);
-        vm.expectRevert("OVRFLOLENDING: price zero");
+        vm.expectRevert("OVRFLOLending: price zero");
         lending.createBorrowerLoanPool(liquidityIds, 202, 50 ether, 0);
         vm.stopPrank();
     }
@@ -1310,7 +1310,7 @@ contract OVRFLOLENDINGTest is Test {
         liquidityIds[0] = liquidity1;
         vm.startPrank(SELLER);
         sablier.approve(address(lending), 203);
-        vm.expectRevert("OVRFLOLENDING: borrow above price");
+        vm.expectRevert("OVRFLOLending: borrow above price");
         lending.createBorrowerLoanPool(liquidityIds, 203, 200 ether, 0);
         vm.stopPrank();
     }
@@ -1328,7 +1328,7 @@ contract OVRFLOLENDINGTest is Test {
         liquidityIds[1] = liquidity2;
         vm.startPrank(SELLER);
         sablier.approve(address(lending), 204);
-        vm.expectRevert("OVRFLOLENDING: liquidity inactive");
+        vm.expectRevert("OVRFLOLending: liquidity inactive");
         lending.createBorrowerLoanPool(liquidityIds, 204, 100 ether, 90 ether);
         vm.stopPrank();
     }
@@ -1509,7 +1509,7 @@ contract OVRFLOLENDINGTest is Test {
 
         address nonContributor = address(0x9999);
         vm.prank(nonContributor);
-        vm.expectRevert("OVRFLOLENDING: not loan pool lender");
+        vm.expectRevert("OVRFLOLending: not loan pool lender");
         lending.claimLoanPoolShare(loanPoolId, 10 ether);
     }
 
@@ -1528,7 +1528,7 @@ contract OVRFLOLENDINGTest is Test {
         (uint256 loanPoolId,) = _originateLoanViaBorrowPool(211, 100 ether);
         // BUYER is a contributor with remaining entitlement
         vm.prank(BUYER);
-        vm.expectRevert("OVRFLOLENDING: claim zero");
+        vm.expectRevert("OVRFLOLending: claim zero");
         lending.claimLoanPoolShare(loanPoolId, 0);
     }
 
@@ -1536,7 +1536,7 @@ contract OVRFLOLENDINGTest is Test {
         (uint256 loanPoolId,) = _originateLoanViaBorrowPool(213, 100 ether);
         // withdrawable defaults to 0, no repay -> loanPoolProceeds == 0, claimable == 0
         vm.prank(BUYER);
-        vm.expectRevert("OVRFLOLENDING: nothing claimable");
+        vm.expectRevert("OVRFLOLending: nothing claimable");
         lending.claimLoanPoolShare(loanPoolId, 50 ether);
     }
 
@@ -1550,7 +1550,7 @@ contract OVRFLOLENDINGTest is Test {
 
         // Full entitlement claimed -> nothing left
         vm.prank(BUYER);
-        vm.expectRevert("OVRFLOLENDING: nothing claimable");
+        vm.expectRevert("OVRFLOLending: nothing claimable");
         lending.claimLoanPoolShare(loanPoolId, 1);
     }
 
@@ -1566,10 +1566,10 @@ contract OVRFLOLENDINGTest is Test {
         assertEq(sablier.ownerOf(212), SELLER);
 
         vm.prank(SELLER);
-        vm.expectRevert("OVRFLOLENDING: loan closed");
+        vm.expectRevert("OVRFLOLending: loan closed");
         lending.repayLoan(loanId, 1);
 
-        vm.expectRevert("OVRFLOLENDING: loan closed");
+        vm.expectRevert("OVRFLOLending: loan closed");
         lending.closeLoan(loanId);
     }
 
@@ -1767,7 +1767,7 @@ contract OVRFLOLENDINGTest is Test {
         (, uint256 loanId) = _originateLoanViaBorrowPool(304, 100 ether);
         sablier.setWithdrawable(304, 50 ether);
 
-        vm.expectRevert("OVRFLOLENDING: loan not closable");
+        vm.expectRevert("OVRFLOLending: loan not closable");
         lending.closeLoan(loanId);
 
         (,,,,,, bool closed) = lending.loans(loanId);
@@ -1782,7 +1782,7 @@ contract OVRFLOLENDINGTest is Test {
 
         vm.startPrank(SELLER);
         sablier.approve(address(lending), 305);
-        vm.expectRevert("OVRFLOLENDING: slippage");
+        vm.expectRevert("OVRFLOLending: slippage");
         lending.sellStreamToLiquidity(liquidityId, 305, 200 ether);
         vm.stopPrank();
 
@@ -2194,7 +2194,7 @@ contract OVRFLOLENDINGTest is Test {
 
         vm.startPrank(SELLER);
         sablier.approve(address(lending), 360);
-        vm.expectRevert("OVRFLOLENDING: duplicate or unsorted ids");
+        vm.expectRevert("OVRFLOLending: duplicate or unsorted ids");
         lending.createBorrowerLoanPool(liquidityIds, 360, 100 ether, 90 ether);
         vm.stopPrank();
     }

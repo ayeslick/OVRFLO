@@ -12,7 +12,7 @@
 - **Core flow**: Deposit PT, receive immediate ovrfloToken plus streamed discount, then claim PT, unwrap underlying, trade the token, or monetize the stream.
 - **Key mechanism**: One fungible token spans PT-deposit and 1:1 underlying-wrap origins; combined backing, not origin-specific redemption, defines solvency.
 - **Token model**: One owner-minted OVRFLOToken per underlying, with PT inventory and a separately tracked underlying wrap reserve.
-- **Admin model**: A timelocked multisig owns OVRFLOFactory (per spec); the factory is immutable vault admin and owner of factory-deployed OVRFLOLENDING markets.
+- **Admin model**: A timelocked multisig owns OVRFLOFactory (per spec); the factory is immutable vault admin and owner of factory-deployed OVRFLOLending markets.
 
 For a visual overview, see the [architecture diagram](architecture.svg).
 
@@ -22,7 +22,7 @@ For a visual overview, see the [architecture diagram](architecture.svg).
 |-----------|---------------|------:|------|
 | Core vault and token | `OVRFLO`, `OVRFLOToken` | 310 | PT deposits, fungible claim mint/burn, maturity claims, wrap/unwrap, PT flash loans |
 | Deployment and administration | `OVRFLOFactory` | 186 | One-vault-per-underlying deployment, series onboarding, registry, admin forwarding |
-| Stream market and pricing | `OVRFLOLENDING`, `StreamPricing` | 654 | Stream sales, pooled self-repaying loans, eligibility, discount and obligation math |
+| Stream market and pricing | `OVRFLOLending`, `StreamPricing` | 654 | Stream sales, pooled self-repaying loans, eligibility, discount and obligation math |
 
 ### Backwards-Compatibility Code
 
@@ -58,7 +58,7 @@ ovrfloToken holder
 ### Stream Sale
 
 ```text
-Seller → OVRFLOLENDING.sellStreamToLiquidity()
+Seller → OVRFLOLending.sellStreamToLiquidity()
        ├─ StreamPricing.requireEligible()
        ├─ Sablier.transferFrom(seller, lender)
        └─ underlying → seller + treasury
@@ -69,7 +69,7 @@ Seller → OVRFLOLENDING.sellStreamToLiquidity()
 ### Self-Repaying Pool Loan
 
 ```text
-Borrower → OVRFLOLENDING.createBorrowerLoanPool()
+Borrower → OVRFLOLending.createBorrowerLoanPool()
          ├─ consume matching lender liquidity
          ├─ escrow Sablier stream
          └─ underlying → borrower + treasury
@@ -197,7 +197,7 @@ See [entry-points.md](entry-points.md) for the full permissionless entry point m
 
 **Shared State Exposure:**
 - Pendle oracle observations and PT/SY market state are shared with external users; OVRFLO reads but does not write prices, except admin oracle-cardinality preparation.
-- Sablier stream ownership and withdrawal state are shared across users, OVRFLOLENDING, and any approved NFT operator; eligibility is rechecked on fills.
+- Sablier stream ownership and withdrawal state are shared across users, OVRFLOLending, and any approved NFT operator; eligibility is rechecked on fills.
 
 ---
 
@@ -321,7 +321,7 @@ See [entry-points.md](entry-points.md) for the full permissionless entry point m
 - **Single-developer current-source attribution** — git analysis attributes 100% of current source additions to jay.
 - **Late-stage churn** — 47 source commits occurred in the final 30-day window, including pool fairness, oracle freshness, and lending rebrand work.
 - **Test co-change** — 66.3% of source-changing commits also changed tests, while 10% of fix candidates did not.
-- **Lending lineage dominates churn** — the renamed OVRFLOBook/OVRFLOLENDING subsystem has the largest modification history and recent accounting fixes.
+- **Lending lineage dominates churn** — the renamed OVRFLOBook/OVRFLOLending subsystem has the largest modification history and recent accounting fixes.
 - **No technical-debt markers** — git analysis detected no TODO, FIXME, HACK, or XXX markers in current source.
 
 ### Cross-Reference Synthesis

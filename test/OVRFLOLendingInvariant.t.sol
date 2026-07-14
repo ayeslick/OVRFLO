@@ -3,13 +3,13 @@ pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {OVRFLOLENDING} from "../src/OVRFLOLENDING.sol";
+import {OVRFLOLending} from "../src/OVRFLOLending.sol";
 import {TestERC20} from "./mocks/TestERC20.sol";
 import {MockLendingFactory, MockLendingCore, MockLendingSablier} from "./mocks/LendingMocks.sol";
 
 /// @notice Handler that randomly calls Lending operations to test loan/liquidity invariants.
-contract OVRFLOLENDINGInvariantHandler is Test {
-    OVRFLOLENDING internal lending;
+contract OVRFLOLendingInvariantHandler is Test {
+    OVRFLOLending internal lending;
     MockLendingSablier internal sablier;
     TestERC20 internal underlying;
     TestERC20 internal ovrfloToken;
@@ -39,7 +39,7 @@ contract OVRFLOLENDINGInvariantHandler is Test {
     mapping(uint256 => LoanGhost) public loanGhosts;
 
     constructor(
-        OVRFLOLENDING lending_,
+        OVRFLOLending lending_,
         MockLendingSablier sablier_,
         TestERC20 underlying_,
         TestERC20 ovrfloToken_,
@@ -331,7 +331,7 @@ contract OVRFLOLENDINGInvariantHandler is Test {
     }
 }
 
-contract OVRFLOLENDINGInvariantTest is Test {
+contract OVRFLOLendingInvariantTest is Test {
     address internal constant TREASURY = address(0xBEEF);
     address internal constant MARKET = address(0x5555);
 
@@ -340,10 +340,10 @@ contract OVRFLOLENDINGInvariantTest is Test {
     MockLendingSablier internal sablier;
     TestERC20 internal underlying;
     TestERC20 internal ovrfloToken;
-    OVRFLOLENDING internal lending;
+    OVRFLOLending internal lending;
     uint256 internal expiry;
 
-    OVRFLOLENDINGInvariantHandler internal handler;
+    OVRFLOLendingInvariantHandler internal handler;
 
     function setUp() public {
         factory = new MockLendingFactory();
@@ -357,9 +357,9 @@ contract OVRFLOLENDINGInvariantTest is Test {
         factory.setMarketApproved(address(core), MARKET, true);
         core.setSeries(MARKET, true, expiry, address(ovrfloToken), address(underlying));
 
-        lending = new OVRFLOLENDING(address(factory), address(core), address(sablier));
+        lending = new OVRFLOLending(address(factory), address(core), address(sablier));
 
-        handler = new OVRFLOLENDINGInvariantHandler(lending, sablier, underlying, ovrfloToken, factory, core, expiry);
+        handler = new OVRFLOLendingInvariantHandler(lending, sablier, underlying, ovrfloToken, factory, core, expiry);
         targetContract(address(handler));
     }
 

@@ -101,7 +101,7 @@ OVRFLO operates in two layers:
 
 ## Contracts
 
-### OVRFLOLENDING.sol
+### OVRFLOLending.sol
 
 Lending market for selling OVRFLO streams or borrowing against them. Bound to one core vault and one Sablier V2 LL instance at deployment. Two primitives: unified liquidity positions (consumable as sale or loan) and sale listings. All pricing uses `StreamPricing` with a linear APR discount to series maturity. Liquidity positions front-load market gating; listings and all fills run full stream validation. Fees are snapshotted per listing at post time to protect sellers; the global `feeBps` applies to liquidity positions.
 
@@ -130,7 +130,7 @@ Lending market for selling OVRFLO streams or borrowing against them. Bound to on
 
 ### StreamPricing.sol
 
-Pure library providing shared pricing and eligibility primitives for OVRFLOLENDING. All discounting uses a linear APR factor `f = 1 + apr * ttm / (YEAR * BPS)` in WAD. Rounding is directional and load-bearing: `grossPrice` floors (buyer-favorable), `obligation` ceils (lender-favorable). The invariant `obligation <= remaining` holds for all partial borrows, ensuring the pledged stream can always cover the debt. See `plans/streampricing-math-analysis.md` for the full proof and stress-test results.
+Pure library providing shared pricing and eligibility primitives for OVRFLOLending. All discounting uses a linear APR factor `f = 1 + apr * ttm / (YEAR * BPS)` in WAD. Rounding is directional and load-bearing: `grossPrice` floors (buyer-favorable), `obligation` ceils (lender-favorable). The invariant `obligation <= remaining` holds for all partial borrows, ensuring the pledged stream can always cover the debt. See `plans/streampricing-math-analysis.md` for the full proof and stress-test results.
 
 | Function | Description |
 |----------|-------------|
@@ -153,7 +153,7 @@ Factory and admin hub for deploying and managing OVRFLO vaults. Owned by a timel
 | `constructor(owner, oracle)` | Deploy factory with multisig owner and Pendle oracle (both immutable) |
 | `configureDeployment(treasury, underlying, nameSuffix, symbolSuffix)` | Stage deployment parameters; factory prepends `OVRFLO ` to name and `ovrflo` to symbol |
 | `deploy()` | Deploy OVRFLO + OVRFLOToken from stored config; returns both addresses |
-| `deployLending(ovrflo)` | Deploy an OVRFLOLENDING for an existing vault (1:1, one lending market per vault); reads Sablier from the vault and retains factory ownership |
+| `deployLending(ovrflo)` | Deploy an OVRFLOLending for an existing vault (1:1, one lending market per vault); reads Sablier from the vault and retains factory ownership |
 | `cancelDeployment()` | Cancel a pending deployment |
 | `addMarket(ovrflo, market, twapDuration, feeBps)` | Add a PT maturity; reads PT address and expiry from Pendle market; requires ready oracle and exact underlying match |
 | `prepareOracle(market, twapDuration)` | Increase oracle cardinality before `addMarket`; duration must be 15-30 min (separate transaction) |
@@ -418,7 +418,7 @@ factory.addMarket(ovrflo, market, twapDuration, feeBps);
 Two separate fees operate at different layers:
 
 - **Core deposit fee**: Charged on the immediate portion (`toUser`), paid in underlying, sent to the vault's treasury. Capped at 1% (`FEE_MAX_BPS = 100` on `OVRFLOFactory`). Set per-market via `addMarket`.
-- **Lending protocol fee**: Charged on the sale price or borrow amount, paid in underlying, and sent to the lending market treasury. Capped at 100% (`MAX_FEE_BPS = 10_000` on `OVRFLOLENDING`). Configure it through `OVRFLOFactory.setLendingFee`. Listings snapshot the fee at post time to protect sellers from retroactive changes; liquidity positions use the current global fee.
+- **Lending protocol fee**: Charged on the sale price or borrow amount, paid in underlying, and sent to the lending market treasury. Capped at 100% (`MAX_FEE_BPS = 10_000` on `OVRFLOLending`). Configure it through `OVRFLOFactory.setLendingFee`. Listings snapshot the fee at post time to protect sellers from retroactive changes; liquidity positions use the current global fee.
 
 ## Security
 
@@ -427,12 +427,12 @@ Two separate fees operate at different layers:
 - **OVRFLOFactory**: Owned by timelocked multisig, serves as immutable `factory` (admin) for all deployed OVRFLOs
 - **OVRFLO**: Controlled by factory (admin functions gated by `onlyAdmin` modifier)
 - **OVRFLOToken**: Owned by OVRFLO (mint/burn restricted)
-- **OVRFLOLENDING**: Owned by `OVRFLOFactory`, bound to one vault and Sablier instance at construction, and administered through factory forwarders
+- **OVRFLOLending**: Owned by `OVRFLOFactory`, bound to one vault and Sablier instance at construction, and administered through factory forwarders
 
 ### Safeguards
 
 - **Multisig + Timelock**: All admin operations require multisig consensus and timelock delay
-- **APR ceiling**: Hardcoded at 100% (`APR_MAX_CEILING = 10_000` on `OVRFLOLENDING`) — cannot be raised past 100% even by the owner
+- **APR ceiling**: Hardcoded at 100% (`APR_MAX_CEILING = 10_000` on `OVRFLOLending`) — cannot be raised past 100% even by the owner
 - **Fee ceilings**: Core deposit fee capped at 1% (`FEE_MAX_BPS = 100` on factory), lending protocol fee capped at 100% (`MAX_FEE_BPS = 10_000` on lending) — both hardcoded constants
 - **No liquidations**: Deterministic, non-cancelable Sablier streams cannot underperform — the stream itself repays the loan
 - **StreamPricing math**: Floor/ceil rounding is directional and load-bearing. The invariant `obligation <= remaining` is proven and stress-tested (see `plans/streampricing-math-analysis.md`)
@@ -463,7 +463,7 @@ A single `OVRFLOToken` is shared by every PT market that resolves to the same un
 
 ## Deployments
 
-| Network | OVRFLOFactory | OVRFLO | OVRFLOLENDING |
+| Network | OVRFLOFactory | OVRFLO | OVRFLOLending |
 |---------|---------------|--------|------------|
 | Mainnet | TBD | TBD | TBD |
 

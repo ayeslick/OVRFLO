@@ -26,7 +26,7 @@ tags:
 
 ## Context
 
-OVRFLOFactory is the admin hub for every deployed OVRFLO vault and OVRFLOLENDING. It is owned by a timelocked multisig and is intended to be the **single admin entry point** for all vaults and lending markets: every governance action flows multisig -> factory -> vault (or lending market). A review of the factory's deployment and management surface revealed six concrete gaps where the implementation drifted from that intended design, from stale documentation describing features that were never built, to inconsistent admin routing that broke the single-surface invariant, to a missing duplicate-deployment guard that contradicted a documented fungibility guarantee.
+OVRFLOFactory is the admin hub for every deployed OVRFLO vault and OVRFLOLending. It is owned by a timelocked multisig and is intended to be the **single admin entry point** for all vaults and lending markets: every governance action flows multisig -> factory -> vault (or lending market). A review of the factory's deployment and management surface revealed six concrete gaps where the implementation drifted from that intended design, from stale documentation describing features that were never built, to inconsistent admin routing that broke the single-surface invariant, to a missing duplicate-deployment guard that contradicted a documented fungibility guarantee.
 
 These gaps were not theoretical. Each one was either actively misleading future developers (dead docs), creating operational risk (lending ownership drift on factory ownership transfer), or silently violating an invariant the project relied on (cross-market `ovrfloToken` fungibility under one underlying). The fix work touched `src/OVRFLOFactory.sol`, `src/OVRFLO.sol`, and a broad set of documentation and plan files, and was validated by 362 passing tests including 13 new ones targeting the gaps.
 
@@ -40,7 +40,7 @@ These gaps were not theoretical. Each one was either actively misleading future 
 
 ### 2. Route every dependent contract's admin actions through the factory
 
-OVRFLOLENDING exposed `setAprBounds`, `setFee`, and `setTreasury` as `onlyOwner` on the lending market itself. The factory's `deployLending()` transferred lending ownership straight to the multisig:
+OVRFLOLending exposed `setAprBounds`, `setFee`, and `setTreasury` as `onlyOwner` on the lending market itself. The factory's `deployLending()` transferred lending ownership straight to the multisig:
 
 ```solidity
 b.transferOwnership(owner()); // removed
@@ -53,19 +53,19 @@ This created two admin surfaces: vaults went multisig -> factory -> vault, but l
 ```solidity
 function setLendingAprBounds(address lending, uint16 aprMinBps_, uint16 aprMaxBps_) external onlyOwner {
     _requireKnownLending(lending);
-    OVRFLOLENDING(lending).setAprBounds(aprMinBps_, aprMaxBps_);
+    OVRFLOLending(lending).setAprBounds(aprMinBps_, aprMaxBps_);
     emit LendingAprBoundsSet(lending, aprMinBps_, aprMaxBps_);
 }
 
 function setLendingFee(address lending, uint16 feeBps_) external onlyOwner {
     _requireKnownLending(lending);
-    OVRFLOLENDING(lending).setFee(feeBps_);
+    OVRFLOLending(lending).setFee(feeBps_);
     emit LendingFeeSet(lending, feeBps_);
 }
 
 function setLendingTreasury(address lending, address treasury_) external onlyOwner {
     _requireKnownLending(lending);
-    OVRFLOLENDING(lending).setTreasury(treasury_);
+    OVRFLOLending(lending).setTreasury(treasury_);
     emit LendingTreasurySet(lending, treasury_);
 }
 ```
@@ -208,14 +208,14 @@ modifier onlyAdmin() {
 ```solidity
 // OVRFLOFactory.sol
 function deployLending(address ovrflo) external onlyOwner returns (address lending) {
-    // ...deploy OVRFLOLENDING b...
+    // ...deploy OVRFLOLending b...
     b.transferOwnership(owner()); // lending market owned by multisig directly, NOT the factory
     ovrfloToLending[ovrflo] = lending;  // forward map only, no reverse, no enumeration
     emit LendingDeployed(ovrflo, lending);
 }
 
 // deploy() has no check for an existing vault on the same underlying.
-// setAprBounds / setFee / setTreasury on OVRFLOLENDING are onlyOwner on the lending market,
+// setAprBounds / setFee / setTreasury on OVRFLOLending are onlyOwner on the lending market,
 // so the multisig calls the lending market directly, bypassing the factory.
 ```
 
@@ -259,7 +259,7 @@ function deploy() external onlyOwner returns (address ovrflo) {
 function deployLending(address ovrflo) external onlyOwner returns (address lending) {
     _requireKnownOvrflo(ovrflo);
     require(ovrfloToLending[ovrflo] == address(0), "OVRFLOFactory: lending exists");
-    // ...deploy OVRFLOLENDING b...
+    // ...deploy OVRFLOLending b...
     // NOTE: no b.transferOwnership(owner()) — factory stays the owner
     ovrfloToLending[ovrflo] = lending;
     lendingToOvrflo[lending] = ovrflo;
@@ -270,19 +270,19 @@ function deployLending(address ovrflo) external onlyOwner returns (address lendi
 
 function setLendingAprBounds(address lending, uint16 aprMinBps_, uint16 aprMaxBps_) external onlyOwner {
     _requireKnownLending(lending);
-    OVRFLOLENDING(lending).setAprBounds(aprMinBps_, aprMaxBps_);
+    OVRFLOLending(lending).setAprBounds(aprMinBps_, aprMaxBps_);
     emit LendingAprBoundsSet(lending, aprMinBps_, aprMaxBps_);
 }
 
 function setLendingFee(address lending, uint16 feeBps_) external onlyOwner {
     _requireKnownLending(lending);
-    OVRFLOLENDING(lending).setFee(feeBps_);
+    OVRFLOLending(lending).setFee(feeBps_);
     emit LendingFeeSet(lending, feeBps_);
 }
 
 function setLendingTreasury(address lending, address treasury_) external onlyOwner {
     _requireKnownLending(lending);
-    OVRFLOLENDING(lending).setTreasury(treasury_);
+    OVRFLOLending(lending).setTreasury(treasury_);
     emit LendingTreasurySet(lending, treasury_);
 }
 

@@ -84,34 +84,34 @@ Per-call preconditions. Heading IDs below are anchor targets from `x-ray.md`.
 `require(IStandardizedYield(sy).yieldToken() == info.underlying, "OVRFLOFactory: underlying mismatch")` · `OVRFLOFactory.sol:209` · Prevents unrelated Pendle series from sharing one claim token.
 
 #### G-26
-`require(aprMaxBps_ >= aprMinBps_, "OVRFLOLENDING: bad apr bounds")` · `OVRFLOLending.sol:276` · Preserves a non-inverted APR interval.
+`require(aprMaxBps_ >= aprMinBps_, "OVRFLOLending: bad apr bounds")` · `OVRFLOLending.sol:276` · Preserves a non-inverted APR interval.
 
 #### G-27
-`require(aprMaxBps_ <= APR_MAX_CEILING, "OVRFLOLENDING: apr too high")` · `OVRFLOLending.sol:277` · Caps governance-set APR bounds at 100 percent.
+`require(aprMaxBps_ <= APR_MAX_CEILING, "OVRFLOLending: apr too high")` · `OVRFLOLending.sol:277` · Caps governance-set APR bounds at 100 percent.
 
 #### G-28
-`require(feeBps_ <= MAX_FEE_BPS, "OVRFLOLENDING: fee too high")` · `OVRFLOLending.sol:291` · Prevents fee arithmetic from exceeding the transferred principal or price.
+`require(feeBps_ <= MAX_FEE_BPS, "OVRFLOLending: fee too high")` · `OVRFLOLending.sol:291` · Prevents fee arithmetic from exceeding the transferred principal or price.
 
 #### G-29
-`require(liquidity.active, "OVRFLOLENDING: liquidity inactive")` · `OVRFLOLending.sol:346` · Prevents reuse of cancelled or fully consumed liquidity.
+`require(liquidity.active, "OVRFLOLending: liquidity inactive")` · `OVRFLOLending.sol:346` · Prevents reuse of cancelled or fully consumed liquidity.
 
 #### G-30
-`require(liquidity.lender == msg.sender, "OVRFLOLENDING: not lender")` · `OVRFLOLending.sol:347` · Restricts liquidity withdrawal to its funding account.
+`require(liquidity.lender == msg.sender, "OVRFLOLending: not lender")` · `OVRFLOLending.sol:347` · Restricts liquidity withdrawal to its funding account.
 
 #### G-31
-`require(grossPrice <= liquidity.availableLiquidity, "OVRFLOLENDING: insufficient availableLiquidity")` · `OVRFLOLending.sol:374` · Caps sale settlement at escrowed underlying capacity.
+`require(grossPrice <= liquidity.availableLiquidity, "OVRFLOLending: insufficient availableLiquidity")` · `OVRFLOLending.sol:374` · Caps sale settlement at escrowed underlying capacity.
 
 #### G-32
-`require(!loan.closed, "OVRFLOLENDING: loan closed")` · `OVRFLOLending.sol:482` · Prevents a closed loan from being serviced twice.
+`require(!loan.closed, "OVRFLOLending: loan closed")` · `OVRFLOLending.sol:482` · Prevents a closed loan from being serviced twice.
 
 #### G-33
-`require(withdrawable >= outstanding, "OVRFLOLENDING: loan not closable")` · `OVRFLOLending.sol:486` · Allows permissionless close only when accrued stream value covers debt.
+`require(withdrawable >= outstanding, "OVRFLOLending: loan not closable")` · `OVRFLOLending.sol:486` · Allows permissionless close only when accrued stream value covers debt.
 
 #### G-34
-`require(amount <= outstanding, "OVRFLOLENDING: repay too much")` · `OVRFLOLending.sol:518` · Caps borrower repayment at the remaining obligation.
+`require(amount <= outstanding, "OVRFLOLending: repay too much")` · `OVRFLOLending.sol:518` · Caps borrower repayment at the remaining obligation.
 
 #### G-35
-`require(aprBps >= aprMinBps && aprBps <= aprMaxBps, "OVRFLOLENDING: apr out of bounds")` · `OVRFLOLending.sol:879` · Constrains every new order to the current governance-set APR range.
+`require(aprBps >= aprMinBps && aprBps <= aprMaxBps, "OVRFLOLending: apr out of bounds")` · `OVRFLOLending.sol:879` · Constrains every new order to the current governance-set APR range.
 
 ---
 
@@ -201,7 +201,7 @@ Per-call preconditions. Heading IDs below are anchor targets from `x-ray.md`.
 
 `StateMachine` · On-chain: **Yes**
 
-> A known vault can receive only one factory-registered OVRFLOLENDING deployment.
+> A known vault can receive only one factory-registered OVRFLOLending deployment.
 
 **Derivation** — Edge: `ovrfloToLending[ovrflo] == 0@168 → lending@174` in `OVRFLOFactory.sol`, with no clearing write site.
 

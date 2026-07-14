@@ -10,7 +10,7 @@ import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {ISablierV2LockupLinear} from "../interfaces/ISablierV2LockupLinear.sol";
 import {IOVRFLOFactoryRegistry, StreamPricing} from "./StreamPricing.sol";
 
-/// @title OVRFLOLENDING
+/// @title OVRFLOLending
 /// @notice Lending market for selling OVRFLO streams or lending against them.
 /// @dev A per-vault lending market deployed against one OVRFLO core vault and one Sablier V2
 ///      Lockup Linear instance. It supports two primitives, all priced off
@@ -23,7 +23,7 @@ import {IOVRFLOFactoryRegistry, StreamPricing} from "./StreamPricing.sol";
 ///      run the full stream validation via `_requireEligible`. Fees are snapshotted per
 ///      listing at post time to protect sellers from retroactive fee changes; the global
 ///      `feeBps` applies to liquidity positions. All stateful functions are `nonReentrant`.
-contract OVRFLOLENDING is Ownable2Step, ReentrancyGuard, Multicall {
+contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
     using SafeERC20 for IERC20;
 
     /*//////////////////////////////////////////////////////////////
@@ -237,22 +237,22 @@ contract OVRFLOLENDING is Ownable2Step, ReentrancyGuard, Multicall {
                               CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Deploys an OVRFLOLENDING bound to one vault, Sablier instance, and fee config.
+    /// @notice Deploys an OVRFLOLending bound to one vault, Sablier instance, and fee config.
     /// @dev Pulls `treasury`, `underlying`, and `ovrfloToken` from the factory so they
     ///      stay consistent with the served vault. APR bounds initialize to the launch APR.
     /// @param factory_ The OVRFLOFactory registry address.
     /// @param core_ The OVRFLO core vault this lending market serves.
     /// @param sablier_ The Sablier V2 Lockup Linear address.
     constructor(address factory_, address core_, address sablier_) {
-        require(factory_ != address(0), "OVRFLOLENDING: factory zero");
-        require(core_ != address(0), "OVRFLOLENDING: core zero");
-        require(sablier_ != address(0), "OVRFLOLENDING: sablier zero");
+        require(factory_ != address(0), "OVRFLOLending: factory zero");
+        require(core_ != address(0), "OVRFLOLending: core zero");
+        require(sablier_ != address(0), "OVRFLOLending: sablier zero");
 
         (address treasury_, address underlying_, address ovrfloToken_) =
             IOVRFLOFactoryRegistry(factory_).ovrfloInfo(core_);
-        require(treasury_ != address(0), "OVRFLOLENDING: unknown core");
-        require(underlying_ != address(0), "OVRFLOLENDING: underlying zero");
-        require(ovrfloToken_ != address(0), "OVRFLOLENDING: token zero");
+        require(treasury_ != address(0), "OVRFLOLending: unknown core");
+        require(underlying_ != address(0), "OVRFLOLending: underlying zero");
+        require(ovrfloToken_ != address(0), "OVRFLOLending: token zero");
 
         factory = IOVRFLOFactoryRegistry(factory_);
         core = core_;
@@ -274,10 +274,10 @@ contract OVRFLOLENDING is Ownable2Step, ReentrancyGuard, Multicall {
     /// @param aprMinBps_ New minimum APR in basis points.
     /// @param aprMaxBps_ New maximum APR in basis points.
     function setAprBounds(uint16 aprMinBps_, uint16 aprMaxBps_) external onlyOwner {
-        require(aprMaxBps_ >= aprMinBps_, "OVRFLOLENDING: bad apr bounds");
-        require(aprMaxBps_ <= APR_MAX_CEILING, "OVRFLOLENDING: apr too high");
-        require(aprMinBps_ % APR_STEP_BPS == 0, "OVRFLOLENDING: aprMin not step-aligned");
-        require(aprMaxBps_ % APR_STEP_BPS == 0, "OVRFLOLENDING: aprMax not step-aligned");
+        require(aprMaxBps_ >= aprMinBps_, "OVRFLOLending: bad apr bounds");
+        require(aprMaxBps_ <= APR_MAX_CEILING, "OVRFLOLending: apr too high");
+        require(aprMinBps_ % APR_STEP_BPS == 0, "OVRFLOLending: aprMin not step-aligned");
+        require(aprMaxBps_ % APR_STEP_BPS == 0, "OVRFLOLending: aprMax not step-aligned");
 
         aprMinBps = aprMinBps_;
         aprMaxBps = aprMaxBps_;
@@ -289,7 +289,7 @@ contract OVRFLOLENDING is Ownable2Step, ReentrancyGuard, Multicall {
     /// @dev Does not affect listings, which snapshot `feeBps` at post time.
     /// @param feeBps_ New fee in basis points.
     function setFee(uint16 feeBps_) external onlyOwner {
-        require(feeBps_ <= MAX_FEE_BPS, "OVRFLOLENDING: fee too high");
+        require(feeBps_ <= MAX_FEE_BPS, "OVRFLOLending: fee too high");
 
         feeBps = feeBps_;
 
@@ -299,7 +299,7 @@ contract OVRFLOLENDING is Ownable2Step, ReentrancyGuard, Multicall {
     /// @notice Sets the recipient of protocol fees.
     /// @param treasury_ New treasury address (must not be zero).
     function setTreasury(address treasury_) external onlyOwner {
-        require(treasury_ != address(0), "OVRFLOLENDING: treasury zero");
+        require(treasury_ != address(0), "OVRFLOLending: treasury zero");
 
         treasury = treasury_;
 
@@ -328,7 +328,7 @@ contract OVRFLOLENDING is Ownable2Step, ReentrancyGuard, Multicall {
     {
         _validateApr(aprBps);
         _requireMarketActive(market);
-        require(availableLiquidity > 0, "OVRFLOLENDING: availableLiquidity zero");
+        require(availableLiquidity > 0, "OVRFLOLending: availableLiquidity zero");
 
         liquidityId = nextLiquidityId++;
         liquidityPositions[liquidityId] = LiquidityPosition({
@@ -344,8 +344,8 @@ contract OVRFLOLENDING is Ownable2Step, ReentrancyGuard, Multicall {
     /// @param liquidityId The liquidity position to withdraw.
     function withdrawLiquidity(uint256 liquidityId) external nonReentrant {
         LiquidityPosition storage liquidity = liquidityPositions[liquidityId];
-        require(liquidity.active, "OVRFLOLENDING: liquidity inactive");
-        require(liquidity.lender == msg.sender, "OVRFLOLENDING: not lender");
+        require(liquidity.active, "OVRFLOLending: liquidity inactive");
+        require(liquidity.lender == msg.sender, "OVRFLOLending: not lender");
 
         uint128 refund = liquidity.availableLiquidity;
         liquidity.availableLiquidity = 0;
@@ -365,14 +365,14 @@ contract OVRFLOLENDING is Ownable2Step, ReentrancyGuard, Multicall {
     /// @param minNetOut Minimum underlying the seller must receive (slippage).
     function sellStreamToLiquidity(uint256 liquidityId, uint256 streamId, uint256 minNetOut) external nonReentrant {
         LiquidityPosition storage liquidity = liquidityPositions[liquidityId];
-        require(liquidity.active, "OVRFLOLENDING: liquidity inactive");
+        require(liquidity.active, "OVRFLOLending: liquidity inactive");
 
         (, uint256 grossPrice,) = _priceStream(liquidity.market, streamId, liquidity.aprBps);
-        require(grossPrice <= liquidity.availableLiquidity, "OVRFLOLENDING: insufficient availableLiquidity");
+        require(grossPrice <= liquidity.availableLiquidity, "OVRFLOLending: insufficient availableLiquidity");
 
         uint256 feeAmount = StreamPricing.fee(grossPrice, feeBps);
         uint256 netToSeller = grossPrice - feeAmount;
-        require(netToSeller >= minNetOut, "OVRFLOLENDING: slippage");
+        require(netToSeller >= minNetOut, "OVRFLOLending: slippage");
 
         liquidity.availableLiquidity -= _toUint128(grossPrice);
         if (liquidity.availableLiquidity == 0) {
@@ -422,8 +422,8 @@ contract OVRFLOLENDING is Ownable2Step, ReentrancyGuard, Multicall {
     /// @param listingId The listing to cancel.
     function cancelSaleListing(uint256 listingId) external nonReentrant {
         SaleListing storage listing = saleListings[listingId];
-        require(listing.active, "OVRFLOLENDING: listing inactive");
-        require(listing.seller == msg.sender, "OVRFLOLENDING: not listing seller");
+        require(listing.active, "OVRFLOLending: listing inactive");
+        require(listing.seller == msg.sender, "OVRFLOLending: not listing seller");
 
         listing.active = false;
         sablier.transferFrom(address(this), msg.sender, listing.streamId);
@@ -439,10 +439,10 @@ contract OVRFLOLENDING is Ownable2Step, ReentrancyGuard, Multicall {
     /// @param maxPriceIn Maximum underlying the buyer will pay (slippage).
     function buyListing(uint256 listingId, uint256 maxPriceIn) external nonReentrant {
         SaleListing storage listing = saleListings[listingId];
-        require(listing.active, "OVRFLOLENDING: listing inactive");
+        require(listing.active, "OVRFLOLending: listing inactive");
 
         (, uint256 grossPrice,) = _priceStream(listing.market, listing.streamId, listing.aprBps);
-        require(grossPrice <= maxPriceIn, "OVRFLOLENDING: slippage");
+        require(grossPrice <= maxPriceIn, "OVRFLOLending: slippage");
 
         uint256 feeAmount = StreamPricing.fee(grossPrice, listing.feeBps);
         uint256 netToSeller = grossPrice - feeAmount;
@@ -472,12 +472,12 @@ contract OVRFLOLENDING is Ownable2Step, ReentrancyGuard, Multicall {
     function closeLoan(uint256 loanId) external nonReentrant {
         Loan storage loan = loans[loanId];
         _requireLoanExists(loan);
-        require(!loan.closed, "OVRFLOLENDING: loan closed");
+        require(!loan.closed, "OVRFLOLending: loan closed");
 
         uint128 outstanding = _outstanding(loan);
         uint256 streamId = loan.streamId;
         uint128 withdrawable = sablier.withdrawableAmountOf(streamId);
-        require(withdrawable >= outstanding, "OVRFLOLENDING: loan not closable");
+        require(withdrawable >= outstanding, "OVRFLOLending: loan not closable");
 
         loan.closed = true;
         if (outstanding > 0) {
@@ -497,19 +497,19 @@ contract OVRFLOLENDING is Ownable2Step, ReentrancyGuard, Multicall {
     ///      the loan closes and the stream is returned to the borrower. The equality is
     ///      safe from rounding bricks because `outstanding` is always an exact integer wei
     ///      and ovrfloToken has 18-decimal granularity (see
-    ///      `docs/solutions/security-issues/repayloan-equality-rounding-no-brick-OVRFLOLENDING-20260624.md`).
+    ///      `docs/solutions/security-issues/repayloan-equality-rounding-no-brick-OVRFLOLending-20260624.md`).
     /// @param loanId The loan to repay.
     /// @param amount ovrfloToken to repay (must be <= outstanding).
     function repayLoan(uint256 loanId, uint128 amount) external nonReentrant {
         Loan storage loan = loans[loanId];
         _requireLoanExists(loan);
-        require(!loan.closed, "OVRFLOLENDING: loan closed");
-        require(loan.borrower == msg.sender, "OVRFLOLENDING: not borrower");
+        require(!loan.closed, "OVRFLOLending: loan closed");
+        require(loan.borrower == msg.sender, "OVRFLOLending: not borrower");
 
         uint128 outstanding = _outstanding(loan);
-        require(outstanding > 0, "OVRFLOLENDING: nothing outstanding");
-        require(amount > 0, "OVRFLOLENDING: repay zero");
-        require(amount <= outstanding, "OVRFLOLENDING: repay too much");
+        require(outstanding > 0, "OVRFLOLending: nothing outstanding");
+        require(amount > 0, "OVRFLOLending: repay zero");
+        require(amount <= outstanding, "OVRFLOLending: repay too much");
 
         loan.repaid += amount;
         bool closes = amount == outstanding;
@@ -550,14 +550,14 @@ contract OVRFLOLENDING is Ownable2Step, ReentrancyGuard, Multicall {
         uint128 targetBorrow,
         uint128 minAcceptable
     ) external nonReentrant returns (uint256 loanPoolId) {
-        require(targetBorrow > 0, "OVRFLOLENDING: borrow zero");
-        require(liquidityIds.length > 0, "OVRFLOLENDING: empty liquidity");
+        require(targetBorrow > 0, "OVRFLOLending: borrow zero");
+        require(liquidityIds.length > 0, "OVRFLOLending: empty liquidity");
 
         address market;
         uint16 aprBps;
         {
             LiquidityPosition memory firstLiquidity = liquidityPositions[liquidityIds[0]];
-            require(firstLiquidity.active, "OVRFLOLENDING: liquidity inactive");
+            require(firstLiquidity.active, "OVRFLOLending: liquidity inactive");
             market = firstLiquidity.market;
             aprBps = firstLiquidity.aprBps;
         }
@@ -571,14 +571,14 @@ contract OVRFLOLENDING is Ownable2Step, ReentrancyGuard, Multicall {
             (StreamPricing.Eligibility memory eligibility, uint256 grossPrice, uint256 timeToMaturity) =
                 _priceStream(market, streamId, aprBps);
             uint256 actualBorrow = targetBorrow < totalAvailable ? uint256(targetBorrow) : totalAvailable;
-            require(actualBorrow <= grossPrice, "OVRFLOLENDING: borrow above price");
+            require(actualBorrow <= grossPrice, "OVRFLOLending: borrow above price");
 
             obligation = StreamPricing.obligationForFill(
                 actualBorrow, grossPrice, eligibility.remaining, aprBps, timeToMaturity
             );
             feeAmount = StreamPricing.fee(actualBorrow, feeBps);
             netToBorrower = actualBorrow - feeAmount;
-            require(netToBorrower >= minAcceptable, "OVRFLOLENDING: slippage");
+            require(netToBorrower >= minAcceptable, "OVRFLOLending: slippage");
             actualBorrow128 = _toUint128(actualBorrow);
         }
 
@@ -615,7 +615,7 @@ contract OVRFLOLENDING is Ownable2Step, ReentrancyGuard, Multicall {
     /// @param loanPoolId The loan pool to claim from.
     /// @param amount Requested claim amount (capped at claimable).
     function claimLoanPoolShare(uint256 loanPoolId, uint128 amount) external nonReentrant {
-        require(amount > 0, "OVRFLOLENDING: claim zero");
+        require(amount > 0, "OVRFLOLending: claim zero");
         uint128 payAmount = _claimFair(loanPoolId, msg.sender, amount);
         emit LoanPoolShareClaimed(loanPoolId, msg.sender, payAmount);
     }
@@ -629,7 +629,7 @@ contract OVRFLOLENDING is Ownable2Step, ReentrancyGuard, Multicall {
     ///      insufficient and the loan is open, then pays from `loanPoolProceeds`.
     function _claimFair(uint256 loanPoolId, address account, uint128 amount) internal returns (uint128 payAmount) {
         uint128 contribution = loanPoolContributions[loanPoolId][account];
-        require(contribution > 0, "OVRFLOLENDING: not loan pool lender");
+        require(contribution > 0, "OVRFLOLending: not loan pool lender");
 
         Loan storage loan = loans[loanPoolLoanId[loanPoolId]];
         _requireLoanExists(loan);
@@ -662,7 +662,7 @@ contract OVRFLOLENDING is Ownable2Step, ReentrancyGuard, Multicall {
         }
 
         payAmount = _minUint128(requestAmount, proceeds);
-        require(payAmount > 0, "OVRFLOLENDING: nothing claimable");
+        require(payAmount > 0, "OVRFLOLending: nothing claimable");
 
         loanPoolReceived[loanPoolId][account] += payAmount;
         loanPoolProceeds[loanPoolId] = proceeds - payAmount;
@@ -695,7 +695,7 @@ contract OVRFLOLENDING is Ownable2Step, ReentrancyGuard, Multicall {
         uint256 timeToMaturity;
         (eligibility, grossPrice, timeToMaturity) = _priceStream(market, streamId, aprBps);
         uint256 effectiveBorrowAmount = borrowAmount == 0 ? grossPrice : borrowAmount;
-        require(effectiveBorrowAmount <= grossPrice, "OVRFLOLENDING: borrow above price");
+        require(effectiveBorrowAmount <= grossPrice, "OVRFLOLending: borrow above price");
 
         obligation = StreamPricing.obligationForFill(
             effectiveBorrowAmount, grossPrice, eligibility.remaining, aprBps, timeToMaturity
@@ -756,7 +756,7 @@ contract OVRFLOLENDING is Ownable2Step, ReentrancyGuard, Multicall {
         returns (address lender, address market, uint16 aprBps, uint128 availableLiquidity, bool active)
     {
         LiquidityPosition storage liquidity = liquidityPositions[liquidityId];
-        require(liquidity.lender != address(0), "OVRFLOLENDING: unknown liquidity");
+        require(liquidity.lender != address(0), "OVRFLOLending: unknown liquidity");
         return (liquidity.lender, liquidity.market, liquidity.aprBps, liquidity.availableLiquidity, liquidity.active);
     }
 
@@ -774,7 +774,7 @@ contract OVRFLOLENDING is Ownable2Step, ReentrancyGuard, Multicall {
         returns (address seller, address market, uint256 streamId, uint16 aprBps, uint16 listingFeeBps, bool active)
     {
         SaleListing storage listing = saleListings[listingId];
-        require(listing.seller != address(0), "OVRFLOLENDING: unknown listing");
+        require(listing.seller != address(0), "OVRFLOLending: unknown listing");
         return (listing.seller, listing.market, listing.streamId, listing.aprBps, listing.feeBps, listing.active);
     }
 
@@ -842,12 +842,12 @@ contract OVRFLOLENDING is Ownable2Step, ReentrancyGuard, Multicall {
         returns (uint256 totalAvailable)
     {
         for (uint256 i; i < liquidityIds.length; i++) {
-            if (i > 0) require(liquidityIds[i] > liquidityIds[i - 1], "OVRFLOLENDING: duplicate or unsorted ids");
+            if (i > 0) require(liquidityIds[i] > liquidityIds[i - 1], "OVRFLOLending: duplicate or unsorted ids");
             LiquidityPosition storage liquidity = liquidityPositions[liquidityIds[i]];
-            require(liquidity.active, "OVRFLOLENDING: liquidity inactive");
-            require(liquidity.market == market, "OVRFLOLENDING: market mismatch");
-            require(liquidity.aprBps == aprBps, "OVRFLOLENDING: apr mismatch");
-            require(liquidity.lender != borrower, "OVRFLOLENDING: self-match");
+            require(liquidity.active, "OVRFLOLending: liquidity inactive");
+            require(liquidity.market == market, "OVRFLOLending: market mismatch");
+            require(liquidity.aprBps == aprBps, "OVRFLOLending: apr mismatch");
+            require(liquidity.lender != borrower, "OVRFLOLending: self-match");
             totalAvailable += liquidity.availableLiquidity;
         }
     }
@@ -870,8 +870,8 @@ contract OVRFLOLENDING is Ownable2Step, ReentrancyGuard, Multicall {
 
     /// @dev Reverts if `aprBps` is outside the current `[aprMinBps, aprMaxBps]` bounds.
     function _validateApr(uint16 aprBps) internal view {
-        require(aprBps >= aprMinBps && aprBps <= aprMaxBps, "OVRFLOLENDING: apr out of bounds");
-        require(aprBps % APR_STEP_BPS == 0, "OVRFLOLENDING: apr not whole");
+        require(aprBps >= aprMinBps && aprBps <= aprMaxBps, "OVRFLOLending: apr out of bounds");
+        require(aprBps % APR_STEP_BPS == 0, "OVRFLOLending: apr not whole");
     }
 
     /// @dev Stream-level eligibility gate; delegates to `StreamPricing.requireEligible`.
@@ -902,7 +902,7 @@ contract OVRFLOLENDING is Ownable2Step, ReentrancyGuard, Multicall {
         eligibility = _requireEligible(market, streamId);
         timeToMaturity = _timeToMaturity(eligibility.seriesMaturity);
         grossPrice = StreamPricing.grossPrice(eligibility.remaining, aprBps, timeToMaturity);
-        require(grossPrice > 0, "OVRFLOLENDING: price zero");
+        require(grossPrice > 0, "OVRFLOLending: price zero");
     }
 
     /// @dev Pulls `amount` of `token` from `from` to `to` with a strict balance-delta check.
@@ -910,7 +910,7 @@ contract OVRFLOLENDING is Ownable2Step, ReentrancyGuard, Multicall {
         uint256 balanceBefore = token.balanceOf(to);
         token.safeTransferFrom(from, to, amount);
         uint256 balanceAfter = token.balanceOf(to);
-        require(balanceAfter - balanceBefore == amount, "OVRFLOLENDING: transfer mismatch");
+        require(balanceAfter - balanceBefore == amount, "OVRFLOLending: transfer mismatch");
     }
 
     /// @dev Pays `amount` underlying to `to`, skipping the transfer when zero.
@@ -939,7 +939,7 @@ contract OVRFLOLENDING is Ownable2Step, ReentrancyGuard, Multicall {
 
     /// @dev Reverts if the loan slot is uninitialized.
     function _requireLoanExists(Loan storage loan) internal view {
-        require(loan.borrower != address(0), "OVRFLOLENDING: unknown loan");
+        require(loan.borrower != address(0), "OVRFLOLending: unknown loan");
     }
 
     /// @dev Remaining ovrfloToken owed: `obligation - (drawn + repaid)`.

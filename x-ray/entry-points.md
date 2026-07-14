@@ -63,7 +63,7 @@
 | Value flow | PT and fee underlying in; ovrfloToken minted to user and stream |
 | Reentrancy guard | no |
 
-### `OVRFLOLENDING.supplyLiquidity(address,uint16,uint128)`
+### `OVRFLOLending.supplyLiquidity(address,uint16,uint128)`
 
 | Aspect | Detail |
 |--------|--------|
@@ -75,7 +75,7 @@
 | Value flow | Underlying: lender → lending market |
 | Reentrancy guard | yes |
 
-### `OVRFLOLENDING.buyListing(uint256,uint256)`
+### `OVRFLOLending.buyListing(uint256,uint256)`
 
 | Aspect | Detail |
 |--------|--------|
@@ -87,7 +87,7 @@
 | Value flow | Underlying: buyer → seller and treasury; stream NFT: market → buyer |
 | Reentrancy guard | yes |
 
-### `OVRFLOLENDING.createBorrowerLoanPool(uint256[],uint256,uint128,uint128)`
+### `OVRFLOLending.createBorrowerLoanPool(uint256[],uint256,uint128,uint128)`
 
 | Aspect | Detail |
 |--------|--------|
@@ -135,7 +135,7 @@
 | Value flow | PT out and back; optional underlying fee: borrower → treasury |
 | Reentrancy guard | yes |
 
-### `OVRFLOLENDING.withdrawLiquidity(uint256)`
+### `OVRFLOLending.withdrawLiquidity(uint256)`
 
 | Aspect | Detail |
 |--------|--------|
@@ -147,7 +147,7 @@
 | Value flow | Underlying: lending market → lender |
 | Reentrancy guard | yes |
 
-### `OVRFLOLENDING.sellStreamToLiquidity(uint256,uint256,uint256)`
+### `OVRFLOLending.sellStreamToLiquidity(uint256,uint256,uint256)`
 
 | Aspect | Detail |
 |--------|--------|
@@ -159,7 +159,7 @@
 | Value flow | Stream NFT: seller → lender; underlying: market → seller and treasury |
 | Reentrancy guard | yes |
 
-### `OVRFLOLENDING.postSaleListing(address,uint256,uint16)`
+### `OVRFLOLending.postSaleListing(address,uint256,uint16)`
 
 | Aspect | Detail |
 |--------|--------|
@@ -171,7 +171,7 @@
 | Value flow | Stream NFT: seller → lending market |
 | Reentrancy guard | yes |
 
-### `OVRFLOLENDING.cancelSaleListing(uint256)`
+### `OVRFLOLending.cancelSaleListing(uint256)`
 
 | Aspect | Detail |
 |--------|--------|
@@ -183,7 +183,7 @@
 | Value flow | Stream NFT: lending market → seller |
 | Reentrancy guard | yes |
 
-### `OVRFLOLENDING.closeLoan(uint256)`
+### `OVRFLOLending.closeLoan(uint256)`
 
 | Aspect | Detail |
 |--------|--------|
@@ -195,7 +195,7 @@
 | Value flow | ovrfloToken: stream → market; stream NFT: market → borrower |
 | Reentrancy guard | yes |
 
-### `OVRFLOLENDING.repayLoan(uint256,uint128)`
+### `OVRFLOLending.repayLoan(uint256,uint128)`
 
 | Aspect | Detail |
 |--------|--------|
@@ -207,7 +207,7 @@
 | Value flow | ovrfloToken: borrower → market; optional stream NFT: market → borrower |
 | Reentrancy guard | yes |
 
-### `OVRFLOLENDING.claimLoanPoolShare(uint256,uint128)`
+### `OVRFLOLending.claimLoanPoolShare(uint256,uint128)`
 
 | Aspect | Detail |
 |--------|--------|
@@ -246,7 +246,7 @@
 
 ## Admin-Only
 
-All entries below are `onlyOwner`. The intended owner is the timelocked multisig for OVRFLOFactory, while each factory-deployed OVRFLOLENDING is owned by the factory.
+All entries below are `onlyOwner`. The intended owner is the timelocked multisig for OVRFLOFactory, while each factory-deployed OVRFLOLending is owned by the factory.
 
 | Contract | Function | Parameters | State Modified |
 |----------|----------|------------|----------------|
@@ -264,6 +264,6 @@ All entries below are `onlyOwner`. The intended owner is the timelocked multisig
 | OVRFLOFactory | `setLendingAprBounds` | lending, min/max APR | forwards lending APR bounds |
 | OVRFLOFactory | `setLendingFee` | lending, fee | forwards lending fee |
 | OVRFLOFactory | `setLendingTreasury` | lending, treasury | forwards lending fee recipient |
-| OVRFLOLENDING | `setAprBounds` | min/max APR | APR bounds |
-| OVRFLOLENDING | `setFee` | fee | global fill fee |
-| OVRFLOLENDING | `setTreasury` | treasury | fee recipient |
+| OVRFLOLending | `setAprBounds` | min/max APR | APR bounds |
+| OVRFLOLending | `setFee` | fee | global fill fee |
+| OVRFLOLending | `setTreasury` | treasury | fee recipient |

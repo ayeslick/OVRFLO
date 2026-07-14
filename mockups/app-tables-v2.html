@@ -11,7 +11,7 @@
       CONTRACT WIRING MAP (source of truth for the web/ implementation)
 
       YOUR LENDING panel
-        - Posted capacity ....... sum of OVRFLOLENDING.liquidityPositions[id].capacity where lender == user && active (indexer)
+        - Posted capacity ....... sum of OVRFLOLending.liquidityPositions[id].capacity where lender == user && active (indexer)
         - Open as lender ........ sum of loans[id].obligation - drawn - repaid where lender == user && !closed
         - Claimable ............. claimLoanPoolShare preview: loanPoolContributions[poolId][user] pro-rata vs loanPoolProceeds
         - Net APR ............... weighted avg aprBps across user's active liquidityPositions/loans (indexer)
@@ -23,7 +23,7 @@
 
       MARKETS table (one row per approved series)
         - Asset / maturity ...... OVRFLO series registry: SeriesInfo.ptToken, SeriesInfo.expiryCached
-        - LiquidityPosition depth ........... OVRFLOLENDING.gatherLiquidity(market) — sum of active liquidity capacity
+        - LiquidityPosition depth ........... OVRFLOLending.gatherLiquidity(market) — sum of active liquidity capacity
         - Lend APR .............. top-of-lending liquidity aprBps for the market (indexer sort)
         - Borrow APR ............ same aprBps grossed up by SeriesInfo.feeBps (borrower pays the fee)
         - All amounts are ovrfloToken (1:1 with underlying); display symbol per market's ovrfloToken

@@ -4,7 +4,7 @@ pragma solidity ^0.8.20;
 import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 import {OVRFLO} from "./OVRFLO.sol";
 import {OVRFLOToken} from "./OVRFLOToken.sol";
-import {OVRFLOLENDING} from "./OVRFLOLENDING.sol";
+import {OVRFLOLending} from "./OVRFLOLending.sol";
 import {IPendleMarket} from "../interfaces/IPendleMarket.sol";
 import {IPendleOracle} from "../interfaces/IPendleOracle.sol";
 import {IStandardizedYield} from "../interfaces/IStandardizedYield.sol";
@@ -47,16 +47,16 @@ contract OVRFLOFactory is Ownable2Step {
     mapping(address ovrflo => mapping(uint256 index => address)) public approvedMarketAt;
     mapping(address ovrflo => mapping(address market => bool)) public isMarketApproved;
 
-    /// @notice Maps an OVRFLO vault to its deployed OVRFLOLENDING (1:1).
+    /// @notice Maps an OVRFLO vault to its deployed OVRFLOLending (1:1).
     mapping(address => address) public ovrfloToLending;
 
-    /// @notice Reverse lookup: OVRFLOLENDING address => OVRFLO vault address.
+    /// @notice Reverse lookup: OVRFLOLending address => OVRFLO vault address.
     mapping(address => address) public lendingToOvrflo;
 
-    /// @notice Total number of OVRFLOLENDING markets deployed by this factory.
+    /// @notice Total number of OVRFLOLending markets deployed by this factory.
     uint256 public lendingCount;
 
-    /// @notice Enumerable list of all OVRFLOLENDING addresses deployed by this factory.
+    /// @notice Enumerable list of all OVRFLOLending addresses deployed by this factory.
     mapping(uint256 => address) public lendings;
 
     /// @notice Maps an underlying asset to its deployed OVRFLO vault (1:1, prevents duplicates).
@@ -157,18 +157,18 @@ contract OVRFLOFactory is Ownable2Step {
         emit OvrfloDeployed(ovrflo, ovrfloToken, config.treasury, config.underlying);
     }
 
-    /// @notice Deploy an OVRFLOLENDING for an existing vault (1:1, one lending market per vault)
+    /// @notice Deploy an OVRFLOLending for an existing vault (1:1, one lending market per vault)
     /// @dev Reads the Sablier address from the vault's sablierLL immutable.
     ///      The factory remains the lending market's owner so all lending admin calls flow through
     ///      the factory (consistent with the vault admin model).
     /// @param ovrflo The OVRFLO core vault address
-    /// @return lending The deployed OVRFLOLENDING address
+    /// @return lending The deployed OVRFLOLending address
     function deployLending(address ovrflo) external onlyOwner returns (address lending) {
         _requireKnownOvrflo(ovrflo);
         require(ovrfloToLending[ovrflo] == address(0), "OVRFLOFactory: lending exists");
 
         address sablierAddr = address(OVRFLO(ovrflo).sablierLL());
-        OVRFLOLENDING lendingMarket = new OVRFLOLENDING(address(this), ovrflo, sablierAddr);
+        OVRFLOLending lendingMarket = new OVRFLOLending(address(this), ovrflo, sablierAddr);
         lending = address(lendingMarket);
 
         ovrfloToLending[ovrflo] = lending;
@@ -271,31 +271,31 @@ contract OVRFLOFactory is Ownable2Step {
                   LENDING ADMIN (FACTORY-FORWARDED)
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Set the APR bounds on an OVRFLOLENDING (factory is the lending market's owner)
-    /// @param lending The OVRFLOLENDING address
+    /// @notice Set the APR bounds on an OVRFLOLending (factory is the lending market's owner)
+    /// @param lending The OVRFLOLending address
     /// @param aprMinBps_ New minimum APR in basis points
     /// @param aprMaxBps_ New maximum APR in basis points
     function setLendingAprBounds(address lending, uint16 aprMinBps_, uint16 aprMaxBps_) external onlyOwner {
         _requireKnownLending(lending);
-        OVRFLOLENDING(lending).setAprBounds(aprMinBps_, aprMaxBps_);
+        OVRFLOLending(lending).setAprBounds(aprMinBps_, aprMaxBps_);
         emit LendingAprBoundsSet(lending, aprMinBps_, aprMaxBps_);
     }
 
-    /// @notice Set the protocol fee on an OVRFLOLENDING
-    /// @param lending The OVRFLOLENDING address
+    /// @notice Set the protocol fee on an OVRFLOLending
+    /// @param lending The OVRFLOLending address
     /// @param feeBps_ New fee in basis points
     function setLendingFee(address lending, uint16 feeBps_) external onlyOwner {
         _requireKnownLending(lending);
-        OVRFLOLENDING(lending).setFee(feeBps_);
+        OVRFLOLending(lending).setFee(feeBps_);
         emit LendingFeeSet(lending, feeBps_);
     }
 
-    /// @notice Set the fee treasury on an OVRFLOLENDING
-    /// @param lending The OVRFLOLENDING address
+    /// @notice Set the fee treasury on an OVRFLOLending
+    /// @param lending The OVRFLOLending address
     /// @param treasury_ New treasury address
     function setLendingTreasury(address lending, address treasury_) external onlyOwner {
         _requireKnownLending(lending);
-        OVRFLOLENDING(lending).setTreasury(treasury_);
+        OVRFLOLending(lending).setTreasury(treasury_);
         emit LendingTreasurySet(lending, treasury_);
     }
 

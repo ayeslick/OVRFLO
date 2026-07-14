@@ -18,7 +18,7 @@ audience: [lenders, ai-agents]
     the claim redesign fork-test findings. Updated pattern #4 and #7 to
     reference pool-only functions after single-party lending removal.
   - 2026-06-29: Appended patterns #11 (strictly-increasing IDs in batch
-    arrays) and #12 (pro-rata share of cumulative recovery) from the OVRFLOLENDING
+    arrays) and #12 (pro-rata share of cumulative recovery) from the OVRFLOLending
     Pool feature review (commits 91df170, ca8e248). Pattern #12 was later
     rewritten twice: M-01 audit fix (FCFS min(remaining, proceeds)), then
     2026-07-13 (cumulative-recovered pro-rata formula).
@@ -319,14 +319,14 @@ complementary safety net, not a replacement. Do **not** pull in
 
 ---
 
-## 4. Prevent self-matched loans in OVRFLOLENDING (ALWAYS REQUIRED)
+## 4. Prevent self-matched loans in OVRFLOLending (ALWAYS REQUIRED)
 
 ### ❌ WRONG (borrower == lender breaks `repayLoan`)
 
 ```solidity
 // createBorrowerLoanPool — no self-match guard on liquidity lenders.
 LiquidityPosition storage liquidity = liquidityPositions[liquidityIds[i]];
-require(liquidity.active, "OVRFLOLENDING: liquidity inactive");
+require(liquidity.active, "OVRFLOLending: liquidity inactive");
 // msg.sender could be liquidity.lender, creating a loan where from == to
 // in _pullExact, which reverts on the balance-delta check.
 ```
@@ -335,8 +335,8 @@ require(liquidity.active, "OVRFLOLENDING: liquidity inactive");
 
 ```solidity
 LiquidityPosition storage liquidity = liquidityPositions[liquidityIds[i]];
-require(liquidity.active, "OVRFLOLENDING: liquidity inactive");
-require(liquidity.lender != borrower, "OVRFLOLENDING: self-match");
+require(liquidity.active, "OVRFLOLending: liquidity inactive");
+require(liquidity.lender != borrower, "OVRFLOLending: self-match");
 ```
 
 **Why:** If `borrower == lender`, `repayLoan`'s `_pullExact` does a
@@ -355,11 +355,11 @@ against each `liquidity.lender` in `_validateLiquidityPositions`).
 **How to detect violation:**
 
 ```bash
-rg -n "self-match" src/OVRFLOLENDING.sol
+rg -n "self-match" src/OVRFLOLending.sol
 # expected: match in createBorrowerLoanPool (_validateLiquidityPositions); createLenderPool removed
 ```
 
-**Documented in:** [`docs/solutions/security-issues/repayloan-equality-rounding-no-brick-OVRFLOLENDING-20260624.md`](../security-issues/repayloan-equality-rounding-no-brick-OVRFLOLENDING-20260624.md) — companion finding section.
+**Documented in:** [`docs/solutions/security-issues/repayloan-equality-rounding-no-brick-OVRFLOLending-20260624.md`](../security-issues/repayloan-equality-rounding-no-brick-OVRFLOLending-20260624.md) — companion finding section.
 
 ---
 
@@ -411,7 +411,7 @@ rg -A2 "function prepareOracle" src/OVRFLOFactory.sol | rg "MAX_TWAP"
 ### ❌ WRONG (state flags and NFT ownership pass while value misroutes silently)
 
 ```solidity
-// test/OVRFLOLENDING.t.sol — proves the liquidity was consumed and the stream moved,
+// test/OVRFLOLending.t.sol — proves the liquidity was consumed and the stream moved,
 // not that the underlying left the lending, the fee was paid, or the buyer
 // (who posted liquidity upfront) is back to zero.
 (,,, uint128 capacity,) = lending.liquidityState(liquidityId);
@@ -433,7 +433,7 @@ assertEq(underlying.balanceOf(BUYER), 0);
 assertEq(sablier.ownerOf(28), BUYER);
 ```
 
-**Why:** The highest-severity bug class in `OVRFLOLENDING` is a misrouted
+**Why:** The highest-severity bug class in `OVRFLOLending` is a misrouted
 payment: value sent to the wrong address, a fee skipped or double-charged,
 or funds stranded in the contract after teardown. State flags (`capacity ==
 0`, `active == false`, `loan.closed == true`) and NFT ownership
@@ -456,7 +456,7 @@ and `sablier.ownerOf` for the lender and borrower.
 # Find settlement tests that assert state/ownership but skip balanceOf
 # for treasury or the lending contract:
 rg -l "sellStreamToLiquidity|buyListing|createBorrowerLoanPool|claimLoanPoolShare|closeLoan|repayLoan" \
-  test/OVRFLOLENDING.t.sol | \
+  test/OVRFLOLending.t.sol | \
   xargs -I{} sh -c 'rg -L "balanceOf\(TREASURY\)|balanceOf\(address\(lending\)\)" "{}" && echo "REVIEW: {}"'
 ```
 
@@ -484,7 +484,7 @@ function liquidityState(uint256 liquidityId) external view returns (...) {
 ```solidity
 function liquidityState(uint256 liquidityId) external view returns (...) {
     LiquidityPosition storage liquidity = liquidityPositions[liquidityId];
-    require(liquidity.lender != address(0), "OVRFLOLENDING: unknown liquidity");
+    require(liquidity.lender != address(0), "OVRFLOLending: unknown liquidity");
     return (liquidity.lender, liquidity.market, liquidity.aprBps, liquidity.capacity, liquidity.active);
 }
 ```
@@ -499,7 +499,7 @@ entries (cancelled/filled) retain `lender`/`borrower` (only
 `capacity`/`active` are zeroed), so the sentinel succeeds for dead entries
 and fails only for non-existent ones.
 
-**Placement/Context:** Every view function in `OVRFLOLENDING` that resolves a
+**Placement/Context:** Every view function in `OVRFLOLending` that resolves a
 struct by ID: `liquidityState`, `saleListingState`, `loanState`. Also applies to any future view function
 added to the lending or vault that resolves by ID.
 
@@ -507,7 +507,7 @@ added to the lending or vault that resolves by ID.
 
 ```bash
 # Find view functions that return a struct from a mapping without a sentinel check:
-rg -A5 "function .*State\(.*\) external view" src/OVRFLOLENDING.sol | \
+rg -A5 "function .*State\(.*\) external view" src/OVRFLOLending.sol | \
   rg -L "require.*address\(0\)|unknown" && echo "REVIEW: missing existence check"
 ```
 
@@ -592,7 +592,7 @@ terms.
 
 **Documented in:** [`docs/solutions/architecture-patterns/ovrflo-claim-per-user-pt-transfer-not-protocol-redemption.md`](../architecture-patterns/ovrflo-claim-per-user-pt-transfer-not-protocol-redemption.md)
 
-### R-06: Claim-time fee on posters (lenders/lenders) in OVRFLOLENDING
+### R-06: Claim-time fee on posters (lenders/lenders) in OVRFLOLending
 
 **Finding:** A proposal to charge lenders a fee when their position is
 claimed/settled (i.e. when a lender calls `claimLoanPoolShare` to recover pool
@@ -649,8 +649,8 @@ pitch ("lenders keep every bps they post") is worth more than the revenue.
 // deployLending transfers ownership to the multisig
 b.transferOwnership(owner());
 
-// multisig calls OVRFLOLENDING.setAprBounds directly
-OVRFLOLENDING(lending).setAprBounds(500, 2000);
+// multisig calls OVRFLOLending.setAprBounds directly
+OVRFLOLending(lending).setAprBounds(500, 2000);
 // Now a factory ownership transfer does NOT move lending governance.
 // Lending markets stay owned by the old multisig address.
 ```
@@ -659,7 +659,7 @@ OVRFLOLENDING(lending).setAprBounds(500, 2000);
 
 ```solidity
 // deployLending — no transferOwnership call; factory is the lending's owner
-OVRFLOLENDING b = new OVRFLOLENDING(address(this), ovrflo, sablierAddr);
+OVRFLOLending b = new OVRFLOLending(address(this), ovrflo, sablierAddr);
 // factory remains owner
 
 // factory exposes forwarding functions
@@ -667,7 +667,7 @@ function setLendingAprBounds(address lending, uint16 aprMinBps_, uint16 aprMaxBp
     external onlyOwner
 {
     _requireKnownLending(lending);
-    OVRFLOLENDING(lending).setAprBounds(aprMinBps_, aprMaxBps_);
+    OVRFLOLending(lending).setAprBounds(aprMinBps_, aprMaxBps_);
     emit LendingAprBoundsSet(lending, aprMinBps_, aprMaxBps_);
 }
 ```
@@ -680,7 +680,7 @@ the old multisig address while the factory moves to the new one. This is an
 operational incident in a timelocked-multisig context, not a refactor.
 
 **Placement/Context:** `OVRFLOFactory.deployLending` (must not transfer
-ownership away from the factory) and every admin action on `OVRFLOLENDING`
+ownership away from the factory) and every admin action on `OVRFLOLending`
 (`setAprBounds`, `setFee`, `setTreasury` — must be forwarded through a
 factory function, not called directly on the lending).
 
@@ -769,7 +769,7 @@ rg "underlyingToOvrflo\[config.underlying\]" src/OVRFLOFactory.sol
 // createBorrowerLoanPool — no ordering check
 for (uint256 i = 0; i < liquidityIds.length; i++) {
     LiquidityPosition storage liquidity = liquidityPositions[liquidityIds[i]];
-    require(liquidity.active, "OVRFLOLENDING: liquidity inactive");
+    require(liquidity.active, "OVRFLOLending: liquidity inactive");
     totalAvailable += liquidity.capacity; // duplicate ID => counted twice
 }
 // Borrower receives more underlying than was actually consumed from any
@@ -780,9 +780,9 @@ for (uint256 i = 0; i < liquidityIds.length; i++) {
 
 ```solidity
 for (uint256 i = 0; i < liquidityIds.length; i++) {
-    if (i > 0) require(liquidityIds[i] > liquidityIds[i - 1], "OVRFLOLENDING: duplicate or unsorted ids");
+    if (i > 0) require(liquidityIds[i] > liquidityIds[i - 1], "OVRFLOLending: duplicate or unsorted ids");
     LiquidityPosition storage liquidity = liquidityPositions[liquidityIds[i]];
-    require(liquidity.active, "OVRFLOLENDING: liquidity inactive");
+    require(liquidity.active, "OVRFLOLending: liquidity inactive");
     totalAvailable += liquidity.capacity;
 }
 ```
@@ -802,7 +802,7 @@ future batch primitive.
 **How to detect violation:**
 
 ```bash
-rg "duplicate or unsorted ids" src/OVRFLOLENDING.sol
+rg "duplicate or unsorted ids" src/OVRFLOLending.sol
 # expected: 1 match (createBorrowerLoanPool only; createLenderPool removed)
 ```
 
@@ -924,9 +924,9 @@ claim channel for borrower loan pools.
 **How to detect violation:**
 
 ```bash
-rg "proRataShare" src/OVRFLOLENDING.sol
+rg "proRataShare" src/OVRFLOLending.sol
 # expected: 0 matches — old pro-rata cap removed
-rg "contribution.*recovered.*totalContributed" src/OVRFLOLENDING.sol
+rg "contribution.*recovered.*totalContributed" src/OVRFLOLending.sol
 # expected: 1 match in _claimFair
 ```
 
@@ -946,19 +946,19 @@ before paying the lender. This is the primary mechanism for claiming accrued
 stream value from open pool loans — not a defense-in-depth fallback. Without it,
 lenders could only claim after `closeLoan` or `repayLoan`, not from live accrual.
 
-**Placement/Context:** `_claimFair` in `src/OVRFLOLENDING.sol` — the harvest
+**Placement/Context:** `_claimFair` in `src/OVRFLOLending.sol` — the harvest
 branch that draws from the stream when `loanPoolProceeds < requestAmount`.
 
 **How to detect violation:**
 
 ```bash
-rg "loan.closed && loanPoolProceeds < requestAmount" src/OVRFLOLENDING.sol
+rg "loan.closed && loanPoolProceeds < requestAmount" src/OVRFLOLending.sol
 # expected: 0 matches (harvest guard uses !loan.closed, not loan.closed)
-rg "loanPoolProceeds\[poolId\] < requestAmount" src/OVRFLOLENDING.sol
+rg "loanPoolProceeds\[poolId\] < requestAmount" src/OVRFLOLending.sol
 # expected: 1 match in _claimFair harvest branch
 ```
 
-**Documented in:** OVRFLOLENDING pool claim fairness fix (2026-07-06), `_claimFair` harvest fix (2026-07-07)
+**Documented in:** OVRFLOLending pool claim fairness fix (2026-07-06), `_claimFair` harvest fix (2026-07-07)
 
 ---
 
@@ -972,17 +972,17 @@ require an explicit overflow check inside the function. The `uint128` parameter
 type moves the check to the ABI decoder, which is cheaper and catches invalid
 inputs earlier.
 
-**Placement/Context:** `createBorrowerLoanPool` in `src/OVRFLOLENDING.sol` — parameters
+**Placement/Context:** `createBorrowerLoanPool` in `src/OVRFLOLending.sol` — parameters
 `targetBorrow` and `minAcceptable`.
 
 **How to detect violation:**
 
 ```bash
-rg "function createBorrowerLoanPool" src/OVRFLOLENDING.sol
+rg "function createBorrowerLoanPool" src/OVRFLOLending.sol
 # expected: 1 match — verify targetBorrow and minAcceptable are uint128, not uint256
 ```
 
-**Documented in:** OVRFLOLENDING cleanup refactor (2026-07-07), pool claim fairness brainstorm
+**Documented in:** OVRFLOLending cleanup refactor (2026-07-07), pool claim fairness brainstorm
 
 ---
 
@@ -997,19 +997,19 @@ converts back to `uint128` after math completes, reverting on overflow. This
 pattern is inherent to the design — storage size and math safety have
 different optimal types.
 
-**Placement/Context:** `src/OVRFLOLENDING.sol` — storage structs, intermediate
+**Placement/Context:** `src/OVRFLOLending.sol` — storage structs, intermediate
 math, and `_toUint128`.
 
 **How to detect violation:**
 
 ```bash
-rg "_toUint128" src/OVRFLOLENDING.sol
+rg "_toUint128" src/OVRFLOLending.sol
 # expected: matches at every uint256 -> uint128 narrowing gate
-rg "uint128\(uint256" src/OVRFLOLENDING.sol
+rg "uint128\(uint256" src/OVRFLOLending.sol
 # expected: 0 matches — raw casts should use _toUint128 instead
 ```
 
-**Documented in:** [`docs/solutions/best-practices/avoid-unnecessary-type-widening-with-invariant-guarantees.md`](../best-practices/avoid-unnecessary-type-widening-with-invariant-guarantees.md), OVRFLOLENDING cleanup refactor (2026-07-07)
+**Documented in:** [`docs/solutions/best-practices/avoid-unnecessary-type-widening-with-invariant-guarantees.md`](../best-practices/avoid-unnecessary-type-widening-with-invariant-guarantees.md), OVRFLOLending cleanup refactor (2026-07-07)
 
 ---
 
@@ -1023,15 +1023,15 @@ the excess liquidityPositions are left untouched and available for future consum
 This is intentional — it allows borrowers to include backup liquidityPositions without
 committing to all of them.
 
-**Placement/Context:** `_consumeLiquidityPositions` in `src/OVRFLOLENDING.sol`.
+**Placement/Context:** `_consumeLiquidityPositions` in `src/OVRFLOLending.sol`.
 
 **How to detect violation:**
 
 ```bash
-rg "toBorrow == 0" src/OVRFLOLENDING.sol
+rg "toBorrow == 0" src/OVRFLOLending.sol
 # expected: 1 match in _consumeLiquidityPositions loop break condition
 ```
 
-**Documented in:** [`docs/solutions/design-patterns/solidity-batch-function-safety-patterns.md`](../design-patterns/solidity-batch-function-safety-patterns.md), OVRFLOLENDING cleanup refactor (2026-07-07)
+**Documented in:** [`docs/solutions/design-patterns/solidity-batch-function-safety-patterns.md`](../design-patterns/solidity-batch-function-safety-patterns.md), OVRFLOLending cleanup refactor (2026-07-07)
 
 ---

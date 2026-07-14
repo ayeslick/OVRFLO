@@ -2,7 +2,7 @@
 title: Avoid unnecessary uint256 type widening when invariants guarantee uint128 safety
 date: 2026-06-30
 category: docs/solutions/best-practices/
-module: OVRFLOLENDING
+module: OVRFLOLending
 problem_type: best_practice
 component: tooling
 severity: low
@@ -19,7 +19,7 @@ tags: [solidity, type-safety, code-simplification, dead-code, uint128, checked-a
 
 ## Context
 
-While simplifying `OVRFLOLENDING`, the `_outstanding` helper carried defensive `uint256` widening and a now-redundant `_satisfied` helper. The original shape widened two `uint128` operands into `uint256`, subtracted, and then cast the result back down to `uint128`. That cast tripped a forge-lint `unsafe-typecast` warning even though the math can never overflow its native type. The widening was a holdover from a more cautious draft; it obscured intent and produced a lint warning with no safety payoff. Removing it made the function read as the invariant it already encodes, and the dead `_satisfied` helper (only ever called by `_outstanding`) collapsed along with it.
+While simplifying `OVRFLOLending`, the `_outstanding` helper carried defensive `uint256` widening and a now-redundant `_satisfied` helper. The original shape widened two `uint128` operands into `uint256`, subtracted, and then cast the result back down to `uint128`. That cast tripped a forge-lint `unsafe-typecast` warning even though the math can never overflow its native type. The widening was a holdover from a more cautious draft; it obscured intent and produced a lint warning with no safety payoff. Removing it made the function read as the invariant it already encodes, and the dead `_satisfied` helper (only ever called by `_outstanding`) collapsed along with it.
 
 ## Guidance
 

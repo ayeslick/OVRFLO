@@ -9,7 +9,7 @@ severity: medium
 symptoms:
   - "All 147/147 Medusa fuzz passes were largely vacuous for lending paths"
   - "Stream-custody transitions (createBorrowerLoanPool, closeLoan via sablier.transferFrom) reverted silently in the harness"
-  - "LCOV coverage of OVRFLOLENDING.sol stuck at 66.3% (203/306 lines)"
+  - "LCOV coverage of OVRFLOLending.sol stuck at 66.3% (203/306 lines)"
 root_cause: incomplete_setup
 resolution_type: test_fix
 tags: [fuzz, medusa, fizz, sablier, nft-approval, setapprovalforall, coverage, reachability, vacuous-passes]
@@ -24,7 +24,7 @@ The Fizz fuzz harness's `Base.setupActors()` function granted ERC20 approvals fo
 ## Symptoms
 
 - 147/147 Medusa tests passed, 0 failed — appeared healthy
-- LCOV coverage for OVRFLOLENDING.sol was only 66.3% (203/306 lines)
+- LCOV coverage for OVRFLOLending.sol was only 66.3% (203/306 lines)
 - Lending-specific handlers (createBorrowerLoanPool, closeLoan, claimLoanPoolShare) had near-zero successful invocations
 - No property violations were triggered because the code paths that would violate them were never reached
 

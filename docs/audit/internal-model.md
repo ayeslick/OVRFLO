@@ -33,7 +33,7 @@ One `ovrfloToken` per underlying across approved maturities is an intentional pr
 
 ## Part 2 — Self-repaying-loan economics
 
-OVRFLOLENDING loans are **not** standard collateralized debt. They depart from auditor priors in three ways that pre-empt a whole class of false-positive findings:
+OVRFLOLending loans are **not** standard collateralized debt. They depart from auditor priors in three ways that pre-empt a whole class of false-positive findings:
 
 1. **No health check.** There is no loan-to-value ratio, no health factor, no liquidation threshold.
 2. **No loan-time oracle.** Loan origination and servicing use `StreamPricing` time/factor math against the series maturity, not a live price feed.

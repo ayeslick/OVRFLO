@@ -8,7 +8,7 @@ import {MockERC20} from "./utils/MockERC20.sol";
 import {StringUtils} from "./utils/StringUtils.sol";
 import {OVRFLO} from "../../src/OVRFLO.sol";
 import {OVRFLOToken} from "../../src/OVRFLOToken.sol";
-import {OVRFLOLENDING} from "../../src/OVRFLOLENDING.sol";
+import {OVRFLOLending} from "../../src/OVRFLOLending.sol";
 import {OVRFLOFactory} from "../../src/OVRFLOFactory.sol";
 import {MockSablier} from "./mocks/MockSablier.sol";
 import {MockPendleOracle} from "./mocks/MockPendleOracle.sol";
@@ -117,7 +117,7 @@ abstract contract Base is StringUtils, Clamp {
     OVRFLOFactory public factory;
     OVRFLO public vault;
     OVRFLOToken public ovrfloToken;
-    OVRFLOLENDING public lending;
+    OVRFLOLending public lending;
     MockERC20 public underlying;
     MockERC20 public ptToken;
     MockPendleOracle public mockOracle;
@@ -169,8 +169,8 @@ abstract contract Base is StringUtils, Clamp {
 
         // 7. Deploy lending
         address lendingAddr = factory.deployLending(vaultAddr);
-        lending = OVRFLOLENDING(lendingAddr);
-        vm.label(lendingAddr, "OVRFLOLENDING");
+        lending = OVRFLOLending(lendingAddr);
+        vm.label(lendingAddr, "OVRFLOLending");
 
         // 8. Configure limits and bounds
         factory.setMarketDepositLimit(vaultAddr, market, type(uint256).max);

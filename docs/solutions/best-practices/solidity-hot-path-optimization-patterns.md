@@ -2,7 +2,7 @@
 title: Solidity hot-path optimization - cache external calls, extract pricing helpers, remove dead state
 date: 2026-07-13
 category: docs/solutions/best-practices/
-module: src/ (OVRFLO, OVRFLOLENDING, OVRFLOFactory, StreamPricing)
+module: src/ (OVRFLO, OVRFLOLending, OVRFLOFactory, StreamPricing)
 problem_type: best_practice
 component: service_object
 severity: medium
@@ -19,7 +19,7 @@ tags: [gas-optimization, caching, external-calls, sload, helper-extraction, dead
 
 ## Context
 
-Two refactoring passes on `src/*` (OVRFLO, OVRFLOLENDING, OVRFLOFactory, StreamPricing) identified and fixed 10 issues across code reuse, code quality, and efficiency. The project is a Foundry-based Solidity DeFi protocol using OpenZeppelin and PRB-Math. The passes used parallel code-reuse, code-quality, and efficiency reviewers to systematically find opportunities.
+Two refactoring passes on `src/*` (OVRFLO, OVRFLOLending, OVRFLOFactory, StreamPricing) identified and fixed 10 issues across code reuse, code quality, and efficiency. The project is a Foundry-based Solidity DeFi protocol using OpenZeppelin and PRB-Math. The passes used parallel code-reuse, code-quality, and efficiency reviewers to systematically find opportunities.
 
 ## Guidance
 
@@ -63,7 +63,7 @@ loanPoolProceeds[loanPoolId] = proceeds - payAmount; // single write-back
 
 Three patterns were extracted:
 - `_approvedRate(market)` — the 4-line series-load + approved-check + oracle-fresh + rate-fetch pattern appeared 3x in OVRFLO preview functions
-- `_priceStream(market, streamId, aprBps)` — the 3-step eligibility + grossPrice + zero-check pattern appeared 4x in OVRFLOLENDING fill/quote functions. Returns `(Eligibility, grossPrice, timeToMaturity)` so callers that need timeToMaturity for obligation calculation don't need a separate call
+- `_priceStream(market, streamId, aprBps)` — the 3-step eligibility + grossPrice + zero-check pattern appeared 4x in OVRFLOLending fill/quote functions. Returns `(Eligibility, grossPrice, timeToMaturity)` so callers that need timeToMaturity for obligation calculation don't need a separate call
 - `_validateTwapBounds(twapDuration)` — TWAP duration bounds check appeared 2x in OVRFLOFactory with reversed check ordering (minor inconsistency). Extracting fixed the inconsistency
 
 **4. Remove dead struct fields**
@@ -72,7 +72,7 @@ Three patterns were extracted:
 
 **5. Use audited OZ primitives**
 
-`_toUint128` hand-rolled `require(amount <= type(uint128).max, "OVRFLOLENDING: uint128 overflow")` then `uint128(amount)`. Replaced body with `SafeCast.toUint128(amount)` — behavior-identical, audited. The wrapper function was kept to preserve the internal API and test harness; only the body changed. Test updated to expect SafeCast's revert string.
+`_toUint128` hand-rolled `require(amount <= type(uint128).max, "OVRFLOLending: uint128 overflow")` then `uint128(amount)`. Replaced body with `SafeCast.toUint128(amount)` — behavior-identical, audited. The wrapper function was kept to preserve the internal API and test harness; only the body changed. Test updated to expect SafeCast's revert string.
 
 **6. Use storage pointers over memory copies for partial reads**
 
@@ -124,7 +124,7 @@ if (!loan.closed) {
 StreamPricing.Eligibility memory eligibility = _requireEligible(market, streamId);
 uint256 timeToMaturity = _timeToMaturity(eligibility.seriesMaturity);
 uint256 grossPrice = StreamPricing.grossPrice(eligibility.remaining, aprBps, timeToMaturity);
-require(grossPrice > 0, "OVRFLOLENDING: price zero");
+require(grossPrice > 0, "OVRFLOLending: price zero");
 ```
 
 **After (extracted helper):**

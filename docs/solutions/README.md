@@ -100,7 +100,7 @@ enums have been widened to reflect our stack; everything else matches the upstre
   AMM, Pendle's pool disabled post-expiry, no cross-series swaps), and only costs
   the attacker gas. Lists the trust assumptions and the conditions that would
   reopen it.
-- [security-issues/repayloan-equality-rounding-no-brick-OVRFLOLENDING-20260624.md](security-issues/repayloan-equality-rounding-no-brick-OVRFLOLENDING-20260624.md) —
+- [security-issues/repayloan-equality-rounding-no-brick-OVRFLOLending-20260624.md](security-issues/repayloan-equality-rounding-no-brick-OVRFLOLending-20260624.md) —
   Audit note. Concern that `bool closes = amount == outstanding;` in
   `OVRFLOLending.repayLoan` could brick loan closure via a rounding off-by-one.
   Dismissed: `outstanding` is always an exact integer wei

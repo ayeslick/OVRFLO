@@ -6,8 +6,8 @@ import {Properties} from "../Properties.sol";
 import {MockSablier} from "../mocks/MockSablier.sol";
 import {ISablierV2LockupLinear} from "../../../interfaces/ISablierV2LockupLinear.sol";
 
-/// @notice Handles the interaction with OVRFLOLENDING
-abstract contract OVRFLOLENDINGHandler is Properties {
+/// @notice Handles the interaction with OVRFLOLending
+abstract contract OVRFLOLendingHandler is Properties {
     uint16 constant APR_STEP = 100;
 
     // ――――――――――――――――――――― Stream picker ―――――――――――――――――――――

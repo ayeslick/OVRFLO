@@ -2,7 +2,7 @@
 
 > Dependency assumptions OVRFLO relies on from Sablier V2 Lockup Linear, scoped to the calls OVRFLO actually makes. This is a contract to falsify, not a Sablier tutorial. Pinned to the deployed address `0xAFb979d9afAd1aD27C5eFf4E27226E3AB9e5dCC9` (tag `v1.1`). The v1.1 version distinction is load-bearing — see the ACL table below.
 
-OVRFLO uses Sablier only for linear vesting streams created on PT deposit and then traded/pledged through `OVRFLOLENDING`. It never cancels a stream programmatically and relies on non-cancelability for the self-repaying-loan design.
+OVRFLO uses Sablier only for linear vesting streams created on PT deposit and then traded/pledged through `OVRFLOLending`. It never cancels a stream programmatically and relies on non-cancelability for the self-repaying-loan design.
 
 ## Assumption rows
 
@@ -16,23 +16,23 @@ OVRFLO uses Sablier only for linear vesting streams created on PT deposit and th
 ### S2. `withdrawableAmountOf` is monotonic and reflects accrued value
 
 - **Assumed property:** `withdrawableAmountOf(streamId)` increases monotonically with time and drops only by the amount withdrawn on a successful `withdraw`.
-- **Enforced?** **External (trusted).** OVRFLO depends on Sablier v1.1 behavior it cannot enforce locally. `OVRFLOLENDING.closeLoan()` uses `withdrawableAmountOf()` to gate closability (guard **G-23**).
+- **Enforced?** **External (trusted).** OVRFLO depends on Sablier v1.1 behavior it cannot enforce locally. `OVRFLOLending.closeLoan()` uses `withdrawableAmountOf()` to gate closability (guard **G-23**).
 - **If violated:** Closability and lender draw paths deviate from local lendingkeeping. See `x-ray/invariants.md` and the trust-assumption ledger.
-- **OVRFLO call site:** `OVRFLOLENDING.closeLoan()`, `OVRFLOLENDING.claimLoanPoolShare()` (via _claimFair harvest).
+- **OVRFLO call site:** `OVRFLOLending.closeLoan()`, `OVRFLOLending.claimLoanPoolShare()` (via _claimFair harvest).
 
 ### S3. `transferFrom` moves the stream NFT and changes recipient/ownership
 
 - **Assumed property:** `sablier.transferFrom(from, to, streamId)` moves the NFT so that `to` becomes the recipient/owner for withdraw-ACL purposes.
 - **Enforced?** **External (trusted).** OVRFLO relies on standard ERC-721 `transferFrom` semantics; the lending takes custody via `transferFrom` and later returns the stream via `transferFrom` on loan close.
 - **If violated:** NFT ownership/recipient tracking diverges from the lending's loan state. Standard ERC-721 behavior; residual risk is a non-standard Sablier override.
-- **OVRFLO call site:** `OVRFLOLENDING` (escrow on list/borrow), `OVRFLOLENDING.closeLoan()` (return to borrower).
+- **OVRFLO call site:** `OVRFLOLending` (escrow on list/borrow), `OVRFLOLending.closeLoan()` (return to borrower).
 
 ### S4. `withdraw` ACL — sender / NFT owner / approved operator only (v1.1)
 
 - **Assumed property:** `SablierV2Lockup.withdraw(streamId, to, amount)` reverts `SablierV2Lockup_Unauthorized` unless `msg.sender` is the stream **sender**, the **NFT owner (recipient)**, or an **ERC-721 approved operator**. There is **no permissionless public withdraw** in v1.1.
 - **Enforced?** **External (trusted).** This is the exact distinction that flipped audit finding **H-2** from High to Rejected — see the ACL table and `rejected-findings-record.md`.
 - **If violated:** A permissionless withdraw path would let a third party drain an escrowed stream. Verified not to exist in v1.1 bytecode at the pinned address.
-- **OVRFLO call site:** `OVRFLOLENDING.claimLoanPoolShare()` (via _claimFair harvest) / `closeLoan()` (lending, as NFT owner, withdraws to lender or `loanPoolProceeds`).
+- **OVRFLO call site:** `OVRFLOLending.claimLoanPoolShare()` (via _claimFair harvest) / `closeLoan()` (lending, as NFT owner, withdraws to lender or `loanPoolProceeds`).
 
 ## Verified v1.1 withdraw-ACL table
 
@@ -55,7 +55,7 @@ The loan close path hinges on who is the Sablier NFT owner at each stage:
 | Stage | NFT owner / recipient | Who can withdraw |
 |-------|----------------------|------------------|
 | After deposit, user holds | user | user (to any `to`); vault-as-sender only to `to == user` |
-| Stream listed / pledged as loan collateral | `OVRFLOLENDING` (took custody via `transferFrom`) | lending (to any `to`, e.g. lender) |
+| Stream listed / pledged as loan collateral | `OVRFLOLending` (took custody via `transferFrom`) | lending (to any `to`, e.g. lender) |
 | Loan closed (withdrawable ≥ outstanding) | returned to borrower via `transferFrom` | borrower |
 
 Pricing at fill uses `deposited − withdrawn` (already-withdrawn value is excluded), documented in the lending plan and the internal-model explainer.

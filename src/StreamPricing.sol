@@ -53,7 +53,7 @@ interface IOVRFLOSeriesRegistry {
 }
 
 /// @title StreamPricing
-/// @notice Pure/shared pricing and eligibility primitives for the OVRFLOLENDING secondary market.
+/// @notice Pure/shared pricing and eligibility primitives for the OVRFLOLending secondary market.
 /// @dev All discounting uses a linear APR factor `f = 1 + apr * ttm / (YEAR * BPS)` in WAD.
 ///      Rounding is directional and load-bearing:
 ///        - `grossPrice` floors (buyer pays the lower discounted value; seller-favorable
@@ -61,7 +61,7 @@ interface IOVRFLOSeriesRegistry {
 ///        - `obligation` ceils (lender is owed the rounded-up accrued amount).
 ///      This keeps `obligation <= remaining` in the partial-borrow path so the pledged
 ///      stream can always cover the debt; see
-///      `docs/solutions/security-issues/repayloan-equality-rounding-no-brick-OVRFLOLENDING-20260624.md`.
+///      `docs/solutions/security-issues/repayloan-equality-rounding-no-brick-OVRFLOLending-20260624.md`.
 ///      Do not flip either rounding direction without re-checking that analysis.
 library StreamPricing {
     /// @notice WAD scale (1e18) used for fixed-point math.

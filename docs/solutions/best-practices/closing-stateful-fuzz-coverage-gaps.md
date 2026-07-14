@@ -354,7 +354,7 @@ MockSablier ACL was tightened further:
    `getWithdrawnAmount` at close time. See
    [`stream-reuse-after-loan-close-property-fix.md`](../logic-errors/stream-reuse-after-loan-close-property-fix.md).
 
-Final Medusa campaign: 147 passed, 0 failed, OVRFLOLENDING.sol 91.8% coverage.
+Final Medusa campaign: 147 passed, 0 failed, OVRFLOLending.sol 91.8% coverage.
 
 ## Related
 

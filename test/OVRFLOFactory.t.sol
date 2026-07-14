@@ -6,7 +6,7 @@ import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {OVRFLO} from "../src/OVRFLO.sol";
 import {OVRFLOFactory} from "../src/OVRFLOFactory.sol";
 import {OVRFLOToken} from "../src/OVRFLOToken.sol";
-import {OVRFLOLENDING} from "../src/OVRFLOLENDING.sol";
+import {OVRFLOLending} from "../src/OVRFLOLending.sol";
 import {IPPrincipalToken} from "../interfaces/IPPrincipalToken.sol";
 import {IPendleMarket} from "../interfaces/IPendleMarket.sol";
 
@@ -660,7 +660,7 @@ contract OVRFLOFactoryTest is Test {
         assertEq(factory.lendingCount(), 1);
         assertEq(factory.lendings(0), lending);
 
-        OVRFLOLENDING b = OVRFLOLENDING(lending);
+        OVRFLOLending b = OVRFLOLending(lending);
         assertEq(address(b.factory()), address(factory));
         assertEq(address(b.core()), address(ovrflo));
         assertEq(address(b.sablier()), address(OVRFLO(address(ovrflo)).sablierLL()));
@@ -688,8 +688,8 @@ contract OVRFLOFactoryTest is Test {
     function test_DirectLendingConstruction_RemainsUnregisteredAndDirectlyOwned() public {
         (OVRFLO ovrflo,) = _deployConfiguredSystem();
 
-        OVRFLOLENDING lending =
-            new OVRFLOLENDING(address(factory), address(ovrflo), address(OVRFLO(address(ovrflo)).sablierLL()));
+        OVRFLOLending lending =
+            new OVRFLOLending(address(factory), address(ovrflo), address(OVRFLO(address(ovrflo)).sablierLL()));
 
         assertEq(lending.owner(), address(this));
         assertEq(factory.ovrfloToLending(address(ovrflo)), address(0));
@@ -778,7 +778,7 @@ contract OVRFLOFactoryTest is Test {
 
         vm.prank(OWNER);
         address lending = factory.deployLending(address(ovrflo));
-        OVRFLOLENDING b = OVRFLOLENDING(lending);
+        OVRFLOLending b = OVRFLOLending(lending);
 
         // setAprBounds — lending event fires first (inside the call), then factory event
         vm.expectEmit(address(lending));
@@ -820,7 +820,7 @@ contract OVRFLOFactoryTest is Test {
 
         vm.prank(OWNER);
         address lending = factory.deployLending(address(ovrflo));
-        OVRFLOLENDING b = OVRFLOLENDING(lending);
+        OVRFLOLending b = OVRFLOLending(lending);
 
         // The multisig (OWNER) is NOT the lending's owner — factory is
         vm.prank(OWNER);
