@@ -1,12 +1,18 @@
 ---
 kind: required_reading
 scope: ovrflo
-last_updated: 2026-07-05
+last_updated: 2026-07-14
 audience: [lenders, ai-agents]
 ---
 
 <!--
   Refresh log:
+  - 2026-07-14: Added fuzz enforcement note to pattern #8 (view function coverage
+    via properties and handlers). Updated pattern #7 fuzz enforcement note with
+    SP-100 (borrow disbursement conservation, treasury-as-actor false positive)
+    and second GL-57 false positive (ghost start-value after setup mint). Fixed
+    pattern #8 code examples: `capacity` -> `availableLiquidity` after rebrand.
+    91.8% -> 98.7% coverage campaign (151/151 Medusa, 362/362 Forge).
   - 2026-07-05: Added fuzz enforcement references to patterns #5, #7, #11,
     #13 after the fizz gap closure campaign (GL-57, GL-61, GL-62, SP-62, SP-77).
   - 2026-07-05: Fixed pattern #7 code examples — `saleLiquidityPositions` → `liquidityState`
@@ -462,7 +468,7 @@ rg -l "sellStreamToLiquidity|buyListing|createBorrowerLoanPool|claimLoanPoolShar
 
 **Documented in:** [`docs/solutions/best-practices/verify-token-balance-movement-not-just-ownership.md`](../best-practices/verify-token-balance-movement-not-just-ownership.md)
 
-**Fuzz enforcement:** `property_no_free_profit` (GL-57) in `test/fizz/Properties.sol` extends this discipline to the stateful fuzz suite by checking that total actor value (underlying + PT + ovrfloToken across all actors) never exceeds the total start value, catching misrouted payments across the full actor set.
+**Fuzz enforcement:** `property_no_free_profit` (GL-57) in `test/fizz/Properties.sol` extends this discipline to the stateful fuzz suite by checking that total actor value (underlying + PT + ovrfloToken across all actors) never exceeds the total start value, catching misrouted payments across the full actor set. GL-57 fired a second false positive during the 91.8% to 98.7% coverage campaign when a scenario handler minted tokens via `underlying.deal()` without updating `ghost_actorStartValue` — fix: mirror any test-only mint in the ghost tracker. SP-100 (borrow disbursement conservation) also extends this discipline, verifying the borrower's underlying increase equals `actualBorrow - fee`; it required gating on `lending.treasury() != actor` when an admin handler can set the treasury to an actor address.
 
 ---
 
@@ -475,7 +481,7 @@ function liquidityState(uint256 liquidityId) external view returns (...) {
     LiquidityPosition storage liquidity = liquidityPositions[liquidityId];
     // no existence check — returns (address(0), address(0), 0, 0, false)
     // for an ID that was never created
-    return (liquidity.lender, liquidity.market, liquidity.aprBps, liquidity.capacity, liquidity.active);
+    return (liquidity.lender, liquidity.market, liquidity.aprBps, liquidity.availableLiquidity, liquidity.active);
 }
 ```
 
@@ -485,7 +491,7 @@ function liquidityState(uint256 liquidityId) external view returns (...) {
 function liquidityState(uint256 liquidityId) external view returns (...) {
     LiquidityPosition storage liquidity = liquidityPositions[liquidityId];
     require(liquidity.lender != address(0), "OVRFLOLending: unknown liquidity");
-    return (liquidity.lender, liquidity.market, liquidity.aprBps, liquidity.capacity, liquidity.active);
+    return (liquidity.lender, liquidity.market, liquidity.aprBps, liquidity.availableLiquidity, liquidity.active);
 }
 ```
 
@@ -496,7 +502,7 @@ struct). Reverting makes the distinction explicit. The sentinel is the
 `lender`/`borrower` field, which is `address(0)` in a
 default-initialized struct and always non-zero for a real entry. Torn-down
 entries (cancelled/filled) retain `lender`/`borrower` (only
-`capacity`/`active` are zeroed), so the sentinel succeeds for dead entries
+`availableLiquidity`/`active` are zeroed), so the sentinel succeeds for dead entries
 and fails only for non-existent ones.
 
 **Placement/Context:** Every view function in `OVRFLOLending` that resolves a
@@ -512,6 +518,8 @@ rg -A5 "function .*State\(.*\) external view" src/OVRFLOLending.sol | \
 ```
 
 **Documented in:** [`docs/solutions/architecture-patterns/view-functions-revert-on-nonexistent-ids.md`](../architecture-patterns/view-functions-revert-on-nonexistent-ids.md)
+
+**Fuzz enforcement:** `property_loanState_view`, `property_liquidityState_view`, and `property_saleListingState_view` in `test/fizz/Properties.sol` call the view functions and assert structural invariants (closed loans have zero outstanding, inactive positions have zero capacity). The handler functions also call the views immediately after creating the corresponding state (`supplyLiquidity` calls `liquidityState`, `createBorrowerLoanPool` calls `loanState`, `postSaleListing` calls `saleListingState`), guaranteeing coverage on every state-creating path.
 
 ---
 
@@ -932,7 +940,7 @@ rg "contribution.*recovered.*totalContributed" src/OVRFLOLending.sol
 
 **Documented in:** [`docs/solutions/architecture-patterns/cumulative-recovered-pro-rata-pool-claims.md`](../architecture-patterns/cumulative-recovered-pro-rata-pool-claims.md)
 
-**Last updated:** 2026-07-13
+**Last updated:** 2026-07-14
 
 ---
 

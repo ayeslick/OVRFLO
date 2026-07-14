@@ -70,5 +70,5 @@ Sablier V2 streams are ERC-721 NFTs. Transferring custody (escrowing a stream as
 
 ## Related Issues
 
-- [Closing stateful fuzz coverage gaps](../best-practices/closing-stateful-fuzz-coverage-gaps.md) - Direct predecessor documenting the same campaign; this is the 13th gap in that series
+- [Closing stateful fuzz coverage gaps](../best-practices/closing-stateful-fuzz-coverage-gaps.md) - Direct predecessor documenting the same campaign; this is the 13th gap in that series. A subsequent phase pushed coverage from 91.8% to 98.7% — see the "Second continuation (2026-07-14)" section in that doc.
 - [OVRFLO critical patterns](../patterns/ovrflo-critical-patterns.md) - Pattern #1 addresses Sablier NFT ownership/transfer semantics
