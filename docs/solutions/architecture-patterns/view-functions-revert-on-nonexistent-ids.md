@@ -97,7 +97,7 @@ is queryable, a non-existent offer's state is an error.
   — companion doc on which struct fields to zero on teardown; the sentinel
   check depends on `maker`/`lender`/`borrower` surviving teardown.
 - [patterns/ovrflo-critical-patterns.md](../patterns/ovrflo-critical-patterns.md)
-  — pattern #8 distills this rule as an enforceable check.
+  — pattern #7 distills this rule as an enforceable check.
 - `docs/audit/rejected-findings-record.md` — "Review fixes applied" section
   documents the alignment of the offer and sale listing view functions with
   `loanState`.

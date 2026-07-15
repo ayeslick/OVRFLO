@@ -943,7 +943,7 @@ contract OVRFLOLendingTest is Test {
         _supplyLiquidityAtApr(BUYER, 50 ether, 500);
         _supplyLiquidityAtApr(SELLER, 60 ether, 500);
 
-        (uint256[] memory ids, bool sufficient) = lending.gatherLiquidity(address(0), MARKET, 500, 100 ether, 1);
+        (uint256[] memory ids, bool sufficient) = lending.gatherLiquidity(MARKET, 500, 100 ether, 1, address(0));
         assertTrue(sufficient);
         assertEq(ids.length, 2);
         assertEq(ids[0], 1);
@@ -955,7 +955,7 @@ contract OVRFLOLendingTest is Test {
         _supplyLiquidityAtApr(BUYER, 50 ether, 500);
         _supplyLiquidityAtApr(SELLER, 30 ether, 500);
 
-        (uint256[] memory ids, bool sufficient) = lending.gatherLiquidity(address(0), MARKET, 500, 100 ether, 1);
+        (uint256[] memory ids, bool sufficient) = lending.gatherLiquidity(MARKET, 500, 100 ether, 1, address(0));
         assertFalse(sufficient);
         assertEq(ids.length, 2);
     }
@@ -963,7 +963,7 @@ contract OVRFLOLendingTest is Test {
     function test_GatherLiquidity_NoMatchingLiquiditys() public {
         _supplyLiquidity(BUYER, 100 ether);
 
-        (uint256[] memory ids, bool sufficient) = lending.gatherLiquidity(address(0), MARKET, 500, 100 ether, 1);
+        (uint256[] memory ids, bool sufficient) = lending.gatherLiquidity(MARKET, 500, 100 ether, 1, address(0));
         assertFalse(sufficient);
         assertEq(ids.length, 0);
     }
@@ -976,7 +976,7 @@ contract OVRFLOLendingTest is Test {
         vm.prank(BUYER);
         lending.withdrawLiquidity(1);
 
-        (uint256[] memory ids, bool sufficient) = lending.gatherLiquidity(address(0), MARKET, 1000, 100 ether, 1);
+        (uint256[] memory ids, bool sufficient) = lending.gatherLiquidity(MARKET, 1000, 100 ether, 1, address(0));
         assertFalse(sufficient);
         assertEq(ids.length, 1);
         assertEq(ids[0], 2);
@@ -987,7 +987,7 @@ contract OVRFLOLendingTest is Test {
         _supplyLiquidityAtApr(BUYER, 50 ether, 500);
         _supplyLiquidityAtApr(SELLER, 60 ether, 1000);
 
-        (uint256[] memory ids, bool sufficient) = lending.gatherLiquidity(address(0), MARKET, 500, 100 ether, 1);
+        (uint256[] memory ids, bool sufficient) = lending.gatherLiquidity(MARKET, 500, 100 ether, 1, address(0));
         assertFalse(sufficient);
         assertEq(ids.length, 1);
         assertEq(ids[0], 1);
@@ -996,7 +996,7 @@ contract OVRFLOLendingTest is Test {
     function test_GatherLiquidity_StartIdBeyondRange() public {
         _supplyLiquidity(BUYER, 100 ether);
 
-        (uint256[] memory ids, bool sufficient) = lending.gatherLiquidity(address(0), MARKET, 1000, 100 ether, 99);
+        (uint256[] memory ids, bool sufficient) = lending.gatherLiquidity(MARKET, 1000, 100 ether, 99, address(0));
         assertFalse(sufficient);
         assertEq(ids.length, 0);
     }
@@ -1005,7 +1005,7 @@ contract OVRFLOLendingTest is Test {
         _supplyLiquidity(BUYER, 100 ether);
         vm.warp(expiry);
         vm.expectRevert();
-        lending.gatherLiquidity(address(0), MARKET, 1000, 100 ether, 1);
+        lending.gatherLiquidity(MARKET, 1000, 100 ether, 1, address(0));
     }
 
     function test_GatherLiquidity_ExcludesCallerOwnPositions() public {
@@ -1013,7 +1013,7 @@ contract OVRFLOLendingTest is Test {
         _supplyLiquidity(SELLER, 60 ether);
 
         // Pass BUYER as borrower — their own position (id 1) must be excluded
-        (uint256[] memory ids, bool sufficient) = lending.gatherLiquidity(BUYER, MARKET, 1000, 100 ether, 1);
+        (uint256[] memory ids, bool sufficient) = lending.gatherLiquidity(MARKET, 1000, 100 ether, 1, BUYER);
         assertEq(ids.length, 1, "caller's own position should be excluded");
         assertEq(ids[0], 2, "only non-caller position should be returned");
         assertFalse(sufficient, "60 ether < 100 ether target");

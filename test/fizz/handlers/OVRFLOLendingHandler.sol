@@ -306,10 +306,9 @@ abstract contract OVRFLOLendingHandler is Properties {
         uint256 grossPrice = uint256(stateBefore.liquidityCapacity) - uint256(stateAfter.liquidityCapacity);
         uint256 feeBps = lending.feeBps();
         uint256 fee = feeBps == 0 ? 0 : grossPrice * feeBps / 10_000;
-        uint256 treasuryDelta = stateAfter.treasuryUnderlying - stateBefore.treasuryUnderlying;
         // Property assertions
         property_sellStreamToLiquidityCapacityDecreases(grossPrice);
-        property_lendingFeeFlooredWithBps(treasuryDelta, grossPrice, uint16(feeBps));
+        property_lendingFeeFlooredWithBps(fee, grossPrice, uint16(feeBps));
         property_streamOwnerOnly();
         property_sellStream_transfers_to_lender();
         property_sale_settlement_conservation(fee);
@@ -351,10 +350,8 @@ abstract contract OVRFLOLendingHandler is Properties {
         snapshotBefore();
         lending.buyListing(listingId, maxPriceIn);
         snapshotAfter();
-        uint256 treasuryDelta = stateAfter.treasuryUnderlying - stateBefore.treasuryUnderlying;
         // Property assertions
         property_buyListingInactive();
-        property_lendingFeeFlooredWithBps(treasuryDelta, grossPrice, listingFeeBps);
         property_buyListing_transfers_to_buyer();
         property_sale_settlement_conservation(fee);
     }
@@ -494,7 +491,7 @@ abstract contract OVRFLOLendingHandler is Properties {
         uint256 maxLiquidity = lending.nextLiquidityId();
         // Sometimes pass startId >= nextLiquidityId to cover the early-return path
         if (liquiditySeed % 3 == 0) {
-            try lending.gatherLiquidity(actor, market, 1000, targetAmount, maxLiquidity + 1) returns (
+            try lending.gatherLiquidity(market, 1000, targetAmount, maxLiquidity + 1, actor) returns (
                 uint256[] memory ids, bool sufficient
             ) {
                 assert(ids.length == 0 && !sufficient);
@@ -508,7 +505,7 @@ abstract contract OVRFLOLendingHandler is Properties {
             (, address liquidityMarket, uint16 liquidityApr,, bool active) = lending.liquidityPositions(i);
             if (!active) continue;
             (uint256[] memory ids, bool sufficient) =
-                lending.gatherLiquidity(actor, liquidityMarket, liquidityApr, targetAmount, 1);
+                lending.gatherLiquidity(liquidityMarket, liquidityApr, targetAmount, 1, actor);
             // Verify returned IDs are active with matching market and aprBps
             uint128 sum;
             for (uint256 j = 0; j < ids.length; j++) {

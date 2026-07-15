@@ -788,14 +788,15 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
     ///      excluding positions owned by `borrower` (self-match guard in
     ///      `createBorrowerLoanPool`). Stops once accumulated liquidity meets `targetAmount`.
     ///      Use `startId` to paginate if the scan is large and `sufficient` is false.
-    /// @param borrower Address to exclude (pass msg.sender for on-chain calls).
+    ///      Pass `address(0)` as `borrower` to disable exclusion.
     /// @param market Pendle market to match.
     /// @param aprBps Rate to match.
     /// @param targetAmount Minimum total liquidity desired.
     /// @param startId First liquidity ID to scan (inclusive).
+    /// @param borrower Address to exclude (pass msg.sender for on-chain calls).
     /// @return ids Matching liquidity IDs.
     /// @return sufficient True if accumulated liquidity >= `targetAmount`.
-    function gatherLiquidity(address borrower, address market, uint16 aprBps, uint128 targetAmount, uint256 startId)
+    function gatherLiquidity(address market, uint16 aprBps, uint128 targetAmount, uint256 startId, address borrower)
         external
         view
         returns (uint256[] memory ids, bool sufficient)

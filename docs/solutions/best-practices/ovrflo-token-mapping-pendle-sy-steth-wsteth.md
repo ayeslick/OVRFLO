@@ -141,7 +141,7 @@ OVRFLO's underlying is wstETH, matching the SY's yield token. Pendle's asset (st
 
 ## Related
 
-- [`docs/solutions/patterns/ovrflo-critical-patterns.md`](../patterns/ovrflo-critical-patterns.md) — pattern #9 (factory as single admin), pattern #10 (duplicate underlying prevention)
+- [`docs/solutions/patterns/ovrflo-critical-patterns.md`](../patterns/ovrflo-critical-patterns.md) — pattern #8 (factory as single admin), pattern #9 (duplicate underlying prevention)
 - [`src/OVRFLOFactory.sol`](../../src/OVRFLOFactory.sol) — `addMarket` SY validation
 - [`test/fork/OVRFLOFactoryMainnetFork.t.sol`](../../test/fork/OVRFLOFactoryMainnetFork.t.sol) — on-chain SY field assertions
 - [`interfaces/IStandardizedYield.sol`](../../interfaces/IStandardizedYield.sol) — Pendle SY interface (`assetInfo`, `yieldToken`, `exchangeRate`, `getTokensOut`)

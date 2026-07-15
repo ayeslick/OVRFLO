@@ -33,7 +33,7 @@ difference: `SaleOffer` named the owner `maker` while `LendOffer` named it
 both gated the market with `_requireMarketActive(market)` at post time, both
 validated APR bounds via `_validateApr`, both were cancelled by their owner
 with a capacity refund, and both exposed a `*OfferState` view with a
-sentinel `address(0)` check (pattern #8). The only thing that distinguished
+sentinel `address(0)` check (pattern #7). The only thing that distinguished
 them was **which taker-side function consumed them**: `sellIntoOffer` for
 the sale path, `createBorrowPool` for the loan path.
 
@@ -138,7 +138,7 @@ struct Offer { ... }
 With one struct, the posting, cancellation, state, and gather functions
 collapse one-to-one. `postOffer` replaces both `postSaleOffer` and
 `postLendOffer`; `cancelOffer` replaces both cancels; `offerState` replaces
-both state views (preserving pattern #8's `address(0)` sentinel); a single
+both state views (preserving pattern #7's `address(0)` sentinel); a single
 `gatherOfferCapacities` replaces the two gather functions.
 
 **Before — two posting functions, byte-identical apart from mapping/event:**

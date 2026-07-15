@@ -559,7 +559,7 @@ function createBorrowPool(uint256[] memory offerIds, uint256 streamId, uint128 t
   — companion note on the `active`/`capacity` teardown that the validation-pass
   `require(offer.active)` check relies on.
 - [architecture-patterns/view-functions-revert-on-nonexistent-ids.md](../architecture-patterns/view-functions-revert-on-nonexistent-ids.md)
-  — sibling view-function design rule (pattern #8) that the gather-function
+  — sibling view-function design rule (pattern #7) that the gather-function
   gas learning extends.
 - [best-practices/verify-token-balance-movement-not-just-ownership.md](../best-practices/verify-token-balance-movement-not-just-ownership.md)
   — four-party balance assertion rule (pattern #7) governing pool creation and
