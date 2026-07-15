@@ -405,6 +405,19 @@ contract OVRFLOFactoryTest is Test {
         factory.addMarket(address(ovrflo), address(0xBEEF), tooLong, 0);
     }
 
+    function test_AddMarket_RevertsWhenMarketAlreadyExpired() public {
+        (OVRFLO ovrflo,) = _deployConfiguredSystem();
+        uint256 pastExpiry = block.timestamp - 1;
+        MockPrincipalToken pt = new MockPrincipalToken(address(0xAAAA), 18, pastExpiry);
+        MockPendleMarket market = new MockPendleMarket(address(0xBBBB), address(pt), pastExpiry);
+
+        _mockOracleState(address(market), MIN_TWAP_DURATION, false, 5, true);
+        _mockSyYieldToken(address(0xBBBB), address(underlying));
+        vm.prank(OWNER);
+        vm.expectRevert("OVRFLOFactory: market expired");
+        factory.addMarket(address(ovrflo), address(market), MIN_TWAP_DURATION, 0);
+    }
+
     function test_AddMarket_RevertsWhenOracleNeedsPreparationOrIsNotReady() public {
         (OVRFLO ovrflo,) = _deployConfiguredSystem();
         uint256 expiry = block.timestamp + 30 days;

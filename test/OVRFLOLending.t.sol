@@ -3,6 +3,7 @@ pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
 import {OVRFLOLending} from "../src/OVRFLOLending.sol";
+import {StreamPricing} from "../src/StreamPricing.sol";
 import {TestERC20} from "./mocks/TestERC20.sol";
 import {MockLendingFactory, MockLendingCore, MockLendingSablier} from "./mocks/LendingMocks.sol";
 
@@ -308,7 +309,7 @@ contract OVRFLOLendingTest is Test {
         sablier.approve(address(lending), 4);
         vm.warp(expiry);
         vm.prank(SELLER);
-        vm.expectRevert();
+        vm.expectRevert(StreamPricing.SeriesMatured.selector);
         lending.sellStreamToLiquidity(maturedLiquidityId, 4, 0);
     }
 
@@ -1007,6 +1008,18 @@ contract OVRFLOLendingTest is Test {
         lending.gatherLiquidity(MARKET, 1000, 100 ether, 1);
     }
 
+    function test_GatherLiquidity_ExcludesCallerOwnPositions() public {
+        _supplyLiquidity(BUYER, 50 ether);
+        _supplyLiquidity(SELLER, 60 ether);
+
+        // BUYER calls gatherLiquidity — their own position (id 1) must be excluded
+        vm.prank(BUYER);
+        (uint256[] memory ids, bool sufficient) = lending.gatherLiquidity(MARKET, 1000, 100 ether, 1);
+        assertEq(ids.length, 1, "caller's own position should be excluded");
+        assertEq(ids[0], 2, "only non-caller position should be returned");
+        assertFalse(sufficient, "60 ether < 100 ether target");
+    }
+
     function _supplyLiquidityAtApr(address lender, uint128 availableLiquidity, uint16 aprBps)
         internal
         returns (uint256 liquidityId)
@@ -1655,18 +1668,25 @@ contract OVRFLOLendingTest is Test {
     }
 
     function test_ClaimLoanPoolShare_SucceedsOnClosedLoanAfterPartialRepay() public {
-        (uint256 loanPoolId,) = _createBorrowerPool(163, 60 ether, 40 ether, 100 ether, 100 ether);
-        sablier.setWithdrawable(163, 110 ether);
-        lending.closeLoan(1);
+        (uint256 loanPoolId, uint256 loanId) = _createBorrowerPool(163, 60 ether, 40 ether, 100 ether, 100 ether);
 
+        // Partial repay before closing
+        ovrfloToken.mint(SELLER, 30 ether);
+        vm.startPrank(SELLER);
+        ovrfloToken.approve(address(lending), 30 ether);
+        lending.repayLoan(loanId, 30 ether);
+        vm.stopPrank();
+
+        sablier.setWithdrawable(163, 110 ether);
+        lending.closeLoan(loanId);
+
+        // Claim should include both stream draw and repaid amount
         uint256 before = ovrfloToken.balanceOf(BUYER);
         vm.prank(BUYER);
-        lending.claimLoanPoolShare(loanPoolId, 10 ether);
-        assertEq(ovrfloToken.balanceOf(BUYER) - before, 10 ether, "claim succeeds on closed loan");
-
-        vm.prank(BUYER);
-        lending.claimLoanPoolShare(loanPoolId, 66 ether);
-        assertEq(ovrfloToken.balanceOf(BUYER), 66 ether, "claimLoanPoolShare works after close");
+        lending.claimLoanPoolShare(loanPoolId, type(uint128).max);
+        uint256 claimed = ovrfloToken.balanceOf(BUYER) - before;
+        assertGt(claimed, 0, "claim succeeds on closed loan after partial repay");
+        assertGe(claimed, 30 ether, "claimable includes repaid amount");
     }
 
     function test_ClaimFair_AmountCappedAtClaimable() public {
@@ -1976,6 +1996,12 @@ contract OVRFLOLendingTest is Test {
         _mintEligibleStream(331, SELLER, 110 ether, 0);
         uint256 listingId = _postSaleListing(SELLER, 331);
 
+        // Supply extra liquidity before maturity for the post-maturity pool creation test
+        // (the original liquidity was consumed by the loan above)
+        uint256 freshLiquidityId = _supplyLiquidity(STRANGER, 100 ether);
+        uint256[] memory freshLiquidityIds = new uint256[](1);
+        freshLiquidityIds[0] = freshLiquidityId;
+
         // Warp to expiry
         vm.warp(expiry);
 
@@ -1983,7 +2009,7 @@ contract OVRFLOLendingTest is Test {
         underlying.mint(STRANGER, 50 ether);
         vm.startPrank(STRANGER);
         underlying.approve(address(lending), 50 ether);
-        vm.expectRevert();
+        vm.expectRevert(StreamPricing.SeriesMatured.selector);
         lending.supplyLiquidity(MARKET, 1000, 50 ether);
         vm.stopPrank();
 
@@ -1991,16 +2017,17 @@ contract OVRFLOLendingTest is Test {
         _mintEligibleStream(332, SELLER, 110 ether, 0);
         vm.startPrank(SELLER);
         sablier.approve(address(lending), 332);
-        vm.expectRevert();
+        vm.expectRevert(StreamPricing.SeriesMatured.selector);
         lending.postSaleListing(MARKET, 332, 1000);
         vm.stopPrank();
 
-        // New pool creation reverts
+        // New pool creation reverts (SeriesMatured from marketActive)
+        // Uses fresh liquidity supplied pre-maturity (the original was consumed by the loan)
         _mintEligibleStream(333, SELLER, 110 ether, 0);
         vm.startPrank(SELLER);
         sablier.approve(address(lending), 333);
-        vm.expectRevert();
-        lending.createBorrowerLoanPool(liquidityIds, 333, 50 ether, 0);
+        vm.expectRevert(StreamPricing.SeriesMatured.selector);
+        lending.createBorrowerLoanPool(freshLiquidityIds, 333, 50 ether, 0);
         vm.stopPrank();
 
         // Cancel listing still works (returns escrowed stream)

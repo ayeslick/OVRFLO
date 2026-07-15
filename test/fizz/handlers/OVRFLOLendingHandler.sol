@@ -334,12 +334,14 @@ abstract contract OVRFLOLendingHandler is Properties {
         ghosts.ghost_lastListingId = listingId;
         (,, uint256 streamId,,,) = lending.saleListings(listingId);
         ghosts.ghost_lastStreamId = streamId;
+        // Get grossPrice from quote() instead of balance delta (wrong when buyer==seller)
+        (uint256 grossPrice, bool active) = _listingPrice(listingId);
+        if (!active) return;
+        (,,,, uint16 listingFeeBps,) = lending.saleListings(listingId);
+        uint256 fee = listingFeeBps == 0 ? 0 : grossPrice * listingFeeBps / 10_000;
         snapshotBefore();
         lending.buyListing(listingId, maxPriceIn);
         snapshotAfter();
-        (,,,, uint16 listingFeeBps,) = lending.saleListings(listingId);
-        uint256 grossPrice = stateBefore.actorUnderlying - stateAfter.actorUnderlying;
-        uint256 fee = listingFeeBps == 0 ? 0 : grossPrice * listingFeeBps / 10_000;
         // Ghost: record sale settlement for SP-99
         ghost_lastSaleGrossPrice = grossPrice;
         ghost_lastSaleFeeAmount = fee;
@@ -348,7 +350,9 @@ abstract contract OVRFLOLendingHandler is Properties {
         property_buyListingInactive();
         property_lendingFeeFlooredWithBps(fee, grossPrice, listingFeeBps);
         property_buyListing_transfers_to_buyer();
-        property_sale_settlement_conservation(grossPrice, fee, grossPrice - fee);
+        // SP-99: verify fee actually reached treasury (not tautological gross==net+fee)
+        uint256 treasuryDelta = stateAfter.treasuryUnderlying - stateBefore.treasuryUnderlying;
+        eq(treasuryDelta, fee, "SP-99: treasury did not receive exact fee");
     }
 
     function oVRFLOLending_createBorrowerLoanPool(
@@ -424,6 +428,12 @@ abstract contract OVRFLOLendingHandler is Properties {
         snapshotBefore();
         lending.repayLoan(loanId, amount);
         snapshotAfter();
+        // Record stream withdrawn snapshot if repay closed the loan (stream returned to borrower)
+        (,,,,,, bool closedAfterRepay) = lending.loans(loanId);
+        if (closedAfterRepay) {
+            ghost_loanStreamWithdrawnAtClose[loanId] =
+                ISablierV2LockupLinear(SABLIER_ADDR).getWithdrawnAmount(streamId);
+        }
         // Property assertions
         property_repayLoanExactCheck(loanId, amount);
         property_repayLoanRepaidIncreases(loanId, amount);

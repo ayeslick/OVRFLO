@@ -134,7 +134,8 @@ contract MockSablier is ISablierV2LockupLinear {
         delete getApproved[tokenId];
     }
 
-    function ownerOf(uint256 tokenId) external view returns (address) {
-        return owners[tokenId];
+    function ownerOf(uint256 tokenId) external view returns (address owner) {
+        owner = owners[tokenId];
+        require(owner != address(0), "ERC721: invalid token ID");
     }
 }

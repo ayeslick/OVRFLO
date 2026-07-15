@@ -785,7 +785,8 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
     /// @notice Scans liquidity positions for matching available liquidity.
     /// @dev Gated by
     ///      `marketActive` (reverts on expired series). Returns IDs of active liquidity positions
-    ///      matching `market` and `aprBps` with remaining liquidity, stopping once
+    ///      matching `market` and `aprBps` with remaining liquidity, excluding positions owned by
+    ///      the caller (self-match guard in `createBorrowerLoanPool`). Stopping once
     ///      accumulated liquidity meets `targetAmount`. Use `startId` to paginate if the
     ///      scan is large and `sufficient` is false.
     /// @param market Pendle market to match.
@@ -813,7 +814,7 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
             LiquidityPosition storage liquidity = liquidityPositions[i];
             if (
                 liquidity.active && liquidity.market == market && liquidity.aprBps == aprBps
-                    && liquidity.availableLiquidity > 0
+                    && liquidity.availableLiquidity > 0 && liquidity.lender != msg.sender
             ) {
                 ids[count++] = i;
                 gathered += liquidity.availableLiquidity;

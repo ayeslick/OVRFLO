@@ -20,4 +20,13 @@ contract FoundryTester is Test, Handlers {
     // Each test_repro_* function below replays a shrunk fuzzer call
     // sequence that violated a property. Run all with:
     //   forge test --match-contract FoundryTester -vvv
+
+    /// @notice Smoke test: verifies setup deployed all contracts and actors are funded
+    function test_smoke_setup() public view {
+        assertNotEq(address(vault), address(0), "vault deployed");
+        assertNotEq(address(ovrfloToken), address(0), "ovrfloToken deployed");
+        assertNotEq(address(lending), address(0), "lending deployed");
+        assertGt(underlying.balanceOf(actors[0]), 0, "actor[0] funded with underlying");
+        assertGt(ptToken.balanceOf(actors[0]), 0, "actor[0] funded with PT");
+    }
 }

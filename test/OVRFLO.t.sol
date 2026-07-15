@@ -330,9 +330,9 @@ contract OVRFLOProtocolTest is VaultMockHelpers {
         );
         vm.startPrank(user);
         ptOne.approve(address(ovrflo), 10 ether);
-        ovrflo.deposit(MARKET_ONE, 10 ether, 0);
+        (uint256 depositedToUser,,) = ovrflo.deposit(MARKET_ONE, 10 ether, 0);
         vm.stopPrank();
-        assertGe(ovrfloToken.balanceOf(user), 0);
+        assertEq(ovrfloToken.balanceOf(user), depositedToUser, "user balance equals toUser from deposit");
     }
 
     function test_Deposit_RevertsOnSlippage() public {

@@ -3,7 +3,7 @@ title: Closing stateful fuzz coverage gaps - handler expansion, mock fidelity, a
 category: best-practices
 module: test/fizz/
 date: 2026-07-05
-last_updated: 2026-07-14
+last_updated: 2026-07-15
 problem_type: best_practice
 component: testing_framework
 severity: medium
@@ -160,7 +160,7 @@ campaign that adds actors, tokens holders, rate variation, or reentrancy will
 hit one of them.
 
 The end state matters: 118 tests passing, 0 failures, coverage at or above
-target on every contract (OVRFLO 92%, OVRFLOBook 90%, OVRFLOFactory 88%,
+target on every contract (OVRFLO 92%, OVRFLOLending 90%, OVRFLOFactory 88%,
 OVRFLOToken 88%, StreamPricing 100%). The previously-dead paths
 (`closeLoan` success, `claimPoolShare` success, flash loan callback,
 multi-offer `_consumeOffers`, `prepareOracle` TWAP bounds) are now hit in the
@@ -418,8 +418,9 @@ documented immutable-declaration artifact.
 
 ## Related
 
+- [Test Quality Patterns to Avoid in Solidity/Foundry Projects](../best-practices/solidity-foundry-test-quality-antipatterns.md) - generalizes this campaign's mock-fidelity and ghost-recording patterns into a reusable catalog of 10 anti-patterns
 - [Triage audit findings by trust boundary, then fix test-first and sync pattern docs](../best-practices/triage-fix-and-document-audit-findings.md) - same triage discipline applied to static audit findings rather than fuzz violations
-- [OVRFLO critical patterns](../patterns/ovrflo-critical-patterns.md) - the enforceable rules (pattern #11 strictly-increasing IDs, pattern #12 pro-rata cap, pattern #13 sweepExcessPt guard) the properties encode
+- [OVRFLO critical patterns](../patterns/ovrflo-critical-patterns.md) - the enforceable rules (pattern #10 strictly-increasing IDs, pattern #12 pro-rata cap, pattern #11 sweepExcessPt guard) the properties encode
 - The Fizz gap closure plan at `docs/plans/2026-07-05-002-feat-fizz-gap-closure-plan.md` - the read-only spec governing the 8 implementation units
 - [Sablier NFT setApprovalForAll fuzz reachability gap](../test-failures/sablier-nft-approval-fuzz-reachability-gap.md) - a 13th gap discovered in a later campaign phase; same root cause (mock/harness missing a capability)
 - [GL-70 stream reuse after loan close](../logic-errors/stream-reuse-after-loan-close-property-fix.md) - a 5th triage case from the same campaign; property snapshot baseline breaks under stream reuse

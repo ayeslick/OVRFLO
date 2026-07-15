@@ -142,7 +142,8 @@ contract OVRFLOFuzzTest is VaultMockHelpers {
         assertLe(gp, remaining, "grossPrice exceeds remaining");
 
         if (gp > 0) {
-            uint128 ob = StreamPricing.obligationForFill(gp, gp, remaining, apr, ttm);
+            // Use partial borrow (gp / 2) to exercise the non-fast-path obligation calculation
+            uint128 ob = StreamPricing.obligationForFill(gp / 2, gp, remaining, apr, ttm);
             assertLe(ob, remaining, "obligation exceeds remaining");
         }
     }
@@ -196,7 +197,7 @@ contract OVRFLOFuzzTest is VaultMockHelpers {
 
         address user = makeAddr("minDepositUser");
         pt.mint(user, amount);
-        _mockSablier(user, uint128(amount * RATE_95 / 1e18), 365 days, 999);
+        // No specific Sablier mock needed — setUp's selector-wide mock covers createWithDurations
 
         vm.startPrank(user);
         pt.approve(address(ovrflo), amount);

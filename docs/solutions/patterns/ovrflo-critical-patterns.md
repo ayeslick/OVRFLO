@@ -1,12 +1,20 @@
 ---
 kind: required_reading
 scope: ovrflo
-last_updated: 2026-07-14
+last_updated: 2026-07-15
 audience: [lenders, ai-agents]
 ---
 
 <!--
   Refresh log:
+  - 2026-07-15: Renumbered from 17 to 16 patterns. Removed gap at #6
+    (Sablier binding verification in standalone script, obsolete). Patterns
+    #7-#17 shifted down by 1. Fixed stale function names: _validateLiquidityPositions
+    -> _validateLiquidity (#4), _consumeLiquidityPositions -> _consumeLiquidity (#16).
+    Updated #5 detection grep and code examples for _validateTwapBounds helper.
+    Fixed #13 detection grep (local `proceeds` var). Added cross-link from #6
+    to new test-quality antipatterns catalog. Stale function name references
+    in #4 and #16 corrected.
   - 2026-07-14: Added fuzz enforcement note to pattern #8 (view function coverage
     via properties and handlers). Updated pattern #7 fuzz enforcement note with
     SP-100 (borrow disbursement conservation, treasury-as-actor false positive)
@@ -51,7 +59,7 @@ pulled from a full writeup under `docs/solutions/<category>/`. If you are
 about to touch the area a pattern covers, you are expected to follow it or
 have a documented reason not to.
 
-New patterns are appended in order. Do not renumber existing entries.
+New patterns are appended in order. Pattern #6 was removed (obsolete Sablier binding rule) and subsequent patterns renumbered on 2026-07-15; the current count is 16.
 
 ---
 
@@ -356,13 +364,13 @@ prevention.
 
 **Placement/Context:** The pool-creation entry point that pairs a borrower
 with an liquidity lender: `createBorrowerLoanPool` (borrower = `msg.sender`, checked
-against each `liquidity.lender` in `_validateLiquidityPositions`).
+against each `liquidity.lender` in `_validateLiquidity`).
 
 **How to detect violation:**
 
 ```bash
 rg -n "self-match" src/OVRFLOLending.sol
-# expected: match in createBorrowerLoanPool (_validateLiquidityPositions); createLenderPool removed
+# expected: match in createBorrowerLoanPool (_validateLiquidity); createLenderPool removed
 ```
 
 **Documented in:** [`docs/solutions/security-issues/repayloan-equality-rounding-no-brick-OVRFLOLending-20260624.md`](../security-issues/repayloan-equality-rounding-no-brick-OVRFLOLending-20260624.md) — companion finding section.
@@ -381,12 +389,23 @@ function prepareOracle(address market, uint32 twapDuration) external onlyOwner {
 }
 ```
 
-### ✅ CORRECT (same bounds in both functions)
+### ✅ CORRECT (shared bounds helper called by both functions)
 
 ```solidity
-function prepareOracle(address market, uint32 twapDuration) external onlyOwner {
+function _validateTwapBounds(uint32 twapDuration) internal pure {
     require(twapDuration >= MIN_TWAP_DURATION, "OVRFLOFactory: twap too short");
     require(twapDuration <= MAX_TWAP_DURATION, "OVRFLOFactory: twap too long");
+}
+
+function prepareOracle(address market, uint32 twapDuration) external onlyOwner {
+    _validateTwapBounds(twapDuration);
+    ...
+}
+
+function addMarket(address vault, address market, uint32 twapDuration, uint16 feeBps)
+    external onlyOwner
+{
+    _validateTwapBounds(twapDuration);
     ...
 }
 ```
@@ -404,15 +423,15 @@ mismatch. No security impact; this is an operational consistency rule.
 **How to detect violation:**
 
 ```bash
-rg -A2 "function prepareOracle" src/OVRFLOFactory.sol | rg "MAX_TWAP"
-# expected: 1 match
+rg "_validateTwapBounds" src/OVRFLOFactory.sol
+# expected: 1 definition + 2 call sites (prepareOracle and addMarket)
 ```
 
 **Fuzz enforcement:** The `_oVRFLO_prepareOracle` handler in `test/fizz/` exercises both valid and invalid TWAP durations against `prepareOracle`, hitting both bound checks in coverage.
 
 ---
 
-## 7. Assert all-party token balances in every money-movement test (ALWAYS REQUIRED)
+## 6. Assert all-party token balances in every money-movement test (ALWAYS REQUIRED)
 
 ### ❌ WRONG (state flags and NFT ownership pass while value misroutes silently)
 
@@ -466,13 +485,13 @@ rg -l "sellStreamToLiquidity|buyListing|createBorrowerLoanPool|claimLoanPoolShar
   xargs -I{} sh -c 'rg -L "balanceOf\(TREASURY\)|balanceOf\(address\(lending\)\)" "{}" && echo "REVIEW: {}"'
 ```
 
-**Documented in:** [`docs/solutions/best-practices/verify-token-balance-movement-not-just-ownership.md`](../best-practices/verify-token-balance-movement-not-just-ownership.md)
+**Documented in:** [`docs/solutions/best-practices/verify-token-balance-movement-not-just-ownership.md`](../best-practices/verify-token-balance-movement-not-just-ownership.md). See also [Test Quality Antipatterns](../best-practices/solidity-foundry-test-quality-antipatterns.md) for the general "green is lying" catalog this rule is a specific case of.
 
 **Fuzz enforcement:** `property_no_free_profit` (GL-57) in `test/fizz/Properties.sol` extends this discipline to the stateful fuzz suite by checking that total actor value (underlying + PT + ovrfloToken across all actors) never exceeds the total start value, catching misrouted payments across the full actor set. GL-57 fired a second false positive during the 91.8% to 98.7% coverage campaign when a scenario handler minted tokens via `underlying.deal()` without updating `ghost_actorStartValue` — fix: mirror any test-only mint in the ghost tracker. SP-100 (borrow disbursement conservation) also extends this discipline, verifying the borrower's underlying increase equals `actualBorrow - fee`; it required gating on `lending.treasury() != actor` when an admin handler can set the treasury to an actor address.
 
 ---
 
-## 8. View functions that resolve by ID must revert on non-existent IDs (ALWAYS REQUIRED)
+## 7. View functions that resolve by ID must revert on non-existent IDs (ALWAYS REQUIRED)
 
 ### ❌ WRONG (silent zero defaults for a non-existent ID)
 
@@ -627,7 +646,7 @@ provision of it. A claim-time fee on the poster is worse on every axis:
    rate into "10%, but actually 9.85% depending on when you claim."
 3. **Lands inside `_claimFair`.** That function is the most delicate
    accounting in the lending (pro-rata caps, deficit harvesting from open
-   streams, `loanPoolProceeds` conservation; see patterns #12 and #14). Threading
+   streams, `loanPoolProceeds` conservation; see patterns #12 and #13). Threading
    fee extraction through `recovered`/`entitled`/`loanPoolReceived` adds rounding
    dust across many small pro-rata claims and new invariants to fuzz — large
    audit surface for a second-order revenue stream. Contradicts the
@@ -649,7 +668,7 @@ pitch ("lenders keep every bps they post") is worth more than the revenue.
 
 ---
 
-## 9. The factory owns every deployed lending — lending admin is forwarded, not direct (ALWAYS REQUIRED)
+## 8. The factory owns every deployed lending — lending admin is forwarded, not direct (ALWAYS REQUIRED)
 
 ### ❌ WRONG (multisig calls the lending directly, bypassing the factory)
 
@@ -708,7 +727,7 @@ rg "setAprBounds|setFee|setTreasury" src/OVRFLOFactory.sol
 
 ---
 
-## 10. One vault per underlying — `configureDeployment` must reject duplicates (ALWAYS REQUIRED)
+## 9. One vault per underlying — `configureDeployment` must reject duplicates (ALWAYS REQUIRED)
 
 ### ❌ WRONG (no guard, silently creates a non-fungible second token)
 
@@ -769,7 +788,7 @@ rg "underlyingToOvrflo\[config.underlying\]" src/OVRFLOFactory.sol
 
 ---
 
-## 11. Require strictly-increasing IDs in batch functions that accept ID arrays (ALWAYS REQUIRED)
+## 10. Require strictly-increasing IDs in batch functions that accept ID arrays (ALWAYS REQUIRED)
 
 ### ❌ WRONG (duplicate IDs double-count capacity or create double loans)
 
@@ -820,7 +839,7 @@ rg "duplicate or unsorted ids" src/OVRFLOLending.sol
 
 ---
 
-## 13. `sweepExcessPt` must validate that the passed address is a registered PT (ALWAYS REQUIRED)
+## 11. `sweepExcessPt` must validate that the passed address is a registered PT (ALWAYS REQUIRED)
 
 ### ❌ WRONG (non-PT address drains the wrap reserve)
 
@@ -944,7 +963,7 @@ rg "contribution.*recovered.*totalContributed" src/OVRFLOLending.sol
 
 ---
 
-## 14. Harvest branch for stream-accrued claims (ALWAYS REQUIRED)
+## 13. Harvest branch for stream-accrued claims (ALWAYS REQUIRED)
 
 **Why:** The `claimable` formula in `_claimFair` includes `min(withdrawable, outstanding)`
 for open loans, so a lender can claim their pro-rata share of stream accrual
@@ -962,7 +981,7 @@ branch that draws from the stream when `loanPoolProceeds < requestAmount`.
 ```bash
 rg "loan.closed && loanPoolProceeds < requestAmount" src/OVRFLOLending.sol
 # expected: 0 matches (harvest guard uses !loan.closed, not loan.closed)
-rg "loanPoolProceeds\[poolId\] < requestAmount" src/OVRFLOLending.sol
+rg "proceeds < requestAmount" src/OVRFLOLending.sol
 # expected: 1 match in _claimFair harvest branch
 ```
 
@@ -970,7 +989,7 @@ rg "loanPoolProceeds\[poolId\] < requestAmount" src/OVRFLOLending.sol
 
 ---
 
-## 15. uint128 parameter types as implicit ABI-decoder bounds checks (ALWAYS REQUIRED)
+## 14. uint128 parameter types as implicit ABI-decoder bounds checks (ALWAYS REQUIRED)
 
 **Why:** The `uint128` parameter types serve as implicit ABI-decoder bounds
 checks. Values exceeding `type(uint128).max` are rejected at the ABI level
@@ -994,7 +1013,7 @@ rg "function createBorrowerLoanPool" src/OVRFLOLending.sol
 
 ---
 
-## 16. uint256/uint128 switching (ALWAYS REQUIRED)
+## 15. uint256/uint128 switching (ALWAYS REQUIRED)
 
 **Why:** The contract uses a deliberate uint256/uint128 switching pattern.
 Storage structs use `uint128` for packed slots (fitting multiple fields in a
@@ -1021,9 +1040,9 @@ rg "uint128\(uint256" src/OVRFLOLending.sol
 
 ---
 
-## 17. _consumeLiquidityPositions early-break behavior (ALWAYS REQUIRED)
+## 16. _consumeLiquidity early-break behavior (ALWAYS REQUIRED)
 
-**Why:** The `_consumeLiquidityPositions` loop breaks when `toBorrow == 0`, meaning
+**Why:** The `_consumeLiquidity` loop breaks when `toBorrow == 0`, meaning
 trailing liquidityPositions past the break point are never touched. This retains residual
 capacity and active status for unconsumed liquidityPositions. The caller
 (`createBorrowerLoanPool`) may pass more liquidityPositions than needed to fill `targetBorrow`;
@@ -1031,13 +1050,13 @@ the excess liquidityPositions are left untouched and available for future consum
 This is intentional — it allows borrowers to include backup liquidityPositions without
 committing to all of them.
 
-**Placement/Context:** `_consumeLiquidityPositions` in `src/OVRFLOLending.sol`.
+**Placement/Context:** `_consumeLiquidity` in `src/OVRFLOLending.sol`.
 
 **How to detect violation:**
 
 ```bash
 rg "toBorrow == 0" src/OVRFLOLending.sol
-# expected: 1 match in _consumeLiquidityPositions loop break condition
+# expected: 1 match in _consumeLiquidity loop break condition
 ```
 
 **Documented in:** [`docs/solutions/design-patterns/solidity-batch-function-safety-patterns.md`](../design-patterns/solidity-batch-function-safety-patterns.md), OVRFLOLending cleanup refactor (2026-07-07)

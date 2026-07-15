@@ -208,7 +208,9 @@ contract OVRFLOFactory is Ownable2Step {
             require(IStandardizedYield(sy).yieldToken() == info.underlying, "OVRFLOFactory: underlying mismatch");
         }
 
-        OVRFLO(ovrflo).setSeriesApproved(market, pt, twapDuration, IPendleMarket(market).expiry(), feeBps);
+        uint256 expiry = IPendleMarket(market).expiry();
+        require(expiry > block.timestamp, "OVRFLOFactory: market expired");
+        OVRFLO(ovrflo).setSeriesApproved(market, pt, twapDuration, expiry, feeBps);
 
         isMarketApproved[ovrflo][market] = true;
         approvedMarketAt[ovrflo][approvedMarketCount[ovrflo]] = market;

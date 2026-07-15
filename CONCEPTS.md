@@ -111,3 +111,11 @@ The composition of PT deposit, lending sale, and unwrap or swap that lets the PT
 ### PT flash loan
 
 An atomic loan of deposited PT from the OVRFLO vault, repaid via safeTransferFrom within the same transaction. The borrower implements an EIP-4531 callback that receives PT, executes logic (typically the OVRFLO cycle), and returns PT plus an oracle-adjusted fee in underlying. The fee routes to the treasury, which wraps it to fund the wrap reserve. Capped by marketTotalDeposited, gated pre-maturity, and globally pausable by the multisig. No nonReentrant modifier is applied because the borrower must deposit during the callback to run the cycle.
+
+## Testing infrastructure
+
+### Ghost variable
+
+A shadow variable in a fuzz handler that mirrors a piece of protocol state so invariant functions can detect drift between what the protocol recorded and what the fuzzer observed.
+
+Each ghost is updated in the same handler branch that triggers the corresponding state transition. A missing ghost update on one branch causes false-positive invariant violations later (e.g. a re-pledged stream appears still-pledged), which wastes triage time and erodes trust in the suite.

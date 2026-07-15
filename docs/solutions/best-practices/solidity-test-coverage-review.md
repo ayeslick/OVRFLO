@@ -3,6 +3,7 @@ title: Solidity test coverage review - suite audit and gap tracking
 category: best-practices
 module: test/
 date: 2026-07-03
+last_updated: 2026-07-15
 problem_type: best_practice
 component: test_suite
 severity: low
@@ -37,7 +38,7 @@ No critical coverage gap was found. The gaps below are mostly regression hardeni
 - Wrap/unwrap coverage is strong, including donation resistance, transfer-delta checks, shared reserve consumption, zero amounts, reserve insufficiency, and underlying sweep behavior.
 - Flash loan coverage is strong, including unknown PT, zero amount, paused, matured, stale oracle, wrong callback hash, failed repayment, failed fee pull, nested flash-loan reentrancy, callback composition with deposit/wrap/unwrap, exact deposited amount, max fee, rate-dependent fee, events, and fork coverage with real PTs.
 
-### `OVRFLOBook.sol`
+### `OVRFLOLending.sol`
 
 - Sale offer/listing flows cover posting, cancellation, slippage, dust price, fee snapshots, partial fills, capacity accounting, NFT movement, and all-party balances.
 - Borrow pool coverage includes sufficient/insufficient capacity, partial coverage, self-match, duplicate IDs, market/APR mismatch, cancelled offers, fee/net slippage regressions, offer splitting between sale and loan, pool claims, pool proceeds, double-dip caps, and minority-claim regression.
@@ -87,30 +88,30 @@ No critical coverage gap was found. The gaps below are mostly regression hardeni
 
 ### G-05: ID view functions lack negative tests for unknown IDs
 
-- **Files:** `src/OVRFLOBook.sol`, `test/OVRFLOBook.t.sol`
-- **Current coverage:** Positive `offerState()` and `saleListingState()` reads exist. Unknown loan is covered indirectly through `closeLoan()` and `repayLoan()`.
-- **Gap:** No direct tests assert `offerState(unknown)`, `saleListingState(unknown)`, and `loanState(unknown)` revert with their expected unknown-ID messages.
+- **Files:** `src/OVRFLOLending.sol`, `test/OVRFLOLending.t.sol`
+- **Current coverage:** Positive `liquidityState()` and `saleListingState()` reads exist. Unknown loan is covered indirectly through `closeLoan()` and `repayLoan()`.
+- **Gap:** No direct tests assert `liquidityState(unknown)`, `saleListingState(unknown)`, and `loanState(unknown)` revert with their expected unknown-ID messages.
 - **Why it matters:** Critical pattern #8 says ID-based views must distinguish nonexistent IDs from inactive records.
 - **Suggested test:** Add a view-focused test for all three unknown-ID sentinels.
 
-### G-06: `createBorrowPool` missing direct guard coverage for several boundary reverts
+### G-06: `createBorrowerLoanPool` missing direct guard coverage for several boundary reverts
 
-- **Files:** `src/OVRFLOBook.sol`, `test/OVRFLOBook.t.sol`
+- **Files:** `src/OVRFLOLending.sol`, `test/OVRFLOLending.t.sol`
 - **Current coverage:** The suite covers insufficient capacity, partial coverage, self-match, market/APR mismatch, cancelled offers, duplicate IDs, and net-fee slippage.
 - **Gap:** Direct tests are missing for:
-  - `targetBorrow == 0` -> `OVRFLOBook: borrow zero`
-  - `offerIds.length == 0` -> `OVRFLOBook: empty offers`
-  - `actualBorrow > grossPrice` -> `OVRFLOBook: borrow above price`
-  - `grossPrice == 0` in `createBorrowPool()` -> `OVRFLOBook: price zero`
+  - `targetBorrow == 0` -> `OVRFLOLending: borrow zero`
+  - `liquidityIds.length == 0` -> `OVRFLOLending: empty liquidity`
+  - `actualBorrow > grossPrice` -> `OVRFLOLending: borrow above price`
+  - `grossPrice == 0` in `createBorrowerLoanPool()` -> `OVRFLOLending: price zero`
 - **Why it matters:** These are user-facing validation branches in the loan entry point and should be locked by deterministic regression tests, not only by adjacent sale/listing dust tests.
 
 ### G-07: Some pool-claim and repay edge reverts are not directly covered
 
-- **Files:** `src/OVRFLOBook.sol`, `test/OVRFLOBook.t.sol`
+- **Files:** `src/OVRFLOLending.sol`, `test/OVRFLOLending.t.sol`
 - **Current coverage:** Pool claim happy paths, over-claim, non-contributor, closed-loan rejection, direct draw pro-rata shares, double-dip caps, and book-balance invariants are covered.
 - **Gap:** Direct tests are missing for:
-  - `claimPoolShare(poolId, 0)` -> `OVRFLOBook: claim zero`
-  - `repayLoan()` with outstanding already reduced to zero by `claimPoolShare()` harvesting but before `closeLoan()` -> `OVRFLOBook: nothing outstanding`
+  - `claimLoanPoolShare(poolId, 0)` -> `OVRFLOLending: claim zero`
+  - `repayLoan()` with outstanding already reduced to zero by `claimLoanPoolShare()` harvesting but before `closeLoan()` -> `OVRFLOLending: nothing outstanding`
 - **Why it matters:** These guard branches are small, but deterministic tests make future refactors safer.
 
 ### G-08: Fork tests require `MAINNET_RPC_URL` and are not self-skipping
@@ -126,3 +127,20 @@ No critical coverage gap was found. The gaps below are mostly regression hardeni
 2. Add G-05 and G-06. These cover public ABI edge behavior and loan boundary regressions.
 3. Decide how to run G-01 and G-08 in CI. These are runner/process gaps rather than missing unit assertions.
 4. Add G-07 opportunistically when touching pool servicing tests.
+
+## Resolution (2026-07-15)
+
+All eight gaps have been resolved in subsequent work:
+
+| Gap | Resolution |
+|-----|-----------|
+| G-01 | `FoundryTester.sol` now has `test_smoke_setup()`; `echidna.yaml` sets `testContract: "FuzzTester"`. See [Test Quality Antipatterns](solidity-foundry-test-quality-antipatterns.md) Example 14. |
+| G-02 | `test_Deposit_SucceedsWithCardinalityRequiredButOldestSatisfied` and `test_FlashLoan_SucceedsWithCardinalityRequiredButOldestSatisfied` exist. |
+| G-03 | `sweepExcessPt` unknown-PT revert tested directly in `test/OVRFLO.t.sol` and via `property_sweepExcessPt_reverts_non_pt` (SP-77). |
+| G-04 | `factory.prepareOracle(market, MAX_TWAP_DURATION + 1)` revert tested in `test/OVRFLOFactory.t.sol`. |
+| G-05 | `liquidityState`, `saleListingState`, `loanState` all have unknown-ID revert tests. Function renamed from `offerState` to `liquidityState`. |
+| G-06 | All four boundary reverts tested: `test_CreateBorrowerLoanPool_RevertsWhenBorrowZero`, `_RevertsWhenLiquiditysEmpty`, `_RevertsWhenBorrowAbovePrice`, `_RevertsWhenPriceZero`. Function renamed from `createBorrowPool` to `createBorrowerLoanPool`. |
+| G-07 | `claimLoanPoolShare(poolId, 0)` and `repayLoan` nothing-outstanding reverts tested. Function renamed from `claimPoolShare` to `claimLoanPoolShare`. |
+| G-08 | `OVRFLOForkBase.setUp()` now uses `vm.envOr("MAINNET_RPC_URL", string(""))` with `vm.skip()` when empty. |
+
+Contract renamed from `OVRFLOBook` to `OVRFLOLending` (commit `e2e5305`). All references above have been updated to reflect the current names.

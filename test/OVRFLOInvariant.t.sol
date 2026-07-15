@@ -323,16 +323,6 @@ contract OVRFLOInvariantTest is Test {
         assertLe(ovrflo.wrappedUnderlying(), underlying.balanceOf(address(ovrflo)), "reserve exceeds balance");
     }
 
-    /// @notice R4: flash loans never reduce vault PT balance below marketTotalDeposited
-    /// @dev R2 subsumes this, but we add an explicit check on the ghost variable.
-    function invariant_FlashLoanDoesNotDrainVault() public view {
-        assertLe(
-            ovrflo.marketTotalDeposited(MARKET),
-            pt.balanceOf(address(ovrflo)),
-            "flash loan drained vault PT below deposited"
-        );
-    }
-
     /// @notice R5: nested flash loans always blocked by nonReentrant
     function invariant_NestedFlashLoanAlwaysReverts() public view {
         assertFalse(borrower.nestedSucceeded(), "nested flash loan should always revert");
