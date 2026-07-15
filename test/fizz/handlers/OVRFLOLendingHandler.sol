@@ -61,6 +61,11 @@ abstract contract OVRFLOLendingHandler is Properties {
 
     // ――――――――――――――――――――――――― Clamped ――――――――――――――――――――――――――
 
+    function _recordLoanCloseGhost(uint256 loanId, uint256 streamId) internal {
+        ghost_loanStreamWithdrawnAtClose[loanId] =
+            ISablierV2LockupLinear(SABLIER_ADDR).getWithdrawnAmount(streamId);
+    }
+
     function oVRFLOLending_supplyLiquidity_clamped(address, uint16 aprBps, uint128 availableLiquidity) public {
         availableLiquidity = uint128(clampBetween(uint256(availableLiquidity), 1, underlying.balanceOf(actor)));
         if (availableLiquidity == 0) return;
@@ -301,16 +306,13 @@ abstract contract OVRFLOLendingHandler is Properties {
         uint256 grossPrice = uint256(stateBefore.liquidityCapacity) - uint256(stateAfter.liquidityCapacity);
         uint256 feeBps = lending.feeBps();
         uint256 fee = feeBps == 0 ? 0 : grossPrice * feeBps / 10_000;
-        // Ghost: record sale settlement for SP-99
-        ghost_lastSaleGrossPrice = grossPrice;
-        ghost_lastSaleFeeAmount = fee;
-        ghost_lastSaleNetToSeller = grossPrice - fee;
+        uint256 treasuryDelta = stateAfter.treasuryUnderlying - stateBefore.treasuryUnderlying;
         // Property assertions
         property_sellStreamToLiquidityCapacityDecreases(grossPrice);
-        property_lendingFeeFlooredWithBps(fee, grossPrice, uint16(feeBps));
+        property_lendingFeeFlooredWithBps(treasuryDelta, grossPrice, uint16(feeBps));
         property_streamOwnerOnly();
         property_sellStream_transfers_to_lender();
-        property_sale_settlement_conservation(grossPrice, fee, grossPrice - fee);
+        property_sale_settlement_conservation(fee);
         property_stream_escrow_withdraw_acl();
     }
 
@@ -332,27 +334,29 @@ abstract contract OVRFLOLendingHandler is Properties {
 
     function oVRFLOLending_buyListing(uint256 listingId, uint256 maxPriceIn) public asActor {
         ghosts.ghost_lastListingId = listingId;
-        (,, uint256 streamId,,,) = lending.saleListings(listingId);
+        // Single read of saleListings; derive grossPrice from quote() (not balance delta)
+        (, address listingMarket, uint256 streamId, uint16 aprBps, uint16 listingFeeBps, bool isActive) =
+            lending.saleListings(listingId);
         ghosts.ghost_lastStreamId = streamId;
-        // Get grossPrice from quote() instead of balance delta (wrong when buyer==seller)
-        (uint256 grossPrice, bool active) = _listingPrice(listingId);
-        if (!active) return;
-        (,,,, uint16 listingFeeBps,) = lending.saleListings(listingId);
+        if (!isActive) return;
+        uint256 grossPrice;
+        try lending.quote(listingMarket, streamId, aprBps, 0)
+            returns (uint256 price, uint128, uint256, uint256, uint128)
+        {
+            grossPrice = price;
+        } catch {
+            return;
+        }
         uint256 fee = listingFeeBps == 0 ? 0 : grossPrice * listingFeeBps / 10_000;
         snapshotBefore();
         lending.buyListing(listingId, maxPriceIn);
         snapshotAfter();
-        // Ghost: record sale settlement for SP-99
-        ghost_lastSaleGrossPrice = grossPrice;
-        ghost_lastSaleFeeAmount = fee;
-        ghost_lastSaleNetToSeller = grossPrice - fee;
+        uint256 treasuryDelta = stateAfter.treasuryUnderlying - stateBefore.treasuryUnderlying;
         // Property assertions
         property_buyListingInactive();
-        property_lendingFeeFlooredWithBps(fee, grossPrice, listingFeeBps);
+        property_lendingFeeFlooredWithBps(treasuryDelta, grossPrice, listingFeeBps);
         property_buyListing_transfers_to_buyer();
-        // SP-99: verify fee actually reached treasury (not tautological gross==net+fee)
-        uint256 treasuryDelta = stateAfter.treasuryUnderlying - stateBefore.treasuryUnderlying;
-        eq(treasuryDelta, fee, "SP-99: treasury did not receive exact fee");
+        property_sale_settlement_conservation(fee);
     }
 
     function oVRFLOLending_createBorrowerLoanPool(
@@ -408,8 +412,7 @@ abstract contract OVRFLOLendingHandler is Properties {
         ghosts.ghost_lastStreamId = streamId;
         snapshotBefore();
         lending.closeLoan(loanId);
-        ghost_loanStreamWithdrawnAtClose[loanId] =
-            ISablierV2LockupLinear(SABLIER_ADDR).getWithdrawnAmount(streamId);
+        _recordLoanCloseGhost(loanId, streamId);
         snapshotAfter();
         // Property assertions
         property_closeLoanDrawnIncreases();
@@ -429,10 +432,8 @@ abstract contract OVRFLOLendingHandler is Properties {
         lending.repayLoan(loanId, amount);
         snapshotAfter();
         // Record stream withdrawn snapshot if repay closed the loan (stream returned to borrower)
-        (,,,,,, bool closedAfterRepay) = lending.loans(loanId);
-        if (closedAfterRepay) {
-            ghost_loanStreamWithdrawnAtClose[loanId] =
-                ISablierV2LockupLinear(SABLIER_ADDR).getWithdrawnAmount(streamId);
+        if (stateAfter.loanClosed) {
+            _recordLoanCloseGhost(loanId, streamId);
         }
         // Property assertions
         property_repayLoanExactCheck(loanId, amount);
@@ -493,7 +494,7 @@ abstract contract OVRFLOLendingHandler is Properties {
         uint256 maxLiquidity = lending.nextLiquidityId();
         // Sometimes pass startId >= nextLiquidityId to cover the early-return path
         if (liquiditySeed % 3 == 0) {
-            try lending.gatherLiquidity(market, 1000, targetAmount, maxLiquidity + 1) returns (
+            try lending.gatherLiquidity(actor, market, 1000, targetAmount, maxLiquidity + 1) returns (
                 uint256[] memory ids, bool sufficient
             ) {
                 assert(ids.length == 0 && !sufficient);
@@ -507,7 +508,7 @@ abstract contract OVRFLOLendingHandler is Properties {
             (, address liquidityMarket, uint16 liquidityApr,, bool active) = lending.liquidityPositions(i);
             if (!active) continue;
             (uint256[] memory ids, bool sufficient) =
-                lending.gatherLiquidity(liquidityMarket, liquidityApr, targetAmount, 1);
+                lending.gatherLiquidity(actor, liquidityMarket, liquidityApr, targetAmount, 1);
             // Verify returned IDs are active with matching market and aprBps
             uint128 sum;
             for (uint256 j = 0; j < ids.length; j++) {
@@ -646,8 +647,7 @@ abstract contract OVRFLOLendingHandler is Properties {
 
                     // Step 5: Close the loan
                     try lending.closeLoan(loanId) {
-                        ghost_loanStreamWithdrawnAtClose[loanId] =
-                            ISablierV2LockupLinear(SABLIER_ADDR).getWithdrawnAmount(streamId);
+                        _recordLoanCloseGhost(loanId, streamId);
                         // Step 6: Actor A claims pool share
                         vm.prank(actorA);
                         try lending.claimLoanPoolShare(loanPoolId, type(uint128).max) {

@@ -27,7 +27,7 @@ suite passed cleanly (110 tests, 0 failures) and met coverage targets
 exposed four structural blind spots that meant "green" was lying about real
 coverage:
 
-1. **`createBorrowPool` only ever used single-offer arrays**, so pattern #11
+1. **`createBorrowPool` only ever used single-offer arrays**, so pattern #10
    (strictly-increasing offer IDs) and the multi-contributor pro-rata claim
    path in `_consumeOffers` were dead code in the harness.
 2. **No handler advanced time randomly**, so `closeLoan` and `claimPoolShare`
@@ -40,7 +40,7 @@ coverage:
 
 Eight smaller gaps rounded out the list: `MockSablier` did not enforce the
 `transferable` flag, no property tested the `sweepExcessPt` input-validation
-guard (pattern #13), GL-57 (no free profit) and SP-62 (deposit liveness) were
+guard (pattern #11), GL-57 (no free profit) and SP-62 (deposit liveness) were
 skipped, and several minor functions (`prepareOracle`, `setTreasury`,
 `gatherOfferCapacities`, direct ERC20 transfers) had no handler.
 
@@ -126,7 +126,7 @@ function onFlashLoan(address, uint256, uint256 fee, bytes calldata data)
 excludes the current actor's offers (self-match prevention), and guarantees
 strictly-increasing ordering by picking in ascending order. Sorting a fuzzed
 array is fragile; constructing an ordered array is deterministic and still
-exercises the `offerIds[i] > offerIds[i-1]` check (pattern #11).
+exercises the `offerIds[i] > offerIds[i-1]` check (pattern #10).
 
 **Triage violations against the source, not against the property text.** When a
 property fires, the first question is "did the protocol do something wrong, or
@@ -334,7 +334,7 @@ OVRFLOToken 88%, StreamPricing 100%. The previously-unreachable paths
 (`closeLoan` success, `claimPoolShare` success, flash loan callback,
 multi-offer `_consumeOffers`, `prepareOracle` TWAP bounds) all appear in the
 coverage report. `PROPERTIES.md` checkboxes were flipped from `[-]` to `[x]`
-for GL-57, GL-61, GL-62, SP-62, and the new pattern #13 (SP-77) property.
+for GL-57, GL-61, GL-62, SP-62, and the new pattern #11 (SP-77) property.
 
 ### Later campaign continuation (2026-07-13)
 
@@ -424,4 +424,4 @@ documented immutable-declaration artifact.
 - The Fizz gap closure plan at `docs/plans/2026-07-05-002-feat-fizz-gap-closure-plan.md` - the read-only spec governing the 8 implementation units
 - [Sablier NFT setApprovalForAll fuzz reachability gap](../test-failures/sablier-nft-approval-fuzz-reachability-gap.md) - a 13th gap discovered in a later campaign phase; same root cause (mock/harness missing a capability)
 - [GL-70 stream reuse after loan close](../logic-errors/stream-reuse-after-loan-close-property-fix.md) - a 5th triage case from the same campaign; property snapshot baseline breaks under stream reuse
-- [View functions revert on non-existent IDs](../architecture-patterns/view-functions-revert-on-nonexistent-ids.md) - pattern #8, the safety contract the new view-function coverage properties validate
+- [View functions revert on non-existent IDs](../architecture-patterns/view-functions-revert-on-nonexistent-ids.md) - pattern #7, the safety contract the new view-function coverage properties validate

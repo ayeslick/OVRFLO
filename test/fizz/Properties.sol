@@ -1490,8 +1490,8 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
                     );
                 }
             } else {
-                // Open loan, or closed via repayLoan (stream still escrowed).
-                // Current getWithdrawnAmount is authoritative.
+                // Open loan, or closed via repayLoan (stream returned to borrower;
+                // ghost_loanStreamWithdrawnAtClose recorded at close time).
                 try ISablierV2LockupLinear(SABLIER_ADDR).getWithdrawnAmount(streamId) returns (uint128 currentWithdrawn) {
                     if (currentWithdrawn >= snapshot) {
                         eq(
@@ -2001,9 +2001,9 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
 
     // ─────────────── Wave 2: Settlement Conservation (SP-99..SP-100) ───────────────
 
-    /// @notice SP-99: Sale settlement conservation (grossPrice == netToSeller + fee)
-    function property_sale_settlement_conservation(uint256 grossPrice, uint256 fee, uint256 netToSeller) internal {
-        eq(grossPrice, netToSeller + fee, "SP-99: grossPrice != net + fee");
+    /// @notice SP-99: Sale settlement conservation (treasury received exact fee)
+    function property_sale_settlement_conservation(uint256 fee) internal {
+        eq(stateAfter.treasuryUnderlying - stateBefore.treasuryUnderlying, fee, "SP-99: treasury did not receive exact fee");
     }
 
     /// @notice SP-100: Borrow disbursement conservation (disbursement == sum consumed capacities)

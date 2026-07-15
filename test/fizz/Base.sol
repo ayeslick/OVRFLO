@@ -90,9 +90,6 @@ abstract contract Base is StringUtils, Clamp {
     mapping(uint256 => uint128) internal ghost_liquidityInitialCapacity;
     mapping(uint256 => uint128) internal ghost_loanStreamWithdrawnAtCreation;
     mapping(uint256 => uint128) internal ghost_loanStreamWithdrawnAtClose;
-    uint256 internal ghost_lastSaleGrossPrice;
-    uint256 internal ghost_lastSaleFeeAmount;
-    uint256 internal ghost_lastSaleNetToSeller;
 
     // ―――――――――――――――――――――――――― Actors ――――――――――――――――――――――――――
 

@@ -3,7 +3,6 @@ pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
 import {StreamPricing} from "../src/StreamPricing.sol";
-import {PRBMath} from "prb-math/PRBMath.sol";
 
 /// @dev Harness to expose internal pure functions for testing.
 contract MathHarness {
@@ -165,7 +164,8 @@ contract StreamPricingMathTest is Test {
         // factor = 1.1e18, floor = 106.7e18, ceil = 106.7e18 + 1
         // Deleting the `value += 1` line would make this test fail.
         uint256 borrowAmount = 97e18 + 1;
-        uint256 floored = PRBMath.mulDiv(borrowAmount, StreamPricing.factor(1000, 365 days), WAD);
+        uint256 f = StreamPricing.factor(1000, 365 days);
+        uint256 floored = borrowAmount * f / WAD;
         uint128 ceiled = h.obligation(borrowAmount, 1000, 365 days);
         assertEq(uint256(ceiled), floored + 1, "ceil must be floor + 1 when mulmod != 0");
     }

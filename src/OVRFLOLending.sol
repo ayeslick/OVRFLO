@@ -783,19 +783,19 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Scans liquidity positions for matching available liquidity.
-    /// @dev Gated by
-    ///      `marketActive` (reverts on expired series). Returns IDs of active liquidity positions
-    ///      matching `market` and `aprBps` with remaining liquidity, excluding positions owned by
-    ///      the caller (self-match guard in `createBorrowerLoanPool`). Stopping once
-    ///      accumulated liquidity meets `targetAmount`. Use `startId` to paginate if the
-    ///      scan is large and `sufficient` is false.
+    /// @dev Gated by `marketActive` (reverts on expired series). Returns IDs of active
+    ///      liquidity positions matching `market` and `aprBps` with remaining liquidity,
+    ///      excluding positions owned by `borrower` (self-match guard in
+    ///      `createBorrowerLoanPool`). Stops once accumulated liquidity meets `targetAmount`.
+    ///      Use `startId` to paginate if the scan is large and `sufficient` is false.
+    /// @param borrower Address to exclude (pass msg.sender for on-chain calls).
     /// @param market Pendle market to match.
     /// @param aprBps Rate to match.
     /// @param targetAmount Minimum total liquidity desired.
     /// @param startId First liquidity ID to scan (inclusive).
     /// @return ids Matching liquidity IDs.
     /// @return sufficient True if accumulated liquidity >= `targetAmount`.
-    function gatherLiquidity(address market, uint16 aprBps, uint128 targetAmount, uint256 startId)
+    function gatherLiquidity(address borrower, address market, uint16 aprBps, uint128 targetAmount, uint256 startId)
         external
         view
         returns (uint256[] memory ids, bool sufficient)
@@ -814,7 +814,7 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
             LiquidityPosition storage liquidity = liquidityPositions[i];
             if (
                 liquidity.active && liquidity.market == market && liquidity.aprBps == aprBps
-                    && liquidity.availableLiquidity > 0 && liquidity.lender != msg.sender
+                    && liquidity.availableLiquidity > 0 && liquidity.lender != borrower
             ) {
                 ids[count++] = i;
                 gathered += liquidity.availableLiquidity;

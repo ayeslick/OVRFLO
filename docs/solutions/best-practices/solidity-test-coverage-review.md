@@ -75,7 +75,7 @@ No critical coverage gap was found. The gaps below are mostly regression hardeni
 - **Files:** `src/OVRFLO.sol`, `test/OVRFLO.t.sol`, `test/OVRFLOFactory.t.sol`
 - **Current coverage:** PT sweep covers non-admin, no excess, and successful excess sweep for registered PTs.
 - **Gap:** There is no direct unit test that `OVRFLO.sweepExcessPt(nonPt, to)` reverts with `OVRFLO: unknown PT`.
-- **Why it matters:** This guard is critical pattern #13 and prevents mis-targeted sweeps from treating unrelated token balances as excess.
+- **Why it matters:** This guard is critical pattern #11 and prevents mis-targeted sweeps from treating unrelated token balances as excess.
 - **Suggested test:** Mint underlying or an unrelated token to the vault, call `sweepExcessPt(address(unrelated), recipient)` as admin/factory owner, and expect `OVRFLO: unknown PT`.
 
 ### G-04: `prepareOracle` upper-bound guard is not directly tested
@@ -91,7 +91,7 @@ No critical coverage gap was found. The gaps below are mostly regression hardeni
 - **Files:** `src/OVRFLOLending.sol`, `test/OVRFLOLending.t.sol`
 - **Current coverage:** Positive `liquidityState()` and `saleListingState()` reads exist. Unknown loan is covered indirectly through `closeLoan()` and `repayLoan()`.
 - **Gap:** No direct tests assert `liquidityState(unknown)`, `saleListingState(unknown)`, and `loanState(unknown)` revert with their expected unknown-ID messages.
-- **Why it matters:** Critical pattern #8 says ID-based views must distinguish nonexistent IDs from inactive records.
+- **Why it matters:** Critical pattern #7 says ID-based views must distinguish nonexistent IDs from inactive records.
 - **Suggested test:** Add a view-focused test for all three unknown-ID sentinels.
 
 ### G-06: `createBorrowerLoanPool` missing direct guard coverage for several boundary reverts

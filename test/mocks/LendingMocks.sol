@@ -237,8 +237,9 @@ contract MockLendingSablier {
         delete getApproved[streamId];
     }
 
-    function ownerOf(uint256 streamId) external view returns (address) {
-        return owners[streamId];
+    function ownerOf(uint256 streamId) external view returns (address owner) {
+        owner = owners[streamId];
+        require(owner != address(0), "ERC721: invalid token ID");
     }
 
     function getSender(uint256 streamId) external view returns (address) {
