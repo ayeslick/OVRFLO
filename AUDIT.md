@@ -46,7 +46,7 @@ The package reuses the stable IDs already in `x-ray/` — guard codes `G-1..G-56
 | Runnable audit harness (invariants-as-properties suite, one-command fork env, committed traces) | Deferred to a follow-up plan. This package is the doc/content layer. |
 | Standalone lifecycle walkthrough doc | Deferred; minimal dynamic context is folded into the dependency contracts and internal-model docs. |
 | Formal verification (Halmos) | Not yet implemented. Three properties identified: I-7 (rounding invariant), I-4/E-3 (pool pro-rata fairness), I-2/I-3 (pool conservation). |
-| Fuzz campaign re-run after audit fixes | Medusa/Echidna configs have 133 properties. 5 violations found and fixed (M-01 through L-02); re-run to confirm zero violations is pending. |
+| Fuzz campaign re-run after audit fixes | Complete: 198 properties in Medusa/Echidna configs. 5 violations found and fixed (M-01 through L-02). Re-run: 140 Medusa tests passed, 0 violations. 1 harness false positive (SP-99) found and fixed. See `fizz_data/report.md`. |
 
 ## One-screen triage map
 
@@ -105,22 +105,21 @@ The package reuses the stable IDs already in `x-ray/` — guard codes `G-1..G-56
 
 ## Testing baseline
 
-19 test files, 195 test functions. **Coverage now available** — `forge coverage` succeeds with 100% line coverage and 99.6% branch coverage on source files (1 uncovered branch in `OVRFLOLending.sol`). All 167 test functions in the coverage run passed (0 failed). 195 tests pass (92 unit, 6 attack, 13 fuzz, 52 pricing, 4 invariant/100 runs, 28 fork).
+13+ test files, 364 test functions. **Coverage now available** — `forge coverage` succeeds with 100% line coverage (559/559) and 99.07% branch coverage (107/108) on source files (1 uncovered branch in `OVRFLOLending.sol`). All 364 tests pass. Fuzz campaign re-run complete: 140 Medusa tests passed, 0 violations (after fixing SP-99 harness false positive).
 
 | Category | Count | Notes |
 |----------|-------|-------|
-| Unit tests | ~25 files | All in-scope contracts covered |
+| Unit tests | ~250 | All in-scope contracts covered |
 | Mainnet fork tests | 6 files | Vault, lending, factory, flash loan, wrap/unwrap |
 | Stateless fuzz | 1 suite (1000 runs) | OVRFLOFuzz |
-| Stateful fuzz (Foundry) | 3 suites (500 runs, depth 25) | OVRFLOLending invariant, OVRFLO invariant, wrap/unwrap invariant |
+| Stateful fuzz (Foundry) | 3 suites (500 runs, depth 40) | OVRFLOLending invariant, OVRFLO invariant, wrap/unwrap invariant |
 | Attack scenarios | 1 suite | Flash-loan griefing, wrap/claim/redeem loops |
 | Math stress | 1 suite | StreamPricing rounding, overflow, boundary |
-| Audit fix tests | 7 files (U1-U7) | Guard tests, boundary reverts, edge cases, fork self-skip, defensive branch harness |
-| Stateful fuzz (Echidna) | 1 config (`echidna.yaml`) | 133 properties across 5 contracts |
-| Stateful fuzz (Medusa) | 1 config (`medusa.json`) | 133 properties, 500K test limit, 10 workers |
-| Fuzz campaign results | 5 violations found and fixed | M-01 (claimLoanPoolShare pro-rata cap removed), M-02 (net slippage), M-03 (oracle freshness), L-01 (quote validation), L-02 (step-aligned APR bounds). All fixed test-first. See `docs/audit/audit-findings.md`. |
-| Line coverage | 100% (source files) | 593/593 instrumented lines hit |
-| Branch coverage | 99.6% (source files) | 267/268 branches hit (1 uncovered in OVRFLOLending) |
+| Stateful fuzz (Echidna) | 1 config (`echidna.yaml`) | 198 properties across 5 contracts |
+| Stateful fuzz (Medusa) | 1 config (`medusa.json`) | 198 properties, 1M test limit, 10 workers |
+| Fuzz campaign results | 5 violations found and fixed (M-01..L-02); re-run: 0 violations | M-01 (claimLoanPoolShare pro-rata cap removed), M-02 (net slippage), M-03 (oracle freshness), L-01 (quote validation), L-02 (step-aligned APR bounds). All fixed test-first. Re-run after fixes: 140 Medusa tests passed, 0 violations. 1 harness false positive (SP-99: setLendingTreasury corrupted balance-delta check) found and fixed. See `docs/audit/audit-findings.md` and `fizz_data/report.md`. |
+| Line coverage | 100% (source files) | 559/559 instrumented lines hit |
+| Branch coverage | 99.07% (source files) | 107/108 branches hit (1 uncovered in OVRFLOLending) |
 | Formal verification | 0 | Not yet implemented. Three properties identified: I-7, I-4/E-3, I-2/I-3. Halmos recommended. |
 
 ## Where to start
