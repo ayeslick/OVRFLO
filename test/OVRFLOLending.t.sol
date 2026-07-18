@@ -225,13 +225,12 @@ contract OVRFLOLendingTest is Test {
         uint256 liquidityId = lending.supplyLiquidity(MARKET, 1000, 100 ether);
         vm.stopPrank();
 
-        (address lender, address market, uint16 aprBps, uint128 availableLiquidity, bool active) =
+        (address lender, address market, uint16 aprBps, uint128 availableLiquidity) =
             lending.liquidityPositions(liquidityId);
         assertEq(lender, BUYER);
         assertEq(market, MARKET);
         assertEq(aprBps, 1000);
         assertEq(availableLiquidity, 100 ether);
-        assertTrue(active);
         assertEq(underlying.balanceOf(address(lending)), 100 ether);
         assertEq(underlying.balanceOf(BUYER), 0);
     }
@@ -247,8 +246,8 @@ contract OVRFLOLendingTest is Test {
         vm.prank(SELLER);
         lending.sellStreamToLiquidity(liquidityId, 1, 99 ether);
 
-        (,,,, bool active) = lending.liquidityPositions(liquidityId);
-        assertFalse(active);
+        (,,, uint128 availableLiquidity) = lending.liquidityPositions(liquidityId);
+        assertEq(availableLiquidity, 0);
         assertEq(underlying.balanceOf(SELLER), 99 ether);
         assertEq(underlying.balanceOf(TREASURY), 1 ether);
         assertEq(underlying.balanceOf(address(lending)), 0);
@@ -264,7 +263,7 @@ contract OVRFLOLendingTest is Test {
         vm.prank(SELLER);
         lending.sellStreamToLiquidity(liquidityId, 28, 0);
 
-        (,,, uint128 availableLiquidity,) = lending.liquidityPositions(liquidityId);
+        (,,, uint128 availableLiquidity) = lending.liquidityPositions(liquidityId);
         assertEq(availableLiquidity, 0);
         assertEq(underlying.balanceOf(SELLER), 100 ether);
         assertEq(underlying.balanceOf(TREASURY), 0);
@@ -322,9 +321,8 @@ contract OVRFLOLendingTest is Test {
         vm.prank(SELLER);
         lending.sellStreamToLiquidity(liquidityId, 5, 0);
 
-        (,,, uint128 availableLiquidity, bool active) = lending.liquidityPositions(liquidityId);
+        (,,, uint128 availableLiquidity) = lending.liquidityPositions(liquidityId);
         assertEq(availableLiquidity, 150 ether);
-        assertTrue(active);
         assertEq(underlying.balanceOf(SELLER), 100 ether);
         assertEq(underlying.balanceOf(address(lending)), 150 ether);
         assertEq(sablier.ownerOf(5), BUYER);
@@ -332,9 +330,8 @@ contract OVRFLOLendingTest is Test {
         vm.prank(BUYER);
         lending.withdrawLiquidity(liquidityId);
 
-        (,,, availableLiquidity, active) = lending.liquidityPositions(liquidityId);
+        (,,, availableLiquidity) = lending.liquidityPositions(liquidityId);
         assertEq(availableLiquidity, 0);
-        assertFalse(active);
         assertEq(underlying.balanceOf(BUYER), 150 ether);
     }
 
@@ -699,13 +696,12 @@ contract OVRFLOLendingTest is Test {
 
     function test_OrderStateViewsReflectCurrentState() public {
         uint256 liquidityId = _supplyLiquidity(BUYER, 100 ether);
-        (address lender, address market, uint16 aprBps, uint128 availableLiquidity, bool active) =
+        (address lender, address market, uint16 aprBps, uint128 availableLiquidity) =
             lending.liquidityPositions(liquidityId);
         assertEq(lender, BUYER);
         assertEq(market, MARKET);
         assertEq(aprBps, 1000);
         assertEq(availableLiquidity, 100 ether);
-        assertTrue(active);
 
         _mintEligibleStream(26, SELLER, 110 ether, 0);
         uint256 saleListingId = _postSaleListing(SELLER, 26);
@@ -830,13 +826,11 @@ contract OVRFLOLendingTest is Test {
     }
 
     function test_LiquidityState_ReturnsZeroForUnknownId() public {
-        (address lender, address market, uint16 aprBps, uint128 availableLiquidity, bool active) =
-            lending.liquidityPositions(999);
+        (address lender, address market, uint16 aprBps, uint128 availableLiquidity) = lending.liquidityPositions(999);
         assertEq(lender, address(0));
         assertEq(market, address(0));
         assertEq(aprBps, 0);
         assertEq(availableLiquidity, 0);
-        assertFalse(active);
     }
 
     function test_SaleListingState_ReturnsZeroForUnknownId() public {
@@ -895,11 +889,11 @@ contract OVRFLOLendingTest is Test {
         uint256 id9900 = lending.supplyLiquidity(MARKET, 9900, 100 ether);
         vm.stopPrank();
 
-        (,, uint16 apr0,,) = lending.liquidityPositions(id0);
+        (,, uint16 apr0,) = lending.liquidityPositions(id0);
         assertEq(apr0, 0);
-        (,, uint16 apr500,,) = lending.liquidityPositions(id500);
+        (,, uint16 apr500,) = lending.liquidityPositions(id500);
         assertEq(apr500, 500);
-        (,, uint16 apr9900,,) = lending.liquidityPositions(id9900);
+        (,, uint16 apr9900,) = lending.liquidityPositions(id9900);
         assertEq(apr9900, 9900);
     }
 
@@ -1072,9 +1066,9 @@ contract OVRFLOLendingTest is Test {
         assertEq(lending.loanPoolContributions(loanPoolId, STRANGER), 50 ether);
 
         // LiquidityPosition capacities
-        (,,, uint128 cap1,) = lending.liquidityPositions(liquidity1);
+        (,,, uint128 cap1) = lending.liquidityPositions(liquidity1);
         assertEq(cap1, 0);
-        (,,, uint128 cap2,) = lending.liquidityPositions(liquidity2);
+        (,,, uint128 cap2) = lending.liquidityPositions(liquidity2);
         assertEq(cap2, 10 ether);
 
         // Loan
@@ -1111,9 +1105,9 @@ contract OVRFLOLendingTest is Test {
         vm.stopPrank();
 
         // No liquidityPositions consumed
-        (,,, uint128 cap1,) = lending.liquidityPositions(liquidity1);
+        (,,, uint128 cap1) = lending.liquidityPositions(liquidity1);
         assertEq(cap1, 40 ether, "liquidity1 untouched");
-        (,,, uint128 cap2,) = lending.liquidityPositions(liquidity2);
+        (,,, uint128 cap2) = lending.liquidityPositions(liquidity2);
         assertEq(cap2, 40 ether, "liquidity2 untouched");
         assertEq(sablier.ownerOf(101), SELLER, "stream not escrowed");
     }
@@ -1367,9 +1361,8 @@ contract OVRFLOLendingTest is Test {
         vm.stopPrank();
 
         // LiquidityPosition availableLiquidity reduced by 100 (grossPrice), still active
-        (,,, uint128 capacityAfterSale, bool activeAfterSale) = lending.liquidityPositions(liquidityId);
+        (,,, uint128 capacityAfterSale) = lending.liquidityPositions(liquidityId);
         assertEq(capacityAfterSale, 100 ether, "availableLiquidity after sale");
-        assertTrue(activeAfterSale, "liquidity still active");
         assertEq(sablier.ownerOf(150), BUYER, "stream transferred to lender");
 
         // Loan second: STRANGER borrows 100 via createBorrowerLoanPool using the same liquidity
@@ -1382,9 +1375,8 @@ contract OVRFLOLendingTest is Test {
         vm.stopPrank();
 
         // LiquidityPosition exhausted and deactivated
-        (,,, uint128 capacityAfterLoan, bool activeAfterLoan) = lending.liquidityPositions(liquidityId);
+        (,,, uint128 capacityAfterLoan) = lending.liquidityPositions(liquidityId);
         assertEq(capacityAfterLoan, 0, "availableLiquidity after loan");
-        assertFalse(activeAfterLoan, "liquidity deactivated");
 
         // Maker holds the sold stream (permanent transfer) and borrower's stream is in escrow
         assertEq(sablier.ownerOf(150), BUYER, "lender holds sold stream");
@@ -1753,7 +1745,7 @@ contract OVRFLOLendingTest is Test {
 
         assertEq(lending.nextLoanId(), 1, "pool id not incremented");
         assertEq(lending.nextLoanId(), 1, "loan id not incremented");
-        (,,, uint128 cap,) = lending.liquidityPositions(liquidityId);
+        (,,, uint128 cap) = lending.liquidityPositions(liquidityId);
         assertEq(cap, 100 ether, "liquidity capacity not consumed");
         assertEq(sablier.ownerOf(301), SELLER, "stream still owned by borrower");
     }
@@ -1814,9 +1806,8 @@ contract OVRFLOLendingTest is Test {
         lending.sellStreamToLiquidity(liquidityId, 305, 200 ether);
         vm.stopPrank();
 
-        (,,, uint128 cap, bool active) = lending.liquidityPositions(liquidityId);
+        (,,, uint128 cap) = lending.liquidityPositions(liquidityId);
         assertEq(cap, 100 ether, "capacity unchanged");
-        assertTrue(active, "liquidity still active");
         assertEq(sablier.ownerOf(305), SELLER, "stream still owned by seller");
     }
 
@@ -2188,13 +2179,13 @@ contract OVRFLOLendingTest is Test {
     /// @dev Direct underlying transfer to lending does not inflate liquidity capacity.
     function test_Donation_UnderlyingDoesNotInflateCapacity() public {
         uint256 liquidityId = _supplyLiquidity(BUYER, 100 ether);
-        (,,, uint128 capBefore,) = lending.liquidityPositions(liquidityId);
+        (,,, uint128 capBefore) = lending.liquidityPositions(liquidityId);
 
         // Direct transfer of underlying to lending
         underlying.mint(address(this), 50 ether);
         underlying.transfer(address(lending), 50 ether);
 
-        (,,, uint128 capAfter,) = lending.liquidityPositions(liquidityId);
+        (,,, uint128 capAfter) = lending.liquidityPositions(liquidityId);
         assertEq(capAfter, capBefore, "capacity unchanged after donation");
 
         // Lending balance increases but this doesn't affect capacity accounting

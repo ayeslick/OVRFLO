@@ -79,9 +79,8 @@ abstract contract OVRFLOLendingHandler is Properties {
         uint256 start = clampBetween(liquidityId, 1, maxLiquidity - 1);
         for (uint256 offset; offset < maxLiquidity - 1; offset++) {
             uint256 candidate = (start - 1 + offset) % (maxLiquidity - 1) + 1;
-            (, address liquidityMarket, uint16 apr, uint128 capacity, bool active) =
-                lending.liquidityPositions(candidate);
-            if (!active) continue;
+            (, address liquidityMarket, uint16 apr, uint128 capacity) = lending.liquidityPositions(candidate);
+            if (capacity == 0) continue;
             try lending.quote(liquidityMarket, streamId, apr, 0) returns (
                 uint256 grossPrice, uint128, uint256, uint256, uint128
             ) {
@@ -134,8 +133,8 @@ abstract contract OVRFLOLendingHandler is Properties {
         // Find a first valid liquidity (active, not owned by actor)
         uint256 firstLiquidityId = 0;
         for (uint256 i = 1; i < maxLiquidity; i++) {
-            (address lender,,, uint128 cap, bool active) = lending.liquidityPositions(i);
-            if (active && cap > 0 && lender != actor) {
+            (address lender,,, uint128 cap) = lending.liquidityPositions(i);
+            if (cap > 0 && lender != actor) {
                 firstLiquidityId = i;
                 break;
             }
@@ -143,15 +142,15 @@ abstract contract OVRFLOLendingHandler is Properties {
         if (firstLiquidityId == 0) return;
 
         // Get first liquidity's market and aprBps for matching
-        (, address liquidityMarket, uint16 liquidityApr,,) = lending.liquidityPositions(firstLiquidityId);
+        (, address liquidityMarket, uint16 liquidityApr,) = lending.liquidityPositions(firstLiquidityId);
 
         // Build liquidity array with matching liquidityPositions (ascending order by construction)
         uint256[] memory liquidityIds = new uint256[](poolSize);
         liquidityIds[0] = firstLiquidityId;
         uint256 count = 1;
         for (uint256 i = firstLiquidityId + 1; i < maxLiquidity && count < poolSize; i++) {
-            (address lender, address m, uint16 apr, uint128 cap, bool active) = lending.liquidityPositions(i);
-            if (active && cap > 0 && lender != actor && m == liquidityMarket && apr == liquidityApr) {
+            (address lender, address m, uint16 apr, uint128 cap) = lending.liquidityPositions(i);
+            if (cap > 0 && lender != actor && m == liquidityMarket && apr == liquidityApr) {
                 liquidityIds[count] = i;
                 count++;
             }
@@ -168,7 +167,7 @@ abstract contract OVRFLOLendingHandler is Properties {
 
         uint256 totalAvailable;
         for (uint256 i; i < liquidityIds.length; i++) {
-            (,,, uint128 capacity,) = lending.liquidityPositions(liquidityIds[i]);
+            (,,, uint128 capacity) = lending.liquidityPositions(liquidityIds[i]);
             totalAvailable += capacity;
         }
         uint256 maxBorrow;
@@ -245,8 +244,8 @@ abstract contract OVRFLOLendingHandler is Properties {
         uint256 start = clampBetween(liquidityId, 1, maxLiquidity - 1);
         for (uint256 offset; offset < maxLiquidity - 1; offset++) {
             uint256 candidate = (start - 1 + offset) % (maxLiquidity - 1) + 1;
-            (address lender,,,, bool active) = lending.liquidityPositions(candidate);
-            if (active && lender == actor) {
+            (address lender,,, uint128 cap) = lending.liquidityPositions(candidate);
+            if (cap > 0 && lender == actor) {
                 oVRFLOLending_withdrawLiquidity(candidate);
                 return;
             }
@@ -493,16 +492,16 @@ abstract contract OVRFLOLendingHandler is Properties {
         uint256 startId = clampBetween(liquiditySeed, 1, maxLiquidity - 1);
         // Find a valid liquidity to get market and aprBps
         for (uint256 i = startId; i < maxLiquidity; i++) {
-            (, address liquidityMarket, uint16 liquidityApr,, bool active) = lending.liquidityPositions(i);
-            if (!active) continue;
+            (, address liquidityMarket, uint16 liquidityApr, uint128 cap) = lending.liquidityPositions(i);
+            if (cap == 0) continue;
             (uint256[] memory ids, bool sufficient) =
                 lending.gatherLiquidity(liquidityMarket, liquidityApr, targetAmount, 1, actor);
             // Verify returned IDs are active with matching market and aprBps
             uint128 sum;
             for (uint256 j = 0; j < ids.length; j++) {
-                (, address m, uint16 apr, uint128 cap, bool a) = lending.liquidityPositions(ids[j]);
-                assert(a && m == liquidityMarket && apr == liquidityApr);
-                sum += cap;
+                (, address m, uint16 apr, uint128 liqCap) = lending.liquidityPositions(ids[j]);
+                assert(liqCap > 0 && m == liquidityMarket && apr == liquidityApr);
+                sum += liqCap;
             }
             if (sufficient) {
                 assert(sum >= targetAmount);
@@ -604,9 +603,9 @@ abstract contract OVRFLOLendingHandler is Properties {
                 for (uint256 i = 1; i < MockSablier(SABLIER_ADDR).nextStreamId() + 1; i++) {
                     try ISablierV2LockupLinear(SABLIER_ADDR).ownerOf(i) returns (address owner) {
                         if (owner == actorC) {
-                            (address lender,,,, bool active) = lending.liquidityPositions(liquidityA);
-                            (address makerB,,,, bool activeB) = lending.liquidityPositions(liquidityB);
-                            if (active && activeB && lender != actorC && makerB != actorC) {
+                            (address lender,,, uint128 capA) = lending.liquidityPositions(liquidityA);
+                            (address makerB,,, uint128 liqCapB) = lending.liquidityPositions(liquidityB);
+                            if (capA > 0 && liqCapB > 0 && lender != actorC && makerB != actorC) {
                                 streamId = i;
                                 break;
                             }
@@ -684,8 +683,8 @@ abstract contract OVRFLOLendingHandler is Properties {
             lending.sellStreamToLiquidity(liquidityId, streamId, 0);
             vm.stopPrank();
             // Verify the position is now inactive
-            (,,, uint128 remaining, bool active) = lending.liquidityPositions(liquidityId);
-            assert(!active && remaining == 0);
+            (,,, uint128 remaining) = lending.liquidityPositions(liquidityId);
+            assert(remaining == 0);
         } catch {}
     }
 }

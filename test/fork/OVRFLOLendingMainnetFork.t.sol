@@ -166,8 +166,7 @@ contract OVRFLOLendingMainnetForkTest is OVRFLOForkBase {
         assertEq(IERC20(WSTETH).balanceOf(USER), grossPrice, "seller should receive full gross price");
 
         // LiquidityPosition availableLiquidity consumed
-        (,,, uint128 remainingCapacity, bool active) = lending.liquidityPositions(liquidityId);
-        assertFalse(active, "liquidity should be inactive after full consumption");
+        (,,, uint128 remainingCapacity) = lending.liquidityPositions(liquidityId);
         assertEq(remainingCapacity, 0, "availableLiquidity should be 0 after full fill");
     }
 

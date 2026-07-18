@@ -85,8 +85,8 @@ contract OVRFLOLendingInvariantHandler is Test {
     function withdrawLiquidity(uint256 liquidityIdSeed) public {
         if (lending.nextLiquidityId() == 1) return;
         uint256 liquidityId = bound(liquidityIdSeed, 1, lending.nextLiquidityId() - 1);
-        (address lender,,, uint128 availableLiquidity, bool active) = lending.liquidityPositions(liquidityId);
-        if (!active) return;
+        (address lender,,, uint128 availableLiquidity) = lending.liquidityPositions(liquidityId);
+        if (availableLiquidity == 0) return;
 
         vm.prank(lender);
         lending.withdrawLiquidity(liquidityId);
@@ -97,9 +97,8 @@ contract OVRFLOLendingInvariantHandler is Test {
     function sellStreamToLiquidity(uint256 liquidityIdSeed) public {
         if (lending.nextLiquidityId() == 1) return;
         uint256 liquidityId = bound(liquidityIdSeed, 1, lending.nextLiquidityId() - 1);
-        (, address market, uint16 aprBps, uint128 availableLiquidity, bool active) =
-            lending.liquidityPositions(liquidityId);
-        if (!active || availableLiquidity == 0) return;
+        (, address market, uint16 aprBps, uint128 availableLiquidity) = lending.liquidityPositions(liquidityId);
+        if (availableLiquidity == 0) return;
 
         address actor = _actor(liquidityIdSeed);
         uint256 streamId = _createStream(actor);

@@ -31,7 +31,6 @@ abstract contract Snapshots is Base {
         address streamOwner; // 18: sablier.ownerOf(streamId)
         // LiquidityPosition state (keyed by ghost_lastLiquidityId)
         uint128 liquidityCapacity; // 19: liquidityPositions[liquidityId].availableLiquidity
-        bool liquidityActive; // 20: liquidityPositions[liquidityId].active
         // Listing state (keyed by ghost_lastListingId)
         bool listingActive; // 21: saleListings[listingId].active
         // ID counters
@@ -109,12 +108,10 @@ abstract contract Snapshots is Base {
 
         // LiquidityPosition state
         if (ghosts.ghost_lastLiquidityId > 0) {
-            (,,, uint128 availableLiquidity, bool active) = lending.liquidityPositions(ghosts.ghost_lastLiquidityId);
+            (,,, uint128 availableLiquidity) = lending.liquidityPositions(ghosts.ghost_lastLiquidityId);
             state.liquidityCapacity = availableLiquidity;
-            state.liquidityActive = active;
         } else {
             state.liquidityCapacity = 0;
-            state.liquidityActive = false;
         }
 
         // Listing state

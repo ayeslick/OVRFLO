@@ -69,7 +69,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
         uint256 nextLiquidity = lending.nextLiquidityId();
         uint256 sum;
         for (uint256 i = 1; i < nextLiquidity; i++) {
-            (,,, uint128 availableLiquidity,) = lending.liquidityPositions(i);
+            (,,, uint128 availableLiquidity) = lending.liquidityPositions(i);
             sum += availableLiquidity;
         }
         lte(
@@ -167,19 +167,6 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     }
 
     // ─────────────── State Transitions (one-way flags) ───────────────
-
-    /// @notice GL-11: liquidity.active never goes false -> true
-    function property_liquidity_active_no_revival() public {
-        uint256 nextLiquidity = lending.nextLiquidityId();
-        for (uint256 i = 1; i < nextLiquidity; i++) {
-            (,,,, bool active) = lending.liquidityPositions(i);
-            if (ghost_liquiditySeen[i]) {
-                t(!(ghost_liquidityActiveSnapshot[i] == false && active), "GL-11: liquidity active false->true");
-            }
-            ghost_liquiditySeen[i] = true;
-            ghost_liquidityActiveSnapshot[i] = active;
-        }
-    }
 
     /// @notice GL-12: saleListing.active never goes false -> true
     function property_listing_active_no_revival() public {
@@ -285,7 +272,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     function property_liquidity_slot_iff_id() public {
         uint256 nextLiquidity = lending.nextLiquidityId();
         for (uint256 i = 1; i < nextLiquidity; i++) {
-            (address lender,,,,) = lending.liquidityPositions(i);
+            (address lender,,,) = lending.liquidityPositions(i);
             t(lender != address(0), "GL-25: liquidity slot not populated for id < nextLiquidityId");
         }
     }
@@ -344,15 +331,6 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
         }
     }
 
-    /// @notice GL-32: liquidity.active iff availableLiquidity > 0
-    function property_liquidity_active_iff_capacity() public {
-        uint256 nextLiquidity = lending.nextLiquidityId();
-        for (uint256 i = 1; i < nextLiquidity; i++) {
-            (,,, uint128 availableLiquidity, bool active) = lending.liquidityPositions(i);
-            t(active == (availableLiquidity > 0), "GL-32: liquidity active != (availableLiquidity > 0)");
-        }
-    }
-
     // ─────────────── Immutability ───────────────
 
     /// @notice GL-33: loan.obligation immutable after creation
@@ -398,7 +376,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     function property_liquidity_maker_apr_immutable() public {
         uint256 nextLiquidity = lending.nextLiquidityId();
         for (uint256 i = 1; i < nextLiquidity; i++) {
-            (address lender,, uint16 aprBps,,) = lending.liquidityPositions(i);
+            (address lender,, uint16 aprBps,) = lending.liquidityPositions(i);
             if (ghost_liquidityMakerInit[i] == address(0)) {
                 ghost_liquidityMakerInit[i] = lender;
                 ghost_liquidityAprBpsInit[i] = aprBps;
@@ -906,8 +884,8 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     function property_supplyLiquidityNewLiquidityActive() internal {
         uint256 liquidityId = ghosts.ghost_lastLiquidityId;
         if (liquidityId == 0) return;
-        (address lender,,, uint128 availableLiquidity, bool active) = lending.liquidityPositions(liquidityId);
-        t(active, "SP-44: new liquidity not active");
+        (address lender,,, uint128 availableLiquidity) = lending.liquidityPositions(liquidityId);
+        t(availableLiquidity > 0, "SP-44: new liquidity not active");
         gt(uint256(availableLiquidity), 0, "SP-44: new liquidity availableLiquidity is zero");
         t(lender == actor, "SP-44: new liquidity lender is not the caller");
     }
@@ -916,8 +894,8 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     function property_withdrawLiquidityInactive() internal {
         uint256 liquidityId = ghosts.ghost_lastLiquidityId;
         if (liquidityId == 0) return;
-        (,,, uint128 availableLiquidity, bool active) = lending.liquidityPositions(liquidityId);
-        t(!active, "SP-45: cancelled liquidity still active");
+        (,,, uint128 availableLiquidity) = lending.liquidityPositions(liquidityId);
+        t(availableLiquidity == 0, "SP-45: cancelled liquidity still active");
         eq(uint256(availableLiquidity), 0, "SP-45: cancelled liquidity availableLiquidity not zero");
     }
 
@@ -935,18 +913,17 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     function property_sellStreamToLiquidityCapacityDecreases(uint256 grossPrice) internal {
         uint256 liquidityId = ghosts.ghost_lastLiquidityId;
         if (liquidityId == 0) return;
-        (,,, uint128 capacityAfter, bool activeAfter) = lending.liquidityPositions(liquidityId);
+        (,,, uint128 capacityAfter) = lending.liquidityPositions(liquidityId);
         eq(
             uint256(stateBefore.liquidityCapacity) - uint256(capacityAfter),
             grossPrice,
             "SP-46: availableLiquidity did not decrease by grossPrice"
         );
-        t(activeAfter == (capacityAfter > 0), "SP-46: liquidity active state inconsistent with availableLiquidity");
     }
 
     /// @notice SP-71: Non-lender cannot cancel liquidity (sanity: caller was the lender)
     function property_nonMakerCannotWithdrawLiquidity(uint256 liquidityId) internal {
-        (address lender,,,,) = lending.liquidityPositions(liquidityId);
+        (address lender,,,) = lending.liquidityPositions(liquidityId);
         t(lender == actor, "SP-71: non-lender cancelled liquidity");
     }
 
@@ -1341,7 +1318,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     function property_liquidity_capacity_nonincreasing() public {
         uint256 nextLiquidity = lending.nextLiquidityId();
         for (uint256 i = 1; i < nextLiquidity; i++) {
-            (,,, uint128 availableLiquidity,) = lending.liquidityPositions(i);
+            (,,, uint128 availableLiquidity) = lending.liquidityPositions(i);
             if (ghost_liquidityCapacitySeen[i]) {
                 lte(
                     uint256(availableLiquidity),
@@ -1565,7 +1542,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     function property_underlying_donation_no_inflate() public {
         uint256 nextLiquidity = lending.nextLiquidityId();
         for (uint256 i = 1; i < nextLiquidity; i++) {
-            (,,, uint128 availableLiquidity,) = lending.liquidityPositions(i);
+            (,,, uint128 availableLiquidity) = lending.liquidityPositions(i);
             uint128 initialCap = ghost_liquidityInitialCapacity[i];
             // If we have the initial capacity recorded, current must not exceed it.
             // This proves a direct underlying transfer cannot inflate capacity.
@@ -1767,7 +1744,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     function property_sellStream_transfers_to_lender() internal {
         uint256 liquidityId = ghosts.ghost_lastLiquidityId;
         if (liquidityId == 0) return;
-        (address lender,,,,) = lending.liquidityPositions(liquidityId);
+        (address lender,,,) = lending.liquidityPositions(liquidityId);
         t(stateAfter.streamOwner == lender, "SP-84: sellStreamToLiquidity did not transfer stream to lender");
     }
 
@@ -1990,7 +1967,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     function property_withdraw_post_maturity() internal {
         uint256 liquidityId = ghosts.ghost_lastLiquidityId;
         if (liquidityId == 0) return;
-        (, address liquidityMarket,,,) = lending.liquidityPositions(liquidityId);
+        (, address liquidityMarket,,) = lending.liquidityPositions(liquidityId);
         (,,, uint256 expiry,,,,) = vault.series(liquidityMarket);
         if (block.timestamp >= expiry) {
             gt(stateAfter.actorUnderlying, stateBefore.actorUnderlying, "SP-105: no refund post-maturity");

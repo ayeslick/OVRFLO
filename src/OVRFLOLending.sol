@@ -84,13 +84,11 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
     /// @param aprBps Discount/accrual rate used to price any stream sold into or borrowed
     ///        against this liquidity.
     /// @param availableLiquidity Remaining underlying available (decremented on fill).
-    /// @param active False once cancelled or fully consumed.
     struct LiquidityPosition {
         address lender;
         address market;
         uint16 aprBps;
         uint128 availableLiquidity;
-        bool active;
     }
 
     /// @notice Sell-side listing: a specific stream listed for sale at `aprBps`.
@@ -321,7 +319,7 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
 
         liquidityId = nextLiquidityId++;
         liquidityPositions[liquidityId] = LiquidityPosition({
-            lender: msg.sender, market: market, aprBps: aprBps, availableLiquidity: availableLiquidity, active: true
+            lender: msg.sender, market: market, aprBps: aprBps, availableLiquidity: availableLiquidity
         });
 
         _pullExact(IERC20(underlying), msg.sender, address(this), availableLiquidity);
@@ -333,12 +331,11 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
     /// @param liquidityId The liquidity position to withdraw.
     function withdrawLiquidity(uint256 liquidityId) external nonReentrant {
         LiquidityPosition storage liquidity = liquidityPositions[liquidityId];
-        require(liquidity.active, "OVRFLOLending: liquidity inactive");
+        require(liquidity.availableLiquidity > 0, "OVRFLOLending: liquidity inactive");
         require(liquidity.lender == msg.sender, "OVRFLOLending: not lender");
 
         uint128 refund = liquidity.availableLiquidity;
         liquidity.availableLiquidity = 0;
-        liquidity.active = false;
 
         _payUnderlying(msg.sender, refund);
 
@@ -354,7 +351,7 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
     /// @param minNetOut Minimum underlying the seller must receive (slippage).
     function sellStreamToLiquidity(uint256 liquidityId, uint256 streamId, uint256 minNetOut) external nonReentrant {
         LiquidityPosition storage liquidity = liquidityPositions[liquidityId];
-        require(liquidity.active, "OVRFLOLending: liquidity inactive");
+        require(liquidity.availableLiquidity > 0, "OVRFLOLending: liquidity inactive");
 
         (, uint256 grossPrice,) = _priceStream(liquidity.market, streamId, liquidity.aprBps);
         require(grossPrice <= liquidity.availableLiquidity, "OVRFLOLending: insufficient availableLiquidity");
@@ -364,9 +361,6 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
         require(netToSeller >= minNetOut, "OVRFLOLending: slippage");
 
         liquidity.availableLiquidity -= _toUint128(grossPrice);
-        if (liquidity.availableLiquidity == 0) {
-            liquidity.active = false;
-        }
 
         sablier.transferFrom(msg.sender, liquidity.lender, streamId);
         _payUnderlying(msg.sender, netToSeller);
@@ -543,7 +537,7 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
         uint16 aprBps;
         {
             LiquidityPosition memory firstLiquidity = liquidityPositions[liquidityIds[0]];
-            require(firstLiquidity.active, "OVRFLOLending: liquidity inactive");
+            require(firstLiquidity.availableLiquidity > 0, "OVRFLOLending: liquidity inactive");
             market = firstLiquidity.market;
             aprBps = firstLiquidity.aprBps;
         }
@@ -717,8 +711,8 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
         for (uint256 i = startId; i < nextLiquidityId; i++) {
             LiquidityPosition storage liquidity = liquidityPositions[i];
             if (
-                liquidity.active && liquidity.market == market && liquidity.aprBps == aprBps
-                    && liquidity.availableLiquidity > 0 && liquidity.lender != borrower
+                liquidity.availableLiquidity > 0 && liquidity.market == market && liquidity.aprBps == aprBps
+                    && liquidity.lender != borrower
             ) {
                 ids[count++] = i;
                 gathered += liquidity.availableLiquidity;
@@ -739,7 +733,7 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
                                 INTERNALS
     //////////////////////////////////////////////////////////////*/
 
-    /// @dev Validates all liquidity positions in a borrower loan pool: active, same market,
+    /// @dev Validates all liquidity positions in a borrower loan pool: available, same market,
     ///      same aprBps, and no self-match. Returns total available liquidity.
     function _validateLiquidity(uint256[] memory liquidityIds, address market, uint16 aprBps, address borrower)
         internal
@@ -749,7 +743,7 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
         for (uint256 i; i < liquidityIds.length; i++) {
             if (i > 0) require(liquidityIds[i] > liquidityIds[i - 1], "OVRFLOLending: duplicate or unsorted ids");
             LiquidityPosition storage liquidity = liquidityPositions[liquidityIds[i]];
-            require(liquidity.active, "OVRFLOLending: liquidity inactive");
+            require(liquidity.availableLiquidity > 0, "OVRFLOLending: liquidity inactive");
             require(liquidity.market == market, "OVRFLOLending: market mismatch");
             require(liquidity.aprBps == aprBps, "OVRFLOLending: apr mismatch");
             require(liquidity.lender != borrower, "OVRFLOLending: self-match");
@@ -765,9 +759,6 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
             LiquidityPosition storage liquidity = liquidityPositions[liquidityIds[i]];
             uint256 consumed = toBorrow < liquidity.availableLiquidity ? toBorrow : liquidity.availableLiquidity;
             liquidity.availableLiquidity -= _toUint128(consumed);
-            if (liquidity.availableLiquidity == 0) {
-                liquidity.active = false;
-            }
             loanPoolContributions[loanId][liquidity.lender] += _toUint128(consumed);
             toBorrow -= consumed;
         }
