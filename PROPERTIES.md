@@ -16,13 +16,13 @@ Consolidated from 5 invariant discovery agents (Conservation Auditor, Round-Trip
 - [x] **GL-01** totalSupply == marketTotalDeposited + wrappedUnderlying (no direct-transfer inflation). HIGH_LEVEL, SHOULD-HOLD, HIGH. Evidence: I-1 delta-pair (deposit +ptAmount both, claim -amount both, wrap +amount both, unwrap -amount both). Sources: CON-01, SPEC-V01, SPEC-V02
 - [x] **GL-02** Combined solvency: totalSupply <= underlying.balanceOf(vault) + ptToken.balanceOf(vault). VALID_STATE, SHOULD-HOLD, HIGH. Evidence: ovrfloToken fungibility means holders can exit via either path (unwrap or claim); individual checks (wrappedUnderlying <= balance, MTD <= PT balance) are too strict post-maturity when cross-exits are possible. The combined invariant is the real solvency condition. Sources: CON-02, fuzz campaign 2026-07-01
 - [x] **GL-03** marketTotalDeposited <= ptToken.balanceOf(vault) at rest. VALID_STATE, SHOULD-HOLD, HIGH. Evidence: I-8 deposit/claim delta pairs, flashLoan atomic, sweep only takes excess. Sources: CON-03
-- [x] **GL-04** sum(loanPoolProceeds) <= ovrfloToken.balanceOf(lending). HIGH_LEVEL, SHOULD-HOLD, HIGH. Evidence: Pattern B (internal accounting <= external reality). Sources: CON-10. Iteration: 1..nextLoanPoolId-1.
+- [x] **GL-04** sum(loanPoolProceeds) <= ovrfloToken.balanceOf(lending). HIGH_LEVEL, SHOULD-HOLD, HIGH. Evidence: Pattern B (internal accounting <= external reality). Sources: CON-10. Iteration: 1..nextLoanId-1.
 - [x] **GL-05** sum(liquidity.capacity) <= underlying.balanceOf(lending). HIGH_LEVEL, SHOULD-HOLD, HIGH. Evidence: Pattern B. Sources: CON-11. Iteration: 1..nextLiquidityId-1.
 - [-] **GL-06** sum(loanPoolProceeds) == ovrfloToken.balanceOf(lending) (strict, harness only). HIGH_LEVEL, EXPLORATORY, MEDIUM. Sources: CON-13. True if no direct transfers to lending.
 - [-] **GL-07** sum(liquidity.capacity) == underlying.balanceOf(lending) (strict, harness only). HIGH_LEVEL, EXPLORATORY, HIGH. Sources: CON-14. True if no direct transfers to lending.
 - [x] **GL-08** drawn + repaid <= obligation for every loan. VALID_STATE, SHOULD-HOLD, HIGH. Evidence: all increments capped at outstanding. Sources: CON-07, SPEC-L06, VS-11. Iteration: 1..nextLoanId-1.
-- [x] **GL-09** loanPoolProceeds <= totalObligation for every pool. VALID_STATE, SHOULD-HOLD, MEDIUM. Evidence: derived from GL-08 + SP-25 conservation. Sources: CON-09, SPEC-L07. Iteration: 1..nextLoanPoolId-1.
-- [x] **GL-10** loan.obligation == pool.totalObligation for pool loans. VALID_STATE, SHOULD-HOLD, MEDIUM. Evidence: both set from same variable at creation, never modified. Sources: CON-12. Iteration: 1..nextLoanId-1.
+- [x] **GL-09** loanPoolProceeds <= loan.obligation for every pool/loan. VALID_STATE, SHOULD-HOLD, MEDIUM. Evidence: derived from GL-08 + SP-25 conservation. Sources: CON-09, SPEC-L07. Iteration: 1..nextLoanId-1.
+- [-] **GL-10** loan.obligation == pool.totalObligation for pool loans. VALID_STATE, SHOULD-HOLD, MEDIUM. Evidence: both set from same variable at creation, never modified. Sources: CON-12. Iteration: 1..nextLoanId-1. **REMOVED**: refactor collapsed pool/loan into a single ID space; obligation is read from loans(i) directly. Review 2026-07-18.
 - [x] **GL-60** totalSupply == sum of all known holder balances (actors + vault + lending + treasury). HIGH_LEVEL, SHOULD-HOLD, HIGH. Evidence: ERC-20 standard. Sources: SPEC-T01
 
 ### Liveness & Solvency
@@ -39,14 +39,14 @@ Consolidated from 5 invariant discovery agents (Conservation Auditor, Round-Trip
 
 ### State Transitions (one-way flags)
 
-- [x] **GL-11** liquidity.active never goes false -> true. STATE_TRANSITION, SHOULD-HOLD, HIGH. Sources: ST-41. Iteration: 1..nextLiquidityId-1.
+- [-] **GL-11** liquidity.active never goes false -> true. STATE_TRANSITION, SHOULD-HOLD, HIGH. Sources: ST-41. Iteration: 1..nextLiquidityId-1. **REMOVED**: refactor collapsed the state it asserted. Review 2026-07-18.
 - [x] **GL-12** saleListing.active never goes false -> true. STATE_TRANSITION, SHOULD-HOLD, HIGH. Sources: ST-42. Iteration: 1..nextSaleListingId-1.
 - [x] **GL-13** loan.closed never goes true -> false. STATE_TRANSITION, SHOULD-HOLD, HIGH. Sources: ST-31, ST-43. Iteration: 1..nextLoanId-1.
-- [x] **GL-14** pool.active always true for existing pools. VALID_STATE, EXPLORATORY, MEDIUM. Sources: ST-44. Iteration: 1..nextLoanPoolId-1.
+- [-] **GL-14** pool.active always true for existing pools. VALID_STATE, EXPLORATORY, MEDIUM. Sources: ST-44. Iteration: 1..nextLoanPoolId-1. **REMOVED**: refactor collapsed the state it asserted (no separate pool.active flag). Review 2026-07-18.
 
 ### ID Counter Monotonicity
 
-- [x] **GL-15** All 4 ID counters (nextLiquidityId, nextSaleListingId, nextLoanId, nextLoanPoolId) monotonically non-decreasing. VARIABLE_TRANSITION, SHOULD-HOLD, HIGH. Sources: VT-01, VT-02, VT-03, VT-04, SPEC-Q02. Ghosts: ghost_lastNextLiquidityPositionId, ghost_lastNextSaleListingId, ghost_lastNextLoanId, ghost_lastNextPoolId.
+- [x] **GL-15** All 3 ID counters (nextLiquidityId, nextSaleListingId, nextLoanId) monotonically non-decreasing. VARIABLE_TRANSITION, SHOULD-HOLD, HIGH. Sources: VT-01, VT-02, VT-03, SPEC-Q02. Ghosts: ghost_lastNextLiquidityPositionId, ghost_lastNextSaleListingId, ghost_lastNextLoanId.
 - [x] **GL-19** factory.ovrfloCount never decreases. VARIABLE_TRANSITION, SHOULD-HOLD, LOW. Sources: VT-08. Trivially true (factory set up once).
 - [x] **GL-20** factory.lendingCount never decreases. VARIABLE_TRANSITION, SHOULD-HOLD, LOW. Sources: VT-09. Trivially true.
 - [x] **GL-21** factory.approvedMarketCount never decreases. VARIABLE_TRANSITION, SHOULD-HOLD, LOW. Sources: VT-10. Trivially true.
@@ -55,16 +55,16 @@ Consolidated from 5 invariant discovery agents (Conservation Auditor, Round-Trip
 
 - [x] **GL-16** loan.drawn never decreases for any loan. VARIABLE_TRANSITION, SHOULD-HOLD, HIGH. Sources: VT-05. Iteration: 1..nextLoanId-1.
 - [x] **GL-17** loan.repaid never decreases for any loan. VARIABLE_TRANSITION, SHOULD-HOLD, HIGH. Sources: VT-06. Iteration: 1..nextLoanId-1.
-- [x] **GL-18** loanPoolReceived[poolId][lender] never decreases. VARIABLE_TRANSITION, SHOULD-HOLD, HIGH. Sources: VT-07. Iteration: 1..nextLoanPoolId-1, per lender.
+- [x] **GL-18** loanPoolReceived[poolId][lender] never decreases. VARIABLE_TRANSITION, SHOULD-HOLD, HIGH. Sources: VT-07. Iteration: 1..nextLoanId-1, per lender.
 
 ### Slot Existence Invariants
 
-- [x] **GL-22** pool exists iff loanPoolLoanId[poolId] != 0. VALID_STATE, SHOULD-HOLD, HIGH. Sources: VS-01. Iteration: 1..nextLoanPoolId-1.
-- [x] **GL-23** loan exists iff loanToLoanPool[loanId] != 0. VALID_STATE, SHOULD-HOLD, HIGH. Sources: VS-02. Iteration: 1..nextLoanId-1.
-- [x] **GL-24** loanPoolLoanId[poolId]==loanId iff loanToLoanPool[loanId]==poolId. VALID_STATE, SHOULD-HOLD, HIGH. Sources: VS-03. Iteration: 1..nextLoanPoolId-1.
+- [-] **GL-22** pool exists iff loanPoolLoanId[poolId] != 0. VALID_STATE, SHOULD-HOLD, HIGH. Sources: VS-01. Iteration: 1..nextLoanPoolId-1. **REMOVED**: refactor collapsed pool/loan into a single ID space. Review 2026-07-18.
+- [-] **GL-23** loan exists iff loanToLoanPool[loanId] != 0. VALID_STATE, SHOULD-HOLD, HIGH. Sources: VS-02. Iteration: 1..nextLoanId-1. **REMOVED**: refactor collapsed pool/loan into a single ID space. Review 2026-07-18.
+- [-] **GL-24** loanPoolLoanId[poolId]==loanId iff loanToLoanPool[loanId]==poolId. VALID_STATE, SHOULD-HOLD, HIGH. Sources: VS-03. Iteration: 1..nextLoanPoolId-1. **REMOVED**: refactor collapsed pool/loan into a single ID space. Review 2026-07-18.
 - [x] **GL-25** liquidity slot populated iff id < nextLiquidityId. VALID_STATE, SHOULD-HOLD, HIGH. Sources: VS-04. Iteration: 1..nextLiquidityId-1.
 - [x] **GL-26** loan slot populated iff id < nextLoanId. VALID_STATE, SHOULD-HOLD, HIGH. Sources: VS-05. Iteration: 1..nextLoanId-1.
-- [x] **GL-27** pool slot populated iff id < nextLoanPoolId. VALID_STATE, SHOULD-HOLD, HIGH. Sources: VS-06. Iteration: 1..nextLoanPoolId-1.
+- [x] **GL-27** pool slot populated iff id < nextLoanId. VALID_STATE, SHOULD-HOLD, HIGH. Sources: VS-06. Iteration: 1..nextLoanId-1.
 - [x] **GL-28** listing slot populated iff id < nextSaleListingId. VALID_STATE, SHOULD-HOLD, HIGH. Sources: VS-07. Iteration: 1..nextSaleListingId-1.
 - [x] **GL-29** underlyingToOvrflo one-shot (never overwritten). VALID_STATE, SHOULD-HOLD, LOW. Sources: VS-08. Trivially true (factory set up once).
 - [x] **GL-30** ovrfloToLending iff lendingToOvrflo. VALID_STATE, SHOULD-HOLD, LOW. Sources: VS-09. Trivially true.
@@ -72,17 +72,17 @@ Consolidated from 5 invariant discovery agents (Conservation Auditor, Round-Trip
 ### Closed-State & Active-State Invariants
 
 - [x] **GL-31** loan.closed implies drawn+repaid==obligation. VALID_STATE, SHOULD-HOLD, HIGH. Sources: VS-10, ADV-20. Iteration: 1..nextLoanId-1.
-- [x] **GL-32** liquidity.active iff capacity > 0. VALID_STATE, SHOULD-HOLD, HIGH. Sources: VS-12, SPEC-Q03. Iteration: 1..nextLiquidityId-1.
+- [-] **GL-32** liquidity.active iff capacity > 0. VALID_STATE, SHOULD-HOLD, HIGH. Sources: VS-12, SPEC-Q03. Iteration: 1..nextLiquidityId-1. **REMOVED**: refactor collapsed the state it asserted. Review 2026-07-18.
 
 ### Immutability
 
 - [x] **GL-33** loan.obligation immutable after creation. VARIABLE_TRANSITION, EXPLORATORY, HIGH. Sources: VS-13. Iteration: 1..nextLoanId-1.
 - [x] **GL-34** loan.streamId immutable. VARIABLE_TRANSITION, EXPLORATORY, HIGH. Sources: VS-14.
-- [x] **GL-35** loan.borrower/lender immutable. VARIABLE_TRANSITION, EXPLORATORY, HIGH. Sources: VS-15.
+- [x] **GL-35** loan.borrower immutable. VARIABLE_TRANSITION, EXPLORATORY, HIGH. Sources: VS-15.
 - [x] **GL-36** liquidity.lender/aprBps immutable. VARIABLE_TRANSITION, EXPLORATORY, MEDIUM. Sources: VS-16.
 - [x] **GL-37** listing.feeBps immutable (snapshot at post time). VARIABLE_TRANSITION, EXPLORATORY, MEDIUM. Sources: VS-17.
 - [x] **GL-38** pool.totalContributed immutable. VARIABLE_TRANSITION, EXPLORATORY, HIGH. Sources: VS-18.
-- [x] **GL-39** pool.totalObligation immutable. VARIABLE_TRANSITION, EXPLORATORY, HIGH. Sources: VS-19.
+- [-] **GL-39** pool.totalObligation immutable. VARIABLE_TRANSITION, EXPLORATORY, HIGH. Sources: VS-19. **REMOVED**: refactor collapsed pool/loan into a single ID space; obligation is read from loans(i) directly. Review 2026-07-18.
 - [x] **GL-40** loanPoolContributions immutable after creation. VARIABLE_TRANSITION, EXPLORATORY, HIGH. Sources: VS-20.
 - [x] **GL-41** series ptToken/expiryCached/feeBps immutable. VARIABLE_TRANSITION, SHOULD-HOLD, HIGH. Evidence: I-9, setSeriesApproved one-shot guard. Sources: ST-11, VS-21
 - [x] **GL-42** ptToMarket immutable, reverse of series.ptToken. VARIABLE_TRANSITION, SHOULD-HOLD, HIGH. Evidence: setSeriesApproved one-shot guard. Sources: ST-12, VS-22
@@ -119,18 +119,18 @@ Consolidated from 5 invariant discovery agents (Conservation Auditor, Round-Trip
 - [x] **GL-65** availableLiquidity never increases after creation (one-way capacity). VARIABLE_TRANSITION, SHOULD-HOLD, MEDIUM. Evidence: capacity only decreases via sellStreamToLiquidity/createBorrowerLoanPool consumption and is set once at supplyLiquidity; withdrawLiquidity zeros it. Sources: CON-02, VT-01. Ghosts: ghost_liquidityCapacitySnapshot, ghost_liquidityCapacitySeen. Iteration: 1..nextLiquidityId-1.
 - [x] **GL-66** Open loan stream escrowed at lending market (stream.ownerOf == address(lending)). VALID_STATE, SHOULD-HOLD, HIGH. Evidence: createBorrowerLoanPool transfers the pledged stream to the lending contract; closeLoan/full-repayLoan returns it to the borrower. Sources: CON-04, VS-01, SPEC-06. Iteration: 1..nextLoanId-1, only non-closed loans.
 - [x] **GL-67** Active listing stream escrowed at lending market. VALID_STATE, SHOULD-HOLD, MEDIUM. Evidence: postSaleListing transfers the stream to lending; buyListing transfers to buyer, cancelSaleListing returns to seller. Sources: CON-03, VS-02. Iteration: 1..nextSaleListingId-1, only active listings.
-- [x] **GL-68** Pool loan lender == address(lending) (loan held by market, not individual). VALID_STATE, SHOULD-HOLD, MEDIUM. Evidence: createBorrowerLoanPool stores the lending address as loan.lender so the market services the pool claim channel. Sources: CON-05. Iteration: 1..nextLoanId-1 for pool loans.
-- [x] **GL-69** pool.borrower == loan.borrower (pool and loan share the same borrower). VALID_STATE, SHOULD-HOLD, MEDIUM. Evidence: both set from msg.sender in createBorrowerLoanPool; never modified. Sources: CON-06. Iteration: 1..nextLoanPoolId-1.
-- [x] **GL-70** loan.drawn == stream withdrawals since creation (no external drain). VARIABLE_TRANSITION, EXPLORATORY, MEDIUM. Evidence: closeLoan/_claimFair draw from the stream and increment loan.drawn; an external withdrawal would break the equality. Exploratory because MockSablier permits direct withdrawals in the harness. Sources: CON-07. Ghosts: ghost_loanStreamWithdrawnAtCreation. Iteration: 1..nextLoanId-1.
-- [x] **GL-71** contributions <= consumed capacity (no over-contribution). VALID_STATE, EXPLORATORY, LOW. Evidence: a liquidity can only be consumed up to its capacity; contributions should never exceed the capacity snapshot at pool creation. Exploratory because partial consumption and rounding make the bound soft. Sources: CON-08. Ghosts: ghost_liquidityInitialCapacity. Iteration: 1..nextLoanPoolId-1, per contributor.
+- [-] **GL-68** Pool loan lender == address(lending) (loan held by market, not individual). VALID_STATE, SHOULD-HOLD, MEDIUM. Evidence: createBorrowerLoanPool stores the lending address as loan.lender so the market services the pool claim channel. Sources: CON-05. Iteration: 1..nextLoanId-1 for pool loans. **REMOVED**: refactor collapsed the state it asserted. Review 2026-07-18.
+- [x] **GL-69** pool.borrower == loan.borrower (pool and loan share the same borrower). VALID_STATE, SHOULD-HOLD, MEDIUM. Evidence: both set from msg.sender in createBorrowerLoanPool; never modified. Sources: CON-06. Iteration: 1..nextLoanId-1.
+- [x] **GL-70** loan.drawn == stream withdrawals since creation (no external drain). VARIABLE_TRANSITION, EXPLORATORY, MEDIUM. Evidence: closeLoan/_claimFair draw from the stream and increment loan.drawn; an external withdrawal would break the equality. Exploratory because MockSablier permits direct withdrawals in the harness. Sources: CON-07. Ghosts: ghost_loanStreamWithdrawnAtCreation. Iteration: 1..nextLoanId-1. **FIXED**: guard changed from `snapshot == 0 && drawn == 0` to `currentWithdrawn == snapshot && drawn == 0` so fresh-stream external drain fails instead of being skipped. Review 2026-07-18.
+- [x] **GL-71** contributions <= consumed capacity (no over-contribution). VALID_STATE, EXPLORATORY, LOW. Evidence: a liquidity can only be consumed up to its capacity; contributions should never exceed the capacity snapshot at pool creation. Exploratory because partial consumption and rounding make the bound soft. Sources: CON-08. Ghosts: ghost_liquidityInitialCapacity. Iteration: 1..nextLoanId-1, per contributor.
 - [x] **GL-72** loan.drawn <= stream withdrawn amount (drawn never exceeds what was actually pulled). VALID_STATE, SHOULD-HOLD, MEDIUM. Evidence: drawn accumulates only via _claimFair which withdraws from the stream first; drawn cannot exceed total withdrawn since creation. Sources: VS-03. Iteration: 1..nextLoanId-1.
 
 ### All-Pool Generalizations (Wave 2)
 
-- [x] **GL-73** All pools: sum(loanPoolContributions) == pool.totalContributed (generalizes SP-22 to every pool at rest). VALID_STATE, SHOULD-HOLD, HIGH. Evidence: SP-22 checks the just-created pool; this checks every pool after every call. Sources: SPEC-07. Iteration: 1..nextLoanPoolId-1, per actor.
-- [x] **GL-74** All pools: loanPoolProceeds + sum(loanPoolReceived) == drawn + repaid (generalizes SP-25 to every pool at rest). VALID_STATE, SHOULD-HOLD, HIGH. Evidence: SP-25 checks the just-claimed pool; this checks every pool after every call. Sources: SPEC-08, ADV-08. Iteration: 1..nextLoanPoolId-1.
-- [x] **GL-75** All pools: loanPoolReceived[poolId][lender] <= entitlement (generalizes SP-24 to every pool at rest). VALID_STATE, SHOULD-HOLD, HIGH. Evidence: pro-rata cap (pattern #12) enforced per claim; this checks it holds across all pools at rest. Sources: SPEC-09. Iteration: 1..nextLoanPoolId-1, per actor.
-- [x] **GL-76** All pools: sum(loanPoolReceived) <= pool.totalObligation (generalizes SP-23 to every pool at rest). VALID_STATE, SHOULD-HOLD, MEDIUM. Evidence: SP-23 checks the just-claimed pool; this checks every pool after every call. Sources: SPEC-10. Iteration: 1..nextLoanPoolId-1.
+- [x] **GL-73** All pools: sum(loanPoolContributions) == pool.totalContributed (generalizes SP-22 to every pool at rest). VALID_STATE, SHOULD-HOLD, HIGH. Evidence: SP-22 checks the just-created pool; this checks every pool after every call. Sources: SPEC-07. Iteration: 1..nextLoanId-1, per actor.
+- [x] **GL-74** All pools: loanPoolProceeds + sum(loanPoolReceived) == drawn + repaid (generalizes SP-25 to every pool at rest). VALID_STATE, SHOULD-HOLD, HIGH. Evidence: SP-25 checks the just-claimed pool; this checks every pool after every call. Sources: SPEC-08, ADV-08. Iteration: 1..nextLoanId-1.
+- [x] **GL-75** All pools: loanPoolReceived[poolId][lender] <= entitlement (generalizes SP-24 to every pool at rest). VALID_STATE, SHOULD-HOLD, HIGH. Evidence: pro-rata cap (pattern #12) enforced per claim; this checks it holds across all pools at rest. Sources: SPEC-09. Iteration: 1..nextLoanId-1, per actor.
+- [x] **GL-76** All pools: sum(loanPoolReceived) <= loan.obligation (generalizes SP-23 to every pool at rest). VALID_STATE, SHOULD-HOLD, MEDIUM. Evidence: SP-23 checks the just-claimed pool; this checks every pool after every call. Sources: SPEC-10. Iteration: 1..nextLoanId-1.
 
 ### Admin Config Validity (Wave 2)
 
@@ -140,15 +140,15 @@ Consolidated from 5 invariant discovery agents (Conservation Auditor, Round-Trip
 
 ### Donation Resistance (Wave 2)
 
-- [x] **GL-80** Direct ovrfloToken donation to lending does not inflate claimable pool proceeds. VALID_STATE, SHOULD-HOLD, MEDIUM. Evidence: loanPoolProceeds is an internal mapping, not a balance read; direct ovrfloToken transfer to lending cannot increase any lender's claim. Sources: ADV-04. Distinct from GL-04 (balance bound).
-- [x] **GL-81** Direct underlying donation to lending does not inflate liquidity capacity. VALID_STATE, SHOULD-HOLD, LOW. Evidence: liquidityPositions[].availableLiquidity is internal, not derived from balance; direct underlying transfer cannot increase any maker's capacity. Sources: ADV-05. Distinct from GL-05 (balance bound).
+- [x] **GL-80** Direct ovrfloToken donation to lending does not inflate claimable pool proceeds. VALID_STATE, SHOULD-HOLD, MEDIUM. Evidence: loanPoolProceeds is an internal mapping, not a balance read; direct ovrfloToken transfer to lending cannot increase any lender's claim. Sources: ADV-04. Distinct from GL-04 (balance bound). **Covered by fizz_donate handler (F3, review 2026-07-18)**.
+- [x] **GL-81** Direct underlying donation to lending does not inflate liquidity capacity. VALID_STATE, SHOULD-HOLD, LOW. Evidence: liquidityPositions[].availableLiquidity is internal, not derived from balance; direct underlying transfer cannot increase any maker's capacity. Sources: ADV-05. Distinct from GL-05 (balance bound). **Covered by fizz_donate handler (F3, review 2026-07-18)**.
 
 ### Token & Identity Invariants (Wave 2)
 
 - [x] **GL-82** Non-owner cannot mint/burn ovrfloToken (only vault can). VALID_STATE, SHOULD-HOLD, HIGH. Evidence: OVRFLOToken mint/burn restricted to owner (the vault). Sources: SPEC-03.
-- [x] **GL-83** Lending identity matches vault: factory.lendingToOvrflo(lending) == vault and factory.ovrfloToLending(vault) == lending. VALID_STATE, SHOULD-HOLD, MEDIUM. Evidence: deployLending sets the pair; immutable. Sources: SPEC-04.
+- [-] **GL-83** Lending identity matches vault: factory.lendingToOvrflo(lending) == vault and factory.ovrfloToLending(vault) == lending. VALID_STATE, SHOULD-HOLD, MEDIUM. Evidence: deployLending sets the pair; immutable. Sources: SPEC-04. **REMOVED**: duplicate of GL-30. Review 2026-07-18.
 - [x] **GL-84** Open loan stream eligibility persists (requireEligible still passes for an open loan's stream). VALID_STATE, SHOULD-HOLD, MEDIUM. Evidence: an open loan's stream must remain eligible for the market so closeLoan/_claimFair can draw it. Sources: SPEC-05. Iteration: 1..nextLoanId-1, non-closed loans.
-- [x] **GL-85** Direct PT transfer to vault does not inflate marketTotalDeposited. VALID_STATE, EXPLORATORY, LOW. Evidence: MTD is an internal mapping, not balance-derived; direct PT transfer cannot increase MTD. Sources: SPEC-01. Distinct from GL-03 (balance bound).
+- [-] **GL-85** Direct PT transfer to vault does not inflate marketTotalDeposited. VALID_STATE, EXPLORATORY, LOW. Evidence: MTD is an internal mapping, not balance-derived; direct PT transfer cannot increase MTD. Sources: SPEC-01. Distinct from GL-03 (balance bound). **REMOVED**: duplicate of GL-03. Review 2026-07-18.
 - [x] **GL-86** Direct underlying transfer to vault does not inflate wrappedUnderlying. VALID_STATE, EXPLORATORY, LOW. Evidence: wrappedUnderlying is an internal mapping, not balance-derived; direct underlying transfer cannot increase it. Sources: SPEC-02. Distinct from GL-02/GL-59.
 
 ### Oracle Safety (Wave 2)
@@ -176,21 +176,21 @@ Consolidated from 5 invariant discovery agents (Conservation Auditor, Round-Trip
 - [x] **SP-03** supplyLiquidity -> withdrawLiquidity returns exactly same capacity. HIGH_LEVEL, SHOULD-HOLD, HIGH. Sources: RT-03. Called after: roundTrip_supplyLiquidityCancel, withdrawLiquidity. Ghosts: ghost_liquidityFundedCapacity.
 - [x] **SP-04** postSaleListing -> cancelSaleListing returns stream unchanged. HIGH_LEVEL, SHOULD-HOLD, MEDIUM. Sources: RT-04. Called after: roundTrip_postListingCancel, cancelSaleListing.
 - [x] **SP-05** deposit -> claim cycle conserves value (PT recovered, fee is only loss). HIGH_LEVEL, SHOULD-HOLD, HIGH. Sources: RT-05. Called after: roundTrip_depositClaim.
-- [x] **SP-06** N cycles of wrap -> unwrap do not increase balance (C2 dust extraction). HIGH_LEVEL, SHOULD-HOLD, HIGH. Sources: RT-06. Called after: roundTrip_wrapUnwrap. NOT merged with single round-trip.
+- [x] **SP-06** N cycles of wrap -> unwrap do not increase balance (C2 dust extraction). HIGH_LEVEL, SHOULD-HOLD, HIGH. Sources: RT-06. Called after: roundTrip_wrapUnwrap. IS merged with SP-01 (single wrap→unwrap round-trip).
 - [x] **SP-25** loanPoolProceeds + sum(loanPoolReceived) == drawn + repaid (exact conservation per pool). HIGH_LEVEL, SHOULD-HOLD, HIGH. Sources: CON-08. Called after: closeLoan, repayLoan, claimLoanPoolShare.
 
 ### Deposit Properties
 
-- [x] **SP-07** deposit conserves: toUser + toStream == ptAmount, toStream > 0. VALID_STATE, SHOULD-HOLD, HIGH. Sources: RT-07, RD-10, RD-11, SPEC-V04. Called after: deposit. Ghosts: ghost_lastToUser.
+- [x] **SP-07** deposit conserves: toStream > 0 (eq leg removed as tautological — guaranteed by _computeSplit). VALID_STATE, SHOULD-HOLD, HIGH. Sources: RT-07, RD-10, RD-11, SPEC-V04. Called after: deposit. Ghosts: ghost_lastToUser.
 - [x] **SP-11** previewDeposit matches actual deposit (same block, fixed oracle). VALID_STATE, SHOULD-HOLD, MEDIUM. Sources: RD-01. Called after: deposit.
 - [x] **SP-12** previewStream matches actual deposit split. VALID_STATE, SHOULD-HOLD, MEDIUM. Sources: RD-02. Called after: deposit.
 - [x] **SP-14** deposit floors toUser; claim is exact 1:1 (intentional asymmetry). VALID_STATE, SHOULD-HOLD, MEDIUM. Sources: RD-05. Called after: deposit, claim.
 - [x] **SP-16** deposit toUser capped at ptAmount (rate > 1 reverts via toStream>0 guard). VALID_STATE, SHOULD-HOLD, MEDIUM. Sources: RD-13. Called after: deposit.
-- [x] **SP-17** deposit fee floored (protocol never overcharges). VALID_STATE, SHOULD-HOLD, MEDIUM. Sources: RD-14. Called after: deposit. Ghosts: ghost_depositFeePaid.
+- [x] **SP-17** deposit fee floored (observed from actor underlying delta, not recomputed formula). VALID_STATE, SHOULD-HOLD, MEDIUM. Sources: RD-14. Called after: deposit. Ghosts: ghost_depositFeePaid.
 - [x] **SP-26** marketTotalDeposited increases by exactly ptAmount after deposit. STATE_TRANSITION, SHOULD-HOLD, HIGH. Sources: ST-01. Called after: deposit.
 - [x] **SP-27** wrappedUnderlying unchanged after deposit. STATE_TRANSITION, EXPLORATORY, MEDIUM. Sources: ST-02. Called after: deposit.
 - [x] **SP-28** deposit only succeeds pre-maturity. STATE_TRANSITION, SHOULD-HOLD, HIGH. Sources: ST-03. Called after: deposit.
-- [x] **SP-62** deposit liveness: valid preconditions (approved, >= MIN, pre-maturity, limit ok) -> must succeed. VALID_STATE, SHOULD-HOLD, HIGH. Sources: ADV-03. Called after: deposit.
+- [-] **SP-62** deposit liveness: valid preconditions (approved, >= MIN, pre-maturity, limit ok) -> must succeed. VALID_STATE, SHOULD-HOLD, HIGH. Sources: ADV-03. Called after: deposit. **REMOVED**: vacuous — ptAmount > 0 guaranteed by MIN_PT_AMOUNT check. Review 2026-07-18.
 - [x] **SP-63** toUser non-decreasing in ptAmount for a fixed rate (not share-based pricing). VALID_STATE, SHOULD-HOLD, MEDIUM. Sources: ADV-05. Called after: deposit. Ghosts: ghost_lastToUser, ghost_lastDepositPtAmount. **REWRITTEN**: Original ratio check (toUser/ptAmount non-decreasing) was a false positive — mulDiv flooring causes ratio variance with input size, not share inflation. Replaced with toUser monotonicity check (gte(toUser, prevToUser) when ptAmount > prevPtAmount).
 - [x] **SP-76** Low deposit limit does not brick claims. VALID_STATE, SHOULD-HOLD, MEDIUM. Sources: ADV-23. Called after: claim.
 
@@ -215,22 +215,22 @@ Consolidated from 5 invariant discovery agents (Conservation Auditor, Round-Trip
 - [x] **SP-36** flashLoan: marketTotalDeposited unchanged. STATE_TRANSITION, SHOULD-HOLD, HIGH. Sources: ST-13, ADV-18. Called after: flashLoan.
 - [x] **SP-37** flash loan only succeeds pre-maturity. STATE_TRANSITION, SHOULD-HOLD, HIGH. Sources: ST-14. Called after: flashLoan.
 - [x] **SP-38** flashLoan: wrappedUnderlying unchanged. STATE_TRANSITION, EXPLORATORY, MEDIUM. Sources: ST-15. Called after: flashLoan.
-- [x] **SP-64** flash loan borrower net value <= before (no free profit from flash). VALID_STATE, SHOULD-HOLD, HIGH. Sources: ADV-06. Called after: flashLoan.
+- [x] **SP-64** flash loan borrower net value <= before (no free profit from flash). VALID_STATE, SHOULD-HOLD, HIGH. Sources: ADV-06. Called after: flashLoan. Clamped handler asserts mockFlashBorrower deltas; unclamped handler asserts actor deltas.
 
 ### Admin/Secondary Properties
 
 - [x] **SP-39** sweepExcessPt: marketTotalDeposited unchanged. STATE_TRANSITION, EXPLORATORY, MEDIUM. Sources: ST-16. Called after: sweepExcessPt.
 - [x] **SP-40** sweepExcessUnderlying: wrappedUnderlying unchanged. STATE_TRANSITION, EXPLORATORY, MEDIUM. Sources: ST-17. Called after: sweepExcessUnderlying.
-- [x] **SP-77** sweepExcessPt reverts for non-PT token (pattern #13 input validation guard). VALID_STATE, SHOULD-HOLD, HIGH. Sources: PATTERN-13. Called after: sweepExcessPt.
+- [x] **SP-107** sweepExcessPt reverts for non-PT token (pattern #13 input validation guard). VALID_STATE, SHOULD-HOLD, HIGH. Sources: PATTERN-13. Called after: sweepExcessPt.
 - [x] **SP-41** setFlashFeeBps: flashFeeBps equals arg and <= FLASH_FEE_MAX_BPS. STATE_TRANSITION, SHOULD-HOLD, LOW. Sources: ST-18. Called after: setFlashFeeBps.
 - [x] **SP-42** setFlashLoanPaused: flashLoanPaused equals arg. STATE_TRANSITION, SHOULD-HOLD, LOW. Sources: ST-19. Called after: setFlashLoanPaused.
 
 ### LiquidityPosition Properties
 
 - [x] **SP-43** supplyLiquidity: nextLiquidityId increments by exactly 1. STATE_TRANSITION, SHOULD-HOLD, HIGH. Sources: ST-20. Called after: supplyLiquidity.
-- [x] **SP-44** supplyLiquidity: new liquidity active, capacity > 0, lender == sender. STATE_TRANSITION, SHOULD-HOLD, HIGH. Sources: ST-21. Called after: supplyLiquidity.
-- [x] **SP-45** withdrawLiquidity: liquidity inactive, capacity == 0. STATE_TRANSITION, SHOULD-HOLD, HIGH. Sources: ST-22. Called after: withdrawLiquidity.
-- [x] **SP-46** sellStreamToLiquidity: capacity decreases by grossPrice, active=false only when capacity==0. STATE_TRANSITION, SHOULD-HOLD, HIGH. Sources: ST-23. Called after: sellStreamToLiquidity.
+- [x] **SP-44** supplyLiquidity: new liquidity active, capacity > 0, lender == sender (doubled assert removed). STATE_TRANSITION, SHOULD-HOLD, HIGH. Sources: ST-21. Called after: supplyLiquidity.
+- [x] **SP-45** withdrawLiquidity: liquidity inactive, capacity == 0 (doubled assert removed). STATE_TRANSITION, SHOULD-HOLD, HIGH. Sources: ST-22. Called after: withdrawLiquidity.
+- [x] **SP-46** sellStreamToLiquidity: capacity decreases by grossPrice (quote-derived, not capacity delta), active=false only when capacity==0. STATE_TRANSITION, SHOULD-HOLD, HIGH. Sources: ST-23. Called after: sellStreamToLiquidity.
 - [x] **SP-71** Non-lender cannot cancel liquidity or listing. VALID_STATE, SHOULD-HOLD, HIGH. Sources: ADV-15. Called after: withdrawLiquidity, cancelSaleListing.
 - [-] **SP-75** LiquidityPosition consumed correctly: sale or loan path, value to lender. VALID_STATE, EXPLORATORY, MEDIUM. Sources: ADV-22. Called after: sellStreamToLiquidity, createBorrowerLoanPool.
 
@@ -240,7 +240,7 @@ Consolidated from 5 invariant discovery agents (Conservation Auditor, Round-Trip
 - [x] **SP-48** postSaleListing: listing active, feeBps snapshotted from current lending.feeBps. STATE_TRANSITION, SHOULD-HOLD, MEDIUM. Sources: ST-25. Called after: postSaleListing.
 - [x] **SP-49** cancelSaleListing: listing inactive. STATE_TRANSITION, SHOULD-HOLD, HIGH. Sources: ST-26. Called after: cancelSaleListing.
 - [x] **SP-50** buyListing: listing inactive. STATE_TRANSITION, SHOULD-HOLD, HIGH. Sources: ST-27. Called after: buyListing.
-- [x] **SP-19** lending fee floored (StreamPricing.fee uses mulDiv floor). VALID_STATE, SHOULD-HOLD, MEDIUM. Sources: RD-16. Called after: sellStreamToLiquidity, buyListing, createBorrowerLoanPool. Ghosts: ghost_lendingFeePaid.
+- [x] **SP-19** lending fee floored (observed from treasury balance delta, not recomputed formula). VALID_STATE, SHOULD-HOLD, MEDIUM. Sources: RD-16. Called after: sellStreamToLiquidity, buyListing, createBorrowerLoanPool. Ghosts: ghost_lendingFeePaid.
 
 ### Borrow Pool / Loan Creation Properties
 
@@ -249,16 +249,16 @@ Consolidated from 5 invariant discovery agents (Conservation Auditor, Round-Trip
 - [x] **SP-13** quote matches actual createBorrowerLoanPool obligation. VALID_STATE, SHOULD-HOLD, MEDIUM. Sources: RD-03. Called after: createBorrowerLoanPool.
 - [x] **SP-15** full-borrow fast-path (borrowAmount == grossPrice) returns remaining exactly. VALID_STATE, SHOULD-HOLD, HIGH. Sources: RD-09. Called after: createBorrowerLoanPool.
 - [x] **SP-22** sum(loanPoolContributions) == pool.totalContributed after createBorrowerLoanPool. VALID_STATE, SHOULD-HOLD, HIGH. Sources: CON-04, SPEC-L05. Called after: createBorrowerLoanPool.
-- [x] **SP-23** sum(loanPoolReceived) <= pool.totalObligation. VALID_STATE, SHOULD-HOLD, HIGH. Sources: CON-05, ADV-19. Called after: claimLoanPoolShare.
-- [x] **SP-24** loanPoolReceived[poolId][lender] <= entitlement (contribution * totalObligation / totalContributed). VALID_STATE, SHOULD-HOLD, HIGH. Sources: CON-06, ADV-12, ADV-19. Called after: claimLoanPoolShare.
-- [x] **SP-51** createBorrowerLoanPool: nextLoanPoolId and nextLoanId each increment by 1. STATE_TRANSITION, SHOULD-HOLD, HIGH. Sources: ST-28. Called after: createBorrowerLoanPool.
-- [x] **SP-52** createBorrowerLoanPool: pool active, loan closed=false, drawn=0, repaid=0. STATE_TRANSITION, SHOULD-HOLD, HIGH. Sources: ST-29. Called after: createBorrowerLoanPool.
+- [x] **SP-23** sum(loanPoolReceived) <= loan.obligation. VALID_STATE, SHOULD-HOLD, HIGH. Sources: CON-05, ADV-19. Called after: claimLoanPoolShare.
+- [x] **SP-24** loanPoolReceived[poolId][lender] <= entitlement (contribution * obligation / totalContributed). VALID_STATE, SHOULD-HOLD, HIGH. Sources: CON-06, ADV-12, ADV-19. Called after: claimLoanPoolShare.
+- [-] **SP-51** createBorrowerLoanPool: nextLoanPoolId and nextLoanId each increment by 1. STATE_TRANSITION, SHOULD-HOLD, HIGH. Sources: ST-28. Called after: createBorrowerLoanPool. **REMOVED**: refactor collapsed pool/loan into a single ID space; only nextLoanId increments. Review 2026-07-18.
+- [x] **SP-52** createBorrowerLoanPool: loan closed=false, drawn=0, repaid=0. STATE_TRANSITION, SHOULD-HOLD, HIGH. Sources: ST-29. Called after: createBorrowerLoanPool.
 - [x] **SP-53** createBorrowerLoanPool: loanPoolContributions set for consumed liquidity lenders. STATE_TRANSITION, SHOULD-HOLD, HIGH. Sources: ST-30. Called after: createBorrowerLoanPool.
 - [-] **SP-66** Dust lender not bricked by truncation (entitlement > 0 when contribution > 0). VALID_STATE, EXPLORATORY, MEDIUM. Sources: ADV-09. Called after: createBorrowerLoanPool, claimLoanPoolShare.
 - [-] **SP-67** No uint128 overflow in pool accounting (_toUint128 reverts on overflow). VALID_STATE, SHOULD-HOLD, MEDIUM. Sources: ADV-10. Called after: createBorrowerLoanPool.
 - [x] **SP-77** No self-match bypass (borrower not lender to own pool). VALID_STATE, SHOULD-HOLD, HIGH. Sources: ADV-24. Called after: createBorrowerLoanPool.
 - [x] **SP-78** No loan on zero-remaining stream (requireEligible reverts). VALID_STATE, SHOULD-HOLD, MEDIUM. Sources: SPEC-L02. Called after: createBorrowerLoanPool.
-- [x] **SP-79** borrowAmount <= grossPrice (LTV check enforced). VALID_STATE, SHOULD-HOLD, HIGH. Sources: SPEC-L04. Called after: createBorrowerLoanPool.
+- [x] **SP-79** borrowAmount <= grossPrice (LTV check enforced). VALID_STATE, SHOULD-HOLD, HIGH. Sources: SPEC-L04. Called after: createBorrowerLoanPool. **REWRITTEN**: quotes with borrowAmount=0 for independent grossPrice, asserts outside try/catch (was unfalsifiable — violating case reverted and was caught). Review 2026-07-18.
 - [x] **SP-80** LiquidityPosition IDs strictly increasing, sorted input required (pattern #11). VALID_STATE, SHOULD-HOLD, MEDIUM. Sources: SPEC-Q01. Called after: createBorrowerLoanPool.
 
 ### Loan Servicing Properties
@@ -301,18 +301,18 @@ Consolidated from 5 invariant discovery agents (Conservation Auditor, Round-Trip
 - [x] **SP-87** closeLoan sets loan.closed = true. STATE_TRANSITION, SHOULD-HOLD, HIGH. Evidence: closeLoan writes closed=true after drawing the outstanding. Sources: ST-01. Called after: closeLoan. Distinct from SP-57 (which covers repayLoan's closed flag).
 - [x] **SP-88** closeLoan on an invalid/already-closed loan reverts. VALID_STATE, SHOULD-HOLD, MEDIUM. Evidence: closeLoan requires !closed and withdrawable >= outstanding; calling on a closed or insufficient-stream loan must revert. Sources: ADV-14. Called after: closeLoan (try/catch for invalid inputs).
 - [x] **SP-89** Multi-partial repay eventually closes the loan (sum of partial repays == outstanding -> closed). STATE_TRANSITION, SHOULD-HOLD, MEDIUM. Evidence: repayLoan accumulates repaid until outstanding is met; a sequence of partial repays must close the loan exactly. Sources: ADV-16. Called after: repayLoan.
-- [x] **SP-90** Harvest (claimLoanPoolShare/_claimFair) does not block a subsequent closeLoan. VALID_STATE, EXPLORATORY, MEDIUM. Evidence: closeLoan draws the remaining outstanding; prior harvests reduce outstanding but should not prevent the close. Exploratory because the interaction depends on stream vesting timing. Sources: ADV-03. Called after: closeLoan following a claim.
+- [-] **SP-90** Harvest (claimLoanPoolShare/_claimFair) does not block a subsequent closeLoan. VALID_STATE, EXPLORATORY, MEDIUM. Evidence: closeLoan draws the remaining outstanding; prior harvests reduce outstanding but should not prevent the close. Exploratory because the interaction depends on stream vesting timing. Sources: ADV-03. Called after: closeLoan following a claim. **REMOVED**: vacuous — closeLoan always closes. Review 2026-07-18.
 - [x] **SP-91** Repledge obligation bounded by residual stream value. VALID_STATE, EXPLORATORY, MEDIUM. Evidence: re-pledging a partially-drawn stream should produce an obligation <= the new remaining. Exploratory because re-pledge requires a fresh stream from a re-deposited position. Sources: ADV-07. Called after: createBorrowerLoanPool on a previously-drawn stream.
 
 ### Lending Zero-Input Reverts (Wave 2)
 
 - [x] **SP-92** createBorrowerLoanPool with targetBorrow == 0 reverts. VALID_STATE, SHOULD-HOLD, LOW. Evidence: require targetBorrow > 0 in createBorrowerLoanPool. Sources: RD-07, ADV-13. Called after: createBorrowerLoanPool (try/catch).
 - [x] **SP-93** claimLoanPoolShare with amount == 0 reverts. VALID_STATE, SHOULD-HOLD, LOW. Evidence: require amount > 0 in claimLoanPoolShare. Sources: RD-08, ADV-13. Called after: claimLoanPoolShare (try/catch).
-- [x] **SP-94** repayLoan with amount == 0 reverts. VALID_STATE, SHOULD-HOLD, LOW. Evidence: require amount > 0 in repayLoan. Sources: RD-09, ADV-13. Called after: repayLoan (try/catch).
+- [x] **SP-94** repayLoan with amount == 0 reverts. VALID_STATE, SHOULD-HOLD, LOW. Evidence: require amount > 0 in repayLoan. Sources: RD-09, ADV-13. Called after: repayLoan (try/catch). **FIXED**: removed conflicting vm.prank(borrower) — handler already runs under startPrank(actor) and borrower == actor (SP-72). Review 2026-07-18.
 
 ### Quote & Preview Correspondence (Wave 2)
 
-- [x] **SP-95** quote returns full correspondence: grossPrice, fee, net, residual are mutually consistent (grossPrice == net + fee, residual == remaining - grossPrice for full borrow). VALID_STATE, SHOULD-HOLD, MEDIUM. Evidence: quote computes all four from the same factor; the parts must reconcile. Sources: RT-03. Called after: createBorrowerLoanPool (via quote).
+- [x] **SP-95** quote obligation matches pool obligation (first tautological assertion removed — borrowAmount == net + fee by construction). VALID_STATE, SHOULD-HOLD, MEDIUM. Evidence: quote computes all four from the same factor; the obligation parts must reconcile. Sources: RT-03. Called after: createBorrowerLoanPool (via quote).
 - [x] **SP-96** previewRate matches the rate used by the actual deposit (same block). VALID_STATE, SHOULD-HOLD, LOW. Evidence: deposit reads previewRate at execution; previewRate is deterministic within a block. Sources: RT-04. Called after: deposit.
 
 ### Pool Claim Bounds (Wave 2)
@@ -323,7 +323,7 @@ Consolidated from 5 invariant discovery agents (Conservation Auditor, Round-Trip
 ### Settlement Conservation (Wave 2)
 
 - [x] **SP-99** Sale settlement conservation: grossPrice == netToSeller + fee (buyListing and sellStreamToLiquidity split grossPrice exactly). VALID_STATE, SHOULD-HOLD, HIGH. Evidence: the fee is subtracted from grossPrice and the remainder is credited to the seller; the sum must reconcile. Sources: SPEC-11. Called after: buyListing, sellStreamToLiquidity. Ghosts: ghost_lastGrossPrice, ghost_lastFeeAmount, ghost_lastNetToSeller. Snapshot: treasuryUnderlying.
-- [x] **SP-100** Borrow disbursement conservation: borrower receives targetBorrow underlying and owes totalObligation ovrfloToken; the disbursement equals the sum of consumed liquidity capacities. VALID_STATE, SHOULD-HOLD, HIGH. Evidence: createBorrowerLoanPool transfers targetBorrow underlying to the borrower and records totalObligation; the consumed capacities must sum to targetBorrow. Sources: SPEC-17. Called after: createBorrowerLoanPool.
+- [x] **SP-100** Borrow disbursement conservation: actor underlying delta == actualBorrow - fee (net disbursement). VALID_STATE, SHOULD-HOLD, HIGH. Evidence: createBorrowerLoanPool transfers actualBorrow underlying to the borrower and deducts fee to treasury; the actor's underlying balance delta must equal actualBorrow - fee. Sources: SPEC-17. Called after: createBorrowerLoanPool.
 
 ### Admin Setter Echo (Wave 2)
 

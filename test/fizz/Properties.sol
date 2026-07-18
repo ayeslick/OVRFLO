@@ -1261,10 +1261,10 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
 
     // ─────────────── Pattern #13: sweepExcessPt input validation ───────────────
 
-    /// @notice Pattern #13: sweepExcessPt reverts when passed a non-PT token (e.g. underlying)
+    /// @notice SP-107: sweepExcessPt reverts when passed a non-PT token (e.g. underlying)
     function property_sweepExcessPt_reverts_non_pt() internal asAdmin {
         try factory.sweepExcessPt(address(vault), address(underlying), admin) {
-            t(false, "Pattern-13: sweepExcessPt did not revert for non-PT token");
+            t(false, "SP-107: sweepExcessPt did not revert for non-PT token");
         } catch {}
     }
 

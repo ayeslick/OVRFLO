@@ -5,7 +5,7 @@
 - `Base.sol`: shared setup, deployed contract references, actors, helpers, and ghost state
 - `Snapshots.sol`: before/after state capture used by properties
 - `Properties.sol`: global and function-specific invariants
-- `handlers/`: protocol actions exposed to the fuzzers
+- `handlers/`: protocol actions exposed to the fuzzers (including `LendingScenarios.sol` for scenario/round-trip handlers)
 - `harness/`: (optional) harness contracts that inherit from target contracts to expose private/internal state needed by properties
 - `utils/`: shared helper libraries, assertions, clamping logic, logging, and mocks
 - `FuzzTester.sol`: main Echidna/Medusa fuzzing entry point
@@ -18,9 +18,10 @@ Base (is StringUtils, Clamp)
         └─► Snapshots (is Base)
               └─► Properties (is PropertiesAsserts, Snapshots)
                     └─► <Contract>Handler (is Properties)   — one per target contract
-                          └─► Handlers (is <all handlers>)  — aggregator + actor switching
-                                ├─► FuzzTester (is Handlers)       — Echidna/Medusa entry point
-                                └─► FoundryTester (is Test, Handlers) — Foundry quick debug/PoC entry point
+                          └─► LendingScenarios (is OVRFLOLendingHandler)  — lending scenarios + round-trips
+                                └─► Handlers (is OVRFLOHandler, OVRFLOFactoryHandler, LendingScenarios)  — aggregator + actor switching
+                                      ├─► FuzzTester (is Handlers)       — Echidna/Medusa entry point
+                                      └─► FoundryTester (is Test, Handlers) — Foundry quick debug/PoC entry point
 ```
 
 ## Related Paths Outside This Directory
