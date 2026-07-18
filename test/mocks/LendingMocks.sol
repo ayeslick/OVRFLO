@@ -14,7 +14,6 @@ contract MockLendingFactory {
     }
 
     mapping(address => Info) internal infos;
-    mapping(address => mapping(address => bool)) public isMarketApproved;
 
     function setInfo(address core, address treasury, address underlying, address ovrfloToken) external {
         infos[core] = Info({treasury: treasury, underlying: underlying, ovrfloToken: ovrfloToken});

@@ -4,26 +4,24 @@ pragma solidity ^0.8.20;
 import {Test} from "forge-std/Test.sol";
 import {StreamPricing} from "../src/StreamPricing.sol";
 import {TestERC20} from "./mocks/TestERC20.sol";
-import {MockLendingFactory, MockLendingCore, MockLendingSablier} from "./mocks/LendingMocks.sol";
+import {MockLendingCore, MockLendingSablier} from "./mocks/LendingMocks.sol";
 
 contract StreamPricingHarness {
-    function requireEligible(address factory, address sablier, address core, address market, uint256 streamId)
+    function requireEligible(address sablier, address core, address market, uint256 streamId)
         external
         view
         returns (StreamPricing.Eligibility memory)
     {
-        return StreamPricing.requireEligible(factory, sablier, core, market, streamId);
+        return StreamPricing.requireEligible(sablier, core, market, streamId);
     }
 }
 
 contract StreamPricingTest is Test {
-    address internal constant TREASURY = address(0xBEEF);
     address internal constant MARKET_ONE = address(0x1001);
     address internal constant MARKET_TWO = address(0x1002);
     address internal constant PT_TOKEN = address(0x2001);
     address internal constant ORACLE = address(0x3001);
 
-    MockLendingFactory internal factory;
     MockLendingCore internal core;
     MockLendingSablier internal sablier;
     StreamPricingHarness internal harness;
@@ -35,7 +33,6 @@ contract StreamPricingTest is Test {
     uint256 internal expiry;
 
     function setUp() public {
-        factory = new MockLendingFactory();
         core = new MockLendingCore();
         sablier = new MockLendingSablier();
         harness = new StreamPricingHarness();
@@ -103,48 +100,46 @@ contract StreamPricingTest is Test {
 
     function test_EligibilityReturnsMaturityTokenAndUnwithdrawnRemaining() public view {
         StreamPricing.Eligibility memory eligibility =
-            harness.requireEligible(address(factory), address(sablier), address(core), MARKET_ONE, streamId);
+            harness.requireEligible(address(sablier), address(core), MARKET_ONE, streamId);
 
         assertEq(eligibility.seriesMaturity, expiry);
         assertEq(eligibility.remaining, 70 ether);
     }
 
     function test_EligibilityRejectsUnapprovedMarket() public {
-        // After U4, on-chain market approval is derived from the core's series config
-        // (`ptToken != address(0)`); the factory `isMarketApproved` mapping is no longer
-        // consulted. An unconfigured series (ptToken = 0) reverts MarketNotApproved.
+        // An unconfigured series (ptToken = 0) reverts MarketNotApproved.
         core.setSeries(MARKET_ONE, expiry, address(0), address(ovrfloToken), address(underlying), ORACLE);
 
         vm.expectRevert(StreamPricing.MarketNotApproved.selector);
-        harness.requireEligible(address(factory), address(sablier), address(core), MARKET_ONE, streamId);
+        harness.requireEligible(address(sablier), address(core), MARKET_ONE, streamId);
     }
 
     function test_EligibilityRejectsMaturedSeries() public {
         vm.warp(expiry);
 
         vm.expectRevert(StreamPricing.SeriesMatured.selector);
-        harness.requireEligible(address(factory), address(sablier), address(core), MARKET_ONE, streamId);
+        harness.requireEligible(address(sablier), address(core), MARKET_ONE, streamId);
     }
 
     function test_EligibilityRejectsWrongSender() public {
         sablier.setStream(streamId, address(0xBAD), ovrfloToken, uint40(expiry), 0, false, 100 ether, 30 ether);
 
         vm.expectRevert(StreamPricing.WrongSender.selector);
-        harness.requireEligible(address(factory), address(sablier), address(core), MARKET_ONE, streamId);
+        harness.requireEligible(address(sablier), address(core), MARKET_ONE, streamId);
     }
 
     function test_EligibilityRejectsWrongAsset() public {
         sablier.setStream(streamId, address(core), wrongToken, uint40(expiry), 0, false, 100 ether, 30 ether);
 
         vm.expectRevert(StreamPricing.WrongAsset.selector);
-        harness.requireEligible(address(factory), address(sablier), address(core), MARKET_ONE, streamId);
+        harness.requireEligible(address(sablier), address(core), MARKET_ONE, streamId);
     }
 
     function test_EligibilityRejectsWrongEndTime() public {
         sablier.setStream(streamId, address(core), ovrfloToken, uint40(expiry + 1), 0, false, 100 ether, 30 ether);
 
         vm.expectRevert(StreamPricing.WrongEndTime.selector);
-        harness.requireEligible(address(factory), address(sablier), address(core), MARKET_ONE, streamId);
+        harness.requireEligible(address(sablier), address(core), MARKET_ONE, streamId);
     }
 
     function test_EligibilityRevertsWhenExpiryOverflowsUint40() public {
@@ -156,7 +151,7 @@ contract StreamPricingTest is Test {
         );
         sablier.setStream(99, address(core), ovrfloToken, uint40(expiry), 0, false, 100 ether, 30 ether);
         vm.expectRevert(StreamPricing.WrongEndTime.selector);
-        harness.requireEligible(address(factory), address(sablier), address(core), overflowMarket, 99);
+        harness.requireEligible(address(sablier), address(core), overflowMarket, 99);
     }
 
     function test_EligibilityRejectsCliffedStream() public {
@@ -174,21 +169,21 @@ contract StreamPricingTest is Test {
         );
 
         vm.expectRevert(StreamPricing.CliffPresent.selector);
-        harness.requireEligible(address(factory), address(sablier), address(core), MARKET_ONE, streamId);
+        harness.requireEligible(address(sablier), address(core), MARKET_ONE, streamId);
     }
 
     function test_EligibilityRejectsCancelableStream() public {
         sablier.setStream(streamId, address(core), ovrfloToken, uint40(expiry), 0, true, 100 ether, 30 ether);
 
         vm.expectRevert(StreamPricing.CancelableStream.selector);
-        harness.requireEligible(address(factory), address(sablier), address(core), MARKET_ONE, streamId);
+        harness.requireEligible(address(sablier), address(core), MARKET_ONE, streamId);
     }
 
     function test_EligibilityRejectsEmptyRemainingBalance() public {
         sablier.setStream(streamId, address(core), ovrfloToken, uint40(expiry), 0, false, 100 ether, 100 ether);
 
         vm.expectRevert(StreamPricing.RemainingZero.selector);
-        harness.requireEligible(address(factory), address(sablier), address(core), MARKET_ONE, streamId);
+        harness.requireEligible(address(sablier), address(core), MARKET_ONE, streamId);
     }
 
     function test_EligibilityRejectsCrossMarketMaturityMismatch() public {
@@ -196,12 +191,12 @@ contract StreamPricingTest is Test {
         core.setSeries(MARKET_TWO, otherExpiry, PT_TOKEN, address(ovrfloToken), address(underlying), ORACLE);
 
         vm.expectRevert(StreamPricing.WrongEndTime.selector);
-        harness.requireEligible(address(factory), address(sablier), address(core), MARKET_TWO, streamId);
+        harness.requireEligible(address(sablier), address(core), MARKET_TWO, streamId);
     }
 
     function test_PoolSeam_CallsPricingAndEligibilityWithoutLendingStorage() public view {
         StreamPricing.Eligibility memory eligibility =
-            harness.requireEligible(address(factory), address(sablier), address(core), MARKET_ONE, streamId);
+            harness.requireEligible(address(sablier), address(core), MARKET_ONE, streamId);
         uint256 grossPrice = StreamPricing.grossPrice(eligibility.remaining, 1000, 30 days);
 
         assertGt(grossPrice, 0);
@@ -211,7 +206,6 @@ contract StreamPricingTest is Test {
     function _configureEligible(address market, uint256 id, uint256 maturity, uint128 deposited, uint128 withdrawn)
         internal
     {
-        factory.setInfo(address(core), TREASURY, address(underlying), address(ovrfloToken));
         core.setSeries(market, maturity, PT_TOKEN, address(ovrfloToken), address(underlying), ORACLE);
         sablier.setStream(id, address(core), ovrfloToken, uint40(maturity), 0, false, deposited, withdrawn);
     }

@@ -776,12 +776,12 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
         view
         returns (StreamPricing.Eligibility memory)
     {
-        return StreamPricing.requireEligible(address(factory), address(sablier), core, market, streamId);
+        return StreamPricing.requireEligible(address(sablier), core, market, streamId);
     }
 
     /// @dev Market-level gate (no stream required); delegates to `StreamPricing.marketActive`.
     function _requireMarketActive(address market) internal view {
-        StreamPricing.marketActive(address(factory), core, market);
+        StreamPricing.marketActive(core, market);
     }
 
     /// @dev Seconds from now until the series maturity.

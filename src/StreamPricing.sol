@@ -164,15 +164,13 @@ library StreamPricing {
     /// @dev Lightweight, stream-agnostic check used to front-load rejection at liquidity-post
     ///      time (liquidityPositions carry no `streamId`). The full stream-level validation lives in
     ///      `requireEligible`, which calls this internally; both share this single source
-    ///      of truth for the market/maturity gating. Market approval is now derived from
-    ///      the core's series config (`ptToken != address(0)`); the factory's
-    ///      `isMarketApproved` mapping is no longer consulted on-chain.
-    /// @param factory The OVRFLOFactory registry address (unused here; retained for `requireEligible`).
+    ///      of truth for the market/maturity gating. Market approval is derived from
+    ///      the core's series config (`ptToken != address(0)`).
     /// @param core The OVRFLO core vault address.
     /// @param market The Pendle market address.
     /// @return expiryCached The cached series maturity timestamp.
     /// @return ovrfloToken The series' ovrflo token address.
-    function marketActive(address factory, address core, address market)
+    function marketActive(address core, address market)
         internal
         view
         returns (uint256 expiryCached, address ovrfloToken)
@@ -190,20 +188,19 @@ library StreamPricing {
     ///      ovrfloToken, end time must equal the cached expiry (and fit uint40),
     ///      no cliff, non-cancelable, and `deposited > withdrawn`. Returns the
     ///      validated `remaining` so callers can price without re-reading Sablier.
-    /// @param factory The OVRFLOFactory registry address.
     /// @param sablier The Sablier V2 Lockup Linear contract.
     /// @param core The OVRFLO core vault address.
     /// @param market The Pendle market address.
     /// @param streamId The Sablier stream id being pledged/sold.
     /// @return eligibility The validated maturity, ovrfloToken, and remaining face value.
-    function requireEligible(address factory, address sablier, address core, address market, uint256 streamId)
+    function requireEligible(address sablier, address core, address market, uint256 streamId)
         internal
         view
         returns (Eligibility memory eligibility)
     {
         ISablierV2LockupLinear lockup = ISablierV2LockupLinear(sablier);
 
-        (uint256 expiryCached, address ovrfloToken) = marketActive(factory, core, market);
+        (uint256 expiryCached, address ovrfloToken) = marketActive(core, market);
         ISablierV2LockupLinear.Stream memory stream = lockup.getStream(streamId);
 
         if (stream.sender != core) revert WrongSender();

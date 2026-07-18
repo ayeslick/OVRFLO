@@ -359,7 +359,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
         }
     }
 
-    /// @notice GL-35: loan.borrower immutable (lender is always address(this) by construction)
+    /// @notice GL-35: loan.borrower immutable
     function property_loan_parties_immutable() public {
         uint256 nextLoan = lending.nextLoanId();
         for (uint256 i = 1; i < nextLoan; i++) {
@@ -970,7 +970,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
         t(lender == actor, "SP-71: non-lender cancelled listing");
     }
 
-    // ─────────────── Borrow LoanPool / Loan Creation Properties ───────────────
+    // ─────────────── Borrow / Loan Creation Properties ───────────────
 
     /// @notice SP-09: borrow -> repay: obligation >= actualBorrow (factor >= WAD, obligation ceils)
     function property_obligationGeBorrow() internal {

@@ -579,7 +579,7 @@ abstract contract OVRFLOLendingHandler is Properties {
         property_postListingCancelRoundTrip(ownerBefore, ownerAfter);
     }
 
-    /// @notice R15: LoanPool lifecycle scenario - multi-liquidity pool, vesting, close, claim
+    /// @notice R15: Loan lifecycle scenario - multi-liquidity pool, vesting, close, claim
     function scenario_poolLifecycle(uint16 aprBps, uint128 availableLiquidity, uint128 targetBorrow) public {
         if (actors.length < 3) return;
         address actorA = actors[0];
@@ -623,18 +623,16 @@ abstract contract OVRFLOLendingHandler is Properties {
                 try lending.createBorrowerLoanPool(liquidityIds, streamId, targetBorrow, 0) returns (
                     uint256 loanPoolId
                 ) {
-                    uint256 loanId = loanPoolId;
-
                     // Record withdrawal baseline for GL-70 (scenario bypasses the handler)
-                    ghost_loanStreamWithdrawnAtCreation[loanId] =
+                    ghost_loanStreamWithdrawnAtCreation[loanPoolId] =
                         ISablierV2LockupLinear(SABLIER_ADDR).getWithdrawnAmount(streamId);
 
                     // Step 4: Advance time for stream vesting
                     skipTime(365 days);
 
                     // Step 5: Close the loan
-                    try lending.closeLoan(loanId) {
-                        _recordLoanCloseGhost(loanId, streamId);
+                    try lending.closeLoan(loanPoolId) {
+                        _recordLoanCloseGhost(loanPoolId, streamId);
                         // Step 6: Actor A claims pool share
                         vm.prank(actorA);
                         try lending.claimLoanPoolShare(loanPoolId, type(uint128).max) {
@@ -647,7 +645,7 @@ abstract contract OVRFLOLendingHandler is Properties {
                                 for (uint256 i = 0; i < actors.length; i++) {
                                     sumReceived += lending.loanPoolReceived(loanPoolId, actors[i]);
                                 }
-                                (,,, uint128 drawn, uint128 repaid,) = lending.loans(loanId);
+                                (,,, uint128 drawn, uint128 repaid,) = lending.loans(loanPoolId);
                                 eq(
                                     uint256(proceeds) + sumReceived,
                                     uint256(drawn) + uint256(repaid),
