@@ -38,7 +38,7 @@ lcov.info
 # Agents
 .claude/
 .factory/
-4626_Security.md
+VAULT_SECURITY.md
 GUIDELINES.md
 BASE_SECURITY.md
 CLAUDE.md 
