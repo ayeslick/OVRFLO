@@ -9,6 +9,9 @@ import {ISablierV2LockupLinear} from "../../../interfaces/ISablierV2LockupLinear
 /// @notice Handles the interaction with OVRFLOLending
 abstract contract OVRFLOLendingHandler is Properties {
     uint16 constant APR_STEP = 100;
+    // Fixed treasury target — not an actor, not lending/vault/Sablier.
+    // Clamping prevents corrupting SP-99's balance-delta check.
+    address constant TREASURY_CLAMP = address(0xFEED);
 
     // ――――――――――――――――――――― Stream picker ―――――――――――――――――――――
 
@@ -535,8 +538,9 @@ abstract contract OVRFLOLendingHandler is Properties {
         factory.setLendingFee(address(lending), feeBps_);
     }
 
-    function _oVRFLOLending_setTreasury(address newTreasury) internal asAdmin {
-        try factory.setLendingTreasury(address(lending), newTreasury) {} catch {}
+    function _oVRFLOLending_setTreasury(address) internal asAdmin {
+        // Clamp to fixed non-actor address — prevents corrupting SP-99's balance-delta check
+        try factory.setLendingTreasury(address(lending), TREASURY_CLAMP) {} catch {}
     }
 
     // ―――――――――――――――――――― Round-trip handlers ――――――――――――――――――――

@@ -103,6 +103,48 @@ abstract contract OVRFLOHandler is Properties {
         }
     }
 
+    /// @notice F3: Donation handler — exercises donation-resistance invariants (GL-80/81/86)
+    /// @dev targetSel: 0=underlying→vault, 1=ovrfloToken→vault, 2=underlying→lending, 3=ovrfloToken→lending
+    function fizz_donate(uint8 targetSel, uint256 amount) public asActor {
+        targetSel = uint8(targetSel % 4);
+        if (targetSel == 0) {
+            amount = clampBetween(amount, 1, underlying.balanceOf(actor));
+            if (amount == 0) return;
+            require(underlying.transfer(address(vault), amount), "donate failed");
+        } else if (targetSel == 1) {
+            amount = clampBetween(amount, 1, ovrfloToken.balanceOf(actor));
+            if (amount == 0) return;
+            require(ovrfloToken.transfer(address(vault), amount), "donate failed");
+        } else if (targetSel == 2) {
+            amount = clampBetween(amount, 1, underlying.balanceOf(actor));
+            if (amount == 0) return;
+            require(underlying.transfer(address(lending), amount), "donate failed");
+        } else {
+            amount = clampBetween(amount, 1, ovrfloToken.balanceOf(actor));
+            if (amount == 0) return;
+            require(ovrfloToken.transfer(address(lending), amount), "donate failed");
+        }
+    }
+
+    /// @notice F3: Donate PT to vault then sweep — exercises sweep success branch (SP-39)
+    function fizz_donatePtAndSweep(uint256 amount) public {
+        amount = clampBetween(amount, 1, ptToken.balanceOf(actor));
+        if (amount == 0) return;
+
+        // Donate PT to vault (creates excess PT beyond MTD)
+        vm.prank(actor);
+        require(ptToken.transfer(address(vault), amount), "donate PT failed");
+
+        // Sweep through factory admin path — reaches success branch
+        vm.startPrank(admin);
+        snapshotBefore();
+        try factory.sweepExcessPt(address(vault), address(ptToken), admin) {
+            snapshotAfter();
+            property_sweepExcessPtMtdUnchanged();
+        } catch {}
+        vm.stopPrank();
+    }
+
     function oVRFLO_secondary(uint8 selector, uint256 arg0, address arg1, address arg2) public {
         selector = uint8(selector % 7);
         if (selector == 0) _oVRFLO_setMarketDepositLimit(arg1, arg0);
