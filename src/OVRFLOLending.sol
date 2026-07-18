@@ -698,7 +698,7 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
         view
         returns (uint256[] memory ids, bool sufficient)
     {
-        StreamPricing.marketActive(address(factory), core, market);
+        _requireMarketActive(market);
         if (startId >= nextLiquidityId) {
             return (new uint256[](0), false);
         }

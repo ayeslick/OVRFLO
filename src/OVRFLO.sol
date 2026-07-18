@@ -361,6 +361,7 @@ contract OVRFLO is ReentrancyGuard {
     /// @dev User must approve both PT token and underlying (for fee) before calling.
     ///      The rate determines the split: if PT is at 95% of face value, user gets 95% immediately
     ///      and 5% is streamed via Sablier until maturity.
+    ///      Fee rate is ceiling-capped at FEE_MAX_BPS by the factory at setSeriesApproved time (KTD4).
     /// @param market The Pendle market address
     /// @param ptAmount Amount of PT tokens to deposit
     /// @param minToUser Minimum ovrfloTokens to receive immediately (slippage protection)
@@ -455,6 +456,7 @@ contract OVRFLO is ReentrancyGuard {
     /// @dev PT is sent before the callback and pulled back via safeTransferFrom after.
     ///      A fee in underlying is charged to the treasury. nonReentrant blocks nested
     ///      flash loans but does not block deposit/wrap/unwrap during the callback.
+    ///      Fee rate is ceiling-capped at FEE_MAX_BPS by the factory at setSeriesApproved time (KTD4).
     /// @param ptToken The PT token address to flash-loan
     /// @param amount The amount of PT tokens to lend
     /// @param data Arbitrary data passed to the borrower's callback
