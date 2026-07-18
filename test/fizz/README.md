@@ -7,14 +7,14 @@
 - `Properties.sol`: global and function-specific invariants
 - `handlers/`: protocol actions exposed to the fuzzers
 - `harness/`: (optional) harness contracts that inherit from target contracts to expose private/internal state needed by properties
-- `utils/`: shared helper libraries, assertions, clamping logic, math helpers, deploy helpers, logging, and mocks
+- `utils/`: shared helper libraries, assertions, clamping logic, logging, and mocks
 - `FuzzTester.sol`: main Echidna/Medusa fuzzing entry point
 - `FoundryTester.sol`: Foundry harness for quick debugging and local repros
 
 ## Inheritance Chain
 
 ```
-Base (is StringUtils, Clamp, Deployer, Math)
+Base (is StringUtils, Clamp)
         └─► Snapshots (is Base)
               └─► Properties (is PropertiesAsserts, Snapshots)
                     └─► <Contract>Handler (is Properties)   — one per target contract

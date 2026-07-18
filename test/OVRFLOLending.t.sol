@@ -823,7 +823,7 @@ contract OVRFLOLendingTest is Test {
         lending.repayLoan(999, 1);
     }
 
-    function test_LiquidityState_ReturnsZeroForUnknownId() public {
+    function test_LiquidityState_ReturnsZeroForUnknownId() public view {
         (address lender, address market, uint16 aprBps, uint128 availableLiquidity) = lending.liquidityPositions(999);
         assertEq(lender, address(0));
         assertEq(market, address(0));
@@ -831,7 +831,7 @@ contract OVRFLOLendingTest is Test {
         assertEq(availableLiquidity, 0);
     }
 
-    function test_SaleListingState_ReturnsZeroForUnknownId() public {
+    function test_SaleListingState_ReturnsZeroForUnknownId() public view {
         (address seller, address market, uint256 streamId, uint16 aprBps, uint16 feeBps, bool active) =
             lending.saleListings(999);
         assertEq(seller, address(0));
@@ -2083,7 +2083,7 @@ contract OVRFLOLendingTest is Test {
     function test_Exclusivity_CannotListAndLoanSameStream() public {
         _mintEligibleStream(340, SELLER, 110 ether, 0);
         // List the stream
-        uint256 listingId = _postSaleListing(SELLER, 340);
+        _postSaleListing(SELLER, 340);
         assertEq(sablier.ownerOf(340), address(lending), "stream escrowed by listing");
 
         // Now try to create a loan pool with the same stream
@@ -2178,6 +2178,7 @@ contract OVRFLOLendingTest is Test {
 
         // Direct transfer of underlying to lending
         underlying.mint(address(this), 50 ether);
+        // forge-lint: disable-next-line(erc20-unchecked-transfer) — donation test against trusted mock
         underlying.transfer(address(lending), 50 ether);
 
         (,,, uint128 capAfter) = lending.liquidityPositions(liquidityId);
@@ -2196,6 +2197,7 @@ contract OVRFLOLendingTest is Test {
 
         // Direct transfer of ovrfloToken to lending
         ovrfloToken.mint(address(this), 50 ether);
+        // forge-lint: disable-next-line(erc20-unchecked-transfer) — donation test against trusted mock
         ovrfloToken.transfer(address(lending), 50 ether);
 
         assertEq(lending.loanPoolProceeds(loanPoolId), proceedsBefore, "proceeds unchanged after donation");
