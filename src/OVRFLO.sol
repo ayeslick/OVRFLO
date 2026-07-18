@@ -9,6 +9,7 @@ import {OVRFLOToken} from "./OVRFLOToken.sol";
 import {IPendleOracle} from "../interfaces/IPendleOracle.sol";
 import {ISablierV2LockupLinear} from "../interfaces/ISablierV2LockupLinear.sol";
 import {IFlashBorrower} from "../interfaces/IFlashBorrower.sol";
+import {StreamPricing} from "./StreamPricing.sol";
 
 /// @title OVRFLO
 /// @notice A wrapper for Pendle Principal Tokens (PTs) that returns principal immediately and streams the discount
@@ -22,9 +23,6 @@ contract OVRFLO is ReentrancyGuard {
     /*//////////////////////////////////////////////////////////////
                                 CONSTANTS
     //////////////////////////////////////////////////////////////*/
-
-    /// @notice Basis points denominator for fee calculations (100% = 10_000)
-    uint256 public constant BASIS_POINTS = 10_000;
 
     /// @notice Scale factor for 18-decimal precision math
     uint256 public constant WAD = 1e18;
@@ -372,8 +370,9 @@ contract OVRFLO is ReentrancyGuard {
         external
         returns (uint256 toUser, uint256 toStream, uint256 streamId)
     {
-        SeriesInfo memory info = _series[market];
-        require(info.ptToken != address(0), "OVRFLO: market not approved");
+        SeriesInfo memory info;
+        uint256 rateE18;
+        (info, rateE18) = _approvedRate(market);
         require(ptAmount >= MIN_PT_AMOUNT, "OVRFLO: amount < min PT");
         require(block.timestamp < info.expiryCached, "OVRFLO: matured");
 
@@ -389,14 +388,11 @@ contract OVRFLO is ReentrancyGuard {
 
         IERC20(info.ptToken).safeTransferFrom(msg.sender, address(this), ptAmount);
 
-        _requireOracleFresh(market, info.twapDurationFixed);
-        uint256 rateE18 = IPendleOracle(oracle).getPtToSyRate(market, info.twapDurationFixed);
-
         (toUser, toStream) = _computeSplit(ptAmount, rateE18);
 
         require(toUser >= minToUser, "OVRFLO: slippage");
 
-        uint256 feeAmount = info.feeBps == 0 ? 0 : PRBMath.mulDiv(toUser, info.feeBps, BASIS_POINTS);
+        uint256 feeAmount = StreamPricing.fee(toUser, info.feeBps);
 
         if (feeAmount > 0) {
             IERC20(underlying).safeTransferFrom(msg.sender, TREASURY_ADDR, feeAmount);
@@ -470,10 +466,8 @@ contract OVRFLO is ReentrancyGuard {
         require(amount > 0, "OVRFLO: zero flash");
         require(amount <= marketTotalDeposited[market], "OVRFLO: exceeds deposited");
 
-        _requireOracleFresh(market, info.twapDurationFixed);
-        uint256 rateE18 = IPendleOracle(oracle).getPtToSyRate(market, info.twapDurationFixed);
-        uint256 fee =
-            flashFeeBps == 0 ? 0 : PRBMath.mulDiv(PRBMath.mulDiv(amount, rateE18, WAD), flashFeeBps, BASIS_POINTS);
+        uint256 rateE18 = _freshRate(market, info);
+        uint256 fee = StreamPricing.fee(PRBMath.mulDiv(amount, rateE18, WAD), flashFeeBps);
 
         IERC20(ptToken).safeTransfer(msg.sender, amount);
 
@@ -573,12 +567,19 @@ contract OVRFLO is ReentrancyGuard {
         SeriesInfo memory info;
         (info, rateE18) = _approvedRate(market);
         (toUser, toStream) = _computeSplit(ptAmount, rateE18);
-        feeAmount = info.feeBps == 0 ? 0 : PRBMath.mulDiv(toUser, info.feeBps, BASIS_POINTS);
+        feeAmount = StreamPricing.fee(toUser, info.feeBps);
     }
 
     function _approvedRate(address market) internal view returns (SeriesInfo memory info, uint256 rateE18) {
         info = _series[market];
         require(info.ptToken != address(0), "OVRFLO: market not approved");
+        rateE18 = _freshRate(market, info);
+    }
+
+    /// @dev Reads the PT-to-SY rate after verifying the oracle has enough history for the
+    ///      market's fixed TWAP window. Used by `_approvedRate` (deposit/preview path) and
+    ///      directly by `flashLoan` (which has its own `ptToMarket` approval gate).
+    function _freshRate(address market, SeriesInfo memory info) internal view returns (uint256 rateE18) {
         _requireOracleFresh(market, info.twapDurationFixed);
         rateE18 = IPendleOracle(oracle).getPtToSyRate(market, info.twapDurationFixed);
     }

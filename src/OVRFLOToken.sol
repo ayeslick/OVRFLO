@@ -3,6 +3,9 @@ pragma solidity ^0.8.20;
 
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
+/// @notice Minimal single-owner model — `renounceOwnership` is deliberately omitted so
+///         the OVRFLO vault always retains mint/burn control and cannot permanently
+///         disable them. Not replaced with OZ `Ownable`, which exposes renunciation.
 contract OVRFLOToken is ERC20 {
     address public owner;
 

@@ -279,6 +279,7 @@ contract OVRFLOProtocolTest is VaultMockHelpers {
 
     function test_Deposit_RevertsBelowMinimumAmount() public {
         _approveSeries(MARKET_ONE, ptOne, block.timestamp + 30 days, 0);
+        _mockRate(MARKET_ONE, 0.9e18);
         uint256 belowMin = ovrflo.MIN_PT_AMOUNT() - 1;
 
         vm.prank(user);
@@ -289,6 +290,7 @@ contract OVRFLOProtocolTest is VaultMockHelpers {
     function test_Deposit_RevertsAfterMaturity() public {
         uint256 expiry = block.timestamp + 1;
         _approveSeries(MARKET_ONE, ptOne, expiry, 0);
+        _mockRate(MARKET_ONE, 0.9e18);
 
         vm.warp(expiry);
         vm.prank(user);

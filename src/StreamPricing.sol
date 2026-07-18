@@ -2,6 +2,8 @@
 pragma solidity ^0.8.20;
 
 import {PRBMath} from "prb-math/PRBMath.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
+import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {ISablierV2LockupLinear} from "../interfaces/ISablierV2LockupLinear.sol";
 
 /// @notice Registry facet exposed by `OVRFLOFactory` for vault lookups and market approval.
@@ -113,20 +115,16 @@ library StreamPricing {
     /// @notice Future value (at maturity) of a borrowed amount under `aprBps`.
     /// @dev Ceils: rounds up by 1 wei when the division has a remainder, so the lender
     ///      is owed at least the accrual. This is the debt denomination in ovrfloToken.
-    ///      Reverts on uint128 overflow.
+    ///      Uses OpenZeppelin `Math.mulDiv` with `Rounding.Up` (replacing the hand-rolled
+    ///      ceiling add-one) and `SafeCast.toUint128` for the uint128 downcast (reverting
+    ///      on overflow with the OZ error message).
     /// @param borrowAmount Principal advanced today.
     /// @param aprBps Annualized rate in basis points.
     /// @param timeToMaturity Seconds remaining until series maturity.
     /// @return obligation The rounded-up amount owed at maturity.
     function obligation(uint256 borrowAmount, uint16 aprBps, uint256 timeToMaturity) internal pure returns (uint128) {
         uint256 f = factor(aprBps, timeToMaturity);
-        uint256 value = PRBMath.mulDiv(borrowAmount, f, WAD);
-        if (mulmod(borrowAmount, f, WAD) != 0) {
-            value += 1;
-        }
-        require(value <= type(uint128).max, "StreamPricing: obligation overflow");
-        // forge-lint: disable-next-line(unsafe-typecast)
-        return uint128(value);
+        return SafeCast.toUint128(Math.mulDiv(borrowAmount, f, WAD, Math.Rounding.Up));
     }
 
     /// @notice Obligation for a lending fill, fast-pathing the full-borrow case.

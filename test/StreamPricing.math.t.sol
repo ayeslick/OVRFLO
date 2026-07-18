@@ -2,6 +2,7 @@
 pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
+import {PRBMath} from "prb-math/PRBMath.sol";
 import {StreamPricing} from "../src/StreamPricing.sol";
 
 /// @dev Harness to expose internal pure functions for testing.
@@ -176,8 +177,82 @@ contract StreamPricingMathTest is Test {
         uint256 f = StreamPricing.factor(aprBps, ttm);
         vm.assume(f > WAD); // skip zero-apr which won't overflow
         uint256 borrowAmount = type(uint128).max;
-        vm.expectRevert("StreamPricing: obligation overflow");
+        // OZ SafeCast.toUint128 revert message (replaces the hand-rolled check).
+        vm.expectRevert("SafeCast: value doesn't fit in 128 bits");
         h.obligation(borrowAmount, aprBps, ttm);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                     OBLIGATION vs OLD HAND-ROLLED CEIL (U7 DIFFERENTIAL)
+    //////////////////////////////////////////////////////////////*/
+
+    /// @dev Reference implementation of the pre-U7 hand-rolled ceil + manual uint128 cast.
+    ///      Proves behavior-identity with the new OZ `Math.mulDiv(Rounding.Up)` +
+    ///      `SafeCast.toUint128` path. Keep in sync with the old `obligation` body.
+    function _oldObligation(uint256 borrowAmount, uint16 aprBps, uint256 timeToMaturity)
+        internal
+        pure
+        returns (uint128)
+    {
+        uint256 f = StreamPricing.factor(aprBps, timeToMaturity);
+        uint256 value = PRBMath.mulDiv(borrowAmount, f, WAD);
+        if (mulmod(borrowAmount, f, WAD) != 0) {
+            value += 1;
+        }
+        require(value <= type(uint128).max, "StreamPricing: obligation overflow");
+        // forge-lint: disable-next-line(unsafe-typecast)
+        return uint128(value);
+    }
+
+    /// @dev Differential fuzz: new OZ-based `obligation` must equal the old hand-rolled
+    ///      ceil for all non-overflowing inputs (overflow reverts are tested separately).
+    function test_Fuzz_Obligation_MatchesOldHandRolledCeil(uint256 borrowAmount, uint16 aprBps, uint256 ttm)
+        public
+        view
+    {
+        ttm = ttm % (1000 * 365 days); // bound to avoid PRBMath mulDiv overflow
+        // Bound borrowAmount to uint128 first so the overflow-check below cannot panic
+        // on `borrowAmount * f` exceeding uint256 (obligation >= borrowAmount since
+        // f >= WAD, so any borrowAmount > uint128.max reverts in both implementations).
+        vm.assume(borrowAmount <= type(uint128).max);
+        // Skip cases that overflow uint128 — both implementations revert identically
+        // there (covered by test_Obligation_OverflowsReverts).
+        uint256 f = StreamPricing.factor(aprBps, ttm);
+        vm.assume(borrowAmount * f / WAD <= type(uint128).max);
+
+        assertEq(
+            uint256(h.obligation(borrowAmount, aprBps, ttm)),
+            uint256(_oldObligation(borrowAmount, aprBps, ttm)),
+            "new OZ obligation != old hand-rolled ceil"
+        );
+    }
+
+    /// @dev Pinned edge cases: zero borrow, zero APR (exact), exact division,
+    ///      non-exact division (ceil fires), and the uint128 boundary (exact, no overflow).
+    ///      All must be identical between the new and reference implementations.
+    function test_Obligation_Differential_EdgeCases() public view {
+        // Zero borrow amount → 0 under both.
+        assertEq(uint256(h.obligation(0, 1000, 365 days)), uint256(_oldObligation(0, 1000, 365 days)));
+        assertEq(uint256(h.obligation(0, 1000, 365 days)), 0);
+
+        // Zero APR → f = WAD → obligation == borrowAmount (exact division).
+        assertEq(uint256(h.obligation(100 ether, 0, 365 days)), uint256(_oldObligation(100 ether, 0, 365 days)));
+
+        // Exact division: 100e18 * 1.1e18 / 1e18 = 110e18 exactly.
+        assertEq(uint256(h.obligation(100 ether, 1000, 365 days)), uint256(_oldObligation(100 ether, 1000, 365 days)));
+        assertEq(uint256(h.obligation(100 ether, 1000, 365 days)), 110 ether);
+
+        // Non-exact division: mulmod != 0, ceil branch fires (97e18 + 1).
+        uint256 nonExact = 97e18 + 1;
+        assertEq(uint256(h.obligation(nonExact, 1000, 365 days)), uint256(_oldObligation(nonExact, 1000, 365 days)));
+
+        // uint128 boundary: borrowAmount == type(uint128).max with f == WAD (zero APR)
+        // → exact, no overflow, returns type(uint128).max.
+        assertEq(
+            uint256(h.obligation(type(uint128).max, 0, 365 days)),
+            uint256(_oldObligation(type(uint128).max, 0, 365 days))
+        );
+        assertEq(uint256(h.obligation(type(uint128).max, 0, 365 days)), uint256(type(uint128).max));
     }
 
     /*//////////////////////////////////////////////////////////////
