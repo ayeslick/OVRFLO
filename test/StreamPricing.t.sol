@@ -117,16 +117,12 @@ contract StreamPricingTest is Test {
     }
 
     function test_EligibilityRejectsUnapprovedMarket() public {
-        factory.setMarketApproved(address(core), MARKET_ONE, false);
+        // After U4, on-chain market approval is derived from the core's series config
+        // (`ptToken != address(0)`); the factory `isMarketApproved` mapping is no longer
+        // consulted. An unconfigured series (ptToken = 0) reverts MarketNotApproved.
+        core.setSeries(MARKET_ONE, false, expiry, address(0), address(ovrfloToken), address(underlying), ORACLE);
 
         vm.expectRevert(StreamPricing.MarketNotApproved.selector);
-        harness.requireEligible(address(factory), address(sablier), address(core), MARKET_ONE, streamId);
-    }
-
-    function test_EligibilityRejectsSeriesNotApproved() public {
-        core.setSeries(MARKET_ONE, false, expiry, PT_TOKEN, address(ovrfloToken), address(underlying), ORACLE);
-
-        vm.expectRevert(StreamPricing.SeriesNotApproved.selector);
         harness.requireEligible(address(factory), address(sablier), address(core), MARKET_ONE, streamId);
     }
 

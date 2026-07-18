@@ -55,7 +55,6 @@ contract OVRFLOFactoryMainnetForkTest is OVRFLOForkBase {
 
         {
             (
-                bool approved,
                 uint32 twapDuration,
                 uint16 feeBps,
                 uint256 storedExpiry,
@@ -65,7 +64,7 @@ contract OVRFLOFactoryMainnetForkTest is OVRFLOForkBase {
                 address storedOracle
             ) = ovrflo.series(PRIMARY_MARKET);
 
-            assertTrue(approved);
+            assertTrue(storedPt != address(0));
             assertEq(twapDuration, MIN_TWAP_DURATION);
             assertEq(feeBps, 25);
             assertEq(storedExpiry, expiry);
@@ -99,8 +98,8 @@ contract OVRFLOFactoryMainnetForkTest is OVRFLOForkBase {
         factory.addMarket(address(ovrflo), SECONDARY_MARKET, MIN_TWAP_DURATION, 10);
         vm.stopPrank();
 
-        (,,, uint256 primaryExpiry, address primaryPt, address primaryToken,,) = ovrflo.series(PRIMARY_MARKET);
-        (,,, uint256 secondaryExpiry, address secondaryPt, address secondaryToken,,) = ovrflo.series(SECONDARY_MARKET);
+        (,, uint256 primaryExpiry, address primaryPt, address primaryToken,,) = ovrflo.series(PRIMARY_MARKET);
+        (,, uint256 secondaryExpiry, address secondaryPt, address secondaryToken,,) = ovrflo.series(SECONDARY_MARKET);
 
         assertEq(primaryExpiry, PRIMARY_EXPIRY);
         assertEq(primaryPt, PRIMARY_PT);

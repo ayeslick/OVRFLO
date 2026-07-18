@@ -117,7 +117,6 @@ contract OVRFLOProtocolTest is VaultMockHelpers {
         _approveSeries(MARKET_ONE, ptOne, expiry, FEE_BPS);
 
         (
-            bool approved,
             uint32 twapDuration,
             uint16 feeBps,
             uint256 expiryCached,
@@ -127,7 +126,7 @@ contract OVRFLOProtocolTest is VaultMockHelpers {
             address oracle
         ) = ovrflo.series(MARKET_ONE);
 
-        assertTrue(approved);
+        assertTrue(ptToken != address(0));
         assertEq(twapDuration, TWAP_DURATION);
         assertEq(feeBps, FEE_BPS);
         assertEq(expiryCached, expiry);
@@ -146,8 +145,8 @@ contract OVRFLOProtocolTest is VaultMockHelpers {
         _approveSeries(MARKET_ONE, ptOne, firstExpiry, FEE_BPS);
         _approveSeries(MARKET_TWO, ptTwo, secondExpiry, 0);
 
-        (,,, uint256 storedFirstExpiry,, address firstToken,,) = ovrflo.series(MARKET_ONE);
-        (,,, uint256 storedSecondExpiry,, address secondToken,,) = ovrflo.series(MARKET_TWO);
+        (,, uint256 storedFirstExpiry,, address firstToken,,) = ovrflo.series(MARKET_ONE);
+        (,, uint256 storedSecondExpiry,, address secondToken,,) = ovrflo.series(MARKET_TWO);
 
         assertEq(firstToken, address(ovrfloToken));
         assertEq(secondToken, address(ovrfloToken));

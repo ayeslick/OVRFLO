@@ -122,7 +122,7 @@ abstract contract OVRFLOHandler is Properties {
         ghosts.ghost_lastToUser = toUser;
         ghosts.ghost_lastDepositPtAmount = ptAmount;
         ghosts.ghost_lastOracleRate = mockOracle.rate();
-        (,, uint16 feeBps,,,,,) = vault.series(_market);
+        (, uint16 feeBps,,,,,) = vault.series(_market);
         uint256 feeAmount = feeBps == 0 ? 0 : toUser * feeBps / 10_000;
         // Property assertions
         property_depositConservesSplit(toUser, toStream, ptAmount);
@@ -290,7 +290,7 @@ abstract contract OVRFLOHandler is Properties {
         vm.stopPrank();
 
         // Skip to maturity
-        (,,, uint256 expiry,,,,) = vault.series(market);
+        (,, uint256 expiry,,,,) = vault.series(market);
         if (block.timestamp < expiry) {
             skipTime(expiry - block.timestamp + 1);
         }

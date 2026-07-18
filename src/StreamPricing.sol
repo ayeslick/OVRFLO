@@ -15,21 +15,15 @@ interface IOVRFLOFactoryRegistry {
         external
         view
         returns (address treasury, address underlying, address ovrfloToken);
-
-    /// @notice Whether a Pendle market is approved for a given OVRFLO core vault.
-    /// @param ovrflo The OVRFLO core vault address.
-    /// @param market The Pendle market address.
-    /// @return approved True if the market may back streams on this vault.
-    function isMarketApproved(address ovrflo, address market) external view returns (bool);
 }
 
 /// @notice Registry facet exposed by the OVRFLO core vault for per-market series config.
 interface IOVRFLOSeriesRegistry {
     /// @notice Returns the cached series configuration for a Pendle market.
     /// @dev Fields are immutable once set via `setSeriesApproved`; claims depend on
-    ///      `ptToken`/`ovrfloToken`/`expiryCached` never changing for a market.
+    ///      `ptToken`/`ovrfloToken`/`expiryCached` never changing for a market. A series
+    ///      is considered approved iff `ptToken != address(0)`.
     /// @param market The Pendle market address.
-    /// @return approved Whether the series accepts deposits.
     /// @return twapDurationFixed TWAP window in seconds for oracle reads.
     /// @return feeBps Deposit fee in basis points.
     /// @return expiryCached Cached PT maturity timestamp (also the stream end time).
@@ -41,7 +35,6 @@ interface IOVRFLOSeriesRegistry {
         external
         view
         returns (
-            bool approved,
             uint32 twapDurationFixed,
             uint16 feeBps,
             uint256 expiryCached,
@@ -75,8 +68,6 @@ library StreamPricing {
     error CoreNotRegistered();
     /// @dev The Pendle market is not approved for this vault.
     error MarketNotApproved();
-    /// @dev The market's series is not approved on the core vault.
-    error SeriesNotApproved();
     /// @dev The stream's Sablier sender is not the OVRFLO core vault.
     error WrongSender();
     /// @dev The stream's payout asset does not match the series' ovrfloToken.
@@ -172,12 +163,14 @@ library StreamPricing {
         return PRBMath.mulDiv(borrowAmount, feeBps, BASIS_POINTS);
     }
 
-    /// @notice Validates that a market is approved, its series is approved, and it has not matured.
+    /// @notice Validates that a market has a configured series and has not matured.
     /// @dev Lightweight, stream-agnostic check used to front-load rejection at liquidity-post
     ///      time (liquidityPositions carry no `streamId`). The full stream-level validation lives in
     ///      `requireEligible`, which calls this internally; both share this single source
-    ///      of truth for the market/series/maturity gating.
-    /// @param factory The OVRFLOFactory registry address.
+    ///      of truth for the market/maturity gating. Market approval is now derived from
+    ///      the core's series config (`ptToken != address(0)`); the factory's
+    ///      `isMarketApproved` mapping is no longer consulted on-chain.
+    /// @param factory The OVRFLOFactory registry address (unused here; retained for `requireEligible`).
     /// @param core The OVRFLO core vault address.
     /// @param market The Pendle market address.
     /// @return expiryCached The cached series maturity timestamp.
@@ -187,9 +180,9 @@ library StreamPricing {
         view
         returns (uint256 expiryCached, address ovrfloToken)
     {
-        if (!IOVRFLOFactoryRegistry(factory).isMarketApproved(core, market)) revert MarketNotApproved();
-        (bool approved,,, uint256 expiryCached_,, address ovrfloToken_,,) = IOVRFLOSeriesRegistry(core).series(market);
-        if (!approved) revert SeriesNotApproved();
+        (,, uint256 expiryCached_, address ptToken_, address ovrfloToken_,,) =
+            IOVRFLOSeriesRegistry(core).series(market);
+        if (ptToken_ == address(0)) revert MarketNotApproved();
         if (block.timestamp >= expiryCached_) revert SeriesMatured();
         return (expiryCached_, ovrfloToken_);
     }

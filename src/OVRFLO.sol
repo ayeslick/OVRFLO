@@ -75,14 +75,12 @@ contract OVRFLO is ReentrancyGuard {
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Configuration for an approved Pendle market series
-    /// @param approved Whether this market is approved for deposits
     /// @param twapDurationFixed TWAP duration in seconds for oracle queries
     /// @param feeBps Fee in basis points charged on immediate minting
     /// @param expiryCached Cached PT maturity timestamp
-    /// @param ptToken Address of the Pendle PT token
+    /// @param ptToken Address of the Pendle PT token (address(0) means unapproved/unconfigured)
     /// @dev ovrfloToken, underlying, and oracle are vault-level immutables, not stored per-series.
     struct SeriesInfo {
-        bool approved;
         uint32 twapDurationFixed;
         uint16 feeBps;
         uint256 expiryCached;
@@ -256,7 +254,6 @@ contract OVRFLO is ReentrancyGuard {
         require(info.ptToken == address(0), "OVRFLO: series already configured");
         require(ptToMarket[pt] == address(0), "OVRFLO: PT already mapped");
 
-        info.approved = true;
         info.twapDurationFixed = twapDuration;
         info.feeBps = feeBps;
         info.expiryCached = expiry;
@@ -375,7 +372,7 @@ contract OVRFLO is ReentrancyGuard {
         returns (uint256 toUser, uint256 toStream, uint256 streamId)
     {
         SeriesInfo memory info = _series[market];
-        require(info.approved, "OVRFLO: market not approved");
+        require(info.ptToken != address(0), "OVRFLO: market not approved");
         require(ptAmount >= MIN_PT_AMOUNT, "OVRFLO: amount < min PT");
         require(block.timestamp < info.expiryCached, "OVRFLO: matured");
 
@@ -510,13 +507,12 @@ contract OVRFLO is ReentrancyGuard {
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Returns the full series configuration for a market
-    /// @dev ovrfloToken (idx 5), underlying (idx 6), and oracle (idx 7) are synthesized
-    ///      from vault immutables to preserve the 8-tuple ABI consumers depend on.
+    /// @dev ovrfloToken (idx 4), underlying (idx 5), and oracle (idx 6) are synthesized
+    ///      from vault immutables. A series is approved iff `ptToken != address(0)`.
     function series(address market)
         external
         view
         returns (
-            bool approved,
             uint32 twapDurationFixed,
             uint16 feeBps,
             uint256 expiryCached,
@@ -527,7 +523,7 @@ contract OVRFLO is ReentrancyGuard {
         )
     {
         SeriesInfo memory s = _series[market];
-        return (s.approved, s.twapDurationFixed, s.feeBps, s.expiryCached, s.ptToken, ovrfloToken, underlying, oracle);
+        return (s.twapDurationFixed, s.feeBps, s.expiryCached, s.ptToken, ovrfloToken, underlying, oracle);
     }
 
     /// @notice Returns the claimable PT balance for a given PT token
@@ -580,7 +576,7 @@ contract OVRFLO is ReentrancyGuard {
 
     function _approvedRate(address market) internal view returns (SeriesInfo memory info, uint256 rateE18) {
         info = _series[market];
-        require(info.approved, "OVRFLO: market not approved");
+        require(info.ptToken != address(0), "OVRFLO: market not approved");
         _requireOracleFresh(market, info.twapDurationFixed);
         rateE18 = IPendleOracle(oracle).getPtToSyRate(market, info.twapDurationFixed);
     }

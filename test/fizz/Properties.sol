@@ -450,7 +450,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
 
     /// @notice GL-41: series ptToken/expiryCached/feeBps immutable
     function property_series_immutable() public {
-        (,, uint16 feeBps, uint256 expiryCached, address ptToken_,,,) = vault.series(market);
+        (, uint16 feeBps, uint256 expiryCached, address ptToken_,,,) = vault.series(market);
         if (ghost_seriesPtTokenInit[market] == address(0)) {
             ghost_seriesPtTokenInit[market] = ptToken_;
             ghost_seriesExpiryInit[market] = expiryCached;
@@ -657,7 +657,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
 
     /// @notice SP-28: deposit only succeeds pre-maturity
     function property_depositPreMaturity(address _market) internal {
-        (,,, uint256 expiry,,,,) = vault.series(_market);
+        (,, uint256 expiry,,,,) = vault.series(_market);
         lt(block.timestamp, expiry, "SP-28: deposit succeeded post-maturity");
     }
 
@@ -728,7 +728,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     /// @notice SP-30: claim only succeeds post-maturity
     function property_claimPostMaturity(address ptToken_) internal {
         address m = vault.ptToMarket(ptToken_);
-        (,,, uint256 expiry,,,,) = vault.series(m);
+        (,, uint256 expiry,,,,) = vault.series(m);
         gte(block.timestamp, expiry, "SP-30: claim succeeded pre-maturity");
     }
 
@@ -811,7 +811,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
 
     /// @notice SP-37: flash loan only succeeds pre-maturity
     function property_flashLoanPreMaturity() internal {
-        (,,, uint256 expiry,,,,) = vault.series(market);
+        (,, uint256 expiry,,,,) = vault.series(market);
         lt(block.timestamp, expiry, "SP-37: flash loan succeeded post-maturity");
     }
 
@@ -1957,7 +1957,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
         uint256 listingId = ghosts.ghost_lastListingId;
         if (listingId == 0) return;
         (, address listingMarket,,,,) = lending.saleListings(listingId);
-        (,,, uint256 expiry,,,,) = vault.series(listingMarket);
+        (,, uint256 expiry,,,,) = vault.series(listingMarket);
         if (block.timestamp >= expiry) {
             t(stateAfter.streamOwner == actor, "SP-104: cancel did not return stream post-maturity");
         }
@@ -1968,7 +1968,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
         uint256 liquidityId = ghosts.ghost_lastLiquidityId;
         if (liquidityId == 0) return;
         (, address liquidityMarket,,) = lending.liquidityPositions(liquidityId);
-        (,,, uint256 expiry,,,,) = vault.series(liquidityMarket);
+        (,, uint256 expiry,,,,) = vault.series(liquidityMarket);
         if (block.timestamp >= expiry) {
             gt(stateAfter.actorUnderlying, stateBefore.actorUnderlying, "SP-105: no refund post-maturity");
         }

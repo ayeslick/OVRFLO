@@ -462,7 +462,6 @@ contract OVRFLOFactoryTest is Test {
 
         {
             (
-                bool approved,
                 uint32 twapDuration,
                 uint16 feeBps,
                 uint256 storedExpiry,
@@ -472,7 +471,7 @@ contract OVRFLOFactoryTest is Test {
                 address storedOracle
             ) = ovrflo.series(address(market));
 
-            assertTrue(approved);
+            assertTrue(storedPt != address(0));
             assertEq(twapDuration, MIN_TWAP_DURATION);
             assertEq(feeBps, 25);
             assertEq(storedExpiry, expiry);
@@ -901,7 +900,7 @@ contract OVRFLOFactoryTest is Test {
         address expectedToken,
         address expectedUnderlying
     ) internal view {
-        (,,,,, address storedToken, address storedUnderlying,) = ovrflo.series(market);
+        (,,,, address storedToken, address storedUnderlying,) = ovrflo.series(market);
         assertEq(storedToken, expectedToken);
         assertEq(storedUnderlying, expectedUnderlying);
     }

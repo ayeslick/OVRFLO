@@ -90,7 +90,6 @@ contract MockLendingCore {
         external
         view
         returns (
-            bool approved,
             uint32 twapDurationFixed,
             uint16 feeBps,
             uint256 expiryCached,
@@ -102,7 +101,6 @@ contract MockLendingCore {
     {
         Series memory info = seriesInfo[market];
         return (
-            info.approved,
             info.twapDurationFixed,
             info.feeBps,
             info.expiryCached,
