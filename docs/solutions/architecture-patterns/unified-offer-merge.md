@@ -2,7 +2,7 @@
 title: Unify parallel offer types that differ only in consumption path
 date: 2026-06-30
 category: docs/solutions/architecture-patterns
-module: OVRFLOBook
+module: OVRFLOLending
 problem_type: architecture_pattern
 component: service_object
 severity: low
@@ -18,7 +18,7 @@ tags: [unified-offer-type, dead-code-removal, reverse-mapping, solidity-refactor
 
 ## Context
 
-`OVRFLOBook` is the secondary market for selling or lending against Sablier
+`OVRFLOLending` is the secondary market for selling or lending against Sablier
 streams produced by the OVRFLO vault. From inception it carried two
 maker-side "standing offer" primitives that were structurally near-identical:
 
@@ -34,8 +34,8 @@ both gated the market with `_requireMarketActive(market)` at post time, both
 validated APR bounds via `_validateApr`, both were cancelled by their owner
 with a capacity refund, and both exposed a `*OfferState` view with a
 sentinel `address(0)` check (pattern #7). The only thing that distinguished
-them was **which taker-side function consumed them**: `sellIntoOffer` for
-the sale path, `createBorrowPool` for the loan path.
+them was **which taker-side function consumed them**: `sellStreamToLiquidity` for
+the sale path, `createBorrowerLoanPool` for the loan path.
 
 This artificial distinction produced three kinds of friction:
 
@@ -62,7 +62,7 @@ This artificial distinction produced three kinds of friction:
    — it could be derived from the pool itself. Carrying it forward kept a
    caller-supplied ID in scope that could drift from the pool's real loan,
    forcing a defensive `loanPoolId[loanId] == poolId` cross-check that
-   served no purpose once the relationship became 1:1. (Note: `poolClaimLoan` was subsequently removed; `claimPoolShare` is now the sole pool claim function.)
+   served no purpose once the relationship became 1:1. (Note: `poolClaimLoan` was subsequently removed entirely; the sole claim path is now `claimLoanPoolShare(uint256 loanId, uint128 amount)`. U1 of the 2026-07 simplification refactor then collapsed the dual loan/loan-pool ID space so `loanId == loanPoolId`, deleting both the `loanPoolId` forward map and the `poolLoanId` reverse map introduced below — see `./behavior-preserving-simplification-refactor.md`.)
 
 The contract is pre-launch (no deployments), so storage layout changes are
 free. This was the moment to collapse the duplication rather than let it
@@ -75,10 +75,13 @@ order they were applied, because each one unlocks the next.
 
 ### 1. Merge the structs into one type, named for the role-neutral field
 
-Replace the two offer structs with a single `Offer` whose owner field is
-named `maker` (the role-neutral term — a maker posts liquidity; whether they
-end up a buyer or a lender is determined later, by the taker). Keep the
-field set and order identical to the originals so the merge is mechanical.
+Replace the two offer structs with a single `LiquidityPosition` whose owner
+field is named `lender`. Keep the field set and order identical to the
+originals so the merge is mechanical. The name leans toward the lending
+interpretation, but the position is still consumable as either a sale or a
+loan — whether the `lender` ends up a buyer or a creditor is determined
+later, by the taker. (The original merge used the role-neutral name `maker`;
+a later pass standardized on `lender` to match the lending-market vocabulary.)
 
 **Before — two parallel structs:**
 
@@ -108,16 +111,16 @@ uint256 public nextLendOfferId = 1;
 **After — one unified struct:**
 
 ```solidity
-struct Offer {
-    address maker;
+struct LiquidityPosition {
+    address lender;
     address market;
     uint16 aprBps;
-    uint128 capacity;
+    uint128 availableLiquidity;
     bool active;
 }
 
-mapping(uint256 => Offer) public offers;
-uint256 public nextOfferId = 1;
+mapping(uint256 => LiquidityPosition) public liquidityPositions;
+uint256 public nextLiquidityId = 1;
 ```
 
 The NatSpec on the unified struct is the place to record the **intentional
@@ -125,21 +128,22 @@ absence** of a sale/loan flag, so a future reader doesn't re-introduce one
 thinking it was forgotten:
 
 ```solidity
-/// @notice Standing offer: liquidity in underlying waiting to buy or lend against
-///         any eligible stream from `market` at `aprBps`. The offer is consumable as
-///         either a sale (permanent stream transfer via `sellIntoOffer`) or a loan
-///         (stream pledged with obligation via `createBorrowPool`); the maker cannot
-///         restrict an offer to one path.
-struct Offer { ... }
+/// @notice Standing liquidity position: underlying waiting to buy or lend against
+///         any eligible stream from `market` at `aprBps`. The position is consumable as
+///         either a sale (permanent stream transfer via `sellStreamToLiquidity`) or a loan
+///         (stream pledged with obligation via `createBorrowerLoanPool`); the lender cannot
+///         restrict a position to one path.
+struct LiquidityPosition { ... }
 ```
 
 ### 2. Collapse the duplicate functions into one of each kind
 
 With one struct, the posting, cancellation, state, and gather functions
-collapse one-to-one. `postOffer` replaces both `postSaleOffer` and
-`postLendOffer`; `cancelOffer` replaces both cancels; `offerState` replaces
-both state views (preserving pattern #7's `address(0)` sentinel); a single
-`gatherOfferCapacities` replaces the two gather functions.
+collapse one-to-one. `supplyLiquidity` replaces both `postSaleOffer` and
+`postLendOffer`; `withdrawLiquidity` replaces both cancels; the auto-getter
+`liquidityPositions` replaces both state views (preserving pattern #7's
+`address(0)` sentinel — a non-existent id returns `lender == address(0)`);
+a single `gatherLiquidity` replaces the two gather functions.
 
 **Before — two posting functions, byte-identical apart from mapping/event:**
 
@@ -149,7 +153,7 @@ function postSaleOffer(address market, uint16 aprBps, uint128 capacity)
 {
     _validateApr(aprBps);
     _requireMarketActive(market);
-    require(capacity > 0, "OVRFLOBook: capacity zero");
+    require(capacity > 0, "OVRFLOLending: capacity zero");
 
     offerId = nextSaleOfferId++;
     saleOffers[offerId] =
@@ -164,7 +168,7 @@ function postLendOffer(address market, uint16 aprBps, uint128 capacity)
 {
     _validateApr(aprBps);
     _requireMarketActive(market);
-    require(capacity > 0, "OVRFLOBook: capacity zero");
+    require(capacity > 0, "OVRFLOLending: capacity zero");
 
     offerId = nextLendOfferId++;
     lendOffers[offerId] =
@@ -178,24 +182,24 @@ function postLendOffer(address market, uint16 aprBps, uint128 capacity)
 **After — one posting function:**
 
 ```solidity
-function postOffer(address market, uint16 aprBps, uint128 capacity)
-    external nonReentrant returns (uint256 offerId)
+function supplyLiquidity(address market, uint16 aprBps, uint128 availableLiquidity)
+    external nonReentrant returns (uint256 liquidityId)
 {
     _validateApr(aprBps);
     _requireMarketActive(market);
-    require(capacity > 0, "OVRFLOBook: capacity zero");
+    require(availableLiquidity > 0, "OVRFLOLending: availableLiquidity zero");
 
-    offerId = nextOfferId++;
-    offers[offerId] = Offer({maker: msg.sender, market: market, aprBps: aprBps, capacity: capacity, active: true});
+    liquidityId = nextLiquidityId++;
+    liquidityPositions[liquidityId] = LiquidityPosition({lender: msg.sender, market: market, aprBps: aprBps, availableLiquidity: availableLiquidity, active: true});
 
-    _pullExact(IERC20(underlying), msg.sender, address(this), capacity);
-    emit OfferPosted(offerId, msg.sender, market, aprBps, capacity);
+    _pullExact(IERC20(underlying), msg.sender, address(this), availableLiquidity);
+    emit LiquiditySupplied(liquidityId, msg.sender, market, aprBps, availableLiquidity);
 }
 ```
 
 The market-active gate (pattern: market-active gate) and the upfront
 `_pullExact` funding are preserved exactly — the merge changes **what type
-the offer is stored as**, never the validation or the money-movement
+the position is stored as**, never the validation or the money-movement
 invariants that the gather/fill paths depend on.
 
 ### 3. Remove dead code in a single, named teardown pass
@@ -212,37 +216,37 @@ In this refactor the teardown pass removed:
   single-party lending was removed).
 - `postBorrowListing`, `cancelBorrowListing`, `gatherBorrowListings`, and
   the `BorrowListing` struct (the borrower-side listing primitive, superseded
-  by `createBorrowPool`).
+  by `createBorrowerLoanPool`).
 - `Pool.isLend` (a boolean that only distinguished lender pools from
   borrower pools; with one pool kind it is always false).
 - The duplicate events `SaleOfferPosted` / `SaleOfferCancelled` /
-  `LendOfferPosted` / `LendOfferCancelled`, folded into `OfferPosted` /
-  `OfferCancelled`.
+  `LendOfferPosted` / `LendOfferCancelled`, folded into `LiquiditySupplied` /
+  `LiquidityWithdrawn`.
 
-The `SaleOfferHit` event was **retained**, deliberately. It is a
-*consumption* event (a sale into an offer), not a posting event, and the
-loan path emits `PoolCreated` instead. The two consumption paths have
+The `StreamSoldToLiquidity` event was **retained**, deliberately. It is a
+*consumption* event (a sale into a liquidity position), not a posting event, and the
+loan path emits `BorrowerLoanPoolCreated` instead. The two consumption paths have
 fundamentally different semantics — a sale permanently transfers the
 stream, a loan pledges it with an obligation — so a single unified
 consumption event would have to lie about which one happened. Keeping one
 event per path is cheaper than a tagged union event and easier to index.
 
-### 4. Derive redundant IDs from a reverse mapping instead of taking them as arguments
+### 4. Derive redundant IDs instead of taking them as arguments
 
 When a relationship collapses from one-to-many to one-to-one, an ID that
-was previously needed to select among the many becomes redundant. Add a
-reverse mapping so the function can derive the ID internally, and drop the
-parameter. This removes a caller-supplied value that could be wrong and the
-defensive check that guarded against it being wrong.
-
-**Historical context:** `poolClaimLoan` was later removed entirely. `claimPoolShare` is now the sole pool claim function.
+was previously needed to select among the many becomes redundant. Derive it
+internally and drop the parameter. This removes a caller-supplied value that
+could be wrong and the defensive check that guarded against it being wrong.
+This refactor did that with a reverse mapping; a later, deeper pass (U1 of
+the 2026-07 simplification refactor) went further and collapsed the dual ID
+space entirely.
 
 **Before — `poolClaimLoan` took both IDs and cross-checked them:**
 
 ```solidity
 function poolClaimLoan(uint256 poolId, uint256 loanId, uint128 amount) external nonReentrant {
-    require(poolContributions[poolId][msg.sender] > 0, "OVRFLOBook: not contributor");
-    require(loanPoolId[loanId] == poolId, "OVRFLOBook: loan not in pool");  // defensive cross-check
+    require(poolContributions[poolId][msg.sender] > 0, "OVRFLOLending: not contributor");
+    require(loanPoolId[loanId] == poolId, "OVRFLOLending: loan not in pool");  // defensive cross-check
 
     Loan storage loan = loans[loanId];
     _requireLoanExists(loan);
@@ -250,15 +254,15 @@ function poolClaimLoan(uint256 poolId, uint256 loanId, uint128 amount) external 
 }
 ```
 
-**After — `poolClaimLoan` derives `loanId` from the pool:**
+**After (this refactor) — `poolClaimLoan` derives `loanId` from the pool via a reverse mapping:**
 
 ```solidity
 // storage: mapping(uint256 => uint256) public poolLoanId;  // poolId => loanId
 
 function poolClaimLoan(uint256 poolId, uint128 amount) external nonReentrant {
-    require(poolContributions[poolId][msg.sender] > 0, "OVRFLOBook: not contributor");
+    require(poolContributions[poolId][msg.sender] > 0, "OVRFLOLending: not contributor");
     uint256 loanId = poolLoanId[poolId];
-    require(loanId != 0, "OVRFLOBook: loan not in pool");  // existence, not cross-check
+    require(loanId != 0, "OVRFLOLending: loan not in pool");  // existence, not cross-check
 
     Loan storage loan = loans[loanId];
     _requireLoanExists(loan);
@@ -266,7 +270,7 @@ function poolClaimLoan(uint256 poolId, uint128 amount) external nonReentrant {
 }
 ```
 
-The reverse mapping is written once, in `createBorrowPool`, alongside the
+The reverse mapping is written once, in `createBorrowerLoanPool`, alongside the
 forward mapping that already existed:
 
 ```solidity
@@ -282,66 +286,111 @@ can, when a caller supplies a mismatched pair that happens to satisfy the
 guard. The `0` sentinel is safe because loan IDs are monotonic from `1`
 (`nextLoanId = 1`), so a real loan is never `0`.
 
-### 5. Keep the redundant storage field if it guards a future reconciliation bug
+**Postscript — both the function and the maps were later deleted.**
+`poolClaimLoan` was removed entirely; the sole claim path is now
+`claimLoanPoolShare(uint256 loanId, uint128 amount)`. Then U1 of the
+2026-07 simplification refactor collapsed the dual loan/loan-pool ID space
+into one — a loan and its pool share a single counter (`nextLoanId`, with
+`loanId == loanPoolId`), so the `loanPoolId` forward map and the `poolLoanId`
+reverse map added above are both gone. The claim function takes the single
+`loanId` (which is also the pool id) directly; no translation maps are
+needed because there is nothing to translate between. The deeper lesson:
+when a 1:1 relationship is really "two names for the same entity,"
+collapsing the ID space beats adding a reverse map — the reverse map was a
+correct intermediate, but the single-ID-space design deletes an entire
+class of consistency reasoning. See
+`./behavior-preserving-simplification-refactor.md` for the U1 teardown.
 
-One field was *not* removed even though it became derivable: `pools[poolId].totalObligation`. After `createLenderPool` was removed, every pool has exactly one loan, so `pool.totalObligation == loans[poolLoanId[poolId]].obligation` by construction. It would be "cleaner" to delete it and read the loan's obligation directly.
+### 5. Postmortem: the redundant storage field we kept "for forward-compat" was later deleted
 
-Keep it. The pro-rata claim math in `claimPoolShare` (via `_claimFair`)
-reads `pools[poolId].totalObligation` and `pools[poolId].totalContributed`
-to compute a contributor's entitlement:
+One field was *not* removed in this refactor even though it became
+derivable: `pools[poolId].totalObligation`. After `createLenderPool` was
+removed, every pool had exactly one loan, so `pool.totalObligation ==
+loans[poolLoanId[poolId]].obligation` by construction. The original guidance
+kept it as a forward-compat hedge: the pro-rata claim math in the pool claim
+function (then `claimPoolShare`, via `_claimFair`) read
+`pools[poolId].totalObligation` and `pools[poolId].totalContributed` to
+compute a contributor's entitlement,
 
 ```solidity
 uint256 entitlement = uint256(poolContributions[poolId][msg.sender])
     * pools[poolId].totalObligation / pools[poolId].totalContributed;
 ```
 
-If a future change re-introduces multi-loan pools (a real possibility —
-batching several borrower streams under one lender pool is an obvious
-extension), the `totalObligation` field is already the correct aggregate.
-Deleting it and reading `loan.obligation` instead would bake in the
-single-loan assumption at every claim site, so a future multi-loan pool
-would silently mis-compute entitlements — a reconciliation bug of exactly
-the kind pattern #12 (pro-rata cap) exists to prevent. The cost of keeping
-a redundant `uint128` per pool is trivial; the cost of a future entitlement
-bug across two claim channels is not.
+and the argument was that if a future change re-introduced multi-loan pools
+(batching several borrower streams under one lender pool), the
+`totalObligation` field would already be the correct aggregate. Deleting it
+and reading `loan.obligation` instead would bake in the single-loan
+assumption at every claim site, so a future multi-loan pool would silently
+mis-compute entitlements — a reconciliation bug of exactly the kind pattern
+#12 (pro-rata cap) exists to prevent.
+
+**That bet lost.** U1 of the 2026-07 simplification refactor deleted
+`Pool.totalObligation` (the struct had been renamed `LoanPool` by then)
+because the obligation is recoverable from `loans[id].obligation` in the
+single-ID-space design (`loanId == loanPoolId`, so the pool's loan is
+`loans[poolId]` directly — no `poolLoanId` lookup needed either). The
+forward-compat scenario never materialized: multi-loan pools were never
+built, and the redundant `uint128` per pool was just gas cost and cognitive
+load the whole time. The claim sites now read `loans[loanId].obligation`
+(or the pool's own `totalContributed` for the pro-rata denominator) and
+pattern #12 still holds because single-loan-per-pool is now structural, not
+guarded by a redundant aggregate.
+
+**Lesson: don't keep redundant fields for hypothetical future needs.** If
+the information is recoverable from existing state, delete the redundant
+copy and re-add it *if and when* the need actually arises. A redundant field
+kept "just in case" is a standing invitation to drift from its source of
+truth, and the forward-compat scenario it hedges against usually never
+comes — and when it does, you can re-add the field in the same change that
+introduces the multiplicity. See
+`./behavior-preserving-simplification-refactor.md` for the U1 teardown that
+deleted this and the other vestigial fields consolidated here.
 
 ## Why This Matters
 
 **Reduced attack surface.** The pre-refactor book had four entry points
 that moved `underlying` (`postSaleOffer`, `postLendOffer`, and their two
 cancels) doing the same funding/refund dance. A bug in one copy would not
-appear in the other, so a diff review could miss it. One `postOffer` and
-one `cancelOffer` means one funding path and one refund path to audit,
-fuzz, and write invariant handlers for. The dead-code removal subtracts a
-further four unreachable money-moving functions (`createLenderPool`,
-`postBorrowListing`, `cancelBorrowListing`, `gatherBorrowListings`) from
-the surface a reviewer has to reason about, even though they were
-unreachable — a reviewer still has to *confirm* they are unreachable.
+appear in the other, so a diff review could miss it. One `supplyLiquidity`
+and one `withdrawLiquidity` means one funding path and one refund path to
+audit, fuzz, and write invariant handlers for. The dead-code removal
+subtracts a further four unreachable money-moving functions
+(`createLenderPool`, `postBorrowListing`, `cancelBorrowListing`,
+`gatherBorrowListings`) from the surface a reviewer has to reason about,
+even though they were unreachable — a reviewer still has to *confirm* they
+are unreachable.
 
 **Simpler mental model.** Before, a new contributor had to learn that
-"sale offers are consumed by `sellIntoOffer`, lend offers are consumed by
-`createBorrowPool`, and the two are identical except for the name of the
-owner field and the event they emit." After, there is one offer type and
-two consumption functions; the offer does not declare its fate. This is
-also closer to how the economics actually work: a liquidity provider posts
-capital at a rate; whether it becomes a sale or a loan is the taker's
-choice, and the maker's terms (market, APR, capacity) are identical either
-way.
+"sale offers are consumed by `sellStreamToLiquidity`, lend offers are
+consumed by `createBorrowerLoanPool`, and the two are identical except for
+the name of the owner field and the event they emit." After, there is one
+liquidity-position type and two consumption functions; the position does
+not declare its fate. This is also closer to how the economics actually
+work: a liquidity provider posts capital at a rate; whether it becomes a
+sale or a loan is the taker's choice, and the lender's terms (market, APR,
+availableLiquidity) are identical either way.
 
 **Fewer bugs from duplication.** The twin-function problem is the classic
 "fix it in one place, forget the other" trap. With the merge, a change to
 the posting path — say, adding a reentrancy guard nuance, or tightening
-the capacity-zero check — happens once. The gather function collapse has
-the same benefit: `gatherOfferCapacities` is the single place where the
-market-active gate (pattern: market-active gate) and the
+the availableLiquidity-zero check — happens once. The gather function
+collapse has the same benefit: `gatherLiquidity` is the single place where
+the market-active gate (pattern: market-active gate) and the
 strictly-increasing-ID scan live, so an off-chain integrator has one query
 endpoint instead of two to assemble a batch.
 
 **Caller cannot supply a wrong ID.** The `poolClaimLoan` signature change
-removes a class of caller error (passing a `loanId` that belongs to a
+removed a class of caller error (passing a `loanId` that belongs to a
 different pool) that the old cross-check only *detected*, never *prevented*
 — it reverted, but only after the caller had already constructed a wrong
-call. Deriving the ID internally makes the wrong call unconstructable. (Note: `poolClaimLoan` was later removed entirely; `claimPoolShare` is now the sole pool claim function.)
+call. Deriving the ID internally made the wrong call unconstructable.
+(Note: `poolClaimLoan` was later removed entirely; the sole claim path is
+now `claimLoanPoolShare(uint256 loanId, uint128 amount)`, and U1 of the
+2026-07 simplification refactor collapsed the dual loan/loan-pool ID space
+so `loanId == loanPoolId` — the forward and reverse translation maps are
+both gone, and the caller's single `loanId` is the pool id. See
+`./behavior-preserving-simplification-refactor.md`.)
 
 **Review and test cost drop, and the dropped surface is real.** The diff
 deleted 1146 lines and added 369. The test suite (67 unit, 4 invariant at
@@ -390,11 +439,11 @@ work that absorbs reviewer attention from the actual invariants.
 See the Guidance section's "Before" and "After" blocks under practice 1.
 The merge is a one-to-one field correspondence; no field is dropped or
 reordered, so any code that read `saleOffers[id].capacity` now reads
-`offers[id].capacity` with no semantic change.
+`liquidityPositions[id].availableLiquidity` with no semantic change.
 
-### Example 2 — Function merge (postOffer)
+### Example 2 — Function merge (supplyLiquidity)
 
-See the Guidance section's practice 2. The single `postOffer` is the
+See the Guidance section's practice 2. The single `supplyLiquidity` is the
 canonical posting path; the sale/loan fork happens later, at consumption.
 
 ### Example 3 — poolClaimLoan simplification
@@ -402,62 +451,77 @@ canonical posting path; the sale/loan fork happens later, at consumption.
 See the Guidance section's practice 4. The 3-arg → 2-arg change is the
 cleanest illustration of "derive, don't accept": the caller no longer names
 the loan, the pool names its own loan, and the guard becomes an existence
-check instead of a cross-check. (Note: `poolClaimLoan` was later removed entirely; `claimPoolShare` is now the sole pool claim function.)
+check instead of a cross-check. (Note: `poolClaimLoan` was later removed
+entirely; the sole claim path is now `claimLoanPoolShare(uint256 loanId, uint128 amount)`, and U1 of the 2026-07 simplification refactor then collapsed the dual loan/loan-pool ID space so `loanId == loanPoolId` — both translation maps are gone. See `./behavior-preserving-simplification-refactor.md`.)
 
-### Example 4 — Keeping a redundant field on purpose
+### Example 4 — Postmortem: the redundant field we kept "on purpose" was later deleted
 
-`Pool.totalObligation` is kept despite being equal to
+`Pool.totalObligation` was kept in this refactor despite being equal to
 `loans[poolLoanId[poolId]].obligation` for single-loan pools, because the
-pro-rata entitlement math in both claim channels reads it directly:
+pro-rata entitlement math in both claim channels read it directly:
 
 ```solidity
-// poolClaimLoan — direct-draw channel (removed; claimPoolShare is now the sole claim channel)
+// poolClaimLoan — direct-draw channel (removed; claimLoanPoolShare is now the sole claim channel)
 uint256 entitlement = uint256(poolContributions[poolId][msg.sender])
     * pools[poolId].totalObligation / pools[poolId].totalContributed;
 
-// claimPoolShare — shared-pot channel (pattern #12 pro-rata cap)
+// claimLoanPoolShare — shared-pot channel (pattern #12 pro-rata cap)
 uint256 proRataShare = uint256(poolProceeds[poolId])
     * poolContributions[poolId][msg.sender] / pools[poolId].totalContributed;
 ```
 
-If `totalObligation` were deleted and these sites read `loan.obligation`
-instead, a future multi-loan pool would compute entitlement against a
-single loan's obligation rather than the pool's aggregate, silently
-under-paying or over-paying contributors. The redundant field is the
-forward-compatible choice.
+The argument was that if `totalObligation` were deleted and these sites
+read `loan.obligation` instead, a future multi-loan pool would compute
+entitlement against a single loan's obligation rather than the pool's
+aggregate, silently under-paying or over-paying contributors. The redundant
+field was the "forward-compatible choice."
+
+**It was not.** U1 of the 2026-07 simplification refactor deleted
+`Pool.totalObligation` (the struct had been renamed `LoanPool`) because the
+single-ID-space design (`loanId == loanPoolId`) makes the pool's loan
+directly addressable as `loans[poolId]`, so the obligation is recoverable
+without a redundant aggregate. Multi-loan pools were never built, so the
+hedge never paid off and the field was pure gas cost + cognitive load in
+the meantime. The claim sites now read `loans[loanId].obligation` and
+pattern #12 still holds because single-loan-per-pool is structural. This is
+the worked example for the §5 lesson: recoverable information should be
+deleted, not hoarded for a hypothetical future that usually never arrives.
+See `./behavior-preserving-simplification-refactor.md`.
 
 ### Example 5 — The retained event
 
-`SaleOfferHit` stays; `SaleOfferPosted`/`SaleOfferCancelled`/`LendOfferPosted`/`LendOfferCancelled`
-go. The posting events collapse to `OfferPosted`/`OfferCancelled` because
-posting no longer has a sale/loan distinction. The consumption event does
-not collapse, because consumption does:
+`StreamSoldToLiquidity` stays; `SaleOfferPosted`/`SaleOfferCancelled`/`LendOfferPosted`/`LendOfferCancelled`
+go. The posting events collapse to `LiquiditySupplied`/`LiquidityWithdrawn`
+because posting no longer has a sale/loan distinction. The consumption
+event does not collapse, because consumption does:
 
 ```solidity
 // Sale path — permanent stream transfer:
-emit SaleOfferHit(offerId, streamId, msg.sender, offer.maker, grossPrice, feeAmount, netToSeller);
+emit StreamSoldToLiquidity(liquidityId, streamId, msg.sender, liquidity.lender, grossPrice, feeAmount, netToSeller);
 
-// Loan path — pledge with obligation, batched across offers:
-emit PoolCreated(poolId, msg.sender, market, aprBps, actualBorrow128);
+// Loan path — pledge with obligation, batched across liquidity positions:
+emit BorrowerLoanPoolCreated(loanId, msg.sender, market, aprBps, actualBorrow128);
 ```
 
-A unified `OfferConsumed` event would need a `bool isSale` (or an enum) to
-say which of two incompatible things happened, plus two different field
+A unified `LiquidityConsumed` event would need a `bool isSale` (or an enum)
+to say which of two incompatible things happened, plus two different field
 sets crammed into one event. Two events with honest semantics are cheaper
 to emit and unambiguous to index.
 
 ### Example 6 — Invariant handler coverage of the new entry point
 
-The refactor added a `createBorrowPool` handler to the invariant test
-suite (`test/OVRFLOBookInvariant.t.sol`), so the now-single loan
+The refactor added a `createBorrowerLoanPool` handler to the invariant test
+suite (`test/OVRFLOLendingInvariant.t.sol`), so the now-single loan
 origination path is exercised by the 500-run / depth-25 invariant run.
 This is the testing counterpart to the dead-code removal: the surface that
-matters (one pool primitive, one offer type) gets invariant coverage, and
-the surface that was removed no longer needs any coverage at all.
+matters (one pool primitive, one liquidity-position type) gets invariant
+coverage, and the surface that was removed no longer needs any coverage at
+all.
 
 ## Related
 
-- [`docs/solutions/patterns/ovrflo-critical-patterns.md`](../patterns/ovrflo-critical-patterns.md) — patterns #4 (self-match guard in `createBorrowPool`), #8 (view functions revert on non-existent IDs, now `offerState`), #11 (strictly-increasing IDs in batch arrays, now `createBorrowPool` only), #12 (pro-rata cap on shared-pool claims).
-- [`docs/solutions/design-patterns/solidity-batch-function-safety-patterns.md`](../design-patterns/solidity-batch-function-safety-patterns.md) — batch safety patterns that `createBorrowPool` and `gatherOfferCapacities` rely on.
+- [`docs/solutions/patterns/ovrflo-critical-patterns.md`](../patterns/ovrflo-critical-patterns.md) — patterns #4 (self-match guard in `createBorrowerLoanPool`), #8 (view functions revert on non-existent IDs, now the `liquidityPositions` auto-getter), #11 (strictly-increasing IDs in batch arrays, now `createBorrowerLoanPool` only), #12 (pro-rata cap on shared-pool claims).
+- [`docs/solutions/design-patterns/solidity-batch-function-safety-patterns.md`](../design-patterns/solidity-batch-function-safety-patterns.md) — batch safety patterns that `createBorrowerLoanPool` and `gatherLiquidity` rely on.
+- [`docs/solutions/architecture-patterns/behavior-preserving-simplification-refactor.md`](./behavior-preserving-simplification-refactor.md) — sibling refactor; the 2026-07 simplification pass further trimmed the structs consolidated here (deleted `Pool.totalObligation`, the `loanPoolId`/`poolLoanId` translation maps, the `LiquidityPosition.active` derived boolean, and `poolClaimLoan` itself in favor of the single-ID-space `claimLoanPoolShare`).
 - Commit `aed261d` — the merge commit (`refactor: merge sale and lend offers into unified offer type`), 369 insertions / 1146 deletions.
 - Commit `2be9c45` — the prior refactor that removed single-party lending and made pools the only lending mechanism, leaving the dead code this refactor cleared.

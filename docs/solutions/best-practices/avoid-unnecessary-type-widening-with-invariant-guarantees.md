@@ -65,7 +65,7 @@ Apply this when **all** of the following hold:
 
 Do **not** apply it when:
 
-- An operand is genuinely wider than the target type and a truncation check is required. Use `_toUint128` (which `require`s the value fits) instead. The `_toUint128` callers in `_claimFair` (`_toUint128(grossPrice)`, `_toUint128(remaining)`) are correct: those `uint256` results come from cross-offer batch math and must be bounds-checked before narrowing.
+- An operand is genuinely wider than the target type and a truncation check is required. Use `_toUint128` (which `require`s the value fits) instead. The `_toUint128` callers in `_claimFair` (`_toUint128(claimable)`, `_toUint128(uint256(requestAmount) - uint256(proceeds))`) are correct: those `uint256` results come from cross-offer batch math and must be bounds-checked before narrowing.
 - The cast exists to satisfy an external interface that mandates a specific width. Sablier V2's `createWithDurations` requires `uint128` deposit and `uint40` duration, so `OVRFLO`'s `uint128(toStream)` and `uint40(duration)` casts in `OVRFLO.sol` are necessary interface-boundary casts, not internal arithmetic to simplify.
 
 The distinction to internalize: **interface-boundary casts are necessary because the callee's API requires that width; internal arithmetic casts are usually unnecessary when operands are already the target width and an invariant bounds the result.** The first category stays; the second category should be removed.
@@ -130,3 +130,4 @@ These casts are necessary because Sablier's API mandates those widths; they are 
 - [`docs/solutions/patterns/ovrflo-critical-patterns.md`](../patterns/ovrflo-critical-patterns.md) — R-03 covers redundant downcasts (uint256-to-uint128); this doc is the complementary inverse (avoid unnecessary uint128-to-uint256 widening).
 - [`docs/solutions/design-patterns/solidity-batch-function-safety-patterns.md`](../design-patterns/solidity-batch-function-safety-patterns.md) — Shows when uint256 widening IS necessary (pro-rata multiplication); complementary to this guidance.
 - [`docs/solutions/architecture-patterns/unified-offer-merge.md`](../architecture-patterns/unified-offer-merge.md) — Same dead-code-removal-after-refactor methodology at larger scale.
+- [`docs/solutions/architecture-patterns/behavior-preserving-simplification-refactor.md`](../architecture-patterns/behavior-preserving-simplification-refactor.md) — The larger multi-commit sequel that further simplified `src/*`, including U7's broader `SafeCast.toUint128` and `Math.mulDiv(Rounding.Up)` replacement.

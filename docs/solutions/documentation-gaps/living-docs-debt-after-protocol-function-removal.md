@@ -21,7 +21,7 @@ tags: [documentation, living-docs, refactor, poolclaimloan, ovrflobook, bulk-upd
 
 ## Context
 
-The `poolClaimLoan` function was removed from `src/OVRFLOBook.sol` as part of the `refactor/remove-poolclaimloan` branch. After the removal, `claimPoolShare` became the sole pool claim function, handling both open and closed loans through the internal `_claimFair` helper, which harvests deficit from open loan streams before paying out from the shared `poolProceeds` pool. That single source-code deletion, however, left a long tail of documentation references across the repository.
+The `poolClaimLoan` function was removed from `src/OVRFLOBook.sol` as part of the `refactor/remove-poolclaimloan` branch. After the removal, `claimPoolShare` became the sole pool claim function, handling both open and closed loans through the internal `_claimFair` helper, which harvests deficit from open loan streams before paying out from the shared `poolProceeds` pool. (The function was later renamed to `claimLoanPoolShare` in a subsequent refactor.) That single source-code deletion, however, left a long tail of documentation references across the repository.
 
 This is a repo where the user treats nothing as historical — "everything is living." So every doc that described `poolClaimLoan` as a current entry point, used it in an example, or counted it in an overview table was now stale and had to be found and updated. The blast radius turned out to span roughly twenty files across `AUDIT.md`, the `x-ray/` directory, `docs/audit/*`, `docs/solutions/*`, `CLAUDE.md`, `AGENTS.md`, and several ideation documents.
 
@@ -95,6 +95,8 @@ The documentation debt from a single function removal is large: over twenty file
 
 **Instruction-file correction — removing a convention that was never true.** `AGENTS.md` instructed agents to "gitignore" `docs/plans/`, but the plans were tracked the whole time. The instruction was deleted and the "everything is living" principle was reinforced, so future sessions stage plan edits normally instead of skipping them.
 
+**2026-07 case study — wrapper-getter deletion (U3).** The 2026-07 simplification refactor deleted five hand-rolled ABI wrapper getters (`loanState`, `liquidityState`, `saleListingState` from `OVRFLOLending`; `getOvrfloInfo`, `getApprovedMarket` from `OVRFLOFactory`) in favor of the compiler's auto-getters. This introduced a wrinkle the `poolClaimLoan` case did not have: tests that asserted `vm.expectRevert` on unknown IDs had to be converted to zero-value checks (e.g. `assertEq(borrower, address(0))`), because auto-getters return zero-valued structs for uninitialized slots rather than reverting. This is a new categorization-bucket consideration — test-assertion migration, not just doc-reference migration. See `docs/solutions/architecture-patterns/behavior-preserving-simplification-refactor.md` section U3 and #9 for the code-side details.
+
 ## Related
 
 - `docs/solutions/architecture-patterns/ovrflo-factory-deployment-admin-management-pattern.md` — established the "do not let documentation describe features that do not exist" rule that this learning applies at scale (~20 files) during the poolClaimLoan removal.
@@ -103,3 +105,4 @@ The documentation debt from a single function removal is large: over twenty file
 - `docs/solutions/patterns/ovrflo-critical-patterns.md` — the enforceable-rules list whose count (12 to 17) is one of the aggregates maintained by this sweep.
 - `AUDIT.md` and `x-ray/x-ray.md` — the overview docs holding entry-point tables, pattern counts, and test counts that must track current state.
 - `AGENTS.md` / `CLAUDE.md` — instruction files read by every agent session; stale conventions here have outsized blast radius.
+- `docs/solutions/architecture-patterns/behavior-preserving-simplification-refactor.md` — the 2026-07 simplification refactor whose U3 wrapper-getter deletion is a recent instance of this methodology; adds the test-assertion-migration wrinkle (auto-getters return zeros, not reverts).

@@ -47,12 +47,12 @@ if (!loan.closed) {
 harvestAmount = _minUint128(..., _minUint128(withdrawable, outstanding));
 ```
 
-Similarly, `loanPoolProceeds[loanPoolId]` was accessed 5 times (2 reads, 2 writes, 1 read-write in harvest path). Caching in a local `proceeds` variable reduced to 1 SLOAD + 1 SSTORE:
+Similarly, `loanPoolProceeds[loanId]` was accessed 5 times (2 reads, 2 writes, 1 read-write in harvest path). Caching in a local `proceeds` variable reduced to 1 SLOAD + 1 SSTORE:
 
 ```solidity
-uint128 proceeds = loanPoolProceeds[loanPoolId];
+uint128 proceeds = loanPoolProceeds[loanId];
 // ... all arithmetic on local ...
-loanPoolProceeds[loanPoolId] = proceeds - payAmount; // single write-back
+loanPoolProceeds[loanId] = proceeds - payAmount; // single write-back
 ```
 
 **2. Cache storage reads in locals**
@@ -62,7 +62,7 @@ loanPoolProceeds[loanPoolId] = proceeds - payAmount; // single write-back
 **3. Extract repeated patterns into helpers**
 
 Three patterns were extracted:
-- `_approvedRate(market)` — the 4-line series-load + approved-check + oracle-fresh + rate-fetch pattern appeared 3x in OVRFLO preview functions
+- `_approvedRate(market)` — the 4-line series-load + approved-check + oracle-fresh + rate-fetch pattern appeared 3x in OVRFLO preview functions (and was later routed through `deposit` as well in the 2026-07 simplification refactor's U6)
 - `_priceStream(market, streamId, aprBps)` — the 3-step eligibility + grossPrice + zero-check pattern appeared 4x in OVRFLOLending fill/quote functions. Returns `(Eligibility, grossPrice, timeToMaturity)` so callers that need timeToMaturity for obligation calculation don't need a separate call
 - `_validateTwapBounds(twapDuration)` — TWAP duration bounds check appeared 2x in OVRFLOFactory with reversed check ordering (minor inconsistency). Extracting fixed the inconsistency
 
@@ -80,7 +80,7 @@ Three patterns were extracted:
 
 **7. Reorder cheap validation before expensive external calls**
 
-`createBorrowerLoanPool` ran `_requireEligible` (10+ external calls to Sablier for stream getters, factory for registry, vault for series info) before `_validateLiquidity` (pure storage-read loop). Reordering to validate liquidity first fails fast on invalid positions, saving ~26k gas on the error path. Both are view functions, so CEI (checks-effects-interactions) ordering is preserved.
+`createBorrowerLoanPool` ran `_requireEligible` (at the time, 10+ external calls to Sablier for stream getters, factory for registry, vault for series info) before `_validateLiquidity` (pure storage-read loop). Reordering to validate liquidity first fails fast on invalid positions, saving ~26k gas on the error path. Both are view functions, so CEI (checks-effects-interactions) ordering is preserved. (Note: the 2026-07 simplification refactor's U5 later collapsed the 8 Sablier getter calls into a single `getStream` struct return, and U4 removed the `factory.isMarketApproved` external call, so the current call count is much lower — but the fail-fast ordering principle remains the right call.)
 
 ## Why This Matters
 
@@ -138,3 +138,4 @@ require(grossPrice > 0, "OVRFLOLending: price zero");
 - [Factory deployment admin pattern](../architecture-patterns/ovrflo-factory-deployment-admin-management-pattern.md) - Documents one specific SLOAD-to-immutable conversion; this learning generalizes storage-read caching
 - [Offer market-active gate](../architecture-patterns/ovrflobook-offer-market-active-gate.md) - Eligibility-check helper extraction and no-hot-path-gas-regression guarantee
 - [Entry teardown: zero what matters](../architecture-patterns/ovrflobook-entry-teardown-zero-what-matters.md) - Complementary tension on dead state: runtime slot-zeroing cost vs compile-time dead-state deletion
+- [Behavior-preserving simplification refactor](../architecture-patterns/behavior-preserving-simplification-refactor.md) - The larger multi-commit sequel applying these patterns at broader scope (U5 collapsed 8 Sablier getters to 1 `getStream`, U6 extracted `_freshRate`/`_approvedRate`, U7 replaced hand-rolled ceil with `Math.mulDiv(Rounding.Up)`)

@@ -1,12 +1,23 @@
 ---
 kind: required_reading
 scope: ovrflo
-last_updated: 2026-07-15
+last_updated: 2026-07-18
 audience: [lenders, ai-agents]
 ---
 
 <!--
   Refresh log:
+  - 2026-07-18: Rewrote pattern #7 (auto-getter zero-return is now the
+    operative contract; old hand-rolled-revert principle moved to R-07 in
+    "Considered and rejected"). Removed stale fuzz enforcement refs
+    (property_loanState_view / property_liquidityState_view /
+    property_saleListingState_view — deleted from Properties.sol). Updated
+    detection greps. Fixed stale code snippets in #4, #6, #10, #16 after
+    U2 (capacity -> availableLiquidity, active removed) and U3
+    (liquidityState -> liquidityPositions auto-getter, 4-tuple). Appended
+    patterns #17 (auto-getter zero-return contract), #18 (empirical ABI
+    verification for external struct returns), #19 (mocks implement the
+    interface, not redeclare it). Count is now 19.
   - 2026-07-15: Renumbered from 17 to 16 patterns. Removed gap at #6
     (Sablier binding verification in standalone script, obsolete). Patterns
     #7-#17 shifted down by 1. Fixed stale function names: _validateLiquidityPositions
@@ -59,7 +70,7 @@ pulled from a full writeup under `docs/solutions/<category>/`. If you are
 about to touch the area a pattern covers, you are expected to follow it or
 have a documented reason not to.
 
-New patterns are appended in order. Pattern #6 was removed (obsolete Sablier binding rule) and subsequent patterns renumbered on 2026-07-15; the current count is 16.
+New patterns are appended in order. Pattern #6 was removed (obsolete Sablier binding rule) and subsequent patterns renumbered on 2026-07-15; the current count is 19.
 
 ---
 
@@ -340,7 +351,7 @@ complementary safety net, not a replacement. Do **not** pull in
 ```solidity
 // createBorrowerLoanPool — no self-match guard on liquidity lenders.
 LiquidityPosition storage liquidity = liquidityPositions[liquidityIds[i]];
-require(liquidity.active, "OVRFLOLending: liquidity inactive");
+require(liquidity.availableLiquidity > 0, "OVRFLOLending: liquidity inactive");
 // msg.sender could be liquidity.lender, creating a loan where from == to
 // in _pullExact, which reverts on the balance-delta check.
 ```
@@ -349,7 +360,7 @@ require(liquidity.active, "OVRFLOLending: liquidity inactive");
 
 ```solidity
 LiquidityPosition storage liquidity = liquidityPositions[liquidityIds[i]];
-require(liquidity.active, "OVRFLOLending: liquidity inactive");
+require(liquidity.availableLiquidity > 0, "OVRFLOLending: liquidity inactive");
 require(liquidity.lender != borrower, "OVRFLOLending: self-match");
 ```
 
@@ -439,8 +450,8 @@ rg "_validateTwapBounds" src/OVRFLOFactory.sol
 // test/OVRFLOLending.t.sol — proves the liquidity was consumed and the stream moved,
 // not that the underlying left the lending, the fee was paid, or the buyer
 // (who posted liquidity upfront) is back to zero.
-(,,, uint128 capacity,) = lending.liquidityState(liquidityId);
-assertEq(capacity, 0);
+(,, , uint128 availableLiquidity) = lending.liquidityPositions(liquidityId);
+assertEq(availableLiquidity, 0);
 assertEq(underlying.balanceOf(SELLER), 100 ether);
 assertEq(sablier.ownerOf(28), BUYER);
 // missing: balanceOf(TREASURY), balanceOf(address(lending)), balanceOf(BUYER)
@@ -449,8 +460,8 @@ assertEq(sablier.ownerOf(28), BUYER);
 ### ✅ CORRECT (every party that touched value is checked)
 
 ```solidity
-(,,, uint128 capacity,) = lending.liquidityState(liquidityId);
-assertEq(capacity, 0);
+(,, , uint128 availableLiquidity) = lending.liquidityPositions(liquidityId);
+assertEq(availableLiquidity, 0);
 assertEq(underlying.balanceOf(SELLER), 100 ether);
 assertEq(underlying.balanceOf(TREASURY), 0);
 assertEq(underlying.balanceOf(address(lending)), 0);
@@ -460,12 +471,16 @@ assertEq(sablier.ownerOf(28), BUYER);
 
 **Why:** The highest-severity bug class in `OVRFLOLending` is a misrouted
 payment: value sent to the wrong address, a fee skipped or double-charged,
-or funds stranded in the contract after teardown. State flags (`capacity ==
-0`, `active == false`, `loan.closed == true`) and NFT ownership
+or funds stranded in the contract after teardown. State flags (`availableLiquidity
+== 0`, `loan.closed == true`) and NFT ownership
 (`sablier.ownerOf(...) == X`) are necessary but not sufficient — they prove
 an entry changed hands, not that the money moved correctly. A refactor that
 breaks `_payUnderlying` (wrong payee, skipped fee, stranded value) would
 pass every flag and ownership assertion and ship a fund-loss bug.
+
+Note: `availableLiquidity == 0` is the post-U2 single signal for "consumed
+or never-created". The `active` boolean was removed in U2 of the 2026-07
+simplification refactor; do not re-introduce a separate active flag.
 
 **Placement/Context:** Any non-fork or fork test that calls a function
 transferring `underlying`, `ovrfloToken`, or a Sablier stream NFT:
@@ -491,54 +506,73 @@ rg -l "sellStreamToLiquidity|buyListing|createBorrowerLoanPool|claimLoanPoolShar
 
 ---
 
-## 7. View functions that resolve by ID must revert on non-existent IDs (ALWAYS REQUIRED)
+## 7. Auto-getters return zero-valued structs for non-existent IDs — tests must assert zeros, not expect reverts (ALWAYS REQUIRED)
 
-### ❌ WRONG (silent zero defaults for a non-existent ID)
-
-```solidity
-function liquidityState(uint256 liquidityId) external view returns (...) {
-    LiquidityPosition storage liquidity = liquidityPositions[liquidityId];
-    // no existence check — returns (address(0), address(0), 0, 0, false)
-    // for an ID that was never created
-    return (liquidity.lender, liquidity.market, liquidity.aprBps, liquidity.availableLiquidity, liquidity.active);
-}
-```
-
-### ✅ CORRECT (revert with a sentinel check)
+### ❌ WRONG (stale test expects a revert from an auto-getter that returns zeros)
 
 ```solidity
-function liquidityState(uint256 liquidityId) external view returns (...) {
-    LiquidityPosition storage liquidity = liquidityPositions[liquidityId];
-    require(liquidity.lender != address(0), "OVRFLOLending: unknown liquidity");
-    return (liquidity.lender, liquidity.market, liquidity.aprBps, liquidity.availableLiquidity, liquidity.active);
-}
+// test/OVRFLOLending.t.sol — U3 of the 2026-07 simplification refactor deleted
+// the hand-rolled `*State` wrappers. `liquidityPositions` is now the
+// compiler-generated auto-getter for the public mapping; it does NOT revert
+// on unknown IDs, it returns a zero-valued struct.
+vm.expectRevert();                       // ❌ never reverts
+(address lender,,,) = lending.liquidityPositions(999);
 ```
 
-**Why:** Returning zero defaults for a non-existent ID is silent garbage. An
-indexer or frontend cannot distinguish "this liquidity was cancelled" (real entry,
-`active == false`) from "this ID was never created" (no entry, default
-struct). Reverting makes the distinction explicit. The sentinel is the
-`lender`/`borrower` field, which is `address(0)` in a
-default-initialized struct and always non-zero for a real entry. Torn-down
-entries (cancelled/filled) retain `lender`/`borrower` (only
-`availableLiquidity`/`active` are zeroed), so the sentinel succeeds for dead entries
-and fails only for non-existent ones.
+### ✅ CORRECT (assert the zero-valued struct returned by the auto-getter)
 
-**Placement/Context:** Every view function in `OVRFLOLending` that resolves a
-struct by ID: `liquidityState`, `saleListingState`, `loanState`. Also applies to any future view function
-added to the lending or vault that resolves by ID.
+```solidity
+// test/OVRFLOLending.t.sol — auto-getter returns zeros for an uninitialized ID.
+(address lender, address market, uint16 aprBps, uint128 availableLiquidity) =
+    lending.liquidityPositions(999);
+assertEq(lender, address(0));
+assertEq(market, address(0));
+assertEq(aprBps, 0);
+assertEq(availableLiquidity, 0);
+```
+
+**Why:** `OVRFLOLending` exposes its state structs via the Solidity
+compiler's auto-getters on the public mappings — `liquidityPositions`,
+`saleListings`, `loans`, `loanPools`. An auto-getter for a
+`mapping(uint256 => Struct)` returns a default-initialized (zero-valued)
+struct for any ID that was never written; it does not revert. This is the
+operative contract after U3 of the 2026-07 simplification refactor deleted
+the hand-rolled `*State` wrappers (`liquidityState`, `saleListingState`,
+`loanState`) that previously reverted on unknown IDs via a `lender !=
+address(0)` sentinel. Tests that still call `vm.expectRevert` against the
+auto-getter views are stale and silently wrong — the revert never fires, so
+the assertion proves nothing and masks regressions. The correct shape is to
+destructure the returned struct and `assertEq` each field against its zero
+value (`address(0)` for address fields, `0` for uints).
+
+This reversal is intentional and documented. Do not re-introduce hand-rolled
+`*State` wrappers with sentinel reverts — the auto-getter contract is the
+post-refactor design. The old "hand-rolled views must revert on unknown IDs"
+principle is preserved in the **Considered and rejected** section (R-07)
+for any future hand-rolled view that is *not* an auto-getter.
+
+**Placement/Context:** Every test in `test/**` that resolves a lending
+state struct by ID via `liquidityPositions`, `saleListings`, `loans`, or
+`loanPools` to assert "this ID does not exist / was never created". Also
+applies to any future public mapping exposed only via its auto-getter. If
+a hand-rolled wrapper is ever re-introduced, the revert principle from
+R-07 applies to *that* wrapper, not to the auto-getter.
 
 **How to detect violation:**
 
 ```bash
-# Find view functions that return a struct from a mapping without a sentinel check:
-rg -A5 "function .*State\(.*\) external view" src/OVRFLOLending.sol | \
-  rg -L "require.*address\(0\)|unknown" && echo "REVIEW: missing existence check"
+# Find stale tests that expect a revert from an auto-getter view that
+# actually returns zeros:
+rg "vm.expectRevert.*unknown|vm.expectRevert.*nonexistent" test/
+# expected: 0 matches against liquidityPositions / saleListings / loans / loanPools
+
+# The old grep against hand-rolled *State wrappers now returns nothing,
+# which is expected (the wrappers were deleted in U3):
+rg -A5 "function .*State\(.*\) external view" src/OVRFLOLending.sol
+# expected: 0 matches — auto-getters have no explicit function body
 ```
 
-**Documented in:** [`docs/solutions/architecture-patterns/view-functions-revert-on-nonexistent-ids.md`](../architecture-patterns/view-functions-revert-on-nonexistent-ids.md)
-
-**Fuzz enforcement:** `property_loanState_view`, `property_liquidityState_view`, and `property_saleListingState_view` in `test/fizz/Properties.sol` call the view functions and assert structural invariants (closed loans have zero outstanding, inactive positions have zero capacity). The handler functions also call the views immediately after creating the corresponding state (`supplyLiquidity` calls `liquidityState`, `createBorrowerLoanPool` calls `loanState`, `postSaleListing` calls `saleListingState`), guaranteeing coverage on every state-creating path.
+**Documented in:** [`docs/solutions/architecture-patterns/view-functions-revert-on-nonexistent-ids.md`](../architecture-patterns/view-functions-revert-on-nonexistent-ids.md) (historical principle for hand-rolled views), [`docs/solutions/architecture-patterns/behavior-preserving-simplification-refactor.md`](../architecture-patterns/behavior-preserving-simplification-refactor.md) §9 (U3 deletion of `*State` wrappers).
 
 ---
 
@@ -665,6 +699,27 @@ taken once at pool settlement rather than per claim. That preserves principal
 integrity and leaves `_claimFair`'s per-claim math untouched. Even that is
 deferred: at 10% APR and 25bps fill fees the spread is thin, and the simpler
 pitch ("lenders keep every bps they post") is worth more than the revenue.
+
+### R-07: Hand-rolled `*State` view wrappers that revert on unknown IDs (2026-07-18 reversal)
+
+**Finding:** The original pattern #7 (2026-06-27) required that every
+`OVRFLOLending` view resolving a struct by ID revert on non-existent IDs via
+a `lender != address(0)` sentinel. The contract had hand-rolled
+`liquidityState`, `saleListingState`, and `loanState` wrappers enforcing
+this.
+
+**Rejected because:** The codebase previously had hand-rolled `*State`
+wrappers that reverted on unknown IDs (see
+[`view-functions-revert-on-nonexistent-ids.md`](../architecture-patterns/view-functions-revert-on-nonexistent-ids.md)).
+U3 of the 2026-07 simplification refactor deleted these wrappers in favor of
+auto-getters, which return zeros. The hand-rolled-revert principle remains
+valid for future hand-rolled views but is no longer the operative contract.
+The current operative contract is documented in pattern #7 above (assert
+zeros, do not `vm.expectRevert`); see also
+[`behavior-preserving-simplification-refactor.md`](../architecture-patterns/behavior-preserving-simplification-refactor.md)
+§9. Do not re-raise "add a sentinel-revert wrapper" without new context,
+and do not re-add the deleted wrappers — the auto-getter contract is
+intentional.
 
 ---
 
@@ -796,8 +851,8 @@ rg "underlyingToOvrflo\[config.underlying\]" src/OVRFLOFactory.sol
 // createBorrowerLoanPool — no ordering check
 for (uint256 i = 0; i < liquidityIds.length; i++) {
     LiquidityPosition storage liquidity = liquidityPositions[liquidityIds[i]];
-    require(liquidity.active, "OVRFLOLending: liquidity inactive");
-    totalAvailable += liquidity.capacity; // duplicate ID => counted twice
+    require(liquidity.availableLiquidity > 0, "OVRFLOLending: liquidity inactive");
+    totalAvailable += liquidity.availableLiquidity; // duplicate ID => counted twice
 }
 // Borrower receives more underlying than was actually consumed from any
 // single liquidity — fund theft from other liquidityPositions' escrowed funds.
@@ -809,8 +864,8 @@ for (uint256 i = 0; i < liquidityIds.length; i++) {
 for (uint256 i = 0; i < liquidityIds.length; i++) {
     if (i > 0) require(liquidityIds[i] > liquidityIds[i - 1], "OVRFLOLending: duplicate or unsorted ids");
     LiquidityPosition storage liquidity = liquidityPositions[liquidityIds[i]];
-    require(liquidity.active, "OVRFLOLending: liquidity inactive");
-    totalAvailable += liquidity.capacity;
+    require(liquidity.availableLiquidity > 0, "OVRFLOLending: liquidity inactive");
+    totalAvailable += liquidity.availableLiquidity;
 }
 ```
 
@@ -819,8 +874,10 @@ separate fill loop, duplicate IDs cause double-counting in validation
 (inflated `totalAvailable` or `totalDeployable`) and double-execution in the
 fill (two loans against the same escrowed stream, or funds drawn twice from
 the same liquidity). `require(ids[i] > ids[i-1])` rejects both duplicates and
-unsorted input in a single check. As defense-in-depth, also re-assert the
-`active` flag inside the fill loop.
+unsorted input in a single check. As defense-in-depth, also re-assert
+`availableLiquidity > 0` inside the fill loop (the `active` boolean was
+removed in U2 of the 2026-07 simplification refactor; `availableLiquidity > 0`
+is the single consumability signal).
 
 **Placement/Context:** Any function that accepts an array of IDs and
 iterates them more than once: `createBorrowerLoanPool` (liquidity IDs), and any
@@ -1044,11 +1101,13 @@ rg "uint128\(uint256" src/OVRFLOLending.sol
 
 **Why:** The `_consumeLiquidity` loop breaks when `toBorrow == 0`, meaning
 trailing liquidityPositions past the break point are never touched. This retains residual
-capacity and active status for unconsumed liquidityPositions. The caller
+`availableLiquidity` for unconsumed liquidityPositions. The caller
 (`createBorrowerLoanPool`) may pass more liquidityPositions than needed to fill `targetBorrow`;
 the excess liquidityPositions are left untouched and available for future consumption.
 This is intentional — it allows borrowers to include backup liquidityPositions without
-committing to all of them.
+committing to all of them. (U2 of the 2026-07 simplification refactor removed the
+separate `active` boolean; `availableLiquidity > 0` is now the single signal
+for "consumable".)
 
 **Placement/Context:** `_consumeLiquidity` in `src/OVRFLOLending.sol`.
 
@@ -1060,5 +1119,173 @@ rg "toBorrow == 0" src/OVRFLOLending.sol
 ```
 
 **Documented in:** [`docs/solutions/design-patterns/solidity-batch-function-safety-patterns.md`](../design-patterns/solidity-batch-function-safety-patterns.md), OVRFLOLending cleanup refactor (2026-07-07)
+
+---
+
+## 17. Auto-getter zero-return contract (ALWAYS REQUIRED)
+
+**Why:** When a state struct is exposed via the Solidity compiler's
+auto-getter (i.e. the public mapping has no hand-rolled wrapper function),
+uninitialized slots return a zero-valued struct, not a revert. This is the
+post-U3 operative contract for `OVRFLOLending`'s `liquidityPositions`,
+`saleListings`, `loans`, and `loanPools` (see pattern #7). Tests must
+assert zero values (e.g. `assertEq(lender, address(0))`), not
+`vm.expectRevert`. Do NOT re-add hand-rolled wrapper functions with
+sentinel checks — the auto-getter contract is intentional; re-adding the
+wrappers would resurrect the deleted `*State` surface and the stale test
+shape that goes with it (see R-07).
+
+**Placement/Context:** Any public mapping on `OVRFLOLending` (and any
+future contract) that is exposed only via its compiler-generated
+auto-getter, with no hand-rolled `*State` wrapper. If a hand-rolled
+wrapper is later introduced for a different reason, the revert-on-unknown
+principle from R-07 applies to *that* wrapper — not to the auto-getter.
+
+**How to detect violation:**
+
+```bash
+# Stale tests expecting a revert from an auto-getter that returns zeros:
+rg "vm.expectRevert.*unknown|vm.expectRevert.*nonexistent" test/
+# expected: 0 matches against liquidityPositions / saleListings / loans / loanPools
+
+# Re-introduction of hand-rolled *State wrappers (should stay deleted):
+rg -n "function .*State\(.*\) external view" src/OVRFLOLending.sol
+# expected: 0 matches
+```
+
+**Documented in:** [`docs/solutions/architecture-patterns/behavior-preserving-simplification-refactor.md`](../architecture-patterns/behavior-preserving-simplification-refactor.md) §9 (U3 deletion of `*State` wrappers), [`docs/solutions/architecture-patterns/view-functions-revert-on-nonexistent-ids.md`](../architecture-patterns/view-functions-revert-on-nonexistent-ids.md) (historical principle for hand-rolled views).
+
+---
+
+## 18. Empirical ABI verification for external struct returns (ALWAYS REQUIRED)
+
+### ❌ WRONG (trust the interface doc without probing the deployed contract)
+
+```solidity
+// Mocking Sablier's getStream from the interface ABI alone, without
+// decoding a real mainnet return word layout. A field like `isCancelable`
+// can sit at a different word offset than the interface declares, or the
+// live contract can return a narrower/wider struct than the interface
+// advertises. Tests pass against the mock and fail (or pass wrongly) on mainnet.
+struct LockupLinearStreamView {
+    uint128 depositAmount; uint128 withdrawnAmount;
+    ... bool isCancelable;  // position assumed from interface doc
+}
+```
+
+### ✅ CORRECT (probe the deployed contract, decode against live layout)
+
+```bash
+# Probe a real mainnet stream ID and decode the return words against
+# the interface struct layout. Security-critical fields (e.g. isCancelable)
+# must be cross-checked against an individual getter on the same ID.
+cast call "$SABLIER_LL" "getStream(uint256)" "$STREAM_ID" \
+  --rpc-url "$MAINNET_RPC_URL"
+cast call "$SABLIER_LL" "isCancelable(uint256)" "$STREAM_ID" \
+  --rpc-url "$MAINNET_RPC_URL"
+```
+
+**Why:** Interface ABIs for deployed external contracts (Sablier
+`getStream`, Pendle views) are documentation, not ground truth. The live
+contract's return word layout is what the call actually returns, and a
+mock that redeclares the struct under a different name can silently drift
+from the interface shape — fields shift offsets, booleans pack into
+different words, or the live contract returns a struct the interface does
+not advertise. Doc-reading is not sufficient: a mock that matches the
+interface doc but not the live word layout will pass every test and then
+misbehave (or pass wrongly) against mainnet. Probing with `cast call`
+against a real RPC and decoding the return against the live layout is the
+only way to catch this before a fork test or a mainnet deployment.
+Security-critical fields (e.g. `isCancelable`, which gates
+`closeLoan`/`cancel*` paths) must be cross-checked against individual
+getters on real mainnet IDs, not just the aggregate struct return.
+
+**Placement/Context:** Any test, mock, or integration that models a struct
+returned by a deployed external contract — Sablier V2 `getStream` /
+`getWithdrawnAmount`, Pendle PT/SY/market views, oracle returns. Applies
+to fork tests, fuzz harnesses that mock external calls, and any off-chain
+indexer that decodes return data.
+
+**How to detect violation:**
+
+```bash
+# Mock structs that redeclare an interface struct under a different name
+# (silently drifting from the interface shape):
+rg "struct.*View\b" test/
+# expected: 0 matches after migration — mock struct divergence is a bug
+
+# Mocks that import the interface struct directly are fine; redeclarations
+# with a *View suffix are the smell. Also grep for cast-call probes as
+# positive evidence the layout was verified empirically:
+rg "cast call.*getStream|cast call.*isCancelable" test/ docs/ script/
+```
+
+**Documented in:** Empirical ABI verification practice established during the 2026-07-18 simplification refactor review of mock struct divergence against Sablier V2 `getStream`.
+
+---
+
+## 19. Mocks implement the interface, not redeclare it (ALWAYS REQUIRED)
+
+### ❌ WRONG (mock redeclares the interface struct under a different name)
+
+```solidity
+// test/mocks/SablierMock.sol — redeclares ISablierV2LockupLinear.Stream
+// as LockupLinearStreamView. The mock's field order / types can drift
+// silently from the interface; tests pass against the mock and fail (or
+// pass wrongly) against mainnet.
+struct LockupLinearStreamView {
+    uint128 depositAmount;
+    uint128 withdrawnAmount;
+    uint40 startTime;
+    uint40 endTime;
+    bool isCancelable;   // ← position can drift from interface
+    bool wasCanceled;
+}
+```
+
+### ✅ CORRECT (mock imports and implements the interface struct directly)
+
+```solidity
+// test/mocks/SablierMock.sol — implement ISablierV2LockupLinear.Stream
+// directly. The mock's storage shape cannot drift from the interface
+// because it IS the interface struct.
+import {ISablierV2LockupLinear} from "../../interfaces/ISablierV2LockupLinear.sol";
+
+contract SablierMock is ISablierV2LockupLinear {
+    mapping(uint256 => ISablierV2LockupLinear.Stream) internal _streams;
+    // ... implement getStream to return the interface struct ...
+}
+```
+
+**Why:** When a mock redeclares an interface struct under a different name
+(e.g. `Stream` → `StreamView`), the mock's shape can silently drift from
+the interface: field order shifts, types widen/narrow, booleans pack into
+different words. Tests pass against the mock because the mock and the test
+agree on the redeclared shape, but they fail (or pass wrongly) against
+mainnet where the real contract returns the interface shape. Implementing
+the interface struct directly eliminates the divergence vector — the mock
+and the interface share one definition, so they cannot drift. This is the
+mock-side complement to pattern #18 (probe the deployed contract for the
+live word layout): #18 catches divergence at the mainnet boundary, #19
+prevents it from being introduced at the mock boundary.
+
+**Placement/Context:** Every mock in `test/mocks/**` that stands in for a
+deployed external contract (Sablier, Pendle, oracle, ERC20 variants).
+Mocks must `import` the interface and implement its structs directly; do
+not redeclare interface structs under `*View` or `*Mock` aliases.
+
+**How to detect violation:**
+
+```bash
+# Mock structs that redeclare an interface struct under a different name:
+rg "struct.*View\b" test/
+# expected: 0 matches
+
+# Mocks should import the interface they implement, not redefine it:
+rg -l "import.*interfaces/" test/mocks/
+# expected: every mock file imports its interface
+```
+
+**Documented in:** Mock struct divergence review (2026-07-18), companion to pattern #18 (empirical ABI verification).
 
 ---

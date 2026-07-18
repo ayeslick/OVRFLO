@@ -102,7 +102,7 @@ A loan against a pledged Sablier stream where the stream's deterministic payouts
 
 ### Pool
 
-The only lending mechanism in the OVRFLOLending: an atomic batch primitive where a borrower aggregates multiple liquidityPositions into a single transaction. A borrower pool (`createBorrowerLoanPool`) batches borrows across multiple liquidityPositions; the borrower is the only pooling actor. The pool becomes the virtual lender on the loan it creates (`loan.lender = address(lending)`, tracked via `loanToLoanPool`). Each pool has exactly one loan. Claims are address-based (no NFTs): lenders claim pro-rata proceeds via `claimLoanPoolShare`, which works for both open and closed loans. Claimable amount is the lender's pro-rata share of total recovery (drawn plus repaid, plus stream withdrawable for open loans) minus cumulative prior receipts, ensuring order-independent fairness.
+The only lending mechanism in the OVRFLOLending: an atomic batch primitive where a borrower aggregates multiple liquidityPositions into a single transaction. A borrower pool (`createBorrowerLoanPool`) batches borrows across multiple liquidityPositions; the borrower is the only pooling actor. The pool is the virtual lender on its loan (the lending contract itself holds the lender role, since each pool has exactly one loan and they share a single ID space). Each pool has exactly one loan. Claims are address-based (no NFTs): lenders claim pro-rata proceeds via `claimLoanPoolShare`, which works for both open and closed loans. Claimable amount is the lender's pro-rata share of total recovery (drawn plus repaid, plus stream withdrawable for open loans) minus cumulative prior receipts, ensuring order-independent fairness.
 
 ### OVRFLO cycle
 
@@ -119,3 +119,9 @@ An atomic loan of deposited PT from the OVRFLO vault, repaid via safeTransferFro
 A shadow variable in a fuzz handler that mirrors a piece of protocol state so invariant functions can detect drift between what the protocol recorded and what the fuzzer observed.
 
 Each ghost is updated in the same handler branch that triggers the corresponding state transition. A missing ghost update on one branch causes false-positive invariant violations later (e.g. a re-pledged stream appears still-pledged), which wastes triage time and erodes trust in the suite.
+
+## Refactoring patterns
+
+### Vestigial state
+
+Correct but redundant protocol state that duplicates information recoverable from other on-chain sources. Common forms in OVRFLO: duplicate ID spaces with translation maps (loan vs loan-pool), derived booleans that mirror a quantitative check (`active` vs `availableLiquidity > 0`), dual registries that duplicate a sentinel (`approved` vs `ptToken != address(0)`), and hand-rolled wrapper getters that re-shape data the compiler's auto-getters already expose. Vestigial state is not a bug, but it is attack surface, gas cost, and cognitive load. Deleting it is a behavior-preserving refactor: prove no consumer depends on the redundant field (grep-verified across `src/` and `test/`), delete the declaration, then mechanically update all destructures and call sites. See `docs/solutions/architecture-patterns/behavior-preserving-simplification-refactor.md`.
