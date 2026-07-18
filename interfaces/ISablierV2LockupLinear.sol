@@ -25,6 +25,34 @@ interface ISablierV2LockupLinear {
         Broker broker;
     }
 
+    /// @notice Amounts sub-struct nested inside `Stream`. Mirrors `Lockup.Amounts`
+    ///         from the deployed SablierV2LockupLinear exactly.
+    struct Amounts {
+        uint128 deposited;
+        uint128 withdrawn;
+        uint128 refunded;
+    }
+
+    /// @notice Full stream record returned by `getStream`. Mirrors the deployed
+    ///         SablierV2LockupLinear `LockupLinear.Stream` struct exactly (field order
+    ///         and types), verified via `cast call` against the mainnet contract at
+    ///         `0xAFb979d9afAd1aD27C5eFf4E27226E3AB9e5dCC9` (13-word return). The
+    ///         `wasCanceled`/`isDepleted`/`isStream`/`isTransferable` fields and
+    ///         `amounts.refunded` are ignored by `requireEligible`.
+    struct Stream {
+        address sender;
+        uint40 startTime;
+        uint40 cliffTime;
+        bool isCancelable;
+        bool wasCanceled;
+        IERC20 asset;
+        uint40 endTime;
+        bool isDepleted;
+        bool isStream;
+        bool isTransferable;
+        Amounts amounts;
+    }
+
     function createWithDurations(CreateWithDurations calldata params) external returns (uint256 streamId);
 
     function getSender(uint256 streamId) external view returns (address sender);
@@ -42,6 +70,8 @@ interface ISablierV2LockupLinear {
     function getDepositedAmount(uint256 streamId) external view returns (uint128 depositedAmount);
 
     function getWithdrawnAmount(uint256 streamId) external view returns (uint128 withdrawnAmount);
+
+    function getStream(uint256 streamId) external view returns (Stream memory stream);
 
     function withdrawableAmountOf(uint256 streamId) external view returns (uint128 withdrawableAmount);
 

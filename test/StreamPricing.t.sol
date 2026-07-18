@@ -109,13 +109,6 @@ contract StreamPricingTest is Test {
         assertEq(eligibility.remaining, 70 ether);
     }
 
-    function test_EligibilityRejectsUnregisteredCore() public {
-        MockLendingCore unknownCore = new MockLendingCore();
-
-        vm.expectRevert(StreamPricing.CoreNotRegistered.selector);
-        harness.requireEligible(address(factory), address(sablier), address(unknownCore), MARKET_ONE, streamId);
-    }
-
     function test_EligibilityRejectsUnapprovedMarket() public {
         // After U4, on-chain market approval is derived from the core's series config
         // (`ptToken != address(0)`); the factory `isMarketApproved` mapping is no longer

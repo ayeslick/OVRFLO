@@ -8,7 +8,7 @@ import {ISablierV2LockupLinear} from "../../../interfaces/ISablierV2LockupLinear
 contract MockSablier is ISablierV2LockupLinear {
     using SafeERC20 for IERC20;
 
-    struct Stream {
+    struct StreamData {
         address sender;
         address recipient;
         IERC20 asset;
@@ -21,7 +21,7 @@ contract MockSablier is ISablierV2LockupLinear {
         bool transferable;
     }
 
-    mapping(uint256 => Stream) private streams;
+    mapping(uint256 => StreamData) private streams;
     mapping(uint256 => address) private owners;
     mapping(uint256 => address) public getApproved;
     mapping(address => mapping(address => bool)) public isApprovedForAll;
@@ -30,7 +30,7 @@ contract MockSablier is ISablierV2LockupLinear {
     function createWithDurations(CreateWithDurations calldata params) external returns (uint256 streamId) {
         streamId = ++nextStreamId;
         uint40 start = uint40(block.timestamp);
-        streams[streamId] = Stream({
+        streams[streamId] = StreamData({
             sender: params.sender,
             recipient: params.recipient,
             asset: params.asset,
@@ -78,8 +78,25 @@ contract MockSablier is ISablierV2LockupLinear {
         return streams[streamId].withdrawnAmount;
     }
 
+    function getStream(uint256 streamId) external view returns (Stream memory) {
+        StreamData memory s = streams[streamId];
+        return Stream({
+            sender: s.sender,
+            startTime: s.startTime,
+            cliffTime: s.cliffTime,
+            isCancelable: s.cancelable,
+            wasCanceled: false,
+            asset: s.asset,
+            endTime: s.endTime,
+            isDepleted: s.depositedAmount <= s.withdrawnAmount,
+            isStream: s.depositedAmount > 0,
+            isTransferable: s.transferable,
+            amounts: Amounts({deposited: s.depositedAmount, withdrawn: s.withdrawnAmount, refunded: 0})
+        });
+    }
+
     function withdrawableAmountOf(uint256 streamId) public view returns (uint128) {
-        Stream memory s = streams[streamId];
+        StreamData memory s = streams[streamId];
         if (s.depositedAmount == 0) return 0;
         if (block.timestamp < s.cliffTime) return 0;
         uint256 elapsed = block.timestamp > s.endTime ? s.endTime - s.startTime : block.timestamp - s.startTime;

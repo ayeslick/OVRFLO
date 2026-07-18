@@ -129,6 +129,31 @@ contract MockLendingSablier {
         uint128 withdrawable;
     }
 
+    /// @dev View struct mirroring `ISablierV2LockupLinear.Stream` field order/types so
+    ///      `getStream` ABI-encodes identically to the real Sablier contract (verified
+    ///      via `cast call`: 13-word nested `LockupLinear.Stream` with `Amounts`). The
+    ///      mock does not inherit the interface (duck-typed), so this local struct
+    ///      supplies the matching positional layout.
+    struct AmountsView {
+        uint128 deposited;
+        uint128 withdrawn;
+        uint128 refunded;
+    }
+
+    struct StreamView {
+        address sender;
+        uint40 startTime;
+        uint40 cliffTime;
+        bool isCancelable;
+        bool wasCanceled;
+        IERC20 asset;
+        uint40 endTime;
+        bool isDepleted;
+        bool isStream;
+        bool isTransferable;
+        AmountsView amounts;
+    }
+
     mapping(uint256 => Stream) internal streams;
     mapping(uint256 => address) internal owners;
     mapping(uint256 => address) public getApproved;
@@ -270,6 +295,23 @@ contract MockLendingSablier {
 
     function getWithdrawnAmount(uint256 streamId) external view returns (uint128) {
         return streams[streamId].withdrawn;
+    }
+
+    function getStream(uint256 streamId) external view returns (StreamView memory) {
+        Stream memory s = streams[streamId];
+        return StreamView({
+            sender: s.sender,
+            startTime: s.startTime,
+            cliffTime: s.cliffTime,
+            isCancelable: s.cancelable,
+            wasCanceled: false,
+            asset: s.asset,
+            endTime: s.endTime,
+            isDepleted: s.deposited <= s.withdrawn,
+            isStream: s.deposited > 0,
+            isTransferable: true,
+            amounts: AmountsView({deposited: s.deposited, withdrawn: s.withdrawn, refunded: 0})
+        });
     }
 
     function withdrawableAmountOf(uint256 streamId) external view returns (uint128) {

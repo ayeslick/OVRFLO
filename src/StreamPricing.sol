@@ -64,8 +64,6 @@ library StreamPricing {
     /// @notice Basis-points denominator (100% = 10_000).
     uint256 internal constant BASIS_POINTS = 10_000;
 
-    /// @dev The OVRFLO core vault is not registered with the factory.
-    error CoreNotRegistered();
     /// @dev The Pendle market is not approved for this vault.
     error MarketNotApproved();
     /// @dev The stream's Sablier sender is not the OVRFLO core vault.
@@ -204,24 +202,20 @@ library StreamPricing {
         view
         returns (Eligibility memory eligibility)
     {
-        IOVRFLOFactoryRegistry registry = IOVRFLOFactoryRegistry(factory);
         ISablierV2LockupLinear lockup = ISablierV2LockupLinear(sablier);
 
-        (address treasury,, address registeredToken) = registry.ovrfloInfo(core);
-        if (treasury == address(0) || registeredToken == address(0)) revert CoreNotRegistered();
-
         (uint256 expiryCached, address ovrfloToken) = marketActive(factory, core, market);
-        if (lockup.getSender(streamId) != core) revert WrongSender();
-        if (address(lockup.getAsset(streamId)) != ovrfloToken) revert WrongAsset();
+        ISablierV2LockupLinear.Stream memory stream = lockup.getStream(streamId);
+
+        if (stream.sender != core) revert WrongSender();
+        if (address(stream.asset) != ovrfloToken) revert WrongAsset();
         // forge-lint: disable-next-line(unsafe-typecast)
-        if (lockup.getEndTime(streamId) != uint40(expiryCached)) revert WrongEndTime();
-        if (lockup.getCliffTime(streamId) != lockup.getStartTime(streamId)) revert CliffPresent();
-        if (lockup.isCancelable(streamId)) revert CancelableStream();
+        if (stream.endTime != uint40(expiryCached)) revert WrongEndTime();
+        if (stream.cliffTime != stream.startTime) revert CliffPresent();
+        if (stream.isCancelable) revert CancelableStream();
+        if (stream.amounts.deposited <= stream.amounts.withdrawn) revert RemainingZero();
 
-        uint128 deposited = lockup.getDepositedAmount(streamId);
-        uint128 withdrawn = lockup.getWithdrawnAmount(streamId);
-        if (deposited <= withdrawn) revert RemainingZero();
-
-        eligibility = Eligibility({seriesMaturity: expiryCached, remaining: deposited - withdrawn});
+        eligibility =
+            Eligibility({seriesMaturity: expiryCached, remaining: stream.amounts.deposited - stream.amounts.withdrawn});
     }
 }
