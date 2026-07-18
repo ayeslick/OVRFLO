@@ -1,269 +1,287 @@
 # Entry Point Map
 
-> OVRFLO | 41 entry points | 15 permissionless | 9 role-gated | 17 admin-only
+> OVRFLO | 35 entry points | 10 permissionless | 7 role-gated | 18 admin-only
 
 ---
 
 ## Protocol Flow Paths
 
-### Setup (Timelocked Multisig)
+### Setup (Multisig)
 
-`configureDeployment()` → `deploy()` → `addMarket()`  ◄── Pendle oracle history must be ready and SY underlying must match
+`configureDeployment()` -> `deploy()` -> `deployLending()` -> `addMarket()`  ◄── `prepareOracle()` may be needed first if cardinality insufficient
 
-`[vault setup above]` → `deployLending()` → `setLendingAprBounds()` / `setLendingFee()` / `setLendingTreasury()`
+### Depositor Flow
 
-### Vault User Flow
+`[addMarket above]` -> `User.deposit()` -> (maturity passes) -> `User.claim()`
+                                     └─> `User.unwrap()`  ◄── requires wrap reserve funded by someone's `wrap()`
 
-`[market setup above]` → `deposit()`  ◄── before maturity and below market cap
-                              ├─→ `claim()`  ◄── after that PT series matures
-                              └─→ `flashLoan()`  ◄── before maturity, oracle ready, not paused
+### Wrapper Flow
 
-`[vault deployment above]` → `wrap()` → `unwrap()`  ◄── tracked underlying reserve must cover amount
+`[deploy above]` -> `User.wrap()` -> `User.unwrap()`
 
-### Stream Seller and Buyer Flow
+### Lender Flow
 
-`[deposit above]` → Sablier stream → `supplyLiquidity()` → `sellStreamToLiquidity()`
+`[addMarket above]` -> `Lender.supplyLiquidity()` -> `Lender.withdrawLiquidity()`  ◄── refund remaining
+                                          └─> `Seller.sellStreamToLiquidity()`  ◄── consumes liquidity
 
-`[deposit above]` → Sablier stream → `postSaleListing()`
-                                         ├─→ `cancelSaleListing()`
-                                         └─→ `buyListing()`
+### Seller Flow
 
-### Borrower and Lender Flow
+`[addMarket above]` -> `Seller.postSaleListing()` -> `Seller.cancelSaleListing()` or `Buyer.buyListing()`
 
-`[supplyLiquidity above]` → `createBorrowerLoanPool()`  ◄── sorted matching positions and eligible stream
-                                  ├─→ `repayLoan()`  ◄── borrower only
-                                  ├─→ `closeLoan()`  ◄── accrued stream amount covers outstanding
-                                  └─→ `claimLoanPoolShare()`  ◄── caller contributed to pool
+### Borrower Flow
+
+`[addMarket above]` + `[Lender.supplyLiquidity above]` -> `Borrower.createBorrowerLoanPool()`  ◄── gatherLiquidity() to find IDs
+                                                          ├─> `Borrower.repayLoan()`  ◄── role-gated by loan.borrower
+                                                          └─> `Anyone.closeLoan()` -> `Lender.claimLoanPoolShare()`  ◄── role-gated by contribution
+
+### Flash Loan Flow
+
+`[addMarket above]` -> `Borrower.flashLoan()` -> (callback deposits/wraps/swaps) -> pullback + fee
 
 ---
 
 ## Permissionless
 
-### `OVRFLO.wrap(uint256)`
+### `OVRFLO.wrap(uint256 amount)`
 
 | Aspect | Detail |
 |--------|--------|
-| Visibility | external |
-| Caller | Token holder |
+| Visibility | external, (no nonReentrant) |
+| Caller | Anyone (user wrapping underlying) |
 | Parameters | `amount` (user-controlled) |
-| Call chain | `→ IERC20.safeTransferFrom() → OVRFLOToken.mint()` |
-| State modified | `wrappedUnderlying`, token supply and caller balance |
-| Value flow | Underlying: caller → vault; ovrfloToken: vault mint → caller |
+| Call chain | `-> OVRFLOToken.mint(user, amount)` |
+| State modified | `wrappedUnderlying += amount` |
+| Value flow | underlying: user -> vault; ovrfloToken: mint to user |
 | Reentrancy guard | no |
 
-### `OVRFLO.deposit(address,uint256,uint256)`
+### `OVRFLO.unwrap(uint256 amount)`
 
 | Aspect | Detail |
 |--------|--------|
 | Visibility | external |
-| Caller | PT depositor |
-| Parameters | `market`, `ptAmount`, `minToUser` (user-controlled) |
-| Call chain | `→ PendleOracle.getOracleState/getPtToSyRate() → OVRFLOToken.mint() → Sablier.createWithDurations()` |
-| State modified | `marketTotalDeposited`, token supply and balances, external stream state |
-| Value flow | PT and fee underlying in; ovrfloToken minted to user and stream |
-| Reentrancy guard | no |
-
-### `OVRFLOLending.supplyLiquidity(address,uint16,uint128)`
-
-| Aspect | Detail |
-|--------|--------|
-| Visibility | external, nonReentrant |
-| Caller | Liquidity lender |
-| Parameters | `market`, `aprBps`, `availableLiquidity` (user-controlled) |
-| Call chain | `→ StreamPricing.marketActive() → IERC20.safeTransferFrom()` |
-| State modified | `nextLiquidityId`, `liquidityPositions` |
-| Value flow | Underlying: lender → lending market |
-| Reentrancy guard | yes |
-
-### `OVRFLOLending.buyListing(uint256,uint256)`
-
-| Aspect | Detail |
-|--------|--------|
-| Visibility | external, nonReentrant |
-| Caller | Stream buyer |
-| Parameters | `listingId`, `maxPriceIn` (user-controlled) |
-| Call chain | `→ StreamPricing.requireEligible() → IERC20.safeTransferFrom/safeTransfer() → Sablier.transferFrom()` |
-| State modified | `saleListings[listingId].active`, external token and stream ownership |
-| Value flow | Underlying: buyer → seller and treasury; stream NFT: market → buyer |
-| Reentrancy guard | yes |
-
-### `OVRFLOLending.createBorrowerLoanPool(uint256[],uint256,uint128,uint128)`
-
-| Aspect | Detail |
-|--------|--------|
-| Visibility | external, nonReentrant |
-| Caller | Borrower and stream owner |
-| Parameters | `liquidityIds`, `streamId`, `targetBorrow`, `minAcceptable` (user-controlled) |
-| Call chain | `→ StreamPricing.requireEligible/obligationForFill() → Sablier.transferFrom() → IERC20.safeTransfer()` |
-| State modified | ID counters, liquidity positions, pool/loan records, contributions and links |
-| Value flow | Underlying: market → borrower and treasury; stream NFT: borrower → market |
-| Reentrancy guard | yes |
-
-### `OVRFLO.unwrap(uint256)`
-
-| Aspect | Detail |
-|--------|--------|
-| Visibility | external |
-| Caller | ovrfloToken holder |
+| Caller | Anyone holding ovrfloToken |
 | Parameters | `amount` (user-controlled) |
-| Call chain | `→ OVRFLOToken.burn() → IERC20.safeTransfer()` |
-| State modified | `wrappedUnderlying`, token supply and caller balance |
-| Value flow | ovrfloToken burned; underlying: vault → caller |
+| Call chain | `-> OVRFLOToken.burn(user, amount) -> IERC20(underlying).safeTransfer(user, amount)` |
+| State modified | `wrappedUnderlying -= amount` |
+| Value flow | ovrfloToken: burn from user; underlying: vault -> user |
 | Reentrancy guard | no |
 
-### `OVRFLO.claim(address,uint256)`
+### `OVRFLO.claim(address ptToken, uint256 amount)`
 
 | Aspect | Detail |
 |--------|--------|
 | Visibility | external |
-| Caller | ovrfloToken holder |
-| Parameters | `ptToken`, `amount` (user-controlled) |
-| Call chain | `→ OVRFLOToken.burn() → IERC20.safeTransfer()` |
-| State modified | `marketTotalDeposited`, token supply and caller balance |
-| Value flow | ovrfloToken burned; PT: vault → caller |
+| Caller | Anyone holding ovrfloToken, post-maturity |
+| Parameters | `ptToken` (user-controlled), `amount` (user-controlled) |
+| Call chain | `-> OVRFLOToken.burn(user, amount) -> IERC20(ptToken).safeTransfer(user, amount)` |
+| State modified | `marketTotalDeposited[market] -= amount` |
+| Value flow | ovrfloToken: burn; PT: vault -> user |
 | Reentrancy guard | no |
 
-### `OVRFLO.flashLoan(address,uint256,bytes)`
+### `OVRFLO.flashLoan(address ptToken, uint256 amount, bytes data)`
 
 | Aspect | Detail |
 |--------|--------|
-| Visibility | external, nonReentrant |
-| Caller | Flash borrower contract |
-| Parameters | `ptToken`, `amount`, `data` (user-controlled) |
-| Call chain | `→ PendleOracle.getOracleState/getPtToSyRate() → IERC20.safeTransfer() → borrower.onFlashLoan() → IERC20.safeTransferFrom()` |
-| State modified | no persistent protocol storage |
-| Value flow | PT out and back; optional underlying fee: borrower → treasury |
+| Visibility | external, `nonReentrant` |
+| Caller | Anyone (flash borrower contract) |
+| Parameters | `ptToken` (user-controlled), `amount` (user-controlled), `data` (user-controlled) |
+| Call chain | `-> IFlashBorrower(msg.sender).onFlashLoan(...) -> IERC20(pt).safeTransferFrom(borrower, this, amount) -> IERC20(underlying).safeTransferFrom(borrower, TREASURY, fee)` |
+| State modified | none (transient loan; no storage delta) |
+| Value flow | PT: vault -> borrower -> vault; underlying fee: borrower -> treasury |
 | Reentrancy guard | yes |
 
-### `OVRFLOLending.withdrawLiquidity(uint256)`
+### `OVRFLOLending.supplyLiquidity(address market, uint16 aprBps, uint128 availableLiquidity)`
 
 | Aspect | Detail |
 |--------|--------|
-| Visibility | external, nonReentrant |
-| Caller | Position lender, enforced in body |
-| Parameters | `liquidityId` (user-controlled) |
-| Call chain | `→ IERC20.safeTransfer()` |
-| State modified | position `availableLiquidity`, `active` |
-| Value flow | Underlying: lending market → lender |
+| Visibility | external, `nonReentrant` |
+| Caller | Anyone (lender) |
+| Parameters | `market` (user-controlled), `aprBps` (user-controlled), `availableLiquidity` (user-controlled) |
+| Call chain | `-> StreamPricing.marketActive(core, market) -> _pullExact(underlying, lender, this, availableLiquidity)` |
+| State modified | `liquidityPositions[id] = {...}; nextLiquidityId++` |
+| Value flow | underlying: lender -> lending contract |
 | Reentrancy guard | yes |
 
-### `OVRFLOLending.sellStreamToLiquidity(uint256,uint256,uint256)`
+### `OVRFLOLending.sellStreamToLiquidity(uint256 liquidityId, uint256 streamId, uint256 minNetOut)`
 
 | Aspect | Detail |
 |--------|--------|
-| Visibility | external, nonReentrant |
-| Caller | Eligible stream owner |
-| Parameters | `liquidityId`, `streamId`, `minNetOut` (user-controlled) |
-| Call chain | `→ StreamPricing.requireEligible/grossPrice() → Sablier.transferFrom() → IERC20.safeTransfer()` |
-| State modified | position liquidity and active flag, external stream ownership |
-| Value flow | Stream NFT: seller → lender; underlying: market → seller and treasury |
+| Visibility | external, `nonReentrant` |
+| Caller | Anyone owning the Sablier stream NFT |
+| Parameters | `liquidityId` (user-controlled), `streamId` (user-controlled), `minNetOut` (user-controlled) |
+| Call chain | `-> _priceStream -> StreamPricing.requireEligible -> sablier.transferFrom(seller, lender, streamId) -> _payUnderlying(seller, net) -> _payUnderlying(treasury, fee)` |
+| State modified | `liquidityPositions[id].availableLiquidity -= grossPrice` |
+| Value flow | stream NFT: seller -> lender; underlying: lending -> seller (net) + treasury (fee) |
 | Reentrancy guard | yes |
 
-### `OVRFLOLending.postSaleListing(address,uint256,uint16)`
+### `OVRFLOLending.postSaleListing(address market, uint256 streamId, uint16 aprBps)`
 
 | Aspect | Detail |
 |--------|--------|
-| Visibility | external, nonReentrant |
-| Caller | Eligible stream owner |
-| Parameters | `market`, `streamId`, `aprBps` (user-controlled) |
-| Call chain | `→ StreamPricing.requireEligible() → Sablier.transferFrom()` |
-| State modified | `nextSaleListingId`, `saleListings`, external stream ownership |
-| Value flow | Stream NFT: seller → lending market |
+| Visibility | external, `nonReentrant` |
+| Caller | Anyone owning the stream |
+| Parameters | `market` (user-controlled), `streamId` (user-controlled), `aprBps` (user-controlled) |
+| Call chain | `-> _requireEligible -> sablier.transferFrom(seller, this, streamId)` |
+| State modified | `saleListings[id] = {...}; nextSaleListingId++` |
+| Value flow | stream NFT: seller -> lending (escrow) |
 | Reentrancy guard | yes |
 
-### `OVRFLOLending.cancelSaleListing(uint256)`
+### `OVRFLOLending.buyListing(uint256 listingId, uint256 maxPriceIn)`
 
 | Aspect | Detail |
 |--------|--------|
-| Visibility | external, nonReentrant |
-| Caller | Listing seller, enforced in body |
-| Parameters | `listingId` (user-controlled) |
-| Call chain | `→ Sablier.transferFrom()` |
-| State modified | listing `active`, external stream ownership |
-| Value flow | Stream NFT: lending market → seller |
+| Visibility | external, `nonReentrant` |
+| Caller | Anyone (buyer) |
+| Parameters | `listingId` (user-controlled), `maxPriceIn` (user-controlled) |
+| Call chain | `-> _priceStream -> _pullExact(underlying, buyer, this, grossPrice) -> _payUnderlying(seller, net) -> _payUnderlying(treasury, fee) -> sablier.transferFrom(this, buyer, streamId)` |
+| State modified | `saleListings[id].active = false` |
+| Value flow | underlying: buyer -> seller (net) + treasury (fee); stream NFT: lending -> buyer |
 | Reentrancy guard | yes |
 
-### `OVRFLOLending.closeLoan(uint256)`
+### `OVRFLOLending.closeLoan(uint256 loanId)`
 
 | Aspect | Detail |
 |--------|--------|
-| Visibility | external, nonReentrant |
-| Caller | Any account |
+| Visibility | external, `nonReentrant` |
+| Caller | Anyone (permissionless) |
 | Parameters | `loanId` (user-controlled) |
-| Call chain | `→ Sablier.withdrawableAmountOf/withdraw/transferFrom()` |
-| State modified | loan `closed`, `drawn`, pool proceeds, external stream ownership |
-| Value flow | ovrfloToken: stream → market; stream NFT: market → borrower |
+| Call chain | `-> sablier.withdrawableAmountOf -> sablier.withdraw(streamId, this, outstanding) -> sablier.transferFrom(this, borrower, streamId)` |
+| State modified | `loan.closed = true; loan.drawn += outstanding; loanPoolProceeds[loanId] += outstanding` |
+| Value flow | ovrfloToken: stream -> lending (proceeds); stream NFT: lending -> borrower |
 | Reentrancy guard | yes |
 
-### `OVRFLOLending.repayLoan(uint256,uint128)`
+### `OVRFLOLending.createBorrowerLoanPool(uint256[] liquidityIds, uint256 streamId, uint128 targetBorrow, uint128 minAcceptable)`
 
 | Aspect | Detail |
 |--------|--------|
-| Visibility | external, nonReentrant |
-| Caller | Loan borrower, enforced in body |
-| Parameters | `loanId`, `amount` (user-controlled) |
-| Call chain | `→ IERC20.safeTransferFrom() → Sablier.transferFrom()` when fully repaid |
-| State modified | loan `repaid`, `closed`, pool proceeds, external stream ownership |
-| Value flow | ovrfloToken: borrower → market; optional stream NFT: market → borrower |
-| Reentrancy guard | yes |
-
-### `OVRFLOLending.claimLoanPoolShare(uint256,uint128)`
-
-| Aspect | Detail |
-|--------|--------|
-| Visibility | external, nonReentrant |
-| Caller | Pool contributor, enforced in `_claimFair` |
-| Parameters | `loanPoolId`, `amount` (user-controlled) |
-| Call chain | `→ Sablier.withdrawableAmountOf/withdraw() → IERC20.safeTransfer()` |
-| State modified | loan `drawn`, pool proceeds and caller receipt accounting |
-| Value flow | ovrfloToken: stream/market → lender |
+| Visibility | external, `nonReentrant` |
+| Caller | Anyone (borrower) |
+| Parameters | `liquidityIds` (user-controlled), `streamId` (user-controlled), `targetBorrow` (user-controlled), `minAcceptable` (user-controlled) |
+| Call chain | `-> _validateLiquidity -> _priceStream -> StreamPricing.obligationForFill -> _storeLoan -> _consumeLiquidity -> sablier.transferFrom(borrower, this, streamId) -> _payUnderlying(borrower, net) -> _payUnderlying(treasury, fee)` |
+| State modified | `loans[id]; loanPools[id]; loanPoolContributions[id][lender]; liquidityPositions[*].availableLiquidity; nextLoanId++` |
+| Value flow | underlying: liquidity -> borrower (net) + treasury (fee); stream NFT: borrower -> lending (escrow) |
 | Reentrancy guard | yes |
 
 ---
 
 ## Role-Gated
 
-### Immutable factory (`OVRFLO.onlyAdmin`)
+### `LiquidityPosition.lender` (by ownership)
 
-| Contract | Function | Parameters | State Modified / Value Flow |
-|----------|----------|------------|-----------------------------|
-| OVRFLO | `setSeriesApproved` | market, PT, TWAP, expiry, fee | one-shot series and PT mapping |
-| OVRFLO | `setMarketDepositLimit` | market, limit | market cap |
-| OVRFLO | `sweepExcessPt` | PT, recipient | excess PT out |
-| OVRFLO | `sweepExcessUnderlying` | recipient | excess underlying out |
-| OVRFLO | `setFlashFeeBps` | fee | flash fee |
-| OVRFLO | `setFlashLoanPaused` | paused | flash circuit breaker |
+#### `OVRFLOLending.withdrawLiquidity(uint256 liquidityId)`
 
-### Vault owner (`OVRFLOToken.onlyOwner`)
+| Aspect | Detail |
+|--------|--------|
+| Visibility | external, `nonReentrant` |
+| Caller | `liquidity.lender == msg.sender` |
+| Parameters | `liquidityId` (user-controlled) |
+| Call chain | `-> _payUnderlying(lender, refund)` |
+| State modified | `liquidityPositions[id].availableLiquidity = 0` |
+| Value flow | underlying: lending -> lender |
+| Reentrancy guard | yes |
 
-| Contract | Function | Parameters | State Modified / Value Flow |
-|----------|----------|------------|-----------------------------|
-| OVRFLOToken | `transferOwnership` | new owner | token owner, one-step transfer |
-| OVRFLOToken | `mint` | recipient, amount | supply and recipient balance increase |
-| OVRFLOToken | `burn` | holder, amount | supply and holder balance decrease |
+### `SaleListing.seller` (by ownership)
+
+#### `OVRFLOLending.cancelSaleListing(uint256 listingId)`
+
+| Aspect | Detail |
+|--------|--------|
+| Visibility | external, `nonReentrant` |
+| Caller | `listing.seller == msg.sender` |
+| Parameters | `listingId` (user-controlled) |
+| Call chain | `-> sablier.transferFrom(this, seller, streamId)` |
+| State modified | `saleListings[id].active = false` |
+| Value flow | stream NFT: lending -> seller |
+| Reentrancy guard | yes |
+
+### `Loan.borrower` (by ownership)
+
+#### `OVRFLOLending.repayLoan(uint256 loanId, uint128 amount)`
+
+| Aspect | Detail |
+|--------|--------|
+| Visibility | external, `nonReentrant` |
+| Caller | `loan.borrower == msg.sender` |
+| Parameters | `loanId` (user-controlled), `amount` (user-controlled) |
+| Call chain | `-> _pullExact(ovrfloToken, borrower, this, amount) -> (if closes) sablier.transferFrom(this, borrower, streamId)` |
+| State modified | `loan.repaid += amount; loan.closed = true (if amount == outstanding); loanPoolProceeds[loanId] += amount` |
+| Value flow | ovrfloToken: borrower -> lending; (if closes) stream NFT: lending -> borrower |
+| Reentrancy guard | yes |
+
+### `loanPoolContributions[loanId][account] > 0` (by contribution)
+
+#### `OVRFLOLending.claimLoanPoolShare(uint256 loanId, uint128 amount)`
+
+| Aspect | Detail |
+|--------|--------|
+| Visibility | external, `nonReentrant` |
+| Caller | `contribution > 0` (lender) |
+| Parameters | `loanId` (user-controlled), `amount` (user-controlled) |
+| Call chain | `-> _claimFair -> (if open && deficit) sablier.withdraw -> IERC20(ovrfloToken).safeTransfer(account, payAmount)` |
+| State modified | `loanPoolReceived[loanId][account] += payAmount; loanPoolProceeds[loanId] -= payAmount; (if harvest) loan.drawn += harvestAmount` |
+| Value flow | ovrfloToken: lending -> lender |
+| Reentrancy guard | yes |
+
+### `OVRFLOToken.owner` (the vault)
+
+#### `OVRFLOToken.transferOwnership(address newOwner)`
+
+| Aspect | Detail |
+|--------|--------|
+| Visibility | external, `onlyOwner` |
+| Caller | vault (set once by factory at deploy) |
+| Parameters | `newOwner` (vault-controlled) |
+| State modified | `owner = newOwner` |
+
+#### `OVRFLOToken.mint(address to, uint256 amount)` / `OVRFLOToken.burn(address from, uint256 amount)`
+
+| Aspect | Detail |
+|--------|--------|
+| Visibility | external, `onlyOwner` |
+| Caller | vault only |
+| Parameters | `to`/`from` (vault-controlled), `amount` (vault-controlled) |
+| State modified | ERC20 balances + totalSupply |
+
+### `OVRFLO.onlyAdmin` (= factory)
+
+#### `OVRFLO.setSeriesApproved / setMarketDepositLimit / sweepExcessPt / sweepExcessUnderlying / setFlashFeeBps / setFlashLoanPaused`
+
+| Contract | Function | Parameters | State Modified |
+|----------|----------|------------|----------------|
+| OVRFLO | `setSeriesApproved(market, pt, twapDuration, expiry, feeBps)` | market config | `_series[market]; ptToMarket[pt]` |
+| OVRFLO | `setMarketDepositLimit(market, limit)` | limit | `marketDepositLimits[market]` |
+| OVRFLO | `sweepExcessPt(ptToken, to)` | PT + recipient | PT transfer out (excess only) |
+| OVRFLO | `sweepExcessUnderlying(to)` | recipient | underlying transfer out (excess only) |
+| OVRFLO | `setFlashFeeBps(feeBps)` | fee | `flashFeeBps` |
+| OVRFLO | `setFlashLoanPaused(paused)` | bool | `flashLoanPaused` |
 
 ---
 
 ## Admin-Only
 
-All entries below are `onlyOwner`. The intended owner is the timelocked multisig for OVRFLOFactory, while each factory-deployed OVRFLOLending is owned by the factory.
+### `OVRFLOFactory.onlyOwner` (= timelocked multisig)
 
 | Contract | Function | Parameters | State Modified |
 |----------|----------|------------|----------------|
-| OVRFLOFactory | `configureDeployment` | treasury, underlying, name/symbol suffix | staged deployment config |
-| OVRFLOFactory | `cancelDeployment` | none | clears staged config |
-| OVRFLOFactory | `deploy` | none | deploys/registers vault and token |
-| OVRFLOFactory | `deployLending` | vault | deploys/registers lending market |
-| OVRFLOFactory | `addMarket` | vault, market, TWAP, fee | both market registries and vault series |
-| OVRFLOFactory | `setMarketDepositLimit` | vault, market, limit | forwards vault cap |
-| OVRFLOFactory | `sweepExcessPt` | vault, PT, recipient | forwards PT recovery |
-| OVRFLOFactory | `sweepExcessUnderlying` | vault, recipient | forwards underlying recovery |
-| OVRFLOFactory | `setFlashFeeBps` | vault, fee | forwards flash fee |
-| OVRFLOFactory | `setFlashLoanPaused` | vault, paused | forwards flash pause |
-| OVRFLOFactory | `prepareOracle` | market, TWAP | external Pendle observation cardinality |
-| OVRFLOFactory | `setLendingAprBounds` | lending, min/max APR | forwards lending APR bounds |
-| OVRFLOFactory | `setLendingFee` | lending, fee | forwards lending fee |
-| OVRFLOFactory | `setLendingTreasury` | lending, treasury | forwards lending fee recipient |
-| OVRFLOLending | `setAprBounds` | min/max APR | APR bounds |
-| OVRFLOLending | `setFee` | fee | global fill fee |
-| OVRFLOLending | `setTreasury` | treasury | fee recipient |
+| OVRFLOFactory | `configureDeployment(treasury, underlying, nameSuffix, symbolSuffix)` | deploy params | `pendingDeployment` |
+| OVRFLOFactory | `cancelDeployment()` | — | deletes `pendingDeployment` |
+| OVRFLOFactory | `deploy()` | — | deploys OVRFLOToken + OVRFLO; `ovrflos; ovrfloInfo; underlyingToOvrflo` |
+| OVRFLOFactory | `deployLending(ovrflo)` | vault addr | deploys OVRFLOLending; `ovrfloToLending; lendingToOvrflo; lendings` |
+| OVRFLOFactory | `addMarket(ovrflo, market, twapDuration, feeBps)` | market config | `isMarketApproved; approvedMarketAt; approvedMarketCount` + vault.setSeriesApproved |
+| OVRFLOFactory | `setMarketDepositLimit(ovrflo, market, limit)` | limit | vault.marketDepositLimits |
+| OVRFLOFactory | `sweepExcessPt(ovrflo, ptToken, to)` | PT + recipient | vault.sweepExcessPt |
+| OVRFLOFactory | `sweepExcessUnderlying(ovrflo, to)` | recipient | vault.sweepExcessUnderlying |
+| OVRFLOFactory | `setFlashFeeBps(ovrflo, feeBps)` | fee | vault.flashFeeBps |
+| OVRFLOFactory | `setFlashLoanPaused(ovrflo, paused)` | bool | vault.flashLoanPaused |
+| OVRFLOFactory | `prepareOracle(market, twapDuration)` | oracle config | Pendle market cardinality |
+| OVRFLOFactory | `setLendingAprBounds(lending, aprMin, aprMax)` | APR bounds | lending.aprMinBps/aprMaxBps |
+| OVRFLOFactory | `setLendingFee(lending, feeBps)` | fee | lending.feeBps |
+| OVRFLOFactory | `setLendingTreasury(lending, treasury)` | treasury | lending.treasury |
+
+### `OVRFLOLending.onlyOwner` (= factory, forwarded from multisig)
+
+| Contract | Function | Parameters | State Modified |
+|----------|----------|------------|----------------|
+| OVRFLOLending | `setAprBounds(aprMinBps_, aprMaxBps_)` | APR bounds | `aprMinBps; aprMaxBps` |
+| OVRFLOLending | `setFee(feeBps_)` | fee | `feeBps` |
+| OVRFLOLending | `setTreasury(treasury_)` | treasury | `treasury` |
