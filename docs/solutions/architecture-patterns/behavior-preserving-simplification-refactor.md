@@ -132,7 +132,7 @@ Finally, the empirical-ABI-verification discipline matters beyond Sablier. OVRFL
 - When a Solidity protocol has grown organically and you can feel the vestigial state but cannot enumerate it, run a multi-agent review pass to find it; do not rely on a single familiar reviewer.
 - When a struct field, mapping, or parameter exists but grep finds no live consumer, delete it, after proving the grep is exhaustive across `src/` and `test/`.
 - When a function makes N individual getter calls to an external contract that also exposes a single struct-return call, verify the struct shape empirically against the deployed contract, then collapse to the single call.
-- When hand-rolled math (ceil, floor, overflow-checked casts) duplicates an audited OpenZeppelin or PRB-Math primitive, replace it and prove equivalence with a differential fuzz test.
+- When hand-rolled math (ceil, floor, overflow-checked casts) duplicates an audited OpenZeppelin primitive, replace it and prove equivalence with a differential fuzz test.
 - When a mock redeclares an interface struct under a different name, collapse the mock onto the interface; treat mock/interface struct divergence as a bug, not a convenience.
 - When a `via_ir = false` project hits `stack too deep`, extract a helper; do not flip `via_ir` on as a local fix.
 - When a helper extraction takes a `Struct memory` parameter, check whether a scalar parameter would do, and gas-diff before/after.

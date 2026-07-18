@@ -19,7 +19,7 @@ tags: [gas-optimization, caching, external-calls, sload, helper-extraction, dead
 
 ## Context
 
-Two refactoring passes on `src/*` (OVRFLO, OVRFLOLending, OVRFLOFactory, StreamPricing) identified and fixed 10 issues across code reuse, code quality, and efficiency. The project is a Foundry-based Solidity DeFi protocol using OpenZeppelin and PRB-Math. The passes used parallel code-reuse, code-quality, and efficiency reviewers to systematically find opportunities.
+Two refactoring passes on `src/*` (OVRFLO, OVRFLOLending, OVRFLOFactory, StreamPricing) identified and fixed 10 issues across code reuse, code quality, and efficiency. The project is a Foundry-based Solidity DeFi protocol using OpenZeppelin. The passes used parallel code-reuse, code-quality, and efficiency reviewers to systematically find opportunities.
 
 ## Guidance
 
