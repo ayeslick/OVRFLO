@@ -156,6 +156,7 @@ library StreamPricing {
     /// @param feeBps Fee in basis points.
     /// @return feeAmount The fee, in the same units as `borrowAmount`.
     function fee(uint256 borrowAmount, uint16 feeBps) internal pure returns (uint256) {
+        if (feeBps == 0) return 0;
         return PRBMath.mulDiv(borrowAmount, feeBps, BASIS_POINTS);
     }
 

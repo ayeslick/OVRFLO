@@ -466,7 +466,7 @@ contract OVRFLO is ReentrancyGuard {
         require(amount > 0, "OVRFLO: zero flash");
         require(amount <= marketTotalDeposited[market], "OVRFLO: exceeds deposited");
 
-        uint256 rateE18 = _freshRate(market, info);
+        uint256 rateE18 = _freshRate(market, info.twapDurationFixed);
         uint256 fee = StreamPricing.fee(PRBMath.mulDiv(amount, rateE18, WAD), flashFeeBps);
 
         IERC20(ptToken).safeTransfer(msg.sender, amount);
@@ -573,14 +573,14 @@ contract OVRFLO is ReentrancyGuard {
     function _approvedRate(address market) internal view returns (SeriesInfo memory info, uint256 rateE18) {
         info = _series[market];
         require(info.ptToken != address(0), "OVRFLO: market not approved");
-        rateE18 = _freshRate(market, info);
+        rateE18 = _freshRate(market, info.twapDurationFixed);
     }
 
     /// @dev Reads the PT-to-SY rate after verifying the oracle has enough history for the
     ///      market's fixed TWAP window. Used by `_approvedRate` (deposit/preview path) and
     ///      directly by `flashLoan` (which has its own `ptToMarket` approval gate).
-    function _freshRate(address market, SeriesInfo memory info) internal view returns (uint256 rateE18) {
-        _requireOracleFresh(market, info.twapDurationFixed);
-        rateE18 = IPendleOracle(oracle).getPtToSyRate(market, info.twapDurationFixed);
+    function _freshRate(address market, uint32 twapDurationFixed) internal view returns (uint256 rateE18) {
+        _requireOracleFresh(market, twapDurationFixed);
+        rateE18 = IPendleOracle(oracle).getPtToSyRate(market, twapDurationFixed);
     }
 }

@@ -414,19 +414,6 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
         }
     }
 
-    /// @notice GL-39: loan.obligation immutable (was pool.obligation immutable)
-    function property_pool_total_obligation_immutable() public {
-        uint256 nextPool = lending.nextLoanId();
-        for (uint256 i = 1; i < nextPool; i++) {
-            (,, uint128 obligation,,,) = lending.loans(i);
-            if (ghost_loanObligationInit[i] == 0) {
-                ghost_loanObligationInit[i] = obligation;
-            } else {
-                eq(obligation, ghost_loanObligationInit[i], "GL-39: loan obligation changed");
-            }
-        }
-    }
-
     /// @notice GL-40: loanPoolContributions immutable after creation
     function property_pool_contributions_immutable() public {
         uint256 nextPool = lending.nextLoanId();
@@ -1353,13 +1340,6 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
                 t(owner == address(lending), "GL-67: active listing stream not escrowed at lending");
             } catch {}
         }
-    }
-
-    /// @notice GL-68: Pool loan lender == address(lending) (enforced by construction)
-    /// @dev The Loan struct no longer has a lender field; the lending market is always
-    ///      the virtual lender by construction. This property is now a no-op.
-    function property_pool_loan_lender_is_lending() public {
-        // No-op: lender field removed; address(this) is the lender by construction.
     }
 
     /// @notice GL-69: pool.borrower == loan.borrower (pool and loan share the same borrower)

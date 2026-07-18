@@ -28,7 +28,6 @@ abstract contract Base is StringUtils, Clamp {
         uint256 ghost_lastNextLiquidityId;
         uint256 ghost_lastNextSaleListingId;
         uint256 ghost_lastNextLoanId;
-        uint256 ghost_lastNextPoolId;
         // Deposit tracking (SP-07, GL-51, SP-63)
         uint256 ghost_lastToUser;
         uint256 ghost_lastDepositPtAmount;
