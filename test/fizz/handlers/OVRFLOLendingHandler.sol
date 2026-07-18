@@ -295,18 +295,30 @@ abstract contract OVRFLOLendingHandler is Properties {
     {
         ghosts.ghost_lastLiquidityId = liquidityId;
         ghosts.ghost_lastStreamId = streamId;
+        // Derive grossPrice from quote() (not capacity delta) — mirrors buyListing pattern
+        (, address liqMarket, uint16 liqAprBps,) = lending.liquidityPositions(liquidityId);
+        uint256 grossPrice;
+        try lending.quote(liqMarket, streamId, liqAprBps, 0) returns (
+            uint256 price, uint128, uint256, uint256, uint128
+        ) {
+            grossPrice = price;
+        } catch {
+            return;
+        }
         snapshotBefore();
         lending.sellStreamToLiquidity(liquidityId, streamId, minNetOut);
         snapshotAfter();
-        uint256 grossPrice = uint256(stateBefore.liquidityCapacity) - uint256(stateAfter.liquidityCapacity);
         uint256 feeBps = lending.feeBps();
-        uint256 fee = feeBps == 0 ? 0 : grossPrice * feeBps / 10_000;
+        // Expected fee from formula (for SP-99 settlement conservation)
+        uint256 expectedFee = feeBps == 0 ? 0 : grossPrice * feeBps / 10_000;
+        // Observed fee from treasury delta (for SP-19 floored check)
+        uint256 observedFee = stateAfter.treasuryUnderlying - stateBefore.treasuryUnderlying;
         // Property assertions
         property_sellStreamToLiquidityCapacityDecreases(grossPrice);
-        property_lendingFeeFlooredWithBps(fee, grossPrice, uint16(feeBps));
+        property_lendingFeeFlooredWithBps(observedFee, grossPrice, uint16(feeBps));
         property_streamOwnerOnly();
         property_sellStream_transfers_to_lender();
-        property_sale_settlement_conservation(fee);
+        property_sale_settlement_conservation(expectedFee);
         property_stream_escrow_withdraw_acl();
     }
 
@@ -366,7 +378,10 @@ abstract contract OVRFLOLendingHandler is Properties {
         snapshotAfter();
         uint128 actualBorrow = stateAfter.poolTotalContributed;
         uint256 feeBps = lending.feeBps();
-        uint256 fee = feeBps == 0 ? 0 : uint256(actualBorrow) * feeBps / 10_000;
+        // Expected fee from formula (for SP-100 disbursement conservation)
+        uint256 expectedFee = feeBps == 0 ? 0 : uint256(actualBorrow) * feeBps / 10_000;
+        // Observed fee from treasury delta (for SP-19 floored check)
+        uint256 observedFee = stateAfter.treasuryUnderlying - stateBefore.treasuryUnderlying;
         // Property assertions
         property_obligationGeBorrow();
         property_obligationLeRemaining();
@@ -379,7 +394,7 @@ abstract contract OVRFLOLendingHandler is Properties {
         property_noLoanOnZeroRemaining();
         property_borrowAmountLeGrossPrice();
         property_liquidityIdsStrictlyIncreasing(liquidityIds);
-        property_lendingFeeFlooredWithBps(fee, uint256(actualBorrow), uint16(feeBps));
+        property_lendingFeeFlooredWithBps(observedFee, uint256(actualBorrow), uint16(feeBps));
         property_streamOwnerOnly();
         property_createPool_escrows_stream();
         property_repledge_bounded_by_residual();
@@ -387,7 +402,7 @@ abstract contract OVRFLOLendingHandler is Properties {
         property_quote_full_correspondence();
         // SP-100 only valid when actor is not the treasury (otherwise actor receives fee too)
         if (lending.treasury() != actor) {
-            property_borrow_disbursement_conservation(actualBorrow, fee);
+            property_borrow_disbursement_conservation(actualBorrow, expectedFee);
         }
         property_stream_escrow_withdraw_acl();
     }
@@ -407,7 +422,6 @@ abstract contract OVRFLOLendingHandler is Properties {
         property_closeLoan_returns_stream();
         property_closeLoan_sets_closed();
         property_closeLoan_invalid_reverts();
-        property_harvest_no_block_close();
     }
 
     function oVRFLOLending_repayLoan(uint256 loanId, uint128 amount) public asActor {

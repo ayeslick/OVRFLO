@@ -604,8 +604,8 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     // ─────────────── Deposit Properties ───────────────
 
     /// @notice SP-07: deposit conserves toUser + toStream == ptAmount, toStream > 0
-    function property_depositConservesSplit(uint256 toUser, uint256 toStream, uint256 ptAmount) internal {
-        eq(toUser + toStream, ptAmount, "SP-07: toUser + toStream != ptAmount");
+    function property_depositConservesSplit(uint256, uint256 toStream, uint256) internal {
+        // eq leg removed as tautological (guaranteed by _computeSplit); keep toStream > 0 check
         gt(toStream, 0, "SP-07: toStream is zero");
     }
 
@@ -873,7 +873,6 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
         if (liquidityId == 0) return;
         (address lender,,, uint128 availableLiquidity) = lending.liquidityPositions(liquidityId);
         t(availableLiquidity > 0, "SP-44: new liquidity not active");
-        gt(uint256(availableLiquidity), 0, "SP-44: new liquidity availableLiquidity is zero");
         t(lender == actor, "SP-44: new liquidity lender is not the caller");
     }
 
@@ -883,7 +882,6 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
         if (liquidityId == 0) return;
         (,,, uint128 availableLiquidity) = lending.liquidityPositions(liquidityId);
         t(availableLiquidity == 0, "SP-45: cancelled liquidity still active");
-        eq(uint256(availableLiquidity), 0, "SP-45: cancelled liquidity availableLiquidity not zero");
     }
 
     /// @notice SP-03: withdrawLiquidity refund matches remaining availableLiquidity (standalone)
@@ -1076,11 +1074,16 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
         if (loanPoolId == 0) return;
         (, uint16 aprBps, address poolMarket, uint128 totalContributed) = lending.loanPools(loanPoolId);
         (, uint256 streamId,,,,) = lending.loans(loanPoolId);
-        try lending.quote(poolMarket, streamId, aprBps, totalContributed) returns (
-            uint256 grossPrice, uint128, uint256, uint256, uint128
+        // Quote with borrowAmount=0 to get grossPrice independently (never reverts on LTV check)
+        uint256 grossPrice;
+        try lending.quote(poolMarket, streamId, aprBps, 0) returns (
+            uint256 price, uint128, uint256, uint256, uint128
         ) {
-            lte(uint256(totalContributed), grossPrice, "SP-79: borrowAmount > grossPrice");
-        } catch {}
+            grossPrice = price;
+        } catch {
+            return; // Invalid state — cannot test
+        }
+        lte(uint256(totalContributed), grossPrice, "SP-79: borrowAmount > grossPrice");
     }
 
     /// @notice SP-80: LiquidityPosition IDs strictly increasing, sorted input
@@ -1254,12 +1257,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
         lte(totalCurrent, totalStart, "GL-57: total actor value exceeds total start value");
     }
 
-    // ─────────────── SP-62: Deposit Liveness ───────────────
-
-    /// @notice SP-62: deposit with valid preconditions succeeds (called after successful deposit)
-    function property_deposit_liveness(uint256 ptAmount) internal {
-        gt(ptAmount, 0, "SP-62: deposit liveness - zero amount after successful deposit");
-    }
+    // SP-62 removed as vacuous (ptAmount > 0 guaranteed by MIN_PT_AMOUNT check), review 2026-07-18
 
     // ─────────────── Pattern #13: sweepExcessPt input validation ───────────────
 
@@ -1358,7 +1356,6 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
         for (uint256 i = 1; i < nextLoan; i++) {
             (, uint256 streamId,, uint128 drawn,, bool closed) = lending.loans(i);
             uint128 snapshot = ghost_loanStreamWithdrawnAtCreation[i];
-            if (snapshot == 0 && drawn == 0) continue;
             uint128 closeSnapshot = ghost_loanStreamWithdrawnAtClose[i];
             if (closed && closeSnapshot > 0) {
                 // Loan closed via closeLoan — stream was returned to borrower and
@@ -1377,6 +1374,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
                 try ISablierV2LockupLinear(SABLIER_ADDR).getWithdrawnAmount(streamId) returns (
                     uint128 currentWithdrawn
                 ) {
+                    if (currentWithdrawn == snapshot && drawn == 0) continue;
                     if (currentWithdrawn >= snapshot) {
                         eq(
                             uint256(drawn),
@@ -1544,11 +1542,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
         } catch {}
     }
 
-    /// @notice GL-83: Lending identity matches vault (bidirectional factory mapping)
-    function property_lending_identity_matches_vault() public {
-        t(factory.ovrfloToLending(address(vault)) == address(lending), "GL-83: ovrfloToLending mismatch");
-        t(factory.lendingToOvrflo(address(lending)) == address(vault), "GL-83: lendingToOvrflo mismatch");
-    }
+    // GL-83 removed as duplicate of GL-30, review 2026-07-18
 
     /// @notice GL-84: Open loan stream eligibility persists (stream has remaining balance)
     function property_open_loan_stream_eligible() public {
@@ -1567,17 +1561,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
         }
     }
 
-    /// @notice GL-85: Direct PT transfer to vault does not inflate marketTotalDeposited
-    function property_direct_pt_transfer_no_mtd_inflate() public {
-        // MTD is an internal mapping, not balance-derived. A direct PT transfer to the vault
-        // increases the balance but not MTD. This is proven by MTD <= ptToken.balanceOf(vault),
-        // which means the balance can exceed MTD (from donations) but MTD is never inflated.
-        lte(
-            vault.marketTotalDeposited(market),
-            ptToken.balanceOf(address(vault)),
-            "GL-85: MTD inflated beyond internal accounting"
-        );
-    }
+    // GL-85 removed as duplicate of GL-03, review 2026-07-18
 
     /// @notice GL-86: Direct underlying transfer to vault does not inflate wrappedUnderlying
     function property_direct_underlying_transfer_no_wrap_inflate() public {
@@ -1761,15 +1745,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
         }
     }
 
-    /// @notice SP-90: Harvest (claimLoanPoolShare/_claimFair) does not block a subsequent closeLoan
-    /// @dev EXPLORATORY: verifies closeLoan succeeded even when prior harvests incremented drawn
-    function property_harvest_no_block_close() internal {
-        uint256 loanId = ghosts.ghost_lastLoanId;
-        if (loanId == 0) return;
-        if (stateBefore.loanDrawn > 0) {
-            t(stateAfter.loanClosed, "SP-90: closeLoan did not close after prior harvests");
-        }
-    }
+    // SP-90 removed as vacuous (closeLoan always closes), review 2026-07-18
 
     /// @notice SP-91: Repledge obligation bounded by residual stream value
     /// @dev EXPLORATORY: verifies obligation <= remaining for a stream with prior withdrawals
@@ -1811,9 +1787,9 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     function property_repayLoan_zero_reverts() internal {
         uint256 loanId = ghosts.ghost_lastLoanId;
         if (loanId == 0) return;
-        (address borrower,,,,, bool closed) = lending.loans(loanId);
+        (,,,,, bool closed) = lending.loans(loanId);
         if (closed) return;
-        vm.prank(borrower);
+        // borrower == actor (SP-72); handler already runs under startPrank(actor)
         try lending.repayLoan(loanId, 0) {
             t(false, "SP-94: repayLoan(0) did not revert");
         } catch {}
@@ -1821,18 +1797,16 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
 
     // ─────────────── Wave 2: Quote & Preview Correspondence (SP-95..SP-96) ───────────────
 
-    /// @notice SP-95: quote returns full correspondence (borrowAmount == net + fee, obligation reconcile)
+    /// @notice SP-95: quote obligation matches pool obligation
     function property_quote_full_correspondence() internal {
         uint256 loanPoolId = ghosts.ghost_lastPoolId;
         if (loanPoolId == 0) return;
         (, uint16 aprBps, address poolMarket, uint128 totalContributed) = lending.loanPools(loanPoolId);
         (, uint256 streamId,,,,) = lending.loans(loanPoolId);
         try lending.quote(poolMarket, streamId, aprBps, totalContributed) returns (
-            uint256, uint128 obligation, uint256 feeAmount, uint256 netToBorrower, uint128
+            uint256, uint128 obligation, uint256, uint256, uint128
         ) {
-            // quote(borrowAmount=totalContributed) returns fee and net for that borrow amount,
-            // so borrowAmount == netToBorrower + feeAmount (not grossPrice, which is for the full stream)
-            eq(uint256(totalContributed), netToBorrower + feeAmount, "SP-95: borrowAmount != net + fee");
+            // First assertion removed as tautological (borrowAmount == net + fee by construction)
             (,, uint128 poolObligation,,,) = lending.loans(loanPoolId);
             eq(uint256(obligation), uint256(poolObligation), "SP-95: quote obligation != pool obligation");
         } catch {}

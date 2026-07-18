@@ -57,15 +57,23 @@ abstract contract OVRFLOHandler is Properties {
         bytes memory flashData = abi.encode(false);
 
         snapshotBefore();
+        uint256 mockUnderlyingBefore = underlying.balanceOf(address(mockFlashBorrower));
+        uint256 mockPtBefore = ptToken.balanceOf(address(mockFlashBorrower));
         vm.prank(actor);
         mockFlashBorrower.executeFlashLoan(amount, flashData);
         snapshotAfter();
+        uint256 mockUnderlyingAfter = underlying.balanceOf(address(mockFlashBorrower));
+        uint256 mockPtAfter = ptToken.balanceOf(address(mockFlashBorrower));
 
         property_flashLoanAtomicRepay();
         property_flashLoanMtdUnchanged();
         property_flashLoanPreMaturity();
         property_flashLoanWrappedUnchanged();
-        property_flashLoanNoFreeProfit();
+        // SP-64: assert mockFlashBorrower's deltas (not actor's — actor is not the borrower here)
+        t(mockUnderlyingAfter <= mockUnderlyingBefore, "SP-64: mockFlashBorrower underlying increased from flash loan");
+        eq(mockPtAfter, mockPtBefore, "SP-64: mockFlashBorrower PT changed from flash loan");
+        // SP-18: fee from observed mockFlashBorrower underlying delta
+        property_flashLoanFeeFloored(mockUnderlyingBefore - mockUnderlyingAfter, amount);
     }
 
     function fizz_skipTime(uint256 amount) public {
@@ -123,7 +131,8 @@ abstract contract OVRFLOHandler is Properties {
         ghosts.ghost_lastDepositPtAmount = ptAmount;
         ghosts.ghost_lastOracleRate = mockOracle.rate();
         (, uint16 feeBps,,,,,) = vault.series(_market);
-        uint256 feeAmount = feeBps == 0 ? 0 : toUser * feeBps / 10_000;
+        // Observe fee from actor's underlying balance delta (not recomputed formula)
+        uint256 feeAmount = stateBefore.actorUnderlying - stateAfter.actorUnderlying;
         // Property assertions
         property_depositConservesSplit(toUser, toStream, ptAmount);
         property_depositToUserCapped(toUser, ptAmount);
@@ -135,7 +144,6 @@ abstract contract OVRFLOHandler is Properties {
         property_previewDepositMatches(toUser, toStream, feeAmount, _market, ptAmount);
         property_previewStreamMatches(toUser, toStream, _market, ptAmount);
         property_depositFloorsToUser(toUser, ptAmount, _market);
-        property_deposit_liveness(ptAmount);
         property_previewRate_matches_deposit(toUser, ptAmount);
         property_deposit_par_rate_boundary(toUser, toStream, ptAmount);
     }
