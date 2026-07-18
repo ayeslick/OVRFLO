@@ -33,7 +33,6 @@ web/.vercel
 web/.postcss-cache/
 web/reviews/
 node_modules/
-lcov.info
 .gas-snapshot
 
 # Agents
@@ -48,4 +47,7 @@ AGENTS.md
 
 # Fuzz build artifacts (regenerated per run)
 fizz_data/
+
+# Formal verification artifacts (regenerated per run)
+crytic-export/
 

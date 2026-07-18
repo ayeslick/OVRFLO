@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ideation: Web Markets Rebuild Tech Stack Evaluation</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --obsidian: #050505;
+    --carbon: #111111;
+    --graphite: #333333;
+    --chalk: #f4f4f4;
+    --dim: #888888;
+    --accent-cyan: #00e5ff;
+    --accent-gold: #ffcf00;
+    --positive: #4ade80;
+    --negative: #f87171;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--obsidian);
+    color: var(--chalk);
+    font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    font-weight: 400;
+    line-height: 1.55;
+    letter-spacing: -0.01em;
+    font-size: 15px;
+    -webkit-font-smoothing: antialiased;
+  }
+  .mono {
+    font-family: "IBM Plex Mono", "SF Mono", Menlo, Consolas, monospace;
+    font-variant-numeric: tabular-nums;
+  }
+  .container {
+    max-width: 920px;
+    margin-inline: auto;
+    padding: 3rem 2rem 5rem;
+  }
+  .grid-bg {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: -1;
+    background-image:
+      linear-gradient(to right, rgba(51,51,51,0.12) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(51,51,51,0.12) 1px, transparent 1px);
+    background-size: 40px 40px;
+  }
+  header.doc-head {
+    border-bottom: 1px solid var(--graphite);
+    padding-bottom: 2rem;
+    margin-bottom: 3rem;
+  }
+  .eyebrow {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--dim);
+    margin-bottom: 0.75rem;
+  }
+  h1 {
+    font-size: 1.75rem;
+    font-weight: 500;
+    letter-spacing: -0.02em;
+    margin: 0 0 1.25rem;
+    line-height: 1.2;
+  }
+  .meta-strip {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1.5rem;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.78rem;
+    color: var(--dim);
+    margin-top: 1rem;
+  }
+  .meta-strip span { color: var(--chalk); }
+  .meta-strip .label { color: var(--dim); margin-right: 0.4rem; }
+  section {
+    margin-bottom: 3rem;
+  }
+  h2 {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: var(--dim);
+    margin: 0 0 1.25rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--graphite);
+    font-weight: 500;
+  }
+  h3 {
+    font-size: 1.1rem;
+    font-weight: 500;
+    margin: 0 0 0.75rem;
+    letter-spacing: -0.01em;
+  }
+  p { margin: 0 0 1rem; }
+  .prose { max-width: 72ch; }
+  .grounding-block {
+    border: 1px solid var(--graphite);
+    background: var(--carbon);
+    padding: 1.25rem 1.5rem;
+    font-size: 0.9rem;
+  }
+  .grounding-block p { margin-bottom: 0.6rem; }
+  .grounding-block p:last-child { margin-bottom: 0; }
+  .grounding-block .src { color: var(--dim); font-family: "IBM Plex Mono", monospace; font-size: 0.78rem; }
+  .axes-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+  .axes-list li {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.78rem;
+    padding: 0.35rem 0.6rem;
+    border: 1px solid var(--graphite);
+    color: var(--chalk);
+  }
+  .jump-list {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 1.5rem;
+    border: 1px solid var(--graphite);
+    background: var(--carbon);
+  }
+  .jump-list li { border-bottom: 1px solid var(--graphite); }
+  .jump-list li:last-child { border-bottom: none; }
+  .jump-list a {
+    display: flex;
+    align-items: baseline;
+    gap: 0.75rem;
+    padding: 0.6rem 1rem;
+    color: var(--chalk);
+    text-decoration: none;
+    font-size: 0.88rem;
+  }
+  .jump-list a:hover { background: var(--obsidian); }
+  .jump-list .num {
+    font-family: "IBM Plex Mono", monospace;
+    color: var(--dim);
+    font-size: 0.78rem;
+    min-width: 1.5rem;
+  }
+  .jump-list .axis-tag {
+    margin-left: auto;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.72rem;
+    color: var(--dim);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+  .idea-card {
+    border: 1px solid var(--graphite);
+    background: var(--carbon);
+    padding: 1.5rem;
+    margin-bottom: 1.25rem;
+  }
+  .idea-card .card-head {
+    display: flex;
+    align-items: baseline;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+    flex-wrap: wrap;
+  }
+  .idea-card .id-chip {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.78rem;
+    color: var(--accent-cyan);
+    border: 1px solid var(--accent-cyan);
+    padding: 0.15rem 0.4rem;
+    line-height: 1;
+  }
+  .idea-card.gold .id-chip { color: var(--accent-gold); border-color: var(--accent-gold); }
+  .idea-card h3 { margin: 0; flex: 1; min-width: 0; }
+  .idea-card .conf-cx {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.72rem;
+    color: var(--dim);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    display: flex;
+    gap: 1rem;
+  }
+  .idea-card .conf-cx span span { color: var(--chalk); }
+  .field {
+    margin-bottom: 0.75rem;
+    font-size: 0.9rem;
+  }
+  .field-label {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--dim);
+    margin-right: 0.4rem;
+  }
+  .field-body { color: var(--chalk); }
+  .field-body .basis-tag {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.72rem;
+    padding: 0.1rem 0.35rem;
+    border: 1px solid var(--graphite);
+    color: var(--dim);
+    margin-right: 0.4rem;
+  }
+  .field-body .basis-tag.direct { color: var(--positive); border-color: var(--positive); }
+  .field-body .basis-tag.external { color: var(--accent-cyan); border-color: var(--accent-cyan); }
+  .field-body .basis-tag.reasoned { color: var(--accent-gold); border-color: var(--accent-gold); }
+  code, .code {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.82em;
+    color: var(--chalk);
+    background: var(--obsidian);
+    padding: 0.05rem 0.3rem;
+    border: 1px solid var(--graphite);
+  }
+  .reject-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+  }
+  .reject-table th {
+    font-family: "IBM Plex Mono", monospace;
+    text-transform: uppercase;
+    font-size: 0.72rem;
+    letter-spacing: 0.1em;
+    color: var(--dim);
+    text-align: left;
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid var(--graphite);
+    font-weight: 500;
+  }
+  .reject-table td {
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid var(--graphite);
+    vertical-align: top;
+  }
+  .reject-table tr:last-child td { border-bottom: none; }
+  .reject-table .num {
+    font-family: "IBM Plex Mono", monospace;
+    color: var(--dim);
+    width: 2.5rem;
+  }
+  .reject-table .reason { color: var(--dim); }
+  footer.composition-signal {
+    margin-top: 4rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--graphite);
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.72rem;
+    color: var(--dim);
+  }
+  footer.composition-signal code { font-size: 0.78rem; }
+  .pick-callout {
+    border: 1px solid var(--accent-cyan);
+    background: rgba(0, 229, 255, 0.04);
+    padding: 1rem 1.25rem;
+    margin: 1rem 0 2rem;
+    font-size: 0.92rem;
+  }
+  .pick-callout .label {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--accent-cyan);
+    margin-right: 0.5rem;
+  }
+  @media (max-width: 700px) {
+    .container { padding: 2rem 1rem 3rem; }
+    h1 { font-size: 1.4rem; }
+    .idea-card { padding: 1.1rem; }
+  }
+</style>
+</head>
+<body>
+<div class="grid-bg"></div>
+<div class="container">
+
+<header class="doc-head">
+  <div class="eyebrow">IDEATION · TECH STACK EVALUATION</div>
+  <h1>Web Markets Rebuild &mdash; Tech Stack Evaluation</h1>
+  <div class="meta-strip">
+    <div><span class="label mono">date</span><span class="mono">2026-07-18</span></div>
+    <div><span class="label mono">topic</span><span class="mono">web-markets-rebuild-tech-stack</span></div>
+    <div><span class="label mono">mode</span><span class="mono">repo-grounded</span></div>
+    <div><span class="label mono">focus</span><span class="mono">2026-07-18-002-feat-web-markets-rebuild-plan.md stack choices</span></div>
+  </div>
+</header>
+
+<section id="grounding">
+  <h2>Grounding Context</h2>
+  <div class="grounding-block prose">
+    <p><strong>Plan under evaluation.</strong> <code>docs/plans/2026-07-18-002-feat-web-markets-rebuild-plan.md</code> specifies a greenfield <code>web/</code> rebuild on Next.js 16.2 (static export) + wagmi 3.7 + viem 2.55 + TanStack Query 5 + Tailwind 4 + Reown AppKit + Vitest 4 + <code>@wagmi/cli</code> foundry plugin for ABI typegen, with the Envio indexer pinned at 2.32.x and the existing CSP / static-export-verify / banned-patterns / ModalErrorBoundary infra carried over.</p>
+    <p><strong>Current installed stack</strong> (<code>web/package.json</code>, verified this run): Next <code>^16.1.6</code>, wagmi <code>^2.15.4</code> (v2, not v3), viem <code>^2.31.3</code>, <code>@reown/appkit</code> <code>^1.7.3</code>, <code>@tanstack/react-query</code> <code>^5.72.2</code>, Tailwind <code>^4.1.4</code>, Vitest <code>^4.0.18</code>, TypeScript <code>^5.8.3</code>. The app uses <code>output: "export"</code> with <code>scripts/build-csp.mjs</code>, <code>scripts/verify-static-export.mjs</code>, <code>scripts/check-banned-patterns.sh</code>, a class-component <code>ModalErrorBoundary</code>, and env-validation Vitest tests. The stale <code>calculateMinFeeWei</code> entry in <code>web/lib/contracts.ts:153</code> (cited by the plan as the drift that broke the old app) is confirmed present.</p>
+    <p><strong>Institutional learnings</strong> (<code>docs/solutions/</code>): pattern #1 (ALWAYS REQUIRED) &mdash; Envio GraphQL indexer is the sanctioned Sablier stream discovery path; log-scan fallback is banned by <code>check-banned-patterns.sh</code>. Pattern #2 (ALWAYS REQUIRED) &mdash; no <code>forge script --broadcast</code> on local Anvil forks. Pattern #3 (ALWAYS REQUIRED) &mdash; owned <code>ModalErrorBoundary</code> with <code>onReset</code> remount contract; <code>react-error-boundary</code> explicitly rejected. Patterns #18/#19 &mdash; external ABIs are documentation, not ground truth; verify with <code>cast call</code>. The five Web UI writeups (2026-04-21) document Next 15 / wagmi 2.x shapes; the architectural rules survive the v3 migration, the code snippets do not.</p>
+    <p><strong>External research</strong> (web, 2026-07-18): for no-SSR/no-SEO wallet dapps, Vite + React SPA is the 2026 default recommendation; Next.js static export is common but carries framework weight for file-based routing only. wagmi v3 shipped Nov 2025 with connectors moved to peer deps; RainbowKit has no v3 support (discussion rainbow-me/rainbowkit#2575 unanswered); Reown AppKit is the healthiest-maintained modal but its wagmi v3 peer range was NOT explicitly confirmed in any fetched source. <code>@wagmi/cli</code> foundry plugin is the documented ABI typegen path. Tailwind 4 <code>@theme</code> compiles tokens to native CSS custom properties, collapsing the Tailwind-vs-vanilla-CSS dichotomy. E2E pattern is two-tier: Vitest + mock connector for logic, Playwright + Anvil + injected mock EIP-1193 for release gating (rombrom.com pattern); Synpress is the heavier alternative.</p>
+    <p class="src">Sources: plan file; <code>web/package.json</code>; <code>docs/solutions/patterns/ovrflo-critical-patterns.md</code>; 5 Web UI / LocalSeeding writeups; web research digest (wagmi.sh, rainbow-me/rainbowkit#2575, designrevision.com, patterns.dev, aave/interface, synpress.io, rombrom.com, tailwindcss.com/blog, docs.envio.dev).</p>
+  </div>
+</section>
+
+<section id="axes">
+  <h2>Topic Axes</h2>
+  <ul class="axes-list">
+    <li>framework / rendering</li>
+    <li>wallet / connection</li>
+    <li>abi-pipeline</li>
+    <li>data / caching</li>
+    <li>testing-stack</li>
+  </ul>
+</section>
+
+<section id="ranked-ideas">
+  <h2>Ranked Ideas</h2>
+
+  <div class="pick-callout">
+    <span class="label">Top pick</span>
+    Add a Stack Spike 0 that verifies <code>@reown/appkit</code> + <code>@reown/appkit-adapter-wagmi</code> against wagmi v3 in a scratch branch before committing the stack. It is the single cheapest de-risking step and gates the entire KTD2 decision; the plan's existing "first implementation step" spike covers the wagmi rename but not AppKit v3 peer compatibility, which no fetched source confirmed.
+  </div>
+
+  <ul class="jump-list">
+    <li><a href="#i1"><span class="num">1.</span> Stack Spike 0: verify wagmi v3 + Reown AppKit v3 peer compatibility<span class="axis-tag">wallet / connection</span></a></li>
+    <li><a href="#i2"><span class="num">2.</span> Keep Envio indexer on pinned 2.32.x &mdash; do not switch to Ponder or viem getLogs<span class="axis-tag">data / caching</span></a></li>
+    <li><a href="#i3"><span class="num">3.</span> Add a drift test for the hand-maintained Sablier ABI against the vendored envio ABI<span class="axis-tag">abi-pipeline</span></a></li>
+    <li><a href="#i4"><span class="num">4.</span> Consider Vite + React SPA as the framework shape instead of Next 16 static export<span class="axis-tag">framework / rendering</span></a></li>
+    <li><a href="#i5"><span class="num">5.</span> Evaluate a custom DESIGN.md-compliant connect modal as a fallback if AppKit theming fights back<span class="axis-tag">wallet / connection</span></a></li>
+    <li><a href="#i6"><span class="num">6.</span> Promote Playwright + Anvil + mock EIP-1193 E2E from stretch goal to release gate<span class="axis-tag">testing-stack</span></a></li>
+  </ul>
+
+  <article class="idea-card" id="i1">
+    <div class="card-head">
+      <span class="id-chip mono">1</span>
+      <h3>Stack Spike 0: verify wagmi v3 + Reown AppKit v3 peer compatibility</h3>
+      <div class="conf-cx"><span>Conf <span>High</span></span><span>Cx <span>Low</span></span></div>
+    </div>
+    <div class="field"><span class="field-label mono">Description</span><span class="field-body">Before scaffolding any hooks, stand up a scratch branch that installs <code>wagmi@^3.7</code>, <code>@reown/appkit@latest</code>, <code>@reown/appkit-adapter-wagmi@latest</code>, and the v3-mandated connector peer deps (MetaMask SDK, WalletConnect, Coinbase). Render <code>createAppKit</code>, connect an injected wallet, and confirm <code>useConnection</code>/<code>useWriteContract</code> compile and fire. Only on green does the stack decision lock.</span></div>
+    <div class="field"><span class="field-label mono">Axis</span><span class="field-body">wallet / connection</span></div>
+    <div class="field"><span class="field-label mono">Basis</span><span class="field-body"><span class="basis-tag external mono">external</span>Web research: wagmi v3 shipped Nov 2025 with connectors moved to peer deps (wevm/wagmi PR #4857); RainbowKit has no v3 support (rainbow-me/rainbowkit#2575 unanswered); Reown AppKit is actively released (v1.8.21, May 2026) but "verify its wagmi v3 peer range in package.json before committing; none of the fetched sources explicitly confirmed v3 compatibility." <span class="basis-tag direct mono">direct</span><code>web/package.json</code> currently pins <code>@reown/appkit ^1.7.3</code> against <code>wagmi ^2.15.4</code> &mdash; the v3 combination has never run in this repo.</span></div>
+    <div class="field"><span class="field-label mono">Rationale</span><span class="field-body">KTD2 asserts "Reown AppKit (the only modal whose peer range admits wagmi v3)" as a settled fact, but the evidence base for that assertion is negative (RainbowKit is out) not positive (AppKit v3 is in). The plan's existing "first implementation step of the data layer" spike covers the wagmi rename surface, not AppKit compatibility. A failed spike is the cheapest possible signal that the stack needs a contingency (Survivor 5, or defer to wagmi v2) before the rebuild is underway.</span></div>
+    <div class="field"><span class="field-label mono">Downsides</span><span class="field-body">Adds a half-day of spike work before P2. If the spike fails, the plan needs a KTD2 amendment and a fallback decision before scaffolding can start &mdash; but that is exactly the failure mode the spike exists to surface early.</span></div>
+  </article>
+
+  <article class="idea-card" id="i2">
+    <div class="card-head">
+      <span class="id-chip mono">2</span>
+      <h3>Keep Envio indexer on pinned 2.32.x &mdash; do not switch to Ponder or viem getLogs</h3>
+      <div class="conf-cx"><span>Conf <span>High</span></span><span>Cx <span>Low</span></span></div>
+    </div>
+    <div class="field"><span class="field-label mono">Description</span><span class="field-body">Affirm the plan's P6 choice: extend the vendored Envio indexer on V2 conventions. Resist the temptation to swap to Ponder (simpler ops) or plain viem <code>getLogs</code> (zero infra) that external research surfaces as mainstream 2026 alternatives. Carry the existing GraphQL payload-shape contract test (<code>web/tests/lib/sablier.test.ts</code>) forward verbatim.</span></div>
+    <div class="field"><span class="field-label mono">Axis</span><span class="field-body">data / caching</span></div>
+    <div class="field"><span class="field-label mono">Basis</span><span class="field-body"><span class="basis-tag direct mono">direct</span>Pattern #1 (ALWAYS REQUIRED) in <code>docs/solutions/patterns/ovrflo-critical-patterns.md</code>: "ERC-721 current ownership comes from the token/indexer, never from derived protocol events." <code>web/scripts/check-banned-patterns.sh:32-33</code> greps to ban <code>watchContractEvent.*Deposited</code> and <code>getLogs.*Deposited</code>. The transferred-Sablier-NFTs writeup (high severity) documents three failed log-scan approaches and calls dual scanner+indexer coexistence "a maintenance trap." <span class="basis-tag external mono">external</span>Web research lists Ponder and viem getLogs as Envio alternatives but notes Envio is mainstream for self-hosted small protocols.</span></div>
+    <div class="field"><span class="field-label mono">Rationale</span><span class="field-body">The highest-severity frontend learning in this repo is that log-scan stream discovery is wrong and the Envio GraphQL indexer is the sanctioned path. Switching indexers throws away the contract test that enforces pattern #1 and reopens a closed high-severity bug. The external alternatives are mainstream in the abstract but do not carry this repo's institutional scar tissue.</span></div>
+    <div class="field"><span class="field-label mono">Downsides</span><span class="field-body">Envio carries a Docker/Postgres ops dependency and a pinned 2.32.x version (V3 migration is explicitly deferred). That cost is already paid and already documented; switching would trade a known cost for an unknown one.</span></div>
+  </article>
+
+  <article class="idea-card" id="i3">
+    <div class="card-head">
+      <span class="id-chip mono">3</span>
+      <h3>Add a drift test for the hand-maintained Sablier ABI against the vendored envio ABI</h3>
+      <div class="conf-cx"><span>Conf <span>High</span></span><span>Cx <span>Low</span></span></div>
+    </div>
+    <div class="field"><span class="field-label mono">Description</span><span class="field-body">KTD3 makes the Sablier Lockup ABI permanently hand-maintained (the repo's <code>ISablierV2LockupLinear.sol</code> is a narrow interface; frontend-only functions like <code>withdrawMax</code>, <code>getRecipient</code>, ERC-721 approvals have no forge artifact). Add a Vitest test that asserts every function signature in the hand-written <code>sablierLockupAbi</code> matches the corresponding entry in <code>tools/envio/abi/SablierV2LockupLinear.json</code> (and/or a Sourcify fetch). Generate from neither; just fail CI on drift.</span></div>
+    <div class="field"><span class="field-label mono">Axis</span><span class="field-body">abi-pipeline</span></div>
+    <div class="field"><span class="field-label mono">Basis</span><span class="field-body"><span class="basis-tag direct mono">direct</span>KTD3 specifies a CI drift test for the <code>@wagmi/cli</code>-generated OVRFLO ABIs ("a Vitest test asserting expected function/error names exist in the generated ABI") but explicitly carves out the Sablier ABI from generation. The stale <code>calculateMinFeeWei</code> at <code>web/lib/contracts.ts:153</code> is the exact failure mode a drift test would have caught. Patterns #18/#19: external ABIs are documentation, not ground truth; verify empirically with <code>cast call</code>. <span class="basis-tag direct mono">direct</span><code>tools/envio/abi/SablierV2LockupLinear.json</code> already exists in-repo as a verified source the plan cites.</span></div>
+    <div class="field"><span class="field-label mono">Rationale</span><span class="field-body">The <code>@wagmi/cli</code> plugin fixes drift for OVRFLO contracts structurally. The hand-maintained Sablier ABI is the one remaining drift surface, and it is the surface that already broke the old app (<code>calculateMinFeeWei</code>). A signature-equality test against the envio ABI closes that gap without the risk of pulling in unverified entries that full generation would introduce.</span></div>
+    <div class="field"><span class="field-label mono">Downsides</span><span class="field-body">The envio ABI may itself drift from the deployed Sablier v1.1.2; the test should pin to the vendored JSON copy, not a live fetch. Adds one small Vitest file. Negligible cost.</span></div>
+  </article>
+
+  <article class="idea-card" id="i4">
+    <div class="card-head">
+      <span class="id-chip mono">4</span>
+      <h3>Consider Vite + React SPA as the framework shape instead of Next 16 static export</h3>
+      <div class="conf-cx"><span>Conf <span>Medium</span></span><span>Cx <span>Medium</span></span></div>
+    </div>
+    <div class="field"><span class="field-label mono">Description</span><span class="field-body">A genuine alternative to surface, not a switch to make blindly. Under Vite + React 19 the app is a single-page dashboard (the current <code>web/app/</code> has one route plus modals), CSP ships as a static <code>_headers</code> entry instead of a build script, and the Next framework weight (RSC disabled by <code>output: "export"</code>, <code>headers()</code> a no-op, route handlers unused) is removed. The ModalErrorBoundary, banned-patterns grep, env-validation tests, and DESIGN.md tokens are all framework-agnostic and carry over unchanged.</span></div>
+    <div class="field"><span class="field-label mono">Axis</span><span class="field-body">framework / rendering</span></div>
+    <div class="field"><span class="field-label mono">Basis</span><span class="field-body"><span class="basis-tag external mono">external</span>Web research (designrevision.com Jul 2026, patterns.dev "React 2026"): "for a wallet-gated, no-SEO, no-SSR app, Vite + React SPA is the default recommendation; Next.js earns its keep only with SSR/RSC/route handlers &mdash; all of which static export disables." Aave uses Next; Uniswap runs a React monorepo (RN-web-driven, not applicable). <span class="basis-tag direct mono">direct</span><code>web/next.config.ts:9</code> sets <code>output: "export"</code>; <code>web/scripts/build-csp.mjs:8</code> comments "Next's <code>headers()</code> API is a no-op under <code>output: 'export'</code>" &mdash; the CSP script exists solely to work around that no-op. The app has one page (<code>web/app/page.tsx</code>) plus modals.</span></div>
+    <div class="field"><span class="field-label mono">Rationale</span><span class="field-body">The plan chose Next 16 because the team already has Next infra and familiarity. That is a real factor, but the rebuild is greenfield (KTD1), so the effort is comparable either way. The CSP scripts are the strongest Next lock-in signal, and they exist because of a Next limitation, not a Next feature. Worth a deliberate "did we pick Next by default or on purpose?" conversation before the rebuild starts.</span></div>
+    <div class="field"><span class="field-label mono">Downsides</span><span class="field-body">Loses the team's Next muscle memory, <code>next/font</code> (Inter + IBM Plex Mono load becomes a Vite font setup), and <code>next/image</code> (unused on a dark data UI). The CSP scripts need rewriting as static headers &mdash; simpler, but new code. TanStack Router would be overkill for one page; a minimal react-router or hand-rolled view switch suffices. This is a "consider seriously" survivor, not a "switch" recommendation.</span></div>
+  </article>
+
+  <article class="idea-card" id="i5">
+    <div class="card-head">
+      <span class="id-chip mono">5</span>
+      <h3>Evaluate a custom DESIGN.md-compliant connect modal as a fallback if AppKit theming fights back</h3>
+      <div class="conf-cx"><span>Conf <span>Medium</span></span><span>Cx <span>Medium</span></span></div>
+    </div>
+    <div class="field"><span class="field-label mono">Description</span><span class="field-body">If Spike 0 (Survivor 1) passes but AppKit's default modal proves hard to bend to "Architectural Dark" (sharp corners, no shadows, obsidian/carbon/graphite, mono, 1px borders), have a fallback design: wagmi's <code>useConnect</code> + injected + <code>WalletConnectConnector</code> directly, with a ~200-line custom modal that matches DESIGN.md for free. Sidesteps the entire modal-library release-cadence dependency and tightens CSP (no remote AppKit assets/analytics).</span></div>
+    <div class="field"><span class="field-label mono">Axis</span><span class="field-body">wallet / connection</span></div>
+    <div class="field"><span class="field-label mono">Basis</span><span class="field-body"><span class="basis-tag direct mono">direct</span><code>DESIGN.md</code> sections 1, 4, 9: "No Drop Shadows," "Cards: no border-radius (or maximum 2px), sharp edges, 1px graphite borders," "Modals are sharp-cornered carbon panels with a 1px graphite border, centered on an obsidian scrim. No blur, no shadow." <code>web/public/_headers:2</code> CSP currently allows <code>https://*.reown.com</code> and <code>https://*.walletconnect.com</code> for script/frame/connect sources &mdash; AppKit loads remote assets. <span class="basis-tag external mono">external</span>Web research: "a viem/wagmi-native custom connect UI sidesteps the modal-library lag entirely and plays better with strict CSP."</span></div>
+    <div class="field"><span class="field-label mono">Rationale</span><span class="field-body">AppKit's default modal is rounded, shadowed, and themed for mass market &mdash; the opposite of DESIGN.md. Heavy theming overrides are possible but fragile across AppKit releases. A custom modal is more code to own but it is small, matches the design system by construction, and removes a third-party release-cadence dependency. This is a contingency for when AppKit theming proves heavier than expected, not a primary direction.</span></div>
+    <div class="field"><span class="field-label mono">Downsides</span><span class="field-body">WalletConnect QR rendering needs a library (<code>qr-code-styling</code> or similar) or canvas work &mdash; the one non-trivial piece. Loses AppKit's analytics/social logins (likely a pro for this team). More modal code to maintain. Only worth it if AppKit theming fights back; if AppKit bends cleanly to DESIGN.md, keep AppKit.</span></div>
+  </article>
+
+  <article class="idea-card" id="i6">
+    <div class="card-head">
+      <span class="id-chip mono">6</span>
+      <h3>Promote Playwright + Anvil + mock EIP-1193 E2E from stretch goal to release gate</h3>
+      <div class="conf-cx"><span>Conf <span>Medium</span></span><span>Cx <span>Medium-High</span></span></div>
+    </div>
+    <div class="field"><span class="field-label mono">Description</span><span class="field-body">The plan's P5 makes a Playwright script of the 8-step two-wallet flow "a stretch goal, not a gate." Promote it: use the rombrom.com pattern (Playwright + Anvil mainnet fork + an injected mock EIP-1193 provider instead of a real MetaMask extension) to encode the manual checklist as a deterministic CI gate. Tenderly Virtual TestNets are the CI fallback if Anvil-in-CI proves flaky.</span></div>
+    <div class="field"><span class="field-label mono">Axis</span><span class="field-body">testing-stack</span></div>
+    <div class="field"><span class="field-label mono">Basis</span><span class="field-body"><span class="basis-tag external mono">external</span>Web research: "The observed 2025-2026 pattern is two-tier: Vitest + mock connector for logic, and Playwright-based E2E for release gating. A leaner alternative avoids the [MetaMask] extension entirely: Playwright + Anvil + an injected mock EIP-1193 provider &mdash; deterministic and CI-friendly, matches your local-Anvil-fork dev loop." Tenderly Virtual TestNets (docs current Jul 2026) are positioned for CI/staging forks. <span class="basis-tag direct mono">direct</span>The plan's P5 gate is currently "all 8 steps + <code>npm run lint:security && test && build</code>" where the 8 steps are a manual checklist; KTD9 specifies provider-tree integration tests for write flows but does not gate on a full E2E flow.</span></div>
+    <div class="field"><span class="field-label mono">Rationale</span><span class="field-body">For a DeFi protocol handling real value, a manual checklist as the release gate is a judgment call worth interrogating. The mock-EIP-1193 pattern is deterministic, reuses the existing local Anvil fork, and catches integration drift (ABI rename, CSP regression, contract/event mismatch) that unit tests miss. The existing <code>web/tests/components/ModalErrorBoundary.test.tsx</code> and provider-tree tests are the unit tier; this closes the E2E tier.</span></div>
+    <div class="field"><span class="field-label mono">Downsides</span><span class="field-body">Anvil-in-CI can be flaky (Tenderly VTN mitigates). More CI setup and maintenance. The manual 8-step flow is already documented and works for a small team. Whether this is "best" depends on release cadence and team size &mdash; surface it as a bar-raising option, not a forced upgrade.</span></div>
+  </article>
+
+</section>
+
+<section id="rejections">
+  <h2>Rejection Summary</h2>
+  <table class="reject-table">
+    <thead>
+      <tr><th class="num">#</th><th>Idea</th><th>Reason Rejected</th></tr>
+    </thead>
+    <tbody>
+      <tr><td class="num">1</td><td>Defer wagmi v3, stay on wagmi v2 for the rebuild</td><td class="reason">Duplicates Survivor 1's spike. Rebuilding on a frozen major (KTD2: "wagmi v2 is frozen") is technical debt from day one. Only a contingency if Spike 0 fails AND a custom modal (Survivor 5) is rejected.</td></tr>
+      <tr><td class="num">2</td><td>Replace Envio with Ponder (simpler TS-native ops)</td><td class="reason">Refuted by pattern #1 (ALWAYS REQUIRED) and the highest-severity frontend learning in the repo (transferred-Sablier-NFTs writeup). Switching indexers reopens a closed high-severity bug and throws away <code>web/tests/lib/sablier.test.ts</code>. Inverted into Survivor 2.</td></tr>
+      <tr><td class="num">3</td><td>Replace Envio with plain viem <code>getLogs</code> scanning</td><td class="reason">Same refutation as above, plus <code>check-banned-patterns.sh:32-33</code> explicitly bans <code>getLogs.*Deposited</code> and the institutional learning calls log-scan fallback "a maintenance trap."</td></tr>
+      <tr><td class="num">4</td><td>Generate the Sablier ABI from the envio ABI instead of hand-maintaining</td><td class="reason">Generation risks pulling in unverified entries; the plan's hand-maintained small known surface + empirical <code>cast call</code> verification (patterns #18/#19) is the right discipline. Survivor 3 captures the drift hardening without generation.</td></tr>
+      <tr><td class="num">5</td><td>Use TanStack Router instead of Next file-based routing</td><td class="reason">Only relevant under Vite (Survivor 4). The app is a single dashboard page plus modals &mdash; routing is trivial, TanStack Router is overkill. Subsumed by Survivor 4.</td></tr>
+      <tr><td class="num">6</td><td>Add React Server Components / SSR</td><td class="reason">Impossible under <code>output: "export"</code> (RSC requires a server). The plan already disables this. Not a real option.</td></tr>
+      <tr><td class="num">7</td><td>Switch to Synpress for E2E</td><td class="reason">Synpress wraps a real MetaMask extension; the rombrom.com pattern (Playwright + Anvil + injected mock EIP-1193) is deterministic, CI-friendly, and matches the local-Anvil-fork dev loop. Subsumed by Survivor 6.</td></tr>
+      <tr><td class="num">8</td><td>Add a CI drift-detection step that regenerates OVRFLO ABIs and fails on diff</td><td class="reason">Already in the plan (KTD3: "regeneration in the build script so stale artifacts fail loudly"). Not a new idea.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<footer class="composition-signal">Composed 2026-07-18T<em>local</em> by ce-ideate from <code>docs/plans/2026-07-18-002-feat-web-markets-rebuild-plan.md</code> + repo profile + <code>docs/solutions/</code> learnings + 2026-07-18 web research digest.</footer>
+
+</div>
+</body>
+</html>
