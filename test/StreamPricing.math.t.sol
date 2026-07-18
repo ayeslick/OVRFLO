@@ -2,7 +2,7 @@
 pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
-import {PRBMath} from "prb-math/PRBMath.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {StreamPricing} from "../src/StreamPricing.sol";
 
 /// @dev Harness to expose internal pure functions for testing.
@@ -48,7 +48,7 @@ contract StreamPricingMathTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     function test_Factor_AlwaysAtLeastWAD(uint16 aprBps, uint256 ttm) public pure {
-        ttm = ttm % (1000 * 365 days); // bound to avoid PRBMath mulDiv overflow
+        ttm = ttm % (1000 * 365 days); // bound to avoid Math.mulDiv overflow
         assertGe(StreamPricing.factor(aprBps, ttm), WAD);
     }
 
@@ -87,7 +87,7 @@ contract StreamPricingMathTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     function test_GrossPrice_NeverExceedsRemaining(uint128 remaining, uint16 aprBps, uint256 ttm) public view {
-        ttm = ttm % (1000 * 365 days); // bound to avoid PRBMath mulDiv overflow
+        ttm = ttm % (1000 * 365 days); // bound to avoid Math.mulDiv overflow
         vm.assume(remaining > 0);
         uint256 price = h.grossPrice(remaining, aprBps, ttm);
         assertLe(price, uint256(remaining));
@@ -129,7 +129,7 @@ contract StreamPricingMathTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     function test_Obligation_NeverBelowBorrowAmount(uint256 borrowAmount, uint16 aprBps, uint256 ttm) public view {
-        ttm = ttm % (1000 * 365 days); // bound to avoid PRBMath mulDiv overflow
+        ttm = ttm % (1000 * 365 days); // bound to avoid Math.mulDiv overflow
         vm.assume(borrowAmount > 0 && borrowAmount <= type(uint128).max);
         // Skip cases that overflow uint128 (tested separately)
         uint256 f = StreamPricing.factor(aprBps, ttm);
@@ -195,7 +195,7 @@ contract StreamPricingMathTest is Test {
         returns (uint128)
     {
         uint256 f = StreamPricing.factor(aprBps, timeToMaturity);
-        uint256 value = PRBMath.mulDiv(borrowAmount, f, WAD);
+        uint256 value = Math.mulDiv(borrowAmount, f, WAD);
         if (mulmod(borrowAmount, f, WAD) != 0) {
             value += 1;
         }
@@ -210,7 +210,7 @@ contract StreamPricingMathTest is Test {
         public
         view
     {
-        ttm = ttm % (1000 * 365 days); // bound to avoid PRBMath mulDiv overflow
+        ttm = ttm % (1000 * 365 days); // bound to avoid Math.mulDiv overflow
         // Bound borrowAmount to uint128 first so the overflow-check below cannot panic
         // on `borrowAmount * f` exceeding uint256 (obligation >= borrowAmount since
         // f >= WAD, so any borrowAmount > uint128.max reverts in both implementations).

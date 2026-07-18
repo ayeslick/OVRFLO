@@ -169,7 +169,7 @@ contract OVRFLOFlashLoanForkTest is OVRFLOForkBase {
         assertGt(liveRate, 0, "live rate should be > 0");
 
         // Compute expected fee: (amount * rate / 1e18) * feeBps / 10000 — matches contract's mulDiv order
-        // forge-lint: disable-next-line(divide-before-multiply) — intentional, matches PRBMath.mulDiv order
+        // forge-lint: disable-next-line(divide-before-multiply) — intentional, matches Math.mulDiv order
         uint256 expectedFee = (FLASH_AMOUNT * liveRate / 1e18) * 50 / 10_000;
 
         uint256 treasuryBefore = IERC20(WSTETH).balanceOf(TREASURY);
@@ -194,7 +194,7 @@ contract OVRFLOFlashLoanForkTest is OVRFLOForkBase {
         factory.setFlashFeeBps(address(ovrflo), 100);
 
         uint256 liveRate = ovrflo.previewRate(PRIMARY_MARKET);
-        // forge-lint: disable-next-line(divide-before-multiply) — intentional, matches PRBMath.mulDiv order
+        // forge-lint: disable-next-line(divide-before-multiply) — intentional, matches Math.mulDiv order
         uint256 expectedFee = (FLASH_AMOUNT * liveRate / 1e18) * 100 / 10_000;
 
         uint256 treasuryBefore = IERC20(WSTETH).balanceOf(TREASURY);

@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {PRBMath} from "prb-math/PRBMath.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {ISablierV2LockupLinear} from "../interfaces/ISablierV2LockupLinear.sol";
@@ -98,7 +97,7 @@ library StreamPricing {
     /// @param timeToMaturity Seconds remaining until series maturity.
     /// @return f The WAD-scale factor.
     function factor(uint16 aprBps, uint256 timeToMaturity) internal pure returns (uint256) {
-        return WAD + PRBMath.mulDiv(timeToMaturity, uint256(aprBps) * WAD, YEAR * BASIS_POINTS);
+        return WAD + Math.mulDiv(timeToMaturity, uint256(aprBps) * WAD, YEAR * BASIS_POINTS);
     }
 
     /// @notice Discounted present value of a stream's remaining face value.
@@ -109,7 +108,7 @@ library StreamPricing {
     /// @param timeToMaturity Seconds remaining until series maturity.
     /// @return price The discounted gross price, in ovrfloToken units.
     function grossPrice(uint128 remaining, uint16 aprBps, uint256 timeToMaturity) internal pure returns (uint256) {
-        return PRBMath.mulDiv(uint256(remaining), WAD, factor(aprBps, timeToMaturity));
+        return Math.mulDiv(uint256(remaining), WAD, factor(aprBps, timeToMaturity));
     }
 
     /// @notice Future value (at maturity) of a borrowed amount under `aprBps`.
@@ -157,7 +156,7 @@ library StreamPricing {
     /// @return feeAmount The fee, in the same units as `borrowAmount`.
     function fee(uint256 borrowAmount, uint16 feeBps) internal pure returns (uint256) {
         if (feeBps == 0) return 0;
-        return PRBMath.mulDiv(borrowAmount, feeBps, BASIS_POINTS);
+        return Math.mulDiv(borrowAmount, feeBps, BASIS_POINTS);
     }
 
     /// @notice Validates that a market has a configured series and has not matured.

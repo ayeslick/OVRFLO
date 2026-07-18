@@ -4,7 +4,7 @@ pragma solidity ^0.8.20;
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/security/ReentrancyGuard.sol";
-import {PRBMath} from "prb-math/PRBMath.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {OVRFLOToken} from "./OVRFLOToken.sol";
 import {IPendleOracle} from "../interfaces/IPendleOracle.sol";
 import {ISablierV2LockupLinear} from "../interfaces/ISablierV2LockupLinear.sol";
@@ -349,7 +349,7 @@ contract OVRFLO is ReentrancyGuard {
     /// @dev Splits a PT deposit into the immediate mint and the streamed remainder,
     ///      capping the immediate portion at face value (rate can exceed 1e18 briefly).
     function _computeSplit(uint256 ptAmount, uint256 rateE18) internal pure returns (uint256 toUser, uint256 toStream) {
-        toUser = PRBMath.mulDiv(ptAmount, rateE18, WAD);
+        toUser = Math.mulDiv(ptAmount, rateE18, WAD);
         if (toUser > ptAmount) toUser = ptAmount;
         toStream = ptAmount - toUser;
         require(toStream > 0, "OVRFLO: nothing to stream");
@@ -467,7 +467,7 @@ contract OVRFLO is ReentrancyGuard {
         require(amount <= marketTotalDeposited[market], "OVRFLO: exceeds deposited");
 
         uint256 rateE18 = _freshRate(market, info.twapDurationFixed);
-        uint256 fee = StreamPricing.fee(PRBMath.mulDiv(amount, rateE18, WAD), flashFeeBps);
+        uint256 fee = StreamPricing.fee(Math.mulDiv(amount, rateE18, WAD), flashFeeBps);
 
         IERC20(ptToken).safeTransfer(msg.sender, amount);
 
