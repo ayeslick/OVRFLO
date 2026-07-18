@@ -186,8 +186,8 @@ contract OVRFLOLendingMainnetForkTest is OVRFLOForkBase {
         lending = new OVRFLOLending(address(factory), address(ovrflo), address(ovrflo.sablierLL()));
     }
 
-    function _loanOutstanding(OVRFLOLending lending, uint256 loanId) internal view returns (uint128) {
-        (,, uint128 obligation, uint128 drawn, uint128 repaid,) = lending.loans(loanId);
+    function _loanOutstanding(OVRFLOLending lending_, uint256 loanId) internal view returns (uint128) {
+        (,, uint128 obligation, uint128 drawn, uint128 repaid,) = lending_.loans(loanId);
         return obligation - drawn - repaid;
     }
 

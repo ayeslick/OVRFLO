@@ -20,10 +20,6 @@ contract MockLendingFactory {
         infos[core] = Info({treasury: treasury, underlying: underlying, ovrfloToken: ovrfloToken});
     }
 
-    function setMarketApproved(address core, address market, bool approved) external {
-        isMarketApproved[core][market] = approved;
-    }
-
     function ovrfloInfo(address core)
         external
         view
@@ -38,7 +34,6 @@ contract MockLendingFactory {
 /// @dev Includes both 5-arg (hardcoded ptToken/oracle) and 7-arg (explicit) setSeries overloads.
 contract MockLendingCore {
     struct Series {
-        bool approved;
         uint32 twapDurationFixed;
         uint16 feeBps;
         uint256 expiryCached;
@@ -50,11 +45,8 @@ contract MockLendingCore {
 
     mapping(address => Series) internal seriesInfo;
 
-    function setSeries(address market, bool approved, uint256 expiryCached, address ovrfloToken, address underlying)
-        external
-    {
+    function setSeries(address market, uint256 expiryCached, address ovrfloToken, address underlying) external {
         seriesInfo[market] = Series({
-            approved: approved,
             twapDurationFixed: 30 minutes,
             feeBps: 0,
             expiryCached: expiryCached,
@@ -67,7 +59,6 @@ contract MockLendingCore {
 
     function setSeries(
         address market,
-        bool approved,
         uint256 expiryCached,
         address ptToken,
         address ovrfloToken,
@@ -75,7 +66,6 @@ contract MockLendingCore {
         address oracle
     ) external {
         seriesInfo[market] = Series({
-            approved: approved,
             twapDurationFixed: 30 minutes,
             feeBps: 0,
             expiryCached: expiryCached,

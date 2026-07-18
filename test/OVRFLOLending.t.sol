@@ -67,8 +67,7 @@ contract OVRFLOLendingTest is Test {
         expiry = block.timestamp + 365 days;
 
         factory.setInfo(address(core), TREASURY, address(underlying), address(ovrfloToken));
-        factory.setMarketApproved(address(core), MARKET, true);
-        core.setSeries(MARKET, true, expiry, address(ovrfloToken), address(underlying));
+        core.setSeries(MARKET, expiry, address(ovrfloToken), address(underlying));
 
         lending = new OVRFLOLending(address(factory), address(core), address(sablier));
     }
@@ -802,8 +801,7 @@ contract OVRFLOLendingTest is Test {
         MockLendingSablier shortSablier = new MockLendingSablier();
 
         shortFactory.setInfo(address(shortCore), TREASURY, address(shortToken), address(shortOvrfloToken));
-        shortFactory.setMarketApproved(address(shortCore), MARKET, true);
-        shortCore.setSeries(MARKET, true, expiry, address(shortOvrfloToken), address(shortToken));
+        shortCore.setSeries(MARKET, expiry, address(shortOvrfloToken), address(shortToken));
 
         OVRFLOLending shortLending = new OVRFLOLending(address(shortFactory), address(shortCore), address(shortSablier));
 
@@ -1155,8 +1153,7 @@ contract OVRFLOLendingTest is Test {
         uint256 liquidity1 = _supplyLiquidity(BUYER, 50 ether);
 
         address market2 = address(0x6666);
-        factory.setMarketApproved(address(core), market2, true);
-        core.setSeries(market2, true, expiry, address(ovrfloToken), address(underlying));
+        core.setSeries(market2, expiry, address(ovrfloToken), address(underlying));
         underlying.mint(STRANGER, 60 ether);
         vm.startPrank(STRANGER);
         underlying.approve(address(lending), 60 ether);
@@ -1744,7 +1741,6 @@ contract OVRFLOLendingTest is Test {
         lending.createBorrowerLoanPool(liquidityIds, 301, 100 ether, 0);
 
         assertEq(lending.nextLoanId(), 1, "pool id not incremented");
-        assertEq(lending.nextLoanId(), 1, "loan id not incremented");
         (,,, uint128 cap) = lending.liquidityPositions(liquidityId);
         assertEq(cap, 100 ether, "liquidity capacity not consumed");
         assertEq(sablier.ownerOf(301), SELLER, "stream still owned by borrower");
@@ -2103,7 +2099,6 @@ contract OVRFLOLendingTest is Test {
 
         // Pool/loan not created
         assertEq(lending.nextLoanId(), 1, "pool not created");
-        assertEq(lending.nextLoanId(), 1, "loan not created");
     }
 
     /// @dev Cannot pledge the same stream to two loan pools.

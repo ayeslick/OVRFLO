@@ -253,14 +253,12 @@ contract OVRFLOLendingInvariantHandler is Test {
     function claimLoanPoolShare(uint256 poolIdSeed, uint256 amountSeed) public {
         if (lending.nextLoanId() == 1) return;
         uint256 loanPoolId = bound(poolIdSeed, 1, lending.nextLoanId() - 1);
-        uint256 loanId = loanPoolId;
-        if (loanId == 0) return;
-        (, uint256 streamId,,,, bool closed) = lending.loans(loanId);
+        (, uint256 streamId,,,, bool closed) = lending.loans(loanPoolId);
         if (closed) {
             // Closed loan: claims come from accumulated proceeds only
         } else {
             // Open loan: set withdrawable so harvest can succeed
-            (,, uint128 obligation, uint128 drawn, uint128 repaid,) = lending.loans(loanId);
+            (,, uint128 obligation, uint128 drawn, uint128 repaid,) = lending.loans(loanPoolId);
             uint128 outstanding = obligation - drawn - repaid;
             if (outstanding > 0) {
                 sablier.setWithdrawable(streamId, outstanding);
@@ -280,7 +278,7 @@ contract OVRFLOLendingInvariantHandler is Test {
         uint128 amount = uint128(bound(amountSeed, 1, 50 ether));
         vm.prank(contributor);
         try lending.claimLoanPoolShare(loanPoolId, amount) {
-            _syncLenderReceived(loanId);
+            _syncLenderReceived(loanPoolId);
         } catch {}
     }
 
@@ -353,8 +351,7 @@ contract OVRFLOLendingInvariantTest is Test {
         expiry = block.timestamp + 365 days;
 
         factory.setInfo(address(core), TREASURY, address(underlying), address(ovrfloToken));
-        factory.setMarketApproved(address(core), MARKET, true);
-        core.setSeries(MARKET, true, expiry, address(ovrfloToken), address(underlying));
+        core.setSeries(MARKET, expiry, address(ovrfloToken), address(underlying));
 
         lending = new OVRFLOLending(address(factory), address(core), address(sablier));
 
@@ -410,9 +407,7 @@ contract OVRFLOLendingInvariantTest is Test {
     function invariant_PoolConservation() public view {
         uint256 nextPool = lending.nextLoanId();
         for (uint256 p = 1; p < nextPool; p++) {
-            uint256 loanId = p;
-            if (loanId == 0) continue;
-            (,,, uint128 drawn, uint128 repaid,) = lending.loans(loanId);
+            (,,, uint128 drawn, uint128 repaid,) = lending.loans(p);
             uint128 proceeds = lending.loanPoolProceeds(p);
 
             uint128 sumReceived;
@@ -430,16 +425,14 @@ contract OVRFLOLendingInvariantTest is Test {
     function invariant_ReceivedLeProRataEntitlement() public view {
         uint256 nextPool = lending.nextLoanId();
         for (uint256 p = 1; p < nextPool; p++) {
-            uint256 loanId = p;
-            if (loanId == 0) continue;
-            (,, uint128 obligation, uint128 drawn, uint128 repaid, bool closed) = lending.loans(loanId);
+            (,, uint128 obligation, uint128 drawn, uint128 repaid, bool closed) = lending.loans(p);
             (,,, uint128 totalContributed) = lending.loanPools(p);
             if (totalContributed == 0) continue;
 
             uint256 recovered = uint256(drawn) + uint256(repaid);
             if (!closed) {
                 uint128 outstanding = obligation - drawn - repaid;
-                uint128 withdrawable = sablier.withdrawableAmountOf(loans_streamId(loanId));
+                uint128 withdrawable = sablier.withdrawableAmountOf(loans_streamId(p));
                 recovered += uint256(withdrawable < outstanding ? withdrawable : outstanding);
             }
 

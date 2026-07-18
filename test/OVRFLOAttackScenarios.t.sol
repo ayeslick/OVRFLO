@@ -266,8 +266,7 @@ contract OVRFLOAttackScenariosTest is VaultMockHelpers {
         uint256 expiry = block.timestamp + 365 days;
 
         factory.setInfo(address(core), TREASURY, address(lendingUnderlying), address(lendingOvrfloToken));
-        factory.setMarketApproved(address(core), BOOK_MARKET, true);
-        core.setSeries(BOOK_MARKET, true, expiry, address(lendingOvrfloToken), address(lendingUnderlying));
+        core.setSeries(BOOK_MARKET, expiry, address(lendingOvrfloToken), address(lendingUnderlying));
 
         OVRFLOLending lending = new OVRFLOLending(address(factory), address(core), address(lendingSablier));
 

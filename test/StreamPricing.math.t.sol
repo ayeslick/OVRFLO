@@ -216,9 +216,10 @@ contract StreamPricingMathTest is Test {
         // f >= WAD, so any borrowAmount > uint128.max reverts in both implementations).
         vm.assume(borrowAmount <= type(uint128).max);
         // Skip cases that overflow uint128 — both implementations revert identically
-        // there (covered by test_Obligation_OverflowsReverts).
+        // there (covered by test_Obligation_OverflowsReverts). Use strict < so the
+        // ceiling rounding (+1) can't push the result to exactly uint128.max + 1.
         uint256 f = StreamPricing.factor(aprBps, ttm);
-        vm.assume(borrowAmount * f / WAD <= type(uint128).max);
+        vm.assume(borrowAmount * f / WAD < type(uint128).max);
 
         assertEq(
             uint256(h.obligation(borrowAmount, aprBps, ttm)),

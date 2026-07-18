@@ -452,7 +452,7 @@ contract OVRFLO is ReentrancyGuard {
     /// @dev PT is sent before the callback and pulled back via safeTransferFrom after.
     ///      A fee in underlying is charged to the treasury. nonReentrant blocks nested
     ///      flash loans but does not block deposit/wrap/unwrap during the callback.
-    ///      Fee rate is ceiling-capped at FEE_MAX_BPS by the factory at setSeriesApproved time (KTD4).
+    ///      Flash fee rate is ceiling-capped at FLASH_FEE_MAX_BPS by setFlashFeeBps (admin-gated).
     /// @param ptToken The PT token address to flash-loan
     /// @param amount The amount of PT tokens to lend
     /// @param data Arbitrary data passed to the borrower's callback

@@ -1347,9 +1347,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
         uint256 nextPool = lending.nextLoanId();
         for (uint256 i = 1; i < nextPool; i++) {
             (address poolBorrower,,,) = lending.loanPools(i);
-            uint256 loanId = i;
-            if (loanId == 0) continue;
-            (address loanBorrower,,,,,) = lending.loans(loanId);
+            (address loanBorrower,,,,,) = lending.loans(i);
             t(poolBorrower == loanBorrower, "GL-69: pool.borrower != loan.borrower");
         }
     }
@@ -1445,7 +1443,6 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
                 sumReceived += lending.loanPoolReceived(p, actors[a]);
             }
             uint256 loanId = p;
-            if (loanId == 0) continue;
             (,,, uint128 drawn, uint128 repaid,) = lending.loans(loanId);
             eq(uint256(proceeds) + sumReceived, uint256(drawn) + uint256(repaid), "GL-74: pool conservation violated");
         }
@@ -1510,7 +1507,6 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
         for (uint256 p = 1; p < nextPool; p++) {
             uint128 proceeds = lending.loanPoolProceeds(p);
             uint256 loanId = p;
-            if (loanId == 0) continue;
             (,,, uint128 drawn, uint128 repaid,) = lending.loans(loanId);
             // Proceeds are internally tracked (drawn + repaid - received); a direct
             // ovrfloToken transfer to lending cannot increase proceeds beyond recovery.

@@ -113,7 +113,7 @@ contract StreamPricingTest is Test {
         // After U4, on-chain market approval is derived from the core's series config
         // (`ptToken != address(0)`); the factory `isMarketApproved` mapping is no longer
         // consulted. An unconfigured series (ptToken = 0) reverts MarketNotApproved.
-        core.setSeries(MARKET_ONE, false, expiry, address(0), address(ovrfloToken), address(underlying), ORACLE);
+        core.setSeries(MARKET_ONE, expiry, address(0), address(ovrfloToken), address(underlying), ORACLE);
 
         vm.expectRevert(StreamPricing.MarketNotApproved.selector);
         harness.requireEligible(address(factory), address(sablier), address(core), MARKET_ONE, streamId);
@@ -151,15 +151,8 @@ contract StreamPricingTest is Test {
         // Set expiryCached above uint40 max — passes the maturity check (far future)
         // but triggers the overflow guard in requireEligible before getEndTime comparison
         address overflowMarket = address(0x9999);
-        factory.setMarketApproved(address(core), overflowMarket, true);
         core.setSeries(
-            overflowMarket,
-            true,
-            uint256(type(uint40).max) + 1,
-            PT_TOKEN,
-            address(ovrfloToken),
-            address(underlying),
-            ORACLE
+            overflowMarket, uint256(type(uint40).max) + 1, PT_TOKEN, address(ovrfloToken), address(underlying), ORACLE
         );
         sablier.setStream(99, address(core), ovrfloToken, uint40(expiry), 0, false, 100 ether, 30 ether);
         vm.expectRevert(StreamPricing.WrongEndTime.selector);
@@ -200,8 +193,7 @@ contract StreamPricingTest is Test {
 
     function test_EligibilityRejectsCrossMarketMaturityMismatch() public {
         uint256 otherExpiry = expiry + 30 days;
-        core.setSeries(MARKET_TWO, true, otherExpiry, PT_TOKEN, address(ovrfloToken), address(underlying), ORACLE);
-        factory.setMarketApproved(address(core), MARKET_TWO, true);
+        core.setSeries(MARKET_TWO, otherExpiry, PT_TOKEN, address(ovrfloToken), address(underlying), ORACLE);
 
         vm.expectRevert(StreamPricing.WrongEndTime.selector);
         harness.requireEligible(address(factory), address(sablier), address(core), MARKET_TWO, streamId);
@@ -220,8 +212,7 @@ contract StreamPricingTest is Test {
         internal
     {
         factory.setInfo(address(core), TREASURY, address(underlying), address(ovrfloToken));
-        factory.setMarketApproved(address(core), market, true);
-        core.setSeries(market, true, maturity, PT_TOKEN, address(ovrfloToken), address(underlying), ORACLE);
+        core.setSeries(market, maturity, PT_TOKEN, address(ovrfloToken), address(underlying), ORACLE);
         sablier.setStream(id, address(core), ovrfloToken, uint40(maturity), 0, false, deposited, withdrawn);
     }
 }
