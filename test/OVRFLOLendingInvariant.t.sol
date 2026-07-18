@@ -197,11 +197,11 @@ contract OVRFLOLendingInvariantHandler is Test {
         try lending.createBorrowerLoanPool(liquidityIds, streamId, targetBorrow, minAcceptable) returns (
             uint256 loanPoolId
         ) {
-            (,,, uint128 totalContributed,) = lending.loanPools(loanPoolId);
+            (,,, uint128 totalContributed) = lending.loanPools(loanPoolId);
             totalActiveLiquidityCapacity -= totalContributed;
 
-            uint256 loanId = lending.loanPoolLoanId(loanPoolId);
-            (,,, uint128 obligation,,,) = lending.loans(loanId);
+            uint256 loanId = loanPoolId;
+            (,, uint128 obligation,,,) = lending.loans(loanId);
             _recordLoanGhost(loanId, borrower, streamId, obligation);
         } catch {}
     }
@@ -213,7 +213,7 @@ contract OVRFLOLendingInvariantHandler is Test {
     function repayLoan(uint256 loanIdSeed, uint256 amountSeed) public {
         if (lending.nextLoanId() == 1) return;
         uint256 loanId = bound(loanIdSeed, 1, lending.nextLoanId() - 1);
-        (address borrower,,, uint128 obligation, uint128 drawn, uint128 repaid, bool closed) = lending.loans(loanId);
+        (address borrower,, uint128 obligation, uint128 drawn, uint128 repaid, bool closed) = lending.loans(loanId);
         if (borrower == address(0) || closed) return;
 
         uint128 outstanding = obligation - drawn - repaid;
@@ -223,7 +223,7 @@ contract OVRFLOLendingInvariantHandler is Test {
 
         vm.prank(borrower);
         try lending.repayLoan(loanId, amount) {
-            (,,,,,, bool closed2) = lending.loans(loanId);
+            (,,,,, bool closed2) = lending.loans(loanId);
             if (closed2) {
                 loanGhosts[loanId].closed = true;
             }
@@ -233,7 +233,7 @@ contract OVRFLOLendingInvariantHandler is Test {
     function closeLoan(uint256 loanIdSeed) public {
         if (lending.nextLoanId() == 1) return;
         uint256 loanId = bound(loanIdSeed, 1, lending.nextLoanId() - 1);
-        (address borrower,, uint256 streamId, uint128 obligation, uint128 drawn, uint128 repaid, bool closed) =
+        (address borrower, uint256 streamId, uint128 obligation, uint128 drawn, uint128 repaid, bool closed) =
             lending.loans(loanId);
         if (borrower == address(0) || closed) return;
 
@@ -252,16 +252,16 @@ contract OVRFLOLendingInvariantHandler is Test {
     ///      from the known actors, sets withdrawable on the stream so harvest can succeed,
     ///      and calls claimLoanPoolShare. Syncs lenderReceived from actual contract state.
     function claimLoanPoolShare(uint256 poolIdSeed, uint256 amountSeed) public {
-        if (lending.nextLoanPoolId() == 1) return;
-        uint256 loanPoolId = bound(poolIdSeed, 1, lending.nextLoanPoolId() - 1);
-        uint256 loanId = lending.loanPoolLoanId(loanPoolId);
+        if (lending.nextLoanId() == 1) return;
+        uint256 loanPoolId = bound(poolIdSeed, 1, lending.nextLoanId() - 1);
+        uint256 loanId = loanPoolId;
         if (loanId == 0) return;
-        (,, uint256 streamId,,,, bool closed) = lending.loans(loanId);
+        (, uint256 streamId,,,, bool closed) = lending.loans(loanId);
         if (closed) {
             // Closed loan: claims come from accumulated proceeds only
         } else {
             // Open loan: set withdrawable so harvest can succeed
-            (,,, uint128 obligation, uint128 drawn, uint128 repaid,) = lending.loans(loanId);
+            (,, uint128 obligation, uint128 drawn, uint128 repaid,) = lending.loans(loanId);
             uint128 outstanding = obligation - drawn - repaid;
             if (outstanding > 0) {
                 sablier.setWithdrawable(streamId, outstanding);
@@ -291,7 +291,7 @@ contract OVRFLOLendingInvariantHandler is Test {
 
     /// @dev Syncs the ghost lenderReceived from actual contract loanPoolReceived state.
     function _syncLenderReceived(uint256 loanId) internal {
-        uint256 loanPoolId = lending.loanToLoanPool(loanId);
+        uint256 loanPoolId = loanId;
         if (loanPoolId == 0) return;
         uint128 totalReceived;
         for (uint256 i = 0; i < 3; i++) {
@@ -409,11 +409,11 @@ contract OVRFLOLendingInvariantTest is Test {
     ///         This verifies that recovered funds are fully accounted for: either still
     ///         in the pool's proceeds pot or already paid out to lenders.
     function invariant_PoolConservation() public view {
-        uint256 nextPool = lending.nextLoanPoolId();
+        uint256 nextPool = lending.nextLoanId();
         for (uint256 p = 1; p < nextPool; p++) {
-            uint256 loanId = lending.loanPoolLoanId(p);
+            uint256 loanId = p;
             if (loanId == 0) continue;
-            (,,,, uint128 drawn, uint128 repaid,) = lending.loans(loanId);
+            (,,, uint128 drawn, uint128 repaid,) = lending.loans(loanId);
             uint128 proceeds = lending.loanPoolProceeds(p);
 
             uint128 sumReceived;
@@ -421,9 +421,7 @@ contract OVRFLOLendingInvariantTest is Test {
                 sumReceived += lending.loanPoolReceived(p, handler.getActor(i));
             }
             assertEq(
-                uint256(proceeds) + uint256(sumReceived),
-                uint256(drawn) + uint256(repaid),
-                "pool conservation violated"
+                uint256(proceeds) + uint256(sumReceived), uint256(drawn) + uint256(repaid), "pool conservation violated"
             );
         }
     }
@@ -431,12 +429,12 @@ contract OVRFLOLendingInvariantTest is Test {
     /// @notice R11: For every loan pool, each lender's received <= their pro-rata entitlement.
     ///         received[pool][lender] <= contribution * recovered / totalContributed.
     function invariant_ReceivedLeProRataEntitlement() public view {
-        uint256 nextPool = lending.nextLoanPoolId();
+        uint256 nextPool = lending.nextLoanId();
         for (uint256 p = 1; p < nextPool; p++) {
-            uint256 loanId = lending.loanPoolLoanId(p);
+            uint256 loanId = p;
             if (loanId == 0) continue;
-            (,,, uint128 obligation, uint128 drawn, uint128 repaid, bool closed) = lending.loans(loanId);
-            (,,, uint128 totalContributed,) = lending.loanPools(p);
+            (,, uint128 obligation, uint128 drawn, uint128 repaid, bool closed) = lending.loans(loanId);
+            (,,, uint128 totalContributed) = lending.loanPools(p);
             if (totalContributed == 0) continue;
 
             uint256 recovered = uint256(drawn) + uint256(repaid);
@@ -459,7 +457,7 @@ contract OVRFLOLendingInvariantTest is Test {
 
     /// @dev Helper to read streamId from a loan without full destructuring.
     function loans_streamId(uint256 loanId) internal view returns (uint256) {
-        (,, uint256 streamId,,,,) = lending.loans(loanId);
+        (, uint256 streamId,,,,) = lending.loans(loanId);
         return streamId;
     }
 }

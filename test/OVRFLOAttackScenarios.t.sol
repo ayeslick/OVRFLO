@@ -313,7 +313,7 @@ contract OVRFLOAttackScenariosTest is VaultMockHelpers {
         uint256 loanId = 1;
 
         // Read loan state
-        (,,, uint128 obligation,,,) = lending.loans(loanId);
+        (,, uint128 obligation,,,) = lending.loans(loanId);
 
         // Borrower repays partial via repayLoan (increases recovered, loanPoolProceeds, loan stays open)
         uint128 partialRepay = obligation / 2;
@@ -329,7 +329,7 @@ contract OVRFLOAttackScenariosTest is VaultMockHelpers {
         lending.closeLoan(loanId);
 
         // Loan should be closed and NFT returned
-        (,,,,,, bool closed) = lending.loans(loanId);
+        (,,,,, bool closed) = lending.loans(loanId);
         assertTrue(closed, "loan should be closed after closeLoan");
 
         assertEq(lendingSablier.ownerOf(streamId), borrowerAddr, "NFT should be returned to borrower");

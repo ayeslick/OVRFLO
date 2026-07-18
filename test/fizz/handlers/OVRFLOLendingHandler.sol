@@ -45,9 +45,8 @@ abstract contract OVRFLOLendingHandler is Properties {
     function _claimable(uint256 loanPoolId, address account) internal view returns (uint256) {
         uint128 contribution = lending.loanPoolContributions(loanPoolId, account);
         if (contribution == 0) return 0;
-        (,,, uint128 totalContributed,) = lending.loanPools(loanPoolId);
-        (,, uint256 streamId, uint128 obligation, uint128 drawn, uint128 repaid, bool closed) =
-            lending.loans(lending.loanPoolLoanId(loanPoolId));
+        (,,, uint128 totalContributed) = lending.loanPools(loanPoolId);
+        (, uint256 streamId, uint128 obligation, uint128 drawn, uint128 repaid, bool closed) = lending.loans(loanPoolId);
         uint256 recovered = uint256(drawn) + uint256(repaid);
         if (!closed) {
             uint128 outstanding = obligation - drawn - repaid;
@@ -191,9 +190,9 @@ abstract contract OVRFLOLendingHandler is Properties {
         uint256 start = clampBetween(loanId, 1, maxLoan - 1);
         for (uint256 offset; offset < maxLoan - 1; offset++) {
             uint256 candidate = (start - 1 + offset) % (maxLoan - 1) + 1;
-            (,,, uint128 obligation, uint128 drawn, uint128 repaid, bool closed) = lending.loans(candidate);
+            (,, uint128 obligation, uint128 drawn, uint128 repaid, bool closed) = lending.loans(candidate);
             uint128 outstanding = obligation - drawn - repaid;
-            (,, uint256 streamId,,,,) = lending.loans(candidate);
+            (, uint256 streamId,,,,) = lending.loans(candidate);
             if (!closed && MockSablier(SABLIER_ADDR).withdrawableAmountOf(streamId) >= outstanding) {
                 oVRFLOLending_closeLoan(candidate);
                 return;
@@ -207,7 +206,7 @@ abstract contract OVRFLOLendingHandler is Properties {
         uint256 start = clampBetween(loanId, 1, maxLoan - 1);
         for (uint256 offset; offset < maxLoan - 1; offset++) {
             uint256 candidate = (start - 1 + offset) % (maxLoan - 1) + 1;
-            (address borrower,,, uint128 obligation, uint128 drawn, uint128 repaid, bool closed) =
+            (address borrower,, uint128 obligation, uint128 drawn, uint128 repaid, bool closed) =
                 lending.loans(candidate);
             uint256 maxRepay = obligation - drawn - repaid;
             uint256 balance = ovrfloToken.balanceOf(actor);
@@ -226,7 +225,7 @@ abstract contract OVRFLOLendingHandler is Properties {
     }
 
     function oVRFLOLending_claimLoanPoolShare_clamped(uint256 loanPoolId, uint128 amount) public {
-        uint256 maxPool = lending.nextLoanPoolId();
+        uint256 maxPool = lending.nextLoanId();
         if (maxPool <= 1) return;
         uint256 start = clampBetween(loanPoolId, 1, maxPool - 1);
         for (uint256 offset; offset < maxPool - 1; offset++) {
@@ -361,7 +360,7 @@ abstract contract OVRFLOLendingHandler is Properties {
         snapshotBefore();
         uint256 loanPoolId = lending.createBorrowerLoanPool(liquidityIds, streamId, targetBorrow, minAcceptable);
         ghosts.ghost_lastPoolId = loanPoolId;
-        ghosts.ghost_lastLoanId = lending.loanPoolLoanId(loanPoolId);
+        ghosts.ghost_lastLoanId = loanPoolId;
         // Ghost: record stream withdrawn amount at creation for GL-70
         ghost_loanStreamWithdrawnAtCreation[ghosts.ghost_lastLoanId] =
             ISablierV2LockupLinear(SABLIER_ADDR).getWithdrawnAmount(streamId);
@@ -375,7 +374,6 @@ abstract contract OVRFLOLendingHandler is Properties {
         property_quoteMatchesObligation(loanPoolId, actualBorrow);
         property_fullBorrowFastPath();
         property_poolContributionsSum();
-        property_createPoolIdIncrements();
         property_createPoolLoanState();
         property_createPoolContributionsSet();
         property_noSelfMatch();
@@ -397,8 +395,8 @@ abstract contract OVRFLOLendingHandler is Properties {
 
     function oVRFLOLending_closeLoan(uint256 loanId) public asActor {
         ghosts.ghost_lastLoanId = loanId;
-        ghosts.ghost_lastPoolId = lending.loanToLoanPool(loanId);
-        (,, uint256 streamId,,,,) = lending.loans(loanId);
+        ghosts.ghost_lastPoolId = loanId;
+        (, uint256 streamId,,,,) = lending.loans(loanId);
         ghosts.ghost_lastStreamId = streamId;
         snapshotBefore();
         lending.closeLoan(loanId);
@@ -415,8 +413,8 @@ abstract contract OVRFLOLendingHandler is Properties {
 
     function oVRFLOLending_repayLoan(uint256 loanId, uint128 amount) public asActor {
         ghosts.ghost_lastLoanId = loanId;
-        ghosts.ghost_lastPoolId = lending.loanToLoanPool(loanId);
-        (,, uint256 streamId,,,,) = lending.loans(loanId);
+        ghosts.ghost_lastPoolId = loanId;
+        (, uint256 streamId,,,,) = lending.loans(loanId);
         ghosts.ghost_lastStreamId = streamId;
         snapshotBefore();
         lending.repayLoan(loanId, amount);
@@ -437,8 +435,8 @@ abstract contract OVRFLOLendingHandler is Properties {
 
     function oVRFLOLending_claimLoanPoolShare(uint256 loanPoolId, uint128 amount) public asActor {
         ghosts.ghost_lastPoolId = loanPoolId;
-        ghosts.ghost_lastLoanId = lending.loanPoolLoanId(loanPoolId);
-        (,, uint256 streamId,,,,) = lending.loans(ghosts.ghost_lastLoanId);
+        ghosts.ghost_lastLoanId = loanPoolId;
+        (, uint256 streamId,,,,) = lending.loans(ghosts.ghost_lastLoanId);
         ghosts.ghost_lastStreamId = streamId;
         snapshotBefore();
         lending.claimLoanPoolShare(loanPoolId, amount);
@@ -626,7 +624,7 @@ abstract contract OVRFLOLendingHandler is Properties {
                 try lending.createBorrowerLoanPool(liquidityIds, streamId, targetBorrow, 0) returns (
                     uint256 loanPoolId
                 ) {
-                    uint256 loanId = lending.loanPoolLoanId(loanPoolId);
+                    uint256 loanId = loanPoolId;
 
                     // Record withdrawal baseline for GL-70 (scenario bypasses the handler)
                     ghost_loanStreamWithdrawnAtCreation[loanId] =
@@ -650,7 +648,7 @@ abstract contract OVRFLOLendingHandler is Properties {
                                 for (uint256 i = 0; i < actors.length; i++) {
                                     sumReceived += lending.loanPoolReceived(loanPoolId, actors[i]);
                                 }
-                                (,,,, uint128 drawn, uint128 repaid,) = lending.loans(loanId);
+                                (,,, uint128 drawn, uint128 repaid,) = lending.loans(loanId);
                                 eq(
                                     uint256(proceeds) + sumReceived,
                                     uint256(drawn) + uint256(repaid),

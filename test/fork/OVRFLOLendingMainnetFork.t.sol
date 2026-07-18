@@ -188,7 +188,7 @@ contract OVRFLOLendingMainnetForkTest is OVRFLOForkBase {
     }
 
     function _loanOutstanding(OVRFLOLending lending, uint256 loanId) internal view returns (uint128) {
-        (,,, uint128 obligation, uint128 drawn, uint128 repaid,) = lending.loans(loanId);
+        (,, uint128 obligation, uint128 drawn, uint128 repaid,) = lending.loans(loanId);
         return obligation - drawn - repaid;
     }
 
@@ -200,7 +200,7 @@ contract OVRFLOLendingMainnetForkTest is OVRFLOForkBase {
         uint256 streamId,
         uint256 loanPoolId
     ) internal {
-        (,,, uint128 obligation, uint128 drawn, uint128 repaid, bool closed) = lending.loans(loanId);
+        (,, uint128 obligation, uint128 drawn, uint128 repaid, bool closed) = lending.loans(loanId);
         uint128 outstanding = obligation - drawn - repaid;
         assertEq(drawn, obligation);
         assertEq(repaid, 0);

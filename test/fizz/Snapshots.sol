@@ -21,9 +21,8 @@ abstract contract Snapshots is Base {
         uint256 lendingOvrfloTokenBalance; // 9: ovrfloToken.balanceOf(lending)
         // Entity-specific state (keyed by ghost_last* IDs)
         uint128 loanPoolProceeds; // 10: loanPoolProceeds[loanPoolId]
-        uint128 poolTotalObligation; // 11: loanPools[loanPoolId].totalObligation
-        uint128 poolTotalContributed; // 12: loanPools[loanPoolId].totalContributed
-        uint128 loanObligation; // 13: loans[loanId].obligation
+        uint128 poolTotalContributed; // 11: loanPools[loanPoolId].totalContributed
+        uint128 loanObligation; // 12: loans[loanId].obligation
         uint128 loanDrawn; // 14: loans[loanId].drawn
         uint128 loanRepaid; // 15: loans[loanId].repaid
         bool loanClosed; // 16: loans[loanId].closed
@@ -39,7 +38,6 @@ abstract contract Snapshots is Base {
         uint256 nextLiquidityId; // 22
         uint256 nextSaleListingId; // 23
         uint256 nextLoanId; // 24
-        uint256 nextLoanPoolId; // 25
         // Vault config
         uint16 flashFeeBps; // 26
         bool flashLoanPaused; // 27
@@ -71,17 +69,14 @@ abstract contract Snapshots is Base {
         // Entity-specific state (defaults to 0/false for non-existent entities)
         state.loanPoolProceeds = lending.loanPoolProceeds(ghosts.ghost_lastPoolId);
         if (ghosts.ghost_lastPoolId > 0) {
-            (,,, uint128 totalContributed, uint128 totalObligation) = lending.loanPools(ghosts.ghost_lastPoolId);
-            state.poolTotalObligation = totalObligation;
+            (,,, uint128 totalContributed) = lending.loanPools(ghosts.ghost_lastPoolId);
             state.poolTotalContributed = totalContributed;
         } else {
-            state.poolTotalObligation = 0;
             state.poolTotalContributed = 0;
         }
 
         if (ghosts.ghost_lastLoanId > 0) {
-            (,,, uint128 obligation, uint128 drawn, uint128 repaid, bool closed) =
-                lending.loans(ghosts.ghost_lastLoanId);
+            (,, uint128 obligation, uint128 drawn, uint128 repaid, bool closed) = lending.loans(ghosts.ghost_lastLoanId);
             state.loanObligation = obligation;
             state.loanDrawn = drawn;
             state.loanRepaid = repaid;
@@ -134,7 +129,6 @@ abstract contract Snapshots is Base {
         state.nextLiquidityId = lending.nextLiquidityId();
         state.nextSaleListingId = lending.nextSaleListingId();
         state.nextLoanId = lending.nextLoanId();
-        state.nextLoanPoolId = lending.nextLoanPoolId();
 
         // Vault config
         state.flashFeeBps = vault.flashFeeBps();

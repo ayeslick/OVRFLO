@@ -229,7 +229,6 @@ library StreamPricing {
         uint128 withdrawn = lockup.getWithdrawnAmount(streamId);
         if (deposited <= withdrawn) revert RemainingZero();
 
-        eligibility =
-            Eligibility({seriesMaturity: expiryCached, remaining: deposited - withdrawn});
+        eligibility = Eligibility({seriesMaturity: expiryCached, remaining: deposited - withdrawn});
     }
 }

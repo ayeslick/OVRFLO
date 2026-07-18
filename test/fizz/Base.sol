@@ -66,13 +66,11 @@ abstract contract Base is StringUtils, Clamp {
     mapping(uint256 => uint128) internal ghost_loanObligationInit;
     mapping(uint256 => uint256) internal ghost_loanStreamIdInit;
     mapping(uint256 => address) internal ghost_loanBorrowerInit;
-    mapping(uint256 => address) internal ghost_loanLenderInit;
     mapping(uint256 => address) internal ghost_liquidityMakerInit;
     mapping(uint256 => uint16) internal ghost_liquidityAprBpsInit;
     mapping(uint256 => uint16) internal ghost_listingFeeBpsInit;
     mapping(uint256 => bool) internal ghost_listingFeeRecorded;
     mapping(uint256 => uint128) internal ghost_poolTotalContributedInit;
-    mapping(uint256 => uint128) internal ghost_poolTotalObligationInit;
     mapping(uint256 => mapping(address => uint128)) internal ghost_poolContributionsInit;
     mapping(address => address) internal ghost_seriesPtTokenInit;
     mapping(address => uint256) internal ghost_seriesExpiryInit;

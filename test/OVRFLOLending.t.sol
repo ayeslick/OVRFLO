@@ -18,7 +18,7 @@ contract ShortTransferERC20 is TestERC20 {
 /// @dev Harness to cover the _toUint128 overflow guard, which is unreachable from
 ///      the external ABI (every call site is pre-bounded). Also documents the
 ///      `loan not in pool` branch as defensive — loanPoolContributions are only written
-///      inside createBorrowerLoanPool, which always sets loanPoolLoanId, so a contributor
+///      inside createBorrowerLoanPool, which always creates a loan, so a contributor
 ///      with no loan cannot exist.
 contract LendingInternalHarness is OVRFLOLending {
     constructor(address factory, address core, address sablier) OVRFLOLending(factory, core, sablier) {}
@@ -452,7 +452,7 @@ contract OVRFLOLendingTest is Test {
         vm.prank(STRANGER);
         lending.closeLoan(loanId);
 
-        (,,,, uint128 drawn,, bool closed) = lending.loans(loanId);
+        (,,, uint128 drawn,, bool closed) = lending.loans(loanId);
         assertEq(drawn, 110 ether);
         assertTrue(closed);
         vm.prank(BUYER);
@@ -477,7 +477,7 @@ contract OVRFLOLendingTest is Test {
         sablier.setWithdrawable(30, 100 ether);
         lending.closeLoan(loanId);
 
-        (,,,, uint128 drawn,, bool closed) = lending.loans(loanId);
+        (,,, uint128 drawn,, bool closed) = lending.loans(loanId);
         assertEq(drawn, 110 ether, "40 harvested + 70 drawn by closeLoan");
         assertTrue(closed);
         vm.prank(BUYER);
@@ -495,7 +495,7 @@ contract OVRFLOLendingTest is Test {
         vm.prank(BUYER);
         lending.claimLoanPoolShare(loanPoolId, 110 ether);
 
-        (,,,, uint128 drawn, uint128 repaid, bool closed) = lending.loans(loanId);
+        (,,, uint128 drawn, uint128 repaid, bool closed) = lending.loans(loanId);
         assertEq(drawn, 110 ether);
         assertEq(repaid, 0);
         assertFalse(closed, "loan not auto-closed by claim");
@@ -504,7 +504,7 @@ contract OVRFLOLendingTest is Test {
         // closeLoan reclaims the empty stream (outstanding == 0, no draw needed)
         lending.closeLoan(loanId);
 
-        (,,,,,, bool closedAfter) = lending.loans(loanId);
+        (,,,,, bool closedAfter) = lending.loans(loanId);
         assertTrue(closedAfter);
         assertEq(sablier.ownerOf(21), SELLER, "NFT returned to borrower");
     }
@@ -525,7 +525,7 @@ contract OVRFLOLendingTest is Test {
         lending.repayLoan(loanId, 70 ether);
         vm.stopPrank();
 
-        (,,,, uint128 drawn, uint128 repaid, bool closed) = lending.loans(loanId);
+        (,,, uint128 drawn, uint128 repaid, bool closed) = lending.loans(loanId);
         assertEq(drawn, 0);
         assertEq(repaid, 110 ether);
         assertTrue(closed);
@@ -546,7 +546,7 @@ contract OVRFLOLendingTest is Test {
         lending.repayLoan(loanId, 25 ether);
         vm.stopPrank();
 
-        (,,,,, uint128 repaid, bool closed) = lending.loans(loanId);
+        (,,,, uint128 repaid, bool closed) = lending.loans(loanId);
         assertEq(repaid, 25 ether);
         assertFalse(closed);
         assertEq(sablier.ownerOf(23), address(lending));
@@ -561,7 +561,7 @@ contract OVRFLOLendingTest is Test {
         sablier.setWithdrawable(23, 85 ether);
         lending.closeLoan(loanId);
 
-        (,,,, uint128 drawn,, bool closedAfter) = lending.loans(loanId);
+        (,,, uint128 drawn,, bool closedAfter) = lending.loans(loanId);
         assertEq(drawn, 85 ether);
         assertTrue(closedAfter);
         vm.prank(BUYER);
@@ -624,7 +624,7 @@ contract OVRFLOLendingTest is Test {
         assertEq(underlying.balanceOf(address(lending)), 0);
         assertEq(sablier.ownerOf(25), address(lending));
 
-        (,,, uint128 obligation,,, bool closed) = lending.loans(loanId);
+        (,, uint128 obligation,,, bool closed) = lending.loans(loanId);
         assertEq(obligation, quotedObligation);
         assertFalse(closed);
 
@@ -634,7 +634,7 @@ contract OVRFLOLendingTest is Test {
         lending.repayLoan(loanId, 25 ether);
         vm.stopPrank();
 
-        (,,,, uint128 drawn, uint128 repaid,) = lending.loans(loanId);
+        (,,, uint128 drawn, uint128 repaid,) = lending.loans(loanId);
         uint128 outstanding = obligation - drawn - repaid;
         assertEq(drawn, 0);
         assertEq(repaid, 25 ether);
@@ -908,7 +908,7 @@ contract OVRFLOLendingTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     function test_Pool_NextPoolIdStartsAtOne() public view {
-        assertEq(lending.nextLoanPoolId(), 1);
+        assertEq(lending.nextLoanId(), 1);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -927,7 +927,7 @@ contract OVRFLOLendingTest is Test {
         assertEq(ovrfloToken.balanceOf(BUYER), 0, "lender does not receive directly");
         assertEq(sablier.ownerOf(72), SELLER, "stream returned to borrower");
 
-        (,,,, uint128 drawn,, bool closed) = lending.loans(loanId);
+        (,,, uint128 drawn,, bool closed) = lending.loans(loanId);
         assertEq(drawn, 110 ether);
         assertTrue(closed);
     }
@@ -1061,7 +1061,7 @@ contract OVRFLOLendingTest is Test {
         vm.stopPrank();
 
         // LoanPool state
-        (address borrower, uint16 aprBps, address market, uint128 totalContributed,) = lending.loanPools(loanPoolId);
+        (address borrower, uint16 aprBps, address market, uint128 totalContributed) = lending.loanPools(loanPoolId);
         assertEq(borrower, SELLER);
         assertEq(aprBps, 1000);
         assertEq(market, MARKET);
@@ -1079,15 +1079,13 @@ contract OVRFLOLendingTest is Test {
 
         // Loan
         {
-            (address loanBorrower, address lender, uint256 streamId, uint128 obligation,,, bool closed) =
-                lending.loans(1);
+            (address loanBorrower, uint256 streamId, uint128 obligation,,, bool closed) = lending.loans(1);
             assertEq(loanBorrower, SELLER);
-            assertEq(lender, address(lending));
             assertEq(streamId, 100);
             assertEq(obligation, 110 ether);
             assertFalse(closed);
         }
-        assertEq(lending.loanToLoanPool(1), loanPoolId);
+        assertEq(1, loanPoolId);
         assertEq(lending.loanPoolProceeds(loanPoolId), 0);
         assertEq(sablier.ownerOf(100), address(lending));
 
@@ -1134,7 +1132,7 @@ contract OVRFLOLendingTest is Test {
         uint256 loanPoolId = lending.createBorrowerLoanPool(liquidityIds, 102, 100 ether, 70 ether);
         vm.stopPrank();
 
-        (, uint16 aprBps,, uint128 totalContributed,) = lending.loanPools(loanPoolId);
+        (, uint16 aprBps,, uint128 totalContributed) = lending.loanPools(loanPoolId);
         assertEq(aprBps, 1000);
         assertEq(totalContributed, 80 ether, "actual borrow = available, not target");
 
@@ -1393,7 +1391,7 @@ contract OVRFLOLendingTest is Test {
         assertEq(sablier.ownerOf(151), address(lending), "borrower stream in escrow");
 
         // Loan created with 110 obligation
-        (,,, uint128 obligation,,, bool closed) = lending.loans(lending.loanPoolLoanId(loanPoolId));
+        (,, uint128 obligation,,, bool closed) = lending.loans(loanPoolId);
         assertEq(obligation, 110 ether, "loan obligation");
         assertFalse(closed, "loan not closed");
 
@@ -1719,7 +1717,7 @@ contract OVRFLOLendingTest is Test {
     ///      unreachable from the external ABI — every call site is pre-bounded
     ///      (grossPrice <= liquidity.availableLiquidity, actualBorrow <= targetBorrow, etc.).
     ///      The `loan not in pool` branch is also defensive: loanPoolContributions
-    ///      are only written inside createBorrowerLoanPool, which always sets loanPoolLoanId.
+    ///      are only written inside createBorrowerLoanPool, which always creates a loan.
     function test_ToUint128_RevertsOnOverflow() public {
         LendingInternalHarness harness = new LendingInternalHarness(address(factory), address(core), address(sablier));
         vm.expectRevert("SafeCast: value doesn't fit in 128 bits");
@@ -1753,7 +1751,7 @@ contract OVRFLOLendingTest is Test {
         vm.expectRevert("not approved");
         lending.createBorrowerLoanPool(liquidityIds, 301, 100 ether, 0);
 
-        assertEq(lending.nextLoanPoolId(), 1, "pool id not incremented");
+        assertEq(lending.nextLoanId(), 1, "pool id not incremented");
         assertEq(lending.nextLoanId(), 1, "loan id not incremented");
         (,,, uint128 cap,) = lending.liquidityPositions(liquidityId);
         assertEq(cap, 100 ether, "liquidity capacity not consumed");
@@ -1785,11 +1783,11 @@ contract OVRFLOLendingTest is Test {
         vm.expectRevert();
         lending.repayLoan(loanId, 50 ether);
 
-        (,,,, uint128 drawn, uint128 repaid, bool closed) = lending.loans(loanId);
+        (,,, uint128 drawn, uint128 repaid, bool closed) = lending.loans(loanId);
         assertEq(drawn, 0, "drawn unchanged");
         assertEq(repaid, 0, "repaid unchanged");
         assertFalse(closed, "loan not closed");
-        assertEq(lending.loanPoolProceeds(lending.loanToLoanPool(loanId)), 0, "proceeds unchanged");
+        assertEq(lending.loanPoolProceeds(loanId), 0, "proceeds unchanged");
     }
 
     /// @dev closeLoan reverts when withdrawable < outstanding; loan unchanged.
@@ -1800,7 +1798,7 @@ contract OVRFLOLendingTest is Test {
         vm.expectRevert("OVRFLOLending: loan not closable");
         lending.closeLoan(loanId);
 
-        (,,,,,, bool closed) = lending.loans(loanId);
+        (,,,,, bool closed) = lending.loans(loanId);
         assertFalse(closed, "loan not closed");
         assertEq(sablier.ownerOf(304), address(lending), "stream still escrowed");
     }
@@ -1845,7 +1843,7 @@ contract OVRFLOLendingTest is Test {
         sablier.approve(address(lending), 310);
         uint256 loanPoolId = lending.createBorrowerLoanPool(liquidityIds, 310, 10, 0);
         vm.stopPrank();
-        uint256 loanId = lending.loanPoolLoanId(loanPoolId);
+        uint256 loanId = loanPoolId;
 
         // Close loan: draws 11 wei from stream
         sablier.setWithdrawable(310, 11);
@@ -1879,7 +1877,7 @@ contract OVRFLOLendingTest is Test {
         sablier.approve(address(lending), 311);
         uint256 loanPoolId = lending.createBorrowerLoanPool(liquidityIds, 311, 10, 0);
         vm.stopPrank();
-        uint256 loanId = lending.loanPoolLoanId(loanPoolId);
+        uint256 loanId = loanPoolId;
 
         sablier.setWithdrawable(311, 11);
         lending.closeLoan(loanId);
@@ -1910,7 +1908,7 @@ contract OVRFLOLendingTest is Test {
         sablier.approve(address(lending), 312);
         uint256 loanPoolId = lending.createBorrowerLoanPool(liquidityIds, 312, 10, 0);
         vm.stopPrank();
-        uint256 loanId = lending.loanPoolLoanId(loanPoolId);
+        uint256 loanId = loanPoolId;
 
         sablier.setWithdrawable(312, 11);
         lending.closeLoan(loanId);
@@ -1942,7 +1940,7 @@ contract OVRFLOLendingTest is Test {
         sablier.approve(address(lending), 320);
         uint256 poolA = lending.createBorrowerLoanPool(idsA, 320, 100 ether, 0);
         vm.stopPrank();
-        uint256 loanA = lending.loanPoolLoanId(poolA);
+        uint256 loanA = poolA;
 
         // Pool B: BUYER lends 50, STRANGER lends 50; a different borrower
         address borrowerB = address(0xB0B0);
@@ -1970,13 +1968,14 @@ contract OVRFLOLendingTest is Test {
         lending.claimLoanPoolShare(poolA, 15 ether);
 
         // Pool B must be completely unchanged (it was just created with known state)
-        (,,, uint128 poolBContributed, uint128 poolBObligation) = lending.loanPools(poolB);
+        (,,, uint128 poolBContributed) = lending.loanPools(poolB);
+        (,, uint128 poolBObligation,,,) = lending.loans(poolB);
         assertEq(poolBContributed, 100 ether, "pool B contributed unchanged");
         assertEq(poolBObligation, 110 ether, "pool B obligation unchanged");
         assertEq(lending.loanPoolProceeds(poolB), 0, "pool B proceeds unchanged");
         assertEq(lending.loanPoolReceived(poolB, BUYER), 0, "pool B buyer received unchanged");
         assertEq(lending.loanPoolReceived(poolB, STRANGER), 0, "pool B stranger received unchanged");
-        (,,,, uint128 loanBDrawn, uint128 loanBRepaid, bool loanBClosed) = lending.loans(lending.loanPoolLoanId(poolB));
+        (,,, uint128 loanBDrawn, uint128 loanBRepaid, bool loanBClosed) = lending.loans(poolB);
         assertEq(loanBDrawn, 0, "loan B drawn unchanged");
         assertEq(loanBRepaid, 0, "loan B repaid unchanged");
         assertFalse(loanBClosed, "loan B not closed");
@@ -1999,7 +1998,7 @@ contract OVRFLOLendingTest is Test {
         sablier.approve(address(lending), 330);
         uint256 loanPoolId = lending.createBorrowerLoanPool(liquidityIds, 330, 100 ether, 0);
         vm.stopPrank();
-        uint256 loanId = lending.loanPoolLoanId(loanPoolId);
+        uint256 loanId = loanPoolId;
 
         // Also post a listing before maturity
         _mintEligibleStream(331, SELLER, 110 ether, 0);
@@ -2055,13 +2054,13 @@ contract OVRFLOLendingTest is Test {
         ovrfloToken.approve(address(lending), 50 ether);
         lending.repayLoan(loanId, 50 ether);
         vm.stopPrank();
-        (,,,,, uint128 repaid,) = lending.loans(loanId);
+        (,,,, uint128 repaid,) = lending.loans(loanId);
         assertEq(repaid, 50 ether, "repay works post-maturity");
 
         // Close still works
         sablier.setWithdrawable(330, 60 ether);
         lending.closeLoan(loanId);
-        (,,,,,, bool closed) = lending.loans(loanId);
+        (,,,,, bool closed) = lending.loans(loanId);
         assertTrue(closed, "close works post-maturity");
         assertEq(sablier.ownerOf(330), SELLER, "NFT returned after close post-maturity");
 
@@ -2112,7 +2111,7 @@ contract OVRFLOLendingTest is Test {
         vm.stopPrank();
 
         // Pool/loan not created
-        assertEq(lending.nextLoanPoolId(), 1, "pool not created");
+        assertEq(lending.nextLoanId(), 1, "pool not created");
         assertEq(lending.nextLoanId(), 1, "loan not created");
     }
 
@@ -2139,7 +2138,7 @@ contract OVRFLOLendingTest is Test {
         lending.createBorrowerLoanPool(ids2, 341, 100 ether, 0);
         vm.stopPrank();
 
-        assertEq(lending.nextLoanPoolId(), 2, "second pool not created");
+        assertEq(lending.nextLoanId(), 2, "second pool not created");
     }
 
     /// @dev After cancelling a listing, the stream can be reused for a new listing or loan.

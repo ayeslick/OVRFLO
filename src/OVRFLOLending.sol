@@ -71,10 +71,8 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
     uint256 public nextLiquidityId = 1;
     /// @notice Next sale-listing id (monotonic from 1).
     uint256 public nextSaleListingId = 1;
-    /// @notice Next loan id (monotonic from 1).
+    /// @notice Next loan id (monotonic from 1); also serves as the loan-pool id.
     uint256 public nextLoanId = 1;
-    /// @notice Next loan-pool id (monotonic from 1).
-    uint256 public nextLoanPoolId = 1;
 
     /// @notice Standing liquidity: liquidity in underlying waiting to buy or lend against
     ///         any eligible stream from `market` at `aprBps`. The liquidity is consumable as
@@ -113,12 +111,11 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
 
     /// @notice A loan backed by a pledged Sablier stream.
     /// @dev Satisfied amount = `drawn + repaid`; outstanding = `obligation - satisfied`.
-    ///      The lender recovers by drawing ovrfloToken from the stream via
-    ///      `closeLoan`, or by the borrower repaying in ovrfloToken (`repayLoan`).
+    ///      The lender (always `address(this)`) recovers by drawing ovrfloToken from the
+    ///      stream via `closeLoan`, or by the borrower repaying in ovrfloToken (`repayLoan`).
     ///      Total recovery is capped at `obligation`; the stream is returned to the
     ///      borrower once the loan closes.
     /// @param borrower Stream owner who received the loan principal.
-    /// @param lender Liquidity provider who funded the loan.
     /// @param streamId The pledged Sablier stream, held in escrow by the lending market.
     /// @param obligation Total ovrfloToken owed at maturity (ceiling-rounded).
     /// @param drawn ovrfloToken the lender has withdrawn from the stream so far.
@@ -126,7 +123,6 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
     /// @param closed True once satisfied == obligation (stream returned).
     struct Loan {
         address borrower;
-        address lender;
         uint256 streamId;
         uint128 obligation;
         uint128 drawn;
@@ -136,18 +132,17 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
 
     /// @notice A loan pool aggregates multiple liquidity positions into one atomic batch.
     /// @dev Borrower loan pools batch across liquidity positions via `createBorrowerLoanPool`. Claims are
-    ///      address-based (no NFTs) via loanPoolContributions and loanPoolReceived.
+    ///      address-based (no NFTs) via loanPoolContributions and loanPoolReceived. The pool's
+    ///      total obligation is `loans[id].obligation` (single-id space: `loanId == loanPoolId`).
     /// @param borrower Loan-pool borrower.
     /// @param aprBps Shared rate across all consumed liquidity positions.
     /// @param market Pendle market all liquidity positions belong to.
     /// @param totalContributed Total capital contributed (borrowed).
-    /// @param totalObligation Total ovrfloToken owed on the pool's loan.
     struct LoanPool {
         address borrower;
         uint16 aprBps;
         address market;
         uint128 totalContributed;
-        uint128 totalObligation;
     }
 
     /// @notice Liquidity position id => liquidity position.
@@ -164,10 +159,6 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
     mapping(uint256 => uint128) public loanPoolProceeds;
     /// @notice Loan-pool id => lender => total received across both claim channels.
     mapping(uint256 => mapping(address => uint128)) public loanPoolReceived;
-    /// @notice Loan id => loan-pool id (every loan belongs to a loan pool).
-    mapping(uint256 => uint256) public loanToLoanPool;
-    /// @notice Loan-pool id => loan id (every loan pool has exactly one loan).
-    mapping(uint256 => uint256) public loanPoolLoanId;
 
     /*//////////////////////////////////////////////////////////////
                                 EVENTS
@@ -221,17 +212,15 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
         uint256 netToSeller
     );
     /// @notice Emitted when a loan is closed by drawing the remainder and returning the stream.
-    event LoanClosed(uint256 indexed loanId, address indexed borrower, address indexed lender, uint128 finalDraw);
+    event LoanClosed(uint256 indexed loanId, address indexed borrower, uint128 finalDraw);
     /// @notice Emitted when a borrower repays ovrfloToken toward a loan (and whether it closed).
-    event LoanRepaid(
-        uint256 indexed loanId, address indexed borrower, address indexed lender, uint128 amount, bool closed
-    );
+    event LoanRepaid(uint256 indexed loanId, address indexed borrower, uint128 amount, bool closed);
     /// @notice Emitted when a borrower loan pool is created.
     event BorrowerLoanPoolCreated(
-        uint256 indexed loanPoolId, address indexed borrower, address market, uint16 aprBps, uint128 totalContributed
+        uint256 indexed loanId, address indexed borrower, address market, uint16 aprBps, uint128 totalContributed
     );
     /// @notice Emitted when a lender claims ovrfloToken from loan-pool proceeds.
-    event LoanPoolShareClaimed(uint256 indexed loanPoolId, address indexed lender, uint128 amount);
+    event LoanPoolShareClaimed(uint256 indexed loanId, address indexed lender, uint128 amount);
 
     /*//////////////////////////////////////////////////////////////
                               CONSTRUCTOR
@@ -482,13 +471,12 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
         loan.closed = true;
         if (outstanding > 0) {
             loan.drawn += outstanding;
-            uint256 loanPoolId = loanToLoanPool[loanId];
             sablier.withdraw(streamId, address(this), outstanding);
-            loanPoolProceeds[loanPoolId] += outstanding;
+            loanPoolProceeds[loanId] += outstanding;
         }
         sablier.transferFrom(address(this), loan.borrower, streamId);
 
-        emit LoanClosed(loanId, loan.borrower, loan.lender, outstanding);
+        emit LoanClosed(loanId, loan.borrower, outstanding);
     }
 
     /// @notice Borrower repays ovrfloToken toward a loan to reduce or clear the obligation.
@@ -517,14 +505,13 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
             loan.closed = true;
         }
 
-        uint256 loanPoolId = loanToLoanPool[loanId];
         _pullExact(IERC20(ovrfloToken), msg.sender, address(this), amount);
-        loanPoolProceeds[loanPoolId] += amount;
+        loanPoolProceeds[loanId] += amount;
         if (closes) {
             sablier.transferFrom(address(this), loan.borrower, loan.streamId);
         }
 
-        emit LoanRepaid(loanId, msg.sender, loan.lender, amount, closes);
+        emit LoanRepaid(loanId, msg.sender, amount, closes);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -533,9 +520,8 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
 
     /// @notice Creates a borrower loan pool from multiple liquidity positions.
     /// @dev The borrower pledges `streamId` and borrows from multiple liquidity positions in a
-    ///      single atomic transaction. The loan pool becomes the virtual lender
-    ///      (`loan.lender = address(this)`, `loanToLoanPool[loanId] = loanPoolId`,
-    ///      `loanPoolLoanId[loanPoolId] = loanId`). Each lender's consumed liquidity is
+    ///      single atomic transaction. The loan and pool share a single id space (`loanId == loanPoolId`);
+    ///      the lending market is the virtual lender on the loan. Each lender's consumed liquidity is
     ///      recorded for pro-rata claims. All liquidity positions must share the same `market` and
     ///      `aprBps`. Self-match (borrower is a lender) is prevented. CEI: all
     ///      validation before any state mutation.
@@ -543,13 +529,13 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
     /// @param streamId The Sablier stream to pledge as collateral.
     /// @param targetBorrow Desired principal; actual may be less if availableLiquidity is insufficient.
     /// @param minAcceptable Minimum net proceeds the borrower will accept (after fees).
-    /// @return loanPoolId The new pool id.
+    /// @return loanId The new loan (and pool) id.
     function createBorrowerLoanPool(
         uint256[] memory liquidityIds,
         uint256 streamId,
         uint128 targetBorrow,
         uint128 minAcceptable
-    ) external nonReentrant returns (uint256 loanPoolId) {
+    ) external nonReentrant returns (uint256 loanId) {
         require(targetBorrow > 0, "OVRFLOLending: borrow zero");
         require(liquidityIds.length > 0, "OVRFLOLending: empty liquidity");
 
@@ -582,26 +568,17 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
             actualBorrow128 = _toUint128(actualBorrow);
         }
 
-        loanPoolId = nextLoanPoolId++;
-        loanPools[loanPoolId] = LoanPool({
-            borrower: msg.sender,
-            aprBps: aprBps,
-            market: market,
-            totalContributed: actualBorrow128,
-            totalObligation: obligation
-        });
+        loanId = _storeLoan(msg.sender, streamId, obligation);
+        loanPools[loanId] =
+            LoanPool({borrower: msg.sender, aprBps: aprBps, market: market, totalContributed: actualBorrow128});
 
-        _consumeLiquidity(liquidityIds, loanPoolId, actualBorrow128);
-
-        uint256 loanId = _storeLoan(msg.sender, address(this), streamId, obligation);
-        loanToLoanPool[loanId] = loanPoolId;
-        loanPoolLoanId[loanPoolId] = loanId;
+        _consumeLiquidity(liquidityIds, loanId, actualBorrow128);
 
         sablier.transferFrom(msg.sender, address(this), streamId);
         _payUnderlying(msg.sender, netToBorrower);
         _payUnderlying(treasury, feeAmount);
 
-        emit BorrowerLoanPoolCreated(loanPoolId, msg.sender, market, aprBps, actualBorrow128);
+        emit BorrowerLoanPoolCreated(loanId, msg.sender, market, aprBps, actualBorrow128);
     }
 
     /// @notice Lets a loan-pool lender claim ovrfloToken from accumulated proceeds.
@@ -612,12 +589,12 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
     ///      loans and `recovered = drawn + repaid` for closed loans. When the loan
     ///      is open and `loanPoolProceeds` is insufficient, harvests the deficit from
     ///      the stream. Works whether the loan is open or closed.
-    /// @param loanPoolId The loan pool to claim from.
+    /// @param loanId The loan pool to claim from.
     /// @param amount Requested claim amount (capped at claimable).
-    function claimLoanPoolShare(uint256 loanPoolId, uint128 amount) external nonReentrant {
+    function claimLoanPoolShare(uint256 loanId, uint128 amount) external nonReentrant {
         require(amount > 0, "OVRFLOLending: claim zero");
-        uint128 payAmount = _claimFair(loanPoolId, msg.sender, amount);
-        emit LoanPoolShareClaimed(loanPoolId, msg.sender, payAmount);
+        uint128 payAmount = _claimFair(loanId, msg.sender, amount);
+        emit LoanPoolShareClaimed(loanId, msg.sender, payAmount);
     }
 
     /// @dev Claim logic for `claimLoanPoolShare`. Computes claimable as
@@ -627,11 +604,11 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
     ///      drawn + repaid` for closed loans (outstanding == 0, stream returned).
     ///      Harvests only the deficit from the stream when `loanPoolProceeds` is
     ///      insufficient and the loan is open, then pays from `loanPoolProceeds`.
-    function _claimFair(uint256 loanPoolId, address account, uint128 amount) internal returns (uint128 payAmount) {
-        uint128 contribution = loanPoolContributions[loanPoolId][account];
+    function _claimFair(uint256 loanId, address account, uint128 amount) internal returns (uint128 payAmount) {
+        uint128 contribution = loanPoolContributions[loanId][account];
         require(contribution > 0, "OVRFLOLending: not loan pool lender");
 
-        Loan storage loan = loans[loanPoolLoanId[loanPoolId]];
+        Loan storage loan = loans[loanId];
         _requireLoanExists(loan);
 
         uint256 recovered = uint256(loan.drawn) + uint256(loan.repaid);
@@ -643,12 +620,12 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
             recovered += uint256(_minUint128(withdrawable, outstanding));
         }
 
-        uint256 claimable = uint256(contribution) * recovered / uint256(loanPools[loanPoolId].totalContributed)
-            - loanPoolReceived[loanPoolId][account];
+        uint256 claimable = uint256(contribution) * recovered / uint256(loanPools[loanId].totalContributed)
+            - loanPoolReceived[loanId][account];
 
         uint128 requestAmount = _minUint128(amount, _toUint128(claimable));
 
-        uint128 proceeds = loanPoolProceeds[loanPoolId];
+        uint128 proceeds = loanPoolProceeds[loanId];
         if (!loan.closed && proceeds < requestAmount) {
             uint128 harvestAmount = _minUint128(
                 _toUint128(uint256(requestAmount) - uint256(proceeds)), _minUint128(withdrawable, outstanding)
@@ -663,8 +640,8 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
         payAmount = _minUint128(requestAmount, proceeds);
         require(payAmount > 0, "OVRFLOLending: nothing claimable");
 
-        loanPoolReceived[loanPoolId][account] += payAmount;
-        loanPoolProceeds[loanPoolId] = proceeds - payAmount;
+        loanPoolReceived[loanId][account] += payAmount;
+        loanPoolProceeds[loanId] = proceeds - payAmount;
         IERC20(ovrfloToken).safeTransfer(account, payAmount);
     }
 
@@ -781,7 +758,7 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
     }
 
     /// @dev Consumes liquidity positions up to `actualBorrow`, recording per-lender contributions.
-    function _consumeLiquidity(uint256[] memory liquidityIds, uint256 loanPoolId, uint256 actualBorrow) internal {
+    function _consumeLiquidity(uint256[] memory liquidityIds, uint256 loanId, uint256 actualBorrow) internal {
         uint256 toBorrow = actualBorrow;
         for (uint256 i; i < liquidityIds.length; i++) {
             if (toBorrow == 0) break;
@@ -791,7 +768,7 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
             if (liquidity.availableLiquidity == 0) {
                 liquidity.active = false;
             }
-            loanPoolContributions[loanPoolId][liquidity.lender] += _toUint128(consumed);
+            loanPoolContributions[loanId][liquidity.lender] += _toUint128(consumed);
             toBorrow -= consumed;
         }
     }
@@ -849,20 +826,10 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
     }
 
     /// @dev Allocates a new loan and returns its id.
-    function _storeLoan(address borrower, address lender, uint256 streamId, uint128 obligation)
-        internal
-        returns (uint256 loanId)
-    {
+    function _storeLoan(address borrower, uint256 streamId, uint128 obligation) internal returns (uint256 loanId) {
         loanId = nextLoanId++;
-        loans[loanId] = Loan({
-            borrower: borrower,
-            lender: lender,
-            streamId: streamId,
-            obligation: obligation,
-            drawn: 0,
-            repaid: 0,
-            closed: false
-        });
+        loans[loanId] =
+            Loan({borrower: borrower, streamId: streamId, obligation: obligation, drawn: 0, repaid: 0, closed: false});
     }
 
     /// @dev Reverts if the loan slot is uninitialized.

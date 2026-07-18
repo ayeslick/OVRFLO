@@ -56,7 +56,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
 
     /// @notice GL-04: sum(loanPoolProceeds) <= ovrfloToken.balanceOf(lending)
     function property_pool_proceeds_le_token_bal() public {
-        uint256 nextPool = lending.nextLoanPoolId();
+        uint256 nextPool = lending.nextLoanId();
         uint256 sum;
         for (uint256 i = 1; i < nextPool; i++) {
             sum += lending.loanPoolProceeds(i);
@@ -83,31 +83,18 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     function property_drawn_repaid_le_obligation() public {
         uint256 nextLoan = lending.nextLoanId();
         for (uint256 i = 1; i < nextLoan; i++) {
-            (,,, uint128 obligation, uint128 drawn, uint128 repaid,) = lending.loans(i);
+            (,, uint128 obligation, uint128 drawn, uint128 repaid,) = lending.loans(i);
             lte(uint256(drawn) + uint256(repaid), uint256(obligation), "GL-08: drawn + repaid > obligation");
         }
     }
 
-    /// @notice GL-09: loanPoolProceeds <= totalObligation for every pool
+    /// @notice GL-09: loanPoolProceeds <= obligation for every pool
     function property_pool_proceeds_le_obligation() public {
-        uint256 nextPool = lending.nextLoanPoolId();
-        for (uint256 i = 1; i < nextPool; i++) {
-            uint128 proceeds = lending.loanPoolProceeds(i);
-            (,,,, uint128 totalObligation) = lending.loanPools(i);
-            lte(proceeds, totalObligation, "GL-09: loanPoolProceeds > totalObligation");
-        }
-    }
-
-    /// @notice GL-10: loan.obligation == pool.totalObligation for pool loans
-    function property_loan_obligation_eq_pool() public {
         uint256 nextLoan = lending.nextLoanId();
         for (uint256 i = 1; i < nextLoan; i++) {
-            (,,, uint128 obligation,,,) = lending.loans(i);
-            uint256 loanPoolId = lending.loanToLoanPool(i);
-            if (loanPoolId != 0) {
-                (,,,, uint128 totalObligation) = lending.loanPools(loanPoolId);
-                eq(obligation, totalObligation, "GL-10: loan obligation != pool totalObligation");
-            }
+            uint128 proceeds = lending.loanPoolProceeds(i);
+            (,, uint128 obligation,,,) = lending.loans(i);
+            lte(proceeds, obligation, "GL-09: loanPoolProceeds > obligation");
         }
     }
 
@@ -156,7 +143,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
         uint256 sumOutstanding;
         uint256 sumRemaining;
         for (uint256 i = 1; i < nextLoan; i++) {
-            (,, uint256 streamId, uint128 obligation, uint128 drawn, uint128 repaid,) = lending.loans(i);
+            (, uint256 streamId, uint128 obligation, uint128 drawn, uint128 repaid,) = lending.loans(i);
             uint128 outstanding = obligation - drawn - repaid;
             sumOutstanding += outstanding;
             try ISablierV2LockupLinear(SABLIER_ADDR).getDepositedAmount(streamId) returns (uint128 deposited) {
@@ -211,7 +198,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     function property_loan_closed_no_revival() public {
         uint256 nextLoan = lending.nextLoanId();
         for (uint256 i = 1; i < nextLoan; i++) {
-            (,,,,,, bool closed) = lending.loans(i);
+            (,,,,, bool closed) = lending.loans(i);
             if (ghost_loanSeen[i]) {
                 t(!(ghost_loanClosedSnapshot[i] && !closed), "GL-13: loan closed true->false");
             }
@@ -222,20 +209,17 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
 
     // ─────────────── ID Counter Monotonicity ───────────────
 
-    /// @notice GL-15: All 4 ID counters monotonically non-decreasing
+    /// @notice GL-15: All 3 ID counters monotonically non-decreasing
     function property_id_counters_monotonic() public {
         uint256 currentLiquidity = lending.nextLiquidityId();
         uint256 currentListing = lending.nextSaleListingId();
         uint256 currentLoan = lending.nextLoanId();
-        uint256 currentPool = lending.nextLoanPoolId();
         gte(currentLiquidity, ghosts.ghost_lastNextLiquidityId, "GL-15: nextLiquidityId decreased");
         gte(currentListing, ghosts.ghost_lastNextSaleListingId, "GL-15: nextSaleListingId decreased");
         gte(currentLoan, ghosts.ghost_lastNextLoanId, "GL-15: nextLoanId decreased");
-        gte(currentPool, ghosts.ghost_lastNextPoolId, "GL-15: nextLoanPoolId decreased");
         ghosts.ghost_lastNextLiquidityId = currentLiquidity;
         ghosts.ghost_lastNextSaleListingId = currentListing;
         ghosts.ghost_lastNextLoanId = currentLoan;
-        ghosts.ghost_lastNextPoolId = currentPool;
     }
 
     /// @notice GL-19: factory.ovrfloCount never decreases
@@ -265,7 +249,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     function property_drawn_monotonic() public {
         uint256 nextLoan = lending.nextLoanId();
         for (uint256 i = 1; i < nextLoan; i++) {
-            (,,,, uint128 drawn,,) = lending.loans(i);
+            (,,, uint128 drawn,,) = lending.loans(i);
             gte(drawn, ghost_loanDrawnSnapshot[i], "GL-16: drawn decreased");
             ghost_loanDrawnSnapshot[i] = drawn;
         }
@@ -275,7 +259,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     function property_repaid_monotonic() public {
         uint256 nextLoan = lending.nextLoanId();
         for (uint256 i = 1; i < nextLoan; i++) {
-            (,,,,, uint128 repaid,) = lending.loans(i);
+            (,,,, uint128 repaid,) = lending.loans(i);
             gte(repaid, ghost_loanRepaidSnapshot[i], "GL-17: repaid decreased");
             ghost_loanRepaidSnapshot[i] = repaid;
         }
@@ -283,7 +267,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
 
     /// @notice GL-18: loanPoolReceived[loanPoolId][contributor] never decreases
     function property_pool_received_monotonic() public {
-        uint256 nextPool = lending.nextLoanPoolId();
+        uint256 nextPool = lending.nextLoanId();
         for (uint256 p = 1; p < nextPool; p++) {
             for (uint256 a = 0; a < actors.length; a++) {
                 if (lending.loanPoolContributions(p, actors[a]) > 0) {
@@ -296,44 +280,6 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     }
 
     // ─────────────── Slot Existence Invariants ───────────────
-
-    /// @notice GL-22: pool exists iff loanPoolLoanId[loanPoolId] != 0
-    function property_pool_exists_iff_pool_loan_id() public {
-        uint256 nextPool = lending.nextLoanPoolId();
-        for (uint256 i = 1; i < nextPool; i++) {
-            (address borrower,,,,) = lending.loanPools(i);
-            uint256 loanId = lending.loanPoolLoanId(i);
-            t((borrower != address(0)) == (loanId != 0), "GL-22: pool exists iff loanPoolLoanId != 0");
-        }
-    }
-
-    /// @notice GL-23: loan exists iff loanToLoanPool[loanId] != 0
-    function property_loan_exists_iff_loan_pool_id() public {
-        uint256 nextLoan = lending.nextLoanId();
-        for (uint256 i = 1; i < nextLoan; i++) {
-            (address borrower,,,,,,) = lending.loans(i);
-            uint256 loanPoolId = lending.loanToLoanPool(i);
-            t((borrower != address(0)) == (loanPoolId != 0), "GL-23: loan exists iff loanToLoanPool != 0");
-        }
-    }
-
-    /// @notice GL-24: loanPoolLoanId[loanPoolId]==loanId iff loanToLoanPool[loanId]==loanPoolId
-    function property_pool_loan_id_iff_loan_pool_id() public {
-        uint256 nextPool = lending.nextLoanPoolId();
-        for (uint256 i = 1; i < nextPool; i++) {
-            uint256 loanId = lending.loanPoolLoanId(i);
-            if (loanId != 0) {
-                eq(lending.loanToLoanPool(loanId), i, "GL-24: loanToLoanPool mismatch");
-            }
-        }
-        uint256 nextLoan = lending.nextLoanId();
-        for (uint256 i = 1; i < nextLoan; i++) {
-            uint256 loanPoolId = lending.loanToLoanPool(i);
-            if (loanPoolId != 0) {
-                eq(lending.loanPoolLoanId(loanPoolId), i, "GL-24: loanPoolLoanId mismatch");
-            }
-        }
-    }
 
     /// @notice GL-25: liquidity slot populated iff id < nextLiquidityId
     function property_liquidity_slot_iff_id() public {
@@ -348,16 +294,16 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     function property_loan_slot_iff_id() public {
         uint256 nextLoan = lending.nextLoanId();
         for (uint256 i = 1; i < nextLoan; i++) {
-            (address borrower,,,,,,) = lending.loans(i);
+            (address borrower,,,,,) = lending.loans(i);
             t(borrower != address(0), "GL-26: loan slot not populated");
         }
     }
 
-    /// @notice GL-27: pool slot populated iff id < nextLoanPoolId
+    /// @notice GL-27: pool slot populated iff id < nextLoanId
     function property_pool_slot_iff_id() public {
-        uint256 nextPool = lending.nextLoanPoolId();
+        uint256 nextPool = lending.nextLoanId();
         for (uint256 i = 1; i < nextPool; i++) {
-            (address borrower,,,,) = lending.loanPools(i);
+            (address borrower,,,) = lending.loanPools(i);
             t(borrower != address(0), "GL-27: pool slot not populated");
         }
     }
@@ -391,7 +337,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     function property_closed_implies_satisfied() public {
         uint256 nextLoan = lending.nextLoanId();
         for (uint256 i = 1; i < nextLoan; i++) {
-            (,,, uint128 obligation, uint128 drawn, uint128 repaid, bool closed) = lending.loans(i);
+            (,, uint128 obligation, uint128 drawn, uint128 repaid, bool closed) = lending.loans(i);
             if (closed) {
                 eq(uint256(drawn) + uint256(repaid), uint256(obligation), "GL-31: closed loan not satisfied");
             }
@@ -413,7 +359,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     function property_loan_obligation_immutable() public {
         uint256 nextLoan = lending.nextLoanId();
         for (uint256 i = 1; i < nextLoan; i++) {
-            (,,, uint128 obligation,,,) = lending.loans(i);
+            (,, uint128 obligation,,,) = lending.loans(i);
             if (ghost_loanObligationInit[i] == 0) {
                 ghost_loanObligationInit[i] = obligation;
             } else {
@@ -426,7 +372,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     function property_loan_stream_id_immutable() public {
         uint256 nextLoan = lending.nextLoanId();
         for (uint256 i = 1; i < nextLoan; i++) {
-            (,, uint256 streamId,,,,) = lending.loans(i);
+            (, uint256 streamId,,,,) = lending.loans(i);
             if (ghost_loanStreamIdInit[i] == 0) {
                 ghost_loanStreamIdInit[i] = streamId;
             } else {
@@ -435,17 +381,15 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
         }
     }
 
-    /// @notice GL-35: loan.borrower/lender immutable
+    /// @notice GL-35: loan.borrower immutable (lender is always address(this) by construction)
     function property_loan_parties_immutable() public {
         uint256 nextLoan = lending.nextLoanId();
         for (uint256 i = 1; i < nextLoan; i++) {
-            (address borrower, address lender,,,,,) = lending.loans(i);
+            (address borrower,,,,,) = lending.loans(i);
             if (ghost_loanBorrowerInit[i] == address(0)) {
                 ghost_loanBorrowerInit[i] = borrower;
-                ghost_loanLenderInit[i] = lender;
             } else {
                 t(borrower == ghost_loanBorrowerInit[i], "GL-35: loan borrower changed");
-                t(lender == ghost_loanLenderInit[i], "GL-35: loan lender changed");
             }
         }
     }
@@ -481,9 +425,9 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
 
     /// @notice GL-38: pool.totalContributed immutable
     function property_pool_total_contributed_immutable() public {
-        uint256 nextPool = lending.nextLoanPoolId();
+        uint256 nextPool = lending.nextLoanId();
         for (uint256 i = 1; i < nextPool; i++) {
-            (,,, uint128 totalContributed,) = lending.loanPools(i);
+            (,,, uint128 totalContributed) = lending.loanPools(i);
             if (ghost_poolTotalContributedInit[i] == 0) {
                 ghost_poolTotalContributedInit[i] = totalContributed;
             } else {
@@ -492,22 +436,22 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
         }
     }
 
-    /// @notice GL-39: pool.totalObligation immutable
+    /// @notice GL-39: loan.obligation immutable (was pool.obligation immutable)
     function property_pool_total_obligation_immutable() public {
-        uint256 nextPool = lending.nextLoanPoolId();
+        uint256 nextPool = lending.nextLoanId();
         for (uint256 i = 1; i < nextPool; i++) {
-            (,,,, uint128 totalObligation) = lending.loanPools(i);
-            if (ghost_poolTotalObligationInit[i] == 0) {
-                ghost_poolTotalObligationInit[i] = totalObligation;
+            (,, uint128 obligation,,,) = lending.loans(i);
+            if (ghost_loanObligationInit[i] == 0) {
+                ghost_loanObligationInit[i] = obligation;
             } else {
-                eq(totalObligation, ghost_poolTotalObligationInit[i], "GL-39: pool totalObligation changed");
+                eq(obligation, ghost_loanObligationInit[i], "GL-39: loan obligation changed");
             }
         }
     }
 
     /// @notice GL-40: loanPoolContributions immutable after creation
     function property_pool_contributions_immutable() public {
-        uint256 nextPool = lending.nextLoanPoolId();
+        uint256 nextPool = lending.nextLoanId();
         for (uint256 p = 1; p < nextPool; p++) {
             for (uint256 a = 0; a < actors.length; a++) {
                 uint128 contribution = lending.loanPoolContributions(p, actors[a]);
@@ -1067,7 +1011,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     /// @notice SP-09: borrow -> repay: obligation >= actualBorrow (factor >= WAD, obligation ceils)
     function property_obligationGeBorrow() internal {
         gte(
-            uint256(stateAfter.poolTotalObligation),
+            uint256(stateAfter.loanObligation),
             uint256(stateAfter.poolTotalContributed),
             "SP-09: obligation < actualBorrow"
         );
@@ -1075,22 +1019,18 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
 
     /// @notice SP-10: obligation <= remaining in partial-borrow path (stream covers debt)
     function property_obligationLeRemaining() internal {
-        lte(
-            uint256(stateAfter.poolTotalObligation),
-            uint256(stateBefore.streamRemaining),
-            "SP-10: obligation > remaining"
-        );
+        lte(uint256(stateAfter.loanObligation), uint256(stateBefore.streamRemaining), "SP-10: obligation > remaining");
     }
 
     /// @notice SP-13: quote matches actual createBorrowerLoanPool obligation
     function property_quoteMatchesObligation(uint256 loanPoolId, uint128 actualBorrow) internal {
-        (, uint16 aprBps, address poolMarket,,) = lending.loanPools(loanPoolId);
-        (,, uint256 streamId,,,,) = lending.loans(lending.loanPoolLoanId(loanPoolId));
+        (, uint16 aprBps, address poolMarket,) = lending.loanPools(loanPoolId);
+        (, uint256 streamId,,,,) = lending.loans(loanPoolId);
         try lending.quote(poolMarket, streamId, aprBps, actualBorrow) returns (
             uint256, uint128 qObligation, uint256, uint256, uint128
         ) {
-            (,,,, uint128 totalObligation) = lending.loanPools(loanPoolId);
-            eq(uint256(qObligation), uint256(totalObligation), "SP-13: quote obligation mismatch");
+            (,, uint128 obligation,,,) = lending.loans(loanPoolId);
+            eq(uint256(qObligation), uint256(obligation), "SP-13: quote obligation mismatch");
         } catch {}
     }
 
@@ -1098,20 +1038,16 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     function property_fullBorrowFastPath() internal {
         uint256 loanPoolId = ghosts.ghost_lastPoolId;
         if (loanPoolId == 0) return;
-        (, uint16 aprBps, address poolMarket, uint128 totalContributed, uint128 totalObligation) =
-            lending.loanPools(loanPoolId);
-        (,, uint256 streamId,,,,) = lending.loans(lending.loanPoolLoanId(loanPoolId));
+        (, uint16 aprBps, address poolMarket, uint128 totalContributed) = lending.loanPools(loanPoolId);
+        (,, uint128 obligation,,,) = lending.loans(loanPoolId);
+        (, uint256 streamId,,,,) = lending.loans(loanPoolId);
         try lending.quote(poolMarket, streamId, aprBps, 0) returns (
             uint256 grossPrice, uint128, uint256, uint256, uint128
         ) {
             if (uint256(totalContributed) == grossPrice) {
                 uint128 deposited = ISablierV2LockupLinear(SABLIER_ADDR).getDepositedAmount(streamId);
                 uint128 withdrawn = ISablierV2LockupLinear(SABLIER_ADDR).getWithdrawnAmount(streamId);
-                eq(
-                    uint256(totalObligation),
-                    uint256(deposited - withdrawn),
-                    "SP-15: full-borrow obligation != remaining"
-                );
+                eq(uint256(obligation), uint256(deposited - withdrawn), "SP-15: full-borrow obligation != remaining");
             }
         } catch {}
     }
@@ -1120,18 +1056,12 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     function property_poolContributionsSum() internal {
         uint256 loanPoolId = ghosts.ghost_lastPoolId;
         if (loanPoolId == 0) return;
-        (,,, uint128 totalContributed,) = lending.loanPools(loanPoolId);
+        (,,, uint128 totalContributed) = lending.loanPools(loanPoolId);
         uint256 sum;
         for (uint256 i = 0; i < actors.length; i++) {
             sum += lending.loanPoolContributions(loanPoolId, actors[i]);
         }
         eq(sum, uint256(totalContributed), "SP-22: sum loanPoolContributions != totalContributed");
-    }
-
-    /// @notice SP-51: createBorrowerLoanPool: nextLoanPoolId and nextLoanId each increment by 1
-    function property_createPoolIdIncrements() internal {
-        eq(stateAfter.nextLoanPoolId, stateBefore.nextLoanPoolId + 1, "SP-51: nextLoanPoolId did not increment by 1");
-        eq(stateAfter.nextLoanId, stateBefore.nextLoanId + 1, "SP-51: nextLoanId did not increment by 1");
     }
 
     /// @notice SP-52: createBorrowerLoanPool: loan closed=false, drawn=0, repaid=0
@@ -1140,7 +1070,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
         if (loanPoolId == 0) return;
         uint256 loanId = ghosts.ghost_lastLoanId;
         if (loanId == 0) return;
-        (,,,, uint128 drawn, uint128 repaid, bool closed) = lending.loans(loanId);
+        (,,, uint128 drawn, uint128 repaid, bool closed) = lending.loans(loanId);
         t(!closed, "SP-52: new loan is closed");
         eq(uint256(drawn), 0, "SP-52: new loan drawn != 0");
         eq(uint256(repaid), 0, "SP-52: new loan repaid != 0");
@@ -1150,7 +1080,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     function property_createPoolContributionsSet() internal {
         uint256 loanPoolId = ghosts.ghost_lastPoolId;
         if (loanPoolId == 0) return;
-        (,,, uint128 totalContributed,) = lending.loanPools(loanPoolId);
+        (,,, uint128 totalContributed) = lending.loanPools(loanPoolId);
         if (totalContributed == 0) return;
         // At least one actor must have a non-zero contribution
         bool foundContributor;
@@ -1167,7 +1097,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     function property_noSelfMatch() internal {
         uint256 loanPoolId = ghosts.ghost_lastPoolId;
         if (loanPoolId == 0) return;
-        (address borrower,,,,) = lending.loanPools(loanPoolId);
+        (address borrower,,,) = lending.loanPools(loanPoolId);
         eq(lending.loanPoolContributions(loanPoolId, borrower), 0, "SP-77: self-match detected");
     }
 
@@ -1180,8 +1110,8 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     function property_borrowAmountLeGrossPrice() internal {
         uint256 loanPoolId = ghosts.ghost_lastPoolId;
         if (loanPoolId == 0) return;
-        (, uint16 aprBps, address poolMarket, uint128 totalContributed,) = lending.loanPools(loanPoolId);
-        (,, uint256 streamId,,,,) = lending.loans(lending.loanPoolLoanId(loanPoolId));
+        (, uint16 aprBps, address poolMarket, uint128 totalContributed) = lending.loanPools(loanPoolId);
+        (, uint256 streamId,,,,) = lending.loans(loanPoolId);
         try lending.quote(poolMarket, streamId, aprBps, totalContributed) returns (
             uint256 grossPrice, uint128, uint256, uint256, uint128
         ) {
@@ -1200,7 +1130,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
 
     /// @notice SP-21: repayLoan equality check exact (no rounding brick, exact integer wei)
     function property_repayLoanExactCheck(uint256, uint128 amount) internal {
-        (,,,,,, bool closed) = lending.loans(ghosts.ghost_lastLoanId);
+        (,,,,, bool closed) = lending.loans(ghosts.ghost_lastLoanId);
         if (closed) {
             uint128 outstandingBefore = stateBefore.loanObligation - stateBefore.loanDrawn - stateBefore.loanRepaid;
             eq(uint256(amount), uint256(outstandingBefore), "SP-21: repay equality not exact");
@@ -1261,14 +1191,14 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
 
     /// @notice SP-57: repayLoan: closed=true iff amount==outstanding; partial stays false
     function property_repayLoanClosedIff(uint256, uint128 amount) internal {
-        (,,,,,, bool closed) = lending.loans(ghosts.ghost_lastLoanId);
+        (,,,,, bool closed) = lending.loans(ghosts.ghost_lastLoanId);
         uint128 outstandingBefore = stateBefore.loanObligation - stateBefore.loanDrawn - stateBefore.loanRepaid;
         t(closed == (amount == outstandingBefore), "SP-57: closed != (amount == outstanding)");
     }
 
     /// @notice SP-72: Non-borrower cannot repayLoan (sanity: caller was the borrower)
     function property_nonBorrowerCannotRepay(uint256 loanId) internal {
-        (address borrower,,,,,,) = lending.loans(loanId);
+        (address borrower,,,,,) = lending.loans(loanId);
         t(borrower == actor, "SP-72: non-borrower repaid loan");
     }
 
@@ -1288,26 +1218,27 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
         if (loanPoolId == 0) return;
         uint128 contribution = lending.loanPoolContributions(loanPoolId, actor);
         if (contribution == 0) return;
-        (,,, uint128 totalContributed, uint128 totalObligation) = lending.loanPools(loanPoolId);
+        (,,, uint128 totalContributed) = lending.loanPools(loanPoolId);
+        (,, uint128 obligation,,,) = lending.loans(loanPoolId);
         uint128 received = lending.loanPoolReceived(loanPoolId, actor);
-        // received <= floor(contribution * totalObligation / totalContributed)
+        // received <= floor(contribution * obligation / totalContributed)
         lte(
             uint256(received) * uint256(totalContributed),
-            uint256(contribution) * uint256(totalObligation),
+            uint256(contribution) * uint256(obligation),
             "SP-20: pro-rata entitlement not floored"
         );
     }
 
-    /// @notice SP-23: sum(loanPoolReceived) <= pool.totalObligation
+    /// @notice SP-23: sum(loanPoolReceived) <= obligation
     function property_poolReceivedLeTotalObligation() internal {
         uint256 loanPoolId = ghosts.ghost_lastPoolId;
         if (loanPoolId == 0) return;
-        (,,,, uint128 totalObligation) = lending.loanPools(loanPoolId);
+        (,, uint128 obligation,,,) = lending.loans(loanPoolId);
         uint256 sumReceived;
         for (uint256 i = 0; i < actors.length; i++) {
             sumReceived += lending.loanPoolReceived(loanPoolId, actors[i]);
         }
-        lte(sumReceived, uint256(totalObligation), "SP-23: sum loanPoolReceived > totalObligation");
+        lte(sumReceived, uint256(obligation), "SP-23: sum loanPoolReceived > obligation");
     }
 
     /// @notice SP-24: loanPoolReceived[loanPoolId][contributor] <= entitlement (pro-rata cap)
@@ -1316,9 +1247,10 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
         if (loanPoolId == 0) return;
         uint128 contribution = lending.loanPoolContributions(loanPoolId, actor);
         if (contribution == 0) return;
-        (,,, uint128 totalContributed, uint128 totalObligation) = lending.loanPools(loanPoolId);
+        (,,, uint128 totalContributed) = lending.loanPools(loanPoolId);
+        (,, uint128 obligation,,,) = lending.loans(loanPoolId);
         uint128 received = lending.loanPoolReceived(loanPoolId, actor);
-        uint256 entitlement = uint256(contribution) * uint256(totalObligation) / uint256(totalContributed);
+        uint256 entitlement = uint256(contribution) * uint256(obligation) / uint256(totalContributed);
         lte(uint256(received), entitlement, "SP-24: loanPoolReceived > entitlement");
     }
 
@@ -1331,8 +1263,8 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
         for (uint256 i = 0; i < actors.length; i++) {
             sumReceived += lending.loanPoolReceived(loanPoolId, actors[i]);
         }
-        uint256 loanId = lending.loanPoolLoanId(loanPoolId);
-        (,,,, uint128 drawn, uint128 repaid,) = lending.loans(loanId);
+        uint256 loanId = loanPoolId;
+        (,,, uint128 drawn, uint128 repaid,) = lending.loans(loanId);
         eq(uint256(proceeds) + sumReceived, uint256(drawn) + uint256(repaid), "SP-25: pool conservation violated");
     }
 
@@ -1394,7 +1326,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     function property_per_loan_outstanding_le_remaining() public {
         uint256 nextLoan = lending.nextLoanId();
         for (uint256 i = 1; i < nextLoan; i++) {
-            (,, uint256 streamId, uint128 obligation, uint128 drawn, uint128 repaid,) = lending.loans(i);
+            (, uint256 streamId, uint128 obligation, uint128 drawn, uint128 repaid,) = lending.loans(i);
             uint128 outstanding = obligation - drawn - repaid;
             if (outstanding == 0) continue;
             try ISablierV2LockupLinear(SABLIER_ADDR).getDepositedAmount(streamId) returns (uint128 deposited) {
@@ -1426,7 +1358,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     function property_open_loan_stream_escrowed() public {
         uint256 nextLoan = lending.nextLoanId();
         for (uint256 i = 1; i < nextLoan; i++) {
-            (,, uint256 streamId,,,, bool closed) = lending.loans(i);
+            (, uint256 streamId,,,, bool closed) = lending.loans(i);
             if (closed) continue;
             try ISablierV2LockupLinear(SABLIER_ADDR).ownerOf(streamId) returns (address owner) {
                 t(owner == address(lending), "GL-66: open loan stream not escrowed at lending");
@@ -1446,26 +1378,21 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
         }
     }
 
-    /// @notice GL-68: Pool loan lender == address(lending) (loan held by market, not individual)
+    /// @notice GL-68: Pool loan lender == address(lending) (enforced by construction)
+    /// @dev The Loan struct no longer has a lender field; the lending market is always
+    ///      the virtual lender by construction. This property is now a no-op.
     function property_pool_loan_lender_is_lending() public {
-        uint256 nextLoan = lending.nextLoanId();
-        for (uint256 i = 1; i < nextLoan; i++) {
-            (, address lender,,,,,) = lending.loans(i);
-            uint256 loanPoolId = lending.loanToLoanPool(i);
-            if (loanPoolId != 0) {
-                t(lender == address(lending), "GL-68: pool loan lender != address(lending)");
-            }
-        }
+        // No-op: lender field removed; address(this) is the lender by construction.
     }
 
     /// @notice GL-69: pool.borrower == loan.borrower (pool and loan share the same borrower)
     function property_pool_borrower_eq_loan_borrower() public {
-        uint256 nextPool = lending.nextLoanPoolId();
+        uint256 nextPool = lending.nextLoanId();
         for (uint256 i = 1; i < nextPool; i++) {
-            (address poolBorrower,,,,) = lending.loanPools(i);
-            uint256 loanId = lending.loanPoolLoanId(i);
+            (address poolBorrower,,,) = lending.loanPools(i);
+            uint256 loanId = i;
             if (loanId == 0) continue;
-            (address loanBorrower,,,,,,) = lending.loans(loanId);
+            (address loanBorrower,,,,,) = lending.loans(loanId);
             t(poolBorrower == loanBorrower, "GL-69: pool.borrower != loan.borrower");
         }
     }
@@ -1474,7 +1401,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     function property_loan_drawn_eq_stream_withdrawals() public {
         uint256 nextLoan = lending.nextLoanId();
         for (uint256 i = 1; i < nextLoan; i++) {
-            (,, uint256 streamId,, uint128 drawn,, bool closed) = lending.loans(i);
+            (, uint256 streamId,, uint128 drawn,, bool closed) = lending.loans(i);
             uint128 snapshot = ghost_loanStreamWithdrawnAtCreation[i];
             if (snapshot == 0 && drawn == 0) continue;
             uint128 closeSnapshot = ghost_loanStreamWithdrawnAtClose[i];
@@ -1509,7 +1436,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
 
     /// @notice GL-71: contributions <= consumed capacity (no over-contribution)
     function property_contributions_le_capacity() public {
-        uint256 nextPool = lending.nextLoanPoolId();
+        uint256 nextPool = lending.nextLoanId();
         for (uint256 p = 1; p < nextPool; p++) {
             for (uint256 a = 0; a < actors.length; a++) {
                 uint128 contribution = lending.loanPoolContributions(p, actors[a]);
@@ -1519,7 +1446,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
                 // This is a soft bound — we verify contribution <= sum of initial capacities
                 // of consumed positions. Since we don't track which specific positions were
                 // consumed per pool, we check against the pool's totalContributed as a proxy.
-                (,,, uint128 totalContributed,) = lending.loanPools(p);
+                (,,, uint128 totalContributed) = lending.loanPools(p);
                 lte(uint256(contribution), uint256(totalContributed), "GL-71: contribution > totalContributed");
             }
         }
@@ -1529,7 +1456,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     function property_loan_drawn_le_stream_withdrawn() public {
         uint256 nextLoan = lending.nextLoanId();
         for (uint256 i = 1; i < nextLoan; i++) {
-            (,, uint256 streamId,, uint128 drawn,,) = lending.loans(i);
+            (, uint256 streamId,, uint128 drawn,,) = lending.loans(i);
             try ISablierV2LockupLinear(SABLIER_ADDR).getWithdrawnAmount(streamId) returns (uint128 withdrawn) {
                 lte(uint256(drawn), uint256(withdrawn), "GL-72: loan.drawn > stream withdrawn amount");
             } catch {}
@@ -1540,9 +1467,9 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
 
     /// @notice GL-73: All pools: sum(loanPoolContributions) == pool.totalContributed
     function property_all_pools_contributions_sum() public {
-        uint256 nextPool = lending.nextLoanPoolId();
+        uint256 nextPool = lending.nextLoanId();
         for (uint256 p = 1; p < nextPool; p++) {
-            (,,, uint128 totalContributed,) = lending.loanPools(p);
+            (,,, uint128 totalContributed) = lending.loanPools(p);
             uint256 sum;
             for (uint256 a = 0; a < actors.length; a++) {
                 sum += lending.loanPoolContributions(p, actors[a]);
@@ -1553,46 +1480,47 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
 
     /// @notice GL-74: All pools: proceeds + sum(received) == drawn + repaid
     function property_all_pools_conservation() public {
-        uint256 nextPool = lending.nextLoanPoolId();
+        uint256 nextPool = lending.nextLoanId();
         for (uint256 p = 1; p < nextPool; p++) {
             uint128 proceeds = lending.loanPoolProceeds(p);
             uint256 sumReceived;
             for (uint256 a = 0; a < actors.length; a++) {
                 sumReceived += lending.loanPoolReceived(p, actors[a]);
             }
-            uint256 loanId = lending.loanPoolLoanId(p);
+            uint256 loanId = p;
             if (loanId == 0) continue;
-            (,,,, uint128 drawn, uint128 repaid,) = lending.loans(loanId);
+            (,,, uint128 drawn, uint128 repaid,) = lending.loans(loanId);
             eq(uint256(proceeds) + sumReceived, uint256(drawn) + uint256(repaid), "GL-74: pool conservation violated");
         }
     }
 
     /// @notice GL-75: All pools: loanPoolReceived[poolId][lender] <= entitlement (pro-rata cap)
     function property_all_pools_received_le_entitlement() public {
-        uint256 nextPool = lending.nextLoanPoolId();
+        uint256 nextPool = lending.nextLoanId();
         for (uint256 p = 1; p < nextPool; p++) {
-            (,,, uint128 totalContributed, uint128 totalObligation) = lending.loanPools(p);
+            (,,, uint128 totalContributed) = lending.loanPools(p);
+            (,, uint128 obligation,,,) = lending.loans(p);
             if (totalContributed == 0) continue;
             for (uint256 a = 0; a < actors.length; a++) {
                 uint128 contribution = lending.loanPoolContributions(p, actors[a]);
                 if (contribution == 0) continue;
                 uint128 received = lending.loanPoolReceived(p, actors[a]);
-                uint256 entitlement = uint256(contribution) * uint256(totalObligation) / uint256(totalContributed);
+                uint256 entitlement = uint256(contribution) * uint256(obligation) / uint256(totalContributed);
                 lte(uint256(received), entitlement, "GL-75: loanPoolReceived > entitlement");
             }
         }
     }
 
-    /// @notice GL-76: All pools: sum(loanPoolReceived) <= pool.totalObligation
+    /// @notice GL-76: All pools: sum(loanPoolReceived) <= obligation
     function property_all_pools_received_le_obligation() public {
-        uint256 nextPool = lending.nextLoanPoolId();
+        uint256 nextPool = lending.nextLoanId();
         for (uint256 p = 1; p < nextPool; p++) {
-            (,,,, uint128 totalObligation) = lending.loanPools(p);
+            (,, uint128 obligation,,,) = lending.loans(p);
             uint256 sumReceived;
             for (uint256 a = 0; a < actors.length; a++) {
                 sumReceived += lending.loanPoolReceived(p, actors[a]);
             }
-            lte(sumReceived, uint256(totalObligation), "GL-76: sum loanPoolReceived > totalObligation");
+            lte(sumReceived, uint256(obligation), "GL-76: sum loanPoolReceived > obligation");
         }
     }
 
@@ -1621,12 +1549,12 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
 
     /// @notice GL-80: Direct ovrfloToken donation to lending does not inflate claimable pool proceeds
     function property_ovrflo_donation_no_inflate() public {
-        uint256 nextPool = lending.nextLoanPoolId();
+        uint256 nextPool = lending.nextLoanId();
         for (uint256 p = 1; p < nextPool; p++) {
             uint128 proceeds = lending.loanPoolProceeds(p);
-            uint256 loanId = lending.loanPoolLoanId(p);
+            uint256 loanId = p;
             if (loanId == 0) continue;
-            (,,,, uint128 drawn, uint128 repaid,) = lending.loans(loanId);
+            (,,, uint128 drawn, uint128 repaid,) = lending.loans(loanId);
             // Proceeds are internally tracked (drawn + repaid - received); a direct
             // ovrfloToken transfer to lending cannot increase proceeds beyond recovery.
             lte(uint256(proceeds), uint256(drawn) + uint256(repaid), "GL-80: proceeds inflated beyond recovery");
@@ -1675,7 +1603,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     function property_open_loan_stream_eligible() public {
         uint256 nextLoan = lending.nextLoanId();
         for (uint256 i = 1; i < nextLoan; i++) {
-            (,, uint256 streamId, uint128 obligation, uint128 drawn, uint128 repaid, bool closed) = lending.loans(i);
+            (, uint256 streamId, uint128 obligation, uint128 drawn, uint128 repaid, bool closed) = lending.loans(i);
             if (closed) continue;
             uint128 outstanding = obligation - drawn - repaid;
             if (outstanding == 0) continue;
@@ -1815,7 +1743,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     function property_closeLoan_returns_stream() internal {
         uint256 loanId = ghosts.ghost_lastLoanId;
         if (loanId == 0) return;
-        (address borrower,,,,,,) = lending.loans(loanId);
+        (address borrower,,,,,) = lending.loans(loanId);
         t(stateAfter.streamOwner == borrower, "SP-81: closeLoan did not return stream to borrower");
     }
 
@@ -1823,9 +1751,9 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     function property_repayLoan_returns_stream() internal {
         uint256 loanId = ghosts.ghost_lastLoanId;
         if (loanId == 0) return;
-        (,,,,,, bool closed) = lending.loans(loanId);
+        (,,,,, bool closed) = lending.loans(loanId);
         if (!closed) return;
-        (address borrower,,,,,,) = lending.loans(loanId);
+        (address borrower,,,,,) = lending.loans(loanId);
         t(stateAfter.streamOwner == borrower, "SP-82: full repayLoan did not return stream to borrower");
     }
 
@@ -1876,7 +1804,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     function property_multi_partial_repay_closes() internal {
         uint256 loanId = ghosts.ghost_lastLoanId;
         if (loanId == 0) return;
-        (,,, uint128 obligation, uint128 drawn, uint128 repaid, bool closed) = lending.loans(loanId);
+        (,, uint128 obligation, uint128 drawn, uint128 repaid, bool closed) = lending.loans(loanId);
         if (closed) {
             eq(uint256(repaid) + uint256(drawn), uint256(obligation), "SP-89: closed loan repaid+drawn != obligation");
         }
@@ -1901,7 +1829,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
         uint128 withdrawn = ISablierV2LockupLinear(SABLIER_ADDR).getWithdrawnAmount(ghosts.ghost_lastStreamId);
         if (withdrawn > 0) {
             lte(
-                uint256(stateAfter.poolTotalObligation),
+                uint256(stateAfter.loanObligation),
                 uint256(stateBefore.streamRemaining),
                 "SP-91: repledge obligation > residual"
             );
@@ -1932,7 +1860,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     function property_repayLoan_zero_reverts() internal {
         uint256 loanId = ghosts.ghost_lastLoanId;
         if (loanId == 0) return;
-        (address borrower,,,,,, bool closed) = lending.loans(loanId);
+        (address borrower,,,,, bool closed) = lending.loans(loanId);
         if (closed) return;
         vm.prank(borrower);
         try lending.repayLoan(loanId, 0) {
@@ -1946,16 +1874,16 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     function property_quote_full_correspondence() internal {
         uint256 loanPoolId = ghosts.ghost_lastPoolId;
         if (loanPoolId == 0) return;
-        (, uint16 aprBps, address poolMarket, uint128 totalContributed,) = lending.loanPools(loanPoolId);
-        (,, uint256 streamId,,,,) = lending.loans(lending.loanPoolLoanId(loanPoolId));
+        (, uint16 aprBps, address poolMarket, uint128 totalContributed) = lending.loanPools(loanPoolId);
+        (, uint256 streamId,,,,) = lending.loans(loanPoolId);
         try lending.quote(poolMarket, streamId, aprBps, totalContributed) returns (
             uint256, uint128 obligation, uint256 feeAmount, uint256 netToBorrower, uint128
         ) {
             // quote(borrowAmount=totalContributed) returns fee and net for that borrow amount,
             // so borrowAmount == netToBorrower + feeAmount (not grossPrice, which is for the full stream)
             eq(uint256(totalContributed), netToBorrower + feeAmount, "SP-95: borrowAmount != net + fee");
-            (,,,, uint128 poolTotalObligation) = lending.loanPools(loanPoolId);
-            eq(uint256(obligation), uint256(poolTotalObligation), "SP-95: quote obligation != pool totalObligation");
+            (,, uint128 poolObligation,,,) = lending.loans(loanPoolId);
+            eq(uint256(obligation), uint256(poolObligation), "SP-95: quote obligation != pool obligation");
         } catch {}
     }
 
@@ -1978,12 +1906,12 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
         if (loanPoolId == 0) return;
         uint128 contribution = lending.loanPoolContributions(loanPoolId, actor);
         if (contribution == 0) return;
-        (,,, uint128 totalContributed,) = lending.loanPools(loanPoolId);
-        uint256 loanId = lending.loanPoolLoanId(loanPoolId);
-        (,,, uint128 obligation, uint128 drawn, uint128 repaid, bool closed) = lending.loans(loanId);
+        (,,, uint128 totalContributed) = lending.loanPools(loanPoolId);
+        uint256 loanId = loanPoolId;
+        (,, uint128 obligation, uint128 drawn, uint128 repaid, bool closed) = lending.loans(loanId);
         uint256 recovered = uint256(drawn) + uint256(repaid);
         if (!closed) {
-            (,, uint256 streamId,,,,) = lending.loans(loanId);
+            (, uint256 streamId,,,,) = lending.loans(loanId);
             uint128 outstanding = obligation - drawn - repaid;
             uint128 withdrawable = ISablierV2LockupLinear(SABLIER_ADDR).withdrawableAmountOf(streamId);
             recovered += withdrawable < outstanding ? uint256(withdrawable) : uint256(outstanding);
