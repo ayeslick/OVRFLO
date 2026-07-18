@@ -46,10 +46,6 @@ abstract contract OVRFLOFactoryHandler is Properties {
         factory.setLendingFee(address(lending), feeBps_);
     }
 
-    function _oVRFLOFactory_setLendingTreasury(address treasury_) internal asAdmin {
-        factory.setLendingTreasury(address(lending), treasury_);
-    }
-
     function _oVRFLOFactory_setMarketDepositLimit(uint256 limit) internal asAdmin {
         factory.setMarketDepositLimit(address(vault), market, limit);
         property_setDepositLimitEcho(market, limit);

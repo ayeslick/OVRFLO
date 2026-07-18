@@ -1356,11 +1356,12 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
         for (uint256 i = 1; i < nextLoan; i++) {
             (, uint256 streamId,, uint128 drawn,, bool closed) = lending.loans(i);
             uint128 snapshot = ghost_loanStreamWithdrawnAtCreation[i];
-            uint128 closeSnapshot = ghost_loanStreamWithdrawnAtClose[i];
-            if (closed && closeSnapshot > 0) {
-                // Loan closed via closeLoan — stream was returned to borrower and
-                // may have been reused or externally withdrawn since. Use the
-                // snapshot taken at close time.
+            if (closed) {
+                // Closed loan — stream was returned to borrower and may have been
+                // reused or externally withdrawn since. Always trust closeSnapshot
+                // (recording is guaranteed at all close sites: closeLoan, full
+                // repayLoan, and scenario). Never live-read for closed loans.
+                uint128 closeSnapshot = ghost_loanStreamWithdrawnAtClose[i];
                 if (closeSnapshot >= snapshot) {
                     eq(
                         uint256(drawn),
@@ -1369,12 +1370,10 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
                     );
                 }
             } else {
-                // Open loan, or closed via repayLoan (stream returned to borrower;
-                // ghost_loanStreamWithdrawnAtClose recorded at close time).
+                // Open loan — live-read the stream's withdrawn amount.
                 try ISablierV2LockupLinear(SABLIER_ADDR).getWithdrawnAmount(streamId) returns (
                     uint128 currentWithdrawn
                 ) {
-                    if (currentWithdrawn == snapshot && drawn == 0) continue;
                     if (currentWithdrawn >= snapshot) {
                         eq(
                             uint256(drawn),
