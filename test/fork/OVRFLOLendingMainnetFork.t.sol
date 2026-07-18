@@ -63,7 +63,7 @@ contract OVRFLOLendingMainnetForkTest is OVRFLOForkBase {
         uint256 claimTimestamp = block.timestamp + (PRIMARY_EXPIRY - block.timestamp) / 4;
         vm.warp(claimTimestamp);
         uint128 partialClaim = sablier.withdrawableAmountOf(streamId);
-        (,,,,,, uint128 outstandingBeforeClaim,) = lending.loanState(loanId);
+        uint128 outstandingBeforeClaim = _loanOutstanding(lending, loanId);
         assertGt(partialClaim, 0);
         assertLt(partialClaim, outstandingBeforeClaim);
 
@@ -97,7 +97,7 @@ contract OVRFLOLendingMainnetForkTest is OVRFLOForkBase {
         uint256 loanPoolId = lending.createBorrowerLoanPool(_singletonArray(liquidityId), streamId, borrowAmount, 0);
         uint256 loanId = 1;
 
-        (,,,,,, uint128 outstanding,) = lending.loanState(loanId);
+        uint128 outstanding = _loanOutstanding(lending, loanId);
         _seedWstEth(USER, outstanding);
         vm.startPrank(USER);
         IERC20(WSTETH).approve(address(ovrflo), outstanding);
@@ -187,6 +187,11 @@ contract OVRFLOLendingMainnetForkTest is OVRFLOForkBase {
         lending = new OVRFLOLending(address(factory), address(ovrflo), address(ovrflo.sablierLL()));
     }
 
+    function _loanOutstanding(OVRFLOLending lending, uint256 loanId) internal view returns (uint128) {
+        (,,, uint128 obligation, uint128 drawn, uint128 repaid,) = lending.loans(loanId);
+        return obligation - drawn - repaid;
+    }
+
     function _assertLoanClosedAfterClaim(
         OVRFLOLending lending,
         OVRFLOToken token,
@@ -195,8 +200,8 @@ contract OVRFLOLendingMainnetForkTest is OVRFLOForkBase {
         uint256 streamId,
         uint256 loanPoolId
     ) internal {
-        (,,, uint128 obligation, uint128 drawn, uint128 repaid, uint128 outstanding, bool closed) =
-            lending.loanState(loanId);
+        (,,, uint128 obligation, uint128 drawn, uint128 repaid, bool closed) = lending.loans(loanId);
+        uint128 outstanding = obligation - drawn - repaid;
         assertEq(drawn, obligation);
         assertEq(repaid, 0);
         assertEq(outstanding, 0);

@@ -78,7 +78,7 @@ contract OVRFLOFactoryMainnetForkTest is OVRFLOForkBase {
         assertEq(ovrflo.ptToMarket(pt), PRIMARY_MARKET);
         assertTrue(factory.isMarketApproved(address(ovrflo), PRIMARY_MARKET));
         assertEq(factory.approvedMarketCount(address(ovrflo)), 1);
-        assertEq(factory.getApprovedMarket(address(ovrflo), 0), PRIMARY_MARKET);
+        assertEq(factory.approvedMarketAt(address(ovrflo), 0), PRIMARY_MARKET);
     }
 
     function test_AddMarket_AllowsSharedTokenAcrossLiveWstEthMaturities() public {
@@ -109,8 +109,8 @@ contract OVRFLOFactoryMainnetForkTest is OVRFLOForkBase {
         assertEq(secondaryPt, SECONDARY_PT);
         assertEq(secondaryToken, address(token));
         assertEq(factory.approvedMarketCount(address(ovrflo)), 2);
-        assertEq(factory.getApprovedMarket(address(ovrflo), 0), PRIMARY_MARKET);
-        assertEq(factory.getApprovedMarket(address(ovrflo), 1), SECONDARY_MARKET);
+        assertEq(factory.approvedMarketAt(address(ovrflo), 0), PRIMARY_MARKET);
+        assertEq(factory.approvedMarketAt(address(ovrflo), 1), SECONDARY_MARKET);
         assertEq(ovrflo.ptToMarket(PRIMARY_PT), PRIMARY_MARKET);
         assertEq(ovrflo.ptToMarket(SECONDARY_PT), SECONDARY_MARKET);
     }

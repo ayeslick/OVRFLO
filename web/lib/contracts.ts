@@ -36,7 +36,7 @@ export const ovrfloFactoryAbi = [
       { name: "ovrflo", type: "address" },
       { name: "index", type: "uint256" },
     ],
-    name: "getApprovedMarket",
+    name: "approvedMarketAt",
     outputs: [{ name: "", type: "address" }],
     stateMutability: "view",
     type: "function",

@@ -624,7 +624,7 @@ contract OVRFLOLendingTest is Test {
         assertEq(underlying.balanceOf(address(lending)), 0);
         assertEq(sablier.ownerOf(25), address(lending));
 
-        (,,, uint128 obligation,,,, bool closed) = lending.loanState(loanId);
+        (,,, uint128 obligation,,, bool closed) = lending.loans(loanId);
         assertEq(obligation, quotedObligation);
         assertFalse(closed);
 
@@ -634,7 +634,8 @@ contract OVRFLOLendingTest is Test {
         lending.repayLoan(loanId, 25 ether);
         vm.stopPrank();
 
-        (,,,, uint128 drawn, uint128 repaid, uint128 outstanding,) = lending.loanState(loanId);
+        (,,,, uint128 drawn, uint128 repaid,) = lending.loans(loanId);
+        uint128 outstanding = obligation - drawn - repaid;
         assertEq(drawn, 0);
         assertEq(repaid, 25 ether);
         assertEq(outstanding, 85 ether);
@@ -699,7 +700,7 @@ contract OVRFLOLendingTest is Test {
     function test_OrderStateViewsReflectCurrentState() public {
         uint256 liquidityId = _supplyLiquidity(BUYER, 100 ether);
         (address lender, address market, uint16 aprBps, uint128 availableLiquidity, bool active) =
-            lending.liquidityState(liquidityId);
+            lending.liquidityPositions(liquidityId);
         assertEq(lender, BUYER);
         assertEq(market, MARKET);
         assertEq(aprBps, 1000);
@@ -715,7 +716,7 @@ contract OVRFLOLendingTest is Test {
             uint16 listingApr,
             uint16 listingFeeBps,
             bool listingActive
-        ) = lending.saleListingState(saleListingId);
+        ) = lending.saleListings(saleListingId);
         assertEq(listingMaker, SELLER);
         assertEq(listingMarket, MARKET);
         assertEq(listingStreamId, 26);
@@ -828,14 +829,25 @@ contract OVRFLOLendingTest is Test {
         lending.repayLoan(999, 1);
     }
 
-    function test_LiquidityState_RevertsForUnknownId() public {
-        vm.expectRevert("OVRFLOLending: unknown liquidity");
-        lending.liquidityState(999);
+    function test_LiquidityState_ReturnsZeroForUnknownId() public {
+        (address lender, address market, uint16 aprBps, uint128 availableLiquidity, bool active) =
+            lending.liquidityPositions(999);
+        assertEq(lender, address(0));
+        assertEq(market, address(0));
+        assertEq(aprBps, 0);
+        assertEq(availableLiquidity, 0);
+        assertFalse(active);
     }
 
-    function test_SaleListingState_RevertsForUnknownId() public {
-        vm.expectRevert("OVRFLOLending: unknown listing");
-        lending.saleListingState(999);
+    function test_SaleListingState_ReturnsZeroForUnknownId() public {
+        (address seller, address market, uint256 streamId, uint16 aprBps, uint16 feeBps, bool active) =
+            lending.saleListings(999);
+        assertEq(seller, address(0));
+        assertEq(market, address(0));
+        assertEq(streamId, 0);
+        assertEq(aprBps, 0);
+        assertEq(feeBps, 0);
+        assertFalse(active);
     }
 
     function test_WithdrawLiquidity_RevertsWhenAlreadyCancelled() public {
@@ -1964,8 +1976,7 @@ contract OVRFLOLendingTest is Test {
         assertEq(lending.loanPoolProceeds(poolB), 0, "pool B proceeds unchanged");
         assertEq(lending.loanPoolReceived(poolB, BUYER), 0, "pool B buyer received unchanged");
         assertEq(lending.loanPoolReceived(poolB, STRANGER), 0, "pool B stranger received unchanged");
-        (,,,, uint128 loanBDrawn, uint128 loanBRepaid, bool loanBClosed) =
-            lending.loans(lending.loanPoolLoanId(poolB));
+        (,,,, uint128 loanBDrawn, uint128 loanBRepaid, bool loanBClosed) = lending.loans(lending.loanPoolLoanId(poolB));
         assertEq(loanBDrawn, 0, "loan B drawn unchanged");
         assertEq(loanBRepaid, 0, "loan B repaid unchanged");
         assertFalse(loanBClosed, "loan B not closed");
@@ -2188,7 +2199,9 @@ contract OVRFLOLendingTest is Test {
         assertEq(capAfter, capBefore, "capacity unchanged after donation");
 
         // Lending balance increases but this doesn't affect capacity accounting
-        assertGt(underlying.balanceOf(address(lending)), uint256(capBefore), "balance exceeds capacity (donation sits idle)");
+        assertGt(
+            underlying.balanceOf(address(lending)), uint256(capBefore), "balance exceeds capacity (donation sits idle)"
+        );
     }
 
     /// @dev Direct ovrfloToken transfer to lending does not inflate loan pool proceeds.

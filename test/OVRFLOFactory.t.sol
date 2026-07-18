@@ -261,7 +261,8 @@ contract OVRFLOFactoryTest is Test {
         assertEq(token.symbol(), "ovrfloWETH");
         assertEq(token.decimals(), 18);
 
-        OVRFLOFactory.OvrfloInfo memory info = factory.getOvrfloInfo(ovrfloAddr);
+        OVRFLOFactory.OvrfloInfo memory info;
+        (info.treasury, info.underlying, info.ovrfloToken) = factory.ovrfloInfo(ovrfloAddr);
         assertEq(info.treasury, TREASURY);
         assertEq(info.underlying, address(underlying));
         assertEq(info.ovrfloToken, tokenAddr);
@@ -484,7 +485,7 @@ contract OVRFLOFactoryTest is Test {
         assertEq(ovrflo.ptToMarket(address(pt)), address(market));
         assertTrue(factory.isMarketApproved(address(ovrflo), address(market)));
         assertEq(factory.approvedMarketCount(address(ovrflo)), 1);
-        assertEq(factory.getApprovedMarket(address(ovrflo), 0), address(market));
+        assertEq(factory.approvedMarketAt(address(ovrflo), 0), address(market));
     }
 
     function test_AddMarket_AllowsSharedTokenAcrossMaturities() public {

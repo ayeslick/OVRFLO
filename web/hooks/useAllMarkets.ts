@@ -53,7 +53,7 @@ export function useAllMarkets(ovrflos: OvrfloEntry[]): {
     const contracts: {
       address: `0x${string}`;
       abi: typeof ovrfloFactoryAbi;
-      functionName: "getApprovedMarket";
+      functionName: "approvedMarketAt";
       args: readonly [`0x${string}`, bigint];
     }[] = [];
     ovrflos.forEach((o, oi) => {
@@ -63,7 +63,7 @@ export function useAllMarkets(ovrflos: OvrfloEntry[]): {
         contracts.push({
           address: OVRFLO_FACTORY as `0x${string}`,
           abi: ovrfloFactoryAbi,
-          functionName: "getApprovedMarket" as const,
+          functionName: "approvedMarketAt" as const,
           args: [o.address, BigInt(i)] as const,
         });
       }

@@ -651,8 +651,7 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
         uint128 proceeds = loanPoolProceeds[loanPoolId];
         if (!loan.closed && proceeds < requestAmount) {
             uint128 harvestAmount = _minUint128(
-                _toUint128(uint256(requestAmount) - uint256(proceeds)),
-                _minUint128(withdrawable, outstanding)
+                _toUint128(uint256(requestAmount) - uint256(proceeds)), _minUint128(withdrawable, outstanding)
             );
             if (harvestAmount > 0) {
                 sablier.withdraw(loan.streamId, address(this), harvestAmount);
@@ -703,79 +702,6 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
         feeAmount = StreamPricing.fee(effectiveBorrowAmount, feeBps);
         netToBorrower = effectiveBorrowAmount - feeAmount;
         residual = eligibility.remaining - obligation;
-    }
-
-    /// @notice Returns the full state of a loan.
-    /// @param loanId The loan id.
-    /// @return borrower The borrower (stream owner).
-    /// @return lender The lender.
-    /// @return streamId The pledged Sablier stream.
-    /// @return obligation Total ovrfloToken owed at maturity.
-    /// @return drawn ovrfloToken drawn by the lender so far.
-    /// @return repaid ovrfloToken repaid by the borrower so far.
-    /// @return outstanding `obligation - drawn - repaid`.
-    /// @return closed Whether the loan is closed.
-    function loanState(uint256 loanId)
-        external
-        view
-        returns (
-            address borrower,
-            address lender,
-            uint256 streamId,
-            uint128 obligation,
-            uint128 drawn,
-            uint128 repaid,
-            uint128 outstanding,
-            bool closed
-        )
-    {
-        Loan storage loan = loans[loanId];
-        _requireLoanExists(loan);
-        return (
-            loan.borrower,
-            loan.lender,
-            loan.streamId,
-            loan.obligation,
-            loan.drawn,
-            loan.repaid,
-            _outstanding(loan),
-            loan.closed
-        );
-    }
-
-    /// @notice Returns the state of a liquidity position.
-    /// @param liquidityId The liquidity id.
-    /// @return lender LiquidityPosition owner.
-    /// @return market Pendle market.
-    /// @return aprBps Discount/accrual rate.
-    /// @return availableLiquidity Remaining underlying.
-    /// @return active Whether the liquidity is still live.
-    function liquidityState(uint256 liquidityId)
-        external
-        view
-        returns (address lender, address market, uint16 aprBps, uint128 availableLiquidity, bool active)
-    {
-        LiquidityPosition storage liquidity = liquidityPositions[liquidityId];
-        require(liquidity.lender != address(0), "OVRFLOLending: unknown liquidity");
-        return (liquidity.lender, liquidity.market, liquidity.aprBps, liquidity.availableLiquidity, liquidity.active);
-    }
-
-    /// @notice Returns the state of a sale listing.
-    /// @param listingId The sale listing id.
-    /// @return seller Listing owner.
-    /// @return market Pendle market.
-    /// @return streamId The Sablier stream.
-    /// @return aprBps Ask discount rate.
-    /// @return listingFeeBps Snapshotted fee at post time.
-    /// @return active Whether the listing is still live.
-    function saleListingState(uint256 listingId)
-        external
-        view
-        returns (address seller, address market, uint256 streamId, uint16 aprBps, uint16 listingFeeBps, bool active)
-    {
-        SaleListing storage listing = saleListings[listingId];
-        require(listing.seller != address(0), "OVRFLOLending: unknown listing");
-        return (listing.seller, listing.market, listing.streamId, listing.aprBps, listing.feeBps, listing.active);
     }
 
     /*//////////////////////////////////////////////////////////////

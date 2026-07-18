@@ -302,18 +302,6 @@ contract OVRFLOFactory is Ownable2Step {
     }
 
     /*//////////////////////////////////////////////////////////////
-                            VIEW FUNCTIONS
-    //////////////////////////////////////////////////////////////*/
-
-    function getOvrfloInfo(address ovrflo) external view returns (OvrfloInfo memory) {
-        return ovrfloInfo[ovrflo];
-    }
-
-    function getApprovedMarket(address ovrflo, uint256 index) external view returns (address) {
-        return approvedMarketAt[ovrflo][index];
-    }
-
-    /*//////////////////////////////////////////////////////////////
                               INTERNALS
     //////////////////////////////////////////////////////////////*/
 

@@ -62,8 +62,7 @@ abstract contract OVRFLOLendingHandler is Properties {
     // ――――――――――――――――――――――――― Clamped ――――――――――――――――――――――――――
 
     function _recordLoanCloseGhost(uint256 loanId, uint256 streamId) internal {
-        ghost_loanStreamWithdrawnAtClose[loanId] =
-            ISablierV2LockupLinear(SABLIER_ADDR).getWithdrawnAmount(streamId);
+        ghost_loanStreamWithdrawnAtClose[loanId] = ISablierV2LockupLinear(SABLIER_ADDR).getWithdrawnAmount(streamId);
     }
 
     function oVRFLOLending_supplyLiquidity_clamped(address, uint16 aprBps, uint128 availableLiquidity) public {
@@ -287,8 +286,6 @@ abstract contract OVRFLOLendingHandler is Properties {
         // Ghost: record initial capacity for GL-71, GL-81
         ghost_liquidityInitialCapacity[liquidityId] = availableLiquidity;
         snapshotAfter();
-        // Cover liquidityState view
-        lending.liquidityState(liquidityId);
         // Property assertions
         property_supplyLiquidityIdIncrements();
         property_supplyLiquidityNewLiquidityActive();
@@ -321,8 +318,6 @@ abstract contract OVRFLOLendingHandler is Properties {
         uint256 listingId = lending.postSaleListing(_market, streamId, aprBps);
         ghosts.ghost_lastListingId = listingId;
         snapshotAfter();
-        // Cover saleListingState view
-        lending.saleListingState(listingId);
         // Property assertions
         property_postListingIdIncrements();
         property_postListingActiveFeeSnapshotted();
@@ -339,9 +334,9 @@ abstract contract OVRFLOLendingHandler is Properties {
         ghosts.ghost_lastStreamId = streamId;
         if (!isActive) return;
         uint256 grossPrice;
-        try lending.quote(listingMarket, streamId, aprBps, 0)
-            returns (uint256 price, uint128, uint256, uint256, uint128)
-        {
+        try lending.quote(listingMarket, streamId, aprBps, 0) returns (
+            uint256 price, uint128, uint256, uint256, uint128
+        ) {
             grossPrice = price;
         } catch {
             return;
@@ -371,8 +366,6 @@ abstract contract OVRFLOLendingHandler is Properties {
         ghost_loanStreamWithdrawnAtCreation[ghosts.ghost_lastLoanId] =
             ISablierV2LockupLinear(SABLIER_ADDR).getWithdrawnAmount(streamId);
         snapshotAfter();
-        // Cover loanState view
-        lending.loanState(ghosts.ghost_lastLoanId);
         uint128 actualBorrow = stateAfter.poolTotalContributed;
         uint256 feeBps = lending.feeBps();
         uint256 fee = feeBps == 0 ? 0 : uint256(actualBorrow) * feeBps / 10_000;
