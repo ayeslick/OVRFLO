@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>OVRFLO | Self-Repaying Lending</title>
+    <title>OVRFLO | Self-Repaying Loans</title>
     <link rel="stylesheet" href="styles.css">
 </head>
 <body class="grid-bg">
@@ -11,35 +11,34 @@
         <header>
             <div class="logo">OVRFLO</div>
             <nav>
-                <a href="landing-v3.html" class="active">Protocol</a>
-                <a href="app-tables-v2.html">Markets</a>
+                <span class="text-dim mono" style="font-size:0.8125rem;">MARKETS &mdash; SOON</span>
                 <a href="#">Docs</a>
             </nav>
         </header>
 
         <section class="hero" style="grid-template-columns: 1.2fr 1fr; gap: 0; padding-bottom: 4rem;">
             <div style="padding-right: 4rem;">
-                <h1>The Self-Repaying<br>Lending Market.</h1>
+                <h1>Self-Repaying<br>Loans.</h1>
                 <p style="margin-bottom: 2rem;">
                     Deposit Pendle principal tokens. Receive a liquid token plus a Sablier
                     stream of your fixed yield. Sell the stream, or borrow against it and
                     let it pay your debt down block by block. Fixed obligations. No
-                    liquidations. No health factors. No loan-time oracles.
+                    liquidations. No health factors.
                 </p>
                 <div style="display: flex; gap: 1rem;">
-                    <a href="app-tables-v2.html" class="btn btn-cyan" style="text-decoration: none; display: inline-block;">Borrow</a>
-                    <a href="app-tables-v2.html" class="btn btn-gold" style="text-decoration: none; display: inline-block;">Lend</a>
+                    <span class="btn" style="display: inline-block; opacity: 0.5; cursor: default; border-color: var(--graphite); color: var(--dim);">APP &mdash; COMING SOON</span>
                 </div>
             </div>
-            <div style="border-left: var(--grid-line); padding-left: 4rem;">
-                <div class="stat-label">System Architecture</div>
-                <pre class="mono text-dim" style="font-size: 0.875rem; line-height: 1.4; margin-top: 1rem; color: var(--chalk);">
+            <div style="border-left: var(--grid-line); display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 0 1.5rem; min-width: 0;">
+                <div style="max-width: 100%;">
+                <div class="stat-label" style="text-align: center; font-size: 0.8125rem; letter-spacing: 0.08em;">System Architecture</div>
+                <pre class="mono text-dim" style="font-size: clamp(0.7rem, 1.25vw, 0.875rem); line-height: 1.4; margin-top: 1rem; color: var(--chalk); max-width: 100%; overflow-x: auto;">
  [PT DEPOSIT] --> [OVRFLO TOKEN]
                       |
                       v
                 [SABLIER STREAM]
                       |
-              [OVRFLO BOOK MARKET]
+                [OVRFLO LENDING]
                       |
              +--------+--------+
              |                 |
@@ -47,21 +46,22 @@
              |                 |
        (Self-Repaying)   (Yield Capture)
                 </pre>
+                </div>
             </div>
         </section>
 
         <section class="stats-grid">
             <div class="stat-box">
-                <div class="stat-label">Total Value Locked</div>
-                <div class="stat-value text-chalk">$142.5M</div>
+                <div class="stat-label">Liquidations</div>
+                <div class="stat-value text-chalk">None</div>
             </div>
             <div class="stat-box">
-                <div class="stat-label">Active Loans</div>
-                <div class="stat-value text-cyan">1,204</div>
+                <div class="stat-label">Repayment</div>
+                <div class="stat-value text-cyan">Automatic</div>
             </div>
             <div class="stat-box">
-                <div class="stat-label">Yield Streams</div>
-                <div class="stat-value text-gold">3,492</div>
+                <div class="stat-label">Rates</div>
+                <div class="stat-value text-gold">Fixed at origination</div>
             </div>
         </section>
 
@@ -81,9 +81,9 @@
                     <div class="mono text-dim" style="font-size: 0.75rem; margin-bottom: 1rem;">02 / TRADE OR BORROW</div>
                     <h3 style="font-size: 1.125rem; margin-bottom: 0.75rem;">Put the stream to work</h3>
                     <p class="text-dim" style="font-size: 0.875rem; margin: 0;">
-                        List the stream for sale on the lending, or pledge it as collateral
+                        Sell the stream for underlying now, or pledge it as collateral
                         for a loan. The stream itself repays the lender: debt is drawn
-                        from it as it vests, and the residual returns to you at close.
+                        from it as it vests, and any residual returns to you at close.
                     </p>
                 </div>
                 <div style="padding: 2rem;">
@@ -91,8 +91,7 @@
                     <h3 style="font-size: 1.125rem; margin-bottom: 0.75rem;">Leave whenever you want</h3>
                     <p class="text-dim" style="font-size: 0.875rem; margin: 0;">
                         ovrfloToken is fully liquid: unwrap it 1:1 for underlying, claim
-                        PT at maturity, or swap it out. Every holder always has an exit
-                        path, backed by the vault's combined solvency invariant.
+                        PT at maturity, or swap it out. You are never locked in.
                     </p>
                 </div>
             </div>
@@ -114,10 +113,11 @@
                 <div class="stat-label text-gold" style="margin-bottom: 1.5rem;">For Lenders</div>
                 <h2 style="font-size: 1.5rem; margin-bottom: 1rem;">Fixed-rate yield, stream-secured.</h2>
                 <p class="text-dim" style="font-size: 0.9375rem;">
-                    Post an liquidity at your rate and size. When a borrower takes it, their
-                    stream is escrowed by the lending and your recovery draws directly from
-                    it as it vests, capped at the obligation. Pool with other lenders to
-                    fund larger loans and claim your share pro-rata.
+                    Post liquidity at your rate and size. When a borrower takes it, their
+                    stream is escrowed by the market and your recovery draws directly from
+                    it as it vests, capped at the obligation. When a loan is larger than
+                    one position, liquidity is pooled automatically across lenders and
+                    every lender claims their share pro-rata.
                 </p>
             </div>
         </section>

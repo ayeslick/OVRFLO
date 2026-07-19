@@ -101,6 +101,17 @@ Enumeration semantics: with zero-struct getters, per-id failures are impossible 
 
 ## Phases
 
+**Execution order (user decision 2026-07-18):** P0 (landing) ships immediately and independently. Everything else is strictly local-first — P1 through P5 run and gate entirely on the local Anvil fork; nothing deploys to devnet until the full P5 gate is green, and nothing touches mainnet until the devnet bake plus the pre-mainnet requirements (production Ponder, scripted E2E, multisig governance) are satisfied. Local → devnet → mainnet, in that order, no skipping.
+
+### P0 — Ship the landing page (immediate, independent of everything else)
+
+`mockups/landing-v3.html` is already the finished dark-theme landing (DESIGN.md-native). Ship it as-is:
+1. Content fixes (applied 2026-07-18 per user copy review): hero retitled "Self-Repaying Loans."; "No loan-time oracles" removed; listing-for-sale mention replaced with sell-now (storefront is deferred — the old plan's pending buy-side marketing clause is DROPPED for the same reason); "residual returns" softened to "any residual"; the solvency-invariant sentence replaced with plain language; lender pooling reworded as automatic (not lender-triggered); the fake TVL/loans/streams stats replaced with design facts (Liquidations: Zero by design / Repayment: Automatic / Rates: Fixed at origination) — swap back to live TVL/Active Loans/Yield Streams once the indexer serves real numbers; dead app links replaced with a dim APP — COMING SOON state until the app ships. Layout fixes also applied 2026-07-18 (verified in-browser at desktop + 900px): diagram centered in the right hero column, viewport-scaled font so it never overflows narrow windows, self-referencing Protocol nav link removed, stale [OVRFLO BOOK MARKET] diagram label renamed to [OVRFLO LENDING], stats value now "None". Nothing pending — the file is ship-ready; remaining P0 work is Vercel + DNS only.
+2. Deploy as a static site to Vercel (a single HTML file needs no build step; add basic headers).
+3. Point `overflow.finance` at it, replacing the current landing page.
+4. When the Next app ships later, its landing route absorbs this page under the same domain (app placement — same domain path vs `app.` subdomain — is decided at P3, not now).
+Verify: `overflow.finance` serves the new landing; old page gone.
+
 ### P1 — Seed script repair + lending deploy (hard prerequisite)
 
 `script/seed-local.sh` is broken four ways vs. the current factory (verified): 1-arg `forge create` vs `constructor(owner, oracle)`; 3-arg `prepareOracle` vs 2; 5-arg `addMarket` vs 4; stETH underlying vs the fixtures' wstETH. Fix per the old plan's Phase 1.0 items 1–6 (still accurate, including the wstETH wrap-and-transfer sequence and seeding anvil account #2 `0x3C44...93BC` as the lender wallet), then add the `deployLending` step + `lending`/`lenderWallet` fields in `deployments/local.json` per old Phase 1.1. Keep fork block 24609670 (fixtures constant) — **add a check that both fixture markets are still pre-maturity at that block's timestamp; if matured, repin fixtures first and stop.**
@@ -140,6 +151,7 @@ Extend the P2 Ponder indexer (KTD11): add the factory contract block plus a `fac
 
 ## Acceptance criteria
 
+- [ ] P0: overflow.finance serves the landing-v3 page (diagram centered, buy-side copy in)
 - [ ] P1: seed completes on a fresh fork; `deployments/local.json` has `factory, ovrflo, token, lending, devWallet, lenderWallet`; fixture markets pre-maturity at the pinned block
 - [ ] P2 Spike 0: wagmi 3.7 + AppKit connect + one write verified green on a scratch branch before any scaffolding (or the KTD2 fallback ladder invoked and the stack decision amended)
 - [ ] P2: generated ABIs contain all expected functions AND the 8 StreamPricing errors (Vitest-asserted, CI-enforced); Sablier ABI hand-file contains no `calculateMinFeeWei`, a nonpayable `withdrawMax`, and passes the drift test against the vendored envio ABI
