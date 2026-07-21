@@ -43,7 +43,7 @@ The repo is already unusually audit-prepared (`README.md`, `CONCEPTS.md`, securi
 **Internal protocol model (I6)**
 
 - R8. A dual-backing solvency tie-out presenting one fungible `ovrfloToken` as backed by two separately-accounted pools (PT claims via `marketTotalDeposited`, wrap reserve via `wrappedUnderlying`) as conservation identities (I-1, I-3, E-3) an auditor can tie out against on-chain state, framed insolvency-first.
-- R9. A self-repaying-loan economics explainer covering why there is no health check, loan-time oracle, or liquidation; the `outstanding = obligation − (drawn + repaid)` relation; and why permissionless `closeLoan()` is liveness, not exploit.
+- R9. A self-repaying-loan economics explainer covering why there is no health check or liquidation; the `outstanding = obligation − (drawn + repaid)` relation; and why permissionless `closeLoan()` is liveness, not exploit.
 
 **Reproduction and scope (scope snapshot, docs-only slice of I3)**
 

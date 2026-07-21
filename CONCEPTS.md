@@ -98,7 +98,7 @@ Total lender recovery is capped at the obligation; the pledged stream is returne
 
 ### Self-repaying loan
 
-A loan against a pledged Sablier stream where the stream's deterministic payouts repay the lender without liquidations, health checks, or loan-time oracles. The stream is non-cancelable and pays a fixed asset on a fixed schedule, so it cannot underperform; the lender draws accrued value until the obligation is satisfied, then the residual stream returns to the borrower.
+A loan against a pledged Sablier stream where the stream's deterministic payouts repay the lender without liquidations or health checks. The stream is non-cancelable and pays a fixed asset on a fixed schedule, so it cannot underperform; the lender draws accrued value until the obligation is satisfied, then the residual stream returns to the borrower.
 
 ### Pool
 

@@ -37,7 +37,7 @@ The repo is already audit-prepared (`README.md`, `CONCEPTS.md`, security guideli
 **Internal protocol model**
 
 - R8. A dual-backing solvency tie-out presenting one fungible `ovrfloToken` as backed by two separately-accounted pools (PT claims via `marketTotalDeposited`, wrap reserve via `wrappedUnderlying`) as conservation identities (I-1, I-3, E-3) an auditor can tie out against on-chain state, framed insolvency-first.
-- R9. A self-repaying-loan economics explainer covering why there is no health check, loan-time oracle, or liquidation; the `outstanding = obligation − (drawn + repaid)` relation; and why permissionless `closeLoan()` is liveness, not exploit.
+- R9. A self-repaying-loan economics explainer covering why there is no health check or liquidation; the `outstanding = obligation − (drawn + repaid)` relation; and why permissionless `closeLoan()` is liveness, not exploit.
 
 **Reproduction, scope, and reconciliation**
 
@@ -130,7 +130,7 @@ docs/audit/
 - **Requirements:** R8, R9.
 - **Dependencies:** U1.
 - **Files:** `docs/audit/internal-model.md` (create).
-- **Approach:** Two parts. (1) Dual-backing solvency tie-out: one fungible `ovrfloToken` backed by two separately-accounted pools (PT claims via `marketTotalDeposited`, wrap reserve via `wrappedUnderlying`), presented as conservation identities I-1, I-3, E-3 an auditor can tie out against on-chain state, framed insolvency-first ("here is every way the books could stop balancing"), including the donation-to-raw-balance seam that does not increase either reserve. (2) Self-repaying-loan economics: why there is no health check, loan-time oracle, or liquidation; the `outstanding = obligation − (drawn + repaid)` relation (I-8); why permissionless `closeLoan()` is liveness not exploit; the `deposited − withdrawn` pricing-at-fill rule. Reference `CONCEPTS.md` definitions verbatim where they pin terms. Link to `x-ray/invariants.md` for derivations rather than restating them.
+- **Approach:** Two parts. (1) Dual-backing solvency tie-out: one fungible `ovrfloToken` backed by two separately-accounted pools (PT claims via `marketTotalDeposited`, wrap reserve via `wrappedUnderlying`), presented as conservation identities I-1, I-3, E-3 an auditor can tie out against on-chain state, framed insolvency-first ("here is every way the books could stop balancing"), including the donation-to-raw-balance seam that does not increase either reserve. (2) Self-repaying-loan economics: why there is no health check or liquidation; the `outstanding = obligation − (drawn + repaid)` relation (I-8); why permissionless `closeLoan()` is liveness not exploit; the `deposited − withdrawn` pricing-at-fill rule. Reference `CONCEPTS.md` definitions verbatim where they pin terms. Link to `x-ray/invariants.md` for derivations rather than restating them.
 - **Patterns to follow:** `CONCEPTS.md` dual-backing-sources and self-repaying-loan entries; insolvency-first framing from the ideation's I6.
 - **Test expectation:** none -- documentation unit; verified by review against the acceptance criteria below.
 - **Verification:** Reviewer confirms the dual-backing tie-out states both pools, the conservation identities, and the raw-balance-doesn't-increase-reserve seam; that the loan explainer covers the no-health-check/no-liquidation design, the outstanding relation, and permissionless-close-as-liveness; and that conservation derivations link to `x-ray/invariants.md` instead of duplicating them.

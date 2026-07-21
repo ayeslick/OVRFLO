@@ -160,7 +160,7 @@ No proxy patterns. All contracts are immutable once deployed. `OVRFLOFactory` is
 - `_computeSplit` reverts if `toStream == 0` (`OVRFLO.sol:355`), so par-rate deposits (rate == 1e18) reverts rather than minting with zero stream. Worth confirming this is intended.
 
 **As a Lending / Borrowing (secondary):**
-- Self-repaying loans have no liquidations, no health factor, no loan-time oracle; the stream is non-cancelable and pays a fixed asset on a fixed schedule, so the lender draws accrued value until `obligation` is met. The `obligation <= remaining` invariant (from `grossPrice` floor + `obligation` ceil + full-borrow fast path) is what makes this safe.
+- Self-repaying loans have no liquidations, no health factor; the stream is non-cancelable and pays a fixed asset on a fixed schedule, so the lender draws accrued value until `obligation` is met. The `obligation <= remaining` invariant (from `grossPrice` floor + `obligation` ceil + full-borrow fast path) is what makes this safe.
 - `StreamPricing.obligation` uses `Math.mulDiv(..., Rounding.Up)` (ceil) and `grossPrice` uses `PRBMath.mulDiv` (floor); the directional rounding is documented as load-bearing (`StreamPricing.sol:24-30`).
 
 ### Temporal Risk Profile

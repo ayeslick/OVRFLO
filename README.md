@@ -10,7 +10,7 @@ OVRFLO operates in two layers:
 
 **Layer 1 — Collateral Creation (Core Vault):** Deposit a Pendle PT and immediately receive ovrfloTokens (your principal at current market value) plus a Sablier stream that vests the remaining discount until PT maturity. The stream is deterministic and non-cancelable — it pays exactly what it promises, on schedule.
 
-**Layer 2 — The Market (OVRFLOLending):** Use that Sablier stream as collateral. Sell it outright for discounted underlying, or pledge it to borrow underlying and let the stream repay the loan at maturity. Because the stream is deterministic, there are no liquidations, no health factors, and no price oracles needed at loan time.
+**Layer 2 — The Market (OVRFLOLending):** Use that Sablier stream as collateral. Sell it outright for discounted underlying, or pledge it to borrow underlying and let the stream repay the loan at maturity. Because the stream is deterministic, there are no liquidations, no health factors.
 
 ### Example
 
