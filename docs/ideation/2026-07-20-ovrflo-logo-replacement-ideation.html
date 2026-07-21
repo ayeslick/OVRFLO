@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ideation: OVRFLO Logo Replacement</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500&display=swap">
+<style>
+  :root{--obsidian:#050505;--carbon:#111;--graphite:#333;--chalk:#f4f4f4;--dim:#888;--cyan:#00e5ff;--gold:#ffcf00;}
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{background:var(--obsidian);color:var(--chalk);font-family:Inter,system-ui,sans-serif;font-size:15px;line-height:1.6;}
+  .wrap{max-width:860px;margin:0 auto;padding:2.5rem 1.5rem;}
+  h1{font-size:1.6rem;font-weight:500;margin-bottom:.35rem;}
+  h2{font-size:1.05rem;font-weight:500;text-transform:uppercase;letter-spacing:.08em;font-family:'IBM Plex Mono',monospace;color:var(--dim);margin:2.5rem 0 1rem;border-bottom:1px solid var(--graphite);padding-bottom:.4rem;}
+  h3{font-size:1.05rem;font-weight:500;margin-bottom:.4rem;}
+  .meta{font-family:'IBM Plex Mono',monospace;font-size:.75rem;color:var(--dim);display:flex;gap:1.5rem;flex-wrap:wrap;margin-bottom:.5rem;}
+  .meta b{color:var(--chalk);font-weight:500;}
+  p{margin-bottom:.7rem;}
+  .card{border:1px solid var(--graphite);padding:1.25rem;margin-bottom:1.25rem;background:var(--carbon);}
+  .card .rank{font-family:'IBM Plex Mono',monospace;color:var(--dim);font-size:.75rem;margin-bottom:.3rem;}
+  .tags{display:flex;gap:.6rem;flex-wrap:wrap;font-family:'IBM Plex Mono',monospace;font-size:.7rem;margin:.5rem 0 .8rem;}
+  .tag{border:1px solid var(--graphite);padding:.1rem .5rem;color:var(--dim);}
+  .basis{border-left:2px solid var(--graphite);padding:.4rem .8rem;font-size:.85rem;color:#bbb;margin:.6rem 0;}
+  .basis code,.mono{font-family:'IBM Plex Mono',monospace;font-size:.8rem;}
+  .lbl{font-family:'IBM Plex Mono',monospace;font-size:.68rem;text-transform:uppercase;letter-spacing:.08em;color:var(--dim);display:block;margin-top:.7rem;}
+  table{width:100%;border-collapse:collapse;font-size:.85rem;}
+  th,td{border-bottom:1px solid var(--graphite);padding:.45rem .6rem;text-align:left;vertical-align:top;}
+  th{font-family:'IBM Plex Mono',monospace;font-size:.7rem;text-transform:uppercase;color:var(--dim);font-weight:500;}
+  .jump{font-family:'IBM Plex Mono',monospace;font-size:.78rem;line-height:2;margin-bottom:1.2rem;}
+  .jump a{color:var(--chalk);text-decoration:none;border-bottom:1px dotted var(--graphite);}
+  .jump a:hover{color:var(--cyan);}
+  ul{margin:.3rem 0 .8rem 1.2rem;}
+  li{margin-bottom:.25rem;}
+  .sketch{margin:.9rem 0;border:1px solid var(--graphite);background:var(--obsidian);}
+  .sketch svg{display:block;}
+  .cap{font-size:.72rem;color:var(--dim);font-family:'IBM Plex Mono',monospace;padding:.35rem .6rem;border-top:1px solid var(--graphite);}
+  footer{margin-top:3rem;border-top:1px solid var(--graphite);padding-top:.8rem;font-family:'IBM Plex Mono',monospace;font-size:.7rem;color:var(--dim);}
+  .axes li{font-family:'IBM Plex Mono',monospace;font-size:.82rem;}
+  .ground p{font-size:.88rem;color:#ccc;}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>Ideation: OVRFLO Logo Replacement</h1>
+<div class="meta"><span>date <b>2026-07-20</b></span><span>topic <b>ovrflo-logo-replacement</b></span><span>mode <b>repo-grounded</b></span></div>
+<div class="meta"><span>focus <b>replacement concepts for the blue wave-swirl mark — dark-first, SVG-first, 16px→180px, DESIGN.md-constrained</b></span></div>
+
+<h2 id="grounding">Grounding Context</h2>
+<div class="ground">
+<p><b>Codebase context.</b> Design system "Architectural Dark" (DESIGN.md): obsidian #050505 base, chalk #f4f4f4, 1px graphite borders on a 40px grid, accent-cyan = borrow side and accent-gold = lend side (<i>"strictly semantic, never decorative"</i>), Inter + IBM Plex Mono, sharp corners (max 2px), bans on gradients/shadows/blur/bubbly shapes, ASCII diagrams as a first-class element. Current mark: organic blue gradient wave-circle — violates the gradient ban and the palette, and its edge-touching detail fights the maskable-icon 80% safe zone. Surfaces: 28px header (beside the mono wordmark), 16/32px favicons + 180px apple-touch icon, OG image (currently a 292×290 JPEG — wrong ratio for 1200×630 OG), future app header (currently text-only). Landing stats vocabulary: None / Streamed / Fixed.</p>
+<p><b>Past learnings.</b> The discarded Next app generated its favicon as a plain geometric "O" (<span class="mono">web/app/icon.tsx</span>, pre-dating the current palette) — weak but real precedent for a letterform favicon. No brand decisions are documented in <span class="mono">docs/solutions/</span>; whatever wins here should be captured. A stale pre-DESIGN.md plan (<span class="mono">plans/ovfl-frontend-redesign-liquid-flow-gold.md</span>) still contains superseded liquid/gradient brand language — flagged non-authoritative.</p>
+<p><b>External research</b> (moderate value): Morpho = durable abstract symbol; Pendle = line-based motion mark; Alchemix (closest product analog) has weak brand presence; <b>no DeFi protocol has a terminal/ASCII-native brand in production</b> — an open differentiation gap. 2026 trends: abstract-geometric vs monogram resurgence; black/white minimalism resurgent; metallic/chrome an anti-pattern for this system. Loop motifs are the established signal for "self-sustaining process." Favicon practice: Safari ignores SVG-favicon media queries (ICO fallback required); maskable icons need an 80% safe zone.</p>
+<p><b>Evidence dossiers</b> (verbatim quotes with file:line): <span class="mono">/tmp/compound-engineering-501/ce-ideate/l0g0a1b2/evidence-design-language.md</span> (47 entries) and <span class="mono">…/evidence-brand-language.md</span> (27 quotes + 4 ASCII diagrams). Fleet: 5 ideation agents (3 mid-tier, 2 top-tier), 48 raw candidates, fresh-context basis verification on all 30 merged directions.</p>
+</div>
+
+<h2 id="axes">Topic Axes</h2>
+<ul class="axes">
+<li>mark-concept — symbolism: overflow, stream, self-repaying loop, vault/discount</li>
+<li>palette-fit — dark-first, cyan/gold semantics, mono/duotone</li>
+<li>scale-legibility — 16px favicon → 28px header → 180px</li>
+<li>geometry-style — sharp corners, 1px lines, mono/ASCII grammar vs organic swirl</li>
+<li>application-surfaces — header lockup, favicon set, OG, ASCII-renderable variants</li>
+</ul>
+
+<h2 id="ranked">Ranked Ideas</h2>
+<div class="jump">
+1 <a href="#i1">Terminal-Native Identity System</a> ·
+2 <a href="#i2">Carry-Bit Ring</a> ·
+3 <a href="#i3">Breached-Letterform Ō</a> ·
+4 <a href="#i4">Overflowing Card</a> ·
+5 <a href="#i5">Live Vesting Favicon</a> ·
+6 <a href="#i6">Open-Circuit Loop</a> ·
+7 <a href="#i7">Mark Production Policy</a>
+</div>
+
+<div class="card" id="i1">
+<div class="rank">RANK 1 — TOP PICK</div>
+<h3>Terminal-Native Identity System</h3>
+<div class="tags"><span class="tag">axis: geometry-style + application-surfaces</span><span class="tag">confidence 80%</span><span class="tag">complexity Medium</span></div>
+<p>The identity is built from the protocol's own documentation grammar: the canonical mark is a ≤5-character-wide, 3-line box-drawing tile whose master lives as <i>text in the README</i>, versioned in git like the contracts. SVG mark and favicons are mechanical vectorizations of the tile on a strict character grid; the wordmark stays pure IBM Plex Mono (optionally with a terminal block cursor); the OG/social image becomes the OVRFLO CYCLE ASCII diagram itself with the wordmark as a corner label — so a pasted link shows the machine, not a badge.</p>
+<div class="sketch"><svg viewBox="0 0 560 150" width="100%" xmlns="http://www.w3.org/2000/svg">
+<rect width="560" height="150" fill="#050505"/>
+<text x="60" y="52" font-family="IBM Plex Mono,monospace" font-size="26" fill="#f4f4f4">┌─┐</text>
+<text x="60" y="80" font-family="IBM Plex Mono,monospace" font-size="26" fill="#f4f4f4">│ └▶</text>
+<text x="60" y="108" font-family="IBM Plex Mono,monospace" font-size="26" fill="#f4f4f4">▼</text>
+<text x="60" y="135" font-family="IBM Plex Mono,monospace" font-size="10" fill="#888">MASTER = 3 LINES OF TEXT IN THE README</text>
+<rect x="250" y="45" width="56" height="56" fill="none" stroke="#333"/>
+<text x="258" y="70" font-family="IBM Plex Mono,monospace" font-size="15" fill="#f4f4f4">┌─┐</text>
+<text x="258" y="86" font-family="IBM Plex Mono,monospace" font-size="15" fill="#f4f4f4">│└▶</text>
+<text x="250" y="120" font-family="IBM Plex Mono,monospace" font-size="10" fill="#888">FAVICON</text>
+<text x="360" y="80" font-family="IBM Plex Mono,monospace" font-size="18" fill="#f4f4f4" letter-spacing="2">OVRFLO<tspan fill="#ffcf00">▮</tspan></text>
+<text x="360" y="120" font-family="IBM Plex Mono,monospace" font-size="10" fill="#888">HEADER LOCKUP</text>
+</svg><div class="cap">illustrative — tile glyphs, favicon crop, and cursor lockup are directional, not final art</div></div>
+<div class="basis"><b>basis</b> — direct: DESIGN.md:45 "ASCII diagrams are a first-class element: monospace, chalk on obsidian… hand-aligned"; the four verbatim box-drawing diagrams in README.md; app-tables-v2.html:33 header is already text-only. external: research found no terminal/ASCII-native DeFi brand in production. Verifier: sound (5 candidates from 5 different frames converged here).</div>
+<p><span class="lbl">rationale</span>The brand's densest existing visual output is its diagrams — this makes the logo speak the house language instead of being the one off-system asset. Claims a verified category gap at near-zero production cost: the mark renders in a git diff, a code comment, an Etherscan tag, and a tweet without an asset pipeline. Fixes the wrong-ratio OG image as a side effect.</p>
+<p><span class="lbl">downsides</span>Reads "developer-first" — if the target audience shifts retail, a glyph tile may feel austere. Box-drawing glyph rendering varies across fonts outside controlled surfaces (mitigated: canonical renderings are vectorized, only the master is text). Choosing the exact tile is a real design exercise.</p>
+</div>
+
+<div class="card" id="i2">
+<div class="rank">RANK 2</div>
+<h3>Carry-Bit Ring (Integer-Overflow O)</h3>
+<div class="tags"><span class="tag">axis: mark-concept</span><span class="tag">confidence 75%</span><span class="tag">complexity Low</span></div>
+<p>A single-stroke "O" that overshoots its own start point and steps outward with one hard 90° jog — a register wrapping past its maximum, the carry bit escaping. Roughly 1.1 turns of a circle plus a short rectilinear tail; monochrome chalk (tail optionally gold only in semantically-gold contexts). One SVG path serves 16px (broken ring with tail) through 180px (the 90° step resolves). Synthesis S1: the tail's length can double as a vesting-progress indicator in app contexts.</p>
+<div class="sketch"><svg viewBox="0 0 560 150" width="100%" xmlns="http://www.w3.org/2000/svg">
+<rect width="560" height="150" fill="#050505"/>
+<path d="M 150 40 A 36 36 0 1 0 151 112 L 151 96 L 175 96" fill="none" stroke="#f4f4f4" stroke-width="4"/>
+<text x="100" y="140" font-family="IBM Plex Mono,monospace" font-size="10" fill="#888">O WRAPS PAST ITS MAXIMUM</text>
+<path d="M 330 62 A 14 14 0 1 0 330.5 90 L 330.5 84 L 340 84" fill="none" stroke="#f4f4f4" stroke-width="2.5"/>
+<text x="312" y="120" font-family="IBM Plex Mono,monospace" font-size="10" fill="#888">16PX</text>
+<text x="410" y="82" font-family="IBM Plex Mono,monospace" font-size="13" fill="#888">overflow = the value</text>
+<text x="410" y="100" font-family="IBM Plex Mono,monospace" font-size="13" fill="#888">that carries out</text>
+</svg><div class="cap">illustrative — stroke geometry directional; the jog would sit on the 40px grid module</div></div>
+<div class="basis"><b>basis</b> — direct: CONCEPTS.md:107-109 — the fixed discount "overflows into extractable value" (verified verbatim). external: integer overflow / odometer rollover; the audience (Solidity devs) reads "overflow" as the carry bit before water. reasoned: every loop-logo in the category is a <i>closed</i> loop — an open loop with a carry-out tail encodes overflow rather than mere circulation. Verifier: sound.</div>
+<p><span class="lbl">rationale</span>Name, mechanism, and audience in-joke collapse into one stroke. A monogram (it is still an O) with a story no competitor can reuse, fully compliant with the sharp-corner/monochrome rules, and trivially maskable (tail stays inside the 80% safe zone).</p>
+<p><span class="lbl">downsides</span>The in-joke is invisible to non-developers — it reads as "broken circle with a tab" without the story. The 90° jog needs careful drawing to avoid reading as a "Q" or a power symbol.</p>
+</div>
+
+<div class="card" id="i3">
+<div class="rank">RANK 3</div>
+<h3>Breached-Letterform Ō (Collapsed Lockup)</h3>
+<div class="tags"><span class="tag">axis: mark-concept + application-surfaces</span><span class="tag">confidence 70%</span><span class="tag">complexity Low</span></div>
+<p>A typographic mark: the mono "O" with a horizontal limit-line floating above it — a max-capacity line — where the O's top arc visibly breaks through the line. Two elements total. Deployed as the first letter of the OVRFLO wordmark (one lockup file; the favicon is a crop of that O), which finally makes the landing header and the already-text-only app header the same system.</p>
+<div class="sketch"><svg viewBox="0 0 560 150" width="100%" xmlns="http://www.w3.org/2000/svg">
+<rect width="560" height="150" fill="#050505"/>
+<line x1="88" y1="52" x2="122" y2="52" stroke="#f4f4f4" stroke-width="3"/>
+<line x1="140" y1="52" x2="174" y2="52" stroke="#f4f4f4" stroke-width="3"/>
+<circle cx="131" cy="80" r="34" fill="none" stroke="#f4f4f4" stroke-width="5"/>
+<text x="88" y="140" font-family="IBM Plex Mono,monospace" font-size="10" fill="#888">THE O BREACHES ITS LIMIT LINE</text>
+<text x="260" y="92" font-family="IBM Plex Mono,monospace" font-size="26" fill="#f4f4f4" letter-spacing="3">VRFLO</text>
+<line x1="228" y1="58" x2="240" y2="58" stroke="#f4f4f4" stroke-width="2"/>
+<line x1="248" y1="58" x2="260" y2="58" stroke="#f4f4f4" stroke-width="2"/>
+<circle cx="244" cy="76" r="15" fill="none" stroke="#f4f4f4" stroke-width="3"/>
+<text x="228" y="120" font-family="IBM Plex Mono,monospace" font-size="10" fill="#888">LOCKUP: MARK = FIRST LETTER</text>
+</svg><div class="cap">illustrative — breach depth and line weights directional</div></div>
+<div class="basis"><b>basis</b> — direct: AGENTS.md:104 naming rule (the compressed name OVRFLO already drops letters — a mutated letterform continues that logic); styles.css:67-73 `.logo` is already pure mono type, so the lockup drops in with zero redesign (both verified). reasoned: single letterforms are the pictorial device that best survives 16px. Weak-but-real continuity: the discarded app's generated favicon was a plain "O" (web/app/icon.tsx, per learnings — arbitration note: the verifier checked only the mockup assets and missed this).</div>
+<p><span class="lbl">rationale</span>Cheapest credible path to a real mark: no separate pictorial asset to maintain, one drawing serves every surface, and it depicts the name's meaning (a thing exceeding its limit) without water.</p>
+<p><span class="lbl">downsides</span>Subtle at a glance — risks reading as a stylistic quirk rather than a mark. The macron/limit-line needs enough breach to survive 16px rasterization.</p>
+</div>
+
+<div class="card" id="i4">
+<div class="rank">RANK 4</div>
+<h3>Overflowing Card</h3>
+<div class="tags"><span class="tag">axis: geometry-style</span><span class="tag">confidence 65%</span><span class="tag">complexity Low</span></div>
+<p>A 1px chalk-stroked sharp-cornered square — identical grammar to the design system's cards — with a single horizontal stroke that begins inside and continues <i>through</i> the right border, terminating outside: <span class="mono">overflow: visible</span> rendered as a mark. Monochrome only (the verifier's compliance pass removed the "optionally gold" hedge). At 16px it's a box with a protruding tick — cursor-like in a tab bar.</p>
+<div class="sketch"><svg viewBox="0 0 560 150" width="100%" xmlns="http://www.w3.org/2000/svg">
+<rect width="560" height="150" fill="#050505"/>
+<rect x="110" y="40" width="66" height="66" fill="none" stroke="#f4f4f4" stroke-width="3"/>
+<line x1="130" y1="73" x2="212" y2="73" stroke="#f4f4f4" stroke-width="3"/>
+<text x="96" y="136" font-family="IBM Plex Mono,monospace" font-size="10" fill="#888">A CARD, WITH VALUE ESCAPING</text>
+<rect x="330" y="58" width="26" height="26" fill="none" stroke="#f4f4f4" stroke-width="2"/>
+<line x1="338" y1="71" x2="368" y2="71" stroke="#f4f4f4" stroke-width="2"/>
+<text x="322" y="116" font-family="IBM Plex Mono,monospace" font-size="10" fill="#888">16PX</text>
+</svg><div class="cap">illustrative — proportions directional</div></div>
+<div class="basis"><b>basis</b> — direct: DESIGN.md:30 card rule ("No border-radius… Sharp edges… 1px graphite borders") and README.md:300-315 "What's fixed will overflow" (both verified). external: the CSS-overflow / buffer-overflow reading is the developer audience's native decoding of the word. Verifier: weak→sound once resolved monochrome.</div>
+<p><span class="lbl">rationale</span>The only concept built <i>from</i> the design system's own components — the logo is literally one of the product's cards breaking the rule that contains it. Zero risk of palette or geometry mismatch by construction.</p>
+<p><span class="lbl">downsides</span>Box-plus-line is a crowded genre (risks reading as an "export" or "logout" icon); the escaping-stroke length is doing all the distinctive work.</p>
+</div>
+
+<div class="card" id="i5">
+<div class="rank">RANK 5</div>
+<h3>Live Vesting Favicon</h3>
+<div class="tags"><span class="tag">axis: application-surfaces</span><span class="tag">confidence 75%</span><span class="tag">complexity Medium</span></div>
+<p>A surface strategy composable with any mark above: the favicon doesn't show the logo — it shows <i>state</i>. A 16×16 canvas favicon: 1px chalk frame, interior filling bottom-up in gold proportional to the connected user's vested percentage (protocol aggregate when signed out). Static ICO fallback (Safari) frozen at a canonical fill. The browser tab becomes the product demo: a loan repaying itself while you watch.</p>
+<div class="sketch"><svg viewBox="0 0 560 120" width="100%" xmlns="http://www.w3.org/2000/svg">
+<rect width="560" height="120" fill="#050505"/>
+<g>
+<rect x="120" y="35" width="40" height="40" fill="none" stroke="#f4f4f4" stroke-width="2"/>
+<rect x="122" y="65" width="36" height="8" fill="#ffcf00"/>
+<rect x="220" y="35" width="40" height="40" fill="none" stroke="#f4f4f4" stroke-width="2"/>
+<rect x="222" y="53" width="36" height="20" fill="#ffcf00"/>
+<rect x="320" y="35" width="40" height="40" fill="none" stroke="#f4f4f4" stroke-width="2"/>
+<rect x="322" y="39" width="36" height="34" fill="#ffcf00"/>
+</g>
+<text x="120" y="100" font-family="IBM Plex Mono,monospace" font-size="10" fill="#888">EARLY</text>
+<text x="220" y="100" font-family="IBM Plex Mono,monospace" font-size="10" fill="#888">VESTING…</text>
+<text x="320" y="100" font-family="IBM Plex Mono,monospace" font-size="10" fill="#888">NEAR CLOSE</text>
+</svg><div class="cap">illustrative — the tab icon as a progress bar of your own money vesting</div></div>
+<div class="basis"><b>basis</b> — direct: DESIGN.md:69 "The only permitted 'live' motion is data itself updating (e.g. a stream's vested amount ticking)" — the verifier called this "a near-perfect, precise match… genuinely rare"; the ICO/PNG fallback chain already exists in the landing head (verified). Gold = vested yield is a legitimate semantic use, not decoration.</div>
+<p><span class="lbl">rationale</span>Turns the smallest brand surface into the product's differentiator demonstrated live. No competitor's tab does anything. Composable: adopt with idea 1, 2, 3, 4, or 6.</p>
+<p><span class="lbl">downsides</span>Needs the app (P3+) and a canvas-favicon runtime; some browsers throttle favicon updates in background tabs; must degrade gracefully signed-out.</p>
+</div>
+
+<div class="card" id="i6">
+<div class="rank">RANK 6</div>
+<h3>Open-Circuit Loop</h3>
+<div class="tags"><span class="tag">axis: mark-concept</span><span class="tag">confidence 60%</span><span class="tag">complexity Low</span></div>
+<p>One unbroken 1px polyline, right angles only, drawn like a PCB trace: it enters horizontally (deposit), turns through a rectangular near-loop (the self-repaying cycle), and exits <i>without closing</i> — because "You are never locked in." The refusal to close is the point: it takes the category's established loop signal and breaks the cliché exactly where OVRFLO differs from locked protocols.</p>
+<div class="sketch"><svg viewBox="0 0 560 130" width="100%" xmlns="http://www.w3.org/2000/svg">
+<rect width="560" height="130" fill="#050505"/>
+<path d="M 70 65 L 130 65 L 130 35 L 200 35 L 200 95 L 145 95 L 145 78 L 250 78" fill="none" stroke="#f4f4f4" stroke-width="3"/>
+<text x="70" y="120" font-family="IBM Plex Mono,monospace" font-size="10" fill="#888">IN → AROUND → OUT (NEVER CLOSED)</text>
+<text x="330" y="60" font-family="IBM Plex Mono,monospace" font-size="13" fill="#888">a loop that refuses</text>
+<text x="330" y="78" font-family="IBM Plex Mono,monospace" font-size="13" fill="#888">to close = the product</text>
+</svg><div class="cap">illustrative — routing directional; would align to the 40px grid</div></div>
+<div class="basis"><b>basis</b> — direct: landing-v3.html:102-106 "Leave whenever you want… You are never locked in" (verified verbatim). external: loop motif = established "self-sustaining" signal; closest analog (Alchemix) holds the territory weakly. Verifier: sound.</div>
+<p><span class="lbl">rationale</span>Encodes both halves of the pitch — self-repaying (the loop) and exit-optionality (the opening) — in one stroke, in house geometry.</p>
+<p><span class="lbl">downsides</span>Abstract polylines are the least ownable genre in the set (adjacent to circuit-board clichés); at 16px the routing must simplify to survive.</p>
+</div>
+
+<div class="card" id="i7">
+<div class="rank">RANK 7 — ADOPT REGARDLESS OF GEOMETRY</div>
+<h3>Mark Production Policy (Pipeline + currentColor + Two-Tier)</h3>
+<div class="tags"><span class="tag">axis: palette-fit + scale-legibility + application-surfaces</span><span class="tag">confidence 90%</span><span class="tag">complexity Low</span></div>
+<p>Three orthogonal policies that apply to whichever mark wins. (1) <b>Single-source pipeline</b>: one SVG master (or token-driven generator) emits the full favicon/ICO/PNG/apple-touch/OG set at build time, with the maskable 80% safe zone enforced by the generator — replacing the six hand-exported raster files that can silently disagree today. (2) <b>currentColor rule</b>: the mark is defined colorless (<span class="mono">fill: currentColor</span>) — chalk in neutral chrome, inheriting cyan/gold only when standing in a semantically colored context; it can never drift off-palette because it has no palette. (3) <b>Two-tier reduction</b>: a detailed ≥64px rendition and a deliberately reduced 16–32px kernel from one construction grid, instead of one drawing squinted down six sizes.</p>
+<div class="basis"><b>basis</b> — direct: six separately-produced raster files at inconsistent bit depths in mockups/images/ (verifier-corrected count); DESIGN.md:35 semantic-accent rule; the header's chalk-only convention. external: Safari SVG-favicon gap and maskable safe-zone requirements are generator-enforceable, not designer-memorable. Verifier: sound (called the currentColor rule "implementation hygiene… should accompany whichever mark is chosen").</div>
+<p><span class="lbl">rationale</span>The white-box saga and the off-palette drift were process failures, not shape failures — no geometry fixes them. These policies make the next mark unable to regress, whatever it looks like.</p>
+<p><span class="lbl">downsides</span>Small build-step addition to the web rebuild (fits P2's typegen/build tooling naturally).</p>
+</div>
+
+<h2 id="rejections">Rejection Summary</h2>
+<table>
+<tr><th>Idea</th><th>Reason</th></tr>
+<tr><td>Duotone family: Split-Diagonal, Repeat Barline ‖:, Squared Interlock, 95/5 Split Bar</td><td>Compliance — permanent cyan+gold in a context-free mark violates DESIGN.md:34-40 "strictly semantic, never decorative" (verifier-flagged); 95/5 bar was closest (colors do encode economics) but still fails the static-context test. Its split-economics story survives as OG/hero illustration material.</td></tr>
+<tr><td>Weir-Notch O / Overfilled Counter / Escaped O / Negative-space O / Level-Tick Ring / Notched-O</td><td>Duplicates — one "O breaches its container" concept explored six ways; consolidated into Rank 3 (typographic form chosen: cheapest to ship, strongest lockup story). Weir-notch's "favicon equity" basis was verifier-refuted as stated.</td></tr>
+<tr><td>Escapement Wheel</td><td>Basis stretch — DESIGN.md's "ticking" rule covers live data, not clockwork glyphs; sawtooth detail dies at 16px. The deterministic-release story is real but better told in copy than in the mark.</td></tr>
+<tr><td>Stream Gauge Staff</td><td>Analogy too loose — real instrument, but citations support a numeric ethos, not a gauge shape; reads as a barcode at small sizes.</td></tr>
+<tr><td>Spillway Section blueprint set</td><td>Over-scoped — a full plan/section/detail drawing system is disproportionate to a mark replacement (verifier concurred).</td></tr>
+<tr><td>Ascending Stream Bars</td><td>Basis undercuts itself — cites the live-motion rule to justify a frozen equalizer; generic bar-chart genre.</td></tr>
+<tr><td>Three-State Mark Family (None/Streamed/Fixed)</td><td>Fragments identity across three glyphs; survives as a future UI-iconography idea, not the logo.</td></tr>
+<tr><td>Ligature-Glyph Fusion</td><td>Cost asymmetry — custom font engineering vs Rank 3's CSS-level lockup achieving the same collapse.</td></tr>
+<tr><td>Grid Defect / Waterfall Step / Grid-Cell Overflow</td><td>Sound but outcompeted — grid-native marks are subtle at 16px; the "drawn by the page itself" hero moment is kept as a possible Rank 1/4 hero treatment.</td></tr>
+<tr><td>Wordmark-only / Block-Cursor</td><td>Absorbed into Rank 1's system (the cursor lockup) rather than standing alone.</td></tr>
+<tr><td>Pixel-Canonical Mark</td><td>Ungrounded — "16px is binding" asserted, not evidenced; chunky-pixel styling is a taste commitment beyond the brief.</td></tr>
+<tr><td>Overflow Tray</td><td>Cited a stale, superseded pre-DESIGN.md plan as brand canon (verifier-flagged); concept subsumed by Rank 4.</td></tr>
+<tr><td>Sub-Brand Grammar (token/per-market icons)</td><td>Premature — no per-market icons exist yet; noted as a selection criterion (prefer marks that extend to an ovrfloToken icon) rather than a standalone idea.</td></tr>
+<tr><td>Diagram OG</td><td>Not rejected on merit (real wrong-ratio bug) — folded into Rank 1; the OG fix applies even if another mark wins.</td></tr>
+</table>
+
+<footer class="composition-signal">Composed 2026-07-20 by ce-ideate (repo-grounded) from user focus "replacements for the OVRFLO logo" + DESIGN.md/mockups/README grounding + 2026-07-20 web research digest · 48 raw → 30 merged → 7 survivors · basis-verified</footer>
+</div>
+</body>
+</html>

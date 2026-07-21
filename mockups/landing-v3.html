@@ -4,20 +4,32 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>OVRFLO | Self-Repaying Loans</title>
-    <link rel="stylesheet" href="styles.css">
+    <meta name="description" content="OVRFLO enables Self-Repaying Loans. Deposit Pendle principal tokens, sell or borrow against the yield stream, and let the stream repay the loan. No liquidations, no health factors.">
+    <link rel="icon" href="images/favicon.ico" sizes="any">
+    <link rel="icon" type="image/png" sizes="32x32" href="images/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="images/favicon-16x16.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="images/apple-touch-icon.png">
+    <meta property="og:title" content="OVRFLO | Self-Repaying Loans">
+    <meta property="og:description" content="Deposit Pendle principal tokens, sell or borrow against the yield stream, and let the stream repay the loan.">
+    <meta property="og:image" content="https://overflow.finance/images/logo.jpeg">
+    <link rel="stylesheet" href="styles.css?v=2">
 </head>
 <body class="grid-bg">
     <div class="container">
         <header>
-            <div class="logo">OVRFLO</div>
+            <div class="logo" style="display: flex; align-items: center; gap: 0.75rem;">
+                <img src="images/logo-mark.png" alt="" width="28" height="28" style="display: block;">
+                <span>OVRFLO</span>
+            </div>
             <nav>
                 <span class="text-dim mono" style="font-size:0.8125rem;">MARKETS &mdash; SOON</span>
-                <a href="#">Docs</a>
+                <a href="https://deepwiki.com/ayeslick/OVRFLO" target="_blank" rel="noopener">Docs</a>
+                <a href="https://x.com/overflow_fi" target="_blank" rel="noopener" aria-label="OVRFLO on X">X</a>
             </nav>
         </header>
 
-        <section class="hero" style="grid-template-columns: 1.2fr 1fr; gap: 0; padding-bottom: 4rem;">
-            <div style="padding-right: 4rem;">
+        <section class="hero" style="grid-template-columns: 1.2fr 1fr; gap: 0; padding-bottom: 0;">
+            <div style="padding-right: 4rem; padding-bottom: 2.5rem;">
                 <h1>Self-Repaying<br>Loans.</h1>
                 <p style="margin-bottom: 2rem;">
                     Deposit Pendle principal tokens. Receive a liquid token plus a Sablier
@@ -50,22 +62,7 @@
             </div>
         </section>
 
-        <section class="stats-grid">
-            <div class="stat-box">
-                <div class="stat-label">Liquidations</div>
-                <div class="stat-value text-chalk">None</div>
-            </div>
-            <div class="stat-box">
-                <div class="stat-label">Repayment</div>
-                <div class="stat-value text-cyan">Streamed</div>
-            </div>
-            <div class="stat-box">
-                <div class="stat-label">Rates</div>
-                <div class="stat-value text-gold">Fixed</div>
-            </div>
-        </section>
-
-        <section style="padding: 4rem 0; border-bottom: var(--grid-line);">
+        <section style="padding: 2.5rem 0 4rem; border-bottom: var(--grid-line);">
             <div class="stat-label" style="margin-bottom: 2rem;">The OVRFLO Cycle</div>
             <div style="display: grid; grid-template-columns: repeat(3, 1fr); border: var(--grid-line);">
                 <div style="padding: 2rem; border-right: var(--grid-line);">
@@ -97,8 +94,8 @@
             </div>
         </section>
 
-        <section style="padding: 4rem 0; border-bottom: var(--grid-line); display: grid; grid-template-columns: 1fr 1fr; gap: 0;">
-            <div style="padding-right: 4rem;">
+        <section style="padding: 4rem 0 0; border-bottom: var(--grid-line); display: grid; grid-template-columns: 1fr 1fr; gap: 0;">
+            <div style="padding-right: 4rem; padding-bottom: 4rem;">
                 <div class="stat-label text-cyan" style="margin-bottom: 1.5rem;">For Borrowers</div>
                 <h2 style="font-size: 1.5rem; margin-bottom: 1rem;">Debt that pays itself.</h2>
                 <p class="text-dim" style="font-size: 0.9375rem;">
@@ -109,7 +106,7 @@
                     and let the stream repay it.
                 </p>
             </div>
-            <div style="border-left: var(--grid-line); padding-left: 4rem;">
+            <div style="border-left: var(--grid-line); padding-left: 4rem; padding-bottom: 4rem;">
                 <div class="stat-label text-gold" style="margin-bottom: 1.5rem;">For Lenders</div>
                 <h2 style="font-size: 1.5rem; margin-bottom: 1rem;">Fixed-rate yield, stream-secured.</h2>
                 <p class="text-dim" style="font-size: 0.9375rem;">
@@ -121,6 +118,15 @@
                 </p>
             </div>
         </section>
+
+        <footer class="mono text-dim" style="display: flex; justify-content: space-between; align-items: center; padding-top: 1.5rem; font-size: 0.75rem; letter-spacing: 0.05em;">
+            <span>OVRFLO &mdash; SELF-REPAYING LOANS</span>
+            <span>
+                <a href="https://deepwiki.com/ayeslick/OVRFLO" target="_blank" rel="noopener" style="color: var(--dim); text-decoration: none;">DOCS</a>
+                &nbsp;&middot;&nbsp;
+                <a href="https://x.com/overflow_fi" target="_blank" rel="noopener" style="color: var(--dim); text-decoration: none;">X</a>
+            </span>
+        </footer>
     </div>
 </body>
 </html>

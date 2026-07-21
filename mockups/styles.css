@@ -191,3 +191,38 @@ tr:hover { background-color: var(--carbon); }
     font-size: 2rem;
     font-family: var(--font-mono);
 }
+
+/* ---- Mobile (added 2026-07-21): the page previously had no small-screen handling ---- */
+@media (max-width: 800px) {
+    .container { padding: 1.25rem; }
+    h1, .hero h1 { font-size: 2.25rem; }
+    header { padding-bottom: 1.25rem; margin-bottom: 1.75rem; flex-direction: column; align-items: flex-start; gap: 0.85rem; }
+    nav { display: flex; align-items: center; gap: 1.25rem; }
+    nav a, nav span { margin-left: 0; }
+
+    /* Any inline-styled grid collapses to a single column */
+    section[style*="grid-template-columns"],
+    div[style*="grid-template-columns"] { grid-template-columns: 1fr !important; }
+
+    /* Hero: diagram moves below the copy, divider rotates to a top rule */
+    .hero { padding-top: 2.5rem; }
+    .hero > div:first-child { padding-right: 0 !important; }
+    .hero > div:last-child {
+        border-left: none !important;
+        border-top: var(--grid-line);
+        margin-top: 0.5rem;
+        padding: 1.75rem 0 0 !important;
+        align-items: flex-start !important;
+    }
+    .hero pre { font-size: 0.7rem !important; }
+
+    /* Cycle cards: column rules become row rules */
+    div[style*="repeat(3"] > div { border-right: none !important; border-bottom: var(--grid-line); }
+    div[style*="repeat(3"] > div:last-child { border-bottom: none; }
+
+    /* For Borrowers / For Lenders: stack with a top rule between them */
+    section[style*="1fr 1fr"] > div { border-left: none !important; padding-left: 0 !important; padding-right: 0 !important; }
+    section[style*="1fr 1fr"] > div:last-child { border-top: var(--grid-line); padding-top: 2rem !important; margin-top: 0.5rem; }
+
+    footer { flex-direction: column; align-items: flex-start !important; gap: 0.5rem; }
+}
