@@ -14,7 +14,6 @@ contract ForkFlashBorrower is IFlashBorrower, Test {
     bytes32 private constant CALLBACK_SUCCESS = keccak256("OVRFLO.onFlashLoan");
 
     OVRFLO public vault;
-    bool public returnSuccess = true;
 
     bool public depositDuringCallback;
     bool public unwrapDuringCallback;
@@ -33,10 +32,6 @@ contract ForkFlashBorrower is IFlashBorrower, Test {
         vault = vault_;
     }
 
-    function setReturnSuccess(bool success) external {
-        returnSuccess = success;
-    }
-
     function configureDeposit(address market, uint256 amount) external {
         depositDuringCallback = true;
         depositMarket = market;
@@ -52,12 +47,6 @@ contract ForkFlashBorrower is IFlashBorrower, Test {
         nestedFlashLoanDuringCallback = true;
         nestedPtToken = ptToken;
         nestedAmount = amount;
-    }
-
-    function resetConfig() external {
-        depositDuringCallback = false;
-        unwrapDuringCallback = false;
-        nestedFlashLoanDuringCallback = false;
     }
 
     function executeFlashLoan(address ptToken, uint256 amount, bytes calldata data) external {
@@ -82,7 +71,7 @@ contract ForkFlashBorrower is IFlashBorrower, Test {
             nestedSucceeded = ok;
         }
 
-        return returnSuccess ? CALLBACK_SUCCESS : bytes32(0);
+        return CALLBACK_SUCCESS;
     }
 }
 

@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {TestERC20} from "./TestERC20.sol";
 
@@ -252,30 +251,6 @@ contract MockLendingSablier {
     function ownerOf(uint256 streamId) external view returns (address owner) {
         owner = owners[streamId];
         require(owner != address(0), "ERC721: invalid token ID");
-    }
-
-    function getSender(uint256 streamId) external view returns (address) {
-        return streams[streamId].sender;
-    }
-
-    function getAsset(uint256 streamId) external view returns (IERC20) {
-        return streams[streamId].asset;
-    }
-
-    function getEndTime(uint256 streamId) external view returns (uint40) {
-        return streams[streamId].endTime;
-    }
-
-    function getStartTime(uint256 streamId) external view returns (uint40) {
-        return streams[streamId].startTime;
-    }
-
-    function getCliffTime(uint256 streamId) external view returns (uint40) {
-        return streams[streamId].cliffTime;
-    }
-
-    function isCancelable(uint256 streamId) external view returns (bool) {
-        return streams[streamId].cancelable;
     }
 
     function getDepositedAmount(uint256 streamId) external view returns (uint128) {

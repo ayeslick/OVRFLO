@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity >=0.6.2 <0.9.0;
 
-import "../Base.sol";
 import {Properties} from "../Properties.sol";
 import {MockSablier} from "../mocks/MockSablier.sol";
 import {ISablierV2LockupLinear} from "../../../interfaces/ISablierV2LockupLinear.sol";

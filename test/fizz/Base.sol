@@ -56,7 +56,6 @@ abstract contract Base is StringUtils, Clamp {
     // One-way flag tracking (GL-12, GL-13)
     mapping(uint256 => bool) internal ghost_listingActiveSnapshot;
     mapping(uint256 => bool) internal ghost_loanClosedSnapshot;
-    mapping(uint256 => bool) internal ghost_liquiditySeen;
     mapping(uint256 => bool) internal ghost_listingSeen;
     mapping(uint256 => bool) internal ghost_loanSeen;
 

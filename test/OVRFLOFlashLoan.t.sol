@@ -88,14 +88,6 @@ contract FlashBorrower is IFlashBorrower {
         sweepTo = to;
     }
 
-    function resetConfig() external {
-        depositDuringCallback = false;
-        unwrapDuringCallback = false;
-        nestedFlashLoan = false;
-        wrapDuringCallback = false;
-        sweepDuringCallback = false;
-    }
-
     /// @notice Entry point for tests to call. This contract is msg.sender for flashLoan.
     function executeFlashLoan(address ptToken, uint256 amount, bytes calldata data) external {
         vault.flashLoan(ptToken, amount, data);
@@ -787,8 +779,6 @@ contract OVRFLOFlashLoanTest is VaultMockHelpers {
     }
 
     function _toUser(uint256 ptAmount) internal pure returns (uint256) {
-        uint256 toUser = (ptAmount * RATE_95) / 1e18;
-        if (toUser > ptAmount) toUser = ptAmount;
-        return toUser;
+        return (ptAmount * RATE_95) / 1e18;
     }
 }

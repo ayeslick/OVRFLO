@@ -15,10 +15,6 @@ abstract contract Snapshots is Base {
         uint256 vaultTotalDeposited; // 4: marketTotalDeposited[market]
         uint256 vaultWrappedUnderlying; // 5: wrappedUnderlying
         uint256 vaultPtBalance; // 6: ptToken.balanceOf(vault)
-        uint256 ovrfloTotalSupply; // 7: ovrfloToken.totalSupply()
-        // Lending balances
-        uint256 lendingUnderlyingBalance; // 8: underlying.balanceOf(lending)
-        uint256 lendingOvrfloTokenBalance; // 9: ovrfloToken.balanceOf(lending)
         // Entity-specific state (keyed by ghost_last* IDs)
         uint128 loanPoolProceeds; // 10: loanPoolProceeds[loanPoolId]
         uint128 poolTotalContributed; // 11: loanPools[loanPoolId].totalContributed
@@ -37,9 +33,6 @@ abstract contract Snapshots is Base {
         uint256 nextLiquidityId; // 22
         uint256 nextSaleListingId; // 23
         uint256 nextLoanId; // 24
-        // Vault config
-        uint16 flashFeeBps; // 26
-        bool flashLoanPaused; // 27
         // LoanPool received for current actor
         uint128 loanPoolReceived; // 28: loanPoolReceived[loanPoolId][actor]
         // Lending treasury underlying balance (SP-99, SP-100)
@@ -59,11 +52,6 @@ abstract contract Snapshots is Base {
         state.vaultTotalDeposited = vault.marketTotalDeposited(market);
         state.vaultWrappedUnderlying = vault.wrappedUnderlying();
         state.vaultPtBalance = ptToken.balanceOf(address(vault));
-        state.ovrfloTotalSupply = ovrfloToken.totalSupply();
-
-        // Lending balances
-        state.lendingUnderlyingBalance = underlying.balanceOf(address(lending));
-        state.lendingOvrfloTokenBalance = ovrfloToken.balanceOf(address(lending));
 
         // Entity-specific state (defaults to 0/false for non-existent entities)
         state.loanPoolProceeds = lending.loanPoolProceeds(ghosts.ghost_lastPoolId);
@@ -126,10 +114,6 @@ abstract contract Snapshots is Base {
         state.nextLiquidityId = lending.nextLiquidityId();
         state.nextSaleListingId = lending.nextSaleListingId();
         state.nextLoanId = lending.nextLoanId();
-
-        // Vault config
-        state.flashFeeBps = vault.flashFeeBps();
-        state.flashLoanPaused = vault.flashLoanPaused();
 
         // LoanPool received for current actor
         state.loanPoolReceived = lending.loanPoolReceived(ghosts.ghost_lastPoolId, actor);

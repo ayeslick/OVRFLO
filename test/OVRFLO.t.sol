@@ -59,6 +59,7 @@ contract OVRFLOProtocolTest is VaultMockHelpers {
     address internal constant MARKET_TWO = address(0x1002);
 
     uint16 internal constant FEE_BPS = 100;
+    uint256 internal constant RATE_95 = 0.95e18;
 
     OVRFLO internal ovrflo;
     OVRFLOToken internal ovrfloToken;
@@ -334,6 +335,28 @@ contract OVRFLOProtocolTest is VaultMockHelpers {
         (uint256 depositedToUser,,) = ovrflo.deposit(MARKET_ONE, 10 ether, 0);
         vm.stopPrank();
         assertEq(ovrfloToken.balanceOf(user), depositedToUser, "user balance equals toUser from deposit");
+    }
+
+    /// @dev Depositing exactly MIN_PT_AMOUNT (1e6) is the lower-bound success case
+    ///      complementing test_Deposit_RevertsBelowMinimumAmount. At RATE_95 the split is
+    ///      toUser = 950000, toStream = 50000 (both > 0), so the deposit must succeed.
+    function test_Deposit_SucceedsAtExactMinPtAmount() public {
+        uint256 minAmount = ovrflo.MIN_PT_AMOUNT();
+        uint256 expiry = block.timestamp + 30 days;
+        _approveSeries(MARKET_ONE, ptOne, expiry, 0);
+        _mockRate(MARKET_ONE, RATE_95);
+        (, uint256 toStream,) = ovrflo.previewStream(MARKET_ONE, minAmount);
+        _mockSablier(user, uint128(toStream), expiry - block.timestamp, 77);
+
+        ptOne.mint(user, minAmount);
+
+        vm.startPrank(user);
+        ptOne.approve(address(ovrflo), minAmount);
+        ovrflo.deposit(MARKET_ONE, minAmount, 0);
+        vm.stopPrank();
+
+        assertGt(ovrfloToken.balanceOf(user), 0, "user received ovrfloTokens");
+        assertEq(ovrflo.marketTotalDeposited(MARKET_ONE), minAmount, "total deposited matches");
     }
 
     function test_Deposit_RevertsOnSlippage() public {

@@ -6,15 +6,6 @@ pragma solidity >=0.6.2 <0.9.0;
 /// @author Modified from Solady (https://github.com/Vectorized/solady/blob/main/src/utils/LibString.sol)
 /// @dev Name of the library is modified to prevent collisions with contract-under-test uses of LibString
 contract StringUtils {
-    function toString(int256 value) internal pure returns (string memory str) {
-        uint256 absValue = value >= 0 ? uint256(value) : uint256(-value);
-        str = toString(absValue);
-
-        if (value < 0) {
-            str = string(abi.encodePacked("-", str));
-        }
-    }
-
     function toString(uint256 value) internal pure returns (string memory str) {
         /// @solidity memory-safe-assembly
         assembly {
@@ -62,22 +53,5 @@ contract StringUtils {
             // Store the string's length at the start of memory allocated for our string.
             mstore(str, length)
         }
-    }
-
-    function toString(address value) internal pure returns (string memory str) {
-        bytes memory s = new bytes(40);
-        for (uint256 i = 0; i < 20; i++) {
-            bytes1 b = bytes1(uint8(uint256(uint160(value)) / (2 ** (8 * (19 - i)))));
-            bytes1 hi = bytes1(uint8(b) / 16);
-            bytes1 lo = bytes1(uint8(b) - 16 * uint8(hi));
-            s[2 * i] = char(hi);
-            s[2 * i + 1] = char(lo);
-        }
-        return string(s);
-    }
-
-    function char(bytes1 b) internal pure returns (bytes1 c) {
-        if (uint8(b) < 10) return bytes1(uint8(b) + 0x30);
-        else return bytes1(uint8(b) + 0x57);
     }
 }

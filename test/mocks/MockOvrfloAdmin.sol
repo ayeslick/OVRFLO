@@ -35,10 +35,6 @@ contract MockOvrfloAdmin {
         ovrflo.setFlashFeeBps(feeBps);
     }
 
-    function setFlashLoanPaused(OVRFLO ovrflo, bool paused) external {
-        ovrflo.setFlashLoanPaused(paused);
-    }
-
     function ovrfloInfo(address) external view returns (address, address, address) {
         return (treasury, underlying, ovrfloToken);
     }

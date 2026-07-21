@@ -5,7 +5,6 @@ import {Snapshots} from "./Snapshots.sol";
 import {PropertiesAsserts} from "./utils/PropertiesAsserts.sol";
 import {StreamPricing} from "../../src/StreamPricing.sol";
 import {ISablierV2LockupLinear} from "../../interfaces/ISablierV2LockupLinear.sol";
-import {vm} from "./utils/Hevm.sol";
 
 /// @notice Contains the functions that check the properties (invariants)
 abstract contract Properties is PropertiesAsserts, Snapshots {

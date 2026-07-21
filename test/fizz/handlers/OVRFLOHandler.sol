@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity >=0.6.2 <0.9.0;
 
-import "../Base.sol";
+import {vm} from "../utils/Hevm.sol";
 import {Properties} from "../Properties.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ISablierV2LockupLinear} from "../../../interfaces/ISablierV2LockupLinear.sol";

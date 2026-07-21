@@ -73,10 +73,6 @@ contract OVRFLOInvariantHandler is Test {
 
     address[3] internal actors;
 
-    uint256 public totalWrapped;
-    uint256 public totalUnwrapped;
-    uint256 public totalFlashLoaned;
-
     constructor(
         OVRFLO ovrflo_,
         OVRFLOToken ovrfloToken_,
@@ -142,8 +138,6 @@ contract OVRFLOInvariantHandler is Test {
         underlying.approve(address(ovrflo), amount);
         ovrflo.wrap(amount);
         vm.stopPrank();
-
-        totalWrapped += amount;
     }
 
     function unwrap(uint256 actorSeed, uint256 amount) public {
@@ -155,8 +149,6 @@ contract OVRFLOInvariantHandler is Test {
 
         vm.prank(actor);
         ovrflo.unwrap(amount);
-
-        totalUnwrapped += amount;
     }
 
     function unwrapBeyondReserve(uint256 actorSeed, uint256 amount) public {
@@ -219,8 +211,6 @@ contract OVRFLOInvariantHandler is Test {
         }
 
         borrower.executeFlashLoan(address(pt), amount, "");
-
-        totalFlashLoaned += amount;
     }
 
     function flashLoanWithFee(uint256 amountSeed, uint256 actionSeed, uint256 feeSeed) public {

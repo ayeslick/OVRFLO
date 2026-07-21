@@ -271,8 +271,4 @@ contract OVRFLOFuzzTest is VaultMockHelpers {
     /*//////////////////////////////////////////////////////////////
                         HELPERS
     //////////////////////////////////////////////////////////////*/
-
-    function _mockSablier(address recipient, uint128 amount, uint256 duration, uint256 streamId) internal {
-        _mockSablierCreate(address(ovrflo), address(ovrfloToken), recipient, amount, duration, streamId);
-    }
 }

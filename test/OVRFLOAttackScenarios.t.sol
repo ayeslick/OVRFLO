@@ -2,7 +2,6 @@
 pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
-import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {OVRFLO} from "../src/OVRFLO.sol";
 import {OVRFLOToken} from "../src/OVRFLOToken.sol";
@@ -20,7 +19,6 @@ contract AttackFlashBorrower is IFlashBorrower, Test {
     bytes32 private constant CALLBACK_SUCCESS = keccak256("OVRFLO.onFlashLoan");
 
     OVRFLO public vault;
-    bool public returnSuccess = true;
 
     bool public depositDuringCallback;
     bool public unwrapDuringCallback;
@@ -39,14 +37,9 @@ contract AttackFlashBorrower is IFlashBorrower, Test {
     bool public depositSucceeded;
     bool public unwrapSucceeded;
     bool public claimSucceeded;
-    address public lastInitiator;
 
     constructor(OVRFLO vault_) {
         vault = vault_;
-    }
-
-    function setReturnSuccess(bool success) external {
-        returnSuccess = success;
     }
 
     function configureDeposit(address market, uint256 amount) external {
@@ -74,20 +67,12 @@ contract AttackFlashBorrower is IFlashBorrower, Test {
         newRate = rate;
     }
 
-    function resetConfig() external {
-        depositDuringCallback = false;
-        unwrapDuringCallback = false;
-        claimDuringCallback = false;
-        changeOracleDuringCallback = false;
-    }
-
     function executeFlashLoan(address ptToken, uint256 amount, bytes calldata data) external {
         vault.flashLoan(ptToken, amount, data);
     }
 
-    function onFlashLoan(address initiator, address, uint256, uint256, bytes calldata) external returns (bytes32) {
+    function onFlashLoan(address, address, uint256, uint256, bytes calldata) external returns (bytes32) {
         require(msg.sender == address(vault), "not vault");
-        lastInitiator = initiator;
 
         if (changeOracleDuringCallback) {
             vm.mockCall(
@@ -112,7 +97,7 @@ contract AttackFlashBorrower is IFlashBorrower, Test {
             claimSucceeded = ok;
         }
 
-        return returnSuccess ? CALLBACK_SUCCESS : bytes32(0);
+        return CALLBACK_SUCCESS;
     }
 }
 

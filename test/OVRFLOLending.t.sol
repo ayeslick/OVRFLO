@@ -15,6 +15,30 @@ contract ShortTransferERC20 is TestERC20 {
     }
 }
 
+contract ReentrantLendingUnderlying is TestERC20 {
+    OVRFLOLending public target;
+    bool public attackOnTransfer;
+    bool public reentered;
+    bool public reenterSucceeded;
+
+    constructor() TestERC20("Reentrant Lending Underlying", "RLUND") {}
+
+    function configureAttack(OVRFLOLending target_) external {
+        target = target_;
+        attackOnTransfer = true;
+        reentered = false;
+        reenterSucceeded = false;
+    }
+
+    function transfer(address to, uint256 amount) public override returns (bool) {
+        if (attackOnTransfer && msg.sender == address(target) && !reentered) {
+            reentered = true;
+            (reenterSucceeded,) = address(target).call(abi.encodeCall(OVRFLOLending.withdrawLiquidity, (1)));
+        }
+        return super.transfer(to, amount);
+    }
+}
+
 /// @dev Harness to cover the _toUint128 overflow guard, which is unreachable from
 ///      the external ABI (every call site is pre-bounded). Also documents the
 ///      `loan not in pool` branch as defensive — loanPoolContributions are only written
@@ -36,6 +60,7 @@ contract OVRFLOLendingTest is Test {
     address internal constant MARKET = address(0x5555);
     address internal constant BUYER = address(0xB0B);
     address internal constant SELLER = address(0xA11CE);
+    address internal constant ATTACKER = address(0xBAD);
 
     event LendingAprBoundsSet(uint16 aprMinBps, uint16 aprMaxBps);
     event LendingFeeSet(uint16 feeBps);
@@ -49,6 +74,39 @@ contract OVRFLOLendingTest is Test {
         uint16 aprBps,
         uint16 feeBps
     );
+    event LiquiditySupplied(
+        uint256 indexed liquidityId,
+        address indexed lender,
+        address indexed market,
+        uint16 aprBps,
+        uint128 availableLiquidity
+    );
+    event LiquidityWithdrawn(uint256 indexed liquidityId, address indexed lender, uint128 refunded);
+    event StreamSoldToLiquidity(
+        uint256 indexed liquidityId,
+        uint256 indexed streamId,
+        address indexed seller,
+        address buyer,
+        uint256 grossPrice,
+        uint256 fee,
+        uint256 netToSeller
+    );
+    event StreamSaleListingCancelled(uint256 indexed listingId, address indexed seller, uint256 streamId);
+    event StreamSaleListingTaken(
+        uint256 indexed listingId,
+        uint256 indexed streamId,
+        address indexed buyer,
+        address seller,
+        uint256 grossPrice,
+        uint256 fee,
+        uint256 netToSeller
+    );
+    event LoanClosed(uint256 indexed loanId, address indexed borrower, uint128 finalDraw);
+    event LoanRepaid(uint256 indexed loanId, address indexed borrower, uint128 amount, bool closed);
+    event BorrowerLoanPoolCreated(
+        uint256 indexed loanId, address indexed borrower, address market, uint16 aprBps, uint128 totalContributed
+    );
+    event LoanPoolShareClaimed(uint256 indexed loanId, address indexed lender, uint128 amount);
 
     MockLendingFactory internal factory;
     MockLendingCore internal core;
@@ -221,6 +279,8 @@ contract OVRFLOLendingTest is Test {
         vm.expectRevert("OVRFLOLending: apr out of bounds");
         lending.supplyLiquidity(MARKET, 999, 100 ether);
 
+        vm.expectEmit(true, true, true, true, address(lending));
+        emit LiquiditySupplied(1, BUYER, MARKET, 1000, 100 ether);
         uint256 liquidityId = lending.supplyLiquidity(MARKET, 1000, 100 ether);
         vm.stopPrank();
 
@@ -242,6 +302,8 @@ contract OVRFLOLendingTest is Test {
         vm.prank(SELLER);
         sablier.approve(address(lending), 1);
 
+        vm.expectEmit(true, true, true, true, address(lending));
+        emit StreamSoldToLiquidity(liquidityId, 1, SELLER, BUYER, 100 ether, 1 ether, 99 ether);
         vm.prank(SELLER);
         lending.sellStreamToLiquidity(liquidityId, 1, 99 ether);
 
@@ -317,6 +379,8 @@ contract OVRFLOLendingTest is Test {
 
         vm.prank(SELLER);
         sablier.approve(address(lending), 5);
+        vm.expectEmit(true, true, true, true, address(lending));
+        emit StreamSoldToLiquidity(liquidityId, 5, SELLER, BUYER, 100 ether, 0, 100 ether);
         vm.prank(SELLER);
         lending.sellStreamToLiquidity(liquidityId, 5, 0);
 
@@ -326,6 +390,8 @@ contract OVRFLOLendingTest is Test {
         assertEq(underlying.balanceOf(address(lending)), 150 ether);
         assertEq(sablier.ownerOf(5), BUYER);
 
+        vm.expectEmit(true, true, false, true, address(lending));
+        emit LiquidityWithdrawn(liquidityId, BUYER, 150 ether);
         vm.prank(BUYER);
         lending.withdrawLiquidity(liquidityId);
 
@@ -366,6 +432,8 @@ contract OVRFLOLendingTest is Test {
         _mintEligibleStream(7, SELLER, 110 ether, 0);
         uint256 listingId = _postSaleListing(SELLER, 7);
 
+        vm.expectEmit(true, true, false, true, address(lending));
+        emit StreamSaleListingCancelled(1, SELLER, 7);
         vm.prank(SELLER);
         lending.cancelSaleListing(listingId);
 
@@ -383,6 +451,8 @@ contract OVRFLOLendingTest is Test {
         underlying.mint(BUYER, 100 ether);
         vm.startPrank(BUYER);
         underlying.approve(address(lending), 100 ether);
+        vm.expectEmit(true, true, true, true, address(lending));
+        emit StreamSaleListingTaken(1, 8, BUYER, SELLER, 100 ether, 1 ether, 99 ether);
         lending.buyListing(listingId, 100 ether);
         vm.stopPrank();
 
@@ -448,6 +518,8 @@ contract OVRFLOLendingTest is Test {
         lending.closeLoan(loanId);
 
         sablier.setWithdrawable(20, 110 ether);
+        vm.expectEmit(true, true, false, true, address(lending));
+        emit LoanClosed(1, SELLER, 110 ether);
         vm.prank(STRANGER);
         lending.closeLoan(loanId);
 
@@ -500,7 +572,14 @@ contract OVRFLOLendingTest is Test {
         assertFalse(closed, "loan not auto-closed by claim");
         assertEq(sablier.ownerOf(21), address(lending), "lending still holds NFT");
 
+        // repayLoan reverts: loan is open but nothing outstanding (harvested by claims)
+        vm.prank(SELLER);
+        vm.expectRevert("OVRFLOLending: nothing outstanding");
+        lending.repayLoan(loanId, 1);
+
         // closeLoan reclaims the empty stream (outstanding == 0, no draw needed)
+        vm.expectEmit(true, true, false, true, address(lending));
+        emit LoanClosed(1, SELLER, 0);
         lending.closeLoan(loanId);
 
         (,,,,, bool closedAfter) = lending.loans(loanId);
@@ -521,6 +600,8 @@ contract OVRFLOLendingTest is Test {
         lending.claimLoanPoolShare(loanPoolId, 40 ether);
 
         vm.startPrank(SELLER);
+        vm.expectEmit(true, true, false, true, address(lending));
+        emit LoanRepaid(1, SELLER, 70 ether, true);
         lending.repayLoan(loanId, 70 ether);
         vm.stopPrank();
 
@@ -1065,6 +1146,8 @@ contract OVRFLOLendingTest is Test {
 
         vm.startPrank(SELLER);
         sablier.approve(address(lending), 100);
+        vm.expectEmit(true, true, false, true, address(lending));
+        emit BorrowerLoanPoolCreated(1, SELLER, MARKET, 1000, 100 ether);
         uint256 loanPoolId = lending.createBorrowerLoanPool(liquidityIds, 100, 100 ether, 90 ether);
         vm.stopPrank();
 
@@ -1445,6 +1528,8 @@ contract OVRFLOLendingTest is Test {
 
         // BUYER claims 66 (60% of 110)
         uint256 before = ovrfloToken.balanceOf(BUYER);
+        vm.expectEmit(true, true, false, true, address(lending));
+        emit LoanPoolShareClaimed(1, BUYER, 66 ether);
         vm.prank(BUYER);
         lending.claimLoanPoolShare(loanPoolId, 66 ether);
 
@@ -2239,5 +2324,98 @@ contract OVRFLOLendingTest is Test {
         vm.expectRevert("OVRFLOLending: duplicate or unsorted ids");
         lending.createBorrowerLoanPool(liquidityIds, 360, 100 ether, 90 ether);
         vm.stopPrank();
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                REENTRANCY: nonReentrant GUARD
+    //////////////////////////////////////////////////////////////*/
+
+    /// @dev Proves the nonReentrant guard blocks reentry via a malicious underlying
+    ///      token that attempts to call withdrawLiquidity during _payUnderlying.
+    function test_Reentrancy_BlocksReentryDuringSellStream() public {
+        ReentrantLendingUnderlying reentrantToken = new ReentrantLendingUnderlying();
+        MockLendingFactory rFactory = new MockLendingFactory();
+        MockLendingCore rCore = new MockLendingCore();
+        MockLendingSablier rSablier = new MockLendingSablier();
+        TestERC20 rOvrfloToken = new TestERC20("rOVRFLO", "rUND");
+
+        rFactory.setInfo(address(rCore), TREASURY, address(reentrantToken), address(rOvrfloToken));
+        rCore.setSeries(MARKET, expiry, address(rOvrfloToken), address(reentrantToken));
+
+        OVRFLOLending rLending = new OVRFLOLending(address(rFactory), address(rCore), address(rSablier));
+        reentrantToken.configureAttack(rLending);
+
+        // Supply liquidity (transfers reentrantToken to rLending — no attack, msg.sender != rLending)
+        reentrantToken.mint(BUYER, 100 ether);
+        vm.startPrank(BUYER);
+        reentrantToken.approve(address(rLending), 100 ether);
+        rLending.supplyLiquidity(MARKET, 1000, 100 ether);
+        vm.stopPrank();
+
+        // Mint an eligible stream and sell it — _payUnderlying triggers the reentry attempt
+        rOvrfloToken.mint(address(rCore), 110 ether);
+        rSablier.setStream(500, SELLER, address(rCore), rOvrfloToken, uint40(expiry), 0, false, 110 ether, 0);
+        vm.prank(SELLER);
+        rSablier.approve(address(rLending), 500);
+
+        vm.prank(SELLER);
+        rLending.sellStreamToLiquidity(1, 500, 0);
+
+        // Reentry was attempted but blocked by nonReentrant
+        assertTrue(ReentrantLendingUnderlying(address(reentrantToken)).reentered(), "reentry was attempted");
+        assertFalse(ReentrantLendingUnderlying(address(reentrantToken)).reenterSucceeded(), "reentry succeeded - guard failed");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                MULTICALL: BUSINESS SEQUENCE
+    //////////////////////////////////////////////////////////////*/
+
+    /// @dev Chains supplyLiquidity → withdrawLiquidity in one multicall to confirm
+    ///      msg.sender forwarding and intra-batch state visibility.
+    function test_Multicall_ChainsBusinessSequenceWithIntraBatchState() public {
+        underlying.mint(BUYER, 100 ether);
+        vm.startPrank(BUYER);
+        underlying.approve(address(lending), 100 ether);
+
+        bytes[] memory data = new bytes[](2);
+        data[0] = abi.encodeCall(OVRFLOLending.supplyLiquidity, (MARKET, 1000, 100 ether));
+        data[1] = abi.encodeCall(OVRFLOLending.withdrawLiquidity, (1));
+
+        lending.multicall(data);
+        vm.stopPrank();
+
+        (,,, uint128 availableLiquidity) = lending.liquidityPositions(1);
+        assertEq(availableLiquidity, 0, "liquidity withdrawn in same batch");
+        assertEq(underlying.balanceOf(BUYER), 100 ether, "funds returned");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                FRONT-RUNNING: SAME-BLOCK SANDWICH
+    //////////////////////////////////////////////////////////////*/
+
+    /// @dev Simulates a two-transaction same-block sandwich: an attacker sells to a
+    ///      liquidity position first (front-run), then the victim's sell with a stale
+    ///      minNetOut reverts due to slippage — proving the protection works across txs.
+    function test_FrontRunning_SandwichOnSellRevertsViaSlippage() public {
+        uint256 liquidityId = _supplyLiquidity(BUYER, 100 ether);
+
+        // Attacker front-runs: sells a stream to the liquidity position, consuming capacity
+        _mintEligibleStream(400, ATTACKER, 110 ether, 0);
+        vm.prank(ATTACKER);
+        sablier.approve(address(lending), 400);
+        vm.prank(ATTACKER);
+        lending.sellStreamToLiquidity(liquidityId, 400, 0);
+
+        // Capacity is now 0
+        (,,, uint128 availableLiquidity) = lending.liquidityPositions(liquidityId);
+        assertEq(availableLiquidity, 0, "attacker consumed all capacity");
+
+        // Victim's tx in the same block: tries to sell with minNetOut based on pre-attack state
+        _mintEligibleStream(401, SELLER, 110 ether, 0);
+        vm.prank(SELLER);
+        sablier.approve(address(lending), 401);
+        vm.prank(SELLER);
+        vm.expectRevert("OVRFLOLending: liquidity inactive");
+        lending.sellStreamToLiquidity(liquidityId, 401, 100 ether);
     }
 }

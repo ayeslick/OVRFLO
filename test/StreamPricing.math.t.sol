@@ -405,8 +405,6 @@ contract StreamPricingMathTest is Test {
 
         // residual = remaining - obligation must not underflow
         assertLe(ob, remaining, "residual underflow");
-        uint128 residual = remaining - ob;
-        assertLe(residual, remaining, "residual exceeds remaining");
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -428,8 +426,6 @@ contract StreamPricingMathTest is Test {
 
         uint128 ob = h.obligation(gp, aprBps, ttm);
         assertLe(ob, remaining, "obligation exceeds remaining");
-        // The gap is non-negative (obligation <= remaining)
-        assertGe(uint256(remaining) - uint256(ob), 0, "negative gap");
     }
 
     function test_Fuzz_RoundTrip_ObligationForFillConsistentWithObligation(

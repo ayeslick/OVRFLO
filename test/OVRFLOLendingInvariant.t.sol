@@ -13,7 +13,6 @@ contract OVRFLOLendingInvariantHandler is Test {
     MockLendingSablier internal sablier;
     TestERC20 internal underlying;
     TestERC20 internal ovrfloToken;
-    MockLendingFactory internal factory;
     MockLendingCore internal core;
 
     address internal constant MARKET = address(0x5555);
@@ -32,7 +31,6 @@ contract OVRFLOLendingInvariantHandler is Test {
         uint128 remainingAtOrigination;
         uint128 lenderReceived;
         address borrower;
-        address lender;
         uint256 streamId;
         bool closed;
     }
@@ -43,7 +41,6 @@ contract OVRFLOLendingInvariantHandler is Test {
         MockLendingSablier sablier_,
         TestERC20 underlying_,
         TestERC20 ovrfloToken_,
-        MockLendingFactory factory_,
         MockLendingCore core_,
         uint256 expiry_
     ) {
@@ -51,7 +48,6 @@ contract OVRFLOLendingInvariantHandler is Test {
         sablier = sablier_;
         underlying = underlying_;
         ovrfloToken = ovrfloToken_;
-        factory = factory_;
         core = core_;
         expiry = expiry_;
 
@@ -254,9 +250,7 @@ contract OVRFLOLendingInvariantHandler is Test {
         if (lending.nextLoanId() == 1) return;
         uint256 loanPoolId = bound(poolIdSeed, 1, lending.nextLoanId() - 1);
         (, uint256 streamId,,,, bool closed) = lending.loans(loanPoolId);
-        if (closed) {
-            // Closed loan: claims come from accumulated proceeds only
-        } else {
+        if (!closed) {
             // Open loan: set withdrawable so harvest can succeed
             (,, uint128 obligation, uint128 drawn, uint128 repaid,) = lending.loans(loanPoolId);
             uint128 outstanding = obligation - drawn - repaid;
@@ -288,11 +282,9 @@ contract OVRFLOLendingInvariantHandler is Test {
 
     /// @dev Syncs the ghost lenderReceived from actual contract loanPoolReceived state.
     function _syncLenderReceived(uint256 loanId) internal {
-        uint256 loanPoolId = loanId;
-        if (loanPoolId == 0) return;
         uint128 totalReceived;
         for (uint256 i = 0; i < 3; i++) {
-            totalReceived += lending.loanPoolReceived(loanPoolId, actors[i]);
+            totalReceived += lending.loanPoolReceived(loanId, actors[i]);
         }
         loanGhosts[loanId].lenderReceived = totalReceived;
     }
@@ -303,7 +295,6 @@ contract OVRFLOLendingInvariantHandler is Test {
         ghost.remainingAtOrigination = sablier.getDepositedAmount(streamId) - sablier.getWithdrawnAmount(streamId);
         ghost.lenderReceived = 0;
         ghost.borrower = borrower;
-        ghost.lender = address(lending);
         ghost.streamId = streamId;
         ghost.closed = false;
     }
@@ -355,7 +346,7 @@ contract OVRFLOLendingInvariantTest is Test {
 
         lending = new OVRFLOLending(address(factory), address(core), address(sablier));
 
-        handler = new OVRFLOLendingInvariantHandler(lending, sablier, underlying, ovrfloToken, factory, core, expiry);
+        handler = new OVRFLOLendingInvariantHandler(lending, sablier, underlying, ovrfloToken, core, expiry);
         targetContract(address(handler));
     }
 
@@ -367,7 +358,7 @@ contract OVRFLOLendingInvariantTest is Test {
     function invariant_ObligationNeverExceedsRemaining() public view {
         uint256 nextLoan = lending.nextLoanId();
         for (uint256 i = 1; i < nextLoan; i++) {
-            (uint128 obligation, uint128 remainingAtOrigination,,,,,) = handler.loanGhosts(i);
+            (uint128 obligation, uint128 remainingAtOrigination,,,,) = handler.loanGhosts(i);
             if (obligation == 0 && remainingAtOrigination == 0) continue;
             assertLe(obligation, remainingAtOrigination, "obligation exceeds remaining at origination");
         }
@@ -377,7 +368,7 @@ contract OVRFLOLendingInvariantTest is Test {
     function invariant_LenderReceivedNeverExceedsObligation() public view {
         uint256 nextLoan = lending.nextLoanId();
         for (uint256 i = 1; i < nextLoan; i++) {
-            (uint128 obligation,, uint128 lenderReceived,,,,) = handler.loanGhosts(i);
+            (uint128 obligation,, uint128 lenderReceived,,,) = handler.loanGhosts(i);
             if (obligation == 0) continue;
             assertLe(lenderReceived, obligation, "lender received exceeds obligation");
         }
@@ -387,7 +378,7 @@ contract OVRFLOLendingInvariantTest is Test {
     function invariant_NftReturnedToBorrowerOnClose() public view {
         uint256 nextLoan = lending.nextLoanId();
         for (uint256 i = 1; i < nextLoan; i++) {
-            (,,, address borrower,, uint256 streamId, bool closed) = handler.loanGhosts(i);
+            (,,, address borrower, uint256 streamId, bool closed) = handler.loanGhosts(i);
             if (!closed) continue;
             assertEq(sablier.ownerOf(streamId), borrower, "NFT not returned to borrower on close");
         }

@@ -11,20 +11,3 @@ contract TestERC20 is ERC20 {
         _mint(to, amount);
     }
 }
-
-/// @notice Mintable ERC20 with configurable decimals for tests.
-contract TestERC20Decimals is ERC20 {
-    uint8 private immutable CUSTOM_DECIMALS;
-
-    constructor(string memory name_, string memory symbol_, uint8 decimals_) ERC20(name_, symbol_) {
-        CUSTOM_DECIMALS = decimals_;
-    }
-
-    function decimals() public view override returns (uint8) {
-        return CUSTOM_DECIMALS;
-    }
-
-    function mint(address to, uint256 amount) external {
-        _mint(to, amount);
-    }
-}
