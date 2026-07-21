@@ -2,7 +2,7 @@
 
 **OVRFLO enables Self-Repaying Loans.**
 
-A Lending Platform that turns Principal Token (PT) deposits into deterministic streaming collateral letting users sell or borrow against that collateral. The stream itself repays the loan — no liquidations, no health checks, no oracles.
+A Lending Platform that turns Principal Token (PT) deposits into deterministic streaming collateral letting users sell or borrow against that collateral. The stream itself repays the loan — no liquidations, no health checks.
 
 ## How It Works
 
