@@ -43,7 +43,7 @@ contract OVRFLOProtocolTest is VaultMockHelpers {
     event ExcessSwept(address indexed ptToken, address indexed to, uint256 amount);
     event SeriesApproved(
         address indexed market,
-        address ptToken,
+        address indexed ptToken,
         address ovrfloToken,
         address underlying,
         address oracle,

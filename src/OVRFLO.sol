@@ -170,7 +170,7 @@ contract OVRFLO is ReentrancyGuard {
     /// @param feeBps Fee in basis points
     event SeriesApproved(
         address indexed market,
-        address ptToken,
+        address indexed ptToken,
         address ovrfloToken,
         address underlying,
         address oracle,

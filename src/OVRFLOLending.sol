@@ -217,7 +217,7 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
     event LoanRepaid(uint256 indexed loanId, address indexed borrower, uint128 amount, bool closed);
     /// @notice Emitted when a borrower loan pool is created.
     event BorrowerLoanPoolCreated(
-        uint256 indexed loanId, address indexed borrower, address market, uint16 aprBps, uint128 totalContributed
+        uint256 indexed loanId, address indexed borrower, address indexed market, uint16 aprBps, uint128 totalContributed
     );
     /// @notice Emitted when a lender claims ovrfloToken from loan-pool proceeds.
     event LoanPoolShareClaimed(uint256 indexed loanId, address indexed lender, uint128 amount);

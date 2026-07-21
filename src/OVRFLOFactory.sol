@@ -71,11 +71,11 @@ contract OVRFLOFactory is Ownable2Step {
 
     event DeploymentConfigured(address indexed treasury, address indexed underlying);
     event DeploymentCancelled();
-    event OvrfloDeployed(address indexed ovrflo, address indexed ovrfloToken, address treasury, address underlying);
+    event OvrfloDeployed(address indexed ovrflo, address indexed ovrfloToken, address treasury, address indexed underlying);
     event LendingDeployed(address indexed ovrflo, address indexed lending);
     event LendingAprBoundsSet(address indexed lending, uint16 aprMinBps, uint16 aprMaxBps);
     event LendingFeeSet(address indexed lending, uint16 feeBps);
-    event LendingTreasurySet(address indexed lending, address treasury);
+    event LendingTreasurySet(address indexed lending, address indexed treasury);
 
     /*//////////////////////////////////////////////////////////////
                               CONSTRUCTOR

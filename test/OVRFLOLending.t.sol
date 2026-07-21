@@ -104,7 +104,7 @@ contract OVRFLOLendingTest is Test {
     event LoanClosed(uint256 indexed loanId, address indexed borrower, uint128 finalDraw);
     event LoanRepaid(uint256 indexed loanId, address indexed borrower, uint128 amount, bool closed);
     event BorrowerLoanPoolCreated(
-        uint256 indexed loanId, address indexed borrower, address market, uint16 aprBps, uint128 totalContributed
+        uint256 indexed loanId, address indexed borrower, address indexed market, uint16 aprBps, uint128 totalContributed
     );
     event LoanPoolShareClaimed(uint256 indexed loanId, address indexed lender, uint128 amount);
 
@@ -1146,7 +1146,7 @@ contract OVRFLOLendingTest is Test {
 
         vm.startPrank(SELLER);
         sablier.approve(address(lending), 100);
-        vm.expectEmit(true, true, false, true, address(lending));
+        vm.expectEmit(true, true, true, true, address(lending));
         emit BorrowerLoanPoolCreated(1, SELLER, MARKET, 1000, 100 ether);
         uint256 loanPoolId = lending.createBorrowerLoanPool(liquidityIds, 100, 100 ether, 90 ether);
         vm.stopPrank();
@@ -2417,5 +2417,75 @@ contract OVRFLOLendingTest is Test {
         vm.prank(SELLER);
         vm.expectRevert("OVRFLOLending: liquidity inactive");
         lending.sellStreamToLiquidity(liquidityId, 401, 100 ether);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                EDGE: RE-PLEDGE AFTER closeLoan
+    //////////////////////////////////////////////////////////////*/
+
+    /// @dev Verifies that a stream partially drawn by closeLoan can be re-pledged,
+    ///      and the new obligation is bounded by the reduced remaining face value.
+    ///      Covers the lifecycle: create loan -> closeLoan (draws from stream) ->
+    ///      re-pledge same stream -> new pricing reflects prior drawdown.
+    function test_Reuse_AfterCloseLoanDrawsFromStream() public {
+        // Stream with 200 ether; loan obligation will be ~110 ether
+        _mintEligibleStream(600, SELLER, 200 ether, 0);
+        uint256 liquidityId = _supplyLiquidity(BUYER, 100 ether);
+
+        vm.startPrank(SELLER);
+        sablier.approve(address(lending), 600);
+        uint256[] memory ids = new uint256[](1);
+        ids[0] = liquidityId;
+        uint256 loanPoolId = lending.createBorrowerLoanPool(ids, 600, 100 ether, 0);
+        vm.stopPrank();
+
+        // Close loan: draws 110 from stream (withdrawn: 0 -> 110)
+        sablier.setWithdrawable(600, 110 ether);
+        lending.closeLoan(loanPoolId);
+
+        assertEq(sablier.getWithdrawnAmount(600), 110 ether, "stream drawn by closeLoan");
+        assertEq(sablier.ownerOf(600), SELLER, "NFT returned to borrower");
+
+        // Re-pledge: remaining = 200 - 110 = 90 ether
+        uint256 newLiquidityId = _supplyLiquidity(STRANGER, 80 ether);
+        vm.startPrank(SELLER);
+        sablier.approve(address(lending), 600);
+        uint256[] memory newIds = new uint256[](1);
+        newIds[0] = newLiquidityId;
+        uint256 newLoanId = lending.createBorrowerLoanPool(newIds, 600, 80 ether, 0);
+        vm.stopPrank();
+
+        // New obligation is bounded by the reduced remaining (90 ether)
+        (,, uint128 obligation,,,) = lending.loans(newLoanId);
+        assertLe(obligation, 90 ether, "new obligation bounded by reduced remaining");
+        assertGt(obligation, 0, "new loan has positive obligation");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                EDGE: CROSS-MATURITY STREAM SELL
+    //////////////////////////////////////////////////////////////*/
+
+    /// @dev Verifies that sellStreamToLiquidity reverts when the stream's endTime
+    ///      doesn't match the liquidity position's market expiry. Same vault, different
+    ///      maturity — the only stream-level field that differs is endTime.
+    function test_SellStreamToLiquidity_RevertsForCrossMaturityStream() public {
+        address marketTwo = address(0x6666);
+        uint256 expiry2 = block.timestamp + 180 days;
+        core.setSeries(marketTwo, expiry2, address(ovrfloToken), address(underlying));
+
+        underlying.mint(BUYER, 100 ether);
+        vm.startPrank(BUYER);
+        underlying.approve(address(lending), 100 ether);
+        uint256 liquidityId = lending.supplyLiquidity(marketTwo, 1000, 100 ether);
+        vm.stopPrank();
+
+        // Stream has endTime = expiry (365 days), but marketTwo has expiry2 (180 days)
+        _mintEligibleStream(700, SELLER, 110 ether, 0);
+
+        vm.prank(SELLER);
+        sablier.approve(address(lending), 700);
+        vm.prank(SELLER);
+        vm.expectRevert(StreamPricing.WrongEndTime.selector);
+        lending.sellStreamToLiquidity(liquidityId, 700, 0);
     }
 }

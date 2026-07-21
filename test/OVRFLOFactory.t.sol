@@ -102,11 +102,11 @@ contract OVRFLOFactoryTest is Test {
 
     event DeploymentConfigured(address indexed treasury, address indexed underlying);
     event DeploymentCancelled();
-    event OvrfloDeployed(address indexed ovrflo, address indexed ovrfloToken, address treasury, address underlying);
+    event OvrfloDeployed(address indexed ovrflo, address indexed ovrfloToken, address treasury, address indexed underlying);
     event LendingDeployed(address indexed ovrflo, address indexed lending);
     event LendingAprBoundsSet(address indexed lending, uint16 aprMinBps, uint16 aprMaxBps);
     event LendingFeeSet(address indexed lending, uint16 feeBps);
-    event LendingTreasurySet(address indexed lending, address treasury);
+    event LendingTreasurySet(address indexed lending, address indexed treasury);
     event LendingAprBoundsSet(uint16 aprMinBps, uint16 aprMaxBps);
     event LendingFeeSet(uint16 feeBps);
     event LendingTreasurySet(address indexed treasury);
@@ -114,7 +114,7 @@ contract OVRFLOFactoryTest is Test {
     event OwnershipTransferStarted(address indexed previousOwner, address indexed newOwner);
     event SeriesApproved(
         address indexed market,
-        address ptToken,
+        address indexed ptToken,
         address ovrfloToken,
         address underlying,
         address oracle,
