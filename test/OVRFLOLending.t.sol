@@ -298,7 +298,7 @@ contract OVRFLOLendingTest is Test {
         vm.prank(SELLER);
         sablier.approve(address(lending), 3);
         vm.prank(SELLER);
-        vm.expectRevert("OVRFLOLending: price zero");
+        vm.expectRevert("OVRFLOLending: stream below min");
         lending.sellStreamToLiquidity(dustLiquidityId, 3, 0);
 
         uint256 maturedLiquidityId = _supplyLiquidity(BUYER, 100 ether);
@@ -430,11 +430,14 @@ contract OVRFLOLendingTest is Test {
         vm.expectRevert("OVRFLOLending: listing inactive");
         lending.buyListing(listingId, 100 ether);
 
+        // Dust streams are rejected at post time by the MIN_STREAM_AMOUNT gate,
+        // so a sub-min listing can never exist to be bought.
         _mintEligibleStream(10, SELLER, 1, 0);
-        uint256 dustListingId = _postSaleListing(SELLER, 10);
-        vm.prank(BUYER);
-        vm.expectRevert("OVRFLOLending: price zero");
-        lending.buyListing(dustListingId, 1);
+        vm.startPrank(SELLER);
+        sablier.approve(address(lending), 10);
+        vm.expectRevert("OVRFLOLending: stream below min");
+        lending.postSaleListing(MARKET, 10, 1000);
+        vm.stopPrank();
     }
 
     function test_CloseLoan_RevertsUntilClosableThenPaysAndReturnsNft() public {
@@ -665,11 +668,24 @@ contract OVRFLOLendingTest is Test {
         lending.quote(MARKET, 33, 50, 0);
     }
 
-    function test_Quote_RevertsForZeroPrice() public {
-        // remaining = 1 wei, grossPrice = 1e18 / factor ≈ 0 (floors to 0)
+    function test_Quote_RevertsBelowMinStream() public {
+        // remaining = 1 wei < MIN_STREAM_AMOUNT (1e6): the dust gate fires before
+        // pricing.
         _mintEligibleStream(34, SELLER, 2, 1);
-        vm.expectRevert("OVRFLOLending: price zero");
+        vm.expectRevert("OVRFLOLending: stream below min");
         lending.quote(MARKET, 34, 1000, 0);
+    }
+
+    function test_Quote_MinStreamBoundary() public {
+        // remaining exactly MIN_STREAM_AMOUNT passes eligibility and prices > 0
+        _mintEligibleStream(36, SELLER, uint128(lending.MIN_STREAM_AMOUNT()), 0);
+        (uint256 grossPrice,,,,) = lending.quote(MARKET, 36, 1000, 0);
+        assertGt(grossPrice, 0, "boundary stream must price above zero");
+
+        // one wei below the boundary reverts
+        _mintEligibleStream(37, SELLER, uint128(lending.MIN_STREAM_AMOUNT()), 1);
+        vm.expectRevert("OVRFLOLending: stream below min");
+        lending.quote(MARKET, 37, 1000, 0);
     }
 
     function test_Quote_PartialBorrow() public {
@@ -1302,15 +1318,15 @@ contract OVRFLOLendingTest is Test {
         lending.createBorrowerLoanPool(liquidityIds, 201, 100 ether, 90 ether);
     }
 
-    function test_CreateBorrowerLoanPool_RevertsWhenPriceZero() public {
+    function test_CreateBorrowerLoanPool_RevertsBelowMinStream() public {
         uint256 liquidity1 = _supplyLiquidity(BUYER, 100 ether);
-        // deposited = 1 wei -> remaining = 1, grossPrice floors to 0 at positive APR/ttm
+        // deposited = 1 wei -> remaining < MIN_STREAM_AMOUNT: dust gate fires first
         _mintEligibleStream(202, SELLER, 1, 0);
         uint256[] memory liquidityIds = new uint256[](1);
         liquidityIds[0] = liquidity1;
         vm.startPrank(SELLER);
         sablier.approve(address(lending), 202);
-        vm.expectRevert("OVRFLOLending: price zero");
+        vm.expectRevert("OVRFLOLending: stream below min");
         lending.createBorrowerLoanPool(liquidityIds, 202, 50 ether, 0);
         vm.stopPrank();
     }
@@ -1814,13 +1830,14 @@ contract OVRFLOLendingTest is Test {
     /// @dev Two lenders with 3/7 wei contributions; obligation = 11; after close,
     ///      each can claim their floored pro-rata share and 1 wei dust remains.
     function test_WeiRounding_FlooredProRata() public {
-        // remaining = 11 wei, grossPrice = 11 * 1e18 / 1.1e18 = 10 wei
-        // obligation = 11 (full-borrow fast path)
-        _mintEligibleStream(310, SELLER, 11, 0);
+        // remaining = 11_000_001 wei (above MIN_STREAM_AMOUNT), grossPrice =
+        // floor(11_000_001 / 1.1) = 10_000_000; obligation = remaining (fast path).
+        // Chosen so pro-rata entitlements stay fractional: 3.3e6 + 0.3 and 7.7e6 + 0.7.
+        _mintEligibleStream(310, SELLER, 11_000_001, 0);
 
-        // Lender 1 contributes 3 wei, Lender 2 contributes 7 wei (total = 10 = grossPrice)
-        uint256 liq1 = _supplyLiquidity(BUYER, 3);
-        uint256 liq2 = _supplyLiquidity(STRANGER, 7);
+        // Lender 1 contributes 3e6, Lender 2 contributes 7e6 (total = 10e6 = grossPrice)
+        uint256 liq1 = _supplyLiquidity(BUYER, 3_000_000);
+        uint256 liq2 = _supplyLiquidity(STRANGER, 7_000_000);
 
         uint256[] memory liquidityIds = new uint256[](2);
         liquidityIds[0] = liq1;
@@ -1828,33 +1845,33 @@ contract OVRFLOLendingTest is Test {
 
         vm.startPrank(SELLER);
         sablier.approve(address(lending), 310);
-        uint256 loanPoolId = lending.createBorrowerLoanPool(liquidityIds, 310, 10, 0);
+        uint256 loanPoolId = lending.createBorrowerLoanPool(liquidityIds, 310, 10_000_000, 0);
         vm.stopPrank();
         uint256 loanId = loanPoolId;
 
         // Close loan: draws 11 wei from stream
-        sablier.setWithdrawable(310, 11);
+        sablier.setWithdrawable(310, 11_000_001);
         lending.closeLoan(loanId);
 
-        // Lender 1 claimable = 3 * 11 / 10 = 3 (floored from 3.3)
+        // Lender 1 claimable = 3e6 * 11_000_001 / 10e6 = 3_300_000.3 -> floored
         vm.prank(BUYER);
-        lending.claimLoanPoolShare(loanPoolId, 3);
-        assertEq(ovrfloToken.balanceOf(BUYER), 3, "lender 1 claims 3");
+        lending.claimLoanPoolShare(loanPoolId, 3_300_000);
+        assertEq(ovrfloToken.balanceOf(BUYER), 3_300_000, "lender 1 claims floored share");
 
-        // Lender 2 claimable = 7 * 11 / 10 = 7 (floored from 7.7)
+        // Lender 2 claimable = 7e6 * 11_000_001 / 10e6 = 7_700_000.7 -> floored
         vm.prank(STRANGER);
-        lending.claimLoanPoolShare(loanPoolId, 7);
-        assertEq(ovrfloToken.balanceOf(STRANGER), 7, "lender 2 claims 7");
+        lending.claimLoanPoolShare(loanPoolId, 7_700_000);
+        assertEq(ovrfloToken.balanceOf(STRANGER), 7_700_000, "lender 2 claims floored share");
 
-        // 1 wei dust remains in proceeds (11 - 3 - 7 = 1)
+        // 1 wei dust remains in proceeds (11_000_001 - 3_300_000 - 7_700_000 = 1)
         assertEq(lending.loanPoolProceeds(loanPoolId), 1, "1 wei dust remains");
     }
 
     /// @dev Same setup but claims in reverse order; result is identical (order-independent).
     function test_WeiRounding_ClaimOrderIndependent() public {
-        _mintEligibleStream(311, SELLER, 11, 0);
-        uint256 liq1 = _supplyLiquidity(BUYER, 3);
-        uint256 liq2 = _supplyLiquidity(STRANGER, 7);
+        _mintEligibleStream(311, SELLER, 11_000_001, 0);
+        uint256 liq1 = _supplyLiquidity(BUYER, 3_000_000);
+        uint256 liq2 = _supplyLiquidity(STRANGER, 7_000_000);
 
         uint256[] memory liquidityIds = new uint256[](2);
         liquidityIds[0] = liq1;
@@ -1862,30 +1879,30 @@ contract OVRFLOLendingTest is Test {
 
         vm.startPrank(SELLER);
         sablier.approve(address(lending), 311);
-        uint256 loanPoolId = lending.createBorrowerLoanPool(liquidityIds, 311, 10, 0);
+        uint256 loanPoolId = lending.createBorrowerLoanPool(liquidityIds, 311, 10_000_000, 0);
         vm.stopPrank();
         uint256 loanId = loanPoolId;
 
-        sablier.setWithdrawable(311, 11);
+        sablier.setWithdrawable(311, 11_000_001);
         lending.closeLoan(loanId);
 
         // Claim in reverse order: Lender 2 first, then Lender 1
         vm.prank(STRANGER);
-        lending.claimLoanPoolShare(loanPoolId, 7);
-        assertEq(ovrfloToken.balanceOf(STRANGER), 7, "lender 2 claims 7 first");
+        lending.claimLoanPoolShare(loanPoolId, 7_700_000);
+        assertEq(ovrfloToken.balanceOf(STRANGER), 7_700_000, "lender 2 claims first");
 
         vm.prank(BUYER);
-        lending.claimLoanPoolShare(loanPoolId, 3);
-        assertEq(ovrfloToken.balanceOf(BUYER), 3, "lender 1 claims 3 second");
+        lending.claimLoanPoolShare(loanPoolId, 3_300_000);
+        assertEq(ovrfloToken.balanceOf(BUYER), 3_300_000, "lender 1 claims second");
 
         assertEq(lending.loanPoolProceeds(loanPoolId), 1, "same 1 wei dust regardless of order");
     }
 
     /// @dev Nobody can claim more than their floored pro-rata entitlement.
     function test_WeiRounding_CannotExceedEntitlement() public {
-        _mintEligibleStream(312, SELLER, 11, 0);
-        uint256 liq1 = _supplyLiquidity(BUYER, 3);
-        uint256 liq2 = _supplyLiquidity(STRANGER, 7);
+        _mintEligibleStream(312, SELLER, 11_000_001, 0);
+        uint256 liq1 = _supplyLiquidity(BUYER, 3_000_000);
+        uint256 liq2 = _supplyLiquidity(STRANGER, 7_000_000);
 
         uint256[] memory liquidityIds = new uint256[](2);
         liquidityIds[0] = liq1;
@@ -1893,18 +1910,18 @@ contract OVRFLOLendingTest is Test {
 
         vm.startPrank(SELLER);
         sablier.approve(address(lending), 312);
-        uint256 loanPoolId = lending.createBorrowerLoanPool(liquidityIds, 312, 10, 0);
+        uint256 loanPoolId = lending.createBorrowerLoanPool(liquidityIds, 312, 10_000_000, 0);
         vm.stopPrank();
         uint256 loanId = loanPoolId;
 
-        sablier.setWithdrawable(312, 11);
+        sablier.setWithdrawable(312, 11_000_001);
         lending.closeLoan(loanId);
 
-        // Lender 1 tries to claim 4 (entitlement is 3)
+        // Lender 1 tries to over-claim by 1 wei (entitlement floors to 3_300_000)
         uint256 before = ovrfloToken.balanceOf(BUYER);
         vm.prank(BUYER);
-        lending.claimLoanPoolShare(loanPoolId, 4);
-        assertEq(ovrfloToken.balanceOf(BUYER) - before, 3, "capped at 3 entitlement");
+        lending.claimLoanPoolShare(loanPoolId, 3_300_001);
+        assertEq(ovrfloToken.balanceOf(BUYER) - before, 3_300_000, "capped at floored entitlement");
     }
 
     /*//////////////////////////////////////////////////////////////

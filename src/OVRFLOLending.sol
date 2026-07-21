@@ -38,6 +38,8 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
     uint16 public constant APR_MAX_CEILING = 10_000;
     /// @notice Hard ceiling on the protocol fee the owner may set (100%).
     uint16 public constant MAX_FEE_BPS = 10_000;
+    /// @notice Minimum remaining face value for a stream to be pledged or sold.
+    uint256 public constant MIN_STREAM_AMOUNT = 1e6;
 
     /*//////////////////////////////////////////////////////////////
                                 IMMUTABLES
@@ -770,13 +772,18 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
         require(aprBps % APR_STEP_BPS == 0, "OVRFLOLending: apr not whole");
     }
 
-    /// @dev Stream-level eligibility gate; delegates to `StreamPricing.requireEligible`.
+    /// @dev Stream-level eligibility gate; delegates to `StreamPricing.requireEligible`
+    ///      and enforces a minimum remaining face value so dust streams cannot be
+    ///      pledged or sold.
     function _requireEligible(address market, uint256 streamId)
         internal
         view
         returns (StreamPricing.Eligibility memory)
     {
-        return StreamPricing.requireEligible(address(sablier), core, market, streamId);
+        StreamPricing.Eligibility memory eligibility =
+            StreamPricing.requireEligible(address(sablier), core, market, streamId);
+        require(eligibility.remaining >= MIN_STREAM_AMOUNT, "OVRFLOLending: stream below min");
+        return eligibility;
     }
 
     /// @dev Market-level gate (no stream required); delegates to `StreamPricing.marketActive`.
@@ -789,7 +796,7 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
         return seriesMaturity - block.timestamp;
     }
 
-    /// @dev Prices a stream: eligibility check, gross price, and zero guard.
+    /// @dev Prices a stream: eligibility check and gross price.
     function _priceStream(address market, uint256 streamId, uint16 aprBps)
         internal
         view
@@ -798,7 +805,6 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
         eligibility = _requireEligible(market, streamId);
         timeToMaturity = _timeToMaturity(eligibility.seriesMaturity);
         grossPrice = StreamPricing.grossPrice(eligibility.remaining, aprBps, timeToMaturity);
-        require(grossPrice > 0, "OVRFLOLending: price zero");
     }
 
     /// @dev Pulls `amount` of `token` from `from` to `to` with a strict balance-delta check.
