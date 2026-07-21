@@ -26,7 +26,7 @@ Rewrite `README.md` so the lending platform (OVRFLOBook) is the product and the 
 ### 3.1 Headline & Value Prop
 
 - Lead with "Self-Repaying Loans"
-- One-paragraph explanation: OVRFLO turns Pendle PT deposits into deterministic streaming collateral, then lets users sell or borrow against that collateral. The stream itself repays the loan — no liquidations, no health checks, no oracles at loan time.
+- One-paragraph explanation: OVRFLO turns Pendle PT deposits into deterministic streaming collateral, then lets users sell or borrow against that collateral. The stream itself repays the loan — no liquidations, no health checks.
 - Example flow updated to show the full journey: deposit → receive stream → borrow against stream → stream repays lender → residual returns to borrower
 
 ### 3.2 How It Works

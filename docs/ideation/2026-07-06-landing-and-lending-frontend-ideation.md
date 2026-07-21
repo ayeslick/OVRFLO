@@ -86,7 +86,7 @@ flowchart TB
 
 **Axis:** landing-narrative
 **Basis:** direct: `previewDeposit` (`src/OVRFLO.sol:575`) and `quote` (`src/OVRFLOBook.sol:698`) make the personalized number computable read-only, no signature; external: Alchemix hero grammar (one sentence + numbers + one diagram), NFTfi negative-risk framing, Airbnb dual-path hero.
-**Rationale:** "Here is your number" is the strongest message this protocol can send — no explanation of self-repaying loans lands harder than one computed about your own wallet. It satisfies "explain but do not over-explain" by making the explanation about the visitor, and live reads are brand-consistent with a no-oracle, deterministic-math protocol.
+**Rationale:** "Here is your number" is the strongest message this protocol can send — no explanation of self-repaying loans lands harder than one computed about your own wallet. It satisfies "explain but do not over-explain" by making the explanation about the visitor, and live reads are brand-consistent with a deterministic-math lending protocol.
 **Downsides:** Needs mainnet RPC reads on a marketing page (rate-limit and latency budget); a pre-liquidity launch shows small numbers — the empty-book state needs a story; address-paste has privacy optics to handle gracefully.
 **Confidence:** 75%
 **Complexity:** Medium
@@ -97,7 +97,7 @@ flowchart TB
 
 **Axis:** visual-system
 **Basis:** direct: user constraint "keep color scheme (aligns with logo) unless a better representation" — color, not shadow language, is the stated invariant; existing tokens in `web/app/globals.css`; external: refero Hyperstudio system (editorial-tech on near-black, weight-400 headlines, hairline dividers) maps nearly 1:1 onto the navy palette.
-**Rationale:** A no-liquidation, no-oracle protocol should feel calm and inevitable; hard shadows shout. The mono-equals-truth rule gives users an honest visual contract and resolves the tension inside your own reference set without a rebrand.
+**Rationale:** A no-liquidation protocol should feel calm and inevitable; hard shadows shout. The mono-equals-truth rule gives users an honest visual contract and resolves the tension inside your own reference set without a rebrand.
 **Downsides:** Two registers risk drift without discipline (one token file, two elevation scales); "better representation" is a taste call you should ratify against real mockups before committing.
 **Confidence:** 80%
 **Complexity:** Low
