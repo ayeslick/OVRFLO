@@ -9,6 +9,8 @@ revised: 2026-07-14
 deepened: 2026-07-14
 ---
 
+> SUPERSEDED by 2026-07-18-002-feat-web-markets-rebuild-plan.md
+
 # Plan: Wire the Markets UI (mockups) to OVRFLOLending + OVRFLO contracts
 
 Date: 2026-07-07 (revised 2026-07-14 — see Revision Addendum at the bottom)
