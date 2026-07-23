@@ -226,16 +226,26 @@ function SupplyForm({
     args: connection.addresses?.[0] && market.lending ? [connection.addresses[0], market.lending] : undefined,
     query: { enabled: Boolean(connection.addresses?.[0] && market.lending) },
   });
+  const balanceOf = useReadContract({
+    address: market.underlying,
+    abi: erc20Abi,
+    functionName: "balanceOf",
+    args: connection.addresses?.[0] ? [connection.addresses[0]] : undefined,
+    query: { enabled: Boolean(connection.addresses?.[0]) },
+  });
 
   const allowanceAmount = allowance.data ?? 0n;
+  const walletBalance = balanceOf.data ?? 0n;
+  const validationError = amount > 0n && amount > walletBalance ? "INSUFFICIENT BALANCE" : null;
   const approvalCovers = allowanceAmount >= amount || approvedAmount >= amount;
-  const disabled = !market.lending || amount === 0n || tx.isSigning || tx.isConfirming;
+  const disabled = !market.lending || amount === 0n || tx.isSigning || tx.isConfirming || Boolean(validationError);
   const steps = ["APPROVE", "SIGN", "CONFIRMED"];
   const activeIndex = tx.isConfirmed || tx.isConfirming ? 2 : approvalCovers || tx.isSigning ? 1 : 0;
 
   return (
     <div className="form-grid">
-      <input className="input mono" value={raw} onChange={(e) => setRaw(e.target.value)} placeholder="0.00" />
+      <input className={`input mono ${validationError ? "input-error" : ""}`} value={raw} onChange={(e) => setRaw(e.target.value)} placeholder="0.00" />
+      {validationError ? <div className="label mono status-negative">{validationError}</div> : null}
       <div className="summary-row mono" aria-live="polite">
         LIQUIDITY {formatTokenAmount(amount, "wstETH")} @ {formatAprBps(aprBps)}
       </div>
@@ -473,6 +483,14 @@ function ConvertForm({
     args: connection.addresses?.[0] ? [connection.addresses[0], market.vault] : undefined,
     query: { enabled: Boolean(connection.addresses?.[0]) },
   });
+  const spendToken = mode === "deposit" ? market.ptToken : mode === "wrap" ? market.underlying : market.ovrfloToken;
+  const balanceRead = useReadContract({
+    address: spendToken,
+    abi: erc20Abi,
+    functionName: "balanceOf",
+    args: connection.addresses?.[0] ? [connection.addresses[0]] : undefined,
+    query: { enabled: Boolean(connection.addresses?.[0]) },
+  });
 
   const depositPreview = preview.data as [bigint, bigint, bigint, bigint] | undefined;
   const feeAmount = depositPreview?.[2] ?? 0n;
@@ -487,9 +505,12 @@ function ConvertForm({
     underlyingApprovedAmount < (mode === "wrap" ? amount : feeAmount);
   const needsApproval = needsPtApproval || needsUnderlyingApproval;
   const wrapCapacity = wrappedUnderlying.data ?? 0n;
+  const walletBalance = balanceRead.data ?? 0n;
+  const validationError = amount > 0n && amount > walletBalance ? "INSUFFICIENT BALANCE" : null;
 
   const modeDisabled =
     disabled ||
+    Boolean(validationError) ||
     (mode === "deposit" && (!depositPreview || matured)) ||
     (mode === "claim_matured" && !matured) ||
     (mode === "unwrap" && wrapCapacity < amount);
@@ -506,7 +527,8 @@ function ConvertForm({
 
   return (
     <div className="form-grid">
-      <input className="input mono" value={raw} onChange={(e) => setRaw(e.target.value)} placeholder="0.00" />
+      <input className={`input mono ${validationError ? "input-error" : ""}`} value={raw} onChange={(e) => setRaw(e.target.value)} placeholder="0.00" />
+      {validationError ? <div className="label mono status-negative">{validationError}</div> : null}
       {mode === "deposit" ? (
         <div className="summary-row mono" aria-live="polite">
           {depositPreview ? (
@@ -992,14 +1014,24 @@ function RepayForm({
     args: connection.addresses?.[0] && market.lending ? [connection.addresses[0], market.lending] : undefined,
     query: { enabled: Boolean(connection.addresses?.[0] && market.lending) },
   });
+  const balanceRead = useReadContract({
+    address: market.ovrfloToken,
+    abi: erc20Abi,
+    functionName: "balanceOf",
+    args: connection.addresses?.[0] ? [connection.addresses[0]] : undefined,
+    query: { enabled: Boolean(connection.addresses?.[0]) },
+  });
 
   const needsApproval =
     Boolean(market.lending) &&
     repayAmount > 0n &&
     (repayAllowance.data ?? 0n) < repayAmount &&
     repayApprovedAmount < repayAmount;
+  const walletBalance = balanceRead.data ?? 0n;
+  const validationError = repayAmount > 0n && repayAmount > walletBalance ? "INSUFFICIENT BALANCE" : null;
 
-  const disabled = !market.lending || !loan || repayAmount === 0n || tx.isSigning || tx.isConfirming;
+  const disabled =
+    !market.lending || !loan || repayAmount === 0n || tx.isSigning || tx.isConfirming || Boolean(validationError);
 
   useEffect(() => {
     if (tx.error) setRepayApprovedAmount(0n);
@@ -1020,7 +1052,8 @@ function RepayForm({
   return (
     <div className="form-grid">
       <div className="label mono">LOAN {formatId(loan.id)} / OUTSTANDING {formatTokenAmount(outstanding, "ovrflo")}</div>
-      <input className="input mono" value={raw} onChange={(e) => setRaw(e.target.value)} placeholder="0.00" />
+      <input className={`input mono ${validationError ? "input-error" : ""}`} value={raw} onChange={(e) => setRaw(e.target.value)} placeholder="0.00" />
+      {validationError ? <div className="label mono status-negative">{validationError}</div> : null}
       <button
         className="button mono"
         type="button"

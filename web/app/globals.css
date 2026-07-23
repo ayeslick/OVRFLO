@@ -296,6 +296,10 @@ tr:last-child td {
   border-color: var(--chalk);
 }
 
+.input-error {
+  border-color: var(--negative);
+}
+
 .form-grid {
   display: grid;
   gap: 0.75rem;
