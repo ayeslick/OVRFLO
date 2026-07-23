@@ -61,9 +61,9 @@ OVRFLO operates in two layers:
 │   ┌───────────────┐                                                      │
 │   │   Timelocked  │                                                      │
 │   │   Multisig    │ (verification + authorization)                       │
-│   └───┬───────┬───┘                                                      │
-│       │ owns  │ owns                                                     │
-│       ▼       ▼                                                          │
+│   └───┬───────────┘                                                      │
+│       │ owns                                                             │
+│       ▼                                                                  │
 │   ┌───────────────┐     deploys + admin      ┌──────────────┐            │
 │   │ OVRFLOFactory │────────────────────────▶ │   OVRFLO     │            │
 │   │               │                          │  (core vault)│            │
