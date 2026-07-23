@@ -1,7 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { Address } from "viem";
-import { ActionPanel } from "@/components/ActionPanel";
+import { MarketDetail } from "@/components/MarketDetail";
 import { MarketsTable } from "@/components/MarketsTable";
 import type { MarketInfo } from "@/lib/types";
 
@@ -41,11 +41,10 @@ const market: MarketInfo = {
 };
 
 describe("launch scope", () => {
-  it("renders three launch panels without listing storefront copy", () => {
-    render(<ActionPanel market={market} />);
-    expect(screen.getByText("Supply liquidity")).toBeInTheDocument();
-    expect(screen.getByText("Wrap / unwrap")).toBeInTheDocument();
-    expect(screen.getByText("Claim / repay / close")).toBeInTheDocument();
+  it("renders market detail actions without listing storefront copy", () => {
+    render(<MarketDetail market={market} onBack={vi.fn()} />);
+    expect(screen.getByText("SUPPLY LIQUIDITY")).toBeInTheDocument();
+    expect(screen.getByText("BORROW")).toBeInTheDocument();
     expect(screen.queryByText(/BUY/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/LIST FOR SALE/i)).not.toBeInTheDocument();
   });

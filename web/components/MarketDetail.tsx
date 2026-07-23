@@ -8,6 +8,7 @@ import { erc20Abi, ovrfloAbi } from "@/lib/abis";
 import { formatAddress, formatAprBps, formatMaturity, formatTokenAmount } from "@/lib/format";
 import { isSeriesMatchedStream } from "@/lib/modal-logic";
 import type { ActiveAction, MarketInfo } from "@/lib/types";
+import { ActionModal } from "./ActionModal";
 import { PositionList } from "./PositionList";
 
 type Props = {
@@ -165,15 +166,12 @@ export function MarketDetail({ market, user, onBack }: Props) {
       </section>
 
       {activeAction ? (
-        <div className="modal-scrim" onClick={() => setActiveAction(null)}>
-          <div className="modal-panel" onClick={(e) => e.stopPropagation()}>
-            <div className="label mono">ACTION: {activeAction.type.toUpperCase()}</div>
-            <div className="empty mono">MODAL CONTENT — U4</div>
-            <button className="button mono" type="button" onClick={() => setActiveAction(null)}>
-              CLOSE
-            </button>
-          </div>
-        </div>
+        <ActionModal
+          market={market}
+          user={user}
+          action={activeAction}
+          onClose={() => setActiveAction(null)}
+        />
       ) : null}
     </>
   );
