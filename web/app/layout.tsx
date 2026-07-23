@@ -1,46 +1,23 @@
-import type { Metadata, Viewport } from "next";
-import { Providers } from "@/lib/providers";
-import { outfit } from "@/lib/fonts";
+import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "OVRFLO",
-  description: "Pendle PT stream management",
-  metadataBase: new URL("https://overflow.finance"),
-  openGraph: {
-    title: "OVRFLO",
-    description: "Pendle PT stream management",
-    url: "https://overflow.finance",
-    siteName: "OVRFLO",
-    images: ["/opengraph-image"],
-  },
-  twitter: {
-    card: "summary_large_image",
-    title: "OVRFLO",
-    description: "Pendle PT stream management",
-    images: ["/opengraph-image"],
-  },
-  other: {
-    "generator": "Perplexity Computer (https://www.perplexity.ai/computer)",
+  title: "OVRFLO Markets",
+  description: "Markets UI for OVRFLO self-repaying loans and vault flows.",
+  icons: {
+    icon: [
+      { url: "/favicon.ico", sizes: "any" },
+      { url: "/favicon-32x32.png", sizes: "32x32", type: "image/png" },
+      { url: "/favicon-16x16.png", sizes: "16x16", type: "image/png" },
+    ],
+    apple: "/apple-touch-icon.png",
   },
 };
 
-export const viewport: Viewport = {
-  width: "device-width",
-  initialScale: 1,
-  themeColor: "#0b1221",
-};
-
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" className={outfit.variable}>
-      <body className="flex min-h-screen flex-col bg-[var(--color-bg)]">
-        <Providers>{children}</Providers>
-      </body>
+    <html lang="en">
+      <body className="grid-bg">{children}</body>
     </html>
   );
 }

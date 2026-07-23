@@ -1,82 +1,57 @@
+import type { Address } from "viem";
 import { isAddress } from "viem";
-import { mainnet } from "wagmi/chains";
 
-export const ENV = {
-  chainId: "NEXT_PUBLIC_CHAIN_ID",
-  factory: "NEXT_PUBLIC_OVRFLO_FACTORY",
-  reownProjectId: "NEXT_PUBLIC_REOWN_PROJECT_ID",
-  rpcUrl: "NEXT_PUBLIC_RPC_URL",
-  priceApiUrl: "NEXT_PUBLIC_PRICE_API_URL",
-  sablierIndexerUrl: "NEXT_PUBLIC_SABLIER_INDEXER_URL",
-} as const;
+export const MAINNET_CHAIN_ID = 1;
+export const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as const;
+export const SABLIER_LOCKUP_ADDRESS =
+  "0xAFb979d9afAd1aD27C5eFf4E27226E3AB9e5dCC9" as const;
 
-export const CHAIN = mainnet;
-export const CHAIN_ID = CHAIN.id;
-export const CHAIN_NAME = "Ethereum Mainnet" as const;
+const env = {
+  chainId: process.env.NEXT_PUBLIC_CHAIN_ID,
+  factory: process.env.NEXT_PUBLIC_OVRFLO_FACTORY,
+  rpcUrl: process.env.NEXT_PUBLIC_RPC_URL,
+  reownProjectId: process.env.NEXT_PUBLIC_REOWN_PROJECT_ID,
+  ponderUrl: process.env.NEXT_PUBLIC_PONDER_URL,
+  sablierIndexerUrl: process.env.NEXT_PUBLIC_SABLIER_INDEXER_URL,
+};
 
-// Hardcoded in OVRFLO.sol; identical on any mainnet fork (local anvil, dev, mainnet).
-export const PROTOCOL_DEPS = {
-  pendleOracle: "0x9a9Fa8338dd5E5B2188006f1Cd2Ef26d921650C2",
-  sablierLockup: "0xAFb979d9afAd1aD27C5eFf4E27226E3AB9e5dCC9",
-} as const;
-
-export const PENDLE_ORACLE = PROTOCOL_DEPS.pendleOracle;
-export const SABLIER_LOCKUP = PROTOCOL_DEPS.sablierLockup;
-
-// Default is Sablier's hosted Envio endpoint — continues to back devnet + mainnet
-// with zero env changes. Local bootstrap overrides this to
-// http://localhost:8080/v1/graphql so the UI hits the vendored indexer in
-// tools/envio/. See tools/envio/README.md.
-const SABLIER_INDEXER_URL_DEFAULT =
-  "https://indexer.hyperindex.xyz/53b7e25/v1/graphql" as const;
-
-export const SABLIER_INDEXER_URL: string =
-  process.env.NEXT_PUBLIC_SABLIER_INDEXER_URL?.trim() ||
-  SABLIER_INDEXER_URL_DEFAULT;
-
-function requireEnv(name: string, value: string | undefined): string {
-  if (!value || !value.trim()) {
-    throw new Error(
-      `${name} is not set. Copy web/.env.example to .env.local and fill in the required values.`
-    );
-  }
-  return value.trim();
-}
-
-function parseFactory(raw: string | undefined): `0x${string}` {
-  const trimmed = requireEnv(ENV.factory, raw);
-  if (!isAddress(trimmed)) {
-    throw new Error(
-      `${ENV.factory} is invalid ("${trimmed}"). Must be a single 0x address.`
-    );
-  }
-  return trimmed;
-}
-
-function parseChainId(raw: string | undefined): number {
-  const trimmed = requireEnv(ENV.chainId, raw);
-  const parsed = Number(trimmed);
-  if (!Number.isInteger(parsed) || parsed <= 0) {
-    throw new Error(
-      `${ENV.chainId} is invalid ("${trimmed}"). Must be a positive integer.`
-    );
-  }
-  if (parsed !== CHAIN_ID) {
-    throw new Error(
-      `${ENV.chainId}=${trimmed} is not supported. OVRFLO contracts hardcode mainnet-only protocol dependencies (Sablier, Pendle oracle); local/dev must run against an anvil fork of mainnet with ${ENV.chainId}=${CHAIN_ID}.`
-    );
+function parseChainId(raw = "1") {
+  const parsed = Number.parseInt(raw, 10);
+  if (parsed !== MAINNET_CHAIN_ID) {
+    throw new Error("OVRFLO web requires chain id 1, including local mainnet forks");
   }
   return parsed;
 }
 
-export const OVRFLO_FACTORY = parseFactory(process.env.NEXT_PUBLIC_OVRFLO_FACTORY);
+function parseAddress(raw: string | undefined, name: string): Address {
+  if (!raw || !isAddress(raw)) {
+    throw new Error(`${name} must be a valid address`);
+  }
+  return raw;
+}
 
-// Validated for side effect (throws on bad input); value equals CHAIN_ID by construction.
-parseChainId(process.env.NEXT_PUBLIC_CHAIN_ID);
+function optionalUrl(raw: string | undefined) {
+  if (!raw) return undefined;
+  return new URL(raw).toString();
+}
 
-export const OPTIONAL_RPC_URL =
-  process.env.NEXT_PUBLIC_RPC_URL?.trim() || undefined;
+export const chainId = parseChainId(env.chainId);
+export const factoryAddress = parseAddress(
+  env.factory ?? ZERO_ADDRESS,
+  "NEXT_PUBLIC_OVRFLO_FACTORY",
+);
+export const rpcUrl = optionalUrl(env.rpcUrl);
+export const reownProjectId = env.reownProjectId || "00000000000000000000000000000000";
+export const ponderUrl = optionalUrl(env.ponderUrl ?? env.sablierIndexerUrl);
 
-export const PRICE_API_URL =
-  process.env.NEXT_PUBLIC_PRICE_API_URL?.trim() ||
-  "https://api.coingecko.com/api/v3";
+export function isConfiguredAddress(address: Address | null | undefined) {
+  return Boolean(address && address !== ZERO_ADDRESS);
+}
+
+export function explorerAddress(address: Address) {
+  return `https://etherscan.io/address/${address}`;
+}
+
+export function explorerTx(hash: `0x${string}`) {
+  return `https://etherscan.io/tx/${hash}`;
+}

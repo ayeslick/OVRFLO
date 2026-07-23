@@ -32,6 +32,8 @@ web/.pem
 web/.vercel
 web/.postcss-cache/
 web/reviews/
+tools/ponder/.ponder/
+tools/ponder/generated/
 node_modules/
 .gas-snapshot
 
@@ -44,6 +46,7 @@ BASE_SECURITY.md
 CLAUDE.md 
 AGENTS.md
 .cursor/
+.bootstrap.*
 
 # Fuzz build artifacts (regenerated per run)
 fizz_data/

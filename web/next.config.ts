@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import path from "node:path";
 
 // Note (R19, R20): this config intentionally does NOT set security
 // headers. Next's `headers()` API is a no-op under `output: "export"` —
@@ -8,6 +9,9 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   output: "export",
   reactStrictMode: true,
+  turbopack: {
+    root: path.resolve(__dirname),
+  },
   images: {
     unoptimized: true,
   },

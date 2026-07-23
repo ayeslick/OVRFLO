@@ -1,45 +1,39 @@
-import { isAddress, isHash } from "viem";
+import type { Address } from "viem";
 
-export const TRUNCATION_ELLIPSIS = "\u2026" as const;
-
-interface TruncateOptions {
-  head?: number;
-  tail?: number;
-  fallback?: string;
+export function formatAddress(address?: Address | null) {
+  if (!address) return "—";
+  return `${address.slice(0, 6)}…${address.slice(-4)}`;
 }
 
-function truncateHex(
-  value: string,
-  { head = 4, tail = 4 }: Pick<TruncateOptions, "head" | "tail">
-): string {
-  const minLen = 2 + head + tail;
-  if (value.length <= minLen) return value;
-  return `${value.slice(0, 2 + head)}${TRUNCATION_ELLIPSIS}${value.slice(-tail)}`;
+export function formatAprBps(aprBps: bigint | number) {
+  const value = typeof aprBps === "bigint" ? aprBps : BigInt(aprBps);
+  const whole = value / 100n;
+  const fractional = (value % 100n).toString().padStart(2, "0");
+  return `${whole}.${fractional}%`;
 }
 
-/**
- * Truncate an Ethereum address for display: `0x1234…abcd`.
- * Returns the input unchanged when it isn't a valid 20-byte address
- * (so ENS names and other non-hex labels pass through untouched).
- */
-export function truncateAddress(
-  address: string | undefined | null,
-  options: TruncateOptions = {}
-): string {
-  if (!address) return options.fallback ?? "";
-  if (!isAddress(address)) return address;
-  return truncateHex(address, options);
+export function formatTokenAmount(value: bigint | undefined, symbol: string, decimals = 18) {
+  if (value === undefined) return `— ${symbol}`;
+  const scale = 10n ** BigInt(decimals);
+  const whole = value / scale;
+  const fraction = value % scale;
+  const displayDecimals = whole === 0n && fraction > 0n ? 4 : 2;
+  const divisor = 10n ** BigInt(decimals - displayDecimals);
+  const rounded = (fraction + divisor / 2n) / divisor;
+  return `${whole}.${rounded.toString().padStart(displayDecimals, "0")} ${symbol}`;
 }
 
-/**
- * Truncate a tx hash / block hash for display: `0x1234…abcd`.
- * Uses 6/6 by default so the fingerprint is still unambiguous.
- */
-export function truncateTxHash(
-  hash: string | undefined | null,
-  options: TruncateOptions = {}
-): string {
-  if (!hash) return options.fallback ?? "";
-  if (!isHash(hash)) return hash;
-  return truncateHex(hash, { head: options.head ?? 6, tail: options.tail ?? 6 });
+export function formatMaturity(timestamp: bigint | undefined) {
+  if (!timestamp) return "Maturity unknown";
+  const date = new Date(Number(timestamp) * 1000);
+  return new Intl.DateTimeFormat("en", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(date);
+}
+
+export function formatId(id: bigint | undefined) {
+  return id === undefined ? "—" : `#${id.toString()}`;
 }

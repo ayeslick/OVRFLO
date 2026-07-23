@@ -1,0 +1,21 @@
+{
+  "name": "ovrflo-ponder",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "ponder dev",
+    "start": "ponder start",
+    "codegen": "ponder codegen",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "ponder": "0.17.1",
+    "viem": "2.55.5"
+  },
+  "devDependencies": {
+    "@types/node": "22.15.3",
+    "typescript": "5.9.3",
+    "vitest": "4.0.18"
+  }
+}

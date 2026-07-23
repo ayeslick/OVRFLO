@@ -14,8 +14,8 @@
 # Env overrides:
 #   RPC_URL                          — NEXT_PUBLIC_RPC_URL (default: per-profile)
 #   REOWN_PROJECT_ID                 — NEXT_PUBLIC_REOWN_PROJECT_ID
-#   SABLIER_INDEXER_URL              — NEXT_PUBLIC_SABLIER_INDEXER_URL
-#                                      (default: localhost:8080 for local, unset = hosted for devnet)
+#   PONDER_URL                       — NEXT_PUBLIC_PONDER_URL
+#                                      (default: localhost:42069/sql for local)
 #   DEPLOYMENTS_JSON                 — path override (default: deployments/<network>.json)
 #   OUT                              — output path override (default: web/.env.<local|devnet>)
 
@@ -52,21 +52,19 @@ fi
 case "$NETWORK" in
   local)
     DEFAULT_RPC="http://127.0.0.1:8545"
-    # Local Envio Hasura endpoint from `envio dev` — see tools/envio/README.md.
-    DEFAULT_INDEXER="http://localhost:8080/v1/graphql"
+    DEFAULT_PONDER="http://localhost:42069/sql"
     OUT_DEFAULT="web/.env.local"
     ;;
   devnet)
     # Intentionally empty — operator must supply TENDERLY_RPC_URL via RPC_URL.
     DEFAULT_RPC=""
-    # Empty => UI falls back to SABLIER_INDEXER_URL_DEFAULT (hosted).
-    DEFAULT_INDEXER=""
+    DEFAULT_PONDER=""
     OUT_DEFAULT="web/.env.devnet"
     ;;
 esac
 
 RPC_URL="${RPC_URL:-$DEFAULT_RPC}"
-SABLIER_INDEXER_URL="${SABLIER_INDEXER_URL:-$DEFAULT_INDEXER}"
+PONDER_URL="${PONDER_URL:-$DEFAULT_PONDER}"
 REOWN_PROJECT_ID="${REOWN_PROJECT_ID:-}"
 OUT="${OUT:-$OUT_DEFAULT}"
 
@@ -93,8 +91,8 @@ trap 'rm -f "$TMP"' EXIT
     echo "# NEXT_PUBLIC_REOWN_PROJECT_ID must be set before running the UI."
     echo "# NEXT_PUBLIC_REOWN_PROJECT_ID="
   fi
-  if [ -n "$SABLIER_INDEXER_URL" ]; then
-    echo "NEXT_PUBLIC_SABLIER_INDEXER_URL=$SABLIER_INDEXER_URL"
+  if [ -n "$PONDER_URL" ]; then
+    echo "NEXT_PUBLIC_PONDER_URL=$PONDER_URL"
   fi
 } > "$TMP"
 
@@ -102,4 +100,4 @@ mv "$TMP" "$OUT"
 trap - EXIT
 
 echo "write-env: wrote $OUT"
-echo "           factory=$FACTORY  rpc=${RPC_URL:-<wagmi default>}  indexer=${SABLIER_INDEXER_URL:-<hosted default>}"
+echo "           factory=$FACTORY  rpc=${RPC_URL:-<wagmi default>}  ponder=${PONDER_URL:-<unset>}"

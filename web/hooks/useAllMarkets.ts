@@ -2,187 +2,113 @@
 
 import { useMemo } from "react";
 import { useReadContracts } from "wagmi";
-import { OVRFLO_FACTORY } from "@/lib/config";
-import { ovrfloFactoryAbi, ovrfloAbi } from "@/lib/contracts";
-import { getReadContractsError } from "@/lib/errors";
-import type { OvrfloEntry } from "./useOvrflos";
+import { ovrfloAbi, ovrfloFactoryAbi } from "@/lib/abis";
+import { factoryAddress, ZERO_ADDRESS } from "@/lib/config";
+import { ovrfloKeys } from "@/lib/query-keys";
+import type { MarketInfo } from "@/lib/types";
+import { useOvrflos } from "./useOvrflos";
 
-export interface MarketInfo {
-  market: `0x${string}`;
-  ovrflo: `0x${string}`;
-  approved: boolean;
-  twapDuration: number;
-  feeBps: number;
-  expiry: bigint;
-  ptToken: `0x${string}`;
-  ovrfloToken: `0x${string}`;
-  underlying: `0x${string}`;
-  oracle: `0x${string}`;
-}
+export function useAllMarkets() {
+  const ovrflos = useOvrflos(factoryAddress);
 
-export function useAllMarkets(ovrflos: OvrfloEntry[]): {
-  markets: MarketInfo[];
-  isLoading: boolean;
-  error?: Error;
-} {
-  // Step 1: Batch all market-count reads into one useReadContracts call.
-  const countContracts = useMemo(
-    () =>
-      ovrflos.map((o) => ({
-        address: OVRFLO_FACTORY as `0x${string}`,
+  const marketCountReads = useReadContracts({
+    contracts: ovrflos.vaults.map((vault) => ({
+      address: factoryAddress,
+      abi: ovrfloFactoryAbi,
+      functionName: "approvedMarketCount",
+      args: [vault.vault],
+    })),
+    query: { enabled: ovrflos.vaults.length > 0 },
+  });
+
+  const marketAddressContracts = useMemo(() => {
+    return ovrflos.vaults.flatMap((vault, vaultIndex) => {
+      const countResult = marketCountReads.data?.[vaultIndex];
+      const count = countResult?.status === "success" ? asBigInt(countResult.result) : 0n;
+      return Array.from({ length: bigintToSafeLength(count) }, (_, index) => ({
+        address: factoryAddress,
         abi: ovrfloFactoryAbi,
-        functionName: "approvedMarketCount" as const,
-        args: [o.address] as const,
-      })),
-    [ovrflos]
-  );
+        functionName: "approvedMarketAt" as const,
+        args: [vault.vault, BigInt(index)] as const,
+      }));
+    });
+  }, [marketCountReads.data, ovrflos.vaults]);
 
-  const {
-    data: countResults,
-    isLoading: countsLoading,
-    error: countsError,
-  } = useReadContracts({
-    contracts: countContracts,
-    query: { enabled: countContracts.length > 0 },
+  const marketAddressReads = useReadContracts({
+    contracts: marketAddressContracts,
+    query: { enabled: marketAddressContracts.length > 0 },
   });
 
-  // Step 2: From counts, build a flat list of address-fetch contracts.
-  const { addressContracts, countPerOvrflo } = useMemo(() => {
-    if (!countResults) return { addressContracts: [], countPerOvrflo: [] as number[] };
-    const counts: number[] = [];
-    const contracts: {
-      address: `0x${string}`;
-      abi: typeof ovrfloFactoryAbi;
-      functionName: "approvedMarketAt";
-      args: readonly [`0x${string}`, bigint];
-    }[] = [];
-    ovrflos.forEach((o, oi) => {
-      const count = countResults[oi]?.result ? Number(countResults[oi].result) : 0;
-      counts.push(count);
-      for (let i = 0; i < count; i++) {
-        contracts.push({
-          address: OVRFLO_FACTORY as `0x${string}`,
-          abi: ovrfloFactoryAbi,
-          functionName: "approvedMarketAt" as const,
-          args: [o.address, BigInt(i)] as const,
+  const marketSeriesContracts = useMemo(() => {
+    let readIndex = 0;
+    return ovrflos.vaults.flatMap((vault, vaultIndex) => {
+      const countResult = marketCountReads.data?.[vaultIndex];
+      const count = countResult?.status === "success" ? asBigInt(countResult.result) : 0n;
+      return Array.from({ length: bigintToSafeLength(count) }, () => {
+        const marketResult = marketAddressReads.data?.[readIndex++];
+        const market = marketResult?.status === "success" ? asAddress(marketResult.result) : ZERO_ADDRESS;
+        return {
+          address: vault.vault,
+          abi: ovrfloAbi,
+          functionName: "series" as const,
+          args: [market] as const,
+        };
+      });
+    });
+  }, [marketAddressReads.data, marketCountReads.data, ovrflos.vaults]);
+
+  const seriesReads = useReadContracts({
+    contracts: marketSeriesContracts,
+    query: { enabled: marketSeriesContracts.length > 0 },
+  });
+
+  const markets = useMemo<MarketInfo[]>(() => {
+    const rows: MarketInfo[] = [];
+    let readIndex = 0;
+    for (const vault of ovrflos.vaults) {
+      const count = marketCountReads.data?.[ovrflos.vaults.indexOf(vault)];
+      const marketCount = count?.status === "success" ? asBigInt(count.result) : 0n;
+      for (let offset = 0; offset < bigintToSafeLength(marketCount); offset++) {
+        const marketResult = marketAddressReads.data?.[readIndex];
+        const seriesResult = seriesReads.data?.[readIndex];
+        readIndex++;
+        if (marketResult?.status !== "success" || seriesResult?.status !== "success") continue;
+        const [twapDurationFixed, feeBps, expiryCached, ptToken, ovrfloToken, underlying, oracle] =
+          seriesResult.result;
+        if (ptToken === ZERO_ADDRESS) continue;
+        rows.push({
+          ...vault,
+          market: asAddress(marketResult.result),
+          twapDurationFixed,
+          feeBps,
+          expiryCached,
+          ptToken,
+          ovrfloToken,
+          underlying,
+          oracle,
         });
       }
-    });
-    return { addressContracts: contracts, countPerOvrflo: counts };
-  }, [ovrflos, countResults]);
-
-  const {
-    data: addrResults,
-    isLoading: addrsLoading,
-    error: addrsError,
-  } = useReadContracts({
-    contracts: addressContracts,
-    query: { enabled: addressContracts.length > 0 },
-  });
-
-  // Step 3: From addresses, build series-fetch contracts.
-  const seriesContracts = useMemo(() => {
-    if (!addrResults || addrResults.length === 0) return [];
-    let idx = 0;
-    const contracts: {
-      address: `0x${string}`;
-      abi: typeof ovrfloAbi;
-      functionName: "series";
-      args: readonly [`0x${string}`];
-    }[] = [];
-    ovrflos.forEach((o, oi) => {
-      const count = countPerOvrflo[oi] ?? 0;
-      for (let i = 0; i < count; i++) {
-        const market = addrResults[idx]?.result as `0x${string}` | undefined;
-        if (market) {
-          contracts.push({
-            address: o.address,
-            abi: ovrfloAbi,
-            functionName: "series" as const,
-            args: [market] as const,
-          });
-        }
-        idx++;
-      }
-    });
-    return contracts;
-  }, [ovrflos, countPerOvrflo, addrResults]);
-
-  const {
-    data: seriesResults,
-    isLoading: seriesLoading,
-    error: seriesError,
-  } = useReadContracts({
-    contracts: seriesContracts,
-    query: { enabled: seriesContracts.length > 0 },
-  });
-
-  const error = useMemo(
-    () =>
-      getReadContractsError(
-        countsError,
-        countResults,
-        "Unable to read approved market counts from the configured factory."
-      ) ??
-      getReadContractsError(
-        addrsError,
-        addrResults,
-        "Unable to read approved market addresses from the configured factory."
-      ) ??
-      getReadContractsError(
-        seriesError,
-        seriesResults,
-        "Unable to read approved market metadata from the configured OVRFLO contract."
-      ),
-    [countsError, countResults, addrsError, addrResults, seriesError, seriesResults]
-  );
-
-  // Step 4: Post-process into MarketInfo[].
-  const markets = useMemo(() => {
-    if (!addrResults || !seriesResults) return [];
-    const result: MarketInfo[] = [];
-    let addrIdx = 0;
-    let seriesIdx = 0;
-    ovrflos.forEach((o, oi) => {
-      const count = countPerOvrflo[oi] ?? 0;
-      for (let i = 0; i < count; i++) {
-        const market = addrResults[addrIdx]?.result as `0x${string}` | undefined;
-        addrIdx++;
-        if (!market) continue;
-        const s = seriesResults[seriesIdx]?.result as
-          | readonly [
-              boolean,
-              number,
-              number,
-              bigint,
-              `0x${string}`,
-              `0x${string}`,
-              `0x${string}`,
-              `0x${string}`,
-            ]
-          | undefined;
-        seriesIdx++;
-        if (!s) continue;
-        result.push({
-          market,
-          ovrflo: o.address,
-          approved: s[0],
-          twapDuration: s[1],
-          feeBps: s[2],
-          expiry: s[3],
-          ptToken: s[4],
-          ovrfloToken: s[5],
-          underlying: s[6],
-          oracle: s[7],
-        });
-      }
-    });
-    return result;
-  }, [ovrflos, countPerOvrflo, addrResults, seriesResults]);
+    }
+    return rows;
+  }, [marketAddressReads.data, marketCountReads.data, ovrflos.vaults, seriesReads.data]);
 
   return {
+    queryKey: ovrfloKeys.markets(factoryAddress),
     markets,
-    isLoading: countsLoading || addrsLoading || seriesLoading,
-    error,
+    isLoading: ovrflos.isLoading || marketCountReads.isLoading || marketAddressReads.isLoading || seriesReads.isLoading,
+    error: ovrflos.error ?? marketCountReads.error ?? marketAddressReads.error ?? seriesReads.error,
   };
+}
+
+function bigintToSafeLength(value: bigint) {
+  if (value > 100n) return 100;
+  return Number(value);
+}
+
+function asBigInt(value: unknown) {
+  return typeof value === "bigint" ? value : 0n;
+}
+
+function asAddress(value: unknown) {
+  return typeof value === "string" && value.startsWith("0x") ? (value as `0x${string}`) : ZERO_ADDRESS;
 }

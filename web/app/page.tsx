@@ -1,17 +1,10 @@
-import { Suspense } from "react";
-import { Header } from "@/components/Header";
-import { Footer } from "@/components/Footer";
-import { Dashboard } from "@/components/Dashboard";
-import { DashboardSkeleton } from "@/components/DashboardSkeleton";
+import { MarketsApp } from "@/components/MarketsApp";
+import { Providers } from "@/components/Providers";
 
-export default function Home() {
+export default function Page() {
   return (
-    <>
-      <Header />
-      <Suspense fallback={<DashboardSkeleton />}>
-        <Dashboard />
-      </Suspense>
-      <Footer />
-    </>
+    <Providers>
+      <MarketsApp />
+    </Providers>
   );
 }

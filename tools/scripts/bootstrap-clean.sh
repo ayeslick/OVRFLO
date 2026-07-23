@@ -49,16 +49,9 @@ rm_if_exists() {
 
 if [ "$NETWORK" = "local" ]; then
   kill_pid_file "anvil" ".bootstrap.pid"
-  kill_pid_file "envio (pnpm dev)" ".bootstrap.envio.pid"
-  # Wipe Envio's Postgres volume so the next boot re-indexes from the fork
-  # head — required whenever anvil restarts (R6).
-  if command -v pnpm >/dev/null 2>&1 && [ -d "tools/envio/.envio" ]; then
-    echo "bootstrap-clean: wiping Envio postgres volume (envio local stop --reset)"
-    (cd tools/envio && pnpm run stop >/dev/null 2>&1 || true)
-    CLEANED=1
-  fi
+  kill_pid_file "ponder" ".bootstrap.ponder.pid"
   rm_if_exists "anvil log"  ".bootstrap.anvil.log"
-  rm_if_exists "envio log"  ".bootstrap.envio.log"
+  rm_if_exists "ponder log" ".bootstrap.ponder.log"
   rm_if_exists "env.local"  "web/.env.local"
   rm_if_exists "deployment artifact" "deployments/local.json"
 else

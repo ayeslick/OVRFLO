@@ -14,7 +14,7 @@
  * output):
  *
  *   NEXT_PUBLIC_RPC_URL                 → connect-src origin for Ethereum RPC
- *   NEXT_PUBLIC_SABLIER_INDEXER_URL     → connect-src origin for Envio
+ *   NEXT_PUBLIC_PONDER_URL              → connect-src origin for Ponder
  *   NEXT_PUBLIC_PRICE_API_URL           → connect-src origin for CoinGecko
  *
  * Static origins for WalletConnect / Reown and their WSS relays are baked
@@ -63,9 +63,9 @@ const rpcOrigin =
   "https://rpc.ankr.com";
 const indexerOrigin =
   originOf(
-    process.env.NEXT_PUBLIC_SABLIER_INDEXER_URL,
-    "NEXT_PUBLIC_SABLIER_INDEXER_URL"
-  ) ?? "https://indexer.hyperindex.xyz";
+    process.env.NEXT_PUBLIC_PONDER_URL,
+    "NEXT_PUBLIC_PONDER_URL"
+  ) ?? "http://localhost:42069";
 const priceApiOrigin =
   originOf(process.env.NEXT_PUBLIC_PRICE_API_URL, "NEXT_PUBLIC_PRICE_API_URL") ??
   "https://api.coingecko.com";

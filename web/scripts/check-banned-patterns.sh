@@ -32,6 +32,7 @@ PATTERNS=(
   'watchContractEvent.*Deposited|Event-scan fallback is banned; use factory reads.'
   'getLogs.*Deposited|Event-scan fallback is banned; use factory reads.'
   'nativeUsd|Renamed/removed; use the price API surface in lib/prices.'
+  'Number\\([^)]*(amount|balance|liquidity|obligation|drawn|repaid|proceeds|price|outstanding|contribution)|Do not cast token amounts through Number; keep money values as bigint.'
 )
 
 SEARCH_ROOTS=(
