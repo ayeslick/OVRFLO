@@ -67,3 +67,24 @@ export type HeldStream = {
 };
 
 export type TxStep = "idle" | "approve" | "sign" | "confirming" | "confirmed" | "error";
+
+export type ActionType =
+  | "supply"
+  | "withdraw"
+  | "claim_share"
+  | "deposit"
+  | "claim_matured"
+  | "wrap"
+  | "unwrap"
+  | "borrow"
+  | "claim_stream"
+  | "sell"
+  | "repay"
+  | "close";
+
+export type ActiveAction = {
+  type: ActionType;
+  positionId?: bigint;
+  loanId?: bigint;
+  streamId?: bigint;
+};
