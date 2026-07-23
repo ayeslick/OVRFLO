@@ -18,10 +18,8 @@ import { loanOutstanding, MAX_UINT128 } from "@/lib/lending-math";
 import {
   applySlippageDown,
   borrowQuoteCopy,
-  canCloseLoan,
   chooseSellNowLiquidity,
   isSeriesMatchedStream,
-  repayMax,
   staleBatchCopy,
 } from "@/lib/modal-logic";
 import { lendingKeys, ovrfloKeys, streamKeys } from "@/lib/query-keys";
@@ -103,7 +101,7 @@ function FormBody({
 }) {
   switch (action.type) {
     case "supply":
-      return <SupplyForm market={market} user={user} accent={accent} onClose={onClose} />;
+      return <SupplyForm market={market} accent={accent} onClose={onClose} />;
     case "withdraw":
     case "claim_share":
     case "claim_stream":
@@ -113,11 +111,11 @@ function FormBody({
     case "claim_matured":
     case "wrap":
     case "unwrap":
-      return <ConvertForm market={market} user={user} action={action} accent={accent} onClose={onClose} />;
+      return <ConvertForm market={market} action={action} accent={accent} onClose={onClose} />;
     case "borrow":
       return <BorrowForm market={market} user={user} action={action} accent={accent} onClose={onClose} />;
     case "sell":
-      return <SellForm market={market} user={user} action={action} accent={accent} onClose={onClose} />;
+      return <SellForm market={market} action={action} accent={accent} onClose={onClose} />;
     case "repay":
       return <RepayForm market={market} user={user} action={action} accent={accent} onClose={onClose} />;
     default:
@@ -187,15 +185,6 @@ function parseAmount(raw: string): bigint {
   }
 }
 
-function parseBigInt(raw: string): bigint | null {
-  try {
-    if (!raw.trim()) return null;
-    return BigInt(raw.trim());
-  } catch {
-    return null;
-  }
-}
-
 function formatUnits18(value: bigint) {
   return formatUnits(value, 18);
 }
@@ -204,12 +193,10 @@ function formatUnits18(value: bigint) {
 
 function SupplyForm({
   market,
-  user,
   accent,
   onClose,
 }: {
   market: MarketInfo;
-  user?: Address;
   accent: Accent;
   onClose: () => void;
 }) {
@@ -428,13 +415,11 @@ function SimpleActionForm({
 
 function ConvertForm({
   market,
-  user,
   action,
   accent,
   onClose,
 }: {
   market: MarketInfo;
-  user?: Address;
   action: ActiveAction;
   accent: Accent;
   onClose: () => void;
@@ -830,13 +815,11 @@ function BorrowForm({
 
 function SellForm({
   market,
-  user,
   action,
   accent,
   onClose,
 }: {
   market: MarketInfo;
-  user?: Address;
   action: ActiveAction;
   accent: Accent;
   onClose: () => void;
@@ -844,9 +827,7 @@ function SellForm({
   const connection = useConnection();
   const lending = useLending(market.lending);
   const liquidity = useLendingLiquidity(market.lending);
-  const streams = useHeldStreams(user);
   const streamId = action.streamId ?? null;
-  const stream = streams.streams.find((stream) => stream.streamId === streamId);
 
   const [streamApprovedId, setStreamApprovedId] = useState<bigint | null>(null);
   const [pendingLabel, setPendingLabel] = useState<string | null>(null);
