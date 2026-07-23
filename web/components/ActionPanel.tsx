@@ -66,6 +66,7 @@ function SupplyLiquidityForm({ market }: { market: MarketInfo }) {
   const lending = useLending(market.lending);
   const [raw, setRaw] = useState("");
   const [approvedAmount, setApprovedAmount] = useState(0n);
+  const [pendingLabel, setPendingLabel] = useState<string | null>(null);
   const amount = parseAmount(raw);
   const aprBps = lending.params.aprMinBps || 1000;
   const invalidateKeys = useMemo(
@@ -73,6 +74,10 @@ function SupplyLiquidityForm({ market }: { market: MarketInfo }) {
     [market.lending],
   );
   const tx = useWriteFlow(invalidateKeys);
+  useEffect(() => {
+    if (tx.error) setApprovedAmount(0n);
+    if (tx.error || tx.isConfirmed) setPendingLabel(null);
+  }, [tx.error, tx.isConfirmed]);
   const allowance = useReadContract({
     address: market.underlying,
     abi: erc20Abi,
@@ -103,6 +108,7 @@ function SupplyLiquidityForm({ market }: { market: MarketInfo }) {
             type="button"
             onClick={() => {
               if (!market.lending) return;
+              setPendingLabel("APPROVE");
               tx.writeContract({
                 address: market.underlying,
                 abi: erc20Abi,
@@ -121,6 +127,7 @@ function SupplyLiquidityForm({ market }: { market: MarketInfo }) {
             type="button"
             onClick={() => {
               if (!market.lending) return;
+              setPendingLabel("SUPPLY");
               tx.writeContract({
                 address: market.lending,
                 abi: ovrfloLendingAbi,
@@ -132,7 +139,7 @@ function SupplyLiquidityForm({ market }: { market: MarketInfo }) {
             SUPPLY @ {formatAprBps(aprBps)}
           </button>
         )}
-        <TxState tx={tx} />
+        <TxState tx={tx} pendingLabel={pendingLabel} />
       </div>
     </div>
   );
@@ -145,12 +152,20 @@ function VaultConversionForm({ market }: { market: MarketInfo }) {
   const [ptApprovedAmount, setPtApprovedAmount] = useState(0n);
   const [underlyingApprovedAmount, setUnderlyingApprovedAmount] = useState(0n);
   const [nowSeconds, setNowSeconds] = useState<bigint | null>(null);
+  const [pendingLabel, setPendingLabel] = useState<string | null>(null);
   const amount = parseAmount(raw);
   const tx = useWriteFlow([ovrfloKeys.markets(), lendingKeys.borrowerLoans(market.lending)]);
   const disabled = amount === 0n || tx.isSigning || tx.isConfirming;
   useEffect(() => {
     setNowSeconds(BigInt(Math.floor(Date.now() / 1000)));
   }, []);
+  useEffect(() => {
+    if (tx.error) {
+      setPtApprovedAmount(0n);
+      setUnderlyingApprovedAmount(0n);
+    }
+    if (tx.error || tx.isConfirmed) setPendingLabel(null);
+  }, [tx.error, tx.isConfirmed]);
   const matured = nowSeconds !== null && nowSeconds >= market.expiryCached;
   const preview = useReadContract({
     address: market.vault,
@@ -178,7 +193,7 @@ function VaultConversionForm({ market }: { market: MarketInfo }) {
     args: connection.addresses?.[0] ? [connection.addresses[0], market.vault] : undefined,
     query: { enabled: Boolean(connection.addresses?.[0]) },
   });
-  const depositPreview = preview.data as [bigint, bigint, bigint] | undefined;
+  const depositPreview = preview.data as [bigint, bigint, bigint, bigint] | undefined;
   const feeAmount = depositPreview?.[2] ?? 0n;
   const needsPtApproval =
     mode === "deposit" && amount > 0n && (ptAllowance.data ?? 0n) < amount && ptApprovedAmount < amount;
@@ -227,6 +242,7 @@ function VaultConversionForm({ market }: { market: MarketInfo }) {
             disabled={disabled}
             type="button"
             onClick={() => {
+              setPendingLabel("APPROVE PT");
               tx.writeContract({
                 address: market.ptToken,
                 abi: erc20Abi,
@@ -245,6 +261,7 @@ function VaultConversionForm({ market }: { market: MarketInfo }) {
             type="button"
             onClick={() => {
               const approveAmount = mode === "wrap" ? amount : feeAmount;
+              setPendingLabel("APPROVE wstETH");
               tx.writeContract({
                 address: market.underlying,
                 abi: erc20Abi,
@@ -262,6 +279,7 @@ function VaultConversionForm({ market }: { market: MarketInfo }) {
           disabled={modeDisabled}
           type="button"
           onClick={() => {
+            setPendingLabel(mode.toUpperCase());
             if (mode === "deposit") {
               tx.writeContract({
                 address: market.vault,
@@ -298,7 +316,7 @@ function VaultConversionForm({ market }: { market: MarketInfo }) {
               : "CLAIM ENABLES AFTER MATURITY"
             : "APPROVE → SIGN → RECEIPT → REFRESH"}
         </div>
-        <TxState tx={tx} />
+        <TxState tx={tx} pendingLabel={pendingLabel} />
       </div>
     </div>
   );
@@ -311,6 +329,7 @@ function StreamActionsForm({ market, loan }: { market: MarketInfo; loan?: Loan }
   const [repayRaw, setRepayRaw] = useState("");
   const [streamApprovedId, setStreamApprovedId] = useState<bigint | null>(null);
   const [repayApprovedAmount, setRepayApprovedAmount] = useState(0n);
+  const [pendingLabel, setPendingLabel] = useState<string | null>(null);
   const parsedStreamId = parseBigInt(streamId);
   const borrowAmount = parseAmount(borrowRaw);
   const repayInput = parseAmount(repayRaw);
@@ -403,6 +422,13 @@ function StreamActionsForm({ market, loan }: { market: MarketInfo; loan?: Loan }
     (repayAllowance.data ?? 0n) < repayAmount &&
     repayApprovedAmount < repayAmount;
   const staleCopy = tx.error instanceof Error ? staleBatchCopy(tx.error.message) : null;
+  useEffect(() => {
+    if (tx.error) {
+      setStreamApprovedId(null);
+      setRepayApprovedAmount(0n);
+    }
+    if (tx.error || tx.isConfirmed) setPendingLabel(null);
+  }, [tx.error, tx.isConfirmed]);
 
   return (
     <div className="panel">
@@ -426,6 +452,7 @@ function StreamActionsForm({ market, loan }: { market: MarketInfo; loan?: Loan }
           type="button"
           onClick={() => {
             if (!parsedStreamId || !connection.addresses?.[0]) return;
+            setPendingLabel("CLAIM STREAM");
             tx.writeContract({
               address: SABLIER_LOCKUP_ADDRESS,
               abi: sablierLockupAbi,
@@ -466,6 +493,7 @@ function StreamActionsForm({ market, loan }: { market: MarketInfo; loan?: Loan }
             type="button"
             onClick={() => {
               if (!market.lending || !parsedStreamId) return;
+              setPendingLabel("APPROVE STREAM");
               tx.writeContract({
                 address: SABLIER_LOCKUP_ADDRESS,
                 abi: sablierLockupAbi,
@@ -492,6 +520,7 @@ function StreamActionsForm({ market, loan }: { market: MarketInfo; loan?: Loan }
             type="button"
             onClick={() => {
               if (!market.lending || !parsedStreamId || !gatherData || !quoteData) return;
+              setPendingLabel("BORROW");
               tx.writeContract({
                 address: market.lending,
                 abi: ovrfloLendingAbi,
@@ -509,6 +538,7 @@ function StreamActionsForm({ market, loan }: { market: MarketInfo; loan?: Loan }
           type="button"
           onClick={() => {
             if (!market.lending || !parsedStreamId || !sellPosition || !sellQuoteData) return;
+            setPendingLabel("SELL");
             tx.writeContract({
               address: market.lending,
               abi: ovrfloLendingAbi,
@@ -537,6 +567,7 @@ function StreamActionsForm({ market, loan }: { market: MarketInfo; loan?: Loan }
                 type="button"
                 onClick={() => {
                   if (!market.lending) return;
+                  setPendingLabel("APPROVE REPAY");
                   tx.writeContract({
                     address: market.ovrfloToken,
                     abi: erc20Abi,
@@ -555,6 +586,7 @@ function StreamActionsForm({ market, loan }: { market: MarketInfo; loan?: Loan }
               type="button"
               onClick={() => {
                 if (!market.lending) return;
+                setPendingLabel("REPAY");
                 tx.writeContract({
                   address: market.lending,
                   abi: ovrfloLendingAbi,
@@ -572,6 +604,7 @@ function StreamActionsForm({ market, loan }: { market: MarketInfo; loan?: Loan }
               type="button"
               onClick={() => {
                 if (!market.lending) return;
+                setPendingLabel("CLOSE");
                 tx.writeContract({
                   address: market.lending,
                   abi: ovrfloLendingAbi,
@@ -587,15 +620,23 @@ function StreamActionsForm({ market, loan }: { market: MarketInfo; loan?: Loan }
           <div className="empty mono">NO ACTIVE LOAN SELECTED</div>
         )}
         {staleCopy ? <div className="label mono status-warning">{staleCopy}</div> : null}
-        <TxState tx={tx} />
+        <TxState tx={tx} pendingLabel={pendingLabel} />
       </div>
     </div>
   );
 }
 
-function TxState({ tx }: { tx: ReturnType<typeof useWriteFlow> }) {
-  if (tx.isSigning) return <div className="label mono status-warning">SIGNING</div>;
-  if (tx.isConfirming) return <div className="label mono status-warning">CONFIRMING {tx.hash}</div>;
+function TxState({ tx, pendingLabel }: { tx: ReturnType<typeof useWriteFlow>; pendingLabel?: string | null }) {
+  if (tx.isSigning)
+    return (
+      <div className="label mono status-warning">{pendingLabel ? `${pendingLabel}: SIGNING` : "SIGNING"}</div>
+    );
+  if (tx.isConfirming)
+    return (
+      <div className="label mono status-warning">
+        {pendingLabel ? `${pendingLabel}: CONFIRMING` : "CONFIRMING"} {tx.hash}
+      </div>
+    );
   if (tx.isConfirmed) return <div className="label mono status-positive">CONFIRMED</div>;
   if (tx.error) return <div className="label mono status-negative">{userFacingError(tx.error)}</div>;
   return null;

@@ -4,6 +4,18 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "OVRFLO Markets",
   description: "Markets UI for OVRFLO self-repaying loans and vault flows.",
+  openGraph: {
+    title: "OVRFLO Markets",
+    description: "Markets UI for OVRFLO self-repaying loans and vault flows.",
+    url: "https://overflow.finance",
+    siteName: "OVRFLO",
+    type: "website",
+  },
+  twitter: {
+    card: "summary",
+    title: "OVRFLO Markets",
+    description: "Markets UI for OVRFLO self-repaying loans and vault flows.",
+  },
   icons: {
     icon: [
       { url: "/favicon.ico", sizes: "any" },
