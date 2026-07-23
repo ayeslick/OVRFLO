@@ -5,7 +5,7 @@ import { useReadContracts } from "wagmi";
 import type { Address } from "viem";
 import { ovrfloLendingAbi } from "@/lib/abis";
 import { isConfiguredAddress, ZERO_ADDRESS } from "@/lib/config";
-import { MAX_ENUMERATION_IDS } from "@/lib/lending-math";
+import { enumerateIds, MAX_ENUMERATION_IDS } from "@/lib/lending-math";
 import { lendingKeys } from "@/lib/query-keys";
 import type { Loan, LoanPool } from "@/lib/types";
 import { useLending } from "./useLending";
@@ -57,10 +57,4 @@ export function useBorrowerLoans(lending: Address | null | undefined, borrower: 
     isLoading: lendingState.isLoading || reads.isLoading,
     error: lendingState.error ?? reads.error,
   };
-}
-
-function enumerateIds(nextId: bigint) {
-  const max = nextId - 1n;
-  const capped = max > MAX_ENUMERATION_IDS ? MAX_ENUMERATION_IDS : max;
-  return Array.from({ length: Number(capped) }, (_, index) => BigInt(index + 1));
 }

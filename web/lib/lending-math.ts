@@ -43,6 +43,13 @@ export function recoveredForClaimable({
   return loan.drawn + loan.repaid + pendingStreamRecovery;
 }
 
+export function enumerateIds(nextId: bigint, maxIds: bigint = MAX_ENUMERATION_IDS) {
+  const max = nextId - 1n;
+  const capped = max > maxIds ? maxIds : max;
+  if (capped <= 0n) return [];
+  return Array.from({ length: Number(capped) }, (_, index) => BigInt(index + 1));
+}
+
 export function aprChoices(minBps: number, maxBps: number, stepBps = APR_STEP_BPS) {
   const choices: number[] = [];
   for (let aprBps = minBps; aprBps <= maxBps; aprBps += stepBps) {

@@ -4,7 +4,7 @@ import { QueryClient } from "@tanstack/react-query";
 import { createAppKit } from "@reown/appkit/react";
 import { WagmiAdapter } from "@reown/appkit-adapter-wagmi";
 import { mainnet } from "@reown/appkit/networks";
-import { createConfig, http } from "wagmi";
+import { http, type Config } from "wagmi";
 import { reownProjectId, rpcUrl } from "./config";
 
 const networks = [mainnet];
@@ -17,12 +17,11 @@ export const wagmiAdapter = new WagmiAdapter({
   },
 });
 
-export const wagmiConfig = createConfig({
-  chains: [mainnet],
-  transports: {
-    [mainnet.id]: http(rpcUrl),
-  },
-});
+// WagmiProvider must share the exact config AppKit connects against, or wallet
+// connections made through the modal never propagate to the app's wagmi hooks.
+// The cast bridges the duplicate @wagmi/core versions (the Reown adapter pins a
+// different patch than wagmi bundles); the runtime object is the one AppKit drives.
+export const wagmiConfig = wagmiAdapter.wagmiConfig as unknown as Config;
 
 export const queryClient = new QueryClient({
   defaultOptions: {
