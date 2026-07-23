@@ -15,13 +15,13 @@ export function useBorrowerLoans(lending: Address | null | undefined, borrower: 
   const ids = useMemo(() => enumerateIds(lendingState.params.nextLoanId), [lendingState.params.nextLoanId]);
 
   const reads = useReadContracts({
-    contracts: lending
+    contracts: lending && borrower
       ? ids.flatMap((id) => [
           { address: lending, abi: ovrfloLendingAbi, functionName: "loans" as const, args: [id] as const },
           { address: lending, abi: ovrfloLendingAbi, functionName: "loanPools" as const, args: [id] as const },
         ])
       : [],
-    query: { enabled: isConfiguredAddress(lending ?? null) && ids.length > 0 },
+    query: { enabled: isConfiguredAddress(lending ?? null) && Boolean(borrower) && ids.length > 0 },
   });
 
   const loans = useMemo(() => {

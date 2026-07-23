@@ -358,10 +358,10 @@ function StreamActionsForm({ market, loan }: { market: MarketInfo; loan?: Loan }
     abi: ovrfloLendingAbi,
     functionName: "gatherLiquidity",
     args:
-      market.lending && connection.addresses?.[0] && borrowAmount > 0n
+      market.lending && parsedStreamId && connection.addresses?.[0] && borrowAmount > 0n
         ? [market.market, aprBps, borrowAmount, 1n, connection.addresses[0]]
         : undefined,
-    query: { enabled: Boolean(market.lending && connection.addresses?.[0] && borrowAmount > 0n) },
+    query: { enabled: Boolean(market.lending && parsedStreamId && connection.addresses?.[0] && borrowAmount > 0n) },
   });
   const approved = useReadContract({
     address: SABLIER_LOCKUP_ADDRESS,
@@ -391,7 +391,7 @@ function StreamActionsForm({ market, loan }: { market: MarketInfo; loan?: Loan }
     (position) => position.market.toLowerCase() === market.market.toLowerCase() && position.aprBps === aprBps,
   );
   const sellPosition = sellQuoteData
-    ? chooseSellNowLiquidity({ positions: liquidity.liquidity, market, grossPrice: sellQuoteData[0] })
+    ? chooseSellNowLiquidity({ positions: positionsAtRate, market, grossPrice: sellQuoteData[0] })
     : undefined;
   const streamApproved =
     Boolean(parsedStreamId && streamApprovedId === parsedStreamId) ||

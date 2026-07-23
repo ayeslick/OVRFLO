@@ -19,8 +19,11 @@ export function formatTokenAmount(value: bigint | undefined, symbol: string, dec
   const fraction = value % scale;
   const displayDecimals = whole === 0n && fraction > 0n ? 4 : 2;
   const divisor = 10n ** BigInt(decimals - displayDecimals);
-  const rounded = (fraction + divisor / 2n) / divisor;
-  return `${whole}.${rounded.toString().padStart(displayDecimals, "0")} ${symbol}`;
+  const roundedTotal = (value + divisor / 2n) / divisor;
+  const displayScale = 10n ** BigInt(displayDecimals);
+  const displayWhole = roundedTotal / displayScale;
+  const displayFraction = roundedTotal % displayScale;
+  return `${displayWhole}.${displayFraction.toString().padStart(displayDecimals, "0")} ${symbol}`;
 }
 
 export function formatMaturity(timestamp: bigint | undefined) {

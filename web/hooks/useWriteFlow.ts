@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useWaitForTransactionReceipt, useWriteContract } from "wagmi";
 
 export function useWriteFlow(invalidateKeys: readonly (readonly unknown[])[] = []) {
   const queryClient = useQueryClient();
+  const lastInvalidatedHash = useRef<`0x${string}` | undefined>(undefined);
   const write = useWriteContract();
   const receipt = useWaitForTransactionReceipt({
     hash: write.data,
@@ -13,11 +14,12 @@ export function useWriteFlow(invalidateKeys: readonly (readonly unknown[])[] = [
   });
 
   useEffect(() => {
-    if (!receipt.isSuccess) return;
+    if (!receipt.isSuccess || !write.data || lastInvalidatedHash.current === write.data) return;
+    lastInvalidatedHash.current = write.data;
     for (const queryKey of invalidateKeys) {
       queryClient.invalidateQueries({ queryKey });
     }
-  }, [invalidateKeys, queryClient, receipt.isSuccess]);
+  }, [invalidateKeys, queryClient, receipt.isSuccess, write.data]);
 
   return {
     writeContract: write.writeContract,

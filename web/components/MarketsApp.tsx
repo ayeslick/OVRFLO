@@ -23,6 +23,10 @@ export function MarketsApp() {
 
   const connectedAddress = useMemo(() => connection.addresses?.[0], [connection.addresses]);
 
+  useEffect(() => {
+    setSelectedLoan(undefined);
+  }, [connectedAddress, selectedMarket?.market]);
+
   return (
     <main className="container">
       <header className="topbar">

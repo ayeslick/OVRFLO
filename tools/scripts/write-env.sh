@@ -15,7 +15,8 @@
 #   RPC_URL                          — NEXT_PUBLIC_RPC_URL (default: per-profile)
 #   REOWN_PROJECT_ID                 — NEXT_PUBLIC_REOWN_PROJECT_ID
 #   PONDER_URL                       — NEXT_PUBLIC_PONDER_URL
-#                                      (default: localhost:42069/sql for local)
+#                                      (default: localhost:42069/sql for local;
+#                                      required for devnet)
 #   DEPLOYMENTS_JSON                 — path override (default: deployments/<network>.json)
 #   OUT                              — output path override (default: web/.env.<local|devnet>)
 
@@ -64,12 +65,16 @@ case "$NETWORK" in
 esac
 
 RPC_URL="${RPC_URL:-$DEFAULT_RPC}"
-PONDER_URL="${PONDER_URL:-$DEFAULT_PONDER}"
+PONDER_URL="${PONDER_URL:-${NEXT_PUBLIC_PONDER_URL:-$DEFAULT_PONDER}}"
 REOWN_PROJECT_ID="${REOWN_PROJECT_ID:-}"
 OUT="${OUT:-$OUT_DEFAULT}"
 
 if [ "$NETWORK" = "devnet" ] && [ -z "$RPC_URL" ]; then
   echo "write-env: RPC_URL is required for devnet (Tenderly Virtual Testnet URL)." >&2
+  exit 1
+fi
+if [ "$NETWORK" = "devnet" ] && [ -z "$PONDER_URL" ]; then
+  echo "write-env: PONDER_URL is required for devnet stream discovery." >&2
   exit 1
 fi
 

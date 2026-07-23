@@ -19,38 +19,20 @@ export function useHeldStreams(user: Address | null | undefined) {
 
   const streamIds = useMemo(() => discovery.data?.map((stream) => stream.streamId) ?? [], [discovery.data]);
   const sablierReads = useReadContracts({
-    contracts: streamIds.flatMap((streamId) => [
-      {
-        address: SABLIER_LOCKUP_ADDRESS,
-        abi: sablierLockupAbi,
-        functionName: "getDepositedAmount" as const,
-        args: [streamId] as const,
-      },
-      {
-        address: SABLIER_LOCKUP_ADDRESS,
-        abi: sablierLockupAbi,
-        functionName: "getWithdrawnAmount" as const,
-        args: [streamId] as const,
-      },
-      {
-        address: SABLIER_LOCKUP_ADDRESS,
-        abi: sablierLockupAbi,
-        functionName: "withdrawableAmountOf" as const,
-        args: [streamId] as const,
-      },
-    ]),
+    contracts: streamIds.map((streamId) => ({
+      address: SABLIER_LOCKUP_ADDRESS,
+      abi: sablierLockupAbi,
+      functionName: "withdrawableAmountOf" as const,
+      args: [streamId] as const,
+    })),
     query: { enabled: streamIds.length > 0 },
   });
 
   const streams = useMemo<HeldStream[]>(() => {
     return (discovery.data ?? []).map((stream, index) => {
-      const deposited = sablierReads.data?.[index * 3];
-      const withdrawn = sablierReads.data?.[index * 3 + 1];
-      const withdrawable = sablierReads.data?.[index * 3 + 2];
+      const withdrawable = sablierReads.data?.[index];
       return {
         ...stream,
-        deposited: deposited?.status === "success" ? deposited.result : stream.deposited,
-        withdrawn: withdrawn?.status === "success" ? withdrawn.result : stream.withdrawn,
         withdrawable: withdrawable?.status === "success" ? withdrawable.result : stream.withdrawable,
       };
     });

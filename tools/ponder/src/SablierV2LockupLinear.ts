@@ -1,22 +1,14 @@
 import { ponder } from "ponder:registry";
 import schema from "ponder:schema";
-import { shouldSkipMintTransfer } from "./logic";
+import { applyWithdrawal, assetKey, normalizeAddress, shouldSkipMintTransfer, streamKey } from "./logic";
 
 const DEFAULT_ASSET_DECIMALS = 18n;
 const DEFAULT_ASSET_SYMBOL = "OVRFLO";
 const DEFAULT_ASSET_NAME = "OVRFLO token";
 const CHAIN_ID = 1;
 
-function streamKey(chainId: number, contract: string, tokenId: bigint) {
-  return `${contract.toLowerCase()}-${chainId.toString()}-${tokenId.toString()}`;
-}
-
-function assetKey(chainId: number, asset: string) {
-  return `asset-${chainId.toString()}-${asset.toLowerCase()}`;
-}
-
 ponder.on("SablierV2LockupLinear:CreateLockupLinearStream", async ({ event, context }) => {
-  const contract = event.log.address.toLowerCase() as `0x${string}`;
+  const contract = normalizeAddress(event.log.address) as `0x${string}`;
   const chainId = CHAIN_ID;
   const assetId = assetKey(chainId, event.args.asset);
 
@@ -24,7 +16,7 @@ ponder.on("SablierV2LockupLinear:CreateLockupLinearStream", async ({ event, cont
     .insert(schema.asset)
     .values({
       id: assetId,
-      address: event.args.asset.toLowerCase() as `0x${string}`,
+      address: normalizeAddress(event.args.asset) as `0x${string}`,
       chainId: BigInt(chainId),
       decimals: DEFAULT_ASSET_DECIMALS,
       name: DEFAULT_ASSET_NAME,
@@ -42,9 +34,9 @@ ponder.on("SablierV2LockupLinear:CreateLockupLinearStream", async ({ event, cont
       streamId: event.args.streamId,
       contract,
       category: "LockupLinear",
-      recipient: event.args.recipient.toLowerCase() as `0x${string}`,
-      sender: event.args.sender.toLowerCase() as `0x${string}`,
-      funder: event.args.funder.toLowerCase() as `0x${string}`,
+      recipient: normalizeAddress(event.args.recipient) as `0x${string}`,
+      sender: normalizeAddress(event.args.sender) as `0x${string}`,
+      funder: normalizeAddress(event.args.funder) as `0x${string}`,
       assetId,
       cancelable: event.args.cancelable,
       canceled: false,
@@ -58,7 +50,7 @@ ponder.on("SablierV2LockupLinear:CreateLockupLinearStream", async ({ event, cont
       transferable: event.args.transferable,
     })
     .onConflictDoUpdate({
-      recipient: event.args.recipient.toLowerCase() as `0x${string}`,
+      recipient: normalizeAddress(event.args.recipient) as `0x${string}`,
       intactAmount: depositAmount,
       depleted: false,
     });
@@ -80,15 +72,15 @@ ponder.on("SablierV2LockupLinear:WithdrawFromLockupStream", async ({ event, cont
   const stream = await context.db.find(schema.sablierStream, { id });
   if (!stream) return;
 
-  const withdrawnAmount = stream.withdrawnAmount + event.args.amount;
-  const intactAmount = stream.intactAmount > event.args.amount ? stream.intactAmount - event.args.amount : 0n;
   await context.db
     .update(schema.sablierStream, { id })
-    .set({
-      withdrawnAmount,
-      intactAmount,
-      depleted: intactAmount === 0n,
-    });
+    .set(
+      applyWithdrawal({
+        withdrawnAmount: stream.withdrawnAmount,
+        intactAmount: stream.intactAmount,
+        amount: event.args.amount,
+      }),
+    );
 });
 
 ponder.on("SablierV2LockupLinear:RenounceLockupStream", async ({ event, context }) => {
@@ -104,5 +96,5 @@ ponder.on("SablierV2LockupLinear:Transfer", async ({ event, context }) => {
   const id = streamKey(CHAIN_ID, event.log.address, event.args.tokenId);
   await context.db
     .update(schema.sablierStream, { id })
-    .set({ recipient: event.args.to.toLowerCase() as `0x${string}` })
+    .set({ recipient: normalizeAddress(event.args.to) as `0x${string}` })
 });

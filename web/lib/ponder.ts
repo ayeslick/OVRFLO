@@ -11,18 +11,22 @@ type StreamRow = {
   end_time: string;
   canceled: boolean;
   depleted: boolean;
+  deposit_amount: string;
+  withdrawn_amount: string;
 };
+
+const DEFAULT_STREAM_LIMIT = 100;
 
 export function createPonderClient(baseUrl = ponderUrl) {
   if (!baseUrl) return null;
   return createClient(baseUrl.replace(/\/$/, ""));
 }
 
-export async function fetchHeldStreamIds(user: Address, baseUrl = ponderUrl): Promise<HeldStream[]> {
+export async function fetchHeldStreamIds(user: Address, baseUrl = ponderUrl, limit = DEFAULT_STREAM_LIMIT): Promise<HeldStream[]> {
   const client = createPonderClient(baseUrl);
   if (!client) return [];
 
-  const normalized = user.toLowerCase();
+  const normalized = user.toLowerCase() as Address;
   const result = await client.db.execute<StreamRow>(sql`
     select
       sablier_streams.stream_id,
@@ -31,13 +35,16 @@ export async function fetchHeldStreamIds(user: Address, baseUrl = ponderUrl): Pr
       asset.address as asset,
       sablier_streams.end_time,
       sablier_streams.canceled,
-      sablier_streams.depleted
+      sablier_streams.depleted,
+      sablier_streams.deposit_amount,
+      sablier_streams.withdrawn_amount
     from sablier_streams
     join asset on asset.id = sablier_streams.asset_id
-    where lower(sablier_streams.recipient) = ${normalized}
+    where sablier_streams.recipient = ${normalized}
       and sablier_streams.canceled = false
       and sablier_streams.depleted = false
     order by stream_id desc
+    limit ${limit}
   `);
 
   return result.map((row) => ({
@@ -48,8 +55,8 @@ export async function fetchHeldStreamIds(user: Address, baseUrl = ponderUrl): Pr
     endTime: BigInt(row.end_time),
     canceled: row.canceled,
     depleted: row.depleted,
-    deposited: 0n,
-    withdrawn: 0n,
+    deposited: BigInt(row.deposit_amount),
+    withdrawn: BigInt(row.withdrawn_amount),
     withdrawable: 0n,
   }));
 }
