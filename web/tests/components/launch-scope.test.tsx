@@ -52,7 +52,6 @@ describe("launch scope", () => {
 
   it("keeps the markets table launch columns free of FOR SALE", () => {
     render(<MarketsTable markets={[market]} selected={market} onSelect={vi.fn()} />);
-    expect(screen.getByText("Liquidity depth")).toBeInTheDocument();
     expect(screen.queryByText("For sale")).not.toBeInTheDocument();
   });
 });

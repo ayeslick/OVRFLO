@@ -12,20 +12,15 @@ type Props = {
 export function MarketsTable({ markets, selected, onSelect }: Props) {
   return (
     <section className="section">
-      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.75rem" }}>
-        <div>
-          <div className="label mono">MARKETS</div>
-          <h2>Approved Pendle series</h2>
-        </div>
-        <div className="label mono">LIVE MARKET DEPTH</div>
+      <div style={{ marginBottom: "0.75rem" }}>
+        <div className="label mono">MARKETS</div>
+        <h2>Approved Pendle Series</h2>
       </div>
       <div className="table-container">
         <table>
           <thead>
             <tr>
               <th>Asset</th>
-              <th>Liquidity depth</th>
-              <th>APR</th>
               <th>Fee</th>
               <th>Maturity</th>
               <th>Action</th>
@@ -34,7 +29,7 @@ export function MarketsTable({ markets, selected, onSelect }: Props) {
           <tbody>
             {markets.length === 0 ? (
               <tr>
-                <td className="empty mono" colSpan={6}>
+                <td className="empty mono" colSpan={4}>
                   NO APPROVED MARKETS
                 </td>
               </tr>
@@ -45,8 +40,6 @@ export function MarketsTable({ markets, selected, onSelect }: Props) {
                     <div className="mono">{formatAddress(market.market)}</div>
                     <div className="label mono">PT {formatAddress(market.ptToken)}</div>
                   </td>
-                  <td className="mono">{market.lending ? "SEE LENDING PANEL" : "NOT DEPLOYED"}</td>
-                  <td className="mono">{formatAprBps(1000)}</td>
                   <td className="mono">{formatAprBps(market.feeBps)}</td>
                   <td className="mono">{formatMaturity(market.expiryCached)}</td>
                   <td>
