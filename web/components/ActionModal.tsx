@@ -25,7 +25,7 @@ import {
 import { lendingKeys, ovrfloKeys, streamKeys } from "@/lib/query-keys";
 import type { ActiveAction, ActionType, MarketInfo } from "@/lib/types";
 
-type Accent = "gold" | "cyan" | "neutral";
+export type Accent = "gold" | "cyan" | "neutral";
 
 type Props = {
   market: MarketInfo;
@@ -34,7 +34,7 @@ type Props = {
   onClose: () => void;
 };
 
-const ACTION_META: Record<ActionType, { title: string; accent: Accent }> = {
+export const ACTION_META: Record<ActionType, { title: string; accent: Accent }> = {
   supply: { title: "SUPPLY LIQUIDITY", accent: "gold" },
   withdraw: { title: "WITHDRAW LIQUIDITY", accent: "gold" },
   claim_share: { title: "CLAIM LENDING SHARE", accent: "gold" },
@@ -49,7 +49,7 @@ const ACTION_META: Record<ActionType, { title: string; accent: Accent }> = {
   close: { title: "CLOSE LOAN", accent: "cyan" },
 };
 
-function accentClass(accent: Accent) {
+export function accentClass(accent: Accent) {
   return accent === "gold" ? "button-gold" : accent === "cyan" ? "button-cyan" : "";
 }
 
@@ -77,16 +77,21 @@ export function ActionModal({ market, user, action, onClose }: Props) {
         aria-modal="true"
         aria-label={meta.title}
       >
-        <h3 className="modal-heading" tabIndex={-1}>
-          {meta.title}
-        </h3>
+        <div className="modal-header">
+          <h3 className="modal-heading" tabIndex={-1}>
+            {meta.title}
+          </h3>
+          <button type="button" className="modal-close" onClick={onClose} aria-label="Close">
+            ✕
+          </button>
+        </div>
         <FormBody action={action} market={market} user={user} accent={meta.accent} onClose={onClose} />
       </div>
     </div>
   );
 }
 
-function FormBody({
+export function FormBody({
   action,
   market,
   user,
@@ -247,7 +252,7 @@ function SupplyForm({
       <input className={`input mono ${validationError ? "input-error" : ""}`} value={raw} onChange={(e) => setRaw(e.target.value)} placeholder="0.00" />
       {validationError ? <div className="label mono status-negative">{validationError}</div> : null}
       <div className="summary-row mono" aria-live="polite">
-        LIQUIDITY {formatTokenAmount(amount, "wstETH")} @ {formatAprBps(aprBps)}
+        SUPPLY {formatTokenAmount(amount, "wstETH")} @ {formatAprBps(aprBps)}
       </div>
       <StepIndicator steps={steps} activeIndex={activeIndex} error={Boolean(tx.error)} accent={accent} />
       {!approvalCovers ? (

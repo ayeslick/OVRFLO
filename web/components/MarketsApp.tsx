@@ -29,18 +29,16 @@ export function MarketsApp() {
         </nav>
       </header>
 
+      <MarketsTable markets={markets.markets} selected={selectedMarket} onSelect={setSelectedMarket} />
+      <PositionSummary markets={markets.markets} user={connectedAddress} />
+
       {selectedMarket ? (
         <MarketDetail
           market={selectedMarket}
           user={connectedAddress}
           onBack={() => setSelectedMarket(null)}
         />
-      ) : (
-        <>
-          <MarketsTable markets={markets.markets} selected={selectedMarket} onSelect={setSelectedMarket} />
-          <PositionSummary markets={markets.markets} user={connectedAddress} />
-        </>
-      )}
+      ) : null}
     </main>
   );
 }
