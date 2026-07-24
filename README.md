@@ -2,22 +2,21 @@
 
 **OVRFLO enables Self-Repaying Loans.**
 
-A Lending Platform that turns Principal Token (PT) deposits into deterministic streaming collateral letting users sell or borrow against that collateral. The stream itself repays the loan — no liquidations, no health checks.
+A Lending Platform where borrowers pledge OVRFLO streams, deterministic Sablier streams, as collateral. The stream itself repays the loan — no liquidations, no health checks. OVRFLO creates these streams from Pendle PT deposits, giving every PT holder a deterministic, non-cancelable income stream they can sell or borrow against.
 
 ## How It Works
 
 OVRFLO operates in two layers:
 
-**Layer 1 — Collateral Creation (Core Vault):** Deposit a Pendle PT and immediately receive ovrfloTokens (your principal at current market value) plus a Sablier stream that vests the remaining discount until PT maturity. The stream is deterministic and non-cancelable — it pays exactly what it promises, on schedule.
+**Layer 1 — The Market (OVRFLOLending):** Sell or borrow against a Sablier stream. Sell it outright for discounted underlying, or pledge it to borrow underlying and let the stream repay the loan at maturity. Because the stream is deterministic and non-cancelable, there are no liquidations, no health factors.
 
-**Layer 2 — The Market (OVRFLOLending):** Use that Sablier stream as collateral. Sell it outright for discounted underlying, or pledge it to borrow underlying and let the stream repay the loan at maturity. Because the stream is deterministic, there are no liquidations, no health factors.
+**Layer 2 — Collateral Creation (Core Vault):** The stream is created by depositing a Pendle PT. Depositors immediately receive ovrfloTokens (their principal at current market value) plus a Sablier stream that vests the remaining discount until PT maturity. The stream is deterministic and non-cancelable — it pays exactly what it promises, on schedule. That stream is the collateral.
 
 ### Example
 
-1. User deposits **100 PT-stETH** (currently trading at 95% of face value)
-2. User immediately receives **95 ovrfloETH** (their principal) and a **Sablier stream** vesting **5 ovrfloETH** until PT maturity
-3. User pledges the stream on OVRFLOLending to borrow **4 WETH** against it at a 10% APR
-4. At maturity, the stream has vested **5 ovrfloETH**; the lender draws the owed **4.4 ovrfloETH** obligation, and the **0.6 ovrfloETH** residual returns to the borrower
+1. A borrower **borrows 4 WETH** at 10% APR, pledging an OVRFLO stream — a deterministic Sablier stream vesting **5 ovrfloETH** until PT maturity — as collateral
+2. The stream was created by depositing **100 PT-stETH** into OVRFLO; the depositor received **95 ovrfloETH** immediately plus this stream
+3. At maturity, the stream has vested **5 ovrfloETH**; the lender draws the owed **4.4 ovrfloETH** obligation, and the **0.6 ovrfloETH** residual returns to the borrower
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
@@ -43,8 +42,8 @@ OVRFLO operates in two layers:
 │                          ▼                                           │
 │   ┌──────────────────────────────────────┐                           │
 │   │           OVRFLOLending              │                           │
-│   │  Sell stream ──▶ receive WETH now    │                           │
 │   │  Pledge stream ──▶ borrow WETH now   │                           │
+│   │  Sell stream ──▶ receive WETH now    │                           │
 │   │  Stream repays loan at maturity      │                           │
 │   └──────────────────────────────────────┘                           │
 │                                                                      │
@@ -192,6 +191,57 @@ ERC20 wrapper token deployed per OVRFLO/underlying asset. Owned by the OVRFLO co
 
 ## User Flows
 
+### Borrowing Against a Stream
+
+Borrowing is handled via the borrower loan-pool primitive that batches across multiple liquidity positions in a single transaction:
+
+**Borrower loan pool, batch borrow against multiple liquidity positions:**
+```solidity
+// Borrower pledges a stream and borrows underlying from several liquidity positions.
+uint256 loanPoolId = lending.createBorrowerLoanPool(liquidityIds, streamId, targetBorrow, minAcceptable);
+```
+
+The borrower receives `borrowAmount` underlying (net of fee) and owes an `obligation` in ovrfloToken at maturity. The stream is escrowed by the lending market. The obligation is computed via `StreamPricing.obligationForFill`, which guarantees `obligation <= remaining` so the stream can always cover the debt. No liquidations, the stream is deterministic and non-cancelable.
+
+### Loan Servicing
+
+Loan servicing routes through loan-pool claim channels. `closeLoan` and `repayLoan` route proceeds to `loanPoolProceeds` rather than directly to a lender:
+
+```solidity
+// Loan-pool lender claims pro-rata from accumulated proceeds.
+lending.claimLoanPoolShare(loanPoolId, amount);
+
+// Permissionless: draw remaining outstanding, return stream to borrower (proceeds to loanPoolProceeds)
+lending.closeLoan(loanId);
+
+// Borrower repays early in ovrfloToken to reduce or clear the obligation (proceeds to loanPoolProceeds)
+lending.repayLoan(loanId, amount);
+```
+
+`claimLoanPoolShare` lets a lender claim pro-rata from a loan pool's accumulated `loanPoolProceeds` (fed by `closeLoan` and `repayLoan`), working for both open and closed loans. `closeLoan` is permissionless and requires the stream to have accrued enough to cover the outstanding. `repayLoan` lets the borrower repay early in ovrfloToken; when the obligation is fully satisfied, the stream is returned.
+
+### Selling a Stream
+
+Two paths to sell a Sablier stream for discounted underlying:
+
+**Path A — Sell into a standing liquidity:**
+```solidity
+// Seller hits an existing liquidity
+lending.sellStreamToLiquidity(liquidityId, streamId, minNetOut);
+// Stream transfers to liquidity lender, seller receives net underlying
+```
+
+**Path B — List for sale:**
+```solidity
+// List the stream
+uint256 listingId = lending.postSaleListing(market, streamId, aprBps);
+// Buyer purchases it
+lending.buyListing(listingId, maxPriceIn);
+// Stream transfers to buyer, seller receives net underlying
+```
+
+Both paths transfer the stream permanently. The sale price is the stream's remaining face value discounted by the APR over the time to maturity.
+
 ### Creating Collateral (Core Vault)
 
 #### Depositing
@@ -243,57 +293,6 @@ ovrflo.wrap(amount);
 // Unwrap ovrfloToken back to underlying
 ovrflo.unwrap(amount);
 ```
-
-### Selling a Stream
-
-Two paths to sell a Sablier stream for discounted underlying:
-
-**Path A — Sell into a standing liquidity:**
-```solidity
-// Seller hits an existing liquidity
-lending.sellStreamToLiquidity(liquidityId, streamId, minNetOut);
-// Stream transfers to liquidity lender, seller receives net underlying
-```
-
-**Path B — List for sale:**
-```solidity
-// List the stream
-uint256 listingId = lending.postSaleListing(market, streamId, aprBps);
-// Buyer purchases it
-lending.buyListing(listingId, maxPriceIn);
-// Stream transfers to buyer, seller receives net underlying
-```
-
-Both paths transfer the stream permanently. The sale price is the stream's remaining face value discounted by the APR over the time to maturity.
-
-### Borrowing Against a Stream
-
-Borrowing is handled via the borrower loan-pool primitive that batches across multiple liquidity positions in a single transaction:
-
-**Borrower loan pool, batch borrow against multiple liquidity positions:**
-```solidity
-// Borrower pledges a stream and borrows underlying from several liquidity positions.
-uint256 loanPoolId = lending.createBorrowerLoanPool(liquidityIds, streamId, targetBorrow, minAcceptable);
-```
-
-The borrower receives `borrowAmount` underlying (net of fee) and owes an `obligation` in ovrfloToken at maturity. The stream is escrowed by the lending market. The obligation is computed via `StreamPricing.obligationForFill`, which guarantees `obligation <= remaining` so the stream can always cover the debt. No liquidations, the stream is deterministic and non-cancelable.
-
-### Loan Servicing
-
-Loan servicing routes through loan-pool claim channels. `closeLoan` and `repayLoan` route proceeds to `loanPoolProceeds` rather than directly to a lender:
-
-```solidity
-// Loan-pool lender claims pro-rata from accumulated proceeds.
-lending.claimLoanPoolShare(loanPoolId, amount);
-
-// Permissionless: draw remaining outstanding, return stream to borrower (proceeds to loanPoolProceeds)
-lending.closeLoan(loanId);
-
-// Borrower repays early in ovrfloToken to reduce or clear the obligation (proceeds to loanPoolProceeds)
-lending.repayLoan(loanId, amount);
-```
-
-`claimLoanPoolShare` lets a lender claim pro-rata from a loan pool's accumulated `loanPoolProceeds` (fed by `closeLoan` and `repayLoan`), working for both open and closed loans. `closeLoan` is permissionless and requires the stream to have accrued enough to cover the outstanding. `repayLoan` lets the borrower repay early in ovrfloToken; when the obligation is fully satisfied, the stream is returned.
 
 ### What's Fixed Will OVRFLO
 
