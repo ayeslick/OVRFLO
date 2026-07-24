@@ -2,19 +2,19 @@
 
 **OVRFLO enables Self-Repaying Loans.**
 
-A lending platform where lenders supply liquidity and borrowers borrow against deterministic collateral. No liquidations — the collateral repays the loan. OVRFLO's collateral type is a deterministic, non-cancelable Sablier stream created from Pendle PT deposits, which is why no liquidations are needed.
+A lending platform where lenders supply liquidity and borrowers borrow against deterministic collateral streams. No liquidations — the collateral repays the loan. OVRFLO's collateral streams are deterministic, non-cancelable Sablier streams created from Pendle PT deposits, which is why no liquidations are needed.
 
 ## How It Works
 
 OVRFLO operates in two layers:
 
-**Layer 1 — The Market (OVRFLOLending):** Lenders supply liquidity at a chosen APR. Borrowers borrow against deterministic collateral. The collateral repays the loan at maturity — no liquidations, no health factors, because the collateral cannot underperform.
+**Layer 1 — The Market (OVRFLOLending):** Lenders supply liquidity at a chosen APR. Borrowers borrow against deterministic collateral streams. The collateral repays the loan at maturity — no liquidations, no health factors, because the collateral cannot underperform.
 
 **Layer 2 — The Collateral (Core Vault):** OVRFLO's collateral is a deterministic, non-cancelable Sablier stream. It is created by depositing a Pendle PT — depositors receive ovrfloTokens (their principal at current market value) plus a stream vesting the remaining discount until PT maturity. The stream pays exactly what it promises, on schedule. That determinism is why no liquidations are needed.
 
 ### Example
 
-1. A borrower **borrows 4 WETH** at 10% APR against deterministic collateral
+1. A borrower **borrows 4 WETH** at 10% APR against deterministic collateral streams
 2. The collateral — an OVRFLO stream vesting **5 ovrfloETH** until PT maturity — was created by depositing **100 PT-stETH** into OVRFLO (the depositor also received **95 ovrfloETH** immediately)
 3. At maturity, the collateral has vested **5 ovrfloETH**; the lender draws the owed **4.4 ovrfloETH** obligation, and the **0.6 ovrfloETH** residual returns to the borrower
 
@@ -102,7 +102,7 @@ OVRFLO operates in two layers:
 
 ### OVRFLOLending.sol
 
-Lending market for self-repaying loans. Lenders supply liquidity at a chosen APR; borrowers pledge deterministic collateral and borrow. No liquidations — the collateral cannot underperform. Bound to one core vault and one Sablier V2 LL instance at deployment. Two primitives: unified liquidity positions (consumable as sale or loan) and sale listings. All pricing uses `StreamPricing` with a linear APR discount to series maturity. Fees are snapshotted per listing at post time to protect sellers; the global `feeBps` applies to liquidity positions.
+Lending market for self-repaying loans. Lenders supply liquidity at a chosen APR; borrowers pledge deterministic collateral streams and borrow. No liquidations — the collateral cannot underperform. Bound to one core vault and one Sablier V2 LL instance at deployment. Two primitives: unified liquidity positions (consumable as sale or loan) and sale listings. All pricing uses `StreamPricing` with a linear APR discount to series maturity. Fees are snapshotted per listing at post time to protect sellers; the global `feeBps` applies to liquidity positions.
 
 | Function | Description |
 |----------|-------------|
