@@ -1,0 +1,331 @@
+---
+title: "Web UX v1: summary strip, expandable markets, APR ladder, borrow router, claim-all"
+type: feat
+date: 2026-07-25
+topic: web-ux-v1-implementation
+artifact_contract: ce-unified-plan/v1
+artifact_readiness: implementation-ready
+product_contract_source: docs/plans/ux-personas-journeys-screens.md
+builds_on: 2026-07-23-001-fix-web-markets-ui-polish-plan.md
+execution: code
+---
+
+# Web UX v1 Implementation Plan
+
+## Goal Capsule
+
+- **Objective:** Implement the agreed v1 UX (`docs/plans/ux-personas-journeys-screens.md`, screens S0–S6) on the existing `web/` app: a value-aggregating summary strip with claim-all, a markets table with expandable per-market position rows, per-market SUPPLY/BORROW/DEPOSIT modes built around an APR-tick ladder, a client-side FIFO borrow router, stream/loan/lender cards, and a Ponder-backed trailing-demand column — while fixing three pre-existing data-layer defects (broken query-key invalidation, conflated approve/action confirmation, hardcoded token symbols).
+- **Product authority:** `docs/plans/ux-personas-journeys-screens.md` (locked decisions 1–4, router spec, screens S0–S6, edge states, deferred list). Where this plan and that spec conflict, **that spec wins on WHAT, this plan wins on HOW**. Visual authority: `DESIGN.md` (all 12 sections binding).
+- **Execution profile:** code — TypeScript/React in `web/`, plus one indexer unit in `tools/ponder/`. No Solidity changes. No changes to `src/`.
+- **Stop conditions:** All R-IDs satisfied; `npm --prefix web run lint`, `npm --prefix web run test`, `npm --prefix web run build` green; visual pass on the local Anvil fork (`npm --prefix web run bootstrap:local`) confirms S0–S6.
+- **Open blockers:** none.
+
+---
+
+## Product Contract
+
+### Summary
+
+The app becomes a single-page, markets-centric console. Connected users see an aggregate position strip (streams flowing, supplied, loans repaying, claimable now, one CLAIM ALL) above the markets table. Each market row expands in place to show that market's balances, positions, and three mode buttons (SUPPLY / BORROW / DEPOSIT PT) which open the existing overlay panel directly in that mode. BORROW and SUPPLY modes render an APR-tick ladder (discrete ticks from `aprMinBps..aprMaxBps` step `APR_STEP_BPS`), always showing both lenses: lender "+X% fixed over Yd" and borrower "receive X% upfront". Borrowing is instant-only: a pure client-side router picks the tick and liquidity IDs (single-coverage-first, else FIFO accumulate), `quote()` prices it, `createBorrowerLoanPool` executes it in one tx. Selling is absent from the UI. Vault lifecycle is complete: deposit PT, claim stream, claim matured PT, unwrap; wrap is behind an ADVANCED disclosure.
+
+### Problem Frame
+
+The current app (post 2026-07-23 polish pass) has the right skeleton — overlay panel, per-action forms, position list — but: the APR is hardcoded to `aprMinBps` in every form (`ActionModal.tsx:214,664,861`) with no ladder; positions are only visible inside the overlay, with a count-only summary; there is no claim-all, no obligation progress, no upfront-% anywhere; `chooseSellNowLiquidity` is the only routing logic and it cannot split positions; post-transaction cache invalidation is a no-op because the invalidated keys are not the wagmi keys (`useWriteFlow` + `lib/query-keys.ts` mismatch); and a single `useWriteFlow` instance makes the CONFIRMED state fire after the *approval* receipt. The UX spec demands outcome-first presentation (upfront %, fixed return over the period) which requires client-side mirrors of `StreamPricing`'s linear-discount math that do not exist yet.
+
+### Requirements
+
+**Summary strip (S0 top)**
+
+- R1. When a wallet is connected and has any position, a summary strip renders between the topbar and the markets table with four aggregate cells: STREAMS (count + total remaining, i.e. `deposited - withdrawn`, per ovrfloToken symbol), SUPPLIED (total idle `availableLiquidity` per underlying symbol + count of positions), LOANS (count + weighted repayment progress `(drawn+repaid)/obligation` across open loans, shown as "N REPAYING · 64%"), CLAIMABLE (sum of stream `withdrawable` + pool `claimable`, per ovrfloToken symbol). Amounts are per-symbol; never sum across different tokens; no USD.
+- R2. The strip has exactly one action: CLAIM ALL, enabled iff total claimable > 0. It opens a claim-all modal (R3). Strip cells are informational only — no per-cell navigation (the spec's "click jumps to market" is dropped: aggregates span markets, the target is ambiguous).
+- R3. CLAIM ALL executes a sequential transaction queue: first, per lending contract with claimable pools, ONE `multicall(bytes[])` batching `claimLoanPoolShare(loanId, MAX_UINT128)` for every claimable pool on that contract; then one Sablier `withdrawMax(streamId, user)` per stream with `withdrawable > 0`. Sablier has no multicall (verified against the vendored ABI) — stream claims cannot be batched. The modal lists every queued tx as a row with per-row status (PENDING / SIGNING / CONFIRMING / CONFIRMED / FAILED); the queue advances only after the prior receipt; a failure stops the queue after the in-flight tx, leaving remaining rows PENDING with a RESUME button. Closing the modal mid-queue is allowed after the in-flight tx settles; it never cancels a signed tx. The modal reuses the overlay's focus-trap/Escape machinery (`useFocusTrap` + the Escape/scrim pattern from `MarketDetail`); Escape and scrim-click are disabled while the in-flight tx is SIGNING or CONFIRMING, matching the close rule.
+- R4. Disconnected: no strip; connected with zero positions: no strip (not an empty strip).
+
+**Markets table with expandable rows (S0)**
+
+- R5. The markets table columns become: ASSET, MATURITY (date + "Nd" days-remaining), TVL (vault `marketTotalDeposited(market)` formatted in PT terms with the underlying symbol), RATES (the market's live tick range shown in both lenses: "6–10% APR · 90–94% ↑" — from ticks that have liquidity; when no liquidity, render "—"). The SELECT/Action column is removed; the whole row is the toggle.
+- R6. Clicking a row (or pressing Enter/Space on it) expands it in place: a `<tr class="market-row-detail"><td colSpan={4}>` accordion under the row. Exactly one row may be expanded; expanding another collapses the first; clicking the expanded row collapses it. The row carries `aria-expanded`; the detail region carries `role="region"` + `aria-label="<symbol> market detail"`.
+- R7. The expanded detail contains, in order: (a) a BALANCES block — underlying, PT, ovrfloToken balances of the connected user with context verbs per R8; (b) the market-scoped `PositionList` (existing component, restyled per R16–R18); (c) a mode-button row: SUPPLY (gold), BORROW (cyan), DEPOSIT PT (gold). Disabled states with dim mono captions per DESIGN.md §8: SUPPLY/BORROW disabled when `market.lending === null` ("LENDING NOT DEPLOYED"); BORROW additionally disabled when the user has no eligible stream ("NO STREAMS AVAILABLE"); DEPOSIT PT hidden after maturity; all three show "CONNECT WALLET" captions when disconnected.
+- R8. Balance-row verbs (context-aware): underlying → none in the default view (WRAP moves behind ADVANCED, R9); PT → DEPOSIT PT (pre-maturity only); ovrfloToken → pre-maturity UNWRAP (disabled with caption "WRAP RESERVE EMPTY" when `wrappedUnderlying() === 0` or insufficient), post-maturity CLAIM PT. Verbs open the overlay in the corresponding action (existing `ActiveAction` types: `deposit`, `unwrap`, `claim_matured`, `wrap`).
+- R9. An ADVANCED disclosure (collapsed by default, dim mono "ADVANCED ▸") at the bottom of the balances block reveals the WRAP action (underlying → ovrfloToken). Nothing else lives there in v1.
+- R10. The `MarketDetail` full-screen overlay stops being the positions surface: it becomes a pure action container (retitled per action/mode) hosting `FormBody` and the new mode panels. Its BALANCE section and embedded `PositionList` are removed (they now live inline in the expanded row). Open/close, focus trap, Escape handling, and slide-in animation are retained unchanged.
+
+**BORROW mode — ladder + router (S1)**
+
+- R11. BORROW mode renders: a stream selector (pre-selected when opened from a stream row; first eligible stream otherwise), the APR ladder, and a quote panel. The ladder lists every tick from `aprChoices(aprMinBps, aprMaxBps)` that has non-self liquidity, each row showing: upfront % (borrower lens, computed per KTD2), tick APR, available liquidity (excluding the connected user's own positions), and a depth bar scaled to the largest tick. The lowest-APR tick with liquidity is marked "← BEST" and selected by default; rows are real `<button>` elements with a visible focus state (Enter/Space native — mirrors U4's button-in-cell decision; no div+onClick), clickable or keyboard-operable to re-select. If the user owns liquidity in this market, a footnote renders: "EXCLUDES YOUR $N SUPPLY".
+- R12. The quote panel prices the selection via on-chain `quote(market, streamId, aprBps, borrowAmount)`. Amount input defaults to MAX (= `grossPrice` from `quote(..., 0)`), editable downward. Displayed lines: "YOU RECEIVE NOW: <netToBorrower> (<upfront %>)", "STREAM REPAYS: <obligation> over <Nd>", "RESIDUAL RETURNS TO YOU WHEN OBLIGATION MET". The submit button label is the outcome: "GET <netToBorrower> NOW". Submission calls `createBorrowerLoanPool(ids, streamId, targetBorrow, minAcceptable)` with `ids` from the router (KTD3), `targetBorrow` = the entered amount, `minAcceptable = applySlippageDown(quote.netToBorrower)`.
+- R13. Insufficient-liquidity handling (instant-only, never a dead end): when no tick fully covers the requested amount, the quote panel shows up to two concrete alternatives per the router spec — (a) reduced amount at the lowest-APR tick with liquidity ("GET $X AT 8% — PARTIAL"), and (b) the cheapest covering tick if one exists deeper, clamped to that tick's own price cap per KTD3 ("GET $Y AT 10% — FULL", or PARTIAL if the clamp binds). Each alternative is a complete executable quote (priced via `quote()` at its own tick and clamped amount), one click/keypress to select (alternative cards are `<button>`s per R11's keyboard rule). When the market has zero non-self liquidity, the ladder area shows the lender-lens empty state: "NO LIQUIDITY YET — BE THE FIRST LENDER" plus trailing demand stats when the indexer provides them (R22), plus a SUPPLY INSTEAD button switching mode.
+- R14. Liquidity-race recovery: when the borrow write fails with a stale-batch revert (the three strings matched by `staleBatchCopy`) OR with `"OVRFLOLending: slippage"`, the form automatically: invalidates chain reads (KTD5), re-runs the router + quote, and renders a banner "LIQUIDITY CHANGED — NEW QUOTE:" with the fresh numbers and a single RE-CONFIRM button. No manual refresh, no dead-end error text. The slippage string is included because partial drain is the most common race: `actualBorrow = min(targetBorrow, totalAvailable)` shrinks below `minAcceptable` and the contract reverts "slippage", not any stale-batch string (`staleBatchCopy` deliberately maps it to null — extend the borrow-form trigger, do not widen `staleBatchCopy` itself).
+
+**SUPPLY mode — ladder + demand (S2)**
+
+- R15. SUPPLY mode renders the same tick ladder in the lender lens: tick APR, "YOU EARN +X% FIXED (Yd)" (computed per KTD2), LIQUIDITY WAITING (total `availableLiquidity` at that tick, all lenders including self), and DEMAND (R22). Below it: amount input, tick select (dropdown of `aprChoices`, defaulting to the lowest tick), the two-line consequence copy from the UX spec, and the existing approve→supply flow from `SupplyForm`. The hardcoded `aprBps = lending.params.aprMinBps || 1000` is deleted; the selected tick is used. Note: at current deployment params `aprMinBps == aprMaxBps == 1000`, so the ladder renders exactly one row — this is correct behavior, not a bug; do not special-case it.
+
+**Position cards (S4, S5, S6)**
+
+- R16. Stream rows become cards: progress bar `▓░` of streamed fraction (`(withdrawn + withdrawable) / deposited`), "CLAIMABLE NOW <withdrawable> [CLAIM]" (CLAIM disabled at 0 with caption), "REMAINING <deposited - withdrawn - withdrawable> · ENDS <date>", and a live borrow teaser "⚡ BORROW ~<upfront %> UPFRONT" (from a batched `quote(market, streamId, bestTick, 0)` read, `allowFailure: true`; omitted when no non-self liquidity or the read fails). The teaser button opens BORROW mode with that stream pre-selected. No SELL button anywhere (locked decision 2).
+- R17. Loan rows become cards: header "LOAN #id · BACKED BY STREAM #streamId · @ <pool.aprBps>%" (the upfront amount received is not stored on-chain and is NOT displayed — do not attempt to reconstruct it), obligation progress bar `(drawn + repaid) / obligation` with "X of Y REPAID", copy "SELF-REPAYING FROM THE STREAM — NOTHING TO DO." Open loans show no primary verb. REPAY moves behind the card's ADVANCED disclosure (early repayment is an expert path). CLOSE renders only when `canCloseLoan({loan, withdrawable})` is true, where `withdrawable = sablier.withdrawableAmountOf(loan.streamId)` (new batched read) — this replaces the current `!loan.closed`-only gate that offers CLOSE prematurely and reverts. Settled loans (`closed`) render dimmed with a SETTLED badge.
+- R18. Lender liquidity rows become cards: "SUPPLY #id @ <aprBps>%" (aprBps is currently fetched but never rendered — render it), "IDLE <availableLiquidity> [WITHDRAW]", and ADJUST RATE (R19). The originally supplied amount and per-position consumed amount are not stored on-chain — do not display or reconstruct them; consumed capital is already represented by the per-pool CLAIM SHARE rows, which stay as their own cards showing the pool's aprBps, the lender's contribution, and claimable. Edge state (origin spec, lender-facing only): when a pool's backing stream is fully drawn but the obligation is unmet at the expiry boundary, the pool card carries a dim mono caption noting the shortfall continues to be harvested from the stream as it vests ("SHORTFALL DRAWS FROM STREAM AS IT VESTS" — on-chain `_claimFair` behavior); never shown on the borrower's loan card.
+- R19. ADJUST RATE: a small form (new tick dropdown) that executes ONE transaction: `lending.multicall([encodeFunctionData(withdrawLiquidity(id)), encodeFunctionData(supplyLiquidity(market, newAprBps, idleAmount))])` where `idleAmount` = the position's current `availableLiquidity`. OZ `Multicall` delegatecalls preserve `msg.sender`, and both inner functions' `nonReentrant` guards enter/exit sequentially, so this composes. Prerequisite: underlying allowance to the lending contract must cover `idleAmount` — reuse the approve-step pattern (approve tx first when `allowance < idleAmount`), approving exactly `idleAmount`, never unlimited. Disabled with caption when `availableLiquidity === 0`. Race guard (binding): re-read the position's `availableLiquidity` immediately before encoding and submit that fresh value — a stale larger `idleAmount` is the silent-overdraw hazard: withdraw refunds only the current remainder while `supplyLiquidity` pulls the full encoded amount from the wallet, so the tx can SUCCEED while committing more wallet funds than the displayed "MOVE <idle>". On an adjust-rate revert ("OVRFLOLending: liquidity inactive" after a full drain) or a detected read-vs-encode mismatch, route through the same invalidate → re-read → banner + RE-CONFIRM recovery as R14, not a generic error.
+
+**Demand data (Ponder)**
+
+- R20. `tools/ponder` is extended to index OVRFLOLending instances discovered via the factory event `LendingDeployed(address indexed ovrflo, address indexed lending)` (Ponder `factory()` pattern), capturing `BorrowerLoanPoolCreated(loanId, borrower, market, aprBps, totalContributed)` rows with block timestamp into a new `loan_pool_created` table.
+- R21. `web/lib/ponder.ts` gains `fetchDemandByTick(lending, market, sinceSeconds)` returning `{ aprBps, loanCount, totalContributed }[]` for pools created in the trailing window (30 days).
+- R22. The DEMAND column (S2) and the empty-ladder demand stats (R13) consume R21. Presentation per tick: a 1–3 segment bar scaled relative to the max tick volume in this market plus "N LOANS · <amount>". Degradation is mandatory, silent-safe, and distinguishes two states: (a) no data source — `ponderUrl` unset or the query errors → `fetchDemandByTick` returns `null` → the column renders "—" with a dim mono caption "NO DEMAND DATA" once (not per row); (b) zero demand — the query succeeds with zero rows in the window → bars render at zero with "NO LOANS 30D" (honest data, distinct from no-data). The same null-vs-empty split applies to R13's empty-ladder demand stats. Everything else on the screen works without Ponder.
+
+**Cross-cutting**
+
+- R23. Post-write cache invalidation actually works (KTD5). Every confirmed write refreshes all on-chain reads and held streams. Held streams are indexer-backed and refresh on a short post-write retry schedule (KTD5 indexer-lag caveat) rather than a single instant invalidation. The `staleBatchCopy` promise ("Refreshing market depth") becomes true.
+- R24. CONFIRMED state and close affordances derive only from the *action* transaction, never the approval (KTD6).
+- R25. All hardcoded `"wstETH"` / `"ovrflo"` symbol literals in `PositionList` and `ActionModal` are replaced with the market's actual symbols (KTD7). Decimals remain hardcoded 18 (PT tokens are always 18 decimals — repo invariant; do not generalize).
+- R26. `tooLarge` from the enumeration hooks surfaces as a dim mono warning line ("SHOWING FIRST 500 — DATA TRUNCATED") wherever the affected list renders. No pagination.
+- R27. Matured markets: BORROW and SUPPLY mode buttons disabled with caption "MARKET MATURED"; the router and ladder never run against a matured market (`gatherLiquidity`/`quote` revert on expired series — never call them post-maturity); stream CLAIM, pool CLAIM SHARE, CLAIM PT, UNWRAP all remain live.
+- R28. Every number follows DESIGN.md §10 (mono, tabular-nums, dim units); percentages render with exactly one decimal ("91.2%"); dates render as the existing `formatMaturity`; days-remaining as "Nd".
+
+### Key Decisions
+
+- **Modes open the existing overlay, not inline panels.** The spec's S1/S2/S3 are full titled panels ("wstETH JUN-27 · BORROW"); the existing `MarketDetail` overlay already provides the container, focus trap, Escape stack, and slide-in. Expanded rows hold *state* (balances, positions, mode buttons); the overlay holds *flows*. This is the minimal-delta reading of the spec and reuses all of `ActionModal`'s form machinery.
+- **The router is pure client-side; `gatherLiquidity` is demoted to a test oracle.** The app already enumerates every liquidity position (≤500) — the router has complete information, and the spec's single-coverage-first rule cannot be expressed through `gatherLiquidity`. This supersedes KTD5 of the 2026-07-18 rebuild plan *for the borrow path* (that KTD predates the tick-ladder requirement). The contract re-validates everything; a race produces the R14 re-quote, exactly as it would have with `gatherLiquidity`. Bound (binding): "complete information" holds only while `nextLiquidityId ≤ 501` — the enumeration scans the OLDEST 500 ids, so past the cap the router is blind to the freshest liquidity and can under-quote with no revert to recover from. When the liquidity hook reports `tooLarge`, BORROW mode renders the R26 truncation warning inside the ladder ("SHOWING FIRST 500 — QUOTES MAY MISS NEWER LIQUIDITY") — visible degradation, never silent. Replacing enumeration is the rebuild plan's P6 backlog, not this plan.
+- **Claim-all is a sequential queue, not one tx.** Verified: the Sablier lockup ABI has no `multicall`. Pretending otherwise (a custom batching contract) is out of scope; a visible queue with per-tx status is honest and implementable now.
+- **Coarse invalidation over per-key bookkeeping.** Invalidate the wagmi roots (`['readContract']`, `['readContracts']`) plus `streamKeys.held` after every confirmed write. The per-form curated key lists are provably broken today (keys never match) and per-key correctness buys nothing at this data scale. Delete the curated lists.
+- **REPAY demoted, CLOSE gated.** The loan card's happy path has zero verbs (self-repaying is the product's core promise — the UI must embody it). Early repay is an expert affordance; CLOSE only appears when it can actually succeed.
+- **Strip aggregates are per-symbol.** Cross-token sums are meaningless without USD context (out of scope, consistent with the 2026-07-23 plan's R5 decision). With today's single-underlying deployment this is invisible; the code must still group by symbol.
+
+### Scope Boundaries
+
+**Out of scope (do not implement, do not scaffold):**
+
+- Selling streams in any form: `sell` action, `SellForm`, `chooseSellNowLiquidity` call sites, sale listings, buy-side UI. The launch-scope test's negative assertions extend to SELL NOW (which the 2026-07-23 pass had retained — this plan removes it; see U8).
+- Resting borrower orders, matchmaker backends, notifications, order lifecycle.
+- USD pricing, cross-token totals.
+- Wrap as a first-class flow (ADVANCED-only per R9).
+- A separate portfolio page or any routing beyond the single page.
+- Sablier claim batching contracts.
+- Mobile-specific IA (the existing 800px breakpoint adapts what exists; the ladder stacks vertically — no new breakpoints).
+- Indexing anything beyond `BorrowerLoanPoolCreated` (no full lending event mirror — that is the rebuild plan's P6 backlog).
+
+---
+
+## Planning Contract
+
+### Ground truth: contract surface consumed by this plan (verified 2026-07-25 against `src/`)
+
+| Call | Signature / shape | Notes |
+|---|---|---|
+| `quote` | `quote(address market, uint256 streamId, uint16 aprBps, uint128 borrowAmount) view returns (uint256 grossPrice, uint128 obligation, uint256 feeAmount, uint256 netToBorrower, uint128 residual)` | `borrowAmount = 0` prices the full stream. `remaining = obligation + residual` — no separate read needed. Reverts on matured/ineligible. |
+| `createBorrowerLoanPool` | `(uint256[] liquidityIds, uint256 streamId, uint128 targetBorrow, uint128 minAcceptable) returns (uint256 loanId)` | **Partial fill is native:** `actualBorrow = min(targetBorrow, totalAvailable)`; `minAcceptable` (net, after fee) is the only protection. All ids must share market+tick, strictly increasing, no self-match. |
+| `supplyLiquidity` | `(address market, uint16 aprBps, uint128 availableLiquidity)` | Pulls underlying via `transferFrom` — needs allowance. |
+| `withdrawLiquidity` | `(uint256 liquidityId)` | Full idle refund only, no partial. |
+| `claimLoanPoolShare` | `(uint256 loanId, uint128 amount)` | `MAX_UINT128` = claim max. Pays ovrfloToken. |
+| `multicall` | `multicall(bytes[] data)` (OZ, delegatecall, preserves `msg.sender`) | On OVRFLOLending only. **Not on Sablier.** |
+| APR validation | `aprBps % APR_STEP_BPS == 0`, within `[aprMinBps, aprMaxBps]` | `APR_STEP_BPS = 100` already mirrored in `lib/lending-math.ts`. |
+| Pricing math | `factor f = WAD + ttm * aprBps * WAD / (YEAR * BPS)`; `grossPrice = remaining * WAD / f`; `YEAR = 365 days`; obligation ceils | Client mirrors for display only (KTD2); every executed number comes from `quote()`. |
+| Vault TVL | `ovrfloAbi.marketTotalDeposited(market) → uint256` | Already in the generated ABI. |
+| Wrap capacity | `ovrfloAbi.wrappedUnderlying()` | Already read in `MarketDetail`. |
+| Factory event | `LendingDeployed(address indexed ovrflo, address indexed lending)` | Ponder `factory()` source. |
+| Lending event | `BorrowerLoanPoolCreated(uint256 indexed loanId, address indexed borrower, address indexed market, uint16 aprBps, uint128 totalContributed)` | The only event indexed by this plan. |
+| Sablier reads | `withdrawableAmountOf(streamId) → uint128`, `withdrawMax(streamId, to)` nonpayable | Per rebuild-plan KTD4. |
+
+### Key Technical Decisions
+
+- **KTD1 — State model.** `MarketsApp` keeps `selectedMarket` but its meaning changes: it now drives the *expanded row*, not an overlay. A new `activeMode: { market: MarketInfo; action: ActiveAction } | null` in `MarketsApp` drives the overlay (`MarketDetail` renamed in behavior, not filename). Expanded-row verbs and mode buttons call `setActiveMode({ market, action })`. Closing the overlay clears `activeMode` only — the row stays expanded. Two-level state, both in `MarketsApp`; no context, no router.
+- **KTD2 — Client display math mirrors `StreamPricing` exactly, in bigint.** New pure functions in `web/lib/lending-math.ts` (WAD = `10n ** 18n`, YEAR = `31_536_000n`, BPS = `10_000n`). **Unit convention (binding): all three return plain basis points as bigint; 1% = 100 bps; display divides by 100 and truncates to one decimal.**
+  - `factorWad(aprBps: number, ttmSeconds: bigint): bigint` = `WAD + (ttmSeconds * BigInt(aprBps) * WAD) / (YEAR * BPS)` — floor division, matching `Math.mulDiv` floor.
+  - `upfrontBps(aprBps: number, ttmSeconds: bigint, feeBps: number): bigint` — fraction of the stream's remaining value the borrower receives now, net of fee, in bps. Implement in two steps: `grossBps = (WAD * BPS) / factorWad(aprBps, ttm)`, then `netBps = (grossBps * (BPS - BigInt(feeBps))) / BPS`. Pin with a comment: invariant `upfrontBps ≈ netToBorrower * BPS / (obligation + residual)` for a full borrow, and a unit test asserting agreement with a hand-computed vector (see U1 tests).
+  - `lenderReturnBps(aprBps: number, ttmSeconds: bigint): bigint` = `(BigInt(aprBps) * ttmSeconds) / YEAR` — simple-interest return over the remaining period, in bps (10% APR over a full year → `1000n`; over half a year → `500n`).
+  - `formatBpsPct(x: bigint): string` — bps → percent string, exactly one decimal, truncated: `9523n` → `"95.2%"`, `500n` → `"5.0%"`.
+  These are DISPLAY ONLY (ladder rows, teasers, table ranges). Any number a transaction consumes comes from `quote()` on-chain. Never convert token amounts through `Number` (enforced by `check-banned-patterns.sh`).
+- **KTD3 — Router.** New `web/lib/router.ts`, pure and fully unit-tested:
+  ```ts
+  export type TickDepth = { aprBps: number; total: bigint; own: bigint; positions: LiquidityPosition[] };
+  export function buildLadder(positions: LiquidityPosition[], market: Address,
+    ticks: number[], self?: Address): TickDepth[];
+  // positions filtered to market, availableLiquidity > 0, grouped per tick;
+  // `total` EXCLUDES self-owned, `own` is self-owned only; positions sorted ascending by id.
+
+  export type BorrowPlan =
+    | { kind: "full"; aprBps: number; ids: bigint[] }
+    | { kind: "partial"; aprBps: number; ids: bigint[]; available: bigint }
+    | { kind: "empty" };
+  export function planBorrow(ladder: TickDepth[], target: bigint): {
+    primary: BorrowPlan; alternative: BorrowPlan | null };
+  ```
+  Rules (from the UX spec, binding): iterate ticks ascending; `primary` = the lowest tick whose `total >= target` ("full"); within the tick, choose the FIRST single position with `availableLiquidity >= target` (ascending id), else FIFO-accumulate ascending ids until the running sum covers. If no tick covers, `primary` = `{ kind: "partial" }` at the lowest tick with `total > 0`, ids = all its positions ascending, `available = total`. `alternative` is set only when both shapes exist and differ: if `primary` is "full" at tick T but a lower tick U < T has liquidity, `alternative` = partial at U; if `primary` is "partial", `alternative` = null (there is no covering tick anywhere). Ids are strictly increasing by construction (contract pattern #10). Self-owned positions are never included.
+  **Price cap (binding, applied at the quoting layer in U6):** `grossPrice` shrinks as the tick rises (`grossPrice = remaining * WAD / f`), so a tick can cover the target in *liquidity* while capping the borrow below it in *price* — `quote` and `createBorrowerLoanPool` revert "OVRFLOLending: borrow above price" past the cap. For every candidate tick surfaced to the user (primary or alternative), fetch that tick's full-stream price via `quote(market, streamId, tick, 0)` and clamp the quoted and submitted amount to `min(target, grossPriceAtTick)`. When the clamp binds, label the card PARTIAL even if liquidity alone covers — `planBorrow`'s "full" refers to liquidity coverage only; it is price-blind by design (pure, no reads).
+- **KTD4 — Claim-all planner + queue runner.** Pure planner in `web/lib/claim-all.ts`:
+  ```ts
+  export type QueuedTx =
+    | { kind: "pool-claims"; lending: Address; loanIds: bigint[] }
+    | { kind: "stream-claim"; streamId: bigint };
+  export function planClaimAll(input: {
+    pools: { lending: Address; loanId: bigint; claimable: bigint }[];
+    streams: { streamId: bigint; withdrawable: bigint }[] }): QueuedTx[];
+  ```
+  Order: pool-claims first (one entry per distinct lending address, loanIds ascending), then stream-claims ascending by streamId. Runner: a new `useTxQueue(plan)` hook — holds `index`, executes one `writeContract` at a time, waits for the receipt (own `useWaitForTransactionReceipt`), advances; on error sets `failedIndex` and stops; `resume()` retries from `failedIndex`. `pool-claims` encodes via viem `encodeFunctionData({ abi: ovrfloLendingAbi, functionName: "claimLoanPoolShare", args: [id, MAX_UINT128] })` into `multicall(bytes[])`. Coarse invalidation (KTD5) fires after EACH confirmed receipt, not just at the end.
+- **KTD5 — Invalidation fix.** `useWriteFlow` changes: on each new confirmed receipt it calls `queryClient.invalidateQueries({ queryKey: ["readContract"] })`, `({ queryKey: ["readContracts"] })`, and `({ queryKey: streamKeys.held(user) })` (user passed in). The `invalidateKeys` parameter and every per-form curated list are DELETED. wagmi v3 read-hook keys are rooted at those string literals, so TanStack prefix matching refetches every mounted on-chain read. `lib/query-keys.ts` keeps only `streamKeys` (the one real `useQuery`); `lendingKeys`/`ovrfloKeys` and the hooks' cosmetic `queryKey` return fields are deleted with their imports. Add a regression test (U3). Indexer-lag caveat (binding): `streamKeys.held` is Ponder-backed (`fetchHeldStreamIds`), so an instant invalidation races the indexer (2s polling + indexing time) and refetches the pre-write list — e.g. a just-pledged stream keeps rendering with a live BORROW teaser. After each confirmed write, re-invalidate that key on a short retry schedule (again at ~2s and ~5s post-receipt, stopping early if the result set changes). On-chain reads have no such lag; one invalidation suffices for them.
+- **KTD6 — Approve/action split.** Every form with an approval step creates TWO `useWriteFlow` instances: `approveTx` and `actionTx`. Step indicator: APPROVE active from `approveTx.isSigning|isConfirming`, done on `approveTx.isConfirmed`; SIGN/CONFIRMED driven solely by `actionTx`. The optimistic allowance latches carry over unchanged. `ConvertForm`'s dynamic step list keeps working (it computes steps from `needsApproval`). The CloseButton renders only on `actionTx.isConfirmed`.
+- **KTD7 — Symbols.** New hook `useMarketSymbols(markets: MarketInfo[])`: one `useReadContracts` batching `symbol()` for each market's `ovrfloToken` and `underlying` (deduped by address), returning `Record<Address, string>` with `formatAddress` fallback. `MarketsApp` calls it once and threads a `symbols` prop down (table, strip, expanded row, overlay). All `"wstETH"` / `"ovrflo"` literals in `PositionList.tsx` and `ActionModal.tsx` are replaced. PT symbol is not read (PT rows already show the underlying context).
+- **KTD8 — Ladder/teaser reads.** Time-to-maturity for display math: `ttm = market.expiryCached - nowSeconds` where `nowSeconds` follows the existing `MarketDetail` pattern (state set in an effect — never during render, avoiding hydration mismatch). Teaser quotes: one `useReadContracts` per expanded row batching `quote(market, streamId, bestTickBps, 0n)` for each eligible stream, `allowFailure: true`, enabled only when a best tick exists and market is not matured. RATES table column (R5) is pure math from the ladder + `upfrontBps` — zero extra reads.
+- **KTD9 — Ponder unit is additive and isolated.** New contract entry in `ponder.config.ts` using `factory({ address: FACTORY_ADDRESS, event: LendingDeployed, parameter: "lending" })` with the OVRFLOLending ABI (copy the generated ABI json into `tools/ponder/abis/`), same `startBlock` as the Sablier entry. New schema table `loan_pool_created` (`id` = `${lending}-${loanId}`, columns: `lending`, `loan_id`, `borrower`, `market`, `apr_bps`, `total_contributed`, `timestamp`). Factory address arrives via a `PONDER_FACTORY_ADDRESS` env var exported by the bootstrap scripts on the same line that launches `ponder:dev` (alongside the existing inline `PONDER_RPC_URL`), read from `deployments/<network>.json` (`jq -r .factory`) — NOT via `write-env.sh`, which writes only web `.env` files the Ponder process never reads. The lending `factory()` entry in `ponder.config.ts` is conditional on `PONDER_FACTORY_ADDRESS` being set, so Sablier indexing keeps working on setups that have not re-run the bootstrap. The web query uses the same `@ponder/client` raw-SQL pattern as `fetchHeldStreamIds`, wrapped in try/catch returning `null` (NOT `[]`) so the UI can distinguish "no data source" from "zero demand". Local-fork caveats from rebuild-plan KTD11 apply (`disableCache: true` on chain-id-1 forks).
+
+### High-Level Technical Design
+
+```mermaid
+flowchart TB
+    A[S0: strip + markets table] -->|click row| B[Expanded row: balances + positions + modes]
+    B -->|mode button / row verb| C[Overlay: ladder mode or action form]
+    C -->|Escape / close| B
+    A -->|CLAIM ALL| Q[Claim-all modal: tx queue]
+    Q -->|receipts| A
+    subgraph client data
+      L[useLendingLiquidity ≤500 positions] --> LD[buildLadder]
+      LD --> R[planBorrow]
+      R -->|ids| W[createBorrowerLoanPool]
+      P[Ponder loan_pool_created] -->|30d window| D[DEMAND column]
+    end
+```
+
+Borrow flow sequence (S1): select stream → `quote(market, streamId, tick, 0)` gives MAX → user confirms/edits amount → `planBorrow(ladder, amount)` gives ids → `quote(market, streamId, tick, amount)` gives net/obligation → submit `createBorrowerLoanPool(ids, streamId, amount, slippageDown(net))` → receipt → coarse invalidation. Race revert → R14 banner loop.
+
+---
+
+## Implementation Units
+
+Order is binding: U1 → U2 → U3 are foundations; U4–U8 are screens (U4 first, then any order); U9 (Ponder) and U10 (sweep) last. Each unit lands with its tests green before the next starts.
+
+### U1. Display math
+
+- **Goal:** Client-side mirrors of the contract's linear-discount math for outcome-first display.
+- **Requirements:** R5 (RATES), R11, R12, R15, R16, R28. KTD2.
+- **Files:** `web/lib/lending-math.ts`, `web/lib/format.ts`, `web/tests/lib/lending-math.test.ts`.
+- **Approach:** Add `WAD`, `YEAR_SECONDS`, `factorWad`, `upfrontBps`, `lenderReturnBps`, `formatBpsPct` exactly per KTD2 (plain-bps unit convention). All bigint; floor division throughout (BigInt `/` already floors — matching `Math.mulDiv`). `formatBpsPct` truncates, never rounds — matches contract floor bias; document this in a comment.
+- **Test scenarios:** (a) golden vector: `aprBps=1000`, `ttm=YEAR/2` → factor = `1.05e18`, upfront (fee 0) = `9523n` → `"95.2%"`; (b) cross-check invariant: for the same inputs compute `grossPrice = remaining*WAD/factor` for a sample `remaining` and assert `upfrontBps` ≈ `grossPrice*BPS/remaining` within 1 unit, then repeat with `feeBps=40` scaling by `(BPS-40)/BPS`; (c) `lenderReturnBps(1000, YEAR)` = `1000n` → `"+10.0%"`; `lenderReturnBps(1000, YEAR/2)` = `500n` → `"+5.0%"`; (d) `ttm=0` → factor = WAD, upfront = `10000n` at fee 0, `9960n` at fee 40; (e) truncation: `formatBpsPct(9529n)` → `"95.2%"` (not "95.3%").
+- **Verification:** `npm --prefix web run test` green; no `Number(` on amounts (banned-patterns script).
+
+### U2. Router + claim-all planners (pure)
+
+- **Goal:** The two pure planners every screen depends on.
+- **Requirements:** R3, R11–R13. KTD3, KTD4.
+- **Files:** new `web/lib/router.ts`, new `web/lib/claim-all.ts`, new tests `web/tests/lib/router.test.ts`, `web/tests/lib/claim-all.test.ts`.
+- **Approach:** Implement `buildLadder`, `planBorrow`, `planClaimAll` exactly per KTD3/KTD4 signatures. `buildLadder` takes `ticks` from the existing `aprChoices(minBps, maxBps)` (first real call site — remove the "unused" status). Keep `classifyLiquidity` for empty-state copy; `chooseSellNowLiquidity` is deleted in U8, not here.
+- **Test scenarios (router — every branch):** single position covers at lowest tick → `full`, ids = that one id even when smaller ids exist that don't cover (single-coverage-first); no single covers → FIFO accumulate ascending ids stops at cover; lowest tick insufficient but higher tick covers → primary full at higher tick, alternative partial at lower; nothing covers anywhere → primary partial at lowest liquid tick, alternative null; self positions excluded from `total`/ids but counted in `own`; zero-liquidity positions skipped; ids strictly increasing in every output; empty ladder → `empty`.
+- **Test scenarios (claim-all):** pools on two lending addresses → two `pool-claims` entries, loanIds ascending; zero-claimable pools excluded by the caller contract shape (planner filters `claimable > 0n` and `withdrawable > 0n` defensively anyway — test both); streams after pools; empty input → `[]`.
+- **Verification:** vitest green.
+
+### U3. Data-layer fixes (invalidation, approve split, symbols, close-gate read)
+
+- **Goal:** Make writes refresh the app, confirmation states truthful, and symbols real. This is the highest-risk unit — it touches every form.
+- **Requirements:** R23, R24, R25, R17 (withdrawable read), R26. KTD5, KTD6, KTD7.
+- **Files:** `web/hooks/useWriteFlow.ts`, every form in `web/components/ActionModal.tsx`, `web/lib/query-keys.ts`, `web/hooks/*` (remove cosmetic `queryKey` fields), new `web/hooks/useMarketSymbols.ts`, `web/hooks/useBorrowerLoans.ts` (add per-loan `withdrawableAmountOf(loan.streamId)` batched read, merged as `streamWithdrawable` on each entry), `web/components/PositionList.tsx`, tests.
+- **Approach:** (1) `useWriteFlow(user?: Address)` — new signature; coarse invalidation per KTD5; delete `invalidateKeys` param and all call-site arrays. (2) Split every approval-bearing form (`SupplyForm`, `ConvertForm` deposit/wrap paths, `BorrowForm`, `RepayForm`) into `approveTx`/`actionTx` per KTD6; forms without approval keep one instance. Fix the constant-branch step ternaries flagged in review (e.g. `RepayForm`'s `: tx.isSigning ? 1 : 1`). (3) `useMarketSymbols` per KTD7, threaded from `MarketsApp`. (4) `useBorrowerLoans` gains the pledged-stream withdrawable read; `PositionList` gates CLOSE on `canCloseLoan` (first real call site). (5) Surface `tooLarge` per R26 in `PositionList`.
+- **Test scenarios:** invalidation regression test — mount a component under a real `QueryClientProvider` with a spy on `invalidateQueries`, drive `useWriteFlow` through a mocked confirmed receipt, assert the three keys `["readContract"]`, `["readContracts"]`, `streamKeys.held(user)` were invalidated exactly once per hash; approve-split test — mock approve receipt confirmed, assert CONFIRMED copy absent and CloseButton not rendered until action receipt; symbols test — two markets, distinct symbols, assert no "wstETH" literal renders for the second market; close-gate test — loan with `withdrawable < outstanding` renders no CLOSE, with `>= outstanding` renders CLOSE.
+- **Verification:** full vitest suite green (existing launch-scope test still passes); manual: on the local fork, supply → table/positions refresh without reload.
+
+### U4. Expandable markets table + slim overlay
+
+- **Goal:** S0's structural change — positions move inline, the overlay becomes a pure action container.
+- **Requirements:** R5–R10, R27. KTD1, KTD8.
+- **Dependencies:** U1 (RATES column math), U3 (symbols).
+- **Files:** `web/components/MarketsTable.tsx`, new `web/components/MarketRowDetail.tsx`, `web/components/MarketsApp.tsx`, `web/components/MarketDetail.tsx`, `web/components/PositionList.tsx` (accept symbols; remove nothing else here), `web/app/globals.css`, `web/tests/components/launch-scope.test.tsx` + new component tests.
+- **Approach:** `MarketsTable` gains `user`, `symbols`, `onAction(market, action)` props; row `<tr>` becomes a toggle (`role="button"`-free — use a full-width `<button>` in the first cell wrapping the asset label OR make the row itself keyboard-operable with `tabIndex=0` + Enter/Space handler; pick the button-in-cell form, it's simpler for a11y) rendering chevron ▸/▾. Expanded row appends `<tr className="market-row-detail"><td colSpan={4}><MarketRowDetail …/></td></tr>`. `MarketRowDetail` renders: balances block (move the three balance reads out of `MarketDetail` — they relocate, not duplicate), ADVANCED disclosure (a `<details>`-free manual toggle styled per DESIGN.md; contains WRAP verb), `PositionList`, mode buttons. New columns per R5: MATURITY (existing `formatMaturity` + computed "Nd"), TVL (`useReadContracts` batch of `marketTotalDeposited(market)` per market — add to `MarketsTable`'s existing symbol batch), RATES (from `buildLadder` over `useLendingLiquidity` data + `upfrontBps`; requires calling `useLendingLiquidity(market.lending)` per market with lending — mount it inside a small per-row child component so hooks stay unconditional, reusing the `PositionSummaryMarket` pattern). `MarketDetail`: delete the BALANCE section and `PositionList` mount; keep header/scrim/trap/Escape; body renders `FormBody` (actions) — ladder modes arrive in U6/U7. `MarketsApp` implements KTD1's `activeMode`.
+- **Patterns to follow:** DESIGN.md §5 (tables), §8 (disabled-with-caption), §11 (motion — accordion may reuse the existing `slideIn`); the existing `PositionSummaryMarket` per-market-hooks pattern.
+- **Test scenarios:** row click expands, second row click swaps expansion, `aria-expanded` toggles; disconnected → no balances block, mode buttons disabled with CONNECT WALLET captions; matured market → DEPOSIT hidden, BORROW/SUPPLY disabled "MARKET MATURED", ovrflo verb is CLAIM PT; lending null → SUPPLY/BORROW disabled "LENDING NOT DEPLOYED"; RATES column renders "—" with no liquidity.
+- **Verification:** vitest green; visual pass on fork: expand/collapse, all captions, TVL matches `cast call`.
+
+### U5. Summary strip + claim-all queue
+
+- **Goal:** S0's strip with real aggregates and the claim-all runner.
+- **Requirements:** R1–R4. KTD4, KTD5.
+- **Dependencies:** U2, U3.
+- **Files:** `web/components/PositionSummary.tsx` (rewrite), new `web/components/ClaimAllModal.tsx`, new `web/hooks/useTxQueue.ts`, `web/components/MarketsApp.tsx`, CSS, tests.
+- **Approach:** Rewrite `PositionSummary` to aggregate VALUES per R1. No new hook: keep the per-market child-component structure (the established `PositionSummaryMarket` pattern — hooks stay unconditional), with children rendering nothing and reporting `{supplied, loans, claimable}` upward via an `onData(marketKey, data)` effect callback; the parent reduces into `useState` (`onData` must be identity-stable, and each child's effect cleanup deletes its `marketKey` entry on unmount). Claim-all button → `ClaimAllModal` → `planClaimAll` from live data snapshot → `useTxQueue` runs it per KTD4. Modal rows show tx kind copy: "CLAIM n POOL SHARES — <symbol market list>" / "CLAIM STREAM #id".
+- **Test scenarios:** aggregates: two markets, different symbols → per-symbol lines, no cross-sum; loans progress weighting (two loans 50%/100% by obligation weights); strip absent when disconnected or zero positions; CLAIM ALL disabled at zero claimable. Queue (unit-test `useTxQueue` with mocked wagmi): happy path advances per receipt; failure at index 1 stops, `resume()` retries index 1; per-receipt invalidation fires.
+- **Verification:** vitest; fork test: seed lender+borrower wallets, accrue claimables, run CLAIM ALL end-to-end, balances land.
+
+### U6. BORROW mode — ladder, quote panel, router wiring, re-quote
+
+- **Goal:** S1 complete.
+- **Requirements:** R11–R14, R27. KTD3, KTD8.
+- **Dependencies:** U1, U2, U3, U4.
+- **Files:** `web/components/ActionModal.tsx` (`BorrowForm` rewrite), new `web/components/Ladder.tsx` (shared with U7: props `{ lens: "borrow" | "supply"; ladder: TickDepth[]; feeBps: number; ttm: bigint; selected: number; onSelect: (aprBps: number) => void; demand?: DemandRow[] | null }`), `web/lib/modal-logic.ts`, CSS, tests.
+- **Approach:** `BorrowForm` drops the hardcoded tick and the `gatherLiquidity` read entirely. Data flow per the HLTD sequence: ladder from `buildLadder(liquidity, market, aprChoices(min,max), user)`; default tick = lowest with `total > 0`; MAX from `quote(..., selectedTick, 0n)`; plan from `planBorrow(ladder, amount)`; if plan tick ≠ selected tick (partial/alternative), the quote re-reads at the plan's tick with the amount clamped to that tick's own `grossPrice` per KTD3's price cap (`quote(..., planTick, 0n)` supplies the cap; never quote or submit an amount above it — "borrow above price" reverts). Render R13's alternatives as two selectable quote cards when `planBorrow` returns both shapes. Submit uses `plan.ids`. R14: on `actionTx.error` where `staleBatchCopy(msg)` matches OR the message contains `"OVRFLOLending: slippage"` (partial-drain race, R14) — run the KTD5 invalidation imperatively, wait for the liquidity query to settle (`isFetching` false), re-plan, show the banner + RE-CONFIRM (which is just the submit button re-labeled; no second code path). Guard everything behind `!matured`.
+- **Patterns:** DESIGN.md §8/§9; depth bars are plain divs with width % (no canvas/svg); accent cyan.
+- **Test scenarios:** default selects lowest liquid tick with BEST marker; own-liquidity footnote appears only when `own > 0`; amount > best tick capacity renders both alternative cards with correct labels; deeper-tick alternative clamps to that tick's `grossPrice` and relabels PARTIAL when the clamp binds (no "borrow above price" revert); zero-liquidity market renders the lender-lens empty state + SUPPLY INSTEAD (switches mode); stale-batch AND slippage error paths both re-plan and render the banner (mock both error strings); `tooLarge` renders the truncation warning inside the ladder; minAcceptable = `applySlippageDown(net)` asserted on the submitted args.
+- **Verification:** vitest; fork E2E: two-wallet borrow at the ladder's best tick, then race simulation — drain a position from wallet B between quote and submit in a test, assert the revert copy and successful re-quote submit.
+
+### U7. SUPPLY mode — ladder + tick select
+
+- **Goal:** S2 complete (demand column arrives in U9; render its placeholder now).
+- **Requirements:** R15, R22 (placeholder only), R27 (maturity guard).
+- **Dependencies:** U1, U2, U3, U4, U6 (shares `Ladder`).
+- **Files:** `web/components/ActionModal.tsx` (`SupplyForm`), `Ladder.tsx` (lender lens), tests.
+- **Approach:** `SupplyForm` gains the ladder (lens "supply": earn column via `lenderReturnBps`, waiting column = `total + own`) and a tick `<select>` of `aprChoices` replacing the hardcoded rate; consequence copy per the UX spec; approve→supply flow unchanged (split per KTD6 already applied in U3). Guard everything behind `!matured` per R27, mirroring U6 — the mode button is already disabled at maturity (U4), but the in-form guard covers mid-session maturity while the panel is open. DEMAND column renders "—" + "NO DEMAND DATA" caption until U9 supplies data.
+- **Test scenarios:** single-tick params (1000/1000) render a one-row ladder and a one-option select — no special case, no crash; selected tick flows into the `supplyLiquidity` args; earn column: 1000 bps × 182.5d → "+5.0%"; matured market → ladder and submit disabled with "MARKET MATURED" caption (mid-session maturity path).
+- **Verification:** vitest; fork: supply at tick, position appears in the expanded row without reload.
+
+### U8. Position cards (streams, loans, lender) + sell removal
+
+- **Goal:** S4/S5/S6 card treatments; adjust-rate; sell excised.
+- **Requirements:** R16–R19; scope boundary (sell).
+- **Dependencies:** U1, U3, U4 (teaser needs best tick + symbols + overlay wiring).
+- **Files:** `web/components/PositionList.tsx` (restructure rows → cards), `web/components/ActionModal.tsx` (delete `SellForm`, `sell` from `ACTION_META` and `FormBody`; add `AdjustRateForm` + `adjust_rate` action type), `web/lib/types.ts` (`ActionType`: remove `"sell"`, add `"adjust_rate"`), `web/lib/modal-logic.ts` (delete `chooseSellNowLiquidity`), `web/lib/errors.ts` (keep revert strings — they're contract-truthful), tests incl. `launch-scope.test.tsx`.
+- **Approach:** Cards are styled list items (CSS `.position-card`, 1px graphite border, mono data lines) replacing the bare tables; progress bars per R16/R17 (div-width bars, `--positive` fill for streams, cyan for loan repayment). Teaser per KTD8. Loan ADVANCED disclosure hosts REPAY. `AdjustRateForm` per R19: reads current allowance, steps `[APPROVE?] → ADJUST → CONFIRMED`; re-reads `availableLiquidity` immediately before encoding (R19 race guard) and approves exactly that amount; encodes the two inner calls with `encodeFunctionData` and submits `multicall([...])`; summary row shows "MOVE <idle> FROM <old>% TO <new>%"; on revert or read-vs-encode mismatch, the R14-style re-confirm banner, not a generic error. Sell removal: delete form/action/branches; extend the launch-scope test's negative assertions with `SELL NOW`.
+- **Test scenarios:** stream card progress fraction; teaser hidden when no liquidity / market matured; CLAIM disabled at 0 withdrawable; loan card shows no verbs when open and not closeable, SETTLED badge dims; adjust-rate arg encoding asserted (two calldata entries, correct inner args, idle amount); adjust-rate stale race: position shrinks between open and submit → fresh read wins, re-confirm banner, never a submission with the stale amount; adjust disabled at zero idle; no SELL text anywhere (launch-scope).
+- **Verification:** vitest; fork: adjust-rate round-trip moves a position across ticks in one tx.
+
+### U9. Ponder demand pipeline
+
+- **Goal:** R20–R22 live: trailing-30d demand per tick.
+- **Requirements:** R20, R21, R22, R13 (empty-state stats).
+- **Dependencies:** U7 (column exists), U6 (empty state exists). Independent of U5/U8.
+- **Files:** `tools/ponder/ponder.config.ts`, `tools/ponder/ponder.schema.ts`, `tools/ponder/src/` (new handler), `tools/ponder/abis/` (OVRFLOLending + factory-event ABI json), `tools/scripts/bootstrap-local.sh` + the devnet bootstrap (export `PONDER_FACTORY_ADDRESS` from `deployments/<network>.json` where `ponder:dev` is launched — KTD9), `web/lib/ponder.ts` (`fetchDemandByTick`), new `web/hooks/useDemand.ts` (`useQuery`, key `demandKeys.byMarket(lending, market)`, `staleTime` 60s, returns `DemandRow[] | null`), `Ladder.tsx`/empty-state wiring, tests.
+- **Approach:** Per KTD9 exactly. Handler: on `BorrowerLoanPoolCreated`, insert `{ id: `${event.log.address}-${args.loanId}`, lending: event.log.address, loan_id, borrower, market, apr_bps, total_contributed, timestamp: block.timestamp }`. Web query: select where `lending = X and market = Y and timestamp > now-30d`, group client-side by `apr_bps` into `{ aprBps, loanCount, totalContributed }`. `sinceSeconds` computed from the same `nowSeconds` state pattern (not `Date.now()` inline in render). Degradation per R22: `null` → "—" column + single caption; empty array → bars at zero ("NO LOANS 30D" in the empty-ladder state, which is honest data, distinct from no-data).
+- **Test scenarios:** web-side: grouping/windowing of a fixture row set; `null` vs `[]` render paths. Ponder-side: handler unit test in `tools/ponder/tests` following its existing test conventions (insert on event, id uniqueness across two lending addresses with equal loanIds).
+- **Verification:** `npm --prefix web run bootstrap:local`, run `npm --prefix web run ponder:dev`, execute one borrow on the fork, demand row appears in SUPPLY mode within one refetch; unset `NEXT_PUBLIC_PONDER_URL` → app fully functional, "—" column.
+
+### U10. Edge-state sweep, a11y, gates
+
+- **Goal:** The UX spec's "Edge & empty states" section fully realized; final quality gates.
+- **Requirements:** R26, R27, R28 + spec edge list.
+- **Dependencies:** all prior units.
+- **Files:** touched components; `web/app/globals.css`; tests.
+- **Approach:** Walk the spec's edge list one by one and assert each has a rendered state: empty ladder (U6), race re-quote (U6), post-maturity (U4/U6/U7), deposit cap (`ConvertForm` deposit mode: read `marketDepositLimits(market)` — public getter, already in the generated ABI — and show it per origin S3 ("DEPOSIT CAP: NONE" when 0 = unlimited); disable submit with a dim mono caption when `marketTotalDeposited + amount` would exceed a nonzero limit; the `previewDeposit` revert mapping stays as backstop), self-match footnote (U6), wrap-reserve short (U4 caption), truncation warnings (U3 lists + U6 ladder), deficit-harvest caption on pool cards (U8, per R18). A11y pass: `npm --prefix web run a11y`; keyboard-only walkthrough of expand → mode → submit → close; `aria-live` on quote regions (existing pattern). Run the full gate set.
+- **Verification (= Verification Contract below):** all gates green.
+
+---
+
+## Verification Contract
+
+1. `npm --prefix web run lint` and `npm --prefix web run lint:banned-patterns` — zero errors (no `Number(` on amounts, no banned patterns).
+2. `npm --prefix web run test` — full vitest suite green, including all new suites (U1 math golden vectors, U2 router/claim-all branches, U3 invalidation + approve-split regressions, U5 queue, U6 ladder/re-quote, U8 launch-scope with SELL negative assertions, U9 grouping).
+3. `npm --prefix web run build` — clean production build (typegen + CSP + static export verify).
+4. Fork E2E (manual, scripted steps): `npm --prefix web run bootstrap:local`; two-wallet walkthrough — deposit PT (wallet A), supply at tick (wallet B), borrow via ladder (A), CLAIM ALL (B), adjust-rate (B), race-revert re-quote (scripted drain) — every step succeeds and every screen refreshes without reload.
+5. Ponder: demand appears after one borrow; app degrades to "—" with Ponder off.
+6. Visual: side-by-side check of S0–S6 ASCII in `ux-personas-journeys-screens.md` against the running app; DESIGN.md §2/§6 accents (gold=lend, cyan=borrow, chalk=neutral) hold on every new surface.
+
+## Definition of Done
+
+- All R1–R28 implemented and individually verifiable in the running app.
+- Locked decisions honored: no sell surface, no resting orders, no separate portfolio page, wrap behind ADVANCED, instant-only borrowing with visible re-quote recovery.
+- The three pre-existing defects (no-op invalidation, approve-as-confirmed, hardcoded symbols) are gone, each with a regression test.
+- `docs/plans/ux-personas-journeys-screens.md` untouched (read-only product spec).
+- No Solidity, no changes under `src/`; `tools/ponder` changes limited to the U9 surface.
+
+## Implementer guardrails (reasoning defaults for anything unspecified)
+
+1. **Numbers:** anything a transaction consumes comes from a contract read (`quote`, `previewDeposit`, allowances); client math is display-only. When display math and a contract read disagree, the read wins and the mismatch is a bug in the client mirror.
+2. **Never hide, disable with a reason** (DESIGN.md §8) — any control whose preconditions fail gets a dim mono caption, not `display:none`. The only exceptions are the ones this plan names (DEPOSIT post-maturity hidden, sell absent, wrap behind ADVANCED).
+3. **BigInt everywhere for token amounts**; timestamps may be `number` seconds. `parseUnits`/`formatUnits` at 18 decimals only.
+4. **New UI = existing CSS vocabulary.** Extend `globals.css` with the same BEM-ish class style (`.position-card`, `.ladder-row`, `.strip-cell`); no Tailwind utilities (Tailwind is configured but intentionally unused — do not start using it in this plan).
+5. **Hooks stay unconditional.** Per-market hook needs inside lists use small child components (the established `PositionSummaryMarket` pattern), never hooks in loops.
+6. **When a contract call can revert on a valid-looking UI state** (maturity boundary crossed mid-session, liquidity drained), the failure path must land on a designed state from this plan (caption, banner, re-quote) — if you find a revert path with no designed state, add the minimal dim-mono caption and note it in the PR description rather than inventing new UX.
+7. **Copy tone:** uppercase mono labels, outcome-first phrasing ("GET $7,387 NOW", not "Execute borrow"). Match existing copy style in `ActionModal.tsx`.
+8. **Do not refactor beyond the stated file surface.** In particular: leave the enumeration hooks' 500-cap architecture alone (R26 surfaces it; replacing it is the rebuild plan's P6, not this plan).
+
+## References
+
+- Product spec: `docs/plans/ux-personas-journeys-screens.md` (screens S0–S6, router spec, edge states).
+- Visual system: `DESIGN.md` (§8 forms, §9 modals, §10 data formatting binding).
+- Prior art: `docs/plans/2026-07-23-001-fix-web-markets-ui-polish-plan.md` (overlay/action architecture this plan builds on), `docs/plans/2026-07-18-002-feat-web-markets-rebuild-plan.md` (KTD4 Sablier facts, KTD11 Ponder facts, ground-truth getters).
+- Contract truth re-verified 2026-07-25: `src/OVRFLOLending.sol` (`quote` 660, `createBorrowerLoanPool` 529, `withdrawLiquidity` 334, `claimLoanPoolShare` 590, OZ `Multicall` inherited at 26), `src/StreamPricing.sol` (factor/grossPrice 93–111), `src/OVRFLO.sol` (`marketTotalDeposited` 102), `src/OVRFLOFactory.sol` (`LendingDeployed` 75).
