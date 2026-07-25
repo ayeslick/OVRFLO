@@ -20,6 +20,8 @@ Three mental models from [ethskills.com/concepts](https://ethskills.com/concepts
 
 Curated from [ethskills.com/security](https://ethskills.com/security/SKILL.md). Only patterns that apply to OVRFLO are inlined, each mapped to a concrete surface and invariant ID. Full external checklist linked for depth.
 
+Before applying these OVRFLO-specific patterns, run the per-function pre-flight in `BASE_SECURITY.md` → "Never Miss the Basics" (5 questions + the inheritance attack-surface rule) on each entry point in the triage map. The basics catch most real exploits; the table below catches the OVRFLO-specific ones.
+
 > **Out of scope — do not waste time:** Token decimals and fee-on-transfer are explicitly excluded. Only standard ERC-20 tokens with 18 decimals and exact-transfer semantics (no fee-on-transfer, no rebasing) will ever be used. The multisig validates canonical Pendle PTs at `addMarket()`. Do not raise findings about non-18-decimal tokens, fee-on-transfer tokens, or rebasing tokens — these are accepted by design and outside the protocol's threat model.
 
 | Pattern | OVRFLO surface | Status / probe | Invariant ID |

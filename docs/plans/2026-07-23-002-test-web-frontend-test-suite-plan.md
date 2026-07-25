@@ -13,10 +13,10 @@ execution: code
 
 ## Goal Capsule
 
-- **Objective:** Build a comprehensive frontend test suite covering all components, hooks, and lib modules with three test categories (unit, invariant, attack) modeled on the Solidity test suite's structure, targeting >80% line coverage and >70% branch coverage.
+- **Objective:** Build a comprehensive frontend test suite covering all components, hooks, and lib modules with five test categories (unit, invariant, attack, Gherkin/BDD acceptance, mutation) modeled on the Solidity test suite's structure, targeting ≥ 85% line coverage and ≥ 75% branch coverage for `web/lib/` and `web/hooks/` (hard CI gate), plus QA procedures, quality metrics (complexity, assertion density, execution time, flakiness), and mutation testing (≥ 70% mutation score, zero survivors in financial-logic modules).
 - **Product authority:** ce-brainstorm (dialogue confirmed: core 3 categories, both render-state and interaction invariants, add user-event + msw + coverage-v8, pragmatic coverage target).
 - **Execution profile:** code — new test files, test helper infrastructure, dev dependency additions, vitest config changes.
-- **Stop conditions:** All R-IDs satisfied, coverage threshold met, `npm --prefix web run lint` and `npm --prefix web run test` and `npm --prefix web run build` all green.
+- **Stop conditions:** All R-IDs satisfied; coverage thresholds met (≥ 85% lines / ≥ 75% branches / ≥ 90% functions for `web/lib/` and `web/hooks/`, hard gate); mutation score ≥ 70% with zero survivors in financial-logic modules; full suite < 30s; zero flaky tests; `npm --prefix web run lint` and `npm --prefix web run test` and `npm --prefix web run build` all green.
 - **Open blockers:** none.
 
 ---
@@ -25,7 +25,7 @@ execution: code
 
 ### Summary
 
-A three-category frontend test suite (unit, invariant, attack) covering all 7 components, 9 hooks, and 8 lib modules in `web/`. Unit tests verify per-component rendering, per-hook data transformation, and per-lib function correctness. Invariant tests verify UI properties that always hold across render-state matrices and interaction sequences. Attack tests verify error handling for contract reverts, wallet rejections, malformed inputs, and stale data. Uses a hybrid mocking strategy with msw for hook tests, vi.mock for component tests, and @testing-library/user-event for realistic interactions.
+A five-category frontend test suite (unit, invariant, attack, Gherkin/BDD acceptance, mutation) covering all 7 components, 9 hooks, and 8 lib modules in `web/`. Unit tests verify per-component rendering, per-hook data transformation, and per-lib function correctness. Invariant tests verify UI properties that always hold across render-state matrices and interaction sequences. Attack tests verify error handling for contract reverts, wallet rejections, malformed inputs, and stale data. Gherkin/BDD tests provide executable Given/When/Then specifications for every acceptance example and key user journey. Mutation testing verifies test quality (not just coverage) against financial-logic modules. QA procedures provide manual checklists for visual inspection, regression testing, and exploratory testing. Quality metrics enforce extreme constraints: cyclomatic complexity ≤ 15, assertion density ≥ 2 per test, execution time < 30s, zero flaky tests, and per-file coverage gates. Uses a hybrid mocking strategy with msw for hook tests, vi.mock for component tests, and @testing-library/user-event for realistic interactions.
 
 ### Problem Frame
 
@@ -34,8 +34,8 @@ The Solidity suite has 13 test files across 5 categories (unit, invariant, fuzz,
 ### Key Decisions
 
 - **Hybrid mocking strategy.** vi.mock for wagmi/react-query in component tests (fast, controlled state matrices); msw for hook tests (exercises real data transformation through wagmi/viem). Components need to be tested in specific states (loading, error, empty, populated) which is simpler with mocked hooks returning controlled data. Hooks need their actual data transformation logic exercised, which requires mocked RPC responses at the transport level.
-- **Three categories mapped from Solidity.** Unit (per-component/hook/lib behavior) maps to Solidity unit tests. Invariant (UI properties that always hold) maps to Solidity invariant tests. Attack (adversarial reverts, wallet rejections, malformed inputs) maps to Solidity attack scenarios. Fuzz and fork are skipped.
-- **Pragmatic coverage target.** >80% lines and >70% branches, not Solidity's >90%. UI branches (focus management, DOM edge cases, conditional rendering paths) are harder to reach in jsdom than contract branches in Foundry.
+- **Three categories mapped from Solidity, plus Gherkin and mutation.** Unit (per-component/hook/lib behavior) maps to Solidity unit tests. Invariant (UI properties that always hold) maps to Solidity invariant tests. Attack (adversarial reverts, wallet rejections, malformed inputs) maps to Solidity attack scenarios. Gherkin/BDD acceptance tests provide executable specifications for AE-IDs and user journeys — no Solidity equivalent, but mirrors the spec's acceptance examples. Mutation testing measures test quality by introducing code changes and checking if tests catch them — maps to Solidity's implicit "does the fuzz test actually catch the bug" question. Fuzz and fork are skipped.
+- **Pragmatic coverage target, now with extreme constraints.** ≥ 85% lines and ≥ 75% branches for `web/lib/` and `web/hooks/` (hard CI gate, per-file enforcement), ≥ 80% lines and ≥ 70% branches for `web/components/` (advisory). UI branches (focus management, DOM edge cases, conditional rendering paths) are harder to reach in jsdom than contract branches in Foundry, so component coverage stays advisory. Mutation testing (≥ 70% score) compensates for coverage's blind spots: a file can have 100% line coverage and still have surviving mutants if the tests don't assert on the right values.
 - **ActionModal as focal point.** 1112 lines with 12 action types, each with distinct form fields, approval state, step indicator, and contract write logic. It will dominate the test count.
 
 ### Requirements
@@ -83,6 +83,37 @@ The Solidity suite has 13 test files across 5 categories (unit, invariant, fuzz,
 - R21. Test malformed inputs: `parseAmount` with invalid strings returns 0n without throwing, amounts exceeding wallet balance show a validation error line in `status-negative` with the input border tinted, the action button is disabled while a validation error is present, and zero amounts disable the action button without showing a validation error.
 - R22. Test stale data handling: `staleBatchCopy` detects "liquidity inactive" and "insufficient availableLiquidity" messages and returns the refresh copy, `borrowQuoteCopy` returns distinct copy for insufficient liquidity, all-self-owned liquidity, and no-liquidity-at-rate scenarios.
 
+**Gherkin / BDD Acceptance Tests**
+
+- R23. Executable Gherkin (Given/When/Then) scenarios for every acceptance example (AE1–AE4) and every key user journey: supply liquidity, borrow via ladder, claim-all, adjust-rate, stream claim, close loan, deposit PT, unwrap, wrap (ADVANCED). Feature files live in `web/tests/acceptance/*.feature`; step definitions live in `web/tests/acceptance/steps/`. Step definitions reuse the shared render helper and mock data factories from U1. Each scenario maps to at least one R-ID or AE-ID and asserts the user-visible outcome, not internal state. Scenarios cover the happy path, the primary edge state, and the primary error state for each journey.
+- R24. Cross-cutting Gherkin scenarios for invariant business rules: "empty categories are never rendered" (R13), "step indicator matches action type" (R14), "disabled controls always show a reason" (R16), "modal focus is trapped" (R15/R18), "tick-switching requires conscious borrower consent" (R13 of the web UX v1 plan), "slippage tolerance is user-configurable" (R12 of the web UX v1 plan). These scenarios are tagged `@invariant` and run against the state matrix fixtures from U5.
+
+**QA Procedures**
+
+- R25. A `web/tests/qa/` directory contains structured QA procedures: (a) a pre-release QA gate checklist (manual verification items that cannot be automated: visual DESIGN.md compliance per screen S0–S6, accent color correctness, motion timing, responsive behavior at 800px and 1200px); (b) a regression test procedure per screen (step-by-step manual steps with expected results, referencing the Anvil fork seed); (c) an exploratory testing protocol (time-boxed sessions with charter, bug report template, and severity definitions); (d) a visual inspection checklist (grid lines, no drop shadows, sharp corners, mono/tabular-nums, empty states as dim mono text not illustrations).
+- R26. QA procedures reference the Gherkin feature files as executable specifications: each `.feature` file lists its corresponding manual QA checklist items as a comment block at the top, so an reviewer can cross-reference automated and manual coverage.
+
+**Quality Metrics**
+
+- R27. Define and enforce quality metrics beyond coverage: (a) cyclomatic complexity ≤ 15 per function (enforced via `eslint-plugin-sonarjs` `sonarjs/cyclomatic-complexity` rule); (b) assertion density ≥ 2 assertions per test on average (measured by a custom vitest reporter or post-run script); (c) test execution time < 30s for the full suite (enforced via vitest `testTimeout` and a CI wall-clock check); (d) flakiness policy: zero flaky tests allowed, any test that fails intermittently is quarantined to a `web/tests/quarantine/` directory and fixed within 24h or removed; (e) defect escape target: zero P1 defects reach production (tracked via post-release bug reports tagged with `escaped-from-frontend-tests`).
+- R28. Quality metrics are collected and reported in a `web/tests/quality-report.md` (generated by a post-run script, not hand-maintained): total test count, test count per category (unit/invariant/attack/acceptance), coverage percentages (lines/branches/functions/statements per directory), mutation score, assertion density, execution time, and any quarantined tests. This report is checked into the PR diff so reviewers can see quality trends.
+
+**Mutation Testing**
+
+- R29. Add `@vitest/mutation-testing` (or `stryker` if vitest integration is unavailable) as a dev dependency. Configure mutation testing to run against `web/lib/` and `web/hooks/` only (pure logic and data transformation; mutation testing on React components is noisy and low-value). Mutation score target: ≥ 70% (percentage of mutations caught by tests). Mutation testing runs as a separate verification gate (`npm --prefix web run test:mutation`), not on every CI run (computationally expensive, ~5–10 min). Mutators: arithmetic operator changes, boolean operator flips, condition negation, string literal changes, return value removal — the standard set.
+- R30. Mutation testing baseline: on first run, generate a baseline mutation report. Any surviving mutants in `web/lib/lending-math.ts` (pricing math mirrors), `web/lib/router.ts` (borrow router), `web/lib/claim-all.ts` (claim planner), or `web/lib/modal-logic.ts` (revert mapping) must be killed by adding or strengthening tests — these are financial-logic modules where surviving mutants indicate real risk. Surviving mutants in non-financial modules (format, config, query-keys) are documented as accepted risk with rationale.
+
+**Extreme Coverage Constraints**
+
+- R31. Coverage is a hard CI gate (not advisory) for `web/lib/` and `web/hooks/`: ≥ 85% lines, ≥ 75% branches, ≥ 90% functions. For `web/components/`: ≥ 80% lines, ≥ 70% branches (advisory, not hard gate — DOM branches are harder to reach in jsdom). Coverage is measured per-directory and per-file, not just aggregate. A file with < 50% coverage fails the gate regardless of directory average. Coverage excludes `lib/generated.ts` and `lib/wagmi.ts` (unchanged from R3).
+- R32. Coverage dimensions tracked separately: line coverage, branch coverage, function coverage, and statement coverage are all reported and all must meet their thresholds independently. A file that passes line coverage but fails branch coverage fails the gate. The vitest coverage report is configured to emit all four dimensions (`all: true` in coverage config).
+- R33. Test isolation and determinism: no test may depend on execution order, shared mutable state, real network calls (msw only), or real time (mock `Date.now` and `performance.now` where time-dependent logic exists). Each test file is self-contained: imports its own helpers, sets up its own msw handlers, and cleans up in `afterEach`. A CI run executes tests in random order (`vitest --sequence.shuffle`) to catch order-dependent flakiness.
+
+**Test Maintenance and Review**
+
+- R34. Every PR that changes production code in `web/` must include corresponding test updates. A PR that adds a new function to `web/lib/` or a new hook to `web/hooks/` without tests is blocked by CI (a custom script checks that every new exported function has at least one test referencing it).
+- R35. Dead test detection: a quarterly audit identifies tests that have not caught a real bug in 6 months and tests that assert on implementation details rather than behavior. Dead tests are candidates for removal or rewrite. This is a documented procedure in `web/tests/qa/`, not an automated gate.
+
 ### Acceptance Examples
 
 - AE1. **Covers R14.** Given the user opens a WITHDRAW action modal, the step indicator shows `[1] SIGN [2] CONFIRMED` with no APPROVE step. Given the user opens a SUPPLY action modal, the step indicator shows `[1] APPROVE [2] SIGN [3] CONFIRMED` with the active step in gold.
@@ -129,6 +160,9 @@ Product Contract unchanged.
 - **KTD4: ActionModal parametrized test matrix.** Each of the 12 action types is tested via `it.each` with a shared test shape: correct title, correct accent color, correct step indicator (2-step, 3-step, or conditional 2-or-3-step for deposit/wrap), correct form fields, correct summary row, and correct action button label. This avoids 12 copy-pasted test blocks while ensuring every action type is covered. State-specific tests (approval flow, validation, tx states) are separate per-action-type tests.
 
 - **KTD5: State matrix fixtures for invariant tests.** A shared fixture set in `mock-data.ts` represents all meaningful component states: connected/disconnected, loading/loaded/error, has-positions/no-positions, matured/pre-maturity. Invariant tests iterate over these fixtures and assert properties hold in every state. This mirrors the Solidity invariant handler pattern where ghost state tracks all reachable states.
+- **KTD6: Gherkin test architecture.** Feature files use standard Cucumber Gherkin syntax (`Feature`, `Scenario`, `Given`, `When`, `Then`, `And`). Step definitions are TypeScript functions that reuse the shared render helper and mock data from U1. The Gherkin runner is `@cucumber/cucumber` with a vitest-compatible loader, OR a lightweight custom runner that parses `.feature` files and maps steps to vitest `it` blocks (the latter avoids a second test runner process and keeps everything in vitest). Chosen approach is binding: the lightweight custom runner, because it avoids a second process, keeps coverage unified, and the project already standardizes on vitest. Feature files are the executable specification; step definitions are the glue. Each scenario is independently runnable. Background steps set up the provider wrapper and mock state. Tags (`@invariant`, `@attack`, `@happy`) filter runs.
+- **KTD7: Mutation testing scope and configuration.** Mutation testing targets `web/lib/` and `web/hooks/` only. React components (`web/components/`) are excluded because DOM mutations produce noisy, low-signal results (a mutated className rarely changes behavior in a way tests catch, and chasing those mutants wastes time). The financial-logic modules (`lending-math.ts`, `router.ts`, `claim-all.ts`, `modal-logic.ts`) are the priority: surviving mutants there indicate real risk of incorrect pricing, routing, or claim planning. Configuration uses `@vitest/mutation-testing` if available (native vitest integration, shared config); otherwise `stryker` with a vitest runner. Mutator set is the standard preset (arithmetic, boolean, condition, string, return-value). Report output is HTML + JSON for CI artifact upload. Baseline is committed to `web/tests/mutation-baseline.json` so CI can detect regressions from the baseline (new surviving mutants fail the gate; pre-existing ones are accepted).
+- **KTD8: Quality metrics enforcement.** Cyclomatic complexity is enforced via `eslint-plugin-sonarjs` with `sonarjs/cyclomatic-complexity: ["error", 15]`. Assertion density is measured by a post-run script (`web/scripts/assertion-density.ts`) that parses the vitest JSON report and counts `expect` calls per test. Execution time is enforced via a CI wall-clock check (`timeout 30 npm --prefix web run test`). Flakiness is enforced by running the suite 3 times in CI with `--sequence.shuffle`; any test that passes on some runs and fails on others is flaky and must be quarantined. The quality report (`web/tests/quality-report.md`) is generated by `web/scripts/quality-report.ts` which aggregates: test count, coverage JSON, mutation JSON, assertion density, and execution time into a markdown table.
 
 ### High-Level Technical Design
 
@@ -142,9 +176,15 @@ flowchart TB
 
     U4 --> U5["U5: Invariant Tests<br/>render-state matrices + interaction sequences"]
     U4 --> U6["U6: Attack Tests<br/>reverts, rejections, malformed inputs, stale data"]
+
+    U4 --> U7["U7: Gherkin / BDD Tests<br/>.feature files + step definitions<br/>executable acceptance specs"]
+    U7 --> U8["U8: QA Procedures<br/>manual checklists, regression procedures<br/>visual inspection, exploratory testing"]
+    U2 --> U9["U9: Mutation Testing<br/>stryker/vitest-mutation on lib + hooks<br/>≥70% mutation score"]
+    U3 --> U9
+    U9 --> U10["U10: Quality Metrics + Hard CI Gates<br/>complexity, assertion density,<br/>execution time, flakiness, coverage"]
 ```
 
-The test suite has three layers. The infrastructure layer (U1) provides shared helpers, msw handlers, mock data factories, and coverage configuration. Unit tests (U2, U3, U4) build on the infrastructure and are ordered by dependency: lib tests need no mocking, hook tests need msw, component tests need vi.mock. Invariant tests (U5) and attack tests (U6) build on the component test patterns from U4, using the same render helper and state matrix fixtures to verify properties across states and through interaction sequences.
+The test suite has three layers. The infrastructure layer (U1) provides shared helpers, msw handlers, mock data factories, and coverage configuration. Unit tests (U2, U3, U4) build on the infrastructure and are ordered by dependency: lib tests need no mocking, hook tests need msw, component tests need vi.mock. Invariant tests (U5) and attack tests (U6) build on the component test patterns from U4, using the same render helper and state matrix fixtures to verify properties across states and through interaction sequences. Gherkin/BDD tests (U7) provide executable acceptance specifications mapping AE-IDs to Given/When/Then scenarios. QA procedures (U8) provide manual checklists and regression procedures that complement the automated suite. Mutation testing (U9) measures test quality (not just coverage) against the financial-logic modules. Quality metrics and hard CI gates (U10) enforce the extreme constraints: complexity, assertion density, execution time, flakiness, and per-file coverage thresholds.
 
 ---
 
@@ -253,6 +293,61 @@ The test suite has three layers. The infrastructure layer (U1) provides shared h
   - **Edge cases — malformed inputs:** Type very large number (1000000): amount parsed correctly, button enabled if balance sufficient. Type trailing whitespace "1.5 ": amount parsed correctly. Type "0.000001": small amount parsed correctly, button enabled if balance sufficient.
 - **Verification:** `npm --prefix web run test` passes with all attack tests green. Coverage for error-handling code paths in `errors.ts`, `modal-logic.ts`, and ActionModal validation reaches >80% lines.
 
+### U7. Gherkin / BDD acceptance tests
+
+- **Goal:** Executable Given/When/Then specifications for every acceptance example and key user journey, serving as living documentation and regression protection.
+- **Requirements:** R23, R24.
+- **Dependencies:** U1 (render helper, mock data), U4 (component render patterns), U5 (state matrix fixtures for invariant scenarios).
+- **Files:** `web/tests/acceptance/borrow.feature` (new), `web/tests/acceptance/supply.feature` (new), `web/tests/acceptance/claim-all.feature` (new), `web/tests/acceptance/adjust-rate.feature` (new), `web/tests/acceptance/stream-claim.feature` (new), `web/tests/acceptance/invariants.feature` (new), `web/tests/acceptance/steps/common.ts` (new), `web/tests/acceptance/steps/borrow.ts` (new), `web/tests/acceptance/steps/supply.ts` (new), `web/tests/acceptance/steps/claim-all.ts` (new), `web/tests/acceptance/steps/adjust-rate.ts` (new), `web/tests/acceptance/gherkin-loader.ts` (new, the lightweight custom runner per KTD6).
+- **Approach:** Per KTD6, use a lightweight custom Gherkin runner that parses `.feature` files and maps steps to vitest `it` blocks (not a separate Cucumber process). The `gherkin-loader.ts` module reads `.feature` files, extracts scenarios, and for each scenario creates a vitest `it` that runs the matched step definitions in sequence. Step definitions are TypeScript functions registered via a `Given()`, `When()`, `Then()` API that the loader calls. Step definitions reuse the shared render helper and mock data from U1. Feature files cover: borrow journey (stream select, tick select, amount, slippage, submit, receipt), supply journey (tick select, amount, approve, submit, receipt), claim-all journey (open modal, review queue, confirm, per-tx status, success), adjust-rate journey (select position, new tick, approve, multicall submit, receipt), stream claim (claim button, receipt), and cross-cutting invariants (R13/R14/R15/R16 from this plan + R13/R12 from the web UX v1 plan). Each `.feature` file has a comment block at the top listing its corresponding manual QA checklist items (R26).
+- **Patterns to follow:** Standard Gherkin syntax. Step definitions are thin wrappers around the same render + assertion patterns used in U4/U5.
+- **Test scenarios:**
+  - **Happy path — borrow (Covers AE1):** `Given` a market with liquidity at 8% and 10%, `When` the user selects the 8% tick and enters an amount within its liquidity, `Then` the quote panel shows "YOU RECEIVE NOW" with the net amount and upfront %, `And` the submit button reads "GET \<amount\> NOW".
+  - **Edge — borrow partial fill (Covers R13 of web UX v1 plan):** `Given` a market where the 8% tick has 50% of the requested amount, `When` the user enters the full amount, `Then` the quote panel shows a partial-fill quote at 8%, `And` a "SHOW OTHER TICKS" prompt appears, `But` alternatives at 10% are NOT rendered. `When` the user clicks "SHOW OTHER TICKS", `Then` alternative cards appear at 10%. `When` the user selects the 10% card, `Then` the ladder's selected tick updates to 10%.
+  - **Happy path — supply:** `Given` a market with lending deployed, `When` the user selects the lowest tick and enters an amount, `Then` the quote shows "YOU EARN +X% FIXED (Yd)", `And` the approve-sign flow proceeds.
+  - **Happy path — claim-all (Covers AE from web UX v1 plan R3):** `Given` a user with claimable pools and streams, `When` the user clicks CLAIM ALL, `Then` a review modal lists all queued txs, `But` the queue does NOT auto-start. `When` the user clicks CONFIRM QUEUE, `Then` each tx advances through PENDING/SIGNING/CONFIRMING/CONFIRMED. `When` all txs confirm, `Then` "ALL CLAIMS CONFIRMED" appears with a DONE button.
+  - **Edge — slippage configurable (Covers R12 of web UX v1 plan):** `Given` a borrow modal open, `Then` a "SLIPPAGE TOLERANCE" input is visible showing "0.5%". `When` the user changes it to "1.0%", `Then` the minAcceptable value updates accordingly.
+  - **Invariant — empty categories (Covers R13):** `Given` any state in the state matrix, `Then` PositionList never renders "NO ACTIVE LOANS" or similar placeholder text for empty categories.
+  - **Invariant — disabled controls (Covers R16):** `Given` a market with no lending deployed, `Then` the SUPPLY button is disabled with a dim mono caption "LENDING NOT DEPLOYED".
+- **Verification:** `npm --prefix web run test` passes with all Gherkin scenarios green. Every AE-ID (AE1–AE4) has at least one executable scenario. Every key journey has a `.feature` file.
+
+### U8. QA procedures and checklists
+
+- **Goal:** Structured manual QA procedures that complement the automated suite, covering visual inspection, regression testing, and exploratory testing.
+- **Requirements:** R25, R26.
+- **Dependencies:** U7 (feature files referenced by QA checklists).
+- **Files:** `web/tests/qa/pre-release-checklist.md` (new), `web/tests/qa/regression-s0.md` (new), `web/tests/qa/regression-s1.md` (new), `web/tests/qa/regression-s2.md` (new), `web/tests/qa/regression-s3.md` (new), `web/tests/qa/regression-s4-s5-s6.md` (new), `web/tests/qa/exploratory-protocol.md` (new), `web/tests/qa/visual-inspection.md` (new).
+- **Approach:** Each QA document is a structured markdown checklist with checkboxes (`- [ ]`) that a human QA reviewer walks through. The pre-release checklist is the gate: all items must be checked before a release. Regression procedures are per-screen (S0: strip + table, S1: borrow, S2: supply, S3: deposit, S4–S6: position cards) and reference the Anvil fork seed (`npm --prefix web run bootstrap:local`) for setup. Each regression procedure lists: setup steps, test steps with expected results, and cleanup. The visual inspection checklist enumerates DESIGN.md compliance items: pure black canvas (#050505), 1px grid lines (#333333), no drop shadows, sharp corners (≤2px), IBM Plex Mono for data, Inter for prose, gold=lend/cyan=borrow, empty states as dim mono text. The exploratory protocol defines: time-boxed 30-min sessions, a charter (what to explore), a bug report template (steps, expected, actual, severity), and severity definitions (P1: blocks core flow, P2: wrong behavior with workaround, P3: cosmetic).
+- **Test scenarios:**
+  - **Test expectation: none -- QA procedures are manual documents, not automated tests.**
+- **Verification:** `web/tests/qa/` contains all 8 QA documents. Pre-release checklist references every regression procedure and the visual inspection checklist. Each regression procedure references its corresponding `.feature` file from U7.
+
+### U9. Mutation testing setup and baseline
+
+- **Goal:** Configure mutation testing, generate a baseline, and ensure financial-logic modules have zero surviving mutants.
+- **Requirements:** R29, R30.
+- **Dependencies:** U2 (lib tests must exist before mutation testing), U3 (hook tests must exist).
+- **Files:** `web/package.json` (add mutation testing dev dependency), `web/mutation.config.json` (new, or `stryker.config.json` if using stryker), `web/tests/mutation-baseline.json` (new, generated), `web/scripts/run-mutation.sh` (new, convenience wrapper).
+- **Approach:** Per KTD7, install `@vitest/mutation-testing` (preferred, native vitest integration) or `stryker` with vitest runner. Configure to target `web/lib/` and `web/hooks/` only. Run the initial mutation test to generate the baseline. For each surviving mutant in `lending-math.ts`, `router.ts`, `claim-all.ts`, or `modal-logic.ts`: add or strengthen a test to kill it. For surviving mutants in non-financial modules (`format.ts`, `config.ts`, `query-keys.ts`, `ponder.ts`): document as accepted risk with rationale in `web/tests/mutation-baseline.json`. The mutation test command is `npm --prefix web run test:mutation` (configured in package.json scripts). CI runs mutation testing on PRs that touch `web/lib/` or `web/hooks/` (not on every PR). The baseline is committed; CI compares against it and fails on new surviving mutants.
+- **Patterns to follow:** stryker or vitest-mutation-testing standard configuration. Mutator set: standard preset.
+- **Test scenarios:**
+  - **Happy path:** `npm --prefix web run test:mutation` completes and generates `web/tests/mutation-baseline.json` with a mutation score ≥ 70%.
+  - **Financial-logic zero-survivor check:** No surviving mutants in `lending-math.ts`, `router.ts`, `claim-all.ts`, `modal-logic.ts` (or each survivor is killed by a new test before this unit is complete).
+  - **Regression check:** A deliberate mutation (change `+` to `-` in `factorWad`) is caught by the existing test suite (the U1 golden vector test should fail).
+- **Verification:** `npm --prefix web run test:mutation` reports ≥ 70% mutation score. `web/tests/mutation-baseline.json` is committed. No surviving mutants in financial-logic modules.
+
+### U10. Quality metrics enforcement and hard CI gates
+
+- **Goal:** Enforce the extreme constraints: complexity thresholds, assertion density, execution time, flakiness detection, and per-file coverage gates.
+- **Requirements:** R27, R28, R31, R32, R33, R34, R35.
+- **Dependencies:** U1 (coverage config), U2, U3, U4 (tests must exist for metrics to be meaningful), U9 (mutation score feeds quality report).
+- **Files:** `web/package.json` (add `eslint-plugin-sonarjs`), `web/.eslintrc` or `web/eslint.config.js` (add complexity rule), `web/scripts/assertion-density.ts` (new), `web/scripts/quality-report.ts` (new), `web/scripts/check-new-functions-tested.ts` (new), `web/vitest.config.ts` (update coverage thresholds to per-file gates), `web/tests/quality-report.md` (generated, not hand-maintained), `web/tests/quarantine/` (new directory, empty until needed).
+- **Approach:** (1) Complexity: add `eslint-plugin-sonarjs` and configure `sonarjs/cyclomatic-complexity: ["error", 15]`. Any function exceeding 15 complexity is a lint error. (2) Coverage gates: update vitest config to enforce per-file thresholds: `web/lib/` ≥ 85% lines / 75% branches / 90% functions, `web/hooks/` ≥ 85% lines / 75% branches / 90% functions, `web/components/` ≥ 80% lines / 70% branches (advisory). Configure `coverage.all: true` to emit all four dimensions. A file with < 50% coverage fails regardless of directory average. (3) Assertion density: `assertion-density.ts` parses the vitest JSON report and counts `expect` calls per test; if average < 2, the script exits non-zero. (4) Execution time: CI runs `timeout 30 npm --prefix web run test`; if the suite exceeds 30s, the gate fails. (5) Flakiness: CI runs the suite 3 times with `--sequence.shuffle`; any test that passes on some runs and fails on others is flaky. Flaky tests are moved to `web/tests/quarantine/` and tracked. (6) Quality report: `quality-report.ts` aggregates all metrics into `web/tests/quality-report.md` with a markdown table. (7) New-function check: `check-new-functions-tested.ts` diffs the PR's exported functions against test files and fails if any new exported function has no test reference. (8) Test isolation: vitest config sets `sequence.shuffle: true` for CI runs.
+- **Patterns to follow:** Standard eslint plugin configuration. vitest coverage configuration per docs.
+- **Test scenarios:**
+  - **Test expectation: none -- this unit creates enforcement infrastructure (scripts, config, lint rules), not tests. The tests from U2–U7 are what this infrastructure measures.**
+- **Verification:** `npm --prefix web run lint` enforces complexity ≤ 15. `npm --prefix web run test -- --coverage` enforces per-file coverage gates. `npm --prefix web run test` completes in < 30s. `web/tests/quality-report.md` is generated and checked into the PR diff. CI runs the suite 3x with shuffle and reports zero flaky tests.
+
 ---
 
 ## Verification Contract
@@ -260,25 +355,41 @@ The test suite has three layers. The infrastructure layer (U1) provides shared h
 | Gate | Command | Applies to |
 |---|---|---|
 | Unit tests | `npm --prefix web run test` | All units (existing + new tests must pass) |
-| Coverage | `npm --prefix web run test -- --coverage` | All units (threshold: >80% lines, >70% branches, excluding `lib/generated.ts` and `lib/wagmi.ts`) |
-| Lint | `npm --prefix web run lint` | All units |
+| Coverage (hard CI gate) | `npm --prefix web run test -- --coverage` | U2–U7: ≥ 85% lines / 75% branches / 90% functions for `web/lib/` and `web/hooks/`; ≥ 80% lines / 70% branches for `web/components/` (advisory). Per-file: < 50% coverage fails regardless of average. Excludes `lib/generated.ts` and `lib/wagmi.ts`. All four dimensions (lines/branches/functions/statements) reported and must meet thresholds independently. |
+| Lint | `npm --prefix web run lint` | All units. Enforces `sonarjs/cyclomatic-complexity ≤ 15`. |
 | Build | `npm --prefix web run build` | U1 (vitest config changes must not break build) |
+| Mutation testing | `npm --prefix web run test:mutation` | U9: ≥ 70% mutation score for `web/lib/` and `web/hooks/`. Zero surviving mutants in financial-logic modules. Runs on PRs touching `web/lib/` or `web/hooks/`, not every CI run. |
+| Assertion density | `node web/scripts/assertion-density.ts` | U10: average ≥ 2 assertions per test. Exits non-zero if below. |
+| Execution time | `timeout 30 npm --prefix web run test` | U10: full suite < 30s wall-clock. |
+| Flakiness | `npm --prefix web run test -- --sequence.shuffle` (3x) | U10: zero flaky tests. Any intermittent failure must be quarantined. |
+| Quality report | `node web/scripts/quality-report.ts` | U10: generates `web/tests/quality-report.md` with all metrics. Checked into PR diff. |
+| New-function-tested | `node web/scripts/check-new-functions-tested.ts` | U10: every new exported function in `web/lib/` or `web/hooks/` has at least one test referencing it. |
+| Gherkin scenarios | `npm --prefix web run test` (acceptance suite) | U7: every AE-ID has at least one executable scenario. Every key journey has a `.feature` file. |
+| QA procedures | Manual review of `web/tests/qa/` | U8: all 8 QA documents present. Pre-release checklist references all regression procedures. |
 
-The pretest script (`npm run typegen && bash scripts/check-banned-patterns.sh`) runs automatically before `vitest run`. The coverage gate is separate from the standard test gate — run with `-- --coverage` to measure. Coverage is a signal, not a hard CI gate: if a specific branch is unreachable in jsdom (e.g., a DOM edge case), document it as an uncovered branch rather than writing a test that hacks around jsdom limitations.
+The pretest script (`npm run typegen && bash scripts/check-banned-patterns.sh`) runs automatically before `vitest run`. Coverage is a hard CI gate for `web/lib/` and `web/hooks/` (not advisory): if a file fails its threshold, the CI build fails. For `web/components/`, coverage is advisory: if a branch is unreachable in jsdom (e.g., a DOM edge case), document it as an uncovered branch rather than writing a test that hacks around jsdom limitations.
 
 ---
 
 ## Definition of Done
 
-- All R-IDs (R1 through R22) are satisfied.
+- All R-IDs (R1 through R35) are satisfied.
 - `npm --prefix web run test` passes with all existing and new tests green.
-- `npm --prefix web run test -- --coverage` reports >80% lines and >70% branches for `web/components/`, `web/hooks/`, and `web/lib/` (excluding `lib/generated.ts` and `lib/wagmi.ts`).
-- `npm --prefix web run lint` passes with no new warnings.
+- `npm --prefix web run test -- --coverage` reports ≥ 85% lines, ≥ 75% branches, ≥ 90% functions for `web/lib/` and `web/hooks/`; ≥ 80% lines, ≥ 70% branches for `web/components/` (advisory). Per-file gate: no file < 50%. All four dimensions (lines/branches/functions/statements) reported independently.
+- `npm --prefix web run lint` passes with no new warnings. `sonarjs/cyclomatic-complexity ≤ 15` enforced.
 - `npm --prefix web run build` succeeds.
+- Full test suite completes in < 30s wall-clock.
+- `npm --prefix web run test:mutation` reports ≥ 70% mutation score for `web/lib/` and `web/hooks/`. Zero surviving mutants in `lending-math.ts`, `router.ts`, `claim-all.ts`, `modal-logic.ts`. Baseline committed to `web/tests/mutation-baseline.json`.
 - `web/tests/helpers/` contains `render.tsx`, `mock-data.ts`, `msw-handlers.ts`, and `wagmi-mocks.ts`.
 - `web/tests/hooks/` contains test files for all 9 hooks.
 - `web/tests/components/` contains test files for all 7 components (including refactored `launch-scope.test.tsx`).
 - `web/tests/invariant/` contains `render-state.test.tsx` and `interaction.test.tsx`.
 - `web/tests/attack/` contains `contract-reverts.test.tsx`, `wallet-rejection.test.tsx`, `malformed-inputs.test.tsx`, and `stale-data.test.ts`.
+- `web/tests/acceptance/` contains `.feature` files for every key journey (borrow, supply, claim-all, adjust-rate, stream-claim) and `invariants.feature`. Every AE-ID (AE1–AE4) has at least one executable scenario. Step definitions in `web/tests/acceptance/steps/`.
+- `web/tests/qa/` contains all 8 QA documents (pre-release checklist, 4 regression procedures, exploratory protocol, visual inspection checklist, and the cross-reference to feature files).
+- `web/tests/quality-report.md` is generated by `node web/scripts/quality-report.ts` and checked into the PR diff. Contains: test count per category, coverage per directory, mutation score, assertion density, execution time, quarantined tests.
+- `web/tests/quarantine/` directory exists (empty unless a flaky test is quarantined).
+- `web/scripts/` contains `assertion-density.ts`, `quality-report.ts`, and `check-new-functions-tested.ts`.
 - ActionModal test suite covers all 12 action types with correct step indicators, accent colors, and form fields.
+- CI runs the suite 3x with `--sequence.shuffle` and reports zero flaky tests.
 - No abandoned-attempt or experimental test code left in the diff.
