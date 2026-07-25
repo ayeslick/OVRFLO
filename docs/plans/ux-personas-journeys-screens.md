@@ -120,9 +120,14 @@ Given market `M`, stream `S`, requested amount `A` (default: max borrowable):
 3. Within the tick, prefer the **first single position that alone covers** (FIFO by ID);
    otherwise FIFO-accumulate positions (per `gatherLiquidity` semantics) until covered.
    Single-coverage-first minimizes positions consumed and fragmentation.
-4. If no tick covers `A`: offer both (a) reduce `A` to the best tick's capacity, and
-   (b) fill fully at the cheapest tick that covers. Show both as concrete quotes.
-5. On tx revert from a liquidity race: re-run 1–4, present the delta, re-confirm.
+4. Price cap (added 2026-07-25 after plan review): a tick's `grossPrice` shrinks as APR
+   rises, so a tick can cover `A` in liquidity while capping the borrow below it in
+   price. Every candidate tick's quote clamps the amount to `min(A, grossPrice at that
+   tick)`; a clamped offer is presented as partial even when liquidity alone covers.
+5. If no tick covers `A`: offer both (a) reduce `A` to the best tick's capacity, and
+   (b) the cheapest covering tick, clamped per rule 4. Show both as concrete quotes,
+   labeled by outcome ("most cash now" vs "lowest rate") rather than ranked.
+6. On tx revert from a liquidity race: re-run 1–5, present the delta, re-confirm.
 
 No backend. Ladder data from contract views + Ponder for trailing demand/volume.
 
@@ -150,7 +155,9 @@ No backend. Ladder data from contract views + Ponder for trailing demand/volume.
 │   [ SUPPLY ]  [ BORROW ]  [ DEPOSIT PT ]                     │
 └──────────────────────────────────────────────────────────────┘
 ```
-- Strip rows are aggregates across markets; clicking one opens the relevant market row.
+- Strip rows are aggregates across markets and informational-only; CLAIM ALL is the
+  strip's single action (per-cell navigation dropped 2026-07-25 — with aggregates
+  spanning markets there is no honest click target).
 - Disconnected state: markets table only, strip replaced by connect CTA.
 - Market row expansion = position management for that market + the three mode buttons.
 - Market selection fixes underlying/fee/expiry — downstream forms never re-ask.
