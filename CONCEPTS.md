@@ -128,6 +128,12 @@ The batch exit flow where a connected lender reviews and sequentially confirms a
 
 Each step is a separate on-chain transaction: pool claims batch per lending contract via multicall, then individual stream withdrawals. The UI recomputes the plan from live data on resume rather than retrying stale calldata.
 
+### Stale-recovery classification
+
+The three-way sorting of a failed write transaction that decides what the form offers next: *stale* (on-chain liquidity or pricing moved between quoting and signing — refresh every on-chain read, show a "here's the new number" banner, and offer one explicit re-confirm), *terminal* (the input can never succeed, such as an ineligible stream or self-match — disable the action and say why, never invite a retry), or *retryable* (wallet rejection or transport failure — leave the action live).
+
+Classification is per flow, not global: the same revert can be terminal in one flow and stale in another (an ERC20 shortfall is a liquidity race inside a withdraw-then-supply multicall). A stale outcome is never presented as a dead-end error.
+
 ## Refactoring patterns
 
 ### Vestigial state
