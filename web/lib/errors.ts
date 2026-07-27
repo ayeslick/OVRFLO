@@ -33,8 +33,6 @@ const revertStringCopy: Record<string, string> = {
   "OVRFLOLending: not lender": "Only the lender can withdraw this liquidity.",
   "OVRFLOLending: insufficient availableLiquidity": "This liquidity position cannot fill the quote.",
   "OVRFLOLending: slippage": "Price moved outside your limit.",
-  "OVRFLOLending: listing inactive": "This listing is no longer active.",
-  "OVRFLOLending: not listing seller": "Only the seller can cancel this listing.",
   "OVRFLOLending: loan closed": "This loan is already settled.",
   "OVRFLOLending: loan not closable": "The stream has not vested enough to close this loan.",
   "OVRFLOLending: not borrower": "Only the borrower can repay this loan.",
@@ -53,7 +51,7 @@ const revertStringCopy: Record<string, string> = {
   "OVRFLOLending: self-match": "You cannot borrow from your own liquidity.",
   "OVRFLOLending: apr out of bounds": "APR is outside the market bounds.",
   "OVRFLOLending: apr not whole": "APR must use a supported step.",
-  "OVRFLOLending: stream below min": "This stream is too small to sell or borrow against.",
+  "OVRFLOLending: stream below min": "This stream is too small to borrow against.",
   "OVRFLOLending: transfer mismatch": "Token transfer amount did not match the request.",
   "OVRFLOLending: unknown loan": "This loan does not exist.",
 };

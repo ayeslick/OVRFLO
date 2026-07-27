@@ -25,16 +25,6 @@ export type LiquidityPosition = {
   availableLiquidity: bigint;
 };
 
-export type SaleListing = {
-  id: bigint;
-  seller: Address;
-  market: Address;
-  streamId: bigint;
-  aprBps: number;
-  feeBps: number;
-  active: boolean;
-};
-
 export type Loan = {
   id: bigint;
   borrower: Address;
@@ -78,7 +68,7 @@ export type ActionType =
   | "unwrap"
   | "borrow"
   | "claim_stream"
-  | "sell"
+  | "adjust_rate"
   | "repay"
   | "close";
 

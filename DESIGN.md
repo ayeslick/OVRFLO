@@ -31,6 +31,8 @@ The typography is split strictly by use case to establish hierarchy and intent.
 ### 5. Layout (Tables UI)
 The primary application interface uses a "Tables UI" approach. It avoids heavy dashboard cards in favor of scannable, dense data rows. User balances are clearly separated at the top, followed by interactive market depth.
 
+**Exception (ticket 08, locked):** the user's own positions — streams, loans, supplied liquidity — render as compact `.position-card` blocks with progress bars inside the expanded row. Cards are for stateful *positions* (which carry per-item states, progress, and actions); market data stays in tables.
+
 ### 6. Color Semantics
 Accent colors are strictly semantic, never decorative:
 *   **Cyan = borrow side.** Borrow APRs, obligations, outstanding debt, "Borrow" actions.
@@ -70,4 +72,4 @@ Accent colors are strictly semantic, never decorative:
 
 ### 12. Responsiveness
 *   The container is a fixed 1200px column with left/right graphite rails; below 1200px the rails hug the viewport with 2rem padding.
-*   Below ~800px: split panels stack (vertical rule becomes a horizontal top border), stat grids go single-column, and tables keep their columns but scroll horizontally inside `.table-container`. Do not reflow tables into cards.
+*   Below ~800px: split panels stack (vertical rule becomes a horizontal top border), stat grids go single-column, and tables keep their columns but scroll horizontally inside `.table-container`. Do not reflow *market* tables into cards (position cards from §5 are cards at every breakpoint, not a reflow).

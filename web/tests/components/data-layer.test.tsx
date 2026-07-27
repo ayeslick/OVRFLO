@@ -169,7 +169,9 @@ describe("close gate (R17)", () => {
     hookData.loans = [{ ...baseLoan, withdrawable: 40n }];
     render(<PositionList market={market} user={testAddress(0xa11)} symbols={symbols} onAction={vi.fn()} />);
     expect(screen.queryByText("CLOSE")).not.toBeInTheDocument();
-    expect(screen.getByText("REPAY")).toBeInTheDocument();
+    // Repay lives behind the ADVANCED disclosure on card loans (ticket 08).
+    fireEvent.click(screen.getByRole("button", { name: /ADVANCED/ }));
+    expect(screen.getByText("REPAY EARLY")).toBeInTheDocument();
   });
 
   it("shows CLOSE when the stream covers the outstanding obligation", () => {

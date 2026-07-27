@@ -1,0 +1,144 @@
+import { describe, expect, it } from "vitest";
+import { encodeAbiParameters, encodeEventTopics, type Address, type Log } from "viem";
+import { ovrfloLendingAbi } from "@/lib/generated";
+import {
+  adjustReceiptSummary,
+  borrowTeaserBps,
+  classifyAdjustError,
+  loanCardState,
+  obligationPct,
+  streamedPct,
+} from "@/lib/positions";
+import type { TickDepth } from "@/lib/router";
+
+function testAddress(id: number): Address {
+  return `0x${id.toString(16).padStart(40, "0")}` as Address;
+}
+
+// --- loanCardState ---
+
+describe("loanCardState", () => {
+  it("classifies an open loan with outstanding debt as repaying", () => {
+    expect(loanCardState({ obligation: 100n, drawn: 20n, repaid: 10n, closed: false })).toBe("repaying");
+  });
+
+  it("classifies obligation-met-but-open as residual (stream still returning)", () => {
+    expect(loanCardState({ obligation: 100n, drawn: 60n, repaid: 40n, closed: false })).toBe("residual");
+  });
+
+  it("classifies a closed loan as settled regardless of ledger state", () => {
+    expect(loanCardState({ obligation: 100n, drawn: 100n, repaid: 0n, closed: true })).toBe("settled");
+    expect(loanCardState({ obligation: 100n, drawn: 10n, repaid: 0n, closed: true })).toBe("settled");
+  });
+});
+
+// --- streamedPct ---
+
+describe("streamedPct", () => {
+  it("reports withdrawn plus currently claimable as streamed", () => {
+    expect(streamedPct({ deposited: 200n, withdrawn: 40n, withdrawable: 10n })).toBe(25);
+  });
+
+  it("clamps to 100 and floors fractional percentages", () => {
+    expect(streamedPct({ deposited: 3n, withdrawn: 2n, withdrawable: 0n })).toBe(66);
+    expect(streamedPct({ deposited: 100n, withdrawn: 150n, withdrawable: 0n })).toBe(100);
+  });
+
+  it("returns 0 for an empty deposit instead of dividing by zero", () => {
+    expect(streamedPct({ deposited: 0n, withdrawn: 0n, withdrawable: 0n })).toBe(0);
+  });
+});
+
+// --- borrowTeaserBps ---
+
+function tick(aprBps: number, total: bigint): TickDepth {
+  return { aprBps, total, own: 0n, positions: [] };
+}
+
+describe("borrowTeaserBps", () => {
+  const YEAR = 31_536_000n;
+
+  it("prices the teaser at the lowest tick with real liquidity", () => {
+    // 10% APR over a full year, zero fee: upfront = 10000/1.1 ≈ 90.9%
+    const bps = borrowTeaserBps([tick(1200, 50n), tick(1000, 10n)], YEAR, 0);
+    expect(bps).toBe(9090n);
+  });
+
+  it("returns null when no tick has liquidity", () => {
+    expect(borrowTeaserBps([tick(1000, 0n)], YEAR, 0)).toBeNull();
+    expect(borrowTeaserBps([], YEAR, 0)).toBeNull();
+  });
+});
+
+// --- adjustReceiptSummary ---
+
+const LENDING = testAddress(0x999);
+
+function suppliedLog(liquidityId: bigint, moved: bigint, emitter = LENDING): Log {
+  const topics = encodeEventTopics({
+    abi: ovrfloLendingAbi,
+    eventName: "LiquiditySupplied",
+    args: { liquidityId, lender: testAddress(0x111), market: testAddress(0x333) },
+  });
+  return {
+    address: emitter,
+    topics,
+    data: encodeAbiParameters([{ type: "uint16" }, { type: "uint128" }], [1100, moved]),
+  } as unknown as Log;
+}
+
+function withdrawnLog(liquidityId: bigint, refunded: bigint): Log {
+  const topics = encodeEventTopics({
+    abi: ovrfloLendingAbi,
+    eventName: "LiquidityWithdrawn",
+    args: { liquidityId, lender: testAddress(0x111) },
+  });
+  return {
+    address: LENDING,
+    topics,
+    data: encodeAbiParameters([{ type: "uint128" }], [refunded]),
+  } as unknown as Log;
+}
+
+describe("adjustReceiptSummary", () => {
+  it("pairs the withdraw refund with the supplied amount", () => {
+    expect(adjustReceiptSummary([withdrawnLog(3n, 500n), suppliedLog(9n, 500n)], LENDING)).toEqual({
+      liquidityId: 9n,
+      aprBps: 1100,
+      moved: 500n,
+      refunded: 500n,
+    });
+  });
+
+  it("exposes a wallet top-up when the position shrank before execution", () => {
+    const summary = adjustReceiptSummary([withdrawnLog(3n, 300n), suppliedLog(9n, 500n)], LENDING);
+    expect(summary?.refunded).toBe(300n);
+    expect(summary?.moved).toBe(500n);
+  });
+
+  it("ignores logs from other contracts and empty receipts", () => {
+    expect(adjustReceiptSummary([suppliedLog(9n, 500n, testAddress(0xbad))], LENDING)).toBeNull();
+    expect(adjustReceiptSummary([], LENDING)).toBeNull();
+  });
+});
+
+describe("classifyAdjustError", () => {
+  it("treats an ERC20 shortfall as a liquidity race, not a dead end", () => {
+    expect(classifyAdjustError(new Error("ERC20: transfer amount exceeds balance"))).toBe("stale");
+    expect(classifyAdjustError(new Error("ERC20InsufficientBalance(0x.., 1, 2)"))).toBe("stale");
+  });
+
+  it("defers to the borrow classification otherwise", () => {
+    expect(classifyAdjustError(new Error("reverted: OVRFLOLending: liquidity inactive"))).toBe("stale");
+    expect(classifyAdjustError(new Error("reverted: OVRFLOLending: self-match"))).toBe("terminal");
+    expect(classifyAdjustError(new Error("User rejected the request."))).toBe("retryable");
+  });
+});
+
+describe("obligationPct", () => {
+  it("floors and clamps repayment progress", () => {
+    expect(obligationPct({ obligation: 100n, drawn: 20n, repaid: 13n })).toBe(33);
+    expect(obligationPct({ obligation: 100n, drawn: 150n, repaid: 0n })).toBe(100);
+    expect(obligationPct({ obligation: 0n, drawn: 0n, repaid: 0n })).toBe(100);
+  });
+});

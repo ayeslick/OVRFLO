@@ -4,7 +4,6 @@ import {
   applySlippageDown,
   applySlippageUp,
   canCloseLoan,
-  chooseSellNowLiquidity,
   isSeriesMatchedStream,
   repayMax,
 } from "@/lib/modal-logic";
@@ -33,7 +32,7 @@ describe("write-flow decision helpers", () => {
     expect(applySlippageUp(1_000_000n, 50n)).toBe(1_005_000n);
   });
 
-  it("filters streams by the selected series and picks sell-now liquidity", () => {
+  it("filters streams by the selected series", () => {
     const market = {
       vault: testAddress(1),
       treasury: testAddress(2),
@@ -61,53 +60,11 @@ describe("write-flow decision helpers", () => {
     };
 
     expect(isSeriesMatchedStream(stream, market)).toBe(true);
-    expect(
-      chooseSellNowLiquidity({
-        market,
-        grossPrice: 50n,
-        positions: [
-          { id: 2n, lender: borrower, market: market.market, aprBps: 1000, availableLiquidity: 49n },
-          { id: 3n, lender: borrower, market: market.market, aprBps: 1500, availableLiquidity: 100n },
-          { id: 1n, lender: borrower, market: market.market, aprBps: 1000, availableLiquidity: 100n },
-        ],
-      })?.id,
-    ).toBe(1n);
-
     expect(isSeriesMatchedStream({ ...stream, canceled: true }, market)).toBe(false);
     expect(isSeriesMatchedStream({ ...stream, depleted: true }, market)).toBe(false);
     expect(isSeriesMatchedStream({ ...stream, sender: testAddress(99) }, market)).toBe(false);
     expect(isSeriesMatchedStream({ ...stream, asset: testAddress(99) }, market)).toBe(false);
     expect(isSeriesMatchedStream({ ...stream, endTime: stream.endTime + 1n }, market)).toBe(false);
-  });
-
-  it("only considers liquidity in the target market and returns undefined when none covers the price", () => {
-    const market = {
-      vault: testAddress(1),
-      treasury: testAddress(2),
-      underlying: testAddress(3),
-      ovrfloToken: testAddress(4),
-      lending: testAddress(5),
-      market: testAddress(6),
-      twapDurationFixed: 900,
-      feeBps: 0,
-      expiryCached: 1782345600n,
-      ptToken: testAddress(7),
-      oracle: testAddress(8),
-    };
-    expect(
-      chooseSellNowLiquidity({
-        market,
-        grossPrice: 50n,
-        positions: [{ id: 1n, lender: borrower, market: testAddress(42), aprBps: 1000, availableLiquidity: 100n }],
-      }),
-    ).toBeUndefined();
-    expect(
-      chooseSellNowLiquidity({
-        market,
-        grossPrice: 50n,
-        positions: [{ id: 1n, lender: borrower, market: market.market, aprBps: 1000, availableLiquidity: 10n }],
-      }),
-    ).toBeUndefined();
   });
 
   it("uses the default slippage bound when none is given", () => {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { formatUnits, parseUnits } from "viem";
+import { encodeFunctionData, formatUnits, parseUnits } from "viem";
 import type { Address } from "viem";
 import { useConnection, useReadContract } from "wagmi";
 import { useBorrowerLoans } from "@/hooks/useBorrowerLoans";
@@ -17,7 +17,7 @@ import { SABLIER_LOCKUP_ADDRESS } from "@/lib/config";
 import { userFacingError } from "@/lib/errors";
 import { formatAprBps, formatId, formatTokenAmount } from "@/lib/format";
 
-import { applySlippageDown, chooseSellNowLiquidity, isSeriesMatchedStream } from "@/lib/modal-logic";
+import { applySlippageDown, isSeriesMatchedStream } from "@/lib/modal-logic";
 import {
   borrowReceiptSummary,
   classifyBorrowError,
@@ -36,6 +36,7 @@ import {
   upfrontBps,
 } from "@/lib/lending-math";
 import { invalidateAllOnChainReads } from "@/lib/invalidate";
+import { adjustReceiptSummary, classifyAdjustError } from "@/lib/positions";
 import { useQueryClient } from "@tanstack/react-query";
 import type { ActiveAction, ActionType, MarketInfo } from "@/lib/types";
 import { RateLadder } from "./RateLadder";
@@ -60,7 +61,7 @@ export const ACTION_META: Record<ActionType, { title: string; accent: Accent }> 
   unwrap: { title: "UNWRAP", accent: "neutral" },
   borrow: { title: "BORROW AGAINST STREAM", accent: "cyan" },
   claim_stream: { title: "CLAIM STREAM", accent: "gold" },
-  sell: { title: "SELL STREAM NOW", accent: "cyan" },
+  adjust_rate: { title: "ADJUST RATE", accent: "gold" },
   repay: { title: "REPAY LOAN", accent: "cyan" },
   close: { title: "CLOSE LOAN", accent: "cyan" },
 };
@@ -137,8 +138,8 @@ export function FormBody({
       return <ConvertForm market={market} action={action} symbols={symbols} accent={accent} onClose={onClose} />;
     case "borrow":
       return <BorrowForm market={market} user={user} action={action} symbols={symbols} accent={accent} onClose={onClose} />;
-    case "sell":
-      return <SellForm market={market} action={action} symbols={symbols} accent={accent} onClose={onClose} />;
+    case "adjust_rate":
+      return <AdjustRateForm market={market} action={action} symbols={symbols} accent={accent} onClose={onClose} />;
     case "repay":
       return <RepayForm market={market} user={user} action={action} symbols={symbols} accent={accent} onClose={onClose} />;
     default:
@@ -1112,9 +1113,13 @@ function BorrowForm({
   );
 }
 
-// --- Sell form ---
+// --- Adjust-rate form ---
 
-function SellForm({
+// Moves a position's idle liquidity to a new rate in one transaction:
+// multicall(withdrawLiquidity(id), supplyLiquidity(market, newApr, freshIdle)).
+// The idle amount is re-read immediately before submitting — a shrunk value
+// routes through the ticket-06 re-confirm recovery, never a stale submit.
+function AdjustRateForm({
   market,
   action,
   symbols,
@@ -1128,127 +1133,224 @@ function SellForm({
   onClose: () => void;
 }) {
   const connection = useConnection();
+  const queryClient = useQueryClient();
   const lending = useLending(market.lending);
   const liquidity = useLendingLiquidity(market.lending);
-  const streamId = action.streamId ?? null;
+  const positionId = action.positionId ?? null;
 
-  const [streamApprovedId, setStreamApprovedId] = useState<bigint | null>(null);
-  const aprBps = lending.params.aprMinBps || 1000;
+  const [selectedAprRaw, setSelectedAprRaw] = useState<number | null>(null);
+  const [approvedAmount, setApprovedAmount] = useState(0n);
+  const [staleRecovery, setStaleRecovery] = useState(false);
+  const [nowSeconds] = useState(() => BigInt(Math.floor(Date.now() / 1000)));
+
   const connectedAddress = connection.addresses?.[0];
   const underlyingSymbol = symbolFor(symbols, market.underlying);
+  const matured = nowSeconds >= market.expiryCached;
+  const ttmSeconds = matured ? 0n : market.expiryCached - nowSeconds;
+
+  const positionRead = useReadContract({
+    address: market.lending ?? undefined,
+    abi: ovrfloLendingAbi,
+    functionName: "liquidityPositions",
+    args: positionId !== null ? [positionId] : undefined,
+    query: { enabled: Boolean(market.lending && positionId !== null) },
+  });
+  const positionData = positionRead.data as [Address, Address, number, bigint] | undefined;
+  const currentAprBps = positionData?.[2] ?? null;
+  const idleAmount = positionData?.[3] ?? 0n;
 
   const approveTx = useWriteFlow(connectedAddress);
   const actionTx = useWriteFlow(connectedAddress);
 
-  const guard = useWalletChangeReset(connectedAddress, () => setStreamApprovedId(null));
-
-  const sellQuote = useReadContract({
-    address: market.lending ?? undefined,
-    abi: ovrfloLendingAbi,
-    functionName: "quote",
-    args: market.lending && streamId ? [market.market, streamId, aprBps, 0n] : undefined,
-    query: { enabled: Boolean(market.lending && streamId) },
+  const guard = useWalletChangeReset(connectedAddress, () => {
+    setSelectedAprRaw(null);
+    setApprovedAmount(0n);
+    setStaleRecovery(false);
   });
 
-  const approved = useReadContract({
-    address: SABLIER_LOCKUP_ADDRESS,
-    abi: sablierLockupAbi,
-    functionName: "getApproved",
-    args: streamId ? [streamId] : undefined,
-    query: { enabled: streamId !== null },
-  });
-
-  const approvedForAll = useReadContract({
-    address: SABLIER_LOCKUP_ADDRESS,
-    abi: sablierLockupAbi,
-    functionName: "isApprovedForAll",
+  const allowance = useReadContract({
+    address: market.underlying,
+    abi: erc20Abi,
+    functionName: "allowance",
     args: connectedAddress && market.lending ? [connectedAddress, market.lending] : undefined,
     query: { enabled: Boolean(connectedAddress && market.lending) },
   });
 
   useEffect(() => {
-    if (approveTx.error) setStreamApprovedId(null);
+    if (approveTx.error) setApprovedAmount(0n);
   }, [approveTx.error]);
+
+  // An ERC20 shortfall here is a liquidity race (position shrank after the
+  // fresh read), so it routes through the stale-recovery path too.
+  const errorKind = actionTx.error ? classifyAdjustError(actionTx.error) : null;
+  useEffect(() => {
+    if (errorKind !== "stale") return;
+    setStaleRecovery(true);
+    invalidateAllOnChainReads(queryClient, connectedAddress);
+  }, [errorKind, actionTx.error, queryClient, connectedAddress]);
 
   if (guard.walletChanged) return <WalletChangedNotice onContinue={guard.acknowledge} />;
 
-  const sellQuoteData = sellQuote.data as [bigint, bigint, bigint, bigint, bigint] | undefined;
-  const positionsAtRate = liquidity.liquidity.filter(
-    (position) => position.market.toLowerCase() === market.market.toLowerCase() && position.aprBps === aprBps,
-  );
-  const sellPosition = sellQuoteData
-    ? chooseSellNowLiquidity({ positions: positionsAtRate, market, grossPrice: sellQuoteData[0] })
-    : undefined;
+  const ratesReady = !lending.isLoading && lending.params.aprMaxBps > 0;
+  const ticks = ratesReady ? aprChoices(lending.params.aprMinBps, lending.params.aprMaxBps) : [];
+  // Excludes the user's own supply (including the position being moved) from
+  // the WAITING depth — consistent with the borrow-side ladder.
+  const ladder = buildLadder(liquidity.liquidity, market.market, ticks, connectedAddress);
+  const newAprBps = selectedAprRaw !== null && ticks.includes(selectedAprRaw) ? selectedAprRaw : null;
+  const sameRate = newAprBps !== null && newAprBps === currentAprBps;
 
-  const streamApproved =
-    Boolean(streamId && streamApprovedId === streamId) ||
-    Boolean(market.lending && approved.data?.toLowerCase() === market.lending.toLowerCase()) ||
-    approvedForAll.data === true;
-
-  const needsApproval = !streamApproved && streamId !== null;
+  const needsApproval =
+    idleAmount > 0n && (allowance.data ?? 0n) < idleAmount && approvedAmount < idleAmount;
   const busy = approveTx.isSigning || approveTx.isConfirming || actionTx.isSigning || actionTx.isConfirming;
-  const disabled = !market.lending || !streamId || !sellPosition || !sellQuoteData || !streamApproved || busy;
+  const terminal = errorKind === "terminal";
+  const disabled =
+    !market.lending ||
+    positionId === null ||
+    idleAmount === 0n ||
+    newAprBps === null ||
+    sameRate ||
+    matured ||
+    busy ||
+    terminal;
 
-  const steps = ["APPROVE STREAM", "SIGN", "CONFIRMED"];
-  const activeIndex = actionTx.isConfirmed || actionTx.isConfirming ? 2 : streamApproved ? 1 : 0;
+  const receiptSummary =
+    actionTx.isConfirmed && actionTx.receipt && market.lending
+      ? adjustReceiptSummary(actionTx.receipt.logs, market.lending)
+      : null;
+  // The position can shrink between the fresh read and execution; the wallet
+  // covers the difference. The receipt exposes it: refunded < moved.
+  const walletTopUp =
+    receiptSummary !== null && receiptSummary.refunded < receiptSummary.moved
+      ? receiptSummary.moved - receiptSummary.refunded
+      : null;
+
+  const steps = ["APPROVE", "SIGN", "CONFIRMED"];
+  const activeIndex = actionTx.isConfirmed || actionTx.isConfirming ? 2 : needsApproval ? 0 : 1;
+
+  async function submitAdjust() {
+    if (!market.lending || positionId === null || newAprBps === null) return;
+    // Fresh idle read immediately before submitting — never the cached value.
+    const fresh = await positionRead.refetch();
+    const freshIdle = (fresh.data as [Address, Address, number, bigint] | undefined)?.[3] ?? 0n;
+    if (freshIdle === 0n) {
+      setStaleRecovery(true);
+      return;
+    }
+    if (freshIdle !== idleAmount) {
+      // Shrunk (or grew) since the form opened: surface the fresh number and
+      // ask for one explicit re-confirm — the next click submits freshIdle.
+      setStaleRecovery(true);
+      return;
+    }
+    setStaleRecovery(false);
+    actionTx.writeContract({
+      address: market.lending,
+      abi: ovrfloLendingAbi,
+      functionName: "multicall",
+      args: [
+        [
+          encodeFunctionData({
+            abi: ovrfloLendingAbi,
+            functionName: "withdrawLiquidity",
+            args: [positionId],
+          }),
+          encodeFunctionData({
+            abi: ovrfloLendingAbi,
+            functionName: "supplyLiquidity",
+            args: [market.market, newAprBps, freshIdle],
+          }),
+        ],
+      ],
+    });
+  }
 
   return (
     <div className="form-grid">
-      <div className="label mono">STREAM {formatId(streamId ?? undefined)}</div>
-      <div className="summary-row mono" aria-live="polite">
-        {sellQuoteData ? (
-          <>
-            NET {formatTokenAmount(sellQuoteData[3], underlyingSymbol)} / GROSS{" "}
-            {formatTokenAmount(sellQuoteData[0], underlyingSymbol)}
-          </>
-        ) : streamId ? (
-          "LOADING"
-        ) : (
-          "—"
-        )}
+      <div className="label mono">
+        POSITION {formatId(positionId ?? undefined)} / IDLE {formatTokenAmount(idleAmount, underlyingSymbol)} @{" "}
+        {currentAprBps !== null ? formatAprBps(currentAprBps) : "—"}
       </div>
-      {!sellPosition && sellQuoteData ? (
-        <div className="label mono status-negative">NO LIQUIDITY AT THIS PRICE</div>
+      <RateLadder
+        label="NEW RATE"
+        rows={ladder.map((tick) => ({
+          aprBps: tick.aprBps,
+          cells: [
+            `RETURN ${formatBpsPct(lenderReturnBps(tick.aprBps, ttmSeconds))}`,
+            `WAITING ${formatTokenAmount(tick.total, underlyingSymbol)}`,
+          ],
+        }))}
+        selectedAprBps={newAprBps}
+        onSelect={setSelectedAprRaw}
+        truncated={liquidity.tooLarge}
+        emptyText="LOADING RATES"
+      />
+      {sameRate ? <div className="label mono">SELECT A DIFFERENT RATE</div> : null}
+      {matured ? <div className="label mono status-negative">MARKET MATURED — RATES CLOSED</div> : null}
+      <div className="summary-row mono" aria-live="polite">
+        MOVE {formatTokenAmount(idleAmount, underlyingSymbol)} TO{" "}
+        {newAprBps !== null ? formatAprBps(newAprBps) : "—"}
+      </div>
+      <StepIndicator
+        steps={steps}
+        activeIndex={activeIndex}
+        error={Boolean(approveTx.error ?? actionTx.error)}
+        accent={accent}
+      />
+      {staleRecovery && !actionTx.isConfirmed && !busy ? (
+        <div className="label mono status-warning" role="status">
+          IDLE AMOUNT CHANGED SINCE THE FORM OPENED — REVIEW THE NEW NUMBER AND RE-CONFIRM
+        </div>
       ) : null}
-      <StepIndicator steps={steps} activeIndex={activeIndex} error={Boolean(approveTx.error ?? actionTx.error)} accent={accent} />
+      {terminal ? <div className="label mono status-negative">{userFacingError(actionTx.error)}</div> : null}
       {needsApproval ? (
         <button
           className={`button ${accentClass(accent)} mono`}
-          disabled={!market.lending || !streamId || busy}
+          disabled={!market.lending || idleAmount === 0n || busy || matured}
           type="button"
           onClick={() => {
-            if (!market.lending || !streamId) return;
+            if (!market.lending) return;
             approveTx.writeContract({
-              address: SABLIER_LOCKUP_ADDRESS,
-              abi: sablierLockupAbi,
+              address: market.underlying,
+              abi: erc20Abi,
               functionName: "approve",
-              args: [market.lending, streamId],
+              args: [market.lending, idleAmount],
             });
-            setStreamApprovedId(streamId);
+            setApprovedAmount(idleAmount);
           }}
         >
-          APPROVE STREAM
+          APPROVE
         </button>
       ) : (
         <button
           className={`button ${accentClass(accent)} mono`}
           disabled={disabled}
           type="button"
-          onClick={() => {
-            if (!market.lending || !streamId || !sellPosition || !sellQuoteData) return;
-            actionTx.writeContract({
-              address: market.lending,
-              abi: ovrfloLendingAbi,
-              functionName: "sellStreamToLiquidity",
-              args: [sellPosition.id, streamId, applySlippageDown(sellQuoteData[3])],
-            });
-          }}
+          onClick={() => void submitAdjust()}
         >
-          SELL NOW {sellQuoteData ? formatTokenAmount(sellQuoteData[3], underlyingSymbol) : ""}
+          {staleRecovery ? "RE-CONFIRM MOVE" : "MOVE LIQUIDITY"}
         </button>
       )}
-      <ApproveTxState tx={approveTx} label="APPROVE STREAM" />
-      <TxState tx={actionTx} pendingLabel="SELL" />
+      <ApproveTxState tx={approveTx} label="APPROVE" />
+      {actionTx.isSigning ? <div className="label mono status-warning">MOVE: SIGNING</div> : null}
+      {actionTx.isConfirming ? (
+        <div className="label mono status-warning">MOVE: CONFIRMING {actionTx.hash?.slice(0, 10)}…</div>
+      ) : null}
+      {actionTx.isConfirmed ? <div className="label mono status-positive">CONFIRMED</div> : null}
+      {errorKind === "retryable" ? (
+        <div className="label mono status-negative">{userFacingError(actionTx.error)}</div>
+      ) : null}
+      {actionTx.isConfirmed && receiptSummary ? (
+        <div className="summary-row mono" aria-live="polite">
+          MOVED {formatTokenAmount(receiptSummary.moved, underlyingSymbol)} TO {formatAprBps(receiptSummary.aprBps)}
+          {walletTopUp !== null ? (
+            <span className="status-warning">
+              {" "}
+              — POSITION REFUNDED {formatTokenAmount(receiptSummary.refunded, underlyingSymbol)},{" "}
+              {formatTokenAmount(walletTopUp, underlyingSymbol)} DRAWN FROM WALLET
+            </span>
+          ) : null}
+        </div>
+      ) : null}
       {actionTx.isConfirmed ? <CloseButton onClose={onClose} /> : null}
     </div>
   );

@@ -1,5 +1,5 @@
 import { loanOutstanding } from "./lending-math";
-import type { HeldStream, LiquidityPosition, Loan, MarketInfo } from "./types";
+import type { HeldStream, Loan, MarketInfo } from "./types";
 
 export const DEFAULT_SLIPPAGE_BPS = 50n;
 
@@ -37,23 +37,3 @@ export function isSeriesMatchedStream(stream: HeldStream, market: MarketInfo) {
   );
 }
 
-export function chooseSellNowLiquidity({
-  positions,
-  market,
-  grossPrice,
-}: {
-  positions: LiquidityPosition[];
-  market: MarketInfo;
-  grossPrice: bigint;
-}) {
-  return positions
-    .filter(
-      (position) =>
-        position.market.toLowerCase() === market.market.toLowerCase() &&
-        position.availableLiquidity >= grossPrice,
-    )
-    .sort((a, b) => {
-      if (a.aprBps !== b.aprBps) return a.aprBps - b.aprBps;
-      return a.id < b.id ? -1 : 1;
-    })[0];
-}
