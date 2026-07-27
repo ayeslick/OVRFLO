@@ -1,4 +1,5 @@
 import { parseEventLogs, type Address, type Log } from "viem";
+import { eligibilityErrorNames } from "./errors";
 import { ovrfloLendingAbi } from "./generated";
 import { BPS } from "./lending-math";
 import type { TickDepth } from "./router";
@@ -61,26 +62,13 @@ const STALE_REASONS = [
   "OVRFLOLending: slippage",
 ];
 
-// Eligibility custom errors from StreamPricing — the stream itself can never
-// be borrowed against, so retrying is misleading.
-const TERMINAL_ERROR_NAMES = [
-  "MarketNotApproved",
-  "WrongSender",
-  "WrongAsset",
-  "WrongEndTime",
-  "SeriesMatured",
-  "CliffPresent",
-  "CancelableStream",
-  "RemainingZero",
-];
-
 export type BorrowErrorKind = "stale" | "terminal" | "retryable";
 
 export function classifyBorrowError(error: unknown): BorrowErrorKind {
   const message = error instanceof Error ? error.message : String(error);
   if (STALE_REASONS.some((reason) => message.includes(reason))) return "stale";
   if (message.includes("OVRFLOLending:")) return "terminal";
-  if (TERMINAL_ERROR_NAMES.some((name) => message.includes(name))) return "terminal";
+  if (eligibilityErrorNames.some((name) => message.includes(name))) return "terminal";
   return "retryable";
 }
 

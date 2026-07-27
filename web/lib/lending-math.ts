@@ -1,4 +1,3 @@
-import type { Address } from "viem";
 import { ZERO_ADDRESS } from "./config";
 import type { LiquidityPosition, Loan, LoanPool } from "./types";
 
@@ -90,38 +89,6 @@ export function aprChoices(minBps: number, maxBps: number, stepBps = APR_STEP_BP
     choices.push(aprBps);
   }
   return choices;
-}
-
-export type LiquidityClassification =
-  | { status: "sufficient"; ids: bigint[] }
-  | { status: "insufficient"; reason: "none-at-rate" | "not-enough"; ids: bigint[] }
-  | { status: "all-self-owned"; ids: bigint[] };
-
-export function classifyLiquidity({
-  gatheredIds,
-  sufficient,
-  positionsAtRate,
-  borrower,
-}: {
-  gatheredIds: bigint[];
-  sufficient: boolean;
-  positionsAtRate: Array<Pick<LiquidityPosition, "id" | "lender" | "availableLiquidity">>;
-  borrower?: Address | null;
-}): LiquidityClassification {
-  if (sufficient) return { status: "sufficient", ids: gatheredIds };
-
-  const openPositions = positionsAtRate.filter((position) => position.availableLiquidity > 0n);
-  if (openPositions.length === 0) {
-    return { status: "insufficient", reason: "none-at-rate", ids: gatheredIds };
-  }
-
-  const normalizedBorrower = borrower?.toLowerCase();
-  const hasOnlySelfLiquidity =
-    Boolean(normalizedBorrower) &&
-    openPositions.every((position) => position.lender.toLowerCase() === normalizedBorrower);
-
-  if (hasOnlySelfLiquidity) return { status: "all-self-owned", ids: gatheredIds };
-  return { status: "insufficient", reason: "not-enough", ids: gatheredIds };
 }
 
 export function liquidityExists(position: Pick<LiquidityPosition, "lender">) {

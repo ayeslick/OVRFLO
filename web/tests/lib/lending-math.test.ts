@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   aprChoices,
   BPS,
-  classifyLiquidity,
   enumerateIds,
   factorWad,
   formatBpsPct,
@@ -54,52 +53,6 @@ describe("lending math", () => {
         withdrawable: 90n,
       }),
     ).toBe(100n);
-  });
-
-  it("distinguishes insufficient liquidity from all-self-owned liquidity", () => {
-    expect(
-      classifyLiquidity({
-        gatheredIds: [],
-        sufficient: false,
-        borrower,
-        positionsAtRate: [{ id: 1n, lender: borrower, availableLiquidity: 10n }],
-      }).status,
-    ).toBe("all-self-owned");
-
-    expect(
-      classifyLiquidity({
-        gatheredIds: [],
-        sufficient: false,
-        borrower,
-        positionsAtRate: [{ id: 1n, lender, availableLiquidity: 10n }],
-      }),
-    ).toEqual({ status: "insufficient", reason: "not-enough", ids: [] });
-  });
-
-  it("classifies sufficient batches and empty rates", () => {
-    expect(classifyLiquidity({ gatheredIds: [1n, 2n], sufficient: true, positionsAtRate: [] })).toEqual({
-      status: "sufficient",
-      ids: [1n, 2n],
-    });
-    expect(
-      classifyLiquidity({
-        gatheredIds: [],
-        sufficient: false,
-        borrower,
-        positionsAtRate: [{ id: 1n, lender, availableLiquidity: 0n }],
-      }),
-    ).toEqual({ status: "insufficient", reason: "none-at-rate", ids: [] });
-  });
-
-  it("treats liquidity as self-owned only when a borrower is known", () => {
-    expect(
-      classifyLiquidity({
-        gatheredIds: [],
-        sufficient: false,
-        borrower: null,
-        positionsAtRate: [{ id: 1n, lender: borrower, availableLiquidity: 10n }],
-      }),
-    ).toEqual({ status: "insufficient", reason: "not-enough", ids: [] });
   });
 
   it("enumerates 1-based ids, caps at the enumeration limit, and never underflows", () => {

@@ -3,12 +3,10 @@ import type { Address } from "viem";
 import {
   applySlippageDown,
   applySlippageUp,
-  borrowQuoteCopy,
   canCloseLoan,
   chooseSellNowLiquidity,
   isSeriesMatchedStream,
   repayMax,
-  staleBatchCopy,
 } from "@/lib/modal-logic";
 
 function testAddress(id: number): Address {
@@ -18,28 +16,6 @@ function testAddress(id: number): Address {
 const borrower = testAddress(0xb0b);
 
 describe("write-flow decision helpers", () => {
-  it("returns distinct borrow failure copy for insufficient, self-owned, and stale batches", () => {
-    expect(
-      borrowQuoteCopy({
-        gatheredIds: [],
-        sufficient: false,
-        borrower,
-        positionsAtRate: [],
-      }),
-    ).toBe("No liquidity is posted at this APR.");
-
-    expect(
-      borrowQuoteCopy({
-        gatheredIds: [],
-        sufficient: false,
-        borrower,
-        positionsAtRate: [{ id: 1n, lender: borrower, availableLiquidity: 1n }],
-      }),
-    ).toBe("Only your own liquidity is available at this APR.");
-
-    expect(staleBatchCopy("execution reverted: OVRFLOLending: liquidity inactive")).toContain("Liquidity changed");
-  });
-
   it("caps repay MAX to the smaller of wallet balance and outstanding", () => {
     const loan = { obligation: 100n, drawn: 20n, repaid: 5n };
     expect(repayMax(loan, 200n)).toBe(75n);
@@ -134,8 +110,7 @@ describe("write-flow decision helpers", () => {
     ).toBeUndefined();
   });
 
-  it("returns null stale copy for unrelated revert messages and uses the default slippage bound", () => {
-    expect(staleBatchCopy("execution reverted: OVRFLOLending: slippage")).toBeNull();
+  it("uses the default slippage bound when none is given", () => {
     expect(applySlippageDown(1_000_000n)).toBe(995_000n);
     expect(applySlippageUp(1_000_000n)).toBe(1_005_000n);
   });

@@ -11,6 +11,10 @@ const customErrorCopy: Record<string, string> = {
   RemainingZero: "This stream has nothing remaining.",
 };
 
+// StreamPricing eligibility custom errors. Exported for classifyBorrowError
+// (lib/borrow.ts): a stream failing any of these can never be borrowed against.
+export const eligibilityErrorNames = Object.keys(customErrorCopy);
+
 const revertStringCopy: Record<string, string> = {
   "OVRFLOLending: factory zero": "Lending market is misconfigured.",
   "OVRFLOLending: core zero": "Lending market is misconfigured.",
