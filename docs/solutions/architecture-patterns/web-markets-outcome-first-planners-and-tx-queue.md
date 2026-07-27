@@ -6,6 +6,7 @@ module: web
 problem_type: architecture_pattern
 component: frontend_stimulus
 severity: medium
+last_updated: 2026-07-27
 applies_when:
   - "Rebuilding or extending the OVRFLO web markets UI where borrow/claim flows depend on on-chain StreamPricing quotes and OVRFLOLending liquidity"
   - "Separating outcome-first routing and batch planning into pure TypeScript modules testable without React"
@@ -38,18 +39,19 @@ The recurring theme: **keep React thin** — routing, pricing display, claim pla
 
 ### 1. Pure router — separate routing logic from React
 
-Borrow liquidity selection is **price-blind by design**: the router picks position IDs by tick coverage only; the quoting layer clamps to gross-price caps in the borrow form.
+Borrow liquidity selection is **price-blind by design**: the ladder groups depth by tick coverage only; the quoting layer clamps to gross-price caps in the borrow form.
 
 ```4:6:web/lib/router.ts
-// Pure borrow router (plan KTD3). Liquidity-coverage only — price-blind by design:
+// Pure ladder builder (plan KTD3). Liquidity-coverage only — price-blind by design:
 // the quoting layer clamps to the tick's grossPrice cap (applied in the BORROW form).
+// Selection-scoped fill planning lives in lib/borrow.ts (planSelectedBorrow).
 ```
 
-**`buildLadder`** groups open positions per APR tick for a market. Self-owned liquidity is excluded from `total` (borrowers cannot draw against their own supply) but kept in `positions` for UI display. Positions are sorted ascending by id — input order from hooks is never assumed.
+**`buildLadder`** (`web/lib/router.ts`) groups open positions per APR tick for a market. Self-owned liquidity is excluded from `total` (borrowers cannot draw against their own supply) but kept in `positions` for UI display. Positions are sorted ascending by id — input order from hooks is never assumed. Passing no `self` puts all liquidity in `total` — the supply-side ladder uses this deliberately so waiting depth includes the lender's own.
 
-**`planBorrow`** picks the lowest covering tick, prefers a single position that alone covers the target, otherwise FIFO-accumulates ids. It returns a primary plan plus an optional partial alternative at a lower liquid tick. The `self` parameter is **required** (typed as `Address | undefined`, not optional) so callers with a connected wallet cannot silently forget it.
+**`planSelectedBorrow`** (`web/lib/borrow.ts`, tickets 06–08; superseded the original `planBorrow`) plans a fill *at the user's selected tick*: `min(target, depth)` with a `partial` flag, plus the lowest fully-covering alternative tick offered only behind an explicit "show other options" click. Position ids for the transaction come from the contract's own `gatherLiquidity` read, not from indexed data. `resolveSelectedTick` keeps the user's tick while it still has borrowable depth, defaulting to the lowest liquid tick.
 
-The table's RATES column consumes the same ladder + display math with zero extra contract reads beyond existing liquidity hooks.
+The table's RATES column consumes the same ladder + display math with zero extra contract reads beyond existing liquidity hooks. Failed writes route through the **stale-recovery classification** (see `CONCEPTS.md`): stale races auto-invalidate and offer one re-confirm; terminal reverts disable with a reason; only genuinely transient failures stay retryable.
 
 ### 2. Display math layer — mirror on-chain StreamPricing, never submit from it
 
@@ -186,12 +188,15 @@ Queue advances on receipt with invalidation every step; `resume()` recomputes pl
 - [USD prices not shown in modals](../ui-bugs/usd-prices-not-shown-in-modals-WebUI-20260421.md) — ancestor-hook + batched read pattern for pricing display
 - [repayLoan equality rounding](../security-issues/repayloan-equality-rounding-no-brick-OVRFLOBook-20260624.md) — on-chain rounding invariants display math must mirror
 - [Solidity batch function safety](../design-patterns/solidity-batch-function-safety-patterns.md) — on-chain claim/pool semantics the planner targets
+- [Adjust-rate multicall shrink race](../logic-errors/adjust-rate-multicall-shrink-race.md) — receipt-truth and per-flow error classification for the withdraw-then-supply multicall (tickets 06–08)
 
 ## Related files (quick index)
 
 | Module | Role |
 |--------|------|
-| `web/lib/router.ts` | Borrow ladder + plan |
+| `web/lib/router.ts` | Tick ladder builder (buildLadder) |
+| `web/lib/borrow.ts` | Selection-scoped borrow planning, slippage, error classification, receipt parsing |
+| `web/lib/positions.ts` | Position-card states, progress, adjust-rate receipt/error helpers |
 | `web/lib/lending-math.ts` | Display math + loan/pool helpers |
 | `web/lib/claim-all.ts` | Claim-all tx planner |
 | `web/lib/invalidate.ts` | Shared query invalidation |
@@ -205,4 +210,4 @@ Queue advances on receipt with invalidation every step; `resume()` recomputes pl
 | `web/components/PositionSummary.tsx` | Summary strip + claim-all entry |
 | `web/components/ClaimAllModal.tsx` | Review + queue UI |
 
-Tests: `web/tests/lib/router.test.ts`, `web/tests/lib/claim-all.test.ts`, `web/tests/lib/lending-math.test.ts`, `web/tests/hooks/useTxQueue.test.tsx`, `web/tests/components/markets-table.test.tsx`, `web/tests/components/position-summary.test.tsx`.
+Tests: `web/tests/lib/router.test.ts`, `web/tests/lib/borrow.test.ts`, `web/tests/lib/positions.test.ts`, `web/tests/lib/claim-all.test.ts`, `web/tests/lib/lending-math.test.ts`, `web/tests/hooks/useTxQueue.test.tsx`, `web/tests/components/markets-table.test.tsx`, `web/tests/components/borrow-form.test.tsx`, `web/tests/components/supply-form.test.tsx`, `web/tests/components/position-cards.test.tsx`, `web/tests/components/position-summary.test.tsx`.
