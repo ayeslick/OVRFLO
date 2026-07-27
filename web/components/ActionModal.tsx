@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { formatUnits, parseUnits } from "viem";
 import type { Address } from "viem";
 import { useConnection, useReadContract } from "wagmi";
@@ -8,6 +8,8 @@ import { useBorrowerLoans } from "@/hooks/useBorrowerLoans";
 import { useHeldStreams } from "@/hooks/useHeldStreams";
 import { useLending } from "@/hooks/useLending";
 import { useLendingLiquidity } from "@/hooks/useLendingLiquidity";
+import { symbolFor, type SymbolMap } from "@/hooks/useMarketSymbols";
+import { useWalletChangeReset } from "@/hooks/useWalletChangeReset";
 import { useWriteFlow } from "@/hooks/useWriteFlow";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
 import { erc20Abi, ovrfloAbi, ovrfloLendingAbi, sablierLockupAbi } from "@/lib/abis";
@@ -22,7 +24,6 @@ import {
   isSeriesMatchedStream,
   staleBatchCopy,
 } from "@/lib/modal-logic";
-import { lendingKeys, ovrfloKeys, streamKeys } from "@/lib/query-keys";
 import type { ActiveAction, ActionType, MarketInfo } from "@/lib/types";
 
 export type Accent = "gold" | "cyan" | "neutral";
@@ -31,6 +32,7 @@ type Props = {
   market: MarketInfo;
   user?: Address;
   action: ActiveAction;
+  symbols: SymbolMap;
   onClose: () => void;
 };
 
@@ -53,7 +55,7 @@ export function accentClass(accent: Accent) {
   return accent === "gold" ? "button-gold" : accent === "cyan" ? "button-cyan" : "";
 }
 
-export function ActionModal({ market, user, action, onClose }: Props) {
+export function ActionModal({ market, user, action, symbols, onClose }: Props) {
   const panelRef = useRef<HTMLDivElement>(null);
   useFocusTrap(panelRef, true);
 
@@ -85,7 +87,7 @@ export function ActionModal({ market, user, action, onClose }: Props) {
             ✕
           </button>
         </div>
-        <FormBody action={action} market={market} user={user} accent={meta.accent} onClose={onClose} />
+        <FormBody action={action} market={market} user={user} symbols={symbols} accent={meta.accent} onClose={onClose} />
       </div>
     </div>
   );
@@ -95,18 +97,20 @@ export function FormBody({
   action,
   market,
   user,
+  symbols,
   accent,
   onClose,
 }: {
   action: ActiveAction;
   market: MarketInfo;
   user?: Address;
+  symbols: SymbolMap;
   accent: Accent;
   onClose: () => void;
 }) {
   switch (action.type) {
     case "supply":
-      return <SupplyForm market={market} accent={accent} onClose={onClose} />;
+      return <SupplyForm market={market} symbols={symbols} accent={accent} onClose={onClose} />;
     case "withdraw":
     case "claim_share":
     case "claim_stream":
@@ -116,13 +120,13 @@ export function FormBody({
     case "claim_matured":
     case "wrap":
     case "unwrap":
-      return <ConvertForm market={market} action={action} accent={accent} onClose={onClose} />;
+      return <ConvertForm market={market} action={action} symbols={symbols} accent={accent} onClose={onClose} />;
     case "borrow":
-      return <BorrowForm market={market} user={user} action={action} accent={accent} onClose={onClose} />;
+      return <BorrowForm market={market} user={user} action={action} symbols={symbols} accent={accent} onClose={onClose} />;
     case "sell":
-      return <SellForm market={market} action={action} accent={accent} onClose={onClose} />;
+      return <SellForm market={market} action={action} symbols={symbols} accent={accent} onClose={onClose} />;
     case "repay":
-      return <RepayForm market={market} user={user} action={action} accent={accent} onClose={onClose} />;
+      return <RepayForm market={market} user={user} action={action} symbols={symbols} accent={accent} onClose={onClose} />;
     default:
       return null;
   }
@@ -157,7 +161,9 @@ function StepIndicator({
   );
 }
 
-function TxState({ tx, pendingLabel }: { tx: ReturnType<typeof useWriteFlow>; pendingLabel?: string | null }) {
+type WriteFlow = ReturnType<typeof useWriteFlow>;
+
+function TxState({ tx, pendingLabel }: { tx: WriteFlow; pendingLabel?: string | null }) {
   if (tx.isSigning)
     return <div className="label mono status-warning">{pendingLabel ? `${pendingLabel}: SIGNING` : "SIGNING"}</div>;
   if (tx.isConfirming)
@@ -171,11 +177,36 @@ function TxState({ tx, pendingLabel }: { tx: ReturnType<typeof useWriteFlow>; pe
   return null;
 }
 
+// Approval progress only — deliberately never renders CONFIRMED. The completed
+// state of a form derives solely from the action transaction (KTD6/R24).
+function ApproveTxState({ tx, label }: { tx: WriteFlow; label: string }) {
+  if (tx.isSigning) return <div className="label mono status-warning">{label}: SIGNING</div>;
+  if (tx.isConfirming)
+    return (
+      <div className="label mono status-warning">
+        {label}: CONFIRMING {tx.hash?.slice(0, 10)}…
+      </div>
+    );
+  if (tx.error) return <div className="label mono status-negative">{userFacingError(tx.error)}</div>;
+  return null;
+}
+
 function CloseButton({ onClose }: { onClose: () => void }) {
   return (
     <button className="button mono" type="button" onClick={onClose}>
       CLOSE
     </button>
+  );
+}
+
+function WalletChangedNotice({ onContinue }: { onContinue: () => void }) {
+  return (
+    <div className="form-grid">
+      <div className="label mono status-warning">WALLET CHANGED — RE-ENTER</div>
+      <button className="button mono" type="button" onClick={onContinue}>
+        CONTINUE
+      </button>
+    </div>
   );
 }
 
@@ -198,10 +229,12 @@ function formatUnits18(value: bigint) {
 
 function SupplyForm({
   market,
+  symbols,
   accent,
   onClose,
 }: {
   market: MarketInfo;
+  symbols: SymbolMap;
   accent: Accent;
   onClose: () => void;
 }) {
@@ -209,52 +242,57 @@ function SupplyForm({
   const lending = useLending(market.lending);
   const [raw, setRaw] = useState("");
   const [approvedAmount, setApprovedAmount] = useState(0n);
-  const [pendingLabel, setPendingLabel] = useState<string | null>(null);
   const amount = parseAmount(raw);
   const aprBps = lending.params.aprMinBps || 1000;
+  const connectedAddress = connection.addresses?.[0];
+  const underlyingSymbol = symbolFor(symbols, market.underlying);
 
-  const invalidateKeys = useMemo(
-    () => [lendingKeys.liquidity(market.lending), ovrfloKeys.markets()],
-    [market.lending],
-  );
-  const tx = useWriteFlow(invalidateKeys);
+  const approveTx = useWriteFlow(connectedAddress);
+  const actionTx = useWriteFlow(connectedAddress);
+
+  const guard = useWalletChangeReset(connectedAddress, () => {
+    setRaw("");
+    setApprovedAmount(0n);
+  });
 
   useEffect(() => {
-    if (tx.error) setApprovedAmount(0n);
-    if (tx.error || tx.isConfirmed) setPendingLabel(null);
-  }, [tx.error, tx.isConfirmed]);
+    if (approveTx.error) setApprovedAmount(0n);
+  }, [approveTx.error]);
 
   const allowance = useReadContract({
     address: market.underlying,
     abi: erc20Abi,
     functionName: "allowance",
-    args: connection.addresses?.[0] && market.lending ? [connection.addresses[0], market.lending] : undefined,
-    query: { enabled: Boolean(connection.addresses?.[0] && market.lending) },
+    args: connectedAddress && market.lending ? [connectedAddress, market.lending] : undefined,
+    query: { enabled: Boolean(connectedAddress && market.lending) },
   });
   const balanceOf = useReadContract({
     address: market.underlying,
     abi: erc20Abi,
     functionName: "balanceOf",
-    args: connection.addresses?.[0] ? [connection.addresses[0]] : undefined,
-    query: { enabled: Boolean(connection.addresses?.[0]) },
+    args: connectedAddress ? [connectedAddress] : undefined,
+    query: { enabled: Boolean(connectedAddress) },
   });
+
+  if (guard.walletChanged) return <WalletChangedNotice onContinue={guard.acknowledge} />;
 
   const allowanceAmount = allowance.data ?? 0n;
   const walletBalance = balanceOf.data ?? 0n;
   const validationError = amount > 0n && amount > walletBalance ? "INSUFFICIENT BALANCE" : null;
   const approvalCovers = allowanceAmount >= amount || approvedAmount >= amount;
-  const disabled = !market.lending || amount === 0n || tx.isSigning || tx.isConfirming || Boolean(validationError);
+  const busy = approveTx.isSigning || approveTx.isConfirming || actionTx.isSigning || actionTx.isConfirming;
+  const disabled = !market.lending || amount === 0n || busy || Boolean(validationError);
   const steps = ["APPROVE", "SIGN", "CONFIRMED"];
-  const activeIndex = tx.isConfirmed || tx.isConfirming ? 2 : approvalCovers || tx.isSigning ? 1 : 0;
+  const activeIndex = actionTx.isConfirmed || actionTx.isConfirming ? 2 : approvalCovers ? 1 : 0;
 
   return (
     <div className="form-grid">
       <input className={`input mono ${validationError ? "input-error" : ""}`} value={raw} onChange={(e) => setRaw(e.target.value)} placeholder="0.00" />
       {validationError ? <div className="label mono status-negative">{validationError}</div> : null}
       <div className="summary-row mono" aria-live="polite">
-        SUPPLY {formatTokenAmount(amount, "wstETH")} @ {formatAprBps(aprBps)}
+        SUPPLY {formatTokenAmount(amount, underlyingSymbol)} @ {formatAprBps(aprBps)}
       </div>
-      <StepIndicator steps={steps} activeIndex={activeIndex} error={Boolean(tx.error)} accent={accent} />
+      <StepIndicator steps={steps} activeIndex={activeIndex} error={Boolean(approveTx.error ?? actionTx.error)} accent={accent} />
       {!approvalCovers ? (
         <button
           className={`button ${accentClass(accent)} mono`}
@@ -262,8 +300,7 @@ function SupplyForm({
           type="button"
           onClick={() => {
             if (!market.lending) return;
-            setPendingLabel("APPROVE");
-            tx.writeContract({
+            approveTx.writeContract({
               address: market.underlying,
               abi: erc20Abi,
               functionName: "approve",
@@ -281,8 +318,7 @@ function SupplyForm({
           type="button"
           onClick={() => {
             if (!market.lending) return;
-            setPendingLabel("SUPPLY");
-            tx.writeContract({
+            actionTx.writeContract({
               address: market.lending,
               abi: ovrfloLendingAbi,
               functionName: "supplyLiquidity",
@@ -293,8 +329,9 @@ function SupplyForm({
           SUPPLY @ {formatAprBps(aprBps)}
         </button>
       )}
-      <TxState tx={tx} pendingLabel={pendingLabel} />
-      {tx.isConfirmed ? <CloseButton onClose={onClose} /> : null}
+      <ApproveTxState tx={approveTx} label="APPROVE" />
+      <TxState tx={actionTx} pendingLabel="SUPPLY" />
+      {actionTx.isConfirmed ? <CloseButton onClose={onClose} /> : null}
     </div>
   );
 }
@@ -316,27 +353,17 @@ function SimpleActionForm({
 }) {
   const connection = useConnection();
   const [pendingLabel, setPendingLabel] = useState<string | null>(null);
+  const connectedAddress = connection.addresses?.[0];
 
-  const invalidateKeys = useMemo(() => {
-    switch (action.type) {
-      case "withdraw":
-        return [lendingKeys.liquidity(market.lending)];
-      case "claim_share":
-        return [lendingKeys.lenderPools(market.lending, user)];
-      case "claim_stream":
-        return [streamKeys.held(user)];
-      case "close":
-        return [lendingKeys.borrowerLoans(market.lending, user)];
-      default:
-        return [];
-    }
-  }, [action.type, market.lending, user]);
+  const tx = useWriteFlow(connectedAddress ?? user);
 
-  const tx = useWriteFlow(invalidateKeys);
+  const guard = useWalletChangeReset(connectedAddress, () => setPendingLabel(null));
 
   useEffect(() => {
     if (tx.error || tx.isConfirmed) setPendingLabel(null);
   }, [tx.error, tx.isConfirmed]);
+
+  if (guard.walletChanged) return <WalletChangedNotice onContinue={guard.acknowledge} />;
 
   const steps = ["SIGN", "CONFIRMED"];
   const activeIndex = tx.isConfirmed || tx.isConfirming ? 1 : 0;
@@ -378,13 +405,13 @@ function SimpleActionForm({
         summary = `CLAIM STREAM ${formatId(action.streamId)}`;
         buttonText = "CLAIM STREAM";
         return () => {
-          if (!connection.addresses?.[0]) return;
+          if (!connectedAddress) return;
           setPendingLabel("CLAIM");
           tx.writeContract({
             address: SABLIER_LOCKUP_ADDRESS,
             abi: sablierLockupAbi,
             functionName: "withdrawMax",
-            args: [action.streamId!, connection.addresses[0]],
+            args: [action.streamId!, connectedAddress],
           });
         };
       case "close":
@@ -431,11 +458,13 @@ function SimpleActionForm({
 function ConvertForm({
   market,
   action,
+  symbols,
   accent,
   onClose,
 }: {
   market: MarketInfo;
   action: ActiveAction;
+  symbols: SymbolMap;
   accent: Accent;
   onClose: () => void;
 }) {
@@ -444,21 +473,30 @@ function ConvertForm({
   const [ptApprovedAmount, setPtApprovedAmount] = useState(0n);
   const [underlyingApprovedAmount, setUnderlyingApprovedAmount] = useState(0n);
   const [nowSeconds, setNowSeconds] = useState<bigint | null>(null);
-  const [pendingLabel, setPendingLabel] = useState<string | null>(null);
   const amount = parseAmount(raw);
   const mode = action.type;
+  const connectedAddress = connection.addresses?.[0];
+  const underlyingSymbol = symbolFor(symbols, market.underlying);
+  const ovrfloSymbol = symbolFor(symbols, market.ovrfloToken);
 
-  const tx = useWriteFlow([ovrfloKeys.markets(), lendingKeys.borrowerLoans(market.lending)]);
-  const disabled = amount === 0n || tx.isSigning || tx.isConfirming;
+  const approveTx = useWriteFlow(connectedAddress);
+  const actionTx = useWriteFlow(connectedAddress);
+  const busy = approveTx.isSigning || approveTx.isConfirming || actionTx.isSigning || actionTx.isConfirming;
+  const disabled = amount === 0n || busy;
+
+  const guard = useWalletChangeReset(connectedAddress, () => {
+    setRaw("");
+    setPtApprovedAmount(0n);
+    setUnderlyingApprovedAmount(0n);
+  });
 
   useEffect(() => setNowSeconds(BigInt(Math.floor(Date.now() / 1000))), []);
   useEffect(() => {
-    if (tx.error) {
+    if (approveTx.error) {
       setPtApprovedAmount(0n);
       setUnderlyingApprovedAmount(0n);
     }
-    if (tx.error || tx.isConfirmed) setPendingLabel(null);
-  }, [tx.error, tx.isConfirmed]);
+  }, [approveTx.error]);
 
   const matured = nowSeconds !== null && nowSeconds >= market.expiryCached;
 
@@ -478,24 +516,26 @@ function ConvertForm({
     address: market.ptToken,
     abi: erc20Abi,
     functionName: "allowance",
-    args: connection.addresses?.[0] ? [connection.addresses[0], market.vault] : undefined,
-    query: { enabled: Boolean(connection.addresses?.[0]) },
+    args: connectedAddress ? [connectedAddress, market.vault] : undefined,
+    query: { enabled: Boolean(connectedAddress) },
   });
   const underlyingAllowance = useReadContract({
     address: market.underlying,
     abi: erc20Abi,
     functionName: "allowance",
-    args: connection.addresses?.[0] ? [connection.addresses[0], market.vault] : undefined,
-    query: { enabled: Boolean(connection.addresses?.[0]) },
+    args: connectedAddress ? [connectedAddress, market.vault] : undefined,
+    query: { enabled: Boolean(connectedAddress) },
   });
   const spendToken = mode === "deposit" ? market.ptToken : mode === "wrap" ? market.underlying : market.ovrfloToken;
   const balanceRead = useReadContract({
     address: spendToken,
     abi: erc20Abi,
     functionName: "balanceOf",
-    args: connection.addresses?.[0] ? [connection.addresses[0]] : undefined,
-    query: { enabled: Boolean(connection.addresses?.[0]) },
+    args: connectedAddress ? [connectedAddress] : undefined,
+    query: { enabled: Boolean(connectedAddress) },
   });
+
+  if (guard.walletChanged) return <WalletChangedNotice onContinue={guard.acknowledge} />;
 
   const depositPreview = preview.data as [bigint, bigint, bigint, bigint] | undefined;
   const feeAmount = depositPreview?.[2] ?? 0n;
@@ -521,14 +561,7 @@ function ConvertForm({
     (mode === "unwrap" && wrapCapacity < amount);
 
   const steps = needsApproval ? ["APPROVE", "SIGN", "CONFIRMED"] : ["SIGN", "CONFIRMED"];
-  const activeIndex =
-    tx.isConfirmed || tx.isConfirming
-      ? steps.length - 1
-      : needsApproval
-        ? tx.isSigning
-          ? 1
-          : 0
-        : 0;
+  const activeIndex = actionTx.isConfirmed || actionTx.isConfirming ? steps.length - 1 : 0;
 
   return (
     <div className="form-grid">
@@ -538,8 +571,8 @@ function ConvertForm({
         <div className="summary-row mono" aria-live="polite">
           {depositPreview ? (
             <>
-              TO WALLET {formatTokenAmount(depositPreview[0], "ovrflo")} / STREAM{" "}
-              {formatTokenAmount(depositPreview[1], "ovrflo")} / FEE {formatTokenAmount(feeAmount, "wstETH")}
+              TO WALLET {formatTokenAmount(depositPreview[0], ovrfloSymbol)} / STREAM{" "}
+              {formatTokenAmount(depositPreview[1], ovrfloSymbol)} / FEE {formatTokenAmount(feeAmount, underlyingSymbol)}
             </>
           ) : amount > 0n ? (
             "LOADING"
@@ -549,20 +582,19 @@ function ConvertForm({
         </div>
       ) : null}
       {mode === "unwrap" ? (
-        <div className="label mono">UNWRAP CAPACITY {formatTokenAmount(wrapCapacity, "wstETH")}</div>
+        <div className="label mono">UNWRAP CAPACITY {formatTokenAmount(wrapCapacity, underlyingSymbol)}</div>
       ) : null}
       {mode === "claim_matured" && !matured ? (
         <div className="label mono status-negative">CLAIM ENABLES AFTER MATURITY</div>
       ) : null}
-      <StepIndicator steps={steps} activeIndex={activeIndex} error={Boolean(tx.error)} accent={accent} />
+      <StepIndicator steps={steps} activeIndex={activeIndex} error={Boolean(approveTx.error ?? actionTx.error)} accent={accent} />
       {needsPtApproval ? (
         <button
           className={`button ${accentClass(accent)} mono`}
           disabled={disabled}
           type="button"
           onClick={() => {
-            setPendingLabel("APPROVE PT");
-            tx.writeContract({
+            approveTx.writeContract({
               address: market.ptToken,
               abi: erc20Abi,
               functionName: "approve",
@@ -580,8 +612,7 @@ function ConvertForm({
           type="button"
           onClick={() => {
             const approveAmount = mode === "wrap" ? amount : feeAmount;
-            setPendingLabel("APPROVE wstETH");
-            tx.writeContract({
+            approveTx.writeContract({
               address: market.underlying,
               abi: erc20Abi,
               functionName: "approve",
@@ -590,7 +621,7 @@ function ConvertForm({
             setUnderlyingApprovedAmount(approveAmount);
           }}
         >
-          APPROVE wstETH
+          APPROVE {underlyingSymbol}
         </button>
       ) : (
         <button
@@ -598,9 +629,8 @@ function ConvertForm({
           disabled={modeDisabled}
           type="button"
           onClick={() => {
-            setPendingLabel(mode.toUpperCase());
             if (mode === "deposit") {
-              tx.writeContract({
+              actionTx.writeContract({
                 address: market.vault,
                 abi: ovrfloAbi,
                 functionName: "deposit",
@@ -609,7 +639,7 @@ function ConvertForm({
               return;
             }
             if (mode === "claim_matured") {
-              tx.writeContract({
+              actionTx.writeContract({
                 address: market.vault,
                 abi: ovrfloAbi,
                 functionName: "claim",
@@ -617,7 +647,7 @@ function ConvertForm({
               });
               return;
             }
-            tx.writeContract({
+            actionTx.writeContract({
               address: market.vault,
               abi: ovrfloAbi,
               functionName: mode === "wrap" ? "wrap" : "unwrap",
@@ -628,8 +658,9 @@ function ConvertForm({
           {mode === "claim_matured" ? "CLAIM" : mode.toUpperCase()}
         </button>
       )}
-      <TxState tx={tx} pendingLabel={pendingLabel} />
-      {tx.isConfirmed ? <CloseButton onClose={onClose} /> : null}
+      <ApproveTxState tx={approveTx} label="APPROVE" />
+      <TxState tx={actionTx} pendingLabel={mode.toUpperCase()} />
+      {actionTx.isConfirmed ? <CloseButton onClose={onClose} /> : null}
     </div>
   );
 }
@@ -640,12 +671,14 @@ function BorrowForm({
   market,
   user,
   action,
+  symbols,
   accent,
   onClose,
 }: {
   market: MarketInfo;
   user?: Address;
   action: ActiveAction;
+  symbols: SymbolMap;
   accent: Accent;
   onClose: () => void;
 }) {
@@ -658,18 +691,21 @@ function BorrowForm({
   const [selectedStreamId, setSelectedStreamId] = useState<bigint | null>(action.streamId ?? null);
   const [raw, setRaw] = useState("");
   const [streamApprovedId, setStreamApprovedId] = useState<bigint | null>(null);
-  const [pendingLabel, setPendingLabel] = useState<string | null>(null);
 
   const borrowAmount = parseAmount(raw);
   const aprBps = lending.params.aprMinBps || 1000;
   const connectedAddress = connection.addresses?.[0];
+  const underlyingSymbol = symbolFor(symbols, market.underlying);
+  const ovrfloSymbol = symbolFor(symbols, market.ovrfloToken);
 
-  const tx = useWriteFlow([
-    streamKeys.held(connectedAddress),
-    lendingKeys.borrowerLoans(market.lending, connectedAddress),
-    lendingKeys.lenderPools(market.lending, connectedAddress),
-    lendingKeys.liquidity(market.lending),
-  ]);
+  const approveTx = useWriteFlow(connectedAddress);
+  const actionTx = useWriteFlow(connectedAddress);
+
+  const guard = useWalletChangeReset(connectedAddress, () => {
+    setSelectedStreamId(action.streamId ?? null);
+    setRaw("");
+    setStreamApprovedId(null);
+  });
 
   const recipient = useReadContract({
     address: SABLIER_LOCKUP_ADDRESS,
@@ -717,6 +753,12 @@ function BorrowForm({
     query: { enabled: Boolean(connectedAddress && market.lending) },
   });
 
+  useEffect(() => {
+    if (approveTx.error) setStreamApprovedId(null);
+  }, [approveTx.error]);
+
+  if (guard.walletChanged) return <WalletChangedNotice onContinue={guard.acknowledge} />;
+
   const quoteData = quote.data as [bigint, bigint, bigint, bigint, bigint] | undefined;
   const gatherData = gather.data as [bigint[], boolean] | undefined;
   const positionsAtRate = liquidity.liquidity.filter(
@@ -732,24 +774,14 @@ function BorrowForm({
     approvedForAll.data === true;
 
   const needsApproval = !streamApproved && selectedStreamId !== null;
+  const busy = approveTx.isSigning || approveTx.isConfirming || actionTx.isSigning || actionTx.isConfirming;
   const disabled =
-    !market.lending ||
-    !selectedStreamId ||
-    !recipientMatches ||
-    borrowAmount === 0n ||
-    tx.isSigning ||
-    tx.isConfirming;
+    !market.lending || !selectedStreamId || !recipientMatches || borrowAmount === 0n || busy;
 
-  const staleCopy = tx.error instanceof Error ? staleBatchCopy(tx.error.message) : null;
-
-  useEffect(() => {
-    if (tx.error) setStreamApprovedId(null);
-    if (tx.error || tx.isConfirmed) setPendingLabel(null);
-  }, [tx.error, tx.isConfirmed]);
+  const staleCopy = actionTx.error instanceof Error ? staleBatchCopy(actionTx.error.message) : null;
 
   const steps = ["APPROVE STREAM", "SIGN", "CONFIRMED"];
-  const activeIndex =
-    tx.isConfirmed || tx.isConfirming ? 2 : streamApproved ? (tx.isSigning ? 1 : 1) : 0;
+  const activeIndex = actionTx.isConfirmed || actionTx.isConfirming ? 2 : streamApproved ? 1 : 0;
 
   return (
     <div className="form-grid">
@@ -762,7 +794,7 @@ function BorrowForm({
           <option value="">SELECT STREAM</option>
           {eligibleStreams.map((stream) => (
             <option key={stream.streamId.toString()} value={stream.streamId.toString()}>
-              {stream.streamId.toString()} / {formatTokenAmount(stream.deposited - stream.withdrawn, "ovrflo")}
+              {stream.streamId.toString()} / {formatTokenAmount(stream.deposited - stream.withdrawn, ovrfloSymbol)}
             </option>
           ))}
         </select>
@@ -773,8 +805,8 @@ function BorrowForm({
       <div className="summary-row mono" aria-live="polite">
         {quoteData ? (
           <>
-            NET {formatTokenAmount(quoteData[3], "wstETH")} / OBLIGATION{" "}
-            {formatTokenAmount(quoteData[1], "ovrflo")} / RESIDUAL {formatTokenAmount(quoteData[4], "ovrflo")}
+            NET {formatTokenAmount(quoteData[3], underlyingSymbol)} / OBLIGATION{" "}
+            {formatTokenAmount(quoteData[1], ovrfloSymbol)} / RESIDUAL {formatTokenAmount(quoteData[4], ovrfloSymbol)}
           </>
         ) : borrowAmount > 0n ? (
           "LOADING"
@@ -792,16 +824,15 @@ function BorrowForm({
               borrower: connectedAddress,
             })}
       </div>
-      <StepIndicator steps={steps} activeIndex={activeIndex} error={Boolean(tx.error)} accent={accent} />
+      <StepIndicator steps={steps} activeIndex={activeIndex} error={Boolean(approveTx.error ?? actionTx.error)} accent={accent} />
       {needsApproval ? (
         <button
           className={`button ${accentClass(accent)} mono`}
-          disabled={!market.lending || !selectedStreamId || tx.isSigning || tx.isConfirming}
+          disabled={!market.lending || !selectedStreamId || busy}
           type="button"
           onClick={() => {
             if (!market.lending || !selectedStreamId) return;
-            setPendingLabel("APPROVE STREAM");
-            tx.writeContract({
+            approveTx.writeContract({
               address: SABLIER_LOCKUP_ADDRESS,
               abi: sablierLockupAbi,
               functionName: "approve",
@@ -819,8 +850,7 @@ function BorrowForm({
           type="button"
           onClick={() => {
             if (!market.lending || !selectedStreamId || !gatherData || !quoteData) return;
-            setPendingLabel("BORROW");
-            tx.writeContract({
+            actionTx.writeContract({
               address: market.lending,
               abi: ovrfloLendingAbi,
               functionName: "createBorrowerLoanPool",
@@ -832,8 +862,9 @@ function BorrowForm({
         </button>
       )}
       {staleCopy ? <div className="label mono status-warning">{staleCopy}</div> : null}
-      <TxState tx={tx} pendingLabel={pendingLabel} />
-      {tx.isConfirmed ? <CloseButton onClose={onClose} /> : null}
+      <ApproveTxState tx={approveTx} label="APPROVE STREAM" />
+      <TxState tx={actionTx} pendingLabel="BORROW" />
+      {actionTx.isConfirmed ? <CloseButton onClose={onClose} /> : null}
     </div>
   );
 }
@@ -843,11 +874,13 @@ function BorrowForm({
 function SellForm({
   market,
   action,
+  symbols,
   accent,
   onClose,
 }: {
   market: MarketInfo;
   action: ActiveAction;
+  symbols: SymbolMap;
   accent: Accent;
   onClose: () => void;
 }) {
@@ -857,15 +890,14 @@ function SellForm({
   const streamId = action.streamId ?? null;
 
   const [streamApprovedId, setStreamApprovedId] = useState<bigint | null>(null);
-  const [pendingLabel, setPendingLabel] = useState<string | null>(null);
   const aprBps = lending.params.aprMinBps || 1000;
   const connectedAddress = connection.addresses?.[0];
+  const underlyingSymbol = symbolFor(symbols, market.underlying);
 
-  const tx = useWriteFlow([
-    streamKeys.held(connectedAddress),
-    lendingKeys.borrowerLoans(market.lending, connectedAddress),
-    lendingKeys.liquidity(market.lending),
-  ]);
+  const approveTx = useWriteFlow(connectedAddress);
+  const actionTx = useWriteFlow(connectedAddress);
+
+  const guard = useWalletChangeReset(connectedAddress, () => setStreamApprovedId(null));
 
   const sellQuote = useReadContract({
     address: market.lending ?? undefined,
@@ -891,6 +923,12 @@ function SellForm({
     query: { enabled: Boolean(connectedAddress && market.lending) },
   });
 
+  useEffect(() => {
+    if (approveTx.error) setStreamApprovedId(null);
+  }, [approveTx.error]);
+
+  if (guard.walletChanged) return <WalletChangedNotice onContinue={guard.acknowledge} />;
+
   const sellQuoteData = sellQuote.data as [bigint, bigint, bigint, bigint, bigint] | undefined;
   const positionsAtRate = liquidity.liquidity.filter(
     (position) => position.market.toLowerCase() === market.market.toLowerCase() && position.aprBps === aprBps,
@@ -905,16 +943,11 @@ function SellForm({
     approvedForAll.data === true;
 
   const needsApproval = !streamApproved && streamId !== null;
-  const disabled =
-    !market.lending || !streamId || !sellPosition || !sellQuoteData || !streamApproved || tx.isSigning || tx.isConfirming;
-
-  useEffect(() => {
-    if (tx.error) setStreamApprovedId(null);
-    if (tx.error || tx.isConfirmed) setPendingLabel(null);
-  }, [tx.error, tx.isConfirmed]);
+  const busy = approveTx.isSigning || approveTx.isConfirming || actionTx.isSigning || actionTx.isConfirming;
+  const disabled = !market.lending || !streamId || !sellPosition || !sellQuoteData || !streamApproved || busy;
 
   const steps = ["APPROVE STREAM", "SIGN", "CONFIRMED"];
-  const activeIndex = tx.isConfirmed || tx.isConfirming ? 2 : streamApproved ? (tx.isSigning ? 1 : 1) : 0;
+  const activeIndex = actionTx.isConfirmed || actionTx.isConfirming ? 2 : streamApproved ? 1 : 0;
 
   return (
     <div className="form-grid">
@@ -922,8 +955,8 @@ function SellForm({
       <div className="summary-row mono" aria-live="polite">
         {sellQuoteData ? (
           <>
-            NET {formatTokenAmount(sellQuoteData[3], "wstETH")} / GROSS{" "}
-            {formatTokenAmount(sellQuoteData[0], "wstETH")}
+            NET {formatTokenAmount(sellQuoteData[3], underlyingSymbol)} / GROSS{" "}
+            {formatTokenAmount(sellQuoteData[0], underlyingSymbol)}
           </>
         ) : streamId ? (
           "LOADING"
@@ -934,16 +967,15 @@ function SellForm({
       {!sellPosition && sellQuoteData ? (
         <div className="label mono status-negative">NO LIQUIDITY AT THIS PRICE</div>
       ) : null}
-      <StepIndicator steps={steps} activeIndex={activeIndex} error={Boolean(tx.error)} accent={accent} />
+      <StepIndicator steps={steps} activeIndex={activeIndex} error={Boolean(approveTx.error ?? actionTx.error)} accent={accent} />
       {needsApproval ? (
         <button
           className={`button ${accentClass(accent)} mono`}
-          disabled={!market.lending || !streamId || tx.isSigning || tx.isConfirming}
+          disabled={!market.lending || !streamId || busy}
           type="button"
           onClick={() => {
             if (!market.lending || !streamId) return;
-            setPendingLabel("APPROVE STREAM");
-            tx.writeContract({
+            approveTx.writeContract({
               address: SABLIER_LOCKUP_ADDRESS,
               abi: sablierLockupAbi,
               functionName: "approve",
@@ -961,8 +993,7 @@ function SellForm({
           type="button"
           onClick={() => {
             if (!market.lending || !streamId || !sellPosition || !sellQuoteData) return;
-            setPendingLabel("SELL");
-            tx.writeContract({
+            actionTx.writeContract({
               address: market.lending,
               abi: ovrfloLendingAbi,
               functionName: "sellStreamToLiquidity",
@@ -970,11 +1001,12 @@ function SellForm({
             });
           }}
         >
-          SELL NOW {sellQuoteData ? formatTokenAmount(sellQuoteData[3], "wstETH") : ""}
+          SELL NOW {sellQuoteData ? formatTokenAmount(sellQuoteData[3], underlyingSymbol) : ""}
         </button>
       )}
-      <TxState tx={tx} pendingLabel={pendingLabel} />
-      {tx.isConfirmed ? <CloseButton onClose={onClose} /> : null}
+      <ApproveTxState tx={approveTx} label="APPROVE STREAM" />
+      <TxState tx={actionTx} pendingLabel="SELL" />
+      {actionTx.isConfirmed ? <CloseButton onClose={onClose} /> : null}
     </div>
   );
 }
@@ -985,12 +1017,14 @@ function RepayForm({
   market,
   user,
   action,
+  symbols,
   accent,
   onClose,
 }: {
   market: MarketInfo;
   user?: Address;
   action: ActiveAction;
+  symbols: SymbolMap;
   accent: Accent;
   onClose: () => void;
 }) {
@@ -1001,31 +1035,41 @@ function RepayForm({
 
   const [raw, setRaw] = useState("");
   const [repayApprovedAmount, setRepayApprovedAmount] = useState(0n);
-  const [pendingLabel, setPendingLabel] = useState<string | null>(null);
+  const connectedAddress = connection.addresses?.[0];
+  const ovrfloSymbol = symbolFor(symbols, market.ovrfloToken);
 
   const repayInput = parseAmount(raw);
   const outstanding = loan ? loanOutstanding(loan) : 0n;
   const repayAmount = repayInput > outstanding && outstanding > 0n ? outstanding : repayInput;
 
-  const tx = useWriteFlow([
-    lendingKeys.borrowerLoans(market.lending, user),
-    lendingKeys.lenderPools(market.lending, user),
-  ]);
+  const approveTx = useWriteFlow(connectedAddress);
+  const actionTx = useWriteFlow(connectedAddress);
+
+  const guard = useWalletChangeReset(connectedAddress, () => {
+    setRaw("");
+    setRepayApprovedAmount(0n);
+  });
 
   const repayAllowance = useReadContract({
     address: market.ovrfloToken,
     abi: erc20Abi,
     functionName: "allowance",
-    args: connection.addresses?.[0] && market.lending ? [connection.addresses[0], market.lending] : undefined,
-    query: { enabled: Boolean(connection.addresses?.[0] && market.lending) },
+    args: connectedAddress && market.lending ? [connectedAddress, market.lending] : undefined,
+    query: { enabled: Boolean(connectedAddress && market.lending) },
   });
   const balanceRead = useReadContract({
     address: market.ovrfloToken,
     abi: erc20Abi,
     functionName: "balanceOf",
-    args: connection.addresses?.[0] ? [connection.addresses[0]] : undefined,
-    query: { enabled: Boolean(connection.addresses?.[0]) },
+    args: connectedAddress ? [connectedAddress] : undefined,
+    query: { enabled: Boolean(connectedAddress) },
   });
+
+  useEffect(() => {
+    if (approveTx.error) setRepayApprovedAmount(0n);
+  }, [approveTx.error]);
+
+  if (guard.walletChanged) return <WalletChangedNotice onContinue={guard.acknowledge} />;
 
   const needsApproval =
     Boolean(market.lending) &&
@@ -1035,17 +1079,12 @@ function RepayForm({
   const walletBalance = balanceRead.data ?? 0n;
   const validationError = repayAmount > 0n && repayAmount > walletBalance ? "INSUFFICIENT BALANCE" : null;
 
+  const busy = approveTx.isSigning || approveTx.isConfirming || actionTx.isSigning || actionTx.isConfirming;
   const disabled =
-    !market.lending || !loan || repayAmount === 0n || tx.isSigning || tx.isConfirming || Boolean(validationError);
-
-  useEffect(() => {
-    if (tx.error) setRepayApprovedAmount(0n);
-    if (tx.error || tx.isConfirmed) setPendingLabel(null);
-  }, [tx.error, tx.isConfirmed]);
+    !market.lending || !loan || repayAmount === 0n || busy || Boolean(validationError);
 
   const steps = ["APPROVE", "SIGN", "CONFIRMED"];
-  const activeIndex =
-    tx.isConfirmed || tx.isConfirming ? 2 : needsApproval ? (tx.isSigning ? 1 : 0) : tx.isSigning ? 1 : 1;
+  const activeIndex = actionTx.isConfirmed || actionTx.isConfirming ? 2 : needsApproval ? 0 : 1;
 
   if (borrowerLoans.isLoading) {
     return <div className="label mono">LOADING</div>;
@@ -1056,7 +1095,7 @@ function RepayForm({
 
   return (
     <div className="form-grid">
-      <div className="label mono">LOAN {formatId(loan.id)} / OUTSTANDING {formatTokenAmount(outstanding, "ovrflo")}</div>
+      <div className="label mono">LOAN {formatId(loan.id)} / OUTSTANDING {formatTokenAmount(outstanding, ovrfloSymbol)}</div>
       <input className={`input mono ${validationError ? "input-error" : ""}`} value={raw} onChange={(e) => setRaw(e.target.value)} placeholder="0.00" />
       {validationError ? <div className="label mono status-negative">{validationError}</div> : null}
       <button
@@ -1068,18 +1107,17 @@ function RepayForm({
         MAX
       </button>
       <div className="summary-row mono" aria-live="polite">
-        REPAY {formatTokenAmount(repayAmount, "ovrflo")} / REMAINING {formatTokenAmount(outstanding - repayAmount, "ovrflo")}
+        REPAY {formatTokenAmount(repayAmount, ovrfloSymbol)} / REMAINING {formatTokenAmount(outstanding - repayAmount, ovrfloSymbol)}
       </div>
-      <StepIndicator steps={steps} activeIndex={activeIndex} error={Boolean(tx.error)} accent={accent} />
+      <StepIndicator steps={steps} activeIndex={activeIndex} error={Boolean(approveTx.error ?? actionTx.error)} accent={accent} />
       {needsApproval ? (
         <button
           className={`button ${accentClass(accent)} mono`}
-          disabled={!market.lending || tx.isSigning || tx.isConfirming}
+          disabled={!market.lending || busy}
           type="button"
           onClick={() => {
             if (!market.lending) return;
-            setPendingLabel("APPROVE REPAY");
-            tx.writeContract({
+            approveTx.writeContract({
               address: market.ovrfloToken,
               abi: erc20Abi,
               functionName: "approve",
@@ -1097,8 +1135,7 @@ function RepayForm({
           type="button"
           onClick={() => {
             if (!market.lending || !loan) return;
-            setPendingLabel("REPAY");
-            tx.writeContract({
+            actionTx.writeContract({
               address: market.lending,
               abi: ovrfloLendingAbi,
               functionName: "repayLoan",
@@ -1106,11 +1143,12 @@ function RepayForm({
             });
           }}
         >
-          REPAY {formatTokenAmount(repayAmount, "ovrflo")}
+          REPAY {formatTokenAmount(repayAmount, ovrfloSymbol)}
         </button>
       )}
-      <TxState tx={tx} pendingLabel={pendingLabel} />
-      {tx.isConfirmed ? <CloseButton onClose={onClose} /> : null}
+      <ApproveTxState tx={approveTx} label="APPROVE REPAY" />
+      <TxState tx={actionTx} pendingLabel="REPAY" />
+      {actionTx.isConfirmed ? <CloseButton onClose={onClose} /> : null}
     </div>
   );
 }

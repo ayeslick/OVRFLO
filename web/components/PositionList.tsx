@@ -5,18 +5,20 @@ import { useBorrowerLoans } from "@/hooks/useBorrowerLoans";
 import { useHeldStreams } from "@/hooks/useHeldStreams";
 import { useLenderPools } from "@/hooks/useLenderPools";
 import { useLendingLiquidity } from "@/hooks/useLendingLiquidity";
+import { symbolFor, type SymbolMap } from "@/hooks/useMarketSymbols";
 import { formatAddress, formatId, formatTokenAmount } from "@/lib/format";
 import { isLoanOpen, loanOutstanding } from "@/lib/lending-math";
-import { isSeriesMatchedStream } from "@/lib/modal-logic";
+import { canCloseLoan, isSeriesMatchedStream } from "@/lib/modal-logic";
 import type { ActiveAction, MarketInfo } from "@/lib/types";
 
 type Props = {
   market: MarketInfo;
   user?: Address;
+  symbols: SymbolMap;
   onAction: (action: ActiveAction) => void;
 };
 
-export function PositionList({ market, user, onAction }: Props) {
+export function PositionList({ market, user, symbols, onAction }: Props) {
   const liquidity = useLendingLiquidity(market.lending);
   const lenderPools = useLenderPools(market.lending, user);
   const borrowerLoans = useBorrowerLoans(market.lending, user);
@@ -54,6 +56,17 @@ export function PositionList({ market, user, onAction }: Props) {
     );
   }
 
+  const underlyingSymbol = symbolFor(symbols, market.underlying);
+  const ovrfloSymbol = symbolFor(symbols, market.ovrfloToken);
+
+  // R26: enumeration hooks scan the OLDEST 500 ids; degrade visibly, never silently.
+  const tooLarge = liquidity.tooLarge || lenderPools.tooLarge || borrowerLoans.tooLarge;
+  const allEnumeratedEmpty =
+    liquidity.tooLarge && liquidity.liquidity.every((position) => position.availableLiquidity === 0n);
+  const truncationCopy = allEnumeratedEmpty
+    ? "SHOWING FIRST 500 — ACTIVE LIQUIDITY MAY EXIST BEYOND SCAN RANGE"
+    : "SHOWING FIRST 500 — DATA TRUNCATED";
+
   const hasLending = userLiquidity.length > 0 || userPools.length > 0;
   const hasBorrowing = userLoans.length > 0;
   const hasStreams = eligibleStreams.length > 0;
@@ -64,6 +77,7 @@ export function PositionList({ market, user, onAction }: Props) {
 
   return (
     <div style={{ display: "grid", gap: "1rem" }}>
+      {tooLarge ? <div className="label mono">{truncationCopy}</div> : null}
       {hasLending ? (
         <div className="position-group">
           <div className="label mono">LENDING</div>
@@ -72,7 +86,7 @@ export function PositionList({ market, user, onAction }: Props) {
               {userLiquidity.map((position) => (
                 <tr key={`liquidity-${position.id}`}>
                   <td className="mono">{formatId(position.id)}</td>
-                  <td className="mono">{formatTokenAmount(position.availableLiquidity, "wstETH")}</td>
+                  <td className="mono">{formatTokenAmount(position.availableLiquidity, underlyingSymbol)}</td>
                   <td>
                     <button
                       className="button button-gold mono"
@@ -87,7 +101,7 @@ export function PositionList({ market, user, onAction }: Props) {
               {userPools.map((pool) => (
                 <tr key={`pool-${pool.pool.id}`}>
                   <td className="mono">POOL {formatId(pool.pool.id)}</td>
-                  <td className="mono">{formatTokenAmount(pool.claimable, "ovrflo")}</td>
+                  <td className="mono">{formatTokenAmount(pool.claimable, ovrfloSymbol)}</td>
                   <td>
                     <button
                       className="button button-gold mono"
@@ -110,10 +124,10 @@ export function PositionList({ market, user, onAction }: Props) {
           <div className="label mono">BORROWING</div>
           <table>
             <tbody>
-              {userLoans.map(({ loan, pool }) => (
+              {userLoans.map(({ loan, pool, withdrawable }) => (
                 <tr key={`loan-${loan.id}`}>
                   <td className="mono">{formatId(loan.id)}</td>
-                  <td className="mono">{formatTokenAmount(loanOutstanding(loan), "ovrflo")}</td>
+                  <td className="mono">{formatTokenAmount(loanOutstanding(loan), ovrfloSymbol)}</td>
                   <td className="mono">{isLoanOpen(loan) ? "OPEN" : "SETTLED"}</td>
                   <td className="mono">{formatAddress(pool.market)}</td>
                   <td>
@@ -125,14 +139,15 @@ export function PositionList({ market, user, onAction }: Props) {
                     >
                       REPAY
                     </button>
-                    <button
-                      className="button button-cyan mono"
-                      type="button"
-                      disabled={loan.closed}
-                      onClick={() => onAction({ type: "close", loanId: loan.id })}
-                    >
-                      CLOSE
-                    </button>
+                    {canCloseLoan({ loan, withdrawable }) ? (
+                      <button
+                        className="button button-cyan mono"
+                        type="button"
+                        onClick={() => onAction({ type: "close", loanId: loan.id })}
+                      >
+                        CLOSE
+                      </button>
+                    ) : null}
                   </td>
                 </tr>
               ))}
@@ -149,7 +164,7 @@ export function PositionList({ market, user, onAction }: Props) {
               {eligibleStreams.map((stream) => (
                 <tr key={`stream-${stream.streamId}`}>
                   <td className="mono">{formatId(stream.streamId)}</td>
-                  <td className="mono">{formatTokenAmount(stream.withdrawable, "ovrflo")}</td>
+                  <td className="mono">{formatTokenAmount(stream.withdrawable, ovrfloSymbol)}</td>
                   <td>
                     <button
                       className="button button-gold mono"

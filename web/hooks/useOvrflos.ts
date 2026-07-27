@@ -5,7 +5,6 @@ import { useReadContract, useReadContracts } from "wagmi";
 import type { Address } from "viem";
 import { ovrfloFactoryAbi } from "@/lib/abis";
 import { factoryAddress, isConfiguredAddress, ZERO_ADDRESS } from "@/lib/config";
-import { ovrfloKeys } from "@/lib/query-keys";
 import type { VaultInfo } from "@/lib/types";
 
 export function useOvrflos(factory: Address = factoryAddress) {
@@ -76,7 +75,6 @@ export function useOvrflos(factory: Address = factoryAddress) {
   }, [infoReads.data, vaultAddresses]);
 
   return {
-    queryKey: ovrfloKeys.list(factory),
     vaults,
     isLoading: countRead.isLoading || vaultReads.isLoading || infoReads.isLoading,
     error: countRead.error ?? vaultReads.error ?? infoReads.error,

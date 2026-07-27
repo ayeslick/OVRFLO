@@ -3,10 +3,9 @@
 import { useMemo } from "react";
 import { useReadContracts } from "wagmi";
 import type { Address } from "viem";
-import { ovrfloLendingAbi } from "@/lib/abis";
-import { isConfiguredAddress, ZERO_ADDRESS } from "@/lib/config";
+import { ovrfloLendingAbi, sablierLockupAbi } from "@/lib/abis";
+import { isConfiguredAddress, SABLIER_LOCKUP_ADDRESS, ZERO_ADDRESS } from "@/lib/config";
 import { enumerateIds, MAX_ENUMERATION_IDS } from "@/lib/lending-math";
-import { lendingKeys } from "@/lib/query-keys";
 import type { Loan, LoanPool } from "@/lib/types";
 import { useLending } from "./useLending";
 
@@ -50,9 +49,29 @@ export function useBorrowerLoans(lending: Address | null | undefined, borrower: 
     return rows.sort((a, b) => (a.loan.id > b.loan.id ? -1 : 1));
   }, [borrower, ids, reads.data]);
 
+  // Separate Sablier batch (mirrors useHeldStreams) — never widen the lending
+  // batch's index stride. Feeds the CLOSE gate (canCloseLoan needs withdrawable).
+  const withdrawableReads = useReadContracts({
+    contracts: loans.map(({ loan }) => ({
+      address: SABLIER_LOCKUP_ADDRESS,
+      abi: sablierLockupAbi,
+      functionName: "withdrawableAmountOf" as const,
+      args: [loan.streamId] as const,
+    })),
+    query: { enabled: loans.length > 0 },
+  });
+
+  const loansWithWithdrawable = useMemo(
+    () =>
+      loans.map((entry, index) => {
+        const result = withdrawableReads.data?.[index];
+        return { ...entry, withdrawable: result?.status === "success" ? (result.result as bigint) : 0n };
+      }),
+    [loans, withdrawableReads.data],
+  );
+
   return {
-    queryKey: lendingKeys.borrowerLoans(lending, borrower),
-    loans,
+    loans: loansWithWithdrawable,
     tooLarge: lendingState.params.nextLoanId > MAX_ENUMERATION_IDS + 1n,
     isLoading: lendingState.isLoading || reads.isLoading,
     error: lendingState.error ?? reads.error,

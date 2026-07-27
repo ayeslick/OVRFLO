@@ -3,10 +3,13 @@
 import { useEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useWaitForTransactionReceipt, useWriteContract } from "wagmi";
+import type { Address } from "viem";
+import { invalidateAllOnChainReads, scheduleHeldStreamsRetry } from "@/lib/invalidate";
 
-export function useWriteFlow(invalidateKeys: readonly (readonly unknown[])[] = []) {
+export function useWriteFlow(user?: Address) {
   const queryClient = useQueryClient();
   const lastInvalidatedHash = useRef<`0x${string}` | undefined>(undefined);
+  const cancelRetry = useRef<(() => void) | undefined>(undefined);
   const write = useWriteContract();
   const receipt = useWaitForTransactionReceipt({
     hash: write.data,
@@ -16,10 +19,12 @@ export function useWriteFlow(invalidateKeys: readonly (readonly unknown[])[] = [
   useEffect(() => {
     if (!receipt.isSuccess || !write.data || lastInvalidatedHash.current === write.data) return;
     lastInvalidatedHash.current = write.data;
-    for (const queryKey of invalidateKeys) {
-      queryClient.invalidateQueries({ queryKey });
-    }
-  }, [invalidateKeys, queryClient, receipt.isSuccess, write.data]);
+    invalidateAllOnChainReads(queryClient, user);
+    cancelRetry.current?.();
+    cancelRetry.current = scheduleHeldStreamsRetry(queryClient, user);
+  }, [queryClient, receipt.isSuccess, user, write.data]);
+
+  useEffect(() => () => cancelRetry.current?.(), []);
 
   return {
     writeContract: write.writeContract,

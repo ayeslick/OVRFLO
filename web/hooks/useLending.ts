@@ -4,7 +4,6 @@ import { useReadContracts } from "wagmi";
 import type { Address } from "viem";
 import { ovrfloLendingAbi } from "@/lib/abis";
 import { isConfiguredAddress } from "@/lib/config";
-import { lendingKeys } from "@/lib/query-keys";
 
 export function useLending(lending: Address | null | undefined) {
   const reads = useReadContracts({
@@ -24,7 +23,6 @@ export function useLending(lending: Address | null | undefined) {
   const [aprMin, aprMax, fee, nextLiquidityId, nextLoanId, nextSaleListingId] = reads.data ?? [];
 
   return {
-    queryKey: lendingKeys.params(lending),
     params: {
       aprMinBps: aprMin?.status === "success" ? aprMin.result : 0,
       aprMaxBps: aprMax?.status === "success" ? aprMax.result : 0,

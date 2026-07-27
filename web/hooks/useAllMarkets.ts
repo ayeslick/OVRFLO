@@ -4,7 +4,6 @@ import { useMemo } from "react";
 import { useReadContracts } from "wagmi";
 import { ovrfloAbi, ovrfloFactoryAbi } from "@/lib/abis";
 import { factoryAddress, ZERO_ADDRESS } from "@/lib/config";
-import { ovrfloKeys } from "@/lib/query-keys";
 import type { MarketInfo } from "@/lib/types";
 import { useOvrflos } from "./useOvrflos";
 
@@ -93,7 +92,6 @@ export function useAllMarkets() {
   }, [marketAddressReads.data, marketCountReads.data, ovrflos.vaults, seriesReads.data]);
 
   return {
-    queryKey: ovrfloKeys.markets(factoryAddress),
     markets,
     isLoading: ovrflos.isLoading || marketCountReads.isLoading || marketAddressReads.isLoading || seriesReads.isLoading,
     error: ovrflos.error ?? marketCountReads.error ?? marketAddressReads.error ?? seriesReads.error,

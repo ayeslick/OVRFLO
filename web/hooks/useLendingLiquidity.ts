@@ -5,7 +5,6 @@ import { useReadContracts } from "wagmi";
 import type { Address } from "viem";
 import { ovrfloLendingAbi } from "@/lib/abis";
 import { isConfiguredAddress, ZERO_ADDRESS } from "@/lib/config";
-import { lendingKeys } from "@/lib/query-keys";
 import type { LiquidityPosition } from "@/lib/types";
 import { enumerateIds, MAX_ENUMERATION_IDS } from "@/lib/lending-math";
 import { useLending } from "./useLending";
@@ -48,7 +47,6 @@ export function useLendingLiquidity(lending: Address | null | undefined) {
   }, [ids, reads.data]);
 
   return {
-    queryKey: lendingKeys.liquidity(lending),
     liquidity,
     tooLarge: lendingState.params.nextLiquidityId > MAX_ENUMERATION_IDS + 1n,
     isLoading: lendingState.isLoading || reads.isLoading,

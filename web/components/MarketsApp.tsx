@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { useConnection } from "wagmi";
 import { useAllMarkets } from "@/hooks/useAllMarkets";
+import { useMarketSymbols } from "@/hooks/useMarketSymbols";
 import type { MarketInfo } from "@/lib/types";
 import { MarketDetail } from "./MarketDetail";
 import { MarketsTable } from "./MarketsTable";
@@ -12,6 +13,7 @@ import { WalletButton } from "./WalletButton";
 export function MarketsApp() {
   const connection = useConnection();
   const markets = useAllMarkets();
+  const symbols = useMarketSymbols(markets.markets);
   const [selectedMarket, setSelectedMarket] = useState<MarketInfo | null>(null);
 
   const connectedAddress = useMemo(() => connection.addresses?.[0], [connection.addresses]);
@@ -29,13 +31,14 @@ export function MarketsApp() {
         </nav>
       </header>
 
-      <MarketsTable markets={markets.markets} selected={selectedMarket} onSelect={setSelectedMarket} />
+      <MarketsTable markets={markets.markets} symbols={symbols} selected={selectedMarket} onSelect={setSelectedMarket} />
       <PositionSummary markets={markets.markets} user={connectedAddress} />
 
       {selectedMarket ? (
         <MarketDetail
           market={selectedMarket}
           user={connectedAddress}
+          symbols={symbols}
           onBack={() => setSelectedMarket(null)}
         />
       ) : null}

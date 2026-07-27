@@ -39,7 +39,6 @@ export function useHeldStreams(user: Address | null | undefined) {
   }, [discovery.data, sablierReads.data]);
 
   return {
-    queryKey: streamKeys.held(user),
     streams,
     isLoading: discovery.isLoading || sablierReads.isLoading,
     error: discovery.error ?? sablierReads.error,

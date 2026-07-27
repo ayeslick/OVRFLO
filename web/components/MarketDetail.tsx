@@ -6,7 +6,8 @@ import { useReadContract } from "wagmi";
 import { useHeldStreams } from "@/hooks/useHeldStreams";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
 import { erc20Abi, ovrfloAbi } from "@/lib/abis";
-import { formatAddress, formatAprBps, formatMaturity, formatTokenAmount } from "@/lib/format";
+import { symbolFor, type SymbolMap } from "@/hooks/useMarketSymbols";
+import { formatAprBps, formatMaturity, formatTokenAmount } from "@/lib/format";
 import { isSeriesMatchedStream } from "@/lib/modal-logic";
 import type { ActiveAction, MarketInfo } from "@/lib/types";
 import { ACTION_META, FormBody } from "./ActionModal";
@@ -15,10 +16,11 @@ import { PositionList } from "./PositionList";
 type Props = {
   market: MarketInfo;
   user?: Address;
+  symbols: SymbolMap;
   onBack: () => void;
 };
 
-export function MarketDetail({ market, user, onBack }: Props) {
+export function MarketDetail({ market, user, symbols, onBack }: Props) {
   const [activeAction, setActiveAction] = useState<ActiveAction | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   useFocusTrap(panelRef, true);
@@ -78,12 +80,8 @@ export function MarketDetail({ market, user, onBack }: Props) {
     functionName: "wrappedUnderlying",
   });
 
-  const symbolRead = useReadContract({
-    address: market.ovrfloToken,
-    abi: erc20Abi,
-    functionName: "symbol",
-  });
-  const symbol = symbolRead.data ?? formatAddress(market.ovrfloToken);
+  const symbol = symbolFor(symbols, market.ovrfloToken);
+  const underlyingSymbol = symbolFor(symbols, market.underlying);
 
   const streams = useHeldStreams(user);
   const eligibleStreams = streams.streams.filter((stream) => isSeriesMatchedStream(stream, market));
@@ -133,6 +131,7 @@ export function MarketDetail({ market, user, onBack }: Props) {
               action={activeAction}
               market={market}
               user={user}
+              symbols={symbols}
               accent={actionMeta.accent}
               onClose={() => setActiveAction(null)}
             />
@@ -143,7 +142,7 @@ export function MarketDetail({ market, user, onBack }: Props) {
                   <div className="label mono">BALANCE</div>
                   <div className="balance-summary">
                     <div className="balance-row">
-                      <span className="mono">{formatTokenAmount(underlyingBal, "wstETH")}</span>
+                      <span className="mono">{formatTokenAmount(underlyingBal, underlyingSymbol)}</span>
                       <button
                         className="button mono"
                         type="button"
@@ -167,7 +166,7 @@ export function MarketDetail({ market, user, onBack }: Props) {
                       ) : null}
                     </div>
                     <div className="balance-row">
-                      <span className="mono">{formatTokenAmount(ovrfloBal, "ovrflo")}</span>
+                      <span className="mono">{formatTokenAmount(ovrfloBal, symbol)}</span>
                       {wrapCapacity > 0n ? (
                         <button
                           className="button mono"
@@ -194,7 +193,7 @@ export function MarketDetail({ market, user, onBack }: Props) {
               ) : null}
 
               <div className="market-detail-section">
-                <PositionList market={market} user={user} onAction={setActiveAction} />
+                <PositionList market={market} user={user} symbols={symbols} onAction={setActiveAction} />
               </div>
 
               <div className="market-detail-actions">

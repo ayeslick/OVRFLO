@@ -42,7 +42,7 @@ const market: MarketInfo = {
 
 describe("launch scope", () => {
   it("renders market detail actions without listing storefront copy", () => {
-    render(<MarketDetail market={market} onBack={vi.fn()} />);
+    render(<MarketDetail market={market} symbols={{}} onBack={vi.fn()} />);
     expect(screen.getByText("SUPPLY LIQUIDITY")).toBeInTheDocument();
     expect(screen.getByText("BORROW")).toBeInTheDocument();
     expect(screen.queryByText(/BUY/i)).not.toBeInTheDocument();
@@ -50,7 +50,7 @@ describe("launch scope", () => {
   });
 
   it("keeps the markets table launch columns free of FOR SALE", () => {
-    render(<MarketsTable markets={[market]} selected={market} onSelect={vi.fn()} />);
+    render(<MarketsTable markets={[market]} symbols={{}} selected={market} onSelect={vi.fn()} />);
     expect(screen.queryByText("For sale")).not.toBeInTheDocument();
   });
 });
