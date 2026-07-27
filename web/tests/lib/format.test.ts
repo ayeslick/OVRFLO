@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseUnits } from "viem";
+import { parseUnits, type Address } from "viem";
 import { formatAddress, formatAprBps, formatId, formatMaturity, formatTokenAmount } from "@/lib/format";
 import { formatBpsPct } from "@/lib/lending-math";
 
@@ -20,6 +20,13 @@ describe("formatTokenAmount", () => {
 
   it("honours non-18 decimal scales", () => {
     expect(formatTokenAmount(parseUnits("2.5", 6), "usdc", 6)).toBe("2.50 usdc");
+  });
+
+  it("keeps 4 decimals when rounding a sub-1 value carries into a whole number", () => {
+    // 0.999999999999999999 rounds to 1 at 4 decimals, but the decimal COUNT was
+    // already locked to 4 by the pre-rounding whole===0n check, so the display
+    // is "1.0000", not "1.00" — a real edge case, not just a rounding nicety.
+    expect(formatTokenAmount(999_999_999_999_999_999n, "wstETH")).toBe("1.0000 wstETH");
   });
 });
 
@@ -44,6 +51,11 @@ describe("formatAddress", () => {
     expect(formatAddress("0x1234567890abcdef1234567890abcdef12345678")).toBe("0x1234…5678");
     expect(formatAddress(null)).toBe("—");
   });
+
+  it("dashes an empty-string address the same as null/undefined", () => {
+    expect(formatAddress("" as Address)).toBe("—");
+    expect(formatAddress(undefined)).toBe("—");
+  });
 });
 
 describe("formatMaturity / formatId", () => {
@@ -52,8 +64,16 @@ describe("formatMaturity / formatId", () => {
     expect(formatMaturity(undefined)).toBe("Maturity unknown");
   });
 
+  it("treats a zero timestamp as unknown (the epoch is never a real maturity)", () => {
+    expect(formatMaturity(0n)).toBe("Maturity unknown");
+  });
+
   it("prefixes ids with a hash or dashes unknowns", () => {
     expect(formatId(7n)).toBe("#7");
     expect(formatId(undefined)).toBe("—");
+  });
+
+  it("prefixes id 0 with a hash rather than treating it as unknown (0n is falsy but valid)", () => {
+    expect(formatId(0n)).toBe("#0");
   });
 });

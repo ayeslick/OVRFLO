@@ -33,6 +33,18 @@ describe("depositCapStatus", () => {
       depositCapStatus({ mode: "wrap", amount: 1000n, capLoaded: true, capLimit: 100n, capUsed: 100n }),
     ).toMatchObject({ capReached: false, capExceeded: false });
   });
+
+  it("does not flag exceeded when the amount exactly equals the remaining capacity", () => {
+    expect(
+      depositCapStatus({ mode: "deposit", amount: 60n, capLoaded: true, capLimit: 100n, capUsed: 40n }),
+    ).toMatchObject({ capRemaining: 60n, capExceeded: false });
+  });
+
+  it("clamps remaining capacity to zero (never negative) if used already exceeds the limit", () => {
+    expect(
+      depositCapStatus({ mode: "deposit", amount: 1n, capLoaded: true, capLimit: 100n, capUsed: 150n }),
+    ).toMatchObject({ capRemaining: 0n, capReached: true, capExceeded: false });
+  });
 });
 
 describe("convertApprovalNeeds", () => {
@@ -105,6 +117,12 @@ describe("convertValidationError", () => {
   it("returns null for a zero amount even with insufficient balance", () => {
     expect(
       convertValidationError({ amount: 0n, walletBalance: 0n, capExceeded: false, capRemaining: null }),
+    ).toBeNull();
+  });
+
+  it("does not flag insufficient balance when the amount exactly equals the wallet balance", () => {
+    expect(
+      convertValidationError({ amount: 500n, walletBalance: 500n, capExceeded: false, capRemaining: null }),
     ).toBeNull();
   });
 });

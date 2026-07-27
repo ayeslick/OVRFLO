@@ -12,6 +12,7 @@ import {
   loanOutstanding,
   loanPoolClaimable,
   MAX_ENUMERATION_IDS,
+  MAX_UINT128,
   poolExists,
   recoveredForClaimable,
   upfrontBps,
@@ -29,6 +30,14 @@ describe("lending math", () => {
     expect(loanOutstanding({ obligation: 100n, drawn: 100n, repaid: 25n })).toBe(0n);
   });
 
+  it("treats a zero-obligation loan (e.g. a loan pool with no contributions) as fully satisfied and not open", () => {
+    // obligation/drawn/repaid all zero is vacuous for loanOutstanding alone —
+    // every plausible mutation (>= vs >, subtraction order) still yields 0n.
+    // isLoanOpen is the property this scenario actually exercises.
+    expect(loanOutstanding({ obligation: 0n, drawn: 0n, repaid: 0n })).toBe(0n);
+    expect(isLoanOpen({ obligation: 0n, drawn: 0n, repaid: 0n, closed: false })).toBe(false);
+  });
+
   it("treats closed loans and fully satisfied loans as not open", () => {
     expect(isLoanOpen({ obligation: 100n, drawn: 50n, repaid: 0n, closed: false })).toBe(true);
     expect(isLoanOpen({ obligation: 100n, drawn: 100n, repaid: 0n, closed: false })).toBe(false);
@@ -44,6 +53,20 @@ describe("lending math", () => {
         totalContributed: 100n,
       }),
     ).toBe(15n);
+  });
+
+  it("floors claimable at zero once received catches up to (or passes) entitled, never going negative", () => {
+    expect(
+      loanPoolClaimable({ contribution: 25n, received: 20n, recovered: 80n, totalContributed: 100n }),
+    ).toBe(0n); // entitled == 20, received == 20 -> exactly zero
+    expect(
+      loanPoolClaimable({ contribution: 25n, received: 21n, recovered: 80n, totalContributed: 100n }),
+    ).toBe(0n); // received > entitled -> still zero, not negative
+  });
+
+  it("returns zero for a zero contribution or a zero total-contributed pool, never dividing by zero", () => {
+    expect(loanPoolClaimable({ contribution: 0n, received: 0n, recovered: 80n, totalContributed: 100n })).toBe(0n);
+    expect(loanPoolClaimable({ contribution: 25n, received: 0n, recovered: 80n, totalContributed: 0n })).toBe(0n);
   });
 
   it("caps open-stream recovery at outstanding debt", () => {
@@ -70,6 +93,10 @@ describe("lending math", () => {
     expect(aprChoices(1000, 1300)).toEqual([1000, 1100, 1200, 1300]);
     expect(aprChoices(1000, 1000)).toEqual([1000]);
     expect(aprChoices(1300, 1000)).toEqual([]);
+  });
+
+  it("includes a zero-bps floor when the market's minimum APR is zero", () => {
+    expect(aprChoices(0, 200)).toEqual([0, 100, 200]);
   });
 
   it("detects presence by non-zero owner address", () => {
@@ -127,6 +154,10 @@ describe("lending math", () => {
     expect(formatBpsPct(500n)).toBe("5.0%");
     expect(formatBpsPct(10_000n)).toBe("100.0%");
     expect(formatBpsPct(0n)).toBe("0.0%");
+  });
+
+  it("pins MAX_UINT128 to the real uint128 max (the claimLoanPoolShare max-amount sentinel)", () => {
+    expect(MAX_UINT128).toBe(340_282_366_920_938_463_463_374_607_431_768_211_455n);
   });
 
   it("drops pending stream recovery once a loan is closed", () => {

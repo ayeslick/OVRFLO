@@ -7,9 +7,12 @@ import {
   classifyAdjustError,
   loanCardState,
   obligationPct,
+  selectForMarket,
+  selectLiquidityForLender,
   streamedPct,
 } from "@/lib/positions";
 import type { TickDepth } from "@/lib/router";
+import type { LiquidityPosition, LoanPool } from "@/lib/types";
 
 function testAddress(id: number): Address {
   return `0x${id.toString(16).padStart(40, "0")}` as Address;
@@ -120,6 +123,12 @@ describe("adjustReceiptSummary", () => {
     expect(adjustReceiptSummary([suppliedLog(9n, 500n, testAddress(0xbad))], LENDING)).toBeNull();
     expect(adjustReceiptSummary([], LENDING)).toBeNull();
   });
+
+  it("falls back to the supplied amount for refunded when there is no withdraw leg at all", () => {
+    // A pure top-up (increasing available liquidity) never emits LiquidityWithdrawn.
+    const summary = adjustReceiptSummary([suppliedLog(9n, 500n)], LENDING);
+    expect(summary).toEqual({ liquidityId: 9n, aprBps: 1100, moved: 500n, refunded: 500n });
+  });
 });
 
 describe("classifyAdjustError", () => {
@@ -140,5 +149,64 @@ describe("obligationPct", () => {
     expect(obligationPct({ obligation: 100n, drawn: 20n, repaid: 13n })).toBe(33);
     expect(obligationPct({ obligation: 100n, drawn: 150n, repaid: 0n })).toBe(100);
     expect(obligationPct({ obligation: 0n, drawn: 0n, repaid: 0n })).toBe(100);
+  });
+});
+
+// --- selectLiquidityForLender / selectForMarket ---
+
+const MARKET_A = testAddress(0x333);
+const MARKET_B = testAddress(0x444);
+const LENDER = testAddress(0x111);
+
+function liquidityPosition(id: number, market: Address, lender: Address): LiquidityPosition {
+  return { id: BigInt(id), lender, market, aprBps: 1000, availableLiquidity: 100n };
+}
+
+describe("selectLiquidityForLender", () => {
+  const rows = [
+    liquidityPosition(1, MARKET_A, LENDER),
+    liquidityPosition(2, MARKET_B, LENDER),
+    liquidityPosition(3, MARKET_A, testAddress(0x222)),
+  ];
+
+  it("keeps only rows matching both the market and the normalized lender", () => {
+    expect(selectLiquidityForLender(rows, MARKET_A, LENDER.toLowerCase())).toEqual([rows[0]]);
+  });
+
+  it("matches the market case-insensitively", () => {
+    const upperMarket = MARKET_A.toUpperCase().replace("0X", "0x") as Address;
+    expect(selectLiquidityForLender(rows, upperMarket, LENDER.toLowerCase())).toEqual([rows[0]]);
+  });
+
+  it("matches the lender case-insensitively", () => {
+    // LENDER (0x111...) is all-digit, so LENDER.toLowerCase() above is a
+    // no-op and never actually exercises normalization on the lender side.
+    // Use an address with real hex letters so an upper/lower mismatch is
+    // observable, and would fail if the position side's .toLowerCase() were
+    // ever dropped.
+    const mixedCaseLender = testAddress(0xabc);
+    const upperLender = mixedCaseLender.toUpperCase().replace("0X", "0x") as Address;
+    const row = liquidityPosition(9, MARKET_A, upperLender);
+    expect(selectLiquidityForLender([row], MARKET_A, mixedCaseLender.toLowerCase())).toEqual([row]);
+  });
+
+  it("returns nothing when no wallet is connected (normalizedUser undefined)", () => {
+    expect(selectLiquidityForLender(rows, MARKET_A, undefined)).toEqual([]);
+  });
+});
+
+function poolRow(market: Address): { pool: Pick<LoanPool, "market"> } {
+  return { pool: { market } };
+}
+
+describe("selectForMarket", () => {
+  it("keeps only rows whose pool.market matches, case-insensitively", () => {
+    const rows = [poolRow(MARKET_A), poolRow(MARKET_B)];
+    const upperMarket = MARKET_A.toUpperCase().replace("0X", "0x") as Address;
+    expect(selectForMarket(rows, upperMarket)).toEqual([rows[0]]);
+  });
+
+  it("returns an empty array when nothing matches", () => {
+    expect(selectForMarket([poolRow(MARKET_B)], MARKET_A)).toEqual([]);
   });
 });

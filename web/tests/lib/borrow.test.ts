@@ -94,6 +94,11 @@ describe("planSelectedBorrow", () => {
     const plan = planSelectedBorrow(ladder, 1300, 10n);
     expect(plan).toEqual({ fill: 0n, partial: true, alternativeAprBps: 1000 });
   });
+
+  it("treats a zero target as fully (trivially) filled, not partial", () => {
+    const plan = planSelectedBorrow(ladder, 1100, 0n);
+    expect(plan).toEqual({ fill: 0n, partial: false, alternativeAprBps: null });
+  });
 });
 
 // --- parseSlippageBps ---
@@ -117,6 +122,10 @@ describe("parseSlippageBps", () => {
     expect(parseSlippageBps("abc")).toBeNull();
     expect(parseSlippageBps("")).toBeNull();
     expect(parseSlippageBps("0.125")).toBeNull();
+    // Literal zero is below the minimum, not a valid slippage tolerance —
+    // distinct from "0.05" above (which is below the minimum but non-zero).
+    expect(parseSlippageBps("0")).toBeNull();
+    expect(parseSlippageBps("0.0")).toBeNull();
   });
 });
 
@@ -144,6 +153,11 @@ describe("classifyBorrowError", () => {
   it("classifies everything else as retryable", () => {
     expect(classifyBorrowError(new Error("User rejected the request."))).toBe("retryable");
     expect(classifyBorrowError(new Error("HTTP request failed"))).toBe("retryable");
+  });
+
+  it("classifies non-Error thrown values as retryable rather than throwing", () => {
+    expect(classifyBorrowError("")).toBe("retryable"); // empty-message failure
+    expect(classifyBorrowError(undefined)).toBe("retryable"); // no failure object at all
   });
 });
 
@@ -180,5 +194,15 @@ describe("borrowReceiptSummary", () => {
   it("ignores look-alike events emitted by other contracts", () => {
     const forged = borrowCreatedLog(7n, 10_000n, testAddress(0xbad));
     expect(borrowReceiptSummary([forged], 40, LENDING)).toBeNull();
+  });
+
+  it("keeps net equal to contributed when the market fee is zero", () => {
+    const summary = borrowReceiptSummary([borrowCreatedLog(7n, 10_000n)], 0, LENDING);
+    expect(summary).toEqual({ loanId: 7n, contributed: 10_000n, net: 10_000n });
+  });
+
+  it("floors the fee (never rounds up) — 15000 * 1bps / 10000 = 1.5, so fee is 1, not 2", () => {
+    const summary = borrowReceiptSummary([borrowCreatedLog(7n, 15_000n)], 1, LENDING);
+    expect(summary).toEqual({ loanId: 7n, contributed: 15_000n, net: 14_999n });
   });
 });

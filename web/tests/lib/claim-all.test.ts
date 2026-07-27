@@ -40,4 +40,16 @@ describe("planClaimAll", () => {
   it("returns an empty plan for empty input", () => {
     expect(planClaimAll({ pools: [], streams: [] })).toEqual([]);
   });
+
+  it("groups pools for the same lending address into one batch regardless of casing", () => {
+    const upper = lendingA.toUpperCase().replace("0X", "0x") as Address;
+    const plan = planClaimAll({
+      pools: [
+        { lending: lendingA, loanId: 1n, claimable: 3n },
+        { lending: upper, loanId: 2n, claimable: 4n },
+      ],
+      streams: [],
+    });
+    expect(plan).toEqual([{ kind: "pool-claims", lending: lendingA, loanIds: [1n, 2n] }]);
+  });
 });

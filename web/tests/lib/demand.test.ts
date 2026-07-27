@@ -74,4 +74,14 @@ describe("demandLevel", () => {
   it("treats a zero peak as no demand anywhere", () => {
     expect(demandLevel(0n, 0n)).toBe("NONE");
   });
+
+  it("flips from LOW to MODERATE the instant amount*3 crosses peak", () => {
+    // The inclusive-boundary half (100n) is already pinned by the golden
+    // vector above; the crossing at 101n is the novel fact this test adds.
+    expect(demandLevel(101n, 300n)).toBe("MODERATE"); // 101*3 == 303 > 300
+  });
+
+  it("flips from MODERATE to HIGH the instant amount*3 crosses peak*2", () => {
+    expect(demandLevel(201n, 300n)).toBe("HIGH"); // 201*3 == 603 > 600
+  });
 });

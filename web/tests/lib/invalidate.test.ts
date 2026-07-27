@@ -16,6 +16,14 @@ describe("invalidateAllOnChainReads", () => {
     expect(spy).toHaveBeenCalledWith({ queryKey: ["readContracts"] });
     expect(spy).toHaveBeenCalledWith({ queryKey: streamKeys.held(user) });
   });
+
+  it("still invalidates the held-streams key (with an undefined user) when no wallet is connected", () => {
+    const queryClient = new QueryClient();
+    const spy = vi.spyOn(queryClient, "invalidateQueries");
+    invalidateAllOnChainReads(queryClient, undefined);
+    expect(spy).toHaveBeenCalledTimes(3);
+    expect(spy).toHaveBeenCalledWith({ queryKey: streamKeys.held(undefined) });
+  });
 });
 
 describe("scheduleHeldStreamsRetry", () => {

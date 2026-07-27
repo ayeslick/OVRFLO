@@ -45,6 +45,23 @@ describe("buildLadder", () => {
     expect(ladder[0].positions.map((p) => p.id)).toEqual([2n, 4n, 9n]);
   });
 
+  it("sorts tick output ascending by apr regardless of input tick order", () => {
+    const ladder = buildLadder([pos(1n, 1000, 10n), pos(2n, 1100, 10n)], market, [1100, 1000]);
+    expect(ladder.map((t) => t.aprBps)).toEqual([1000, 1100]);
+  });
+
+  it("returns an empty ladder for an empty ticks list", () => {
+    expect(buildLadder([pos(1n, 1000, 10n)], market, [])).toEqual([]);
+  });
+
+  it("counts everything as total (never own) when no self address is connected", () => {
+    // The position is lent by `self` — if buildLadder fell back to treating
+    // an omitted `self` param as "matches everything" (or anything other than
+    // "matches nothing"), this position would wrongly count as `own`.
+    const ladder = buildLadder([pos(1n, 1000, 10n, self)], market, [1000]);
+    expect(ladder[0]).toMatchObject({ total: 10n, own: 0n });
+  });
+
   it("matches self and market case-insensitively", () => {
     const ladder = buildLadder(
       [{ id: 1n, lender: self.toUpperCase().replace("0X", "0x") as Address, market, aprBps: 1000, availableLiquidity: 5n }],

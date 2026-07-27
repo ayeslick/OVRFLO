@@ -21,15 +21,37 @@ describe("write-flow decision helpers", () => {
     expect(repayMax(loan, 10n)).toBe(10n);
   });
 
+  it("returns zero for repayMax once the obligation is already fully satisfied", () => {
+    const settled = { obligation: 100n, drawn: 100n, repaid: 0n };
+    expect(repayMax(settled, 500n)).toBe(0n);
+  });
+
   it("allows close only when withdrawable covers outstanding", () => {
     const loan = { obligation: 100n, drawn: 20n, repaid: 5n, closed: false };
     expect(canCloseLoan({ loan, withdrawable: 74n })).toBe(false);
     expect(canCloseLoan({ loan, withdrawable: 75n })).toBe(true);
   });
 
+  it("never allows re-closing an already-closed loan, even with ample withdrawable", () => {
+    const closed = { obligation: 100n, drawn: 20n, repaid: 5n, closed: true };
+    expect(canCloseLoan({ loan: closed, withdrawable: 1_000_000n })).toBe(false);
+  });
+
   it("derives slippage bounds using integer math", () => {
     expect(applySlippageDown(1_000_000n, 50n)).toBe(995_000n);
     expect(applySlippageUp(1_000_000n, 50n)).toBe(1_005_000n);
+  });
+
+  it("leaves the amount unchanged at zero slippage tolerance", () => {
+    expect(applySlippageDown(1_000_000n, 0n)).toBe(1_000_000n);
+    expect(applySlippageUp(1_000_000n, 0n)).toBe(1_000_000n);
+  });
+
+  it("floors a fractional result rather than rounding", () => {
+    // 1 * 9950 / 10000 = 0.995 -> floor 0, not round-to-1.
+    expect(applySlippageDown(1n, 50n)).toBe(0n);
+    // 1 * 19999 / 10000 = 1.9999 -> floor 1, not round-to-2.
+    expect(applySlippageUp(1n, 9_999n)).toBe(1n);
   });
 
   it("filters streams by the selected series", () => {
