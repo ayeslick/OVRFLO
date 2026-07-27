@@ -35,7 +35,7 @@ export function MarketsApp() {
       <header className="topbar">
         <div className="brand">
           <img src="/images/logo-mark.png" alt="" />
-          <span>OVRFLO</span>
+          <h1>OVRFLO</h1>
         </div>
         <nav className="nav">
           <span className="label mono">MARKETS</span>

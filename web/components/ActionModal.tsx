@@ -596,6 +596,22 @@ function ConvertForm({
 
   const matured = nowSeconds >= market.expiryCached;
 
+  // Deposit-cap edge state (spec: "deposit form disabled with the cap shown,
+  // 0 = unlimited").
+  const depositLimit = useReadContract({
+    address: market.vault,
+    abi: ovrfloAbi,
+    functionName: "marketDepositLimits",
+    args: [market.market],
+    query: { enabled: mode === "deposit" },
+  });
+  const totalDeposited = useReadContract({
+    address: market.vault,
+    abi: ovrfloAbi,
+    functionName: "marketTotalDeposited",
+    args: [market.market],
+    query: { enabled: mode === "deposit" },
+  });
   const preview = useReadContract({
     address: market.vault,
     abi: ovrfloAbi,
@@ -647,12 +663,28 @@ function ConvertForm({
   const needsApproval = needsPtApproval || needsUnderlyingApproval;
   const wrapCapacity = wrappedUnderlying.data ?? 0n;
   const walletBalance = balanceRead.data ?? 0n;
-  const validationError = amount > 0n && amount > walletBalance ? "INSUFFICIENT BALANCE" : null;
+
+  // 0 = unlimited (deposit-cap convention). While the cap reads are loading,
+  // deposit stays gated — an unresolved read must never render as "unlimited".
+  const capLoaded = depositLimit.data !== undefined && totalDeposited.data !== undefined;
+  const capLimit = depositLimit.data ?? 0n;
+  const capUsed = totalDeposited.data ?? 0n;
+  const capRemaining = capLimit > 0n ? (capLimit > capUsed ? capLimit - capUsed : 0n) : null;
+  const capReached = mode === "deposit" && capLoaded && capRemaining === 0n;
+  const capExceeded =
+    mode === "deposit" && capLoaded && capRemaining !== null && capRemaining > 0n && amount > capRemaining;
+
+  const validationError =
+    amount > 0n && amount > walletBalance
+      ? "INSUFFICIENT BALANCE"
+      : capExceeded
+        ? `EXCEEDS DEPOSIT CAP — REMAINING ${formatTokenAmount(capRemaining ?? 0n, "PT")}`
+        : null;
 
   const modeDisabled =
     disabled ||
     Boolean(validationError) ||
-    (mode === "deposit" && (!depositPreview || matured)) ||
+    (mode === "deposit" && (!depositPreview || matured || !capLoaded || capReached)) ||
     (mode === "claim_matured" && !matured) ||
     (mode === "unwrap" && wrapCapacity < amount);
 
@@ -679,6 +711,18 @@ function ConvertForm({
       ) : null}
       {mode === "unwrap" ? (
         <div className="label mono">UNWRAP CAPACITY {formatTokenAmount(wrapCapacity, underlyingSymbol)}</div>
+      ) : null}
+      {mode === "deposit" && capLoaded && capLimit > 0n ? (
+        capReached ? (
+          <div className="label mono status-negative">
+            DEPOSIT CAP REACHED — {formatTokenAmount(capLimit, "PT")}
+          </div>
+        ) : (
+          <div className="label mono">
+            DEPOSIT CAP {formatTokenAmount(capLimit, "PT")} / REMAINING{" "}
+            {formatTokenAmount(capRemaining ?? 0n, "PT")}
+          </div>
+        )
       ) : null}
       {mode === "claim_matured" && !matured ? (
         <div className="label mono status-negative">CLAIM ENABLES AFTER MATURITY</div>

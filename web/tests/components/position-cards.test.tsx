@@ -195,6 +195,19 @@ describe("loan cards", () => {
   });
 });
 
+describe("pool cards", () => {
+  it("explains lender-side deficit harvesting", () => {
+    hookData.pools = [
+      {
+        pool: { id: 1n, borrower: USER, aprBps: 1000, market: market.market, totalContributed: 100n * WAD },
+        claimable: 5n * WAD,
+      },
+    ];
+    renderList();
+    expect(screen.getByText("SHORTFALLS HARVEST FROM THE LOAN STREAM ON CLAIM")).toBeInTheDocument();
+  });
+});
+
 describe("liquidity cards", () => {
   it("shows idle amount, earning rate, and the adjust-rate action", () => {
     hookData.liquidity = [position(1, 1100, 50n, USER)];

@@ -72,9 +72,10 @@ export function MarketsTable({ markets, symbols, user, selected, onSelect, onMod
                     : 0n;
                 return (
                   <Fragment key={`${market.vault}-${market.market}`}>
+                    {/* aria-expanded lives on the toggle button only — the
+                        `row` role does not permit it outside a treegrid. */}
                     <tr
                       className={expanded ? "row-expanded" : undefined}
-                      aria-expanded={expanded}
                       onClick={() => onSelect(expanded ? null : market)}
                     >
                       <td>

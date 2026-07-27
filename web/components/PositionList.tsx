@@ -148,6 +148,11 @@ export function PositionList({ market, user, symbols, onAction }: Props) {
                   <span className="card-badge">EARNING {formatAprBps(pool.pool.aprBps)}</span>
                 </div>
                 <div className="mono">CLAIMABLE {formatTokenAmount(pool.claimable, ovrfloSymbol)}</div>
+                {/* Spec edge state: lender-side note on _claimFair deficit
+                    harvesting — shown only when there is something to claim. */}
+                {pool.claimable > 0n ? (
+                  <div className="label mono">SHORTFALLS HARVEST FROM THE LOAN STREAM ON CLAIM</div>
+                ) : null}
                 <div className="card-actions">
                   <button
                     className="button button-gold mono"
