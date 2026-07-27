@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   aprChoices,
+  BPS,
   classifyLiquidity,
   enumerateIds,
+  factorWad,
+  formatBpsPct,
   isLoanOpen,
+  lenderReturnBps,
   liquidityExists,
   loanExists,
   loanOutstanding,
@@ -11,6 +15,9 @@ import {
   MAX_ENUMERATION_IDS,
   poolExists,
   recoveredForClaimable,
+  upfrontBps,
+  WAD,
+  YEAR_SECONDS,
 } from "@/lib/lending-math";
 import { ZERO_ADDRESS } from "@/lib/config";
 
@@ -119,6 +126,54 @@ describe("lending math", () => {
     expect(loanExists({ borrower: ZERO_ADDRESS })).toBe(false);
     expect(poolExists({ borrower })).toBe(true);
     expect(poolExists({ borrower: ZERO_ADDRESS })).toBe(false);
+  });
+
+  it("mirrors the contract's linear accrual factor on a golden vector", () => {
+    // f = WAD + ttm * apr * WAD / (YEAR * BPS); 10% APR over half a year -> 1.05 WAD
+    expect(factorWad(1000, YEAR_SECONDS / 2n)).toBe(1_050_000_000_000_000_000n);
+    expect(factorWad(1000, 0n)).toBe(WAD);
+  });
+
+  it("computes upfront bps on the golden vector, net of fee", () => {
+    // gross = WAD * BPS / 1.05e18 = 9523.80… -> floor 9523
+    expect(upfrontBps(1000, YEAR_SECONDS / 2n, 0)).toBe(9523n);
+    // net = 9523 * (10000 - 40) / 10000 = 9484.9… -> floor 9484
+    expect(upfrontBps(1000, YEAR_SECONDS / 2n, 40)).toBe(9484n);
+  });
+
+  it("returns full value at zero time to maturity", () => {
+    expect(upfrontBps(1000, 0n, 0)).toBe(10_000n);
+    expect(upfrontBps(1000, 0n, 40)).toBe(9960n);
+  });
+
+  it("agrees with the contract grossPrice path within one bps unit", () => {
+    // upfrontBps ≈ grossPrice * BPS / remaining for a full borrow
+    const aprBps = 1000;
+    const ttm = YEAR_SECONDS / 2n;
+    const remaining = 123_456_789_012_345_678_901n;
+    const grossPrice = (remaining * WAD) / factorWad(aprBps, ttm);
+    const expected = (grossPrice * BPS) / remaining;
+    const actual = upfrontBps(aprBps, ttm, 0);
+    expect(actual - expected <= 1n && expected - actual <= 1n).toBe(true);
+
+    const feeBps = 40;
+    const expectedNet = (expected * (BPS - BigInt(feeBps))) / BPS;
+    const actualNet = upfrontBps(aprBps, ttm, feeBps);
+    expect(actualNet - expectedNet <= 1n && expectedNet - actualNet <= 1n).toBe(true);
+  });
+
+  it("computes simple-interest lender return over the remaining period", () => {
+    expect(lenderReturnBps(1000, YEAR_SECONDS)).toBe(1000n);
+    expect(lenderReturnBps(1000, YEAR_SECONDS / 2n)).toBe(500n);
+    expect(lenderReturnBps(1000, 0n)).toBe(0n);
+  });
+
+  it("formats bps as a one-decimal percent, truncated never rounded", () => {
+    expect(formatBpsPct(9523n)).toBe("95.2%");
+    expect(formatBpsPct(9529n)).toBe("95.2%");
+    expect(formatBpsPct(500n)).toBe("5.0%");
+    expect(formatBpsPct(10_000n)).toBe("100.0%");
+    expect(formatBpsPct(0n)).toBe("0.0%");
   });
 
   it("drops pending stream recovery once a loan is closed", () => {

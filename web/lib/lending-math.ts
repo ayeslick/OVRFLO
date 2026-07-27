@@ -6,6 +6,40 @@ export const APR_STEP_BPS = 100;
 export const MAX_ENUMERATION_IDS = 500n;
 export const MAX_UINT128 = (1n << 128n) - 1n;
 
+export const WAD = 10n ** 18n;
+export const BPS = 10_000n;
+export const YEAR_SECONDS = 31_536_000n;
+
+// Display-only mirrors of StreamPricing (src/StreamPricing.sol). BigInt `/` floors,
+// matching the contract's Math.mulDiv. Every number a transaction submits must come
+// from the contract's own quote() read — never from these.
+
+// f = WAD + ttm * apr * WAD / (YEAR * BPS), mirrors StreamPricing.factor.
+export function factorWad(aprBps: number, ttmSeconds: bigint): bigint {
+  return WAD + (ttmSeconds * BigInt(aprBps) * WAD) / (YEAR_SECONDS * BPS);
+}
+
+// Fraction of the stream's remaining value the borrower receives now, net of fee,
+// in plain bps. Invariant: upfrontBps ≈ netToBorrower * BPS / (obligation + residual)
+// for a full borrow.
+export function upfrontBps(aprBps: number, ttmSeconds: bigint, feeBps: number): bigint {
+  const grossBps = (WAD * BPS) / factorWad(aprBps, ttmSeconds);
+  return (grossBps * (BPS - BigInt(feeBps))) / BPS;
+}
+
+// Simple-interest lender return over the remaining period, in plain bps.
+export function lenderReturnBps(aprBps: number, ttmSeconds: bigint): bigint {
+  return (BigInt(aprBps) * ttmSeconds) / YEAR_SECONDS;
+}
+
+// bps -> percent string with exactly one decimal, truncated (never rounded),
+// matching the contract's floor bias. APR rates use formatAprBps (two decimals).
+export function formatBpsPct(x: bigint): string {
+  const whole = x / 100n;
+  const tenth = (x % 100n) / 10n;
+  return `${whole}.${tenth}%`;
+}
+
 export function loanOutstanding(loan: Pick<Loan, "obligation" | "drawn" | "repaid">) {
   const satisfied = loan.drawn + loan.repaid;
   return satisfied >= loan.obligation ? 0n : loan.obligation - satisfied;

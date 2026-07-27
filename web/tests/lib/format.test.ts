@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { parseUnits } from "viem";
 import { formatAddress, formatAprBps, formatId, formatMaturity, formatTokenAmount } from "@/lib/format";
+import { formatBpsPct } from "@/lib/lending-math";
 
 describe("formatTokenAmount", () => {
   it("carries fractional rounding into the whole amount", () => {
@@ -27,6 +28,14 @@ describe("formatAprBps", () => {
     expect(formatAprBps(462n)).toBe("4.62%");
     expect(formatAprBps(1000)).toBe("10.00%");
     expect(formatAprBps(5n)).toBe("0.05%");
+  });
+});
+
+describe("formatBpsPct", () => {
+  it("renders upfront/return percentages with exactly one truncated decimal", () => {
+    expect(formatBpsPct(9523n)).toBe("95.2%");
+    expect(formatBpsPct(9529n)).toBe("95.2%");
+    expect(formatBpsPct(500n)).toBe("5.0%");
   });
 });
 
