@@ -70,16 +70,37 @@ describe("useLendingLiquidity", () => {
     expect(result.current.tooLarge).toBe(false);
   });
 
-  it("propagates loading and error from either the lending params read or the position reads", () => {
+  // Each side of the `isLoading`/`error` ORs gets its own test (instead of
+  // one "either" test asserting only one side per OR) so a regression that
+  // drops either operand — e.g. `isLoading: reads.isLoading` losing the
+  // `lendingState.isLoading ||` — is caught regardless of which side broke.
+  it("is loading when the lending params read is loading", () => {
     lendingState = { params: { nextLiquidityId: 1n }, isLoading: true, error: null };
     readsReturn = { data: undefined, isLoading: false, error: null };
-    const loadingResult = renderHook(() => useLendingLiquidity(LENDING)).result;
-    expect(loadingResult.current.isLoading).toBe(true);
+    const { result } = renderHook(() => useLendingLiquidity(LENDING));
+    expect(result.current.isLoading).toBe(true);
+  });
 
+  it("is loading when the position reads are loading", () => {
+    lendingState = { params: { nextLiquidityId: 1n }, isLoading: false, error: null };
+    readsReturn = { data: undefined, isLoading: true, error: null };
+    const { result } = renderHook(() => useLendingLiquidity(LENDING));
+    expect(result.current.isLoading).toBe(true);
+  });
+
+  it("propagates a lending params read error", () => {
+    const paramsError = new Error("params read failed");
+    lendingState = { params: { nextLiquidityId: 1n }, isLoading: false, error: paramsError };
+    readsReturn = { data: undefined, isLoading: false, error: null };
+    const { result } = renderHook(() => useLendingLiquidity(LENDING));
+    expect(result.current.error).toBe(paramsError);
+  });
+
+  it("propagates a position reads error", () => {
     const readError = new Error("read failed");
     lendingState = { params: { nextLiquidityId: 1n }, isLoading: false, error: null };
     readsReturn = { data: undefined, isLoading: false, error: readError };
-    const errorResult = renderHook(() => useLendingLiquidity(LENDING)).result;
-    expect(errorResult.current.error).toBe(readError);
+    const { result } = renderHook(() => useLendingLiquidity(LENDING));
+    expect(result.current.error).toBe(readError);
   });
 });

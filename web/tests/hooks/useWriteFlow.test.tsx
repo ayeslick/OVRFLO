@@ -10,8 +10,10 @@ const user = "0x0000000000000000000000000000000000000a11" as Address;
 const hash = "0xabc0000000000000000000000000000000000000000000000000000000000001" as const;
 
 const writeContractMock = vi.fn();
+const resetMock = vi.fn();
 const wagmiState = {
   writeData: undefined as `0x${string}` | undefined,
+  receiptData: undefined as { status: "success" } | undefined,
   receiptSuccess: false,
   isPending: false,
   receiptLoading: false,
@@ -22,11 +24,13 @@ const wagmiState = {
 vi.mock("wagmi", () => ({
   useWriteContract: () => ({
     writeContract: writeContractMock,
+    reset: resetMock,
     isPending: wagmiState.isPending,
     data: wagmiState.writeData,
     error: wagmiState.writeError,
   }),
   useWaitForTransactionReceipt: () => ({
+    data: wagmiState.receiptData,
     isLoading: wagmiState.receiptLoading,
     isSuccess: wagmiState.receiptSuccess,
     error: wagmiState.receiptError,
@@ -37,7 +41,9 @@ describe("useWriteFlow invalidation regression", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     writeContractMock.mockClear();
+    resetMock.mockClear();
     wagmiState.writeData = undefined;
+    wagmiState.receiptData = undefined;
     wagmiState.receiptSuccess = false;
     wagmiState.isPending = false;
     wagmiState.receiptLoading = false;
@@ -99,7 +105,9 @@ describe("useWriteFlow state forwarding", () => {
 
   beforeEach(() => {
     writeContractMock.mockClear();
+    resetMock.mockClear();
     wagmiState.writeData = undefined;
+    wagmiState.receiptData = undefined;
     wagmiState.receiptSuccess = false;
     wagmiState.isPending = false;
     wagmiState.receiptLoading = false;
@@ -116,6 +124,18 @@ describe("useWriteFlow state forwarding", () => {
     // directly (no wrapping), so a call with altered/dropped args would still
     // pass a weaker "called once" check.
     expect(writeContractMock).toHaveBeenCalledExactlyOnceWith(config);
+  });
+
+  it("forwards reset through to the caller unchanged", () => {
+    const { result } = renderHook(() => useWriteFlow(user), { wrapper });
+    result.current.reset();
+    expect(resetMock).toHaveBeenCalledExactlyOnceWith();
+  });
+
+  it("forwards the receipt data through as `receipt`", () => {
+    wagmiState.receiptData = { status: "success" };
+    const { result } = renderHook(() => useWriteFlow(user), { wrapper });
+    expect(result.current.receipt).toBe(wagmiState.receiptData);
   });
 
   it("surfaces isSigning while the wallet write is pending", () => {

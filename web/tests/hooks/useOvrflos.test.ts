@@ -87,7 +87,7 @@ describe("useOvrflos", () => {
     expect(result.current.vaults[0].vault).toBe(VAULT_A);
   });
 
-  it("returns an empty vault list when the count read has not resolved yet", () => {
+  it("returns an empty vault list and is loading when the count read has not resolved yet", () => {
     countReturn = { data: undefined, isLoading: true, error: null };
     vaultsReturn = { data: undefined, isLoading: false, error: null };
     infoReturn = { data: undefined, isLoading: false, error: null };
@@ -97,11 +97,52 @@ describe("useOvrflos", () => {
     expect(result.current.isLoading).toBe(true);
   });
 
-  it("propagates an error from any of the three chained reads", () => {
-    const error = new Error("rpc down");
+  it("is loading while the vault-addresses read is in flight", () => {
+    countReturn = { data: 1n, isLoading: false, error: null };
+    vaultsReturn = { data: undefined, isLoading: true, error: null };
+    infoReturn = { data: undefined, isLoading: false, error: null };
+
+    const { result } = renderHook(() => useOvrflos(FACTORY));
+    expect(result.current.isLoading).toBe(true);
+  });
+
+  it("is loading while the per-vault info read is in flight", () => {
+    countReturn = { data: 1n, isLoading: false, error: null };
+    vaultsReturn = { data: [success(VAULT_A)], isLoading: false, error: null };
+    infoReturn = { data: undefined, isLoading: true, error: null };
+
+    const { result } = renderHook(() => useOvrflos(FACTORY));
+    expect(result.current.isLoading).toBe(true);
+  });
+
+  // Split by source rather than one "any of the three" test asserting only
+  // one of them, so a regression that drops any single operand from either
+  // chained `||`/`??` in useOvrflos.ts is caught regardless of which one.
+  it("propagates an error from the vault count read", () => {
+    const error = new Error("count rpc down");
+    countReturn = { data: undefined, isLoading: false, error };
+    vaultsReturn = { data: undefined, isLoading: false, error: null };
+    infoReturn = { data: undefined, isLoading: false, error: null };
+
+    const { result } = renderHook(() => useOvrflos(FACTORY));
+    expect(result.current.error).toBe(error);
+  });
+
+  it("propagates an error from the vault-addresses read", () => {
+    const error = new Error("vaults rpc down");
     countReturn = { data: 0n, isLoading: false, error: null };
     vaultsReturn = { data: [], isLoading: false, error };
     infoReturn = { data: [], isLoading: false, error: null };
+
+    const { result } = renderHook(() => useOvrflos(FACTORY));
+    expect(result.current.error).toBe(error);
+  });
+
+  it("propagates an error from the per-vault info read", () => {
+    const error = new Error("info rpc down");
+    countReturn = { data: 1n, isLoading: false, error: null };
+    vaultsReturn = { data: [success(VAULT_A)], isLoading: false, error: null };
+    infoReturn = { data: undefined, isLoading: false, error };
 
     const { result } = renderHook(() => useOvrflos(FACTORY));
     expect(result.current.error).toBe(error);

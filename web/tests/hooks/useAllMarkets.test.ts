@@ -13,6 +13,9 @@ const OVRFLO_TOKEN = "0x0000000000000000000000000000000000000702" as Address;
 const UNDERLYING = "0x0000000000000000000000000000000000000703" as Address;
 const ORACLE = "0x0000000000000000000000000000000000000704" as Address;
 
+const VAULT_B = "0x0000000000000000000000000000000000000a02" as Address;
+const MARKET_C = "0x0000000000000000000000000000000000000ea3" as Address;
+
 const vault: VaultInfo = {
   vault: VAULT_A,
   treasury: "0x0000000000000000000000000000000000000705" as Address,
@@ -20,6 +23,8 @@ const vault: VaultInfo = {
   ovrfloToken: OVRFLO_TOKEN,
   lending: null,
 };
+
+const vaultB: VaultInfo = { ...vault, vault: VAULT_B };
 
 const success = (result: unknown) => ({ status: "success" as const, result });
 const seriesTuple = (ptToken: Address) => [900, 40, 1_800_000_000n, ptToken, OVRFLO_TOKEN, UNDERLYING, ORACLE];
@@ -70,6 +75,33 @@ describe("useAllMarkets", () => {
       feeBps: 40,
     });
     expect(result.current.markets[1].market).toBe(MARKET_B);
+  });
+
+  it("keeps the flat read cursor correct across vault boundaries with uneven market counts", () => {
+    // useAllMarkets.ts walks a single `readIndex` across ALL vaults' markets
+    // flattened together (not reset per vault) for both marketAddressReads
+    // and seriesReads. With 1 vault this can't be distinguished from an
+    // implementation that (incorrectly) reset the cursor per vault; giving
+    // vault A 1 market and vault B 2 lets a reset-per-vault regression
+    // misattribute or duplicate rows.
+    ovrflosState = { vaults: [vault, vaultB], isLoading: false, error: null };
+    marketCountReturn = { data: [success(1n), success(2n)], isLoading: false, error: null };
+    marketAddressReturn = {
+      data: [success(MARKET_A), success(MARKET_B), success(MARKET_C)],
+      isLoading: false,
+      error: null,
+    };
+    seriesReturn = {
+      data: [success(seriesTuple(PT_TOKEN)), success(seriesTuple(PT_TOKEN)), success(seriesTuple(PT_TOKEN))],
+      isLoading: false,
+      error: null,
+    };
+
+    const { result } = renderHook(() => useAllMarkets());
+    expect(result.current.markets).toHaveLength(3);
+    expect(result.current.markets[0]).toMatchObject({ vault: VAULT_A, market: MARKET_A });
+    expect(result.current.markets[1]).toMatchObject({ vault: VAULT_B, market: MARKET_B });
+    expect(result.current.markets[2]).toMatchObject({ vault: VAULT_B, market: MARKET_C });
   });
 
   it("skips a series slot whose ptToken is the zero address (not yet approved/matured-cleared)", () => {

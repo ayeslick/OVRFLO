@@ -10,7 +10,7 @@ const USER = "0x0000000000000000000000000000000000000a11" as Address;
 const SENDER = "0x0000000000000000000000000000000000000333" as Address;
 const ASSET = "0x0000000000000000000000000000000000000444" as Address;
 
-function heldStream(streamId: bigint): HeldStream {
+function heldStream(streamId: bigint, overrides: Partial<HeldStream> = {}): HeldStream {
   return {
     streamId,
     recipient: USER,
@@ -22,6 +22,7 @@ function heldStream(streamId: bigint): HeldStream {
     deposited: 100n,
     withdrawn: 0n,
     withdrawable: 0n,
+    ...overrides,
   };
 }
 
@@ -31,8 +32,12 @@ vi.mock("@/lib/ponder", () => ({
 }));
 
 let sablierReadsReturn: { data?: unknown[]; isLoading: boolean; error: unknown };
+const readContractsConfig = vi.fn();
 vi.mock("wagmi", () => ({
-  useReadContracts: () => sablierReadsReturn,
+  useReadContracts: (config: unknown) => {
+    readContractsConfig(config);
+    return sablierReadsReturn;
+  },
 }));
 
 const success = (result: unknown) => ({ status: "success" as const, result });
@@ -53,15 +58,30 @@ describe("useHeldStreams", () => {
     await waitFor(() => expect(result.current.streams).toHaveLength(2));
     expect(result.current.streams[0].withdrawable).toBe(5n);
     expect(result.current.streams[1].withdrawable).toBe(9n);
+
+    // Confirms the sablier reads are actually wired to the discovered stream
+    // ids (not, say, a fixed empty array) — a hardcoded `contracts: []` would
+    // still pass the assertions above via the discovery-time fallback.
+    expect(readContractsConfig).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        contracts: [
+          expect.objectContaining({ functionName: "withdrawableAmountOf", args: [1n] }),
+          expect.objectContaining({ functionName: "withdrawableAmountOf", args: [2n] }),
+        ],
+      }),
+    );
   });
 
   it("falls back to the discovery-time withdrawable when the fresh sablier read fails", async () => {
-    fetchHeldStreamIdsMock = vi.fn().mockResolvedValue([heldStream(1n)]);
+    // A nonzero, distinctive fallback value — if the hook ever hardcoded 0n
+    // instead of reading `stream.withdrawable`, this would catch it, unlike
+    // the previous fixture whose default withdrawable was already 0n.
+    fetchHeldStreamIdsMock = vi.fn().mockResolvedValue([heldStream(1n, { withdrawable: 42n })]);
     sablierReadsReturn = { data: [{ status: "failure", error: new Error("rpc") }], isLoading: false, error: null };
 
     const { result } = renderHook(() => useHeldStreams(USER), { wrapper });
     await waitFor(() => expect(result.current.streams).toHaveLength(1));
-    expect(result.current.streams[0].withdrawable).toBe(0n);
+    expect(result.current.streams[0].withdrawable).toBe(42n);
   });
 
   it("does not query discovery at all when no user is connected", () => {
@@ -83,11 +103,28 @@ describe("useHeldStreams", () => {
     expect((result.current.error as Error).message).toBe("indexer down");
   });
 
-  it("is loading while either discovery or the sablier reads are in flight", async () => {
+  it("is loading once discovery settles but the sablier reads are still in flight", async () => {
+    // Discovery's own `isLoading` is true synchronously on mount regardless
+    // of the sablier mock, so asserting isLoading immediately (the previous
+    // version) can't tell the OR's right-hand side from its left-hand side —
+    // it would pass even if `sablierReads.isLoading` were dropped from the
+    // hook entirely. Waiting for discovery to resolve first, then asserting
+    // isLoading stays true, isolates the sablier-reads half of the OR.
     fetchHeldStreamIdsMock = vi.fn().mockResolvedValue([heldStream(1n)]);
     sablierReadsReturn = { data: undefined, isLoading: true, error: null };
 
     const { result } = renderHook(() => useHeldStreams(USER), { wrapper });
-    await waitFor(() => expect(result.current.isLoading).toBe(true));
+    await waitFor(() => expect(fetchHeldStreamIdsMock).toHaveBeenCalled());
+    await waitFor(() => expect(result.current.streams).toHaveLength(1));
+    expect(result.current.isLoading).toBe(true);
+  });
+
+  it("is not loading once both discovery and the sablier reads have settled", async () => {
+    fetchHeldStreamIdsMock = vi.fn().mockResolvedValue([heldStream(1n)]);
+    sablierReadsReturn = { data: [success(5n)], isLoading: false, error: null };
+
+    const { result } = renderHook(() => useHeldStreams(USER), { wrapper });
+    await waitFor(() => expect(result.current.streams).toHaveLength(1));
+    expect(result.current.isLoading).toBe(false);
   });
 });

@@ -14,14 +14,27 @@ const wagmiState = {
   actionError: null as Error | null,
 };
 
+// useApprovalWriteFlows calls useWriteFlow (and therefore useWriteContract)
+// exactly twice per render, in a fixed order: approveTx first, actionTx
+// second. Discriminating by call order lets tests drive each flow's pending
+// state independently — a shared mock (the same isPending for both calls)
+// can only ever confirm the OR fires at all, not that BOTH operands are
+// live (a regression that hardcoded `busy = approveTx.isSigning` and
+// dropped `actionTx.isSigning` would still pass a shared-mock test).
+let useWriteContractCallCount = 0;
+
 vi.mock("wagmi", () => ({
-  useWriteContract: () => ({
-    writeContract: vi.fn(),
-    isPending: wagmiState.approvePending || wagmiState.actionPending,
-    data: undefined,
-    error: wagmiState.approveError ?? wagmiState.actionError,
-    reset: vi.fn(),
-  }),
+  useWriteContract: () => {
+    useWriteContractCallCount += 1;
+    const isApprove = useWriteContractCallCount % 2 === 1;
+    return {
+      writeContract: vi.fn(),
+      isPending: isApprove ? wagmiState.approvePending : wagmiState.actionPending,
+      data: undefined,
+      error: isApprove ? wagmiState.approveError : wagmiState.actionError,
+      reset: vi.fn(),
+    };
+  },
   useWaitForTransactionReceipt: () => ({
     isLoading: false,
     isSuccess: false,
@@ -36,6 +49,7 @@ function wrapper({ children }: { children: ReactNode }) {
 
 describe("useApprovalWriteFlows", () => {
   beforeEach(() => {
+    useWriteContractCallCount = 0;
     wagmiState.approvePending = false;
     wagmiState.approveError = null;
     wagmiState.actionPending = false;
@@ -55,14 +69,17 @@ describe("useApprovalWriteFlows", () => {
     expect(result.current.busy).toBe(false);
   });
 
-  it("is busy when the underlying write is pending", () => {
-    // The mocked useWriteContract is shared by both approveTx and actionTx
-    // (they're separate useWriteFlow() instances backed by the same mock), so
-    // this cannot independently distinguish "approve is signing" from "action
-    // is signing" — it only confirms busy tracks isPending through the OR in
-    // useApprovalWriteFlows at all, which the "not busy" test above pins the
-    // other side of.
+  it("is busy when only the approval write is pending", () => {
     wagmiState.approvePending = true;
+    const { result } = renderHook(() => useApprovalWriteFlows(user), { wrapper });
+    expect(result.current.busy).toBe(true);
+  });
+
+  it("is busy when only the action write is pending", () => {
+    // Independent of the approval side thanks to the call-order-discriminating
+    // mock above — this would fail if useApprovalWriteFlows ever dropped
+    // `actionTx.isSigning` from the busy OR.
+    wagmiState.actionPending = true;
     const { result } = renderHook(() => useApprovalWriteFlows(user), { wrapper });
     expect(result.current.busy).toBe(true);
   });
