@@ -27,10 +27,18 @@ import {
   SLIPPAGE_DEFAULT_PCT,
 } from "@/lib/borrow";
 import { buildLadder } from "@/lib/router";
-import { aprChoices, formatBpsPct, loanOutstanding, MAX_UINT128, upfrontBps } from "@/lib/lending-math";
+import {
+  aprChoices,
+  formatBpsPct,
+  lenderReturnBps,
+  loanOutstanding,
+  MAX_UINT128,
+  upfrontBps,
+} from "@/lib/lending-math";
 import { invalidateAllOnChainReads } from "@/lib/invalidate";
 import { useQueryClient } from "@tanstack/react-query";
 import type { ActiveAction, ActionType, MarketInfo } from "@/lib/types";
+import { RateLadder } from "./RateLadder";
 
 export type Accent = "gold" | "cyan" | "neutral";
 
@@ -246,12 +254,34 @@ function SupplyForm({
 }) {
   const connection = useConnection();
   const lending = useLending(market.lending);
+  const liquidity = useLendingLiquidity(market.lending);
   const [raw, setRaw] = useState("");
   const [approvedAmount, setApprovedAmount] = useState(0n);
+  const [selectedAprRaw, setSelectedAprRaw] = useState<number | null>(null);
+  // Live clock: maturity is checked when the panel opens AND re-checked while
+  // it stays open — a market crossing maturity mid-session closes supply.
+  const [nowSeconds, setNowSeconds] = useState(() => BigInt(Math.floor(Date.now() / 1000)));
+  useEffect(() => {
+    const id = setInterval(() => setNowSeconds(BigInt(Math.floor(Date.now() / 1000))), 30_000);
+    return () => clearInterval(id);
+  }, []);
+
   const amount = parseAmount(raw);
-  const aprBps = lending.params.aprMinBps || 1000;
   const connectedAddress = connection.addresses?.[0];
   const underlyingSymbol = symbolFor(symbols, market.underlying);
+
+  const matured = nowSeconds >= market.expiryCached;
+  const ttmSeconds = matured ? 0n : market.expiryCached - nowSeconds;
+
+  // aprMinBps may legally be 0, so "loaded" is judged by aprMaxBps (a
+  // configured market always has a positive ceiling), never by the minimum.
+  const ratesReady = !lending.isLoading && lending.params.aprMaxBps > 0;
+  const ticks = ratesReady ? aprChoices(lending.params.aprMinBps, lending.params.aprMaxBps) : [];
+  // No `self` passed to buildLadder, so `total` already includes the lender's
+  // own supply — waiting liquidity deliberately counts it.
+  const ladder = buildLadder(liquidity.liquidity, market.market, ticks);
+  const aprBps =
+    selectedAprRaw !== null && ticks.includes(selectedAprRaw) ? selectedAprRaw : (ticks[0] ?? null);
 
   const approveTx = useWriteFlow(connectedAddress);
   const actionTx = useWriteFlow(connectedAddress);
@@ -259,6 +289,7 @@ function SupplyForm({
   const guard = useWalletChangeReset(connectedAddress, () => {
     setRaw("");
     setApprovedAmount(0n);
+    setSelectedAprRaw(null);
   });
 
   useEffect(() => {
@@ -287,16 +318,36 @@ function SupplyForm({
   const validationError = amount > 0n && amount > walletBalance ? "INSUFFICIENT BALANCE" : null;
   const approvalCovers = allowanceAmount >= amount || approvedAmount >= amount;
   const busy = approveTx.isSigning || approveTx.isConfirming || actionTx.isSigning || actionTx.isConfirming;
-  const disabled = !market.lending || amount === 0n || busy || Boolean(validationError);
+  const disabled =
+    !market.lending || aprBps === null || amount === 0n || busy || Boolean(validationError) || matured;
   const steps = ["APPROVE", "SIGN", "CONFIRMED"];
   const activeIndex = actionTx.isConfirmed || actionTx.isConfirming ? 2 : approvalCovers ? 1 : 0;
 
   return (
     <div className="form-grid">
+      <RateLadder
+        label="SUPPLY RATE"
+        rows={ladder.map((tick) => ({
+          aprBps: tick.aprBps,
+          cells: [
+            `RETURN ${formatBpsPct(lenderReturnBps(tick.aprBps, ttmSeconds))}`,
+            `WAITING ${formatTokenAmount(tick.total, underlyingSymbol)}`,
+          ],
+        }))}
+        selectedAprBps={aprBps}
+        onSelect={setSelectedAprRaw}
+        truncated={liquidity.tooLarge}
+        emptyText="LOADING RATES"
+      />
+      {/* Real per-rate borrower demand lands with the Ponder pipeline (ticket 09). */}
+      <div className="label mono">
+        DEMAND (30D) AT {aprBps !== null ? formatAprBps(aprBps) : "—"} — NO DATA YET
+      </div>
       <input className={`input mono ${validationError ? "input-error" : ""}`} value={raw} onChange={(e) => setRaw(e.target.value)} placeholder="0.00" />
       {validationError ? <div className="label mono status-negative">{validationError}</div> : null}
+      {matured ? <div className="label mono status-negative">MARKET MATURED — SUPPLY CLOSED</div> : null}
       <div className="summary-row mono" aria-live="polite">
-        SUPPLY {formatTokenAmount(amount, underlyingSymbol)} @ {formatAprBps(aprBps)}
+        SUPPLY {formatTokenAmount(amount, underlyingSymbol)} @ {aprBps !== null ? formatAprBps(aprBps) : "—"}
       </div>
       <StepIndicator steps={steps} activeIndex={activeIndex} error={Boolean(approveTx.error ?? actionTx.error)} accent={accent} />
       {!approvalCovers ? (
@@ -323,7 +374,7 @@ function SupplyForm({
           disabled={disabled}
           type="button"
           onClick={() => {
-            if (!market.lending) return;
+            if (!market.lending || aprBps === null) return;
             actionTx.writeContract({
               address: market.lending,
               abi: ovrfloLendingAbi,
@@ -332,7 +383,7 @@ function SupplyForm({
             });
           }}
         >
-          SUPPLY @ {formatAprBps(aprBps)}
+          SUPPLY @ {aprBps !== null ? formatAprBps(aprBps) : "—"}
         </button>
       )}
       <ApproveTxState tx={approveTx} label="APPROVE" />
@@ -899,36 +950,25 @@ function BorrowForm({
         <div className="label mono">STREAM {formatId(selectedStreamId ?? undefined)}</div>
       )}
 
-      <div className="ladder" role="radiogroup" aria-label="BORROW RATE">
-        {liquidity.tooLarge ? (
-          <div className="label mono status-warning">LIQUIDITY LIST TRUNCATED — DEPTH MAY BE UNDERSTATED</div>
-        ) : null}
-        {liquidTicks.length === 0 ? (
-          <div className="label mono status-negative">NO LIQUIDITY POSTED AT ANY RATE</div>
-        ) : (
-          liquidTicks.map((tick) => (
-            <button
-              key={tick.aprBps}
-              type="button"
-              role="radio"
-              aria-checked={tick.aprBps === selectedApr}
-              className={`ladder-row mono ${tick.aprBps === selectedApr ? "ladder-row-selected" : ""}`}
-              onClick={() => {
-                setSelectedAprRaw(tick.aprBps);
-                setShowAlternative(false);
-              }}
-            >
-              <span>{formatAprBps(tick.aprBps)}</span>
-              <span>UPFRONT {formatBpsPct(upfrontBps(tick.aprBps, ttmSeconds, feeBps))}</span>
-              <span>DEPTH {formatTokenAmount(tick.total, underlyingSymbol)}</span>
-              {tick.aprBps === bestApr ? <span className="status-positive">BEST</span> : null}
-            </button>
-          ))
-        )}
-        {hasOwnLiquidity ? (
-          <div className="label mono">YOUR OWN SUPPLY IS EXCLUDED — YOU CANNOT BORROW AGAINST IT</div>
-        ) : null}
-      </div>
+      <RateLadder
+        label="BORROW RATE"
+        rows={liquidTicks.map((tick) => ({
+          aprBps: tick.aprBps,
+          cells: [
+            `UPFRONT ${formatBpsPct(upfrontBps(tick.aprBps, ttmSeconds, feeBps))}`,
+            `DEPTH ${formatTokenAmount(tick.total, underlyingSymbol)}`,
+          ],
+          best: tick.aprBps === bestApr,
+        }))}
+        selectedAprBps={selectedApr}
+        onSelect={(aprBps) => {
+          setSelectedAprRaw(aprBps);
+          setShowAlternative(false);
+        }}
+        truncated={liquidity.tooLarge}
+        emptyText="NO LIQUIDITY POSTED AT ANY RATE"
+        footnote={hasOwnLiquidity ? "YOUR OWN SUPPLY IS EXCLUDED — YOU CANNOT BORROW AGAINST IT" : null}
+      />
 
       <input className="input mono" value={raw} onChange={(e) => setRaw(e.target.value)} placeholder="0.00" />
 
