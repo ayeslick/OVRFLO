@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { Address } from "viem";
+import { useNowSeconds } from "@/hooks/useNowSeconds";
 import { useBorrowerLoans } from "@/hooks/useBorrowerLoans";
 import { useHeldStreams } from "@/hooks/useHeldStreams";
 import { useLenderPools } from "@/hooks/useLenderPools";
@@ -45,8 +46,7 @@ export function PositionList({ market, user, symbols, onAction }: Props) {
   const lenderPools = useLenderPools(market.lending, user);
   const borrowerLoans = useBorrowerLoans(market.lending, user);
   const streams = useHeldStreams(user);
-  // Lazy init is safe: the expanded row only ever renders client-side.
-  const [nowSeconds] = useState(() => BigInt(Math.floor(Date.now() / 1000)));
+  const nowSeconds = useNowSeconds();
 
   const normalizedUser = user?.toLowerCase();
   const userLiquidity = liquidity.liquidity.filter(

@@ -40,6 +40,8 @@ import { adjustReceiptSummary, classifyAdjustError } from "@/lib/positions";
 import { useQueryClient } from "@tanstack/react-query";
 import type { ActiveAction, ActionType, MarketInfo } from "@/lib/types";
 import { RateLadder } from "./RateLadder";
+import { ModalErrorBoundary } from "./ModalErrorBoundary";
+import { useNowSeconds } from "@/hooks/useNowSeconds";
 
 export type Accent = "gold" | "cyan" | "neutral";
 
@@ -72,6 +74,7 @@ export function accentClass(accent: Accent) {
 
 export function ActionModal({ market, user, action, symbols, onClose }: Props) {
   const panelRef = useRef<HTMLDivElement>(null);
+  const [reloadKey, setReloadKey] = useState(0);
   useFocusTrap(panelRef, true);
 
   useEffect(() => {
@@ -102,7 +105,19 @@ export function ActionModal({ market, user, action, symbols, onClose }: Props) {
             ✕
           </button>
         </div>
-        <FormBody action={action} market={market} user={user} symbols={symbols} accent={meta.accent} onClose={onClose} />
+        {/* Body only — the header and close button stay outside the boundary
+            so a body-level throw never traps the user (pattern #3). */}
+        <ModalErrorBoundary onReset={() => setReloadKey((key) => key + 1)}>
+          <FormBody
+            key={reloadKey}
+            action={action}
+            market={market}
+            user={user}
+            symbols={symbols}
+            accent={meta.accent}
+            onClose={onClose}
+          />
+        </ModalErrorBoundary>
       </div>
     </div>
   );
@@ -261,11 +276,7 @@ function SupplyForm({
   const [selectedAprRaw, setSelectedAprRaw] = useState<number | null>(null);
   // Live clock: maturity is checked when the panel opens AND re-checked while
   // it stays open — a market crossing maturity mid-session closes supply.
-  const [nowSeconds, setNowSeconds] = useState(() => BigInt(Math.floor(Date.now() / 1000)));
-  useEffect(() => {
-    const id = setInterval(() => setNowSeconds(BigInt(Math.floor(Date.now() / 1000))), 30_000);
-    return () => clearInterval(id);
-  }, []);
+  const nowSeconds = useNowSeconds(true);
 
   const amount = parseAmount(raw);
   const connectedAddress = connection.addresses?.[0];
@@ -530,7 +541,7 @@ function ConvertForm({
   const [raw, setRaw] = useState("");
   const [ptApprovedAmount, setPtApprovedAmount] = useState(0n);
   const [underlyingApprovedAmount, setUnderlyingApprovedAmount] = useState(0n);
-  const [nowSeconds, setNowSeconds] = useState<bigint | null>(null);
+  const nowSeconds = useNowSeconds();
   const amount = parseAmount(raw);
   const mode = action.type;
   const connectedAddress = connection.addresses?.[0];
@@ -548,7 +559,6 @@ function ConvertForm({
     setUnderlyingApprovedAmount(0n);
   });
 
-  useEffect(() => setNowSeconds(BigInt(Math.floor(Date.now() / 1000))), []);
   useEffect(() => {
     if (approveTx.error) {
       setPtApprovedAmount(0n);
@@ -556,7 +566,7 @@ function ConvertForm({
     }
   }, [approveTx.error]);
 
-  const matured = nowSeconds !== null && nowSeconds >= market.expiryCached;
+  const matured = nowSeconds >= market.expiryCached;
 
   const preview = useReadContract({
     address: market.vault,
@@ -755,10 +765,9 @@ function BorrowForm({
   const [streamApprovedId, setStreamApprovedId] = useState<bigint | null>(null);
   const [staleRecovery, setStaleRecovery] = useState(false);
   const [submitted, setSubmitted] = useState<{ target: bigint; quotedNet: bigint } | null>(null);
-  // Lazy init is safe (the modal only ever renders client-side) and means a
-  // matured market is gated on the very first render — the ladder and router
-  // never run against it, not even for a frame.
-  const [nowSeconds] = useState(() => BigInt(Math.floor(Date.now() / 1000)));
+  // Known on the very first render, so a matured market is gated before the
+  // ladder or router ever run — not even for a frame.
+  const nowSeconds = useNowSeconds();
 
   const target = parseAmount(raw);
   const connectedAddress = connection.addresses?.[0];
@@ -1141,7 +1150,7 @@ function AdjustRateForm({
   const [selectedAprRaw, setSelectedAprRaw] = useState<number | null>(null);
   const [approvedAmount, setApprovedAmount] = useState(0n);
   const [staleRecovery, setStaleRecovery] = useState(false);
-  const [nowSeconds] = useState(() => BigInt(Math.floor(Date.now() / 1000)));
+  const nowSeconds = useNowSeconds();
 
   const connectedAddress = connection.addresses?.[0];
   const underlyingSymbol = symbolFor(symbols, market.underlying);
