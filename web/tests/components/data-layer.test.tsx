@@ -73,6 +73,9 @@ vi.mock("@/hooks/useLending", () => ({
     error: null,
   }),
 }));
+vi.mock("@/hooks/useBorrowDemand", () => ({
+  useBorrowDemand: () => ({ status: "ok", demand: [], peak: 0n }),
+}));
 
 import { FormBody } from "@/components/ActionModal";
 import { PositionList } from "@/components/PositionList";

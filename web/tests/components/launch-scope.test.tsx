@@ -15,6 +15,7 @@ vi.mock("wagmi", () => ({
   useReadContracts: () => ({ data: [], isLoading: false, error: null }),
   useWaitForTransactionReceipt: () => ({ isLoading: false, isSuccess: false, error: null }),
   useWriteContract: () => ({ writeContract: vi.fn(), isPending: false, data: undefined, error: null }),
+  useBlock: () => ({ data: undefined, isError: false }),
 }));
 
 vi.mock("@tanstack/react-query", async () => {

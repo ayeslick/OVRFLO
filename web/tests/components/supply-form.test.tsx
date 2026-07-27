@@ -100,6 +100,16 @@ vi.mock("@tanstack/react-query", () => ({
   useQueryClient: () => ({}),
 }));
 
+type DemandRow = { aprBps: number; count: number; amount: bigint };
+const demandState = {
+  status: "ok" as "loading" | "ok" | "unavailable",
+  demand: [] as DemandRow[],
+  peak: 0n,
+};
+vi.mock("@/hooks/useBorrowDemand", () => ({
+  useBorrowDemand: () => demandState,
+}));
+
 import { FormBody } from "@/components/ActionModal";
 
 const FUTURE = 99_999_999_999n;
@@ -152,6 +162,9 @@ beforeEach(() => {
   writeFlows.approve = flow();
   writeFlows.action = flow();
   writeFlows.calls = 0;
+  demandState.status = "ok";
+  demandState.demand = [];
+  demandState.peak = 0n;
 });
 
 afterEach(() => {
@@ -198,11 +211,35 @@ describe("SupplyForm ladder", () => {
     expect(screen.getByRole("button", { name: "SUPPLY @ 10.00%" })).toBeEnabled();
   });
 
-  it("shows a per-rate demand placeholder until the indexer pipeline lands", () => {
+  it("renders per-rate demand with a qualitative label, count, amount, and window annotation", () => {
+    demandState.demand = [
+      { aprBps: 1000, count: 3, amount: 120n * WAD },
+      { aprBps: 1100, count: 1, amount: 10n * WAD },
+    ];
+    demandState.peak = 120n * WAD;
     renderSupply();
-    expect(screen.getByText("DEMAND (30D) AT 10.00% — NO DATA YET")).toBeInTheDocument();
-    fireEvent.click(screen.getAllByRole("radio")[1]);
-    expect(screen.getByText("DEMAND (30D) AT 11.00% — NO DATA YET")).toBeInTheDocument();
+    const rows = screen.getAllByRole("radio");
+    expect(rows[0]).toHaveTextContent("DEMAND HIGH · 3 · 120.00 TESTA");
+    expect(rows[1]).toHaveTextContent("DEMAND LOW · 1 · 10.00 TESTA");
+    // A rate with no borrows is honest zero, not blank.
+    expect(rows[2]).toHaveTextContent("NO LOANS IN 30 DAYS");
+    expect(screen.getByText("DEMAND: TRAILING 30 DAYS, YOUR OWN BORROWS EXCLUDED")).toBeInTheDocument();
+  });
+
+  it("renders a distinct no-data state when the indexer is unreachable", () => {
+    demandState.status = "unavailable";
+    renderSupply();
+    const rows = screen.getAllByRole("radio");
+    expect(rows[0]).toHaveTextContent("DEMAND: NO DATA");
+    expect(screen.getByText("DEMAND DATA UNAVAILABLE — INDEXER UNREACHABLE")).toBeInTheDocument();
+    expect(screen.queryByText(/NO LOANS IN 30 DAYS/)).not.toBeInTheDocument();
+  });
+
+  it("renders honest zero when the indexer is reachable but the window is empty", () => {
+    renderSupply();
+    const rows = screen.getAllByRole("radio");
+    expect(rows[0]).toHaveTextContent("NO LOANS IN 30 DAYS");
+    expect(screen.queryByText(/NO DATA/)).not.toBeInTheDocument();
   });
 });
 

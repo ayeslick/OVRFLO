@@ -32,3 +32,7 @@ export function applyWithdrawal({
     depleted: nextIntactAmount === 0n,
   };
 }
+
+export function borrowEventKey(chainId: number, lending: string, loanId: bigint) {
+  return `${chainId.toString()}-${normalizeAddress(lending)}-${loanId.toString()}`;
+}

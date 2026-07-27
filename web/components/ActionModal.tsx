@@ -42,6 +42,8 @@ import type { ActiveAction, ActionType, MarketInfo } from "@/lib/types";
 import { RateLadder } from "./RateLadder";
 import { ModalErrorBoundary } from "./ModalErrorBoundary";
 import { useNowSeconds } from "@/hooks/useNowSeconds";
+import { useBorrowDemand } from "@/hooks/useBorrowDemand";
+import { demandLevel, type RateDemand } from "@/lib/demand";
 
 export type Accent = "gold" | "cyan" | "neutral";
 
@@ -221,6 +223,28 @@ function ApproveTxState({ tx, label }: { tx: WriteFlow; label: string }) {
   return null;
 }
 
+// Demand cell for one ladder rate. "no data" (indexer unreachable) and
+// "genuinely zero borrows" must never look alike (ticket 09).
+function demandCellCopy(
+  status: "loading" | "ok" | "unavailable",
+  row: RateDemand | undefined,
+  peak: bigint,
+  formatAmount: (amount: bigint) => string,
+): string {
+  if (status === "loading") return "DEMAND —";
+  if (status === "unavailable") return "DEMAND: NO DATA";
+  if (!row) return "NO LOANS IN 30 DAYS";
+  return `DEMAND ${demandLevel(row.amount, peak)} · ${row.count} · ${formatAmount(row.amount)}`;
+}
+
+function DemandAnnotation({ status }: { status: "loading" | "ok" | "unavailable" }) {
+  if (status === "loading") return <div className="label mono">DEMAND: LOADING</div>;
+  if (status === "unavailable") {
+    return <div className="label mono status-warning">DEMAND DATA UNAVAILABLE — INDEXER UNREACHABLE</div>;
+  }
+  return <div className="label mono">DEMAND: TRAILING 30 DAYS, YOUR OWN BORROWS EXCLUDED</div>;
+}
+
 function CloseButton({ onClose }: { onClose: () => void }) {
   return (
     <button className="button mono" type="button" onClick={onClose}>
@@ -280,6 +304,7 @@ function SupplyForm({
 
   const amount = parseAmount(raw);
   const connectedAddress = connection.addresses?.[0];
+  const demandState = useBorrowDemand(market.market, connectedAddress);
   const underlyingSymbol = symbolFor(symbols, market.underlying);
 
   const matured = nowSeconds >= market.expiryCached;
@@ -344,6 +369,12 @@ function SupplyForm({
           cells: [
             `RETURN ${formatBpsPct(lenderReturnBps(tick.aprBps, ttmSeconds))}`,
             `WAITING ${formatTokenAmount(tick.total, underlyingSymbol)}`,
+            demandCellCopy(
+              demandState.status,
+              demandState.demand.find((row) => row.aprBps === tick.aprBps),
+              demandState.peak,
+              (value) => formatTokenAmount(value, underlyingSymbol),
+            ),
           ],
         }))}
         selectedAprBps={aprBps}
@@ -351,10 +382,7 @@ function SupplyForm({
         truncated={liquidity.tooLarge}
         emptyText="LOADING RATES"
       />
-      {/* Real per-rate borrower demand lands with the Ponder pipeline (ticket 09). */}
-      <div className="label mono">
-        DEMAND (30D) AT {aprBps !== null ? formatAprBps(aprBps) : "—"} — NO DATA YET
-      </div>
+      <DemandAnnotation status={demandState.status} />
       <input className={`input mono ${validationError ? "input-error" : ""}`} value={raw} onChange={(e) => setRaw(e.target.value)} placeholder="0.00" />
       {validationError ? <div className="label mono status-negative">{validationError}</div> : null}
       {matured ? <div className="label mono status-negative">MARKET MATURED — SUPPLY CLOSED</div> : null}
@@ -774,6 +802,7 @@ function BorrowForm({
   const underlyingSymbol = symbolFor(symbols, market.underlying);
   const ovrfloSymbol = symbolFor(symbols, market.ovrfloToken);
   const feeBps = lending.params.feeBps;
+  const demandState = useBorrowDemand(market.market, connectedAddress);
 
   // Maturity gate: past maturity neither the ladder nor the router ever runs
   // (gatherLiquidity reverts on expired series anyway).
@@ -979,6 +1008,25 @@ function BorrowForm({
         emptyText="NO LIQUIDITY POSTED AT ANY RATE"
         footnote={hasOwnLiquidity ? "YOUR OWN SUPPLY IS EXCLUDED — YOU CANNOT BORROW AGAINST IT" : null}
       />
+      {liquidTicks.length === 0 ? (
+        // Empty ladder still shows recent borrower demand so a would-be lender
+        // opening BORROW by mistake — or a borrower scouting — sees the market
+        // isn't dead. Unreachable indexer stays distinct from zero borrows.
+        demandState.status === "ok" ? (
+          demandState.demand.length === 0 ? (
+            <div className="label mono">NO LOANS IN 30 DAYS</div>
+          ) : (
+            demandState.demand.map((row) => (
+              <div key={row.aprBps} className="label mono">
+                RECENT DEMAND {formatAprBps(row.aprBps)} — {row.count} LOANS /{" "}
+                {formatTokenAmount(row.amount, underlyingSymbol)} (30D)
+              </div>
+            ))
+          )
+        ) : (
+          <DemandAnnotation status={demandState.status} />
+        )
+      ) : null}
 
       <input className="input mono" value={raw} onChange={(e) => setRaw(e.target.value)} placeholder="0.00" />
 

@@ -9,6 +9,20 @@ export const asset = onchainTable("asset", (t) => ({
   symbol: t.text().notNull(),
 }));
 
+// One row per BorrowerLoanPoolCreated — the raw material for the trailing
+// 30-day borrow-demand column (ticket 09).
+export const borrowEvent = onchainTable("borrow_events", (t) => ({
+  id: t.text().primaryKey(),
+  chainId: t.bigint().notNull(),
+  lending: t.hex().notNull(),
+  market: t.hex().notNull(),
+  loanId: t.bigint().notNull(),
+  borrower: t.hex().notNull(),
+  aprBps: t.integer().notNull(),
+  amount: t.bigint().notNull(),
+  blockTimestamp: t.bigint().notNull(),
+}));
+
 export const sablierStream = onchainTable("sablier_streams", (t) => ({
   id: t.text().primaryKey(),
   chainId: t.bigint().notNull(),

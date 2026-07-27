@@ -1,6 +1,7 @@
 import { createClient, sql } from "@ponder/client";
 import type { Address } from "viem";
 import { ponderUrl } from "./config";
+import { DEMAND_WINDOW_SECONDS, type BorrowDemandEvent } from "./demand";
 import type { HeldStream } from "./types";
 
 type StreamRow = {
@@ -20,6 +21,42 @@ const DEFAULT_STREAM_LIMIT = 100;
 export function createPonderClient(baseUrl = ponderUrl) {
   if (!baseUrl) return null;
   return createClient(baseUrl.replace(/\/$/, ""));
+}
+
+type BorrowEventRow = {
+  apr_bps: number;
+  amount: string;
+  borrower: Address;
+  block_timestamp: string;
+};
+
+// Raw trailing-window borrow events for one market. Unlike fetchHeldStreamIds
+// this THROWS when the indexer is unconfigured or unreachable — the demand
+// column must render "no data" distinctly from "genuinely zero borrows", so
+// the error must reach the hook instead of collapsing into an empty array.
+export async function fetchBorrowDemand(
+  market: Address,
+  nowSeconds: bigint,
+  baseUrl = ponderUrl,
+): Promise<BorrowDemandEvent[]> {
+  const client = createPonderClient(baseUrl);
+  if (!client) throw new Error("Demand indexer is not configured.");
+
+  const cutoff = (nowSeconds - DEMAND_WINDOW_SECONDS).toString();
+  const normalized = market.toLowerCase() as Address;
+  const result = await client.db.execute<BorrowEventRow>(sql`
+    select apr_bps, amount, borrower, block_timestamp
+    from borrow_events
+    where market = ${normalized}
+      and block_timestamp >= ${cutoff}
+  `);
+
+  return result.map((row) => ({
+    aprBps: Number(row.apr_bps),
+    amount: BigInt(row.amount),
+    borrower: row.borrower,
+    blockTimestamp: BigInt(row.block_timestamp),
+  }));
 }
 
 export async function fetchHeldStreamIds(user: Address, baseUrl = ponderUrl, limit = DEFAULT_STREAM_LIMIT): Promise<HeldStream[]> {

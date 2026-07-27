@@ -6,3 +6,8 @@ export const streamKeys = {
   all: ["streams"] as const,
   held: (user?: Address | null) => [...streamKeys.all, "held", user] as const,
 };
+
+export const demandKeys = {
+  all: ["demand"] as const,
+  market: (market?: Address | null) => [...demandKeys.all, "market", market] as const,
+};

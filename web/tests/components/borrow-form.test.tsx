@@ -111,6 +111,16 @@ vi.mock("@tanstack/react-query", () => ({
   useQueryClient: () => ({}),
 }));
 
+type DemandRow = { aprBps: number; count: number; amount: bigint };
+const demandState = {
+  status: "ok" as "loading" | "ok" | "unavailable",
+  demand: [] as DemandRow[],
+  peak: 0n,
+};
+vi.mock("@/hooks/useBorrowDemand", () => ({
+  useBorrowDemand: () => demandState,
+}));
+
 import { FormBody } from "@/components/ActionModal";
 import { ovrfloLendingAbi } from "@/lib/generated";
 
@@ -174,6 +184,9 @@ beforeEach(() => {
   writeFlows.action = flow();
   writeFlows.calls = 0;
   invalidateSpy.mockClear();
+  demandState.status = "ok";
+  demandState.demand = [];
+  demandState.peak = 0n;
 });
 
 describe("BorrowForm ladder", () => {
@@ -206,6 +219,24 @@ describe("BorrowForm ladder", () => {
     hookData.liquidity = [];
     renderBorrow();
     expect(screen.getByText("NO LIQUIDITY POSTED AT ANY RATE")).toBeInTheDocument();
+    // Reachable indexer with an empty window reads as honest zero.
+    expect(screen.getByText("NO LOANS IN 30 DAYS")).toBeInTheDocument();
+  });
+
+  it("shows recent per-rate demand in the empty-ladder state", () => {
+    hookData.liquidity = [];
+    demandState.demand = [{ aprBps: 1000, count: 2, amount: 80n * WAD }];
+    demandState.peak = 80n * WAD;
+    renderBorrow();
+    expect(screen.getByText(/RECENT DEMAND 10\.00% — 2 LOANS \/ 80\.00 TESTA \(30D\)/)).toBeInTheDocument();
+  });
+
+  it("keeps the unreachable-indexer state distinct in the empty-ladder state", () => {
+    hookData.liquidity = [];
+    demandState.status = "unavailable";
+    renderBorrow();
+    expect(screen.getByText("DEMAND DATA UNAVAILABLE — INDEXER UNREACHABLE")).toBeInTheDocument();
+    expect(screen.queryByText("NO LOANS IN 30 DAYS")).not.toBeInTheDocument();
   });
 });
 
