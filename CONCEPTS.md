@@ -120,6 +120,14 @@ A shadow variable in a fuzz handler that mirrors a piece of protocol state so in
 
 Each ghost is updated in the same handler branch that triggers the corresponding state transition. A missing ghost update on one branch causes false-positive invariant violations later (e.g. a re-pledged stream appears still-pledged), which wastes triage time and erodes trust in the suite.
 
+## Web app processes
+
+### Claim-all
+
+The batch exit flow where a connected lender reviews and sequentially confirms all pending pool share claims and withdrawable Sablier stream balances from the position summary strip.
+
+Each step is a separate on-chain transaction: pool claims batch per lending contract via multicall, then individual stream withdrawals. The UI recomputes the plan from live data on resume rather than retrying stale calldata.
+
 ## Refactoring patterns
 
 ### Vestigial state

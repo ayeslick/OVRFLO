@@ -71,6 +71,15 @@ enums have been widened to reflect our stack; everything else matches the upstre
 
 ### Web UI
 
+- [ui-bugs/web-markets-ui-polish.md](ui-bugs/web-markets-ui-polish.md) —
+  Jul 2026 polish pass: close buttons on overlays, on-chain symbol reads,
+  caption alignment, layout CSS, Reown 403 config. Navigation architecture
+  superseded by the Jul 27 rebuild doc below; overlay/symbol/caption patterns
+  remain current.
+- [architecture-patterns/web-markets-outcome-first-planners-and-tx-queue.md](architecture-patterns/web-markets-outcome-first-planners-and-tx-queue.md) —
+  Jul 2026 markets rebuild: expandable rows, pure borrow router, display math
+  mirroring StreamPricing, claim-all planner, sequential tx queue, shared
+  TanStack Query invalidation.
 - [integration-issues/transferred-sablier-nfts-invisible-WebUI-20260421.md](integration-issues/transferred-sablier-nfts-invisible-WebUI-20260421.md) —
   Streams whose Sablier NFT was transferred to a new wallet never appeared for the new
   recipient. Fixed by reverting from on-chain `Deposited` log scanning to the Sablier
@@ -116,6 +125,10 @@ enums have been widened to reflect our stack; everything else matches the upstre
 
 ### Architecture patterns
 
+- [architecture-patterns/web-markets-outcome-first-planners-and-tx-queue.md](architecture-patterns/web-markets-outcome-first-planners-and-tx-queue.md) —
+  Web markets UI rebuild: expandable rows, pure borrow router, display math
+  mirroring StreamPricing, claim-all planner, sequential tx queue, shared query
+  invalidation. Builds on [ui-bugs/web-markets-ui-polish.md](ui-bugs/web-markets-ui-polish.md).
 - [architecture-patterns/ovrflo-wrap-unwrap-reserve-accounting.md](architecture-patterns/ovrflo-wrap-unwrap-reserve-accounting.md) —
   How the OVRFLO wrap/unwrap reserve is accounted and why deposit-origin
   ovrfloToken cannot consume the wrap reserve.

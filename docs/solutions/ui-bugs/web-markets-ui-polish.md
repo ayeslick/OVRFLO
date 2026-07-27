@@ -1,6 +1,7 @@
 ---
 title: "Web Markets UI Polish: Overlay Pattern, Asset Names, and Layout Fixes"
 date: 2026-07-23
+last_updated: 2026-07-27
 category: docs/solutions/ui-bugs
 module: web
 problem_type: ui_bug
@@ -18,6 +19,8 @@ tags: [modal-overlay, market-detail, close-button, asset-names, layout-fix, next
 ---
 
 # Web Markets UI Polish: Overlay Pattern, Asset Names, and Layout Fixes
+
+> **Scope.** This doc captures the Jul 23, 2026 polish pass (close buttons, symbol reads, caption alignment, layout CSS, Reown 403). The Jul 27 markets rebuild changed primary navigation to **expandable rows + two-level overlay state** — see [web-markets-outcome-first-planners-and-tx-queue.md](../architecture-patterns/web-markets-outcome-first-planners-and-tx-queue.md) for the current architecture. Patterns below that still apply in production are marked **still current**; navigation-specific sections describe the Jul 23 fix and note what changed.
 
 ## Problem
 
@@ -41,7 +44,7 @@ For the asset-name issue, the initial table had no on-chain `symbol()` read at a
 
 ## Solution
 
-All seven issues were resolved in a single coordinated pass across `MarketsApp.tsx`, `MarketDetail.tsx`, `MarketsTable.tsx`, `ActionModal.tsx`, `lib/abis.ts`, and `globals.css`.
+All seven issues were resolved in a single coordinated pass across `web/components/MarketsApp.tsx`, `web/components/MarketDetail.tsx`, `web/components/MarketsTable.tsx`, `web/components/ActionModal.tsx`, `web/lib/abis.ts`, and `web/app/globals.css`.
 
 ### 1. Visible close button on overlays
 
@@ -85,7 +88,7 @@ CSS for the close button, consistent with the design system's transparent-border
 
 The `<div className="label mono">MARKETS</div>` was removed from `MarketsTable.tsx`. The `Approved Pendle Series` `<h2>` heading is sufficient, and the topbar already carries a `MARKETS` nav label.
 
-### 3. Asset names via batched `symbol()` reads
+### 3. Asset names via batched `symbol()` reads (**still current**; refactored in `629d6ff`)
 
 A `symbol` function was added to `erc20Abi` in `web/lib/abis.ts`:
 
@@ -99,27 +102,17 @@ A `symbol` function was added to `erc20Abi` in `web/lib/abis.ts`:
 },
 ```
 
-`MarketsTable` now uses `useReadContracts` to batch-read `symbol()` from each market's `ovrfloToken` in a single multicall, then renders the symbol in the Asset column with a `formatAddress` fallback if a read fails:
+**Jul 23:** `MarketsTable` inlined `useReadContracts` per row batch. **Current (`629d6ff`):** one deduped batch in `useMarketSymbols`, called once in `MarketsApp` and threaded via `symbolFor(symbols, address)`:
 
 ```tsx
-const symbolReads = useReadContracts({
-  contracts: markets.map((market) => ({
-    address: market.ovrfloToken,
-    abi: erc20Abi,
-    functionName: "symbol" as const,
-  })),
-  query: { enabled: markets.length > 0 },
-});
+// MarketsApp.tsx
+const symbols = useMarketSymbols(markets.markets);
 
-const symbols = symbolReads.data ?? [];
-
-// Per row:
-const symbolResult = symbols[index];
-const symbol = symbolResult?.status === "success" ? symbolResult.result : undefined;
-// Rendered: <div className="mono">{symbol ?? formatAddress(market.ovrfloToken)}</div>
+// MarketsTable.tsx — per row:
+const symbol = symbolFor(symbols, market.ovrfloToken);
 ```
 
-`MarketDetail` does a single `useReadContract` for the selected market's symbol and falls back to `formatAddress(market.ovrfloToken)`.
+The principle is unchanged: batch-read `symbol()` on-chain, fall back to `formatAddress` when a read fails or is loading. PT symbols are deliberately not read — PT rows render with underlying context.
 
 ### 4. Vertically centered disabled captions
 
@@ -147,9 +140,9 @@ Each button + caption pair was wrapped in an `.action-with-caption` div so the c
 }
 ```
 
-### 5. MarketDetail converted from page to overlay
+### 5. MarketDetail converted from page to overlay (Jul 23 fix; navigation superseded Jul 27)
 
-The core architectural change is in `MarketsApp.tsx`. **Before**, selection replaced the page:
+The core architectural change in the Jul 23 pass is in `MarketsApp.tsx`. **Before**, selection replaced the page:
 
 ```tsx
 // Before: conditional rendering (page replacement)
@@ -163,37 +156,27 @@ The core architectural change is in `MarketsApp.tsx`. **Before**, selection repl
 )}
 ```
 
-**After**, the table and summary always render, and `MarketDetail` overlays on top when a market is selected:
+**After (Jul 23):** the table and summary always render, and `MarketDetail` overlays on top when a market is selected.
+
+**Current (Jul 27 rebuild):** two-level state — `selectedMarket` expands an inline `MarketRowDetail` row; `activeMode` opens a slim `MarketDetail` action overlay for deposit/borrow/supply only. Balances and positions live in the expanded row, not the overlay:
 
 ```tsx
-// After: always render table, overlay on top
-<MarketsTable markets={markets.markets} selected={selectedMarket} onSelect={setSelectedMarket} />
-<PositionSummary markets={markets.markets} user={connectedAddress} />
-
-{selectedMarket ? (
+// MarketsApp.tsx (current)
+<MarketsTable
+  selected={selectedMarket}
+  onSelect={setSelectedMarket}
+  onMode={(market, action) => setActiveMode({ market, action })}
+/>
+{activeMode ? (
   <MarketDetail
-    market={selectedMarket}
-    user={connectedAddress}
-    onBack={() => setSelectedMarket(null)}
+    market={activeMode.market}
+    action={activeMode.action}
+    onClose={() => setActiveMode(null)}
   />
 ) : null}
 ```
 
-`MarketDetail` now uses the same `modal-scrim` / `modal-panel` pattern as `ActionModal`, with `role="dialog"` and `aria-modal="true"`. A `useFocusTrap(panelRef, true)` hook constrains Tab/Shift+Tab cycling within the overlay. An Escape handler closes the overlay, but only when no `ActionModal` is stacked on top — it checks `!activeAction`:
-
-```tsx
-useFocusTrap(panelRef, true);
-
-useEffect(() => {
-  function handleKey(e: KeyboardEvent) {
-    if (e.key === "Escape" && !activeAction) onBack();
-  }
-  window.addEventListener("keydown", handleKey);
-  return () => window.removeEventListener("keydown", handleKey);
-}, [onBack, activeAction]);
-```
-
-Scrim click closes the overlay (`onClick={onBack}` on `.modal-scrim`, with `e.stopPropagation()` on the panel). The `ActionModal` stacks on top of `MarketDetail` naturally via DOM order — it is rendered after `MarketDetail` in the same fragment, so it paints above and receives the Escape event first.
+`MarketDetail` is now a pure action container (`FormBody` from `ActionModal.tsx`); the standalone `ActionModal` wrapper is no longer mounted from `MarketsApp`. Overlays still use `modal-scrim` / `modal-panel`, `role="dialog"`, `aria-modal="true"`, and `useFocusTrap`. Escape and scrim-click call `onClose()` directly.
 
 ### 6. Layout fixes in the overlay
 
@@ -238,27 +221,28 @@ This is expected behavior when running locally without a real Reown project ID. 
 
 ## Why This Works
 
-**Overlay pattern.** The root cause of the page-replacement problem was a conditional-rendering strategy that treated `MarketDetail` as a sibling alternative to the table rather than as a layer above it. By always rendering the table/summary and conditionally appending `MarketDetail` as a sibling overlay, the table context is preserved underneath and the existing `.modal-scrim` / `.modal-panel` stacking mechanics apply. DOM order resolves the z-index stacking for free: because `ActionModal` is rendered after `MarketDetail` within `MarketDetail`'s fragment, it paints on top and its Escape handler fires first. The `!activeAction` guard in `MarketDetail`'s Escape handler ensures that pressing Escape while an `ActionModal` is open closes *only* the action modal, not the detail overlay behind it.
+**Overlay pattern (Jul 23).** The root cause of the page-replacement problem was conditional rendering that treated `MarketDetail` as a sibling alternative to the table. Always rendering the table/summary and appending the detail as an overlay preserved list context. The Jul 27 rebuild retained overlays for **actions only** and moved detail/balances into expandable rows — see the architecture doc for the two-level state model.
 
-**Asset names.** `MarketInfo` carries only addresses, not symbols, so the table had nothing human-readable to display. Reading `symbol()` directly from each `ovrfloToken` contract via `useReadContracts` multicall populates the column with the real on-chain token symbol (e.g. `ovrfloETH`) without changing the data model or adding a hardcoded mapping. The per-read `status === "success"` check provides a graceful `formatAddress` fallback if a call reverts or is still loading, so the table never shows a blank cell.
+**Asset names.** `MarketInfo` carries only addresses, not symbols. Batch-reading `symbol()` via multicall populates human-readable labels without hardcoded mappings. Centralizing reads in `useMarketSymbols` avoids duplicate RPC calls when both table and summary need the same symbols.
 
-**Caption alignment.** The misalignment was caused by the caption being a sibling of the button without a shared flex container, so it aligned to the row's top baseline. Wrapping the pair in `.action-with-caption { display: flex; align-items: center; }` makes the caption a flex item that centers against the button's box, matching the design system's "never hide an action, disable it and say why in a dim mono caption" rule.
+**Caption alignment.** Wrapping button + caption in `.action-with-caption { display: flex; align-items: center; }` centers the caption against the button. **Still used** in `MarketRowDetail.tsx` and `PositionSummary.tsx`.
 
-**Layout.** Moving FEE/MATURITY into the header meta row and replacing large vertical padding with 1px graphite border separators follows the design system's section-divider rule: structure is conveyed through borders and subtle background shifts, not gaps. The `:first-of-type` exception removes the border on the first section so it doesn't collide with the header. Centering the panel via the existing scrim flexbox and capping `max-height: 90vh` with `overflow-y: auto` ensures the overlay stays viewport-bounded regardless of position-list length.
+**Layout.** FEE/MATURITY in the header meta row and 1px graphite border separators follow the design system's section-divider rule. Action overlays use `max-height: 90vh; overflow-y: auto`.
 
-**Close button.** Adding a visible close button satisfies the modal pattern affordance without altering the existing Escape/scrim dismissal paths — it is additive, not a replacement. The transparent-background / hover-to-chalk styling matches the design system's button rule.
+**Close button.** Visible close buttons on `MarketDetail`, `ClaimAllModal`, and the legacy `ActionModal` component satisfy modal affordance without replacing Escape/scrim dismissal. **Still current.**
 
 ## Prevention
 
-- **Prefer overlays over page replacement for detail views.** When a list-driven app needs to show detail for a selected row, render the detail as an overlay above the persistent list rather than conditionally swapping the list out. This preserves context, enables stacking (detail then action), and reuses the existing scrim/panel/focus-trap infrastructure. The page-replacement pattern should be reserved for genuine route changes.
-- **Read human-readable names on-chain, don't hardcode them.** For any table that lists token-bearing entities, batch-read `symbol()` (and `decimals()` if needed) via `useReadContracts` multicall rather than maintaining an address-to-name mapping. On-chain reads are self-updating and survive new deployments; hardcoded mappings go stale and require code changes for every new market.
-- **Guard Escape handlers for stacked overlays.** When overlays can stack (detail + action), each layer's Escape handler must check whether a higher layer is active before closing. Without the `!activeAction` guard, Escape would tear down two layers at once.
-- **Align disabled-state captions with flex containers.** Always wrap a button and its explanatory caption in a shared `display: flex; align-items: center` container so the caption stays vertically centered against the button regardless of font size or line-height differences.
-- **Use border separators, not padding gaps, for section structure.** Follow the design system: sections are divided by 1px graphite `border-top`, not by large `padding-top` values. The first section in a panel gets `border-top: none` to avoid a double rule against the header.
-- **Surface environment-config expectations in documentation.** The Reown 403 is benign but noisy in the console. Document that `NEXT_PUBLIC_REOWN_PROJECT_ID` must be set in `.env.local` (with a link to `cloud.reown.com`) so developers don't mistake the 403 for a bug.
+- **Prefer overlays over page replacement for detail views.** When a list-driven app needs to show detail for a selected row, render detail as a layer above the persistent list rather than conditionally swapping the list out. The Jul 27 rebuild uses **expandable rows for inline detail** and **overlays only for transaction forms** — see [web-markets-outcome-first-planners-and-tx-queue.md](../architecture-patterns/web-markets-outcome-first-planners-and-tx-queue.md).
+- **Read human-readable names on-chain, don't hardcode them.** Batch-read `symbol()` via `useMarketSymbols` (or equivalent deduped multicall) rather than maintaining address-to-name mappings.
+- **Guard Escape handlers when overlays stack.** If multiple overlay layers can be open simultaneously, each layer's Escape handler must check whether a higher layer is active before closing. The current markets flow uses a single action overlay per market, so `MarketDetail` closes directly on Escape; `ClaimAllModal` blocks scrim/Escape while a tx is in flight.
+- **Align disabled-state captions with flex containers.** Wrap button + caption in `.action-with-caption { display: flex; align-items: center; }`.
+- **Use border separators, not padding gaps, for section structure.** Sections divided by 1px graphite `border-top`; first section gets `border-top: none`.
+- **Surface environment-config expectations in documentation.** The Reown 403 is benign but noisy. Set `NEXT_PUBLIC_REOWN_PROJECT_ID` in `.env.local` (from `cloud.reown.com`).
 
 ## Related Issues
 
-- [usd-prices-not-shown-in-modals-WebUI-20260421.md](../ui-bugs/usd-prices-not-shown-in-modals-WebUI-20260421.md) — Same category (ui_bug) and same broad surface area (web/ modals). That doc fixed USD price sublines not rendering in modals; this doc fixes UI polish/layout in ActionModal/MarketDetail/MarketsTable. Different problem, root cause, and solution.
-- [modal-render-error-crashes-dashboard-WebUI-20260421.md](../runtime-errors/modal-render-error-crashes-dashboard-WebUI-20260421.md) — Same modal surface area. Establishes the ModalErrorBoundary pattern. Related structural context since this doc adds close buttons and converts MarketDetail into a modal.
-- [ovrflo-critical-patterns.md](../patterns/ovrflo-critical-patterns.md) — Pattern #3 (modal bodies wrapped in a class-component error boundary; header/close button must stay outside the boundary so the user always has a dismiss path) is directly relevant. The close-button-placement rule and its enforcement grep apply to the new/converted modal.
+- [web-markets-outcome-first-planners-and-tx-queue.md](../architecture-patterns/web-markets-outcome-first-planners-and-tx-queue.md) — **Successor (Jul 27).** Expandable rows, pure planners, display math, claim-all tx queue, and shared invalidation. Supersedes the MarketsApp navigation model from this doc while retaining overlay/symbol/caption patterns.
+- [usd-prices-not-shown-in-modals-WebUI-20260421.md](../ui-bugs/usd-prices-not-shown-in-modals-WebUI-20260421.md) — Same category (ui_bug) and same broad surface area (web/ modals). Different problem, root cause, and solution.
+- [modal-render-error-crashes-dashboard-WebUI-20260421.md](../runtime-errors/modal-render-error-crashes-dashboard-WebUI-20260421.md) — ModalErrorBoundary pattern. Close buttons and converted modals should keep headers outside the boundary (pattern #3).
+- [ovrflo-critical-patterns.md](../patterns/ovrflo-critical-patterns.md) — Pattern #3 (modal error boundaries; header/close button outside boundary).
