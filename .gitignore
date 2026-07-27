@@ -15,6 +15,9 @@ web/yarn-debug.log*
 web/yarn-error.log*
 web/pnpm-debug.log*
 web/coverage/
+web/tests/e2e/.features-gen/
+web/test-results/
+web/playwright-report/
 
 # Dotenv file
 .env

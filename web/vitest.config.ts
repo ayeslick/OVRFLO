@@ -9,6 +9,13 @@ export default defineConfig({
     globals: true,
     setupFiles: ["./tests/setup.ts"],
     include: ["tests/**/*.test.{ts,tsx}"],
+    coverage: {
+      // R3/KTD5: informational only, no CI gate, no per-file threshold.
+      provider: "v8",
+      include: ["lib/**", "hooks/**"],
+      exclude: ["lib/generated.ts", "lib/wagmi.ts"],
+      reporter: ["text", "html"],
+    },
   },
   resolve: {
     alias: {
