@@ -47,9 +47,36 @@ rm_if_exists() {
   fi
 }
 
+# `npm --prefix web run ponder:dev` (started by bootstrap-local.sh) is a
+# wrapper: npm -> sh -> node -> the actual `ponder dev` binary. Killing only
+# the recorded npm-wrapper PID does not propagate to that grandchild, so it
+# survives as an orphan after every bootstrap/clean cycle. This repo-scoped
+# fallback finds and kills any leftover `ponder dev` process directly by its
+# distinctive on-disk path, independent of the (possibly-already-dead)
+# recorded PID.
+kill_orphaned_ponder() {
+  local repo_root pattern pids
+  repo_root="$(pwd)"
+  pattern="${repo_root}/tools/ponder/node_modules/.bin/ponder"
+  pids=$(pgrep -f "$pattern" 2>/dev/null || true)
+  if [ -n "$pids" ]; then
+    echo "bootstrap-clean: found orphaned ponder dev process(es) not covered by the recorded pid: $pids"
+    kill $pids 2>/dev/null || true
+    for _ in 1 2 3 4 5; do
+      pids=$(pgrep -f "$pattern" 2>/dev/null || true)
+      [ -z "$pids" ] && break
+      sleep 0.2
+    done
+    pids=$(pgrep -f "$pattern" 2>/dev/null || true)
+    [ -n "$pids" ] && kill -9 $pids 2>/dev/null || true
+    CLEANED=1
+  fi
+}
+
 if [ "$NETWORK" = "local" ]; then
   kill_pid_file "anvil" ".bootstrap.pid"
   kill_pid_file "ponder" ".bootstrap.ponder.pid"
+  kill_orphaned_ponder
   rm_if_exists "anvil log"  ".bootstrap.anvil.log"
   rm_if_exists "ponder log" ".bootstrap.ponder.log"
   rm_if_exists "env.local"  "web/.env.local"

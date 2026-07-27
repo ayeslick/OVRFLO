@@ -85,7 +85,8 @@ echo "[2/5] seeding OVRFLO (factory + ovrflo + lending + PT/wstETH to dev/lender
 
 # ─── ponder ───────────────────────────────────────────────────────────────────
 echo "[3/5] starting local Sablier Ponder indexer (sql:http://localhost:42069/sql)"
-PONDER_RPC_URL=http://127.0.0.1:8545 npm --prefix web run ponder:dev >".bootstrap.ponder.log" 2>&1 &
+LOCAL_FACTORY=$(jq -r '.factory' deployments/local.json)
+PONDER_RPC_URL=http://127.0.0.1:8545 PONDER_OVRFLO_FACTORY="$LOCAL_FACTORY" npm --prefix web run ponder:dev >".bootstrap.ponder.log" 2>&1 &
 PONDER_PID=$!
 echo "$PONDER_PID" > ".bootstrap.ponder.pid"
 for _ in $(seq 1 60); do
@@ -101,6 +102,19 @@ if ! kill -0 "$PONDER_PID" 2>/dev/null; then
   fail "ponder exited before accepting requests."
 fi
 echo "      pid=$PONDER_PID  log=.bootstrap.ponder.log  sql=http://localhost:42069/sql"
+
+# ─── ponder factory health check ─────────────────────────────────────────────
+# Confirms the factory address Ponder is watching actually emitted a
+# LendingDeployed event, so a wrong address (e.g. silently defaulted to the
+# zero address) is visible immediately instead of surfacing later as
+# "NO DEMAND DATA" everywhere.
+LENDING_DEPLOYED_COUNT=$(cast logs "LendingDeployed(address,address)" \
+  --address "$LOCAL_FACTORY" --from-block "$FORK_BLOCK" --rpc-url http://127.0.0.1:8545 --json | jq 'length')
+if [ "$LENDING_DEPLOYED_COUNT" -gt 0 ]; then
+  echo "      health check: factory $LOCAL_FACTORY emitted $LENDING_DEPLOYED_COUNT LendingDeployed event(s) — Ponder should index it"
+else
+  echo "      WARNING: factory $LOCAL_FACTORY emitted zero LendingDeployed events — Ponder's borrow-demand indexing will find nothing" >&2
+fi
 
 # ─── env.local ────────────────────────────────────────────────────────────────
 echo "[4/5] writing web/.env.local"
