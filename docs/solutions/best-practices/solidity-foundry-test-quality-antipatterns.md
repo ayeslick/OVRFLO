@@ -483,6 +483,7 @@ contract FoundryTester is FuzzTester {
 
 ## Related
 
+- [Vitest/React frontend test quality anti-patterns](vitest-frontend-test-quality-antipatterns.md) -- the frontend/Vitest counterpart to this review, from a later pass on `web/tests/`; same "green is lying" theme, JS-module-eval and shared-mock mechanisms instead of EVM ones
 - [Closing stateful fuzz coverage gaps](../best-practices/closing-stateful-fuzz-coverage-gaps.md) -- companion campaign on handler expansion, mock fidelity, and property triage; same "green is lying" theme from the fuzz angle
 - [Solidity test coverage review](../best-practices/solidity-test-coverage-review.md) -- the coverage audit that motivates locking guard branches and view-function negative tests
 - [Sablier NFT approval fuzz reachability gap](../test-failures/sablier-nft-approval-fuzz-reachability-gap.md) -- a related case where a green fuzz suite was vacuous because of a missing harness capability
