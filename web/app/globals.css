@@ -455,3 +455,40 @@ tbody tr:not(.market-row-detail) {
 .advanced-toggle:hover {
   color: var(--chalk);
 }
+
+/* --- Summary strip + claim-all queue (U5) --- */
+.summary-strip-cells {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 1rem;
+  align-items: start;
+}
+.summary-cell {
+  display: grid;
+  gap: 0.25rem;
+}
+.claim-queue {
+  display: grid;
+  gap: 0.5rem;
+  max-height: 40vh;
+  overflow-y: auto;
+}
+.claim-queue-row {
+  border-bottom: 1px solid var(--graphite);
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding-bottom: 0.5rem;
+}
+.summary-cell.action-with-caption {
+  flex-direction: column;
+  align-items: stretch;
+}
+@media (max-width: 800px) {
+  .summary-strip-cells {
+    grid-template-columns: 1fr;
+  }
+  .summary-cell.action-with-caption .button {
+    width: 100%;
+  }
+}

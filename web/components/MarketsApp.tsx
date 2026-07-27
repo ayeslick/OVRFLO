@@ -43,6 +43,7 @@ export function MarketsApp() {
         </nav>
       </header>
 
+      <PositionSummary markets={markets.markets} user={connectedAddress} symbols={symbols} />
       <MarketsTable
         markets={markets.markets}
         symbols={symbols}
@@ -51,7 +52,6 @@ export function MarketsApp() {
         onSelect={setSelectedMarket}
         onMode={(market, action) => setActiveMode({ market, action })}
       />
-      <PositionSummary markets={markets.markets} user={connectedAddress} />
 
       {activeMode ? (
         <MarketDetail
