@@ -56,6 +56,17 @@ const revertStringCopy: Record<string, string> = {
   "OVRFLOLending: unknown loan": "This loan does not exist.",
 };
 
+// Revert reasons that mean "liquidity moved between quoting and signing" —
+// classifyBorrowError (lib/borrow.ts) recovers from these with an automatic
+// re-quote instead of a terminal error. Kept here, next to revertStringCopy,
+// so both stay in sync whenever a contract revert string changes.
+export const STALE_LIQUIDITY_REASONS = [
+  "OVRFLOLending: liquidity inactive",
+  "OVRFLOLending: insufficient availableLiquidity",
+  "OVRFLOLending: duplicate or unsorted ids",
+  "OVRFLOLending: slippage",
+] as const;
+
 export function userFacingError(error: unknown) {
   const reverted = findRevert(error);
   const errorName = reverted?.data?.errorName;

@@ -1,11 +1,13 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Address } from "viem";
+import { useEscapeKey } from "@/hooks/useEscapeKey";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
 import type { SymbolMap } from "@/hooks/useMarketSymbols";
 import type { ActiveAction, MarketInfo } from "@/lib/types";
 import { ACTION_META, FormBody } from "./ActionModal";
+import { ModalErrorBoundary } from "./ModalErrorBoundary";
 
 type Props = {
   market: MarketInfo;
@@ -20,15 +22,9 @@ type Props = {
 // animation are retained unchanged.
 export function MarketDetail({ market, user, action, symbols, onClose }: Props) {
   const panelRef = useRef<HTMLDivElement>(null);
+  const [reloadKey, setReloadKey] = useState(0);
   useFocusTrap(panelRef, true);
-
-  useEffect(() => {
-    function handleKey(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
-    }
-    window.addEventListener("keydown", handleKey);
-    return () => window.removeEventListener("keydown", handleKey);
-  }, [onClose]);
+  useEscapeKey(onClose);
 
   useEffect(() => {
     const input = panelRef.current?.querySelector("input");
@@ -53,15 +49,20 @@ export function MarketDetail({ market, user, action, symbols, onClose }: Props) 
             ✕
           </button>
         </div>
+        {/* Body only — the header and close button stay outside the boundary
+            so a body-level throw never traps the user (pattern #3). */}
         <div className="market-detail-view">
-          <FormBody
-            action={action}
-            market={market}
-            user={user}
-            symbols={symbols}
-            accent={actionMeta.accent}
-            onClose={onClose}
-          />
+          <ModalErrorBoundary onReset={() => setReloadKey((key) => key + 1)}>
+            <FormBody
+              key={reloadKey}
+              action={action}
+              market={market}
+              user={user}
+              symbols={symbols}
+              accent={actionMeta.accent}
+              onClose={onClose}
+            />
+          </ModalErrorBoundary>
         </div>
       </div>
     </div>

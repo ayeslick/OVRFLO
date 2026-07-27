@@ -3,7 +3,7 @@ import { ovrfloLendingAbi } from "./generated";
 import { loanOutstanding, upfrontBps } from "./lending-math";
 import { classifyBorrowError, resolveSelectedTick, type BorrowErrorKind } from "./borrow";
 import type { TickDepth } from "./router";
-import type { Loan } from "./types";
+import type { Loan, LiquidityPosition, LoanPool } from "./types";
 
 // Pure card-state logic for the positions panel (ticket 08).
 
@@ -39,6 +39,31 @@ export function streamedPct({
   const streamed = withdrawn + withdrawable;
   if (streamed >= deposited) return 100;
   return Number((streamed * 100n) / deposited);
+}
+
+// Shared "this user's rows for this market" selectors — used by both
+// PositionList (per-market detail) and PositionSummary (cross-market
+// aggregate) so the market-matching filter can't drift between the two.
+// Take the market address (not the full MarketInfo) so callers can keep
+// depending on the primitive string in a useMemo/useEffect deps array
+// instead of the market object's identity.
+export function selectLiquidityForLender(
+  liquidity: LiquidityPosition[],
+  marketAddress: Address,
+  normalizedUser: string | undefined,
+) {
+  const marketKey = marketAddress.toLowerCase();
+  return liquidity.filter(
+    (position) =>
+      position.market.toLowerCase() === marketKey &&
+      Boolean(normalizedUser) &&
+      position.lender.toLowerCase() === normalizedUser,
+  );
+}
+
+export function selectForMarket<T extends { pool: Pick<LoanPool, "market"> }>(rows: T[], marketAddress: Address) {
+  const marketKey = marketAddress.toLowerCase();
+  return rows.filter(({ pool }) => pool.market.toLowerCase() === marketKey);
 }
 
 // "You could borrow ~X% upfront" teaser: priced at the lowest tick with real

@@ -9,6 +9,7 @@ import { useLendingLiquidity } from "@/hooks/useLendingLiquidity";
 import { symbolFor, type SymbolMap } from "@/hooks/useMarketSymbols";
 import { formatTokenAmount } from "@/lib/format";
 import { isLoanOpen } from "@/lib/lending-math";
+import { selectForMarket, selectLiquidityForLender } from "@/lib/positions";
 import type { MarketInfo } from "@/lib/types";
 import { ClaimAllModal, type ClaimAllPool, type ClaimAllStream } from "./ClaimAllModal";
 
@@ -219,7 +220,6 @@ function PositionSummaryMarket({
   const key = `${market.lending}-${market.market}`;
   const underlyingSymbol = symbolFor(symbols, market.underlying);
   const ovrfloSymbol = symbolFor(symbols, market.ovrfloToken);
-  const marketKey = market.market.toLowerCase();
   const normalizedUser = user?.toLowerCase();
 
   const isLoading = liquidity.isLoading || pools.isLoading || loans.isLoading;
@@ -239,16 +239,9 @@ function PositionSummaryMarket({
         status: isLoading ? "loading" : "error",
       };
     }
-    const userLiquidity = liquidity.liquidity.filter(
-      (position) =>
-        position.market.toLowerCase() === marketKey &&
-        Boolean(normalizedUser) &&
-        position.lender.toLowerCase() === normalizedUser,
-    );
-    const marketPools = pools.pools.filter(({ pool }) => pool.market.toLowerCase() === marketKey);
-    const openLoans = loans.loans.filter(
-      ({ pool, loan }) => pool.market.toLowerCase() === marketKey && isLoanOpen(loan),
-    );
+    const userLiquidity = selectLiquidityForLender(liquidity.liquidity, market.market, normalizedUser);
+    const marketPools = selectForMarket(pools.pools, market.market);
+    const openLoans = selectForMarket(loans.loans, market.market).filter(({ loan }) => isLoanOpen(loan));
     return {
       underlyingSymbol,
       ovrfloSymbol,
@@ -268,7 +261,7 @@ function PositionSummaryMarket({
     liquidity.liquidity,
     loans.loans,
     market.lending,
-    marketKey,
+    market.market,
     normalizedUser,
     ovrfloSymbol,
     pools.pools,

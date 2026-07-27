@@ -1,5 +1,5 @@
 import { parseEventLogs, type Address, type Log } from "viem";
-import { eligibilityErrorNames } from "./errors";
+import { eligibilityErrorNames, STALE_LIQUIDITY_REASONS } from "./errors";
 import { ovrfloLendingAbi } from "./generated";
 import { BPS } from "./lending-math";
 import type { TickDepth } from "./router";
@@ -53,20 +53,11 @@ export function parseSlippageBps(raw: string): bigint | null {
   return bps;
 }
 
-// Revert reasons that mean "liquidity moved between quoting and signing" — the
-// form recovers from these with an automatic re-quote, never a dead-end error.
-const STALE_REASONS = [
-  "OVRFLOLending: liquidity inactive",
-  "OVRFLOLending: insufficient availableLiquidity",
-  "OVRFLOLending: duplicate or unsorted ids",
-  "OVRFLOLending: slippage",
-];
-
 export type BorrowErrorKind = "stale" | "terminal" | "retryable";
 
 export function classifyBorrowError(error: unknown): BorrowErrorKind {
   const message = error instanceof Error ? error.message : String(error);
-  if (STALE_REASONS.some((reason) => message.includes(reason))) return "stale";
+  if (STALE_LIQUIDITY_REASONS.some((reason) => message.includes(reason))) return "stale";
   if (message.includes("OVRFLOLending:")) return "terminal";
   if (eligibilityErrorNames.some((name) => message.includes(name))) return "terminal";
   return "retryable";

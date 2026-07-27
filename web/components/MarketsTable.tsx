@@ -1,11 +1,12 @@
 "use client";
 
-import { Fragment, useEffect, useState } from "react";
+import { Fragment } from "react";
 import type { Address } from "viem";
 import { useReadContracts } from "wagmi";
 import { useLending } from "@/hooks/useLending";
 import { useLendingLiquidity } from "@/hooks/useLendingLiquidity";
 import { symbolFor, type SymbolMap } from "@/hooks/useMarketSymbols";
+import { useNowSecondsHydrationSafe } from "@/hooks/useNowSeconds";
 import { ovrfloAbi } from "@/lib/abis";
 import { formatAprBps, formatMaturity, formatTokenAmount } from "@/lib/format";
 import { aprChoices, formatBpsPct, upfrontBps } from "@/lib/lending-math";
@@ -25,8 +26,7 @@ type Props = {
 const DAY_SECONDS = 86_400n;
 
 export function MarketsTable({ markets, symbols, user, selected, onSelect, onMode }: Props) {
-  const [nowSeconds, setNowSeconds] = useState<bigint | null>(null);
-  useEffect(() => setNowSeconds(BigInt(Math.floor(Date.now() / 1000))), []);
+  const nowSeconds = useNowSecondsHydrationSafe();
 
   const tvlReads = useReadContracts({
     contracts: markets.map((market) => ({

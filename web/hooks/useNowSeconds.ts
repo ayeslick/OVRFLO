@@ -17,3 +17,18 @@ export function useNowSeconds(live = false): bigint {
 
   return nowSeconds;
 }
+
+// Hydration-safe variant for components that render unconditionally in the
+// initial page tree (e.g. MarketsTable). This app builds with
+// `output: "export"` (next.config.ts), so that initial HTML is static,
+// baked at `next build` time — an eager Date.now() read would embed a
+// build-time value that mismatches the client's real clock at hydration.
+// Null until the first client-side effect runs, matching the static
+// markup exactly on first paint; consumers must handle the null case.
+export function useNowSecondsHydrationSafe(): bigint | null {
+  const [nowSeconds, setNowSeconds] = useState<bigint | null>(null);
+
+  useEffect(() => setNowSeconds(BigInt(Math.floor(Date.now() / 1000))), []);
+
+  return nowSeconds;
+}

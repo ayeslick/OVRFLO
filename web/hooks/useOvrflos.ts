@@ -81,7 +81,7 @@ export function useOvrflos(factory: Address = factoryAddress) {
   };
 }
 
-function bigintToSafeLength(value: bigint) {
+export function bigintToSafeLength(value: bigint) {
   if (value > 100n) return 100;
   return Number(value);
 }

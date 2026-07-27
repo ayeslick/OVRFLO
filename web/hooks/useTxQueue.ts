@@ -35,6 +35,7 @@ export function useTxQueue(user?: Address) {
   const previousUser = useRef(user);
   const userRef = useRef(user);
   userRef.current = user;
+  const cancelRetry = useRef<(() => void) | undefined>(undefined);
 
   const execute = useCallback(
     (tx: QueuedTx) => {
@@ -114,7 +115,8 @@ export function useTxQueue(user?: Address) {
     if (!running || !receipt.isSuccess || !write.data || handledHash.current === write.data) return;
     handledHash.current = write.data;
     invalidateAllOnChainReads(queryClient, userRef.current);
-    scheduleHeldStreamsRetry(queryClient, userRef.current);
+    cancelRetry.current?.();
+    cancelRetry.current = scheduleHeldStreamsRetry(queryClient, userRef.current);
     const confirmedIndex = index;
     const nextIndex = confirmedIndex + 1;
     setRows((current) => current.map((row, i) => (i === confirmedIndex ? { ...row, status: "confirmed" } : row)));
@@ -126,6 +128,8 @@ export function useTxQueue(user?: Address) {
     }
     execute(rows[nextIndex].tx);
   }, [execute, index, paused, queryClient, receipt.isSuccess, rows, running, write]);
+
+  useEffect(() => () => cancelRetry.current?.(), []);
 
   // Failure (rejected signature or reverted tx): stop after the in-flight tx.
   const failure = write.error ?? receipt.error ?? null;

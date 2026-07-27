@@ -12,7 +12,14 @@ import { symbolFor, type SymbolMap } from "@/hooks/useMarketSymbols";
 import { formatAprBps, formatId, formatTokenAmount } from "@/lib/format";
 import { aprChoices, formatBpsPct, loanOutstanding } from "@/lib/lending-math";
 import { canCloseLoan, isSeriesMatchedStream } from "@/lib/modal-logic";
-import { borrowTeaserBps, loanCardState, obligationPct, streamedPct } from "@/lib/positions";
+import {
+  borrowTeaserBps,
+  loanCardState,
+  obligationPct,
+  selectForMarket,
+  selectLiquidityForLender,
+  streamedPct,
+} from "@/lib/positions";
 import { buildLadder } from "@/lib/router";
 import type { ActiveAction, HeldStream, Loan, LoanPool, MarketInfo } from "@/lib/types";
 
@@ -49,18 +56,9 @@ export function PositionList({ market, user, symbols, onAction }: Props) {
   const nowSeconds = useNowSeconds();
 
   const normalizedUser = user?.toLowerCase();
-  const userLiquidity = liquidity.liquidity.filter(
-    (position) =>
-      position.market.toLowerCase() === market.market.toLowerCase() &&
-      Boolean(normalizedUser) &&
-      position.lender.toLowerCase() === normalizedUser,
-  );
-  const userPools = lenderPools.pools.filter(
-    ({ pool }) => pool.market.toLowerCase() === market.market.toLowerCase(),
-  );
-  const userLoans = borrowerLoans.loans.filter(
-    ({ pool }) => pool.market.toLowerCase() === market.market.toLowerCase(),
-  );
+  const userLiquidity = selectLiquidityForLender(liquidity.liquidity, market.market, normalizedUser);
+  const userPools = selectForMarket(lenderPools.pools, market.market);
+  const userLoans = selectForMarket(borrowerLoans.loans, market.market);
   const eligibleStreams = streams.streams.filter((stream) => isSeriesMatchedStream(stream, market));
 
   const isLoading =
@@ -109,7 +107,7 @@ export function PositionList({ market, user, symbols, onAction }: Props) {
   }
 
   return (
-    <div style={{ display: "grid", gap: "1rem" }}>
+    <div className="position-list">
       {tooLarge ? <div className="label mono">{truncationCopy}</div> : null}
       {hasLending ? (
         <div className="position-group">

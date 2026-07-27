@@ -1,3 +1,4 @@
+import { isAddressEqual } from "viem";
 import { loanOutstanding } from "./lending-math";
 import type { HeldStream, Loan, MarketInfo } from "./types";
 
@@ -29,8 +30,8 @@ export function applySlippageUp(amount: bigint, slippageBps: bigint = DEFAULT_SL
 
 export function isSeriesMatchedStream(stream: HeldStream, market: MarketInfo) {
   return (
-    stream.sender.toLowerCase() === market.vault.toLowerCase() &&
-    stream.asset.toLowerCase() === market.ovrfloToken.toLowerCase() &&
+    isAddressEqual(stream.sender, market.vault) &&
+    isAddressEqual(stream.asset, market.ovrfloToken) &&
     stream.endTime === market.expiryCached &&
     !stream.canceled &&
     !stream.depleted

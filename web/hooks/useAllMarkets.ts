@@ -5,7 +5,7 @@ import { useReadContracts } from "wagmi";
 import { ovrfloAbi, ovrfloFactoryAbi } from "@/lib/abis";
 import { factoryAddress, ZERO_ADDRESS } from "@/lib/config";
 import type { MarketInfo } from "@/lib/types";
-import { useOvrflos } from "./useOvrflos";
+import { bigintToSafeLength, useOvrflos } from "./useOvrflos";
 
 export function useAllMarkets() {
   const ovrflos = useOvrflos(factoryAddress);
@@ -64,8 +64,8 @@ export function useAllMarkets() {
   const markets = useMemo<MarketInfo[]>(() => {
     const rows: MarketInfo[] = [];
     let readIndex = 0;
-    for (const vault of ovrflos.vaults) {
-      const count = marketCountReads.data?.[ovrflos.vaults.indexOf(vault)];
+    for (const [vaultIndex, vault] of ovrflos.vaults.entries()) {
+      const count = marketCountReads.data?.[vaultIndex];
       const marketCount = count?.status === "success" ? asBigInt(count.result) : 0n;
       for (let offset = 0; offset < bigintToSafeLength(marketCount); offset++) {
         const marketResult = marketAddressReads.data?.[readIndex];
@@ -96,11 +96,6 @@ export function useAllMarkets() {
     isLoading: ovrflos.isLoading || marketCountReads.isLoading || marketAddressReads.isLoading || seriesReads.isLoading,
     error: ovrflos.error ?? marketCountReads.error ?? marketAddressReads.error ?? seriesReads.error,
   };
-}
-
-function bigintToSafeLength(value: bigint) {
-  if (value > 100n) return 100;
-  return Number(value);
 }
 
 function asBigInt(value: unknown) {

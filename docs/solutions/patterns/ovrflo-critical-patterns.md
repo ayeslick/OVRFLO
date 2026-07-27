@@ -1,12 +1,33 @@
 ---
 kind: required_reading
 scope: ovrflo
-last_updated: 2026-07-18
+last_updated: 2026-07-27
 audience: [lenders, ai-agents]
 ---
 
 <!--
   Refresh log:
+  - 2026-07-27: Fixed pattern #3's detection script — it scoped to a
+    `*Modal*.tsx` filename glob, which silently missed `MarketDetail.tsx`
+    (the component actually rendered by MarketsApp; `ActionModal`'s own
+    wrapper was dead code). Rescoped to the `modal-scrim` marker + usage
+    instead of filename. Also fixed a latent bug in patterns #3 and #6's
+    detection scripts: both used `rg -L` intending "files without match",
+    but `-L` is ripgrep's `--follow` (symlinks) flag, not a
+    files-without-match shorthand — the scripts as written did not detect
+    what their comments claimed. Replaced with `--files-without-match`.
+    See docs/solutions/runtime-errors/market-detail-missing-error-boundary-WebUI-20260727.md.
+    Appended pattern #20 (prefer battle-tested libraries/stdlib/framework
+    primitives over hand-rolled reimplementations), prompted by the
+    `useNowSeconds` de-duplication finding from a `/ce-simplify-code` pass
+    over `web/*`. Count is now 20.
+  - 2026-07-27: Added a caveat to pattern #20 cross-linking
+    docs/solutions/architecture-patterns/wagmi-read-batching-requires-matching-enabled-predicates.md
+    — consolidating useReadContract calls into useReadContracts is a
+    special case of pattern #20 that additionally requires every merged
+    call's query.enabled predicate to match exactly, which the general
+    "prefer battle-tested/consolidated code" rule doesn't call out on its
+    own. Found via /ce-compound-refresh after documenting that learning.
   - 2026-07-18: Rewrote pattern #7 (auto-getter zero-return is now the
     operative contract; old hand-rolled-revert principle moved to R-07 in
     "Considered and rejected"). Removed stale fuzz enforcement refs
@@ -70,7 +91,7 @@ pulled from a full writeup under `docs/solutions/<category>/`. If you are
 about to touch the area a pattern covers, you are expected to follow it or
 have a documented reason not to.
 
-New patterns are appended in order. Pattern #6 was removed (obsolete Sablier binding rule) and subsequent patterns renumbered on 2026-07-15; the current count is 19.
+New patterns are appended in order. Pattern #6 was removed (obsolete Sablier binding rule) and subsequent patterns renumbered on 2026-07-15; the current count is 20.
 
 ---
 
@@ -313,15 +334,38 @@ complementary safety net, not a replacement. Do **not** pull in
 
 **How to detect violation:**
 
-- Any modal component importing `useReadContract`/`useReadContracts`/`usePublicClient`
-  must also import `ModalErrorBoundary`:
+- Any component that renders the `modal-scrim` wrapper (i.e. is an actual
+  modal, not just a table row or panel that happens to read on-chain data)
+  and either fetches via `useReadContract`/`useReadContracts`/`usePublicClient`
+  or renders `FormBody` from `ActionModal.tsx` must also import
+  `ModalErrorBoundary`. Scope by the `modal-scrim` marker and by usage, not
+  by a `*Modal*` **filename** glob — a 2026-07-27 regression (see
+  [`docs/solutions/runtime-errors/market-detail-missing-error-boundary-WebUI-20260727.md`](../runtime-errors/market-detail-missing-error-boundary-WebUI-20260727.md))
+  showed the filename-scoped version silently misses any wrapper (e.g.
+  `MarketDetail.tsx`) that renders `FormBody` without "Modal" in its name,
+  and an unscoped usage-only version (no `modal-scrim` filter) over-fires on
+  ordinary components that read on-chain data outside any modal (e.g.
+  `MarketsTable.tsx`, `MarketRowDetail.tsx`):
 
   ```bash
-  rg -l "useReadContract|useReadContracts|usePublicClient" web/components/*Modal*.tsx \
-    | xargs -I{} sh -c 'rg -L "ModalErrorBoundary" "{}" && echo "VIOLATION: {}"'
+  for f in $(rg -l "modal-scrim" web/components/*.tsx); do
+    rg -q "useReadContract|useReadContracts|usePublicClient|<FormBody\b" "$f" \
+      && rg --files-without-match "ModalErrorBoundary" "$f" \
+      && echo "VIOLATION: $f"
+  done
   ```
 
   (expected: no "VIOLATION" lines)
+- Confirm every component that renders `FormBody` is reachable from the app
+  entry point (no fully-wired-but-unmounted "twin" wrapper sitting next to
+  the real one):
+
+  ```bash
+  rg -n "<FormBody\b" web/components/*.tsx
+  # expected: exactly one render site (MarketDetail.tsx) plus FormBody's own
+  # definition in ActionModal.tsx; a second render site is a new modal
+  # wrapper that must also be checked for ModalErrorBoundary
+  ```
 
 - The boundary must not wrap the modal header:
 
@@ -494,10 +538,12 @@ and `sablier.ownerOf` for the lender and borrower.
 
 ```bash
 # Find settlement tests that assert state/ownership but skip balanceOf
-# for treasury or the lending contract:
+# for treasury or the lending contract. Note: use --files-without-match, not
+# `-L` (which is --follow, not files-without-match, in ripgrep) — an `-L`
+# version of this check silently inverts and never flags real gaps.
 rg -l "sellStreamToLiquidity|buyListing|createBorrowerLoanPool|claimLoanPoolShare|closeLoan|repayLoan" \
   test/OVRFLOLending.t.sol | \
-  xargs -I{} sh -c 'rg -L "balanceOf\(TREASURY\)|balanceOf\(address\(lending\)\)" "{}" && echo "REVIEW: {}"'
+  while read -r f; do rg --files-without-match "balanceOf\(TREASURY\)|balanceOf\(address\(lending\)\)" "$f" && echo "REVIEW: $f"; done
 ```
 
 **Documented in:** [`docs/solutions/best-practices/verify-token-balance-movement-not-just-ownership.md`](../best-practices/verify-token-balance-movement-not-just-ownership.md). See also [Test Quality Antipatterns](../best-practices/solidity-foundry-test-quality-antipatterns.md) for the general "green is lying" catalog this rule is a specific case of.
@@ -1287,5 +1333,73 @@ rg -l "import.*interfaces/" test/mocks/
 ```
 
 **Documented in:** Mock struct divergence review (2026-07-18), companion to pattern #18 (empirical ABI verification).
+
+---
+
+## 20. Prefer battle-tested libraries and stdlib/framework primitives over hand-rolled reimplementations (ALWAYS REQUIRED)
+
+### ❌ WRONG (two independent hand-rolled wall clocks instead of the existing hook)
+
+```tsx
+// MarketRowDetail.tsx
+const [nowSeconds, setNowSeconds] = useState<bigint | null>(null);
+useEffect(() => setNowSeconds(BigInt(Math.floor(Date.now() / 1000))), []);
+
+// MarketsTable.tsx — same pattern, hand-rolled again in a second file
+const [nowSeconds, setNowSeconds] = useState<bigint | null>(null);
+useEffect(() => setNowSeconds(BigInt(Math.floor(Date.now() / 1000))), []);
+```
+
+### ✅ CORRECT (delegate to the shared hook; extend it if one shape doesn't fit every call site)
+
+```tsx
+// web/hooks/useNowSeconds.ts exports both shapes callers actually need:
+export function useNowSeconds(live = false): bigint { /* eager init */ }
+export function useNowSecondsHydrationSafe(): bigint | null { /* null-then-effect */ }
+
+// MarketRowDetail.tsx
+const nowSeconds = useNowSeconds();
+
+// MarketsTable.tsx
+const nowSeconds = useNowSecondsHydrationSafe();
+```
+
+**Why:** Before writing new logic for a problem that is not protocol-specific
+domain logic (Pendle/Sablier/OVRFLO math and state), check in order: (1) an
+existing hook/util in this codebase (`web/hooks/`, `web/lib/`), (2) the
+language/runtime stdlib (`structuredClone`, `Intl`, `URL`, `AbortController`,
+etc.), (3) an already-installed dependency (`viem`, `wagmi`,
+`@tanstack/react-query`, `next`) before adding logic on top of it, and only
+then (4) write new code — and only if the problem is genuinely
+protocol-specific. Hand-rolled reimplementations accumulate silent edge-case
+bugs that battle-tested code has already paid down, and every duplicate copy
+is a second place a future fix has to be applied. This is a
+behavior-preservation-first rule, not a line-count-first rule: only swap to an
+existing utility/primitive when it is behavior-equivalent for every input
+actually in play (do not swap in a native UI control, a locale-dependent
+formatter, or a different sort-stability/serialization behavior than what is
+already relied upon).
+
+**Placement/Context:** Any new logic in `web/**` (or Solidity utility code)
+that is not protocol-specific business logic — clock/time reads, debounce/
+throttle, deep clone/equality, URL/query-string parsing, retry/backoff, focus
+trapping, formatting. Protocol-specific math (Sablier stream pricing,
+OVRFLO fee/obligation math) stays hand-rolled and owned in `StreamPricing`/
+`lib/*` — there is no generic library for that.
+
+**How to detect violation:**
+
+```bash
+# Duplicated hand-rolled clock/timer state across components — a proxy for
+# "this pattern exists more than once and should delegate to one shared hook":
+rg -l "useState.*null.*useEffect|setTimeout|setInterval" web/components/*.tsx
+# then manually check whether each hit reimplements something already in
+# web/hooks/ (useNowSeconds, useFocusTrap, useDebounce, etc.) instead of
+# importing it.
+```
+
+**Caveat — consolidating on-chain reads is a special case that needs its own check.** Merging duplicated `useReadContract` calls into one `useReadContracts` batch is this same "don't hand-roll/duplicate what already exists" impulse applied to data fetching, but it carries an extra precondition this pattern doesn't cover on its own: every call being merged must share an *identical* `query.enabled` predicate, or the batch silently changes when each read fires. See [`docs/solutions/architecture-patterns/wagmi-read-batching-requires-matching-enabled-predicates.md`](../architecture-patterns/wagmi-read-batching-requires-matching-enabled-predicates.md).
+
+**Documented in:** [`docs/solutions/best-practices/prefer-battle-tested-libraries-over-hand-rolled-code.md`](../best-practices/prefer-battle-tested-libraries-over-hand-rolled-code.md), [`docs/solutions/architecture-patterns/shared-hook-safety-depends-on-render-tree-position.md`](../architecture-patterns/shared-hook-safety-depends-on-render-tree-position.md) (2026-07-27 `useNowSeconds` de-duplication).
 
 ---

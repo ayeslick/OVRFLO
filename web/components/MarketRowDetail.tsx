@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { Address } from "viem";
-import { useReadContract } from "wagmi";
+import { useReadContract, useReadContracts } from "wagmi";
 import { useHeldStreams } from "@/hooks/useHeldStreams";
 import { symbolFor, type SymbolMap } from "@/hooks/useMarketSymbols";
+import { useNowSeconds } from "@/hooks/useNowSeconds";
 import { erc20Abi, ovrfloAbi } from "@/lib/abis";
 import { formatTokenAmount } from "@/lib/format";
 import { isSeriesMatchedStream } from "@/lib/modal-logic";
@@ -18,39 +19,38 @@ type Props = {
   onMode: (action: ActiveAction) => void;
 };
 
+// Shared prefix for supply/borrow captions: wallet, then lending deployment,
+// then maturity — in that priority order. `null` means "no caption needed."
+function baseActionCaption(disconnected: boolean, lendingDeployed: boolean, matured: boolean) {
+  if (disconnected) return "CONNECT WALLET";
+  if (!lendingDeployed) return "LENDING NOT DEPLOYED";
+  if (matured) return "MARKET MATURED";
+  return null;
+}
+
 // Expanded-row content (R7): balances with context verbs, this market's positions,
 // then the three mode buttons. Disabled modes always say why (DESIGN.md §8) —
 // never hidden without a caption, except DEPOSIT PT which R7 hides post-maturity.
 export function MarketRowDetail({ market, user, symbols, onMode }: Props) {
-  const [nowSeconds, setNowSeconds] = useState<bigint | null>(null);
+  const nowSeconds = useNowSeconds();
   const [advancedOpen, setAdvancedOpen] = useState(false);
-  useEffect(() => setNowSeconds(BigInt(Math.floor(Date.now() / 1000))), []);
-  const matured = nowSeconds !== null && nowSeconds >= market.expiryCached;
+  const matured = nowSeconds >= market.expiryCached;
 
   const underlyingSymbol = symbolFor(symbols, market.underlying);
   const ovrfloSymbol = symbolFor(symbols, market.ovrfloToken);
 
-  const ovrfloBalance = useReadContract({
-    address: market.ovrfloToken,
-    abi: erc20Abi,
-    functionName: "balanceOf",
-    args: user ? [user] : undefined,
+  // One multicall round trip for all three wallet balances instead of three
+  // separate reads — same address/enabled shape for each, so they always
+  // land in the same batch and there's nothing to lose by combining them.
+  const balanceReads = useReadContracts({
+    contracts: [
+      { address: market.ovrfloToken, abi: erc20Abi, functionName: "balanceOf" as const, args: user ? [user] : undefined },
+      { address: market.underlying, abi: erc20Abi, functionName: "balanceOf" as const, args: user ? [user] : undefined },
+      { address: market.ptToken, abi: erc20Abi, functionName: "balanceOf" as const, args: user ? [user] : undefined },
+    ],
     query: { enabled: Boolean(user) },
   });
-  const underlyingBalance = useReadContract({
-    address: market.underlying,
-    abi: erc20Abi,
-    functionName: "balanceOf",
-    args: user ? [user] : undefined,
-    query: { enabled: Boolean(user) },
-  });
-  const ptBalance = useReadContract({
-    address: market.ptToken,
-    abi: erc20Abi,
-    functionName: "balanceOf",
-    args: user ? [user] : undefined,
-    query: { enabled: Boolean(user) },
-  });
+  const [ovrfloBalance, underlyingBalance, ptBalance] = balanceReads.data ?? [];
   // Also read by ConvertForm for capacity display — wagmi dedupes by query key.
   const wrappedUnderlying = useReadContract({
     address: market.vault,
@@ -61,29 +61,17 @@ export function MarketRowDetail({ market, user, symbols, onMode }: Props) {
   const streams = useHeldStreams(user);
   const eligibleStreams = streams.streams.filter((stream) => isSeriesMatchedStream(stream, market));
 
-  const ovrfloBal = ovrfloBalance.data ?? 0n;
-  const underlyingBal = underlyingBalance.data ?? 0n;
-  const ptBal = ptBalance.data ?? 0n;
+  const ovrfloBal = ovrfloBalance?.status === "success" ? ovrfloBalance.result : 0n;
+  const underlyingBal = underlyingBalance?.status === "success" ? underlyingBalance.result : 0n;
+  const ptBal = ptBalance?.status === "success" ? ptBalance.result : 0n;
   const wrapCapacity = wrappedUnderlying.data ?? 0n;
   const wrapReserveShort = wrapCapacity === 0n || wrapCapacity < ovrfloBal;
 
   const disconnected = !user;
-  const supplyCaption = disconnected
-    ? "CONNECT WALLET"
-    : !market.lending
-      ? "LENDING NOT DEPLOYED"
-      : matured
-        ? "MARKET MATURED"
-        : null;
-  const borrowCaption = disconnected
-    ? "CONNECT WALLET"
-    : !market.lending
-      ? "LENDING NOT DEPLOYED"
-      : matured
-        ? "MARKET MATURED"
-        : eligibleStreams.length === 0
-          ? "NO STREAMS AVAILABLE"
-          : null;
+  const supplyCaption = baseActionCaption(disconnected, Boolean(market.lending), matured);
+  const borrowCaption =
+    baseActionCaption(disconnected, Boolean(market.lending), matured) ??
+    (eligibleStreams.length === 0 ? "NO STREAMS AVAILABLE" : null);
   const depositCaption = disconnected ? "CONNECT WALLET" : null;
 
   return (

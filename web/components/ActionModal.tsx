@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { encodeFunctionData, formatUnits, parseUnits } from "viem";
 import type { Address } from "viem";
 import { useConnection, useReadContract } from "wagmi";
@@ -11,7 +11,6 @@ import { useLendingLiquidity } from "@/hooks/useLendingLiquidity";
 import { symbolFor, type SymbolMap } from "@/hooks/useMarketSymbols";
 import { useWalletChangeReset } from "@/hooks/useWalletChangeReset";
 import { useWriteFlow } from "@/hooks/useWriteFlow";
-import { useFocusTrap } from "@/hooks/useFocusTrap";
 import { erc20Abi, ovrfloAbi, ovrfloLendingAbi, sablierLockupAbi } from "@/lib/abis";
 import { SABLIER_LOCKUP_ADDRESS } from "@/lib/config";
 import { userFacingError } from "@/lib/errors";
@@ -40,20 +39,11 @@ import { adjustReceiptSummary, classifyAdjustError } from "@/lib/positions";
 import { useQueryClient } from "@tanstack/react-query";
 import type { ActiveAction, ActionType, MarketInfo } from "@/lib/types";
 import { RateLadder } from "./RateLadder";
-import { ModalErrorBoundary } from "./ModalErrorBoundary";
 import { useNowSeconds } from "@/hooks/useNowSeconds";
-import { useBorrowDemand } from "@/hooks/useBorrowDemand";
+import { useBorrowDemand, type BorrowDemandStatus } from "@/hooks/useBorrowDemand";
 import { demandLevel, type RateDemand } from "@/lib/demand";
 
 export type Accent = "gold" | "cyan" | "neutral";
-
-type Props = {
-  market: MarketInfo;
-  user?: Address;
-  action: ActiveAction;
-  symbols: SymbolMap;
-  onClose: () => void;
-};
 
 export const ACTION_META: Record<ActionType, { title: string; accent: Accent }> = {
   supply: { title: "SUPPLY LIQUIDITY", accent: "gold" },
@@ -72,57 +62,6 @@ export const ACTION_META: Record<ActionType, { title: string; accent: Accent }> 
 
 export function accentClass(accent: Accent) {
   return accent === "gold" ? "button-gold" : accent === "cyan" ? "button-cyan" : "";
-}
-
-export function ActionModal({ market, user, action, symbols, onClose }: Props) {
-  const panelRef = useRef<HTMLDivElement>(null);
-  const [reloadKey, setReloadKey] = useState(0);
-  useFocusTrap(panelRef, true);
-
-  useEffect(() => {
-    function handleKey(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
-    }
-    window.addEventListener("keydown", handleKey);
-    return () => window.removeEventListener("keydown", handleKey);
-  }, [onClose]);
-
-  const meta = ACTION_META[action.type];
-
-  return (
-    <div className="modal-scrim" onClick={onClose}>
-      <div
-        className="modal-panel"
-        ref={panelRef}
-        onClick={(e) => e.stopPropagation()}
-        role="dialog"
-        aria-modal="true"
-        aria-label={meta.title}
-      >
-        <div className="modal-header">
-          <h3 className="modal-heading" tabIndex={-1}>
-            {meta.title}
-          </h3>
-          <button type="button" className="modal-close" onClick={onClose} aria-label="Close">
-            ✕
-          </button>
-        </div>
-        {/* Body only — the header and close button stay outside the boundary
-            so a body-level throw never traps the user (pattern #3). */}
-        <ModalErrorBoundary onReset={() => setReloadKey((key) => key + 1)}>
-          <FormBody
-            key={reloadKey}
-            action={action}
-            market={market}
-            user={user}
-            symbols={symbols}
-            accent={meta.accent}
-            onClose={onClose}
-          />
-        </ModalErrorBoundary>
-      </div>
-    </div>
-  );
 }
 
 export function FormBody({
@@ -166,6 +105,12 @@ export function FormBody({
 
 // --- Shared components ---
 
+function stepClassName(i: number, activeIndex: number, error: boolean) {
+  if (i < activeIndex) return "step-done";
+  if (i !== activeIndex) return "step-pending";
+  return error ? "step-error" : "step-active";
+}
+
 function StepIndicator({
   steps,
   activeIndex,
@@ -180,12 +125,7 @@ function StepIndicator({
   return (
     <div className="modal-step-list mono" aria-live="polite" data-accent={accent}>
       {steps.map((step, i) => (
-        <span
-          key={step}
-          className={
-            i < activeIndex ? "step-done" : i === activeIndex ? (error ? "step-error" : "step-active") : "step-pending"
-          }
-        >
+        <span key={step} className={stepClassName(i, activeIndex, error)}>
           [{i + 1}] {step}
         </span>
       ))}
@@ -226,7 +166,7 @@ function ApproveTxState({ tx, label }: { tx: WriteFlow; label: string }) {
 // Demand cell for one ladder rate. "no data" (indexer unreachable) and
 // "genuinely zero borrows" must never look alike (ticket 09).
 function demandCellCopy(
-  status: "loading" | "ok" | "unavailable",
+  status: BorrowDemandStatus,
   row: RateDemand | undefined,
   peak: bigint,
   formatAmount: (amount: bigint) => string,
@@ -237,7 +177,7 @@ function demandCellCopy(
   return `DEMAND ${demandLevel(row.amount, peak)} · ${row.count} · ${formatAmount(row.amount)}`;
 }
 
-function DemandAnnotation({ status }: { status: "loading" | "ok" | "unavailable" }) {
+function DemandAnnotation({ status }: { status: BorrowDemandStatus }) {
   if (status === "loading") return <div className="label mono">DEMAND: LOADING</div>;
   if (status === "unavailable") {
     return <div className="label mono status-warning">DEMAND DATA UNAVAILABLE — INDEXER UNREACHABLE</div>;
@@ -1257,8 +1197,9 @@ function AdjustRateForm({
     query: { enabled: Boolean(market.lending && positionId !== null) },
   });
   const positionData = positionRead.data as [Address, Address, number, bigint] | undefined;
-  const currentAprBps = positionData?.[2] ?? null;
-  const idleAmount = positionData?.[3] ?? 0n;
+  const [, , positionAprBps, positionIdleAmount] = positionData ?? [];
+  const currentAprBps = positionAprBps ?? null;
+  const idleAmount = positionIdleAmount ?? 0n;
 
   const approveTx = useWriteFlow(connectedAddress);
   const actionTx = useWriteFlow(connectedAddress);

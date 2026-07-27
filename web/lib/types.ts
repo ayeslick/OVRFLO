@@ -56,8 +56,6 @@ export type HeldStream = {
   withdrawable: bigint;
 };
 
-export type TxStep = "idle" | "approve" | "sign" | "confirming" | "confirmed" | "error";
-
 export type ActionType =
   | "supply"
   | "withdraw"

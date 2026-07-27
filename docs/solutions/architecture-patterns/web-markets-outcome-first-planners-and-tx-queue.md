@@ -101,7 +101,7 @@ export function invalidateAllOnChainReads(queryClient: QueryClient, user?: Addre
 
 **Disabled actions always explain why** in `MarketRowDetail` (CONNECT WALLET, MARKET MATURED, LENDING NOT DEPLOYED, etc.).
 
-**Symbol batching** — one deduped `useReadContracts` at app root, threaded as props via `symbolFor`.
+**Symbol batching** — one deduped `useReadContracts` at app root, threaded as props via `symbolFor`. Before adding more reads to this batch (or building a new one), verify every call's `query.enabled` predicate matches exactly — see [wagmi read-batching enabled-predicate safety](../architecture-patterns/wagmi-read-batching-requires-matching-enabled-predicates.md).
 
 **Wallet-change guard** — forms reset and show a notice until the user acknowledges; never act on selections from a prior account (`useWalletChangeReset`).
 
@@ -189,6 +189,7 @@ Queue advances on receipt with invalidation every step; `resume()` recomputes pl
 - [repayLoan equality rounding](../security-issues/repayloan-equality-rounding-no-brick-OVRFLOBook-20260624.md) — on-chain rounding invariants display math must mirror
 - [Solidity batch function safety](../design-patterns/solidity-batch-function-safety-patterns.md) — on-chain claim/pool semantics the planner targets
 - [Adjust-rate multicall shrink race](../logic-errors/adjust-rate-multicall-shrink-race.md) — receipt-truth and per-flow error classification for the withdraw-then-supply multicall (tickets 06–08)
+- [wagmi read-batching enabled-predicate safety](wagmi-read-batching-requires-matching-enabled-predicates.md) — the safety condition for merging `useReadContract` calls into a `useReadContracts` batch like the symbol batching described above
 
 ## Related files (quick index)
 

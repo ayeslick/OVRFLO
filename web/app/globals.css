@@ -315,6 +315,11 @@ tr:last-child td {
 }
 
 /* Position list */
+.position-list {
+  display: grid;
+  gap: 1rem;
+}
+
 .position-group {
   border-bottom: 1px solid var(--graphite);
   padding-bottom: 1rem;

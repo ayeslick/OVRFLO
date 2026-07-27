@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { Address } from "viem";
+import { useEscapeKey } from "@/hooks/useEscapeKey";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
 import { useTxQueue, type QueueRowStatus } from "@/hooks/useTxQueue";
 import { planClaimAll, type QueuedTx } from "@/lib/claim-all";
@@ -47,14 +48,7 @@ export function ClaimAllModal({ pools, streams, user, onClose }: Props) {
   const [reviewPlan] = useState<QueuedTx[]>(() => planClaimAll({ pools, streams }));
 
   const closeBlocked = queue.inFlight;
-
-  useEffect(() => {
-    function handleKey(e: KeyboardEvent) {
-      if (e.key === "Escape" && !closeBlocked) onClose();
-    }
-    window.addEventListener("keydown", handleKey);
-    return () => window.removeEventListener("keydown", handleKey);
-  }, [closeBlocked, onClose]);
+  useEscapeKey(onClose, !closeBlocked);
 
   useEffect(() => {
     if (queue.done) doneRef.current?.focus();

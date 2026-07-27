@@ -47,11 +47,3 @@ export const ponderUrl = optionalUrl(env.ponderUrl ?? env.sablierIndexerUrl);
 export function isConfiguredAddress(address: Address | null | undefined) {
   return Boolean(address && address !== ZERO_ADDRESS);
 }
-
-export function explorerAddress(address: Address) {
-  return `https://etherscan.io/address/${address}`;
-}
-
-export function explorerTx(hash: `0x${string}`) {
-  return `https://etherscan.io/tx/${hash}`;
-}
