@@ -47,6 +47,7 @@ CLAUDE.md
 AGENTS.md
 .cursor/
 .bootstrap.*
+.scratch
 
 # Fuzz build artifacts (regenerated per run)
 fizz_data/
