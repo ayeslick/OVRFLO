@@ -39,16 +39,9 @@ vi.mock("@/hooks/useLendingLiquidity", () => ({
     error: entry(lending).error,
   }),
 }));
-vi.mock("@/hooks/useLenderPools", () => ({
-  useLenderPools: (lending: Address) => ({
+vi.mock("@/hooks/useLoanBook", () => ({
+  useLoanBook: (lending: Address) => ({
     pools: entry(lending).pools,
-    tooLarge: false,
-    isLoading: entry(lending).isLoading,
-    error: entry(lending).error,
-  }),
-}));
-vi.mock("@/hooks/useBorrowerLoans", () => ({
-  useBorrowerLoans: (lending: Address) => ({
     loans: entry(lending).loans,
     tooLarge: false,
     isLoading: entry(lending).isLoading,

@@ -54,11 +54,14 @@ const hookData = {
   tooLarge: false,
 };
 
-vi.mock("@/hooks/useBorrowerLoans", () => ({
-  useBorrowerLoans: () => ({ loans: hookData.loans, tooLarge: hookData.tooLarge, isLoading: false, error: null }),
-}));
-vi.mock("@/hooks/useLenderPools", () => ({
-  useLenderPools: () => ({ pools: hookData.pools, tooLarge: false, isLoading: false, error: null }),
+vi.mock("@/hooks/useLoanBook", () => ({
+  useLoanBook: () => ({
+    pools: hookData.pools,
+    loans: hookData.loans,
+    tooLarge: hookData.tooLarge,
+    isLoading: false,
+    error: null,
+  }),
 }));
 vi.mock("@/hooks/useLendingLiquidity", () => ({
   useLendingLiquidity: () => ({ liquidity: hookData.liquidity, tooLarge: false, isLoading: false, error: null }),

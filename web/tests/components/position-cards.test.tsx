@@ -33,11 +33,8 @@ vi.mock("@/hooks/useLendingLiquidity", () => ({
     error: null,
   }),
 }));
-vi.mock("@/hooks/useLenderPools", () => ({
-  useLenderPools: () => ({ pools: hookData.pools, tooLarge: false, isLoading: false, error: null }),
-}));
-vi.mock("@/hooks/useBorrowerLoans", () => ({
-  useBorrowerLoans: () => ({ loans: hookData.loans, tooLarge: false, isLoading: false, error: null }),
+vi.mock("@/hooks/useLoanBook", () => ({
+  useLoanBook: () => ({ pools: hookData.pools, loans: hookData.loans, tooLarge: false, isLoading: false, error: null }),
 }));
 vi.mock("@/hooks/useHeldStreams", () => ({
   useHeldStreams: () => ({ streams: hookData.streams, isLoading: false, error: null }),

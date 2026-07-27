@@ -28,6 +28,15 @@ audience: [lenders, ai-agents]
     call's query.enabled predicate to match exactly, which the general
     "prefer battle-tested/consolidated code" rule doesn't call out on its
     own. Found via /ce-compound-refresh after documenting that learning.
+  - 2026-07-27: Added a second caveat to pattern #20 cross-linking
+    docs/solutions/architecture-patterns/wagmi-query-key-dedup-makes-cross-component-hook-duplication-free.md
+    — pattern #20's "consolidate duplicated logic" spirit does not extend
+    to two components calling the same wagmi/TanStack-Query-backed hook
+    with matching args; that already dedupes by query key for free, so
+    building a shared-cache/context layer to "fix" it adds a real seam to
+    solve a zero-cost non-problem. Found via an /improve-codebase-
+    architecture pass over web/* (RatesCell/PositionList both call
+    useLending/useLendingLiquidity for the same lending address).
   - 2026-07-18: Rewrote pattern #7 (auto-getter zero-return is now the
     operative contract; old hand-rolled-revert principle moved to R-07 in
     "Considered and rejected"). Removed stale fuzz enforcement refs
@@ -1400,6 +1409,8 @@ rg -l "useState.*null.*useEffect|setTimeout|setInterval" web/components/*.tsx
 
 **Caveat — consolidating on-chain reads is a special case that needs its own check.** Merging duplicated `useReadContract` calls into one `useReadContracts` batch is this same "don't hand-roll/duplicate what already exists" impulse applied to data fetching, but it carries an extra precondition this pattern doesn't cover on its own: every call being merged must share an *identical* `query.enabled` predicate, or the batch silently changes when each read fires. See [`docs/solutions/architecture-patterns/wagmi-read-batching-requires-matching-enabled-predicates.md`](../architecture-patterns/wagmi-read-batching-requires-matching-enabled-predicates.md).
 
-**Documented in:** [`docs/solutions/best-practices/prefer-battle-tested-libraries-over-hand-rolled-code.md`](../best-practices/prefer-battle-tested-libraries-over-hand-rolled-code.md), [`docs/solutions/architecture-patterns/shared-hook-safety-depends-on-render-tree-position.md`](../architecture-patterns/shared-hook-safety-depends-on-render-tree-position.md) (2026-07-27 `useNowSeconds` de-duplication).
+**Second caveat — apparent duplication *across* components calling the same read hook is often not real duplication.** This pattern's spirit ("don't reimplement what already exists") does not mean "eliminate every case where two components call the same hook with the same args" — when that hook is built on wagmi/TanStack Query, the caching layer already dedupes by query key, so two call sites resolve to one cache entry and one request. Building a context/shared-cache layer to "fix" this adds a real seam to solve a cost that's already zero. Check the query key equality before assuming the duplication is real. See [`docs/solutions/architecture-patterns/wagmi-query-key-dedup-makes-cross-component-hook-duplication-free.md`](../architecture-patterns/wagmi-query-key-dedup-makes-cross-component-hook-duplication-free.md).
+
+**Documented in:** [`docs/solutions/best-practices/prefer-battle-tested-libraries-over-hand-rolled-code.md`](../best-practices/prefer-battle-tested-libraries-over-hand-rolled-code.md), [`docs/solutions/architecture-patterns/shared-hook-safety-depends-on-render-tree-position.md`](../architecture-patterns/shared-hook-safety-depends-on-render-tree-position.md) (2026-07-27 `useNowSeconds` de-duplication), [`docs/solutions/architecture-patterns/wagmi-query-key-dedup-makes-cross-component-hook-duplication-free.md`](../architecture-patterns/wagmi-query-key-dedup-makes-cross-component-hook-duplication-free.md) (2026-07-27 `RatesCell`/`PositionList` review).
 
 ---

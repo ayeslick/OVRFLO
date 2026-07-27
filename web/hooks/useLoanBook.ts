@@ -9,13 +9,20 @@ import { enumerateIds, loanPoolClaimable, MAX_ENUMERATION_IDS, recoveredForClaim
 import type { Loan, LoanPool } from "@/lib/types";
 import { useLending } from "./useLending";
 
-export function useLenderPools(lending: Address | null | undefined, lender: Address | null | undefined) {
+// Combines what useLenderPools and useBorrowerLoans used to fetch separately.
+// Every current caller (PositionSummary, PositionList) needs both the lender
+// and borrower view of the SAME (lending, user) pair, which meant two
+// multicalls re-scanning the same id space and re-fetching loans/loanPools
+// twice. One multicall + one shared Sablier withdrawable overlay, split into
+// both views client-side. RepayForm needs only the lean borrower view for one
+// loan and stays on useBorrowerLoans — this hook is for the dual-use sites.
+export function useLoanBook(lending: Address | null | undefined, user: Address | null | undefined) {
   const lendingState = useLending(lending);
   const ids = useMemo(() => enumerateIds(lendingState.params.nextLoanId), [lendingState.params.nextLoanId]);
 
   const reads = useReadContracts({
     contracts:
-      lending && lender
+      lending && user
         ? ids.flatMap((id) => [
             { address: lending, abi: ovrfloLendingAbi, functionName: "loanPools" as const, args: [id] as const },
             { address: lending, abi: ovrfloLendingAbi, functionName: "loans" as const, args: [id] as const },
@@ -23,18 +30,18 @@ export function useLenderPools(lending: Address | null | undefined, lender: Addr
               address: lending,
               abi: ovrfloLendingAbi,
               functionName: "loanPoolContributions" as const,
-              args: [id, lender] as const,
+              args: [id, user] as const,
             },
             {
               address: lending,
               abi: ovrfloLendingAbi,
               functionName: "loanPoolReceived" as const,
-              args: [id, lender] as const,
+              args: [id, user] as const,
             },
             { address: lending, abi: ovrfloLendingAbi, functionName: "loanPoolProceeds" as const, args: [id] as const },
           ])
         : [],
-    query: { enabled: isConfiguredAddress(lending ?? null) && Boolean(lender) && ids.length > 0 },
+    query: { enabled: isConfiguredAddress(lending ?? null) && Boolean(user) && ids.length > 0 },
   });
 
   const rowsBase = useMemo(() => {
@@ -61,8 +68,6 @@ export function useLenderPools(lending: Address | null | undefined, lender: Addr
       ) {
         continue;
       }
-      const contribution = contributionResult.result as bigint;
-      if (contribution === 0n) continue;
       const [poolBorrower, aprBps, market, totalContributed] = poolResult.result as [Address, number, Address, bigint];
       if (poolBorrower === ZERO_ADDRESS) continue;
       const [loanBorrower, streamId, obligation, drawn, repaid, closed] = loanResult.result as [
@@ -73,53 +78,77 @@ export function useLenderPools(lending: Address | null | undefined, lender: Addr
         bigint,
         boolean,
       ];
-      const loan = { id: ids[index], borrower: loanBorrower, streamId, obligation, drawn, repaid, closed };
-      const pool = { id: ids[index], borrower: poolBorrower, aprBps, market, totalContributed };
       rows.push({
-        pool,
-        loan,
-        contribution,
+        loan: { id: ids[index], borrower: loanBorrower, streamId, obligation, drawn, repaid, closed },
+        pool: { id: ids[index], borrower: poolBorrower, aprBps, market, totalContributed },
+        contribution: contributionResult.result as bigint,
         received: receivedResult.result as bigint,
         proceeds: proceedsResult.result as bigint,
       });
     }
-    return rows.sort((a, b) => (a.pool.id > b.pool.id ? -1 : 1));
+    return rows;
   }, [ids, reads.data]);
 
-  // Separate Sablier batch (mirrors useHeldStreams) — never widen the lending
-  // batch's index stride. claimable is PROJECTED via recoveredForClaimable so it
-  // includes the open stream's harvestable balance, not just banked proceeds.
+  // One Sablier batch over the union of loans either view needs, deduped by
+  // loan id — never widen this to per-view batches (mirrors useHeldStreams).
+  const relevantRows = useMemo(() => {
+    const normalized = user?.toLowerCase();
+    return rowsBase.filter(
+      (row) => row.contribution > 0n || (normalized && row.loan.borrower.toLowerCase() === normalized),
+    );
+  }, [rowsBase, user]);
+
   const withdrawableReads = useReadContracts({
-    contracts: rowsBase.map(({ loan }) => ({
+    contracts: relevantRows.map(({ loan }) => ({
       address: SABLIER_LOCKUP_ADDRESS,
       abi: sablierLockupAbi,
       functionName: "withdrawableAmountOf" as const,
       args: [loan.streamId] as const,
     })),
-    query: { enabled: rowsBase.length > 0 },
+    query: { enabled: relevantRows.length > 0 },
   });
+
+  const withdrawableByLoanId = useMemo(() => {
+    const map = new Map<bigint, bigint>();
+    relevantRows.forEach((row, index) => {
+      const result = withdrawableReads.data?.[index];
+      map.set(row.loan.id, result?.status === "success" ? (result.result as bigint) : 0n);
+    });
+    return map;
+  }, [relevantRows, withdrawableReads.data]);
 
   const pools = useMemo(
     () =>
-      rowsBase.map((entry, index) => {
-        const result = withdrawableReads.data?.[index];
-        const withdrawable = result?.status === "success" ? (result.result as bigint) : 0n;
-        return {
-          ...entry,
-          withdrawable,
-          claimable: loanPoolClaimable({
-            contribution: entry.contribution,
-            received: entry.received,
-            recovered: recoveredForClaimable({ loan: entry.loan, withdrawable }),
-            totalContributed: entry.pool.totalContributed,
-          }),
-        };
-      }),
-    [rowsBase, withdrawableReads.data],
+      rowsBase
+        .filter((row) => row.contribution > 0n)
+        .map((entry) => {
+          const withdrawable = withdrawableByLoanId.get(entry.loan.id) ?? 0n;
+          return {
+            ...entry,
+            withdrawable,
+            claimable: loanPoolClaimable({
+              contribution: entry.contribution,
+              received: entry.received,
+              recovered: recoveredForClaimable({ loan: entry.loan, withdrawable }),
+              totalContributed: entry.pool.totalContributed,
+            }),
+          };
+        })
+        .sort((a, b) => (a.pool.id > b.pool.id ? -1 : 1)),
+    [rowsBase, withdrawableByLoanId],
   );
+
+  const loans = useMemo(() => {
+    const normalized = user?.toLowerCase();
+    return rowsBase
+      .filter((row) => normalized && row.loan.borrower.toLowerCase() === normalized)
+      .map(({ loan, pool }) => ({ loan, pool, withdrawable: withdrawableByLoanId.get(loan.id) ?? 0n }))
+      .sort((a, b) => (a.loan.id > b.loan.id ? -1 : 1));
+  }, [rowsBase, user, withdrawableByLoanId]);
 
   return {
     pools,
+    loans,
     tooLarge: lendingState.params.nextLoanId > MAX_ENUMERATION_IDS + 1n,
     isLoading: lendingState.isLoading || reads.isLoading,
     error: lendingState.error ?? reads.error,

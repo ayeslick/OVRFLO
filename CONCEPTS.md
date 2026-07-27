@@ -128,6 +128,12 @@ The batch exit flow where a connected lender reviews and sequentially confirms a
 
 Each step is a separate on-chain transaction: pool claims batch per lending contract via multicall, then individual stream withdrawals. The UI recomputes the plan from live data on resume rather than retrying stale calldata.
 
+### Loan book
+
+The client-side enumeration of one connected user's full position against one OVRFLOLending market — every loan pool they've contributed to (lender view) plus every loan they've borrowed (borrower view) — assembled from a single multicall over the shared id space rather than two separate scans.
+
+A loan book is not an on-chain concept; it's the frontend's `useLoanBook` hook (`web/hooks/useLoanBook.ts`) reading the same five per-id fields (`loanPools`, `loans`, `loanPoolContributions`, `loanPoolReceived`, `loanPoolProceeds`) once, plus one shared Sablier `withdrawableAmountOf` batch over the union of loans either view needs, then deriving the lender-view `pools` and borrower-view `loans` from that shared result. Capped at `MAX_ENUMERATION_IDS`; a market with more ids than the cap sets `tooLarge` rather than silently truncating. Call sites that only need the lean borrower-only shape for a single loan (e.g. `RepayForm`) intentionally stay on the narrower `useBorrowerLoans` rather than pulling in a full loan book — the merge exists for callers that need both views of the same `(lending, user)` pair (`PositionSummary`, `PositionList`), not as a universal replacement for every lending read.
+
 ### Stale-recovery classification
 
 The three-way sorting of a failed write transaction that decides what the form offers next: *stale* (on-chain liquidity or pricing moved between quoting and signing — refresh every on-chain read, show a "here's the new number" banner, and offer one explicit re-confirm), *terminal* (the input can never succeed, such as an ineligible stream or self-match — disable the action and say why, never invite a retry), or *retryable* (wallet rejection or transport failure — leave the action live).

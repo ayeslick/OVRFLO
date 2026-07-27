@@ -2,10 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Address } from "viem";
-import { useBorrowerLoans } from "@/hooks/useBorrowerLoans";
 import { useHeldStreams } from "@/hooks/useHeldStreams";
-import { useLenderPools } from "@/hooks/useLenderPools";
 import { useLendingLiquidity } from "@/hooks/useLendingLiquidity";
+import { useLoanBook } from "@/hooks/useLoanBook";
 import { symbolFor, type SymbolMap } from "@/hooks/useMarketSymbols";
 import { formatTokenAmount } from "@/lib/format";
 import { isLoanOpen } from "@/lib/lending-math";
@@ -214,16 +213,15 @@ function PositionSummaryMarket({
   onData: (key: string, data: MarketAggregate | null) => void;
 }) {
   const liquidity = useLendingLiquidity(market.lending);
-  const pools = useLenderPools(market.lending, user);
-  const loans = useBorrowerLoans(market.lending, user);
+  const book = useLoanBook(market.lending, user);
 
   const key = `${market.lending}-${market.market}`;
   const underlyingSymbol = symbolFor(symbols, market.underlying);
   const ovrfloSymbol = symbolFor(symbols, market.ovrfloToken);
   const normalizedUser = user?.toLowerCase();
 
-  const isLoading = liquidity.isLoading || pools.isLoading || loans.isLoading;
-  const hasError = Boolean(liquidity.error || pools.error || loans.error);
+  const isLoading = liquidity.isLoading || book.isLoading;
+  const hasError = Boolean(liquidity.error || book.error);
 
   const aggregate = useMemo<MarketAggregate>(() => {
     if (isLoading || hasError) {
@@ -240,8 +238,8 @@ function PositionSummaryMarket({
       };
     }
     const userLiquidity = selectLiquidityForLender(liquidity.liquidity, market.market, normalizedUser);
-    const marketPools = selectForMarket(pools.pools, market.market);
-    const openLoans = selectForMarket(loans.loans, market.market).filter(({ loan }) => isLoanOpen(loan));
+    const marketPools = selectForMarket(book.pools, market.market);
+    const openLoans = selectForMarket(book.loans, market.market).filter(({ loan }) => isLoanOpen(loan));
     return {
       underlyingSymbol,
       ovrfloSymbol,
@@ -256,15 +254,15 @@ function PositionSummaryMarket({
       status: "ready",
     };
   }, [
+    book.loans,
+    book.pools,
     hasError,
     isLoading,
     liquidity.liquidity,
-    loans.loans,
     market.lending,
     market.market,
     normalizedUser,
     ovrfloSymbol,
-    pools.pools,
     underlyingSymbol,
   ]);
 

@@ -16,7 +16,10 @@ import { SABLIER_LOCKUP_ADDRESS } from "@/lib/config";
 import { userFacingError } from "@/lib/errors";
 import { formatAprBps, formatId, formatTokenAmount } from "@/lib/format";
 
-import { applySlippageDown, isSeriesMatchedStream } from "@/lib/modal-logic";
+import { applySlippageDown, isSeriesMatchedStream, repayMax } from "@/lib/modal-logic";
+import { convertApprovalNeeds, convertValidationError, depositCapStatus, type ConvertMode } from "@/lib/convert";
+import { useApprovalWriteFlows } from "@/hooks/useApprovalWriteFlows";
+import { useStaleRecovery } from "@/hooks/useStaleRecovery";
 import {
   borrowReceiptSummary,
   classifyBorrowError,
@@ -34,7 +37,6 @@ import {
   MAX_UINT128,
   upfrontBps,
 } from "@/lib/lending-math";
-import { invalidateAllOnChainReads } from "@/lib/invalidate";
 import { adjustReceiptSummary, classifyAdjustError } from "@/lib/positions";
 import { useQueryClient } from "@tanstack/react-query";
 import type { ActiveAction, ActionType, MarketInfo } from "@/lib/types";
@@ -260,8 +262,7 @@ function SupplyForm({
   const aprBps =
     selectedAprRaw !== null && ticks.includes(selectedAprRaw) ? selectedAprRaw : (ticks[0] ?? null);
 
-  const approveTx = useWriteFlow(connectedAddress);
-  const actionTx = useWriteFlow(connectedAddress);
+  const { approveTx, actionTx, busy } = useApprovalWriteFlows(connectedAddress);
 
   const guard = useWalletChangeReset(connectedAddress, () => {
     setRaw("");
@@ -294,7 +295,6 @@ function SupplyForm({
   const walletBalance = balanceOf.data ?? 0n;
   const validationError = amount > 0n && amount > walletBalance ? "INSUFFICIENT BALANCE" : null;
   const approvalCovers = allowanceAmount >= amount || approvedAmount >= amount;
-  const busy = approveTx.isSigning || approveTx.isConfirming || actionTx.isSigning || actionTx.isConfirming;
   const disabled =
     !market.lending || aprBps === null || amount === 0n || busy || Boolean(validationError) || matured;
   const steps = ["APPROVE", "SIGN", "CONFIRMED"];
@@ -511,14 +511,12 @@ function ConvertForm({
   const [underlyingApprovedAmount, setUnderlyingApprovedAmount] = useState(0n);
   const nowSeconds = useNowSeconds();
   const amount = parseAmount(raw);
-  const mode = action.type;
+  const mode = action.type as ConvertMode;
   const connectedAddress = connection.addresses?.[0];
   const underlyingSymbol = symbolFor(symbols, market.underlying);
   const ovrfloSymbol = symbolFor(symbols, market.ovrfloToken);
 
-  const approveTx = useWriteFlow(connectedAddress);
-  const actionTx = useWriteFlow(connectedAddress);
-  const busy = approveTx.isSigning || approveTx.isConfirming || actionTx.isSigning || actionTx.isConfirming;
+  const { approveTx, actionTx, busy } = useApprovalWriteFlows(connectedAddress);
   const disabled = amount === 0n || busy;
 
   const guard = useWalletChangeReset(connectedAddress, () => {
@@ -592,34 +590,23 @@ function ConvertForm({
   const depositPreview = preview.data as [bigint, bigint, bigint, bigint] | undefined;
   const feeAmount = depositPreview?.[2] ?? 0n;
   const minToUser = applySlippageDown(depositPreview?.[0] ?? 0n);
-
-  const needsPtApproval =
-    mode === "deposit" && amount > 0n && (ptAllowance.data ?? 0n) < amount && ptApprovedAmount < amount;
-  const needsUnderlyingApproval =
-    ((mode === "deposit" && feeAmount > 0n) || mode === "wrap") &&
-    amount > 0n &&
-    (underlyingAllowance.data ?? 0n) < (mode === "wrap" ? amount : feeAmount) &&
-    underlyingApprovedAmount < (mode === "wrap" ? amount : feeAmount);
-  const needsApproval = needsPtApproval || needsUnderlyingApproval;
   const wrapCapacity = wrappedUnderlying.data ?? 0n;
   const walletBalance = balanceRead.data ?? 0n;
-
-  // 0 = unlimited (deposit-cap convention). While the cap reads are loading,
-  // deposit stays gated — an unresolved read must never render as "unlimited".
   const capLoaded = depositLimit.data !== undefined && totalDeposited.data !== undefined;
   const capLimit = depositLimit.data ?? 0n;
   const capUsed = totalDeposited.data ?? 0n;
-  const capRemaining = capLimit > 0n ? (capLimit > capUsed ? capLimit - capUsed : 0n) : null;
-  const capReached = mode === "deposit" && capLoaded && capRemaining === 0n;
-  const capExceeded =
-    mode === "deposit" && capLoaded && capRemaining !== null && capRemaining > 0n && amount > capRemaining;
 
-  const validationError =
-    amount > 0n && amount > walletBalance
-      ? "INSUFFICIENT BALANCE"
-      : capExceeded
-        ? `EXCEEDS DEPOSIT CAP — REMAINING ${formatTokenAmount(capRemaining ?? 0n, "PT")}`
-        : null;
+  const { needsPtApproval, needsUnderlyingApproval, needsApproval } = convertApprovalNeeds({
+    mode,
+    amount,
+    feeAmount,
+    ptAllowance: ptAllowance.data ?? 0n,
+    ptApprovedAmount,
+    underlyingAllowance: underlyingAllowance.data ?? 0n,
+    underlyingApprovedAmount,
+  });
+  const { capRemaining, capReached, capExceeded } = depositCapStatus({ mode, amount, capLoaded, capLimit, capUsed });
+  const validationError = convertValidationError({ amount, walletBalance, capExceeded, capRemaining });
 
   const modeDisabled =
     disabled ||
@@ -775,7 +762,6 @@ function BorrowForm({
   const [selectedAprRaw, setSelectedAprRaw] = useState<number | null>(null);
   const [showAlternative, setShowAlternative] = useState(false);
   const [streamApprovedId, setStreamApprovedId] = useState<bigint | null>(null);
-  const [staleRecovery, setStaleRecovery] = useState(false);
   const [submitted, setSubmitted] = useState<{ target: bigint; quotedNet: bigint } | null>(null);
   // Known on the very first render, so a matured market is gated before the
   // ladder or router ever run — not even for a frame.
@@ -801,8 +787,7 @@ function BorrowForm({
   const hasOwnLiquidity = ladder.some((tick) => tick.own > 0n);
   const plan = selectedApr !== null ? planSelectedBorrow(ladder, selectedApr, target) : null;
 
-  const approveTx = useWriteFlow(connectedAddress);
-  const actionTx = useWriteFlow(connectedAddress);
+  const { approveTx, actionTx, busy } = useApprovalWriteFlows(connectedAddress);
 
   const guard = useWalletChangeReset(connectedAddress, () => {
     setSelectedStreamId(action.streamId ?? null);
@@ -882,12 +867,12 @@ function BorrowForm({
 
   // A liquidity race is recoverable: refresh every on-chain read so the ladder
   // and quotes reflect the new depth, then ask for one explicit re-confirm.
-  const errorKind = actionTx.error ? classifyBorrowError(actionTx.error) : null;
-  useEffect(() => {
-    if (errorKind !== "stale") return;
-    setStaleRecovery(true);
-    invalidateAllOnChainReads(queryClient, connectedAddress);
-  }, [errorKind, actionTx.error, queryClient, connectedAddress]);
+  const { errorKind, terminal, staleRecovery, setStaleRecovery } = useStaleRecovery(
+    actionTx.error,
+    classifyBorrowError,
+    queryClient,
+    connectedAddress,
+  );
 
   // A terminal error is terminal for the *stream*, not the form — picking a
   // different stream clears the failed transaction and re-arms the button.
@@ -895,7 +880,7 @@ function BorrowForm({
   useEffect(() => {
     resetActionTx();
     setStaleRecovery(false);
-  }, [selectedStreamId, resetActionTx]);
+  }, [selectedStreamId, resetActionTx, setStaleRecovery]);
 
   if (guard.walletChanged) return <WalletChangedNotice onContinue={guard.acknowledge} />;
   if (matured) {
@@ -924,8 +909,6 @@ function BorrowForm({
     approvedForAll.data === true;
 
   const needsApproval = !streamApproved && selectedStreamId !== null;
-  const busy = approveTx.isSigning || approveTx.isConfirming || actionTx.isSigning || actionTx.isConfirming;
-  const terminal = errorKind === "terminal";
   // Pre-submit terminal condition: quote()/gatherLiquidity reject genuinely
   // ineligible streams before the user ever signs.
   const readError = fullQuote.error ?? fillQuote.error ?? gather.error;
@@ -1181,7 +1164,6 @@ function AdjustRateForm({
 
   const [selectedAprRaw, setSelectedAprRaw] = useState<number | null>(null);
   const [approvedAmount, setApprovedAmount] = useState(0n);
-  const [staleRecovery, setStaleRecovery] = useState(false);
   const nowSeconds = useNowSeconds();
 
   const connectedAddress = connection.addresses?.[0];
@@ -1201,8 +1183,16 @@ function AdjustRateForm({
   const currentAprBps = positionAprBps ?? null;
   const idleAmount = positionIdleAmount ?? 0n;
 
-  const approveTx = useWriteFlow(connectedAddress);
-  const actionTx = useWriteFlow(connectedAddress);
+  const { approveTx, actionTx, busy } = useApprovalWriteFlows(connectedAddress);
+
+  // An ERC20 shortfall here is a liquidity race (position shrank after the
+  // fresh read), so it routes through the stale-recovery path too.
+  const { errorKind, terminal, staleRecovery, setStaleRecovery } = useStaleRecovery(
+    actionTx.error,
+    classifyAdjustError,
+    queryClient,
+    connectedAddress,
+  );
 
   const guard = useWalletChangeReset(connectedAddress, () => {
     setSelectedAprRaw(null);
@@ -1222,15 +1212,6 @@ function AdjustRateForm({
     if (approveTx.error) setApprovedAmount(0n);
   }, [approveTx.error]);
 
-  // An ERC20 shortfall here is a liquidity race (position shrank after the
-  // fresh read), so it routes through the stale-recovery path too.
-  const errorKind = actionTx.error ? classifyAdjustError(actionTx.error) : null;
-  useEffect(() => {
-    if (errorKind !== "stale") return;
-    setStaleRecovery(true);
-    invalidateAllOnChainReads(queryClient, connectedAddress);
-  }, [errorKind, actionTx.error, queryClient, connectedAddress]);
-
   if (guard.walletChanged) return <WalletChangedNotice onContinue={guard.acknowledge} />;
 
   const ratesReady = !lending.isLoading && lending.params.aprMaxBps > 0;
@@ -1243,8 +1224,6 @@ function AdjustRateForm({
 
   const needsApproval =
     idleAmount > 0n && (allowance.data ?? 0n) < idleAmount && approvedAmount < idleAmount;
-  const busy = approveTx.isSigning || approveTx.isConfirming || actionTx.isSigning || actionTx.isConfirming;
-  const terminal = errorKind === "terminal";
   const disabled =
     !market.lending ||
     positionId === null ||
@@ -1429,8 +1408,7 @@ function RepayForm({
   const outstanding = loan ? loanOutstanding(loan) : 0n;
   const repayAmount = repayInput > outstanding && outstanding > 0n ? outstanding : repayInput;
 
-  const approveTx = useWriteFlow(connectedAddress);
-  const actionTx = useWriteFlow(connectedAddress);
+  const { approveTx, actionTx, busy } = useApprovalWriteFlows(connectedAddress);
 
   const guard = useWalletChangeReset(connectedAddress, () => {
     setRaw("");
@@ -1466,7 +1444,6 @@ function RepayForm({
   const walletBalance = balanceRead.data ?? 0n;
   const validationError = repayAmount > 0n && repayAmount > walletBalance ? "INSUFFICIENT BALANCE" : null;
 
-  const busy = approveTx.isSigning || approveTx.isConfirming || actionTx.isSigning || actionTx.isConfirming;
   const disabled =
     !market.lending || !loan || repayAmount === 0n || busy || Boolean(validationError);
 
@@ -1489,7 +1466,7 @@ function RepayForm({
         className="button mono"
         type="button"
         disabled={outstanding === 0n}
-        onClick={() => setRaw(formatUnits18(outstanding))}
+        onClick={() => setRaw(formatUnits18(repayMax(loan, walletBalance)))}
       >
         MAX
       </button>

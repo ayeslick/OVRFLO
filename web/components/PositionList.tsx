@@ -3,11 +3,10 @@
 import { useState } from "react";
 import type { Address } from "viem";
 import { useNowSeconds } from "@/hooks/useNowSeconds";
-import { useBorrowerLoans } from "@/hooks/useBorrowerLoans";
 import { useHeldStreams } from "@/hooks/useHeldStreams";
-import { useLenderPools } from "@/hooks/useLenderPools";
 import { useLending } from "@/hooks/useLending";
 import { useLendingLiquidity } from "@/hooks/useLendingLiquidity";
+import { useLoanBook } from "@/hooks/useLoanBook";
 import { symbolFor, type SymbolMap } from "@/hooks/useMarketSymbols";
 import { formatAprBps, formatId, formatTokenAmount } from "@/lib/format";
 import { aprChoices, formatBpsPct, loanOutstanding } from "@/lib/lending-math";
@@ -50,21 +49,18 @@ function ProgressBar({ pct, label, tone }: { pct: number; label: string; tone: "
 export function PositionList({ market, user, symbols, onAction }: Props) {
   const lending = useLending(market.lending);
   const liquidity = useLendingLiquidity(market.lending);
-  const lenderPools = useLenderPools(market.lending, user);
-  const borrowerLoans = useBorrowerLoans(market.lending, user);
+  const loanBook = useLoanBook(market.lending, user);
   const streams = useHeldStreams(user);
   const nowSeconds = useNowSeconds();
 
   const normalizedUser = user?.toLowerCase();
   const userLiquidity = selectLiquidityForLender(liquidity.liquidity, market.market, normalizedUser);
-  const userPools = selectForMarket(lenderPools.pools, market.market);
-  const userLoans = selectForMarket(borrowerLoans.loans, market.market);
+  const userPools = selectForMarket(loanBook.pools, market.market);
+  const userLoans = selectForMarket(loanBook.loans, market.market);
   const eligibleStreams = streams.streams.filter((stream) => isSeriesMatchedStream(stream, market));
 
-  const isLoading =
-    liquidity.isLoading || lenderPools.isLoading || borrowerLoans.isLoading || streams.isLoading;
-  const hasError =
-    liquidity.error || lenderPools.error || borrowerLoans.error || streams.error;
+  const isLoading = liquidity.isLoading || loanBook.isLoading || streams.isLoading;
+  const hasError = liquidity.error || loanBook.error || streams.error;
 
   if (isLoading) {
     return <div className="empty mono">LOADING</div>;
@@ -91,7 +87,7 @@ export function PositionList({ market, user, symbols, onAction }: Props) {
   const teaserBps = matured ? null : borrowTeaserBps(ladder, ttmSeconds, lending.params.feeBps);
 
   // R26: enumeration hooks scan the OLDEST 500 ids; degrade visibly, never silently.
-  const tooLarge = liquidity.tooLarge || lenderPools.tooLarge || borrowerLoans.tooLarge;
+  const tooLarge = liquidity.tooLarge || loanBook.tooLarge;
   const allEnumeratedEmpty =
     liquidity.tooLarge && liquidity.liquidity.every((position) => position.availableLiquidity === 0n);
   const truncationCopy = allEnumeratedEmpty
