@@ -54,4 +54,16 @@ describe("useApprovalWriteFlows", () => {
     const { result } = renderHook(() => useApprovalWriteFlows(user), { wrapper });
     expect(result.current.busy).toBe(false);
   });
+
+  it("is busy when the underlying write is pending", () => {
+    // The mocked useWriteContract is shared by both approveTx and actionTx
+    // (they're separate useWriteFlow() instances backed by the same mock), so
+    // this cannot independently distinguish "approve is signing" from "action
+    // is signing" — it only confirms busy tracks isPending through the OR in
+    // useApprovalWriteFlows at all, which the "not busy" test above pins the
+    // other side of.
+    wagmiState.approvePending = true;
+    const { result } = renderHook(() => useApprovalWriteFlows(user), { wrapper });
+    expect(result.current.busy).toBe(true);
+  });
 });
