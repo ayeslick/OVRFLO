@@ -417,3 +417,41 @@ tr:last-child td {
     font-size: 0.8rem;
   }
 }
+
+/* --- Expandable markets table (U4) --- */
+.row-toggle {
+  background: transparent;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  font-size: inherit;
+  padding: 0;
+  text-align: left;
+}
+tbody tr:not(.market-row-detail) {
+  cursor: pointer;
+}
+.market-row-detail > td {
+  cursor: default;
+  padding: 1.25rem 1rem;
+  border-bottom: 1px solid var(--graphite);
+}
+.row-detail {
+  display: grid;
+  gap: 1rem;
+}
+.row-detail-section {
+  display: grid;
+  gap: 0.5rem;
+}
+.advanced-toggle {
+  background: transparent;
+  border: none;
+  color: var(--dim);
+  cursor: pointer;
+  justify-self: start;
+  padding: 0;
+}
+.advanced-toggle:hover {
+  color: var(--chalk);
+}

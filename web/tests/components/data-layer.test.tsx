@@ -142,9 +142,9 @@ describe("approve/action split (KTD6/R24)", () => {
 
 describe("real symbols per market (KTD7/R25)", () => {
   it("renders each market's own symbol with no hardcoded literal", () => {
-    render(<MarketsTable markets={[market, marketB]} symbols={symbols} onSelect={vi.fn()} />);
-    expect(screen.getByText("ovrfloTESTA")).toBeInTheDocument();
-    expect(screen.getByText("ovrfloTESTB")).toBeInTheDocument();
+    render(<MarketsTable markets={[market, marketB]} symbols={symbols} onSelect={vi.fn()} onMode={vi.fn()} />);
+    expect(screen.getByText(/ovrfloTESTA/)).toBeInTheDocument();
+    expect(screen.getByText(/ovrfloTESTB/)).toBeInTheDocument();
     expect(screen.queryByText(/wstETH/)).not.toBeInTheDocument();
     expect(screen.queryByText(/^ovrflo$/)).not.toBeInTheDocument();
   });

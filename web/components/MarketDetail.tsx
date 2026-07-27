@@ -1,227 +1,67 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import type { Address } from "viem";
-import { useReadContract } from "wagmi";
-import { useHeldStreams } from "@/hooks/useHeldStreams";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
-import { erc20Abi, ovrfloAbi } from "@/lib/abis";
-import { symbolFor, type SymbolMap } from "@/hooks/useMarketSymbols";
-import { formatAprBps, formatMaturity, formatTokenAmount } from "@/lib/format";
-import { isSeriesMatchedStream } from "@/lib/modal-logic";
+import type { SymbolMap } from "@/hooks/useMarketSymbols";
 import type { ActiveAction, MarketInfo } from "@/lib/types";
 import { ACTION_META, FormBody } from "./ActionModal";
-import { PositionList } from "./PositionList";
 
 type Props = {
   market: MarketInfo;
   user?: Address;
+  action: ActiveAction;
   symbols: SymbolMap;
-  onBack: () => void;
+  onClose: () => void;
 };
 
-export function MarketDetail({ market, user, symbols, onBack }: Props) {
-  const [activeAction, setActiveAction] = useState<ActiveAction | null>(null);
+// Pure action container (R10): balances and positions now live inline in the
+// expanded market row. Scrim, focus trap, Escape handling, and the slide-in
+// animation are retained unchanged.
+export function MarketDetail({ market, user, action, symbols, onClose }: Props) {
   const panelRef = useRef<HTMLDivElement>(null);
   useFocusTrap(panelRef, true);
 
   useEffect(() => {
-    setActiveAction(null);
-  }, [user, market.market]);
-
-  useEffect(() => {
     function handleKey(e: KeyboardEvent) {
-      if (e.key !== "Escape") return;
-      if (activeAction) setActiveAction(null);
-      else onBack();
+      if (e.key === "Escape") onClose();
     }
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
-  }, [onBack, activeAction]);
+  }, [onClose]);
 
   useEffect(() => {
-    if (activeAction && panelRef.current) {
-      const input = panelRef.current.querySelector("input");
-      input?.focus();
-    }
-  }, [activeAction]);
+    const input = panelRef.current?.querySelector("input");
+    input?.focus();
+  }, [action.type]);
 
-  const [nowSeconds, setNowSeconds] = useState<bigint | null>(null);
-  useEffect(() => {
-    setNowSeconds(BigInt(Math.floor(Date.now() / 1000)));
-  }, []);
-
-  const matured = nowSeconds !== null && nowSeconds >= market.expiryCached;
-
-  const ovrfloBalance = useReadContract({
-    address: market.ovrfloToken,
-    abi: erc20Abi,
-    functionName: "balanceOf",
-    args: user ? [user] : undefined,
-    query: { enabled: Boolean(user) },
-  });
-  const underlyingBalance = useReadContract({
-    address: market.underlying,
-    abi: erc20Abi,
-    functionName: "balanceOf",
-    args: user ? [user] : undefined,
-    query: { enabled: Boolean(user) },
-  });
-  const ptBalance = useReadContract({
-    address: market.ptToken,
-    abi: erc20Abi,
-    functionName: "balanceOf",
-    args: user ? [user] : undefined,
-    query: { enabled: Boolean(user) },
-  });
-  const wrappedUnderlying = useReadContract({
-    address: market.vault,
-    abi: ovrfloAbi,
-    functionName: "wrappedUnderlying",
-  });
-
-  const symbol = symbolFor(symbols, market.ovrfloToken);
-  const underlyingSymbol = symbolFor(symbols, market.underlying);
-
-  const streams = useHeldStreams(user);
-  const eligibleStreams = streams.streams.filter((stream) => isSeriesMatchedStream(stream, market));
-
-  const ovrfloBal = ovrfloBalance.data ?? 0n;
-  const underlyingBal = underlyingBalance.data ?? 0n;
-  const ptBal = ptBalance.data ?? 0n;
-  const wrapCapacity = wrappedUnderlying.data ?? 0n;
-
-  const actionMeta = activeAction ? ACTION_META[activeAction.type] : null;
+  const actionMeta = ACTION_META[action.type];
 
   return (
-    <div className="modal-scrim" onClick={onBack}>
+    <div className="modal-scrim" onClick={onClose}>
       <div
         className="modal-panel market-detail-panel"
         ref={panelRef}
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
-        aria-label={actionMeta ? actionMeta.title : "Market Detail"}
+        aria-label={actionMeta.title}
       >
         <div className="modal-header">
-          {actionMeta ? (
-            <h3 className="modal-heading">{actionMeta.title}</h3>
-          ) : (
-            <div>
-              <h3 className="modal-heading">{symbol}</h3>
-              <div className="market-detail-meta">
-                <span className="mono">FEE {formatAprBps(market.feeBps)}</span>
-                <span className="mono">MATURITY {formatMaturity(market.expiryCached)}</span>
-              </div>
-            </div>
-          )}
-          <button
-            type="button"
-            className="modal-close"
-            onClick={() => (activeAction ? setActiveAction(null) : onBack())}
-            aria-label="Close"
-          >
+          <h3 className="modal-heading">{actionMeta.title}</h3>
+          <button type="button" className="modal-close" onClick={onClose} aria-label="Close">
             ✕
           </button>
         </div>
-
-        <div key={activeAction ? activeAction.type : "detail"} className="market-detail-view">
-          {activeAction && actionMeta ? (
-            <FormBody
-              action={activeAction}
-              market={market}
-              user={user}
-              symbols={symbols}
-              accent={actionMeta.accent}
-              onClose={() => setActiveAction(null)}
-            />
-          ) : (
-            <>
-              {user ? (
-                <div className="market-detail-section">
-                  <div className="label mono">BALANCE</div>
-                  <div className="balance-summary">
-                    <div className="balance-row">
-                      <span className="mono">{formatTokenAmount(underlyingBal, underlyingSymbol)}</span>
-                      <button
-                        className="button mono"
-                        type="button"
-                        disabled={underlyingBal === 0n}
-                        onClick={() => setActiveAction({ type: "wrap" })}
-                      >
-                        WRAP
-                      </button>
-                    </div>
-                    <div className="balance-row">
-                      <span className="mono">{formatTokenAmount(ptBal, "PT")}</span>
-                      {!matured ? (
-                        <button
-                          className="button mono"
-                          type="button"
-                          disabled={ptBal === 0n}
-                          onClick={() => setActiveAction({ type: "deposit" })}
-                        >
-                          DEPOSIT PT
-                        </button>
-                      ) : null}
-                    </div>
-                    <div className="balance-row">
-                      <span className="mono">{formatTokenAmount(ovrfloBal, symbol)}</span>
-                      {wrapCapacity > 0n ? (
-                        <button
-                          className="button mono"
-                          type="button"
-                          disabled={ovrfloBal === 0n}
-                          onClick={() => setActiveAction({ type: "unwrap" })}
-                        >
-                          UNWRAP
-                        </button>
-                      ) : null}
-                      {matured ? (
-                        <button
-                          className="button mono"
-                          type="button"
-                          disabled={ovrfloBal === 0n}
-                          onClick={() => setActiveAction({ type: "claim_matured" })}
-                        >
-                          CLAIM
-                        </button>
-                      ) : null}
-                    </div>
-                  </div>
-                </div>
-              ) : null}
-
-              <div className="market-detail-section">
-                <PositionList market={market} user={user} symbols={symbols} onAction={setActiveAction} />
-              </div>
-
-              <div className="market-detail-actions">
-                <div className="action-with-caption">
-                  <button
-                    className="button button-gold mono"
-                    type="button"
-                    disabled={!market.lending}
-                    onClick={() => setActiveAction({ type: "supply" })}
-                  >
-                    SUPPLY LIQUIDITY
-                  </button>
-                  {!market.lending ? <span className="label mono">LENDING NOT DEPLOYED</span> : null}
-                </div>
-                <div className="action-with-caption">
-                  <button
-                    className="button button-cyan mono"
-                    type="button"
-                    disabled={eligibleStreams.length === 0}
-                    onClick={() => setActiveAction({ type: "borrow" })}
-                  >
-                    BORROW
-                  </button>
-                  {eligibleStreams.length === 0 ? <span className="label mono">NO STREAMS AVAILABLE</span> : null}
-                </div>
-              </div>
-            </>
-          )}
+        <div className="market-detail-view">
+          <FormBody
+            action={action}
+            market={market}
+            user={user}
+            symbols={symbols}
+            accent={actionMeta.accent}
+            onClose={onClose}
+          />
         </div>
       </div>
     </div>
