@@ -1,0 +1,357 @@
+import { fireEvent, render, screen } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { Address } from "viem";
+import type { ActionType, ActiveAction, Loan, LoanPool, MarketInfo } from "@/lib/types";
+
+// Consolidates the step-indicator/accent/field/button-label assertions that
+// were previously scattered incidentally across supply-form.test.tsx,
+// borrow-form.test.tsx, and deposit-cap.test.tsx (which only exercised 3 of
+// the 12 action types as a side effect of testing something else) into one
+// systematic table covering all 12.
+
+function testAddress(id: number): Address {
+  return `0x${id.toString(16).padStart(40, "0")}` as Address;
+}
+
+const WAD = 10n ** 18n;
+const walletState = { address: testAddress(0xa11) as Address | undefined };
+
+// Per-functionName defaults that keep every one of the 12 forms in a
+// renderable, non-error, non-"LOADING" state without per-row setup. Every
+// row in `table` below renders at amount 0n, at which point
+// convertApprovalNeeds's `amount > 0n` guard means `allowance`,
+// `balanceOf`, `marketDepositLimits`, `marketTotalDeposited`, and
+// `wrappedUnderlying` gate nothing the table asserts (they're set to
+// permissive values purely so a future amount-typing row doesn't trip a
+// stale zero). `liquidityPositions` IS load-bearing at amount 0n: it's the
+// one real adjustable position AdjustRateForm needs to render without an
+// error/loading state. The one place `allowance` actually matters is the
+// standalone 3-step-approval test below, which types a nonzero amount and
+// sets allowance to 0n on purpose.
+const readState: Record<string, unknown> = {
+  allowance: 1_000_000n * WAD,
+  balanceOf: 1_000_000n * WAD,
+  marketDepositLimits: 0n,
+  marketTotalDeposited: 0n,
+  wrappedUnderlying: 1_000_000n * WAD,
+  liquidityPositions: [testAddress(0xa11), testAddress(6), 1000, 50n * WAD],
+};
+
+vi.mock("wagmi", () => ({
+  useConnection: () => ({
+    status: walletState.address ? "connected" : "disconnected",
+    addresses: walletState.address ? [walletState.address] : [],
+  }),
+  useReadContract: (config?: { functionName?: string }) => {
+    const key = config?.functionName ?? "";
+    return { data: key in readState ? readState[key] : undefined, error: null };
+  },
+  useReadContracts: () => ({ data: [], isLoading: false, error: null }),
+}));
+
+type WriteFlowState = {
+  writeContract: ReturnType<typeof vi.fn>;
+  reset: ReturnType<typeof vi.fn>;
+  hash: undefined;
+  receipt?: undefined;
+  isSigning: boolean;
+  isConfirming: boolean;
+  isConfirmed: boolean;
+  error: Error | null;
+};
+
+function flow(): WriteFlowState {
+  return {
+    writeContract: vi.fn(),
+    reset: vi.fn(),
+    hash: undefined,
+    receipt: undefined,
+    isSigning: false,
+    isConfirming: false,
+    isConfirmed: false,
+    error: null,
+  };
+}
+
+// Every form calls useWriteFlow either once directly (SimpleActionForm) or
+// twice via useApprovalWriteFlows (approveTx, then actionTx) — alternating
+// by call count covers both without knowing which form is under test.
+const writeFlows = { calls: 0, first: flow(), second: flow() };
+vi.mock("@/hooks/useWriteFlow", () => ({
+  useWriteFlow: () => (writeFlows.calls++ % 2 === 0 ? writeFlows.first : writeFlows.second),
+}));
+
+vi.mock("@/hooks/useLendingLiquidity", () => ({
+  useLendingLiquidity: () => ({ liquidity: [], tooLarge: false, isLoading: false, error: null }),
+}));
+vi.mock("@/hooks/useLending", () => ({
+  useLending: () => ({
+    params: { aprMinBps: 1000, aprMaxBps: 1200, feeBps: 40, nextLiquidityId: 1n, nextLoanId: 1n, nextSaleListingId: 1n },
+    isLoading: false,
+    error: null,
+  }),
+}));
+vi.mock("@/hooks/useHeldStreams", () => ({
+  useHeldStreams: () => ({ streams: [], isLoading: false, error: null }),
+}));
+vi.mock("@/hooks/useBorrowDemand", () => ({
+  useBorrowDemand: () => ({ status: "ok" as const, demand: [], peak: 0n }),
+}));
+
+const REPAY_LOAN_ID = 1n;
+const borrowerLoansState: { loans: Array<{ loan: Loan; pool: LoanPool; withdrawable: bigint }> } = {
+  loans: [
+    {
+      loan: {
+        id: REPAY_LOAN_ID,
+        borrower: testAddress(0xa11),
+        streamId: 9n,
+        obligation: 100n * WAD,
+        drawn: 20n * WAD,
+        repaid: 0n,
+        closed: false,
+      },
+      pool: { id: REPAY_LOAN_ID, borrower: testAddress(0xa11), aprBps: 1000, market: testAddress(6), totalContributed: 100n * WAD },
+      withdrawable: 0n,
+    },
+  ],
+};
+vi.mock("@/hooks/useBorrowerLoans", () => ({
+  useBorrowerLoans: () => ({ loans: borrowerLoansState.loans, tooLarge: false, isLoading: false, error: null }),
+}));
+
+vi.mock("@/lib/invalidate", () => ({
+  invalidateAllOnChainReads: vi.fn(),
+  scheduleHeldStreamsRetry: () => () => {},
+}));
+vi.mock("@tanstack/react-query", () => ({
+  useQueryClient: () => ({}),
+}));
+
+import { ACTION_META, FormBody } from "@/components/ActionModal";
+
+const FUTURE = 99_999_999_999n;
+
+function makeMarket(): MarketInfo {
+  return {
+    vault: testAddress(1),
+    treasury: testAddress(2),
+    underlying: testAddress(3),
+    ovrfloToken: testAddress(4),
+    lending: testAddress(5),
+    market: testAddress(6),
+    twapDurationFixed: 900,
+    feeBps: 25,
+    expiryCached: FUTURE,
+    ptToken: testAddress(7),
+    oracle: testAddress(8),
+  };
+}
+
+const market = makeMarket();
+const symbols = {
+  [market.underlying.toLowerCase()]: "TESTA",
+  [market.ovrfloToken.toLowerCase()]: "TESTO",
+};
+
+function renderAction(action: ActiveAction) {
+  const accent = ACTION_META[action.type].accent;
+  return render(
+    <FormBody action={action} market={market} user={walletState.address} symbols={symbols} accent={accent} onClose={vi.fn()} />,
+  );
+}
+
+function stepIndicatorText(container: HTMLElement) {
+  return container.querySelector(".modal-step-list")?.textContent ?? "";
+}
+
+function stepIndicatorAccent(container: HTMLElement) {
+  return container.querySelector(".modal-step-list")?.getAttribute("data-accent");
+}
+
+beforeEach(() => {
+  walletState.address = testAddress(0xa11);
+  writeFlows.calls = 0;
+  writeFlows.first = flow();
+  writeFlows.second = flow();
+  readState.allowance = 1_000_000n * WAD;
+  readState.balanceOf = 1_000_000n * WAD;
+  readState.marketDepositLimits = 0n;
+  readState.marketTotalDeposited = 0n;
+  readState.wrappedUnderlying = 1_000_000n * WAD;
+  readState.liquidityPositions = [testAddress(0xa11), testAddress(6), 1000, 50n * WAD];
+});
+
+type Row = {
+  type: ActionType;
+  action: ActiveAction;
+  expectedAccent: "gold" | "cyan" | "neutral";
+  steps: string[];
+  buttonName: string | RegExp;
+  hasAmountInput: boolean;
+  extraFieldCheck?: () => void;
+};
+
+const table: Row[] = [
+  {
+    type: "supply",
+    action: { type: "supply" },
+    expectedAccent: "gold",
+    steps: ["APPROVE", "SIGN", "CONFIRMED"],
+    // Exact label: ticks default to aprChoices(1000, 1200) = [1000, 1100,
+    // 1200], and with no radio selected yet the button defaults to ticks[0].
+    buttonName: "SUPPLY @ 10.00%",
+    hasAmountInput: true,
+    extraFieldCheck: () => expect(screen.getAllByRole("radio")).toHaveLength(3),
+  },
+  {
+    type: "withdraw",
+    action: { type: "withdraw", positionId: 1n },
+    expectedAccent: "gold",
+    steps: ["SIGN", "CONFIRMED"],
+    buttonName: "WITHDRAW",
+    hasAmountInput: false,
+  },
+  {
+    type: "claim_share",
+    action: { type: "claim_share", positionId: 1n },
+    expectedAccent: "gold",
+    steps: ["SIGN", "CONFIRMED"],
+    buttonName: "CLAIM SHARE",
+    hasAmountInput: false,
+  },
+  {
+    type: "deposit",
+    action: { type: "deposit" },
+    expectedAccent: "gold",
+    steps: ["SIGN", "CONFIRMED"],
+    buttonName: "DEPOSIT",
+    hasAmountInput: true,
+  },
+  {
+    type: "claim_matured",
+    action: { type: "claim_matured" },
+    expectedAccent: "gold",
+    steps: ["SIGN", "CONFIRMED"],
+    buttonName: "CLAIM",
+    hasAmountInput: true,
+  },
+  {
+    type: "wrap",
+    action: { type: "wrap" },
+    expectedAccent: "neutral",
+    steps: ["SIGN", "CONFIRMED"],
+    buttonName: "WRAP",
+    hasAmountInput: true,
+  },
+  {
+    type: "unwrap",
+    action: { type: "unwrap" },
+    expectedAccent: "neutral",
+    steps: ["SIGN", "CONFIRMED"],
+    buttonName: "UNWRAP",
+    hasAmountInput: true,
+  },
+  {
+    type: "borrow",
+    action: { type: "borrow" },
+    expectedAccent: "cyan",
+    steps: ["APPROVE STREAM", "SIGN", "CONFIRMED"],
+    buttonName: "BORROW",
+    hasAmountInput: true,
+    extraFieldCheck: () => {
+      expect(screen.getByRole("combobox")).toBeInTheDocument(); // stream selector
+      expect(screen.getByLabelText("SLIPPAGE %")).toBeInTheDocument();
+    },
+  },
+  {
+    type: "claim_stream",
+    action: { type: "claim_stream", streamId: 1n },
+    expectedAccent: "gold",
+    steps: ["SIGN", "CONFIRMED"],
+    buttonName: "CLAIM STREAM",
+    hasAmountInput: false,
+  },
+  {
+    type: "adjust_rate",
+    action: { type: "adjust_rate", positionId: 1n },
+    expectedAccent: "gold",
+    steps: ["APPROVE", "SIGN", "CONFIRMED"],
+    buttonName: "MOVE LIQUIDITY",
+    hasAmountInput: false,
+    // Same ladder as supply: aprChoices(1000, 1200) = [1000, 1100, 1200].
+    extraFieldCheck: () => expect(screen.getAllByRole("radio")).toHaveLength(3),
+  },
+  {
+    type: "repay",
+    action: { type: "repay", loanId: REPAY_LOAN_ID },
+    expectedAccent: "cyan",
+    steps: ["APPROVE", "SIGN", "CONFIRMED"],
+    // No amount typed -> repayAmount is 0n -> exact formatted label.
+    buttonName: "REPAY 0.00 TESTO",
+    hasAmountInput: true,
+    extraFieldCheck: () => expect(screen.getByRole("button", { name: "MAX" })).toBeInTheDocument(),
+  },
+  {
+    type: "close",
+    action: { type: "close", loanId: 1n },
+    expectedAccent: "cyan",
+    steps: ["SIGN", "CONFIRMED"],
+    buttonName: "CLOSE LOAN",
+    hasAmountInput: false,
+  },
+];
+
+describe("ActionModal / FormBody — all 12 action types", () => {
+  it("covers every ActionType exactly once (guards against a silently-dropped row)", () => {
+    // Derived from ACTION_META (Record<ActionType, ...>, exhaustive by
+    // compile-time construction) rather than a hardcoded literal, so a 13th
+    // ActionType added to lib/types.ts + ACTION_META is caught here even
+    // though this file's table stays at 12 until someone adds a row for it.
+    const types = table.map((row) => row.type).sort();
+    expect(types).toEqual(Object.keys(ACTION_META).sort());
+  });
+
+  it.each(table)(
+    "$type: correct accent, step indicator, form fields, and button label",
+    ({ type, action, expectedAccent, steps, buttonName, hasAmountInput, extraFieldCheck }) => {
+      expect(ACTION_META[type].accent).toBe(expectedAccent);
+
+      const { container } = renderAction(action);
+
+      expect(stepIndicatorAccent(container)).toBe(expectedAccent);
+      const stepText = stepIndicatorText(container);
+      steps.forEach((step, index) => expect(stepText).toContain(`[${index + 1}] ${step}`));
+      // No extra/missing steps: the indicator's own step count matches exactly.
+      expect(container.querySelectorAll(".modal-step-list span")).toHaveLength(steps.length);
+
+      expect(screen.getByRole("button", { name: buttonName })).toBeInTheDocument();
+
+      if (hasAmountInput) {
+        expect(screen.getByPlaceholderText("0.00")).toBeInTheDocument();
+      } else {
+        expect(screen.queryByPlaceholderText("0.00")).not.toBeInTheDocument();
+      }
+
+      extraFieldCheck?.();
+    },
+  );
+
+  it("deposit: shows the 3-step approval variant when the PT allowance is below the typed amount", () => {
+    // Every row above renders at amount 0n, where convertApprovalNeeds always
+    // returns false (mode === "deposit" && amount > 0n is the first guard) —
+    // so the table alone never exercises ConvertForm's conditional
+    // 2-step-vs-3-step branch (ActionModal.tsx: `needsApproval ? [...] : [...]`).
+    // This test types a nonzero amount with a zero allowance to force it.
+    readState.allowance = 0n;
+    const { container } = renderAction({ type: "deposit" });
+
+    fireEvent.change(screen.getByPlaceholderText("0.00"), { target: { value: "10" } });
+
+    expect(stepIndicatorText(container)).toContain("[1] APPROVE");
+    expect(stepIndicatorText(container)).toContain("[2] SIGN");
+    expect(stepIndicatorText(container)).toContain("[3] CONFIRMED");
+    expect(container.querySelectorAll(".modal-step-list span")).toHaveLength(3);
+    expect(screen.getByRole("button", { name: "APPROVE PT" })).toBeInTheDocument();
+  });
+});
