@@ -381,6 +381,33 @@ tr:last-child td {
   padding: 0.75rem;
 }
 
+.ladder {
+  display: grid;
+  gap: 0.375rem;
+}
+
+.ladder-row {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: space-between;
+  align-items: baseline;
+  width: 100%;
+  background: transparent;
+  border: 1px solid var(--graphite);
+  color: var(--chalk);
+  padding: 0.5rem 0.75rem;
+  cursor: pointer;
+  text-align: left;
+}
+
+.ladder-row:hover {
+  border-color: var(--chalk);
+}
+
+.ladder-row-selected {
+  border-color: var(--accent-cyan);
+}
+
 .status-positive {
   color: var(--positive);
 }

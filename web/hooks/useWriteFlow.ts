@@ -28,7 +28,9 @@ export function useWriteFlow(user?: Address) {
 
   return {
     writeContract: write.writeContract,
+    reset: write.reset,
     hash: write.data,
+    receipt: receipt.data,
     isSigning: write.isPending,
     isConfirming: receipt.isLoading,
     isConfirmed: receipt.isSuccess,

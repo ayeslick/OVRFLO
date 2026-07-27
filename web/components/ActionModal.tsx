@@ -16,14 +16,20 @@ import { erc20Abi, ovrfloAbi, ovrfloLendingAbi, sablierLockupAbi } from "@/lib/a
 import { SABLIER_LOCKUP_ADDRESS } from "@/lib/config";
 import { userFacingError } from "@/lib/errors";
 import { formatAprBps, formatId, formatTokenAmount } from "@/lib/format";
-import { loanOutstanding, MAX_UINT128 } from "@/lib/lending-math";
+
+import { applySlippageDown, chooseSellNowLiquidity, isSeriesMatchedStream } from "@/lib/modal-logic";
 import {
-  applySlippageDown,
-  borrowQuoteCopy,
-  chooseSellNowLiquidity,
-  isSeriesMatchedStream,
-  staleBatchCopy,
-} from "@/lib/modal-logic";
+  borrowReceiptSummary,
+  classifyBorrowError,
+  parseSlippageBps,
+  planSelectedBorrow,
+  resolveSelectedTick,
+  SLIPPAGE_DEFAULT_PCT,
+} from "@/lib/borrow";
+import { buildLadder } from "@/lib/router";
+import { aprChoices, formatBpsPct, loanOutstanding, MAX_UINT128, upfrontBps } from "@/lib/lending-math";
+import { invalidateAllOnChainReads } from "@/lib/invalidate";
+import { useQueryClient } from "@tanstack/react-query";
 import type { ActiveAction, ActionType, MarketInfo } from "@/lib/types";
 
 export type Accent = "gold" | "cyan" | "neutral";
@@ -683,6 +689,7 @@ function BorrowForm({
   onClose: () => void;
 }) {
   const connection = useConnection();
+  const queryClient = useQueryClient();
   const lending = useLending(market.lending);
   const liquidity = useLendingLiquidity(market.lending);
   const streams = useHeldStreams(user);
@@ -690,13 +697,35 @@ function BorrowForm({
 
   const [selectedStreamId, setSelectedStreamId] = useState<bigint | null>(action.streamId ?? null);
   const [raw, setRaw] = useState("");
+  const [slippageRaw, setSlippageRaw] = useState(SLIPPAGE_DEFAULT_PCT);
+  const [selectedAprRaw, setSelectedAprRaw] = useState<number | null>(null);
+  const [showAlternative, setShowAlternative] = useState(false);
   const [streamApprovedId, setStreamApprovedId] = useState<bigint | null>(null);
+  const [staleRecovery, setStaleRecovery] = useState(false);
+  const [submitted, setSubmitted] = useState<{ target: bigint; quotedNet: bigint } | null>(null);
+  // Lazy init is safe (the modal only ever renders client-side) and means a
+  // matured market is gated on the very first render — the ladder and router
+  // never run against it, not even for a frame.
+  const [nowSeconds] = useState(() => BigInt(Math.floor(Date.now() / 1000)));
 
-  const borrowAmount = parseAmount(raw);
-  const aprBps = lending.params.aprMinBps || 1000;
+  const target = parseAmount(raw);
   const connectedAddress = connection.addresses?.[0];
   const underlyingSymbol = symbolFor(symbols, market.underlying);
   const ovrfloSymbol = symbolFor(symbols, market.ovrfloToken);
+  const feeBps = lending.params.feeBps;
+
+  // Maturity gate: past maturity neither the ladder nor the router ever runs
+  // (gatherLiquidity reverts on expired series anyway).
+  const matured = nowSeconds >= market.expiryCached;
+  const ttmSeconds = matured ? 0n : market.expiryCached - nowSeconds;
+
+  const ticks = aprChoices(lending.params.aprMinBps, lending.params.aprMaxBps);
+  const ladder = buildLadder(liquidity.liquidity, market.market, ticks, connectedAddress);
+  const liquidTicks = ladder.filter((tick) => tick.total > 0n);
+  const selectedApr = resolveSelectedTick(ladder, selectedAprRaw);
+  const bestApr = resolveSelectedTick(ladder, null);
+  const hasOwnLiquidity = ladder.some((tick) => tick.own > 0n);
+  const plan = selectedApr !== null ? planSelectedBorrow(ladder, selectedApr, target) : null;
 
   const approveTx = useWriteFlow(connectedAddress);
   const actionTx = useWriteFlow(connectedAddress);
@@ -704,7 +733,12 @@ function BorrowForm({
   const guard = useWalletChangeReset(connectedAddress, () => {
     setSelectedStreamId(action.streamId ?? null);
     setRaw("");
+    setSlippageRaw(SLIPPAGE_DEFAULT_PCT);
+    setSelectedAprRaw(null);
+    setShowAlternative(false);
     setStreamApprovedId(null);
+    setStaleRecovery(false);
+    setSubmitted(null);
   });
 
   const recipient = useReadContract({
@@ -715,15 +749,30 @@ function BorrowForm({
     query: { enabled: selectedStreamId !== null },
   });
 
-  const quote = useReadContract({
+  const quoteEnabled = Boolean(market.lending && selectedStreamId && selectedApr !== null && !matured);
+  // Full-borrow quote (borrowAmount = 0) for the stream's grossPrice — the cap
+  // the price-blind ladder plan is clamped to before quoting the actual fill.
+  const fullQuote = useReadContract({
     address: market.lending ?? undefined,
     abi: ovrfloLendingAbi,
     functionName: "quote",
-    args:
-      market.lending && selectedStreamId && borrowAmount > 0n
-        ? [market.market, selectedStreamId, aprBps, borrowAmount]
-        : undefined,
-    query: { enabled: Boolean(market.lending && selectedStreamId && borrowAmount > 0n) },
+    args: quoteEnabled ? [market.market, selectedStreamId!, selectedApr!, 0n] : undefined,
+    query: { enabled: quoteEnabled },
+  });
+  const fullQuoteData = fullQuote.data as [bigint, bigint, bigint, bigint, bigint] | undefined;
+  const grossPrice = fullQuoteData?.[0];
+
+  const planFill = plan?.fill ?? 0n;
+  const fill = grossPrice !== undefined && grossPrice < planFill ? grossPrice : planFill;
+  const priceCapped = target > 0n && grossPrice !== undefined && grossPrice < planFill;
+
+  const fillEnabled = quoteEnabled && fill > 0n;
+  const fillQuote = useReadContract({
+    address: market.lending ?? undefined,
+    abi: ovrfloLendingAbi,
+    functionName: "quote",
+    args: fillEnabled ? [market.market, selectedStreamId!, selectedApr!, fill] : undefined,
+    query: { enabled: fillEnabled },
   });
 
   const gather = useReadContract({
@@ -731,10 +780,10 @@ function BorrowForm({
     abi: ovrfloLendingAbi,
     functionName: "gatherLiquidity",
     args:
-      market.lending && selectedStreamId && connectedAddress && borrowAmount > 0n
-        ? [market.market, aprBps, borrowAmount, 1n, connectedAddress]
+      fillEnabled && connectedAddress
+        ? [market.market, selectedApr!, fill, 1n, connectedAddress]
         : undefined,
-    query: { enabled: Boolean(market.lending && selectedStreamId && connectedAddress && borrowAmount > 0n) },
+    query: { enabled: Boolean(fillEnabled && connectedAddress) },
   });
 
   const approved = useReadContract({
@@ -757,13 +806,40 @@ function BorrowForm({
     if (approveTx.error) setStreamApprovedId(null);
   }, [approveTx.error]);
 
-  if (guard.walletChanged) return <WalletChangedNotice onContinue={guard.acknowledge} />;
+  // A liquidity race is recoverable: refresh every on-chain read so the ladder
+  // and quotes reflect the new depth, then ask for one explicit re-confirm.
+  const errorKind = actionTx.error ? classifyBorrowError(actionTx.error) : null;
+  useEffect(() => {
+    if (errorKind !== "stale") return;
+    setStaleRecovery(true);
+    invalidateAllOnChainReads(queryClient, connectedAddress);
+  }, [errorKind, actionTx.error, queryClient, connectedAddress]);
 
-  const quoteData = quote.data as [bigint, bigint, bigint, bigint, bigint] | undefined;
+  // A terminal error is terminal for the *stream*, not the form — picking a
+  // different stream clears the failed transaction and re-arms the button.
+  const resetActionTx = actionTx.reset;
+  useEffect(() => {
+    resetActionTx();
+    setStaleRecovery(false);
+  }, [selectedStreamId, resetActionTx]);
+
+  if (guard.walletChanged) return <WalletChangedNotice onContinue={guard.acknowledge} />;
+  if (matured) {
+    return (
+      <div className="form-grid">
+        <div className="label mono status-negative">MARKET MATURED — BORROWING CLOSED</div>
+        <CloseButton onClose={onClose} />
+      </div>
+    );
+  }
+
+  const quoteData = fillQuote.data as [bigint, bigint, bigint, bigint, bigint] | undefined;
   const gatherData = gather.data as [bigint[], boolean] | undefined;
-  const positionsAtRate = liquidity.liquidity.filter(
-    (position) => position.market.toLowerCase() === market.market.toLowerCase() && position.aprBps === aprBps,
-  );
+  const gatherIds = gatherData?.[0] ?? [];
+
+  const slippageBps = parseSlippageBps(slippageRaw);
+  const minAcceptable =
+    quoteData !== undefined && slippageBps !== null ? applySlippageDown(quoteData[3], slippageBps) : null;
 
   const recipientMatches =
     !selectedStreamId || recipient.data?.toLowerCase() === connectedAddress?.toLowerCase();
@@ -775,10 +851,31 @@ function BorrowForm({
 
   const needsApproval = !streamApproved && selectedStreamId !== null;
   const busy = approveTx.isSigning || approveTx.isConfirming || actionTx.isSigning || actionTx.isConfirming;
+  const terminal = errorKind === "terminal";
+  // Pre-submit terminal condition: quote()/gatherLiquidity reject genuinely
+  // ineligible streams before the user ever signs.
+  const readError = fullQuote.error ?? fillQuote.error ?? gather.error;
   const disabled =
-    !market.lending || !selectedStreamId || !recipientMatches || borrowAmount === 0n || busy;
+    !market.lending ||
+    !selectedStreamId ||
+    !recipientMatches ||
+    target === 0n ||
+    fill === 0n ||
+    busy ||
+    !quoteData ||
+    minAcceptable === null ||
+    gatherIds.length === 0;
 
-  const staleCopy = actionTx.error instanceof Error ? staleBatchCopy(actionTx.error.message) : null;
+  const receiptSummary =
+    actionTx.isConfirmed && actionTx.receipt && market.lending
+      ? borrowReceiptSummary(actionTx.receipt.logs, feeBps, market.lending)
+      : null;
+  // The contract clamps the borrow to available liquidity, so a partial fill
+  // can confirm without reverting — the receipt is the source of truth.
+  const partialFillReceived =
+    receiptSummary !== null && submitted !== null && receiptSummary.contributed < submitted.target;
+  const receivedDiffers =
+    receiptSummary !== null && submitted !== null && receiptSummary.net !== submitted.quotedNet;
 
   const steps = ["APPROVE STREAM", "SIGN", "CONFIRMED"];
   const activeIndex = actionTx.isConfirmed || actionTx.isConfirming ? 2 : streamApproved ? 1 : 0;
@@ -801,34 +898,117 @@ function BorrowForm({
       ) : (
         <div className="label mono">STREAM {formatId(selectedStreamId ?? undefined)}</div>
       )}
+
+      <div className="ladder" role="radiogroup" aria-label="BORROW RATE">
+        {liquidity.tooLarge ? (
+          <div className="label mono status-warning">LIQUIDITY LIST TRUNCATED — DEPTH MAY BE UNDERSTATED</div>
+        ) : null}
+        {liquidTicks.length === 0 ? (
+          <div className="label mono status-negative">NO LIQUIDITY POSTED AT ANY RATE</div>
+        ) : (
+          liquidTicks.map((tick) => (
+            <button
+              key={tick.aprBps}
+              type="button"
+              role="radio"
+              aria-checked={tick.aprBps === selectedApr}
+              className={`ladder-row mono ${tick.aprBps === selectedApr ? "ladder-row-selected" : ""}`}
+              onClick={() => {
+                setSelectedAprRaw(tick.aprBps);
+                setShowAlternative(false);
+              }}
+            >
+              <span>{formatAprBps(tick.aprBps)}</span>
+              <span>UPFRONT {formatBpsPct(upfrontBps(tick.aprBps, ttmSeconds, feeBps))}</span>
+              <span>DEPTH {formatTokenAmount(tick.total, underlyingSymbol)}</span>
+              {tick.aprBps === bestApr ? <span className="status-positive">BEST</span> : null}
+            </button>
+          ))
+        )}
+        {hasOwnLiquidity ? (
+          <div className="label mono">YOUR OWN SUPPLY IS EXCLUDED — YOU CANNOT BORROW AGAINST IT</div>
+        ) : null}
+      </div>
+
       <input className="input mono" value={raw} onChange={(e) => setRaw(e.target.value)} placeholder="0.00" />
+
+      <label className="label mono" htmlFor="borrow-slippage">
+        SLIPPAGE %
+      </label>
+      <input
+        id="borrow-slippage"
+        className={`input mono ${slippageBps === null ? "input-error" : ""}`}
+        value={slippageRaw}
+        onChange={(e) => setSlippageRaw(e.target.value)}
+      />
+      {slippageBps === null ? <div className="label mono status-negative">SLIPPAGE MUST BE 0.1–5%</div> : null}
+
       <div className="summary-row mono" aria-live="polite">
         {quoteData ? (
           <>
             NET {formatTokenAmount(quoteData[3], underlyingSymbol)} / OBLIGATION{" "}
             {formatTokenAmount(quoteData[1], ovrfloSymbol)} / RESIDUAL {formatTokenAmount(quoteData[4], ovrfloSymbol)}
           </>
-        ) : borrowAmount > 0n ? (
+        ) : target > 0n && fill > 0n ? (
           "LOADING"
         ) : (
           "—"
         )}
       </div>
-      <div className="label mono">
-        {selectedStreamId && !recipientMatches
-          ? "CONNECTED WALLET IS NOT RECIPIENT"
-          : borrowQuoteCopy({
-              gatheredIds: gatherData?.[0] ?? [],
-              sufficient: gatherData?.[1] ?? false,
-              positionsAtRate,
-              borrower: connectedAddress,
-            })}
-      </div>
-      <StepIndicator steps={steps} activeIndex={activeIndex} error={Boolean(approveTx.error ?? actionTx.error)} accent={accent} />
+
+      {plan?.partial && target > 0n ? (
+        <div className="label mono status-warning">
+          PARTIAL FILL — {formatTokenAmount(fill, underlyingSymbol)} OF {formatTokenAmount(target, underlyingSymbol)}{" "}
+          AVAILABLE AT {selectedApr !== null ? formatAprBps(selectedApr) : "—"}
+        </div>
+      ) : null}
+      {priceCapped ? (
+        <div className="label mono status-warning">AMOUNT EXCEEDS STREAM VALUE — QUOTING MAXIMUM</div>
+      ) : null}
+      {plan?.partial && target > 0n && plan.alternativeAprBps !== null ? (
+        !showAlternative ? (
+          <button className="button mono" type="button" onClick={() => setShowAlternative(true)}>
+            SHOW OTHER OPTIONS
+          </button>
+        ) : (
+          <button
+            className="button mono"
+            type="button"
+            onClick={() => {
+              setSelectedAprRaw(plan.alternativeAprBps);
+              setShowAlternative(false);
+            }}
+          >
+            SWITCH TO {formatAprBps(plan.alternativeAprBps)} — COVERS FULL AMOUNT
+          </button>
+        )
+      ) : null}
+
+      {selectedStreamId && !recipientMatches ? (
+        <div className="label mono status-negative">CONNECTED WALLET IS NOT RECIPIENT</div>
+      ) : null}
+      {readError ? <div className="label mono status-negative">{userFacingError(readError)}</div> : null}
+
+      <StepIndicator
+        steps={steps}
+        activeIndex={activeIndex}
+        error={Boolean(approveTx.error ?? actionTx.error)}
+        accent={accent}
+      />
+
+      {staleRecovery && !actionTx.isConfirmed && !busy ? (
+        <div className="label mono status-warning" role="status">
+          LIQUIDITY CHANGED SINCE YOUR QUOTE — REVIEW THE NEW NUMBER AND RE-CONFIRM
+        </div>
+      ) : null}
+      {terminal ? (
+        <div className="label mono status-negative">{userFacingError(actionTx.error)}</div>
+      ) : null}
+
       {needsApproval ? (
         <button
           className={`button ${accentClass(accent)} mono`}
-          disabled={!market.lending || !selectedStreamId || busy}
+          disabled={!market.lending || !selectedStreamId || busy || terminal}
           type="button"
           onClick={() => {
             if (!market.lending || !selectedStreamId) return;
@@ -846,24 +1026,47 @@ function BorrowForm({
       ) : (
         <button
           className={`button ${accentClass(accent)} mono`}
-          disabled={disabled || !quoteData || !gatherData?.[1]}
+          disabled={disabled || terminal}
           type="button"
           onClick={() => {
-            if (!market.lending || !selectedStreamId || !gatherData || !quoteData) return;
+            if (!market.lending || !selectedStreamId || !quoteData || minAcceptable === null || gatherIds.length === 0)
+              return;
+            setStaleRecovery(false);
+            setSubmitted({ target: fill, quotedNet: quoteData[3] });
             actionTx.writeContract({
               address: market.lending,
               abi: ovrfloLendingAbi,
               functionName: "createBorrowerLoanPool",
-              args: [gatherData[0], selectedStreamId, borrowAmount, applySlippageDown(quoteData[3])],
+              args: [gatherIds, selectedStreamId, fill, minAcceptable],
             });
           }}
         >
-          BORROW
+          {staleRecovery ? "RE-CONFIRM BORROW" : "BORROW"}
         </button>
       )}
-      {staleCopy ? <div className="label mono status-warning">{staleCopy}</div> : null}
+
       <ApproveTxState tx={approveTx} label="APPROVE STREAM" />
-      <TxState tx={actionTx} pendingLabel="BORROW" />
+      {actionTx.isSigning ? <div className="label mono status-warning">BORROW: SIGNING</div> : null}
+      {actionTx.isConfirming ? (
+        <div className="label mono status-warning">BORROW: CONFIRMING {actionTx.hash?.slice(0, 10)}…</div>
+      ) : null}
+      {actionTx.isConfirmed ? <div className="label mono status-positive">CONFIRMED</div> : null}
+      {errorKind === "retryable" ? (
+        <div className="label mono status-negative">{userFacingError(actionTx.error)}</div>
+      ) : null}
+
+      {actionTx.isConfirmed && receiptSummary ? (
+        <div className="summary-row mono" aria-live="polite">
+          RECEIVED {formatTokenAmount(receiptSummary.net, underlyingSymbol)}
+          {submitted && (partialFillReceived || receivedDiffers) ? (
+            <span className="status-warning">
+              {" "}
+              — {partialFillReceived ? "PARTIAL FILL, " : ""}QUOTED{" "}
+              {formatTokenAmount(submitted.quotedNet, underlyingSymbol)}
+            </span>
+          ) : null}
+        </div>
+      ) : null}
       {actionTx.isConfirmed ? <CloseButton onClose={onClose} /> : null}
     </div>
   );
