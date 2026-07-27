@@ -6,7 +6,11 @@ import { defineBddConfig } from "playwright-bdd";
 // gitignored .features-gen/ output (playwright-bdd's own convention).
 const testDir = defineBddConfig({
   features: "tests/e2e/**/*.feature",
-  steps: "tests/e2e/steps/**/*.ts",
+  // fixtures/fork-snapshot.ts must be included here (not just steps/) so
+  // bddgen can discover the custom `test` instance (forkSnapshot's auto
+  // evm_snapshot/evm_revert, KTD7) that fixtures/bdd.ts binds Given/When/Then
+  // to — it can't be inferred from the steps glob alone.
+  steps: ["tests/e2e/steps/**/*.ts", "tests/e2e/fixtures/**/*.ts"],
 });
 
 export default defineConfig({

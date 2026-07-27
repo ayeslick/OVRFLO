@@ -35,6 +35,8 @@ export default tseslint.config(
     },
   },
   {
-    ignores: [".next/**", "node_modules/**", "out/**"],
+    // .features-gen/ is playwright-bdd's generated-test output (bddgen), not
+    // hand-written code — same treatment as any other build artifact.
+    ignores: [".next/**", "node_modules/**", "out/**", ".features-gen/**"],
   }
 );

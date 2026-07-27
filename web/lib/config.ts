@@ -13,6 +13,7 @@ const env = {
   reownProjectId: process.env.NEXT_PUBLIC_REOWN_PROJECT_ID,
   ponderUrl: process.env.NEXT_PUBLIC_PONDER_URL,
   sablierIndexerUrl: process.env.NEXT_PUBLIC_SABLIER_INDEXER_URL,
+  e2e: process.env.NEXT_PUBLIC_E2E,
 };
 
 function parseChainId(raw = "1") {
@@ -43,6 +44,14 @@ export const factoryAddress = parseAddress(
 export const rpcUrl = optionalUrl(env.rpcUrl);
 export const reownProjectId = env.reownProjectId || "00000000000000000000000000000000";
 export const ponderUrl = optionalUrl(env.ponderUrl ?? env.sablierIndexerUrl);
+
+// Ticket 05 / KTD6: E2E-only escape hatch. When set, `lib/wagmi.ts` swaps in
+// a wagmi `mock` connector (auto-connected as Anvil's well-known account #1)
+// instead of the real Reown AppKit config, so Playwright never has to drive
+// the actual Connect-Wallet/WalletConnect UI. Must be set before `next dev`
+// starts (NEXT_PUBLIC_* is inlined at build/dev-server-start time) — see
+// tests/e2e/README.md.
+export const isE2E = env.e2e === "1";
 
 export function isConfiguredAddress(address: Address | null | undefined) {
   return Boolean(address && address !== ZERO_ADDRESS);
