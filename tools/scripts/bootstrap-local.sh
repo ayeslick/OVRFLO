@@ -2,7 +2,10 @@
 # bootstrap-local.sh — single-command local loop.
 #
 #   1. precheck (docker, anvil, forge, cast, jq, npm, pnpm, MAINNET_RPC_URL)
-#   2. anvil --fork-url $MAINNET_RPC_URL --chain-id 1 --fork-block-number 24609670
+#   2. anvil --fork-url $MAINNET_RPC_URL --chain-id 1  (live head — no
+#      --fork-block-number pin; seed-local discovers Pendle markets against
+#      the fork's own timestamp — see
+#      docs/solutions/architecture-patterns/live-pendle-market-discovery-for-seed-and-fork-fixtures.md)
 #      (PID written to .bootstrap.pid; refuse a second up without :clean)
 #   3. script/seed-local.sh  (deploy factory + ovrflo + oracles + seed dev wallet)
 #   4. npm --prefix web run ponder:dev  (starts Ponder stream discovery)
@@ -20,7 +23,6 @@ cd "$(git rev-parse --show-toplevel)"
 
 ANVIL_PID_FILE=".bootstrap.pid"
 ANVIL_LOG=".bootstrap.anvil.log"
-FORK_BLOCK="24609670"
 
 # ─── precheck ────────────────────────────────────────────────────────────────
 fail() { echo "bootstrap-local: $*" >&2; exit 1; }
@@ -54,11 +56,10 @@ if [ -f "$ANVIL_PID_FILE" ]; then
   rm -f "$ANVIL_PID_FILE"
 fi
 
-echo "[1/5] starting anvil fork @ block $FORK_BLOCK"
+echo "[1/5] starting anvil fork at live mainnet head"
 anvil \
   --fork-url "$MAINNET_RPC_URL" \
   --chain-id 1 \
-  --fork-block-number "$FORK_BLOCK" \
   --disable-code-size-limit \
   --silent \
   >"$ANVIL_LOG" 2>&1 &
@@ -77,7 +78,8 @@ if ! kill -0 "$ANVIL_PID" 2>/dev/null; then
   rm -f "$ANVIL_PID_FILE"
   fail "anvil exited before accepting RPC connections. Check $MAINNET_RPC_URL."
 fi
-echo "      pid=$ANVIL_PID  rpc=http://127.0.0.1:8545  log=$ANVIL_LOG"
+FORK_START_BLOCK=$(cast block-number --rpc-url http://127.0.0.1:8545)
+echo "      pid=$ANVIL_PID  rpc=http://127.0.0.1:8545  block=$FORK_START_BLOCK  log=$ANVIL_LOG"
 
 # ─── seed ─────────────────────────────────────────────────────────────────────
 echo "[2/5] seeding OVRFLO (factory + ovrflo + lending + PT/wstETH to dev/lender wallets)"
@@ -86,7 +88,7 @@ echo "[2/5] seeding OVRFLO (factory + ovrflo + lending + PT/wstETH to dev/lender
 # ─── ponder ───────────────────────────────────────────────────────────────────
 echo "[3/5] starting local Sablier Ponder indexer (sql:http://localhost:42069/sql)"
 LOCAL_FACTORY=$(jq -r '.factory' deployments/local.json)
-PONDER_RPC_URL=http://127.0.0.1:8545 PONDER_OVRFLO_FACTORY="$LOCAL_FACTORY" npm --prefix web run ponder:dev >".bootstrap.ponder.log" 2>&1 &
+PONDER_RPC_URL=http://127.0.0.1:8545 PONDER_OVRFLO_FACTORY="$LOCAL_FACTORY" PONDER_START_BLOCK="$FORK_START_BLOCK" npm --prefix web run ponder:dev >".bootstrap.ponder.log" 2>&1 &
 PONDER_PID=$!
 echo "$PONDER_PID" > ".bootstrap.ponder.pid"
 for _ in $(seq 1 60); do
@@ -109,7 +111,7 @@ echo "      pid=$PONDER_PID  log=.bootstrap.ponder.log  sql=http://localhost:420
 # zero address) is visible immediately instead of surfacing later as
 # "NO DEMAND DATA" everywhere.
 LENDING_DEPLOYED_COUNT=$(cast logs "LendingDeployed(address,address)" \
-  --address "$LOCAL_FACTORY" --from-block "$FORK_BLOCK" --rpc-url http://127.0.0.1:8545 --json | jq 'length')
+  --address "$LOCAL_FACTORY" --from-block "$FORK_START_BLOCK" --rpc-url http://127.0.0.1:8545 --json | jq 'length')
 if [ "$LENDING_DEPLOYED_COUNT" -gt 0 ]; then
   echo "      health check: factory $LOCAL_FACTORY emitted $LENDING_DEPLOYED_COUNT LendingDeployed event(s) — Ponder should index it"
 else

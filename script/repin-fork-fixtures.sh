@@ -47,9 +47,8 @@ echo "      block     = $SAFE_BLOCK (timestamp $BLOCK_TIMESTAMP)"
 
 echo "repin-fork-fixtures: discovering live wstETH Pendle markets (expiry > block time + ${PENDLE_EXPIRY_BUFFER_DAYS}d)..."
 CUTOFF=$((BLOCK_TIMESTAMP + PENDLE_EXPIRY_BUFFER_DAYS * 24 * 60 * 60))
-ALL_MARKETS_JSON=$(pendle_fetch_all_markets)
 WSTETH=0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0
-DISCOVERED=$(pendle_discover_top2_markets "$ALL_MARKETS_JSON" "$WSTETH" "$CUTOFF")
+DISCOVERED=$(pendle_fetch_all_markets | pendle_discover_top2_markets "$WSTETH" "$CUTOFF")
 DISCOVERED_COUNT=$(echo "$DISCOVERED" | grep -c . || true)
 if [ "$DISCOVERED_COUNT" -lt 2 ]; then
   echo "repin-fork-fixtures: found only $DISCOVERED_COUNT wstETH Pendle market(s) with expiry > block time + ${PENDLE_EXPIRY_BUFFER_DAYS}d (need 2)" >&2

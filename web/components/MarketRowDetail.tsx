@@ -65,7 +65,7 @@ export function MarketRowDetail({ market, user, symbols, onMode }: Props) {
   const underlyingBal = underlyingBalance?.status === "success" ? underlyingBalance.result : 0n;
   const ptBal = ptBalance?.status === "success" ? ptBalance.result : 0n;
   const wrapCapacity = wrappedUnderlying.data ?? 0n;
-  const wrapReserveShort = wrapCapacity === 0n || wrapCapacity < ovrfloBal;
+  const wrapReserveShort = wrapCapacity === 0n;
 
   const disconnected = !user;
   const supplyCaption = baseActionCaption(disconnected, Boolean(market.lending), matured);

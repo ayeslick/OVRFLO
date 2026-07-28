@@ -62,8 +62,7 @@ BLOCK_TIMESTAMP=$(cast block latest --field timestamp --rpc-url "$RPC")
 
 echo "seed-local: discovering live wstETH Pendle markets (expiry > now + ${PENDLE_EXPIRY_BUFFER_DAYS}d)..."
 CUTOFF=$((BLOCK_TIMESTAMP + PENDLE_EXPIRY_BUFFER_DAYS * 24 * 60 * 60))
-ALL_MARKETS_JSON=$(pendle_fetch_all_markets)
-DISCOVERED=$(pendle_discover_top2_markets "$ALL_MARKETS_JSON" "$WSTETH" "$CUTOFF")
+DISCOVERED=$(pendle_fetch_all_markets | pendle_discover_top2_markets "$WSTETH" "$CUTOFF")
 DISCOVERED_COUNT=$(echo "$DISCOVERED" | grep -c . || true)
 if [ "$DISCOVERED_COUNT" -lt 2 ]; then
   echo "seed-local: found only $DISCOVERED_COUNT wstETH Pendle market(s) with expiry > now + ${PENDLE_EXPIRY_BUFFER_DAYS}d (need 2)" >&2

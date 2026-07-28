@@ -4,11 +4,13 @@ Feature: Adjust rate
   amount entry. Exit: the position's card shows the new rate.
 
   Background:
-    Given I am on the markets page
+    Given the market offers multiple rate ticks
+    And I am on the markets page
     And my wallet is connected
 
   Scenario: Happy path — move idle liquidity to a new rate
     Given my wallet has supplied liquidity to the active market
+    And the frontend re-syncs with chain state
     When I expand the active market
     And I click the "ADJUST RATE" button
     Then the "ADJUST RATE" modal is open
@@ -19,6 +21,7 @@ Feature: Adjust rate
 
   Scenario: Error state — idle amount changes after the form opens
     Given my wallet has supplied liquidity to the active market
+    And the frontend re-syncs with chain state
     When I expand the active market
     And I click the "ADJUST RATE" button
     Then the "ADJUST RATE" modal is open

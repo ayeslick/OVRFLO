@@ -49,7 +49,22 @@ const e2eChain = {
 // so wagmi's own reconnect-on-mount (`WagmiProvider`'s default
 // `reconnectOnMount`) authenticates the dev wallet before any scenario runs —
 // no Connect-Wallet click ever exercised, matching KTD6.
+//
+// `ssr: true` is required here, not optional: without it, `Hydrate` (wagmi's
+// internal SSR helper) runs the mock connector's reconnect synchronously
+// during the *server* render pass too (see @wagmi/core's `hydrate.js` —
+// `if (!config._internal.ssr) onMount()` fires unconditionally on every
+// render, server included). Once that reconnect resolves server-side, every
+// later SSR response renders the connected address, while each fresh client
+// bundle still starts disconnected pre-hydration — a server/client text
+// mismatch on this exact button (`CONNECT` vs `0x7099…`). React then
+// discards and regenerates the whole client tree to recover, silently
+// resetting in-flight form/wallet state (see the WalletButton hydration
+// mismatch this was written to fix). `ssr: true` defers reconnect to
+// `Hydrate`'s post-commit `useEffect` instead, so first paint always matches
+// on both sides and the wallet connects only after hydration completes.
 export const e2eConfig: Config = createConfig({
+  ssr: true,
   chains: [e2eChain],
   connectors: [mock({ accounts: [E2E_DEV_ACCOUNT], features: { defaultConnected: true, reconnect: true } })],
   transports: { [e2eChain.id]: http(rpcUrl) },

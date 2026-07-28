@@ -23,6 +23,9 @@ const hookData = {
   pools: [] as unknown[],
   loans: [] as LoanEntry[],
   streams: [] as HeldStream[],
+  liquidityError: null as Error | null,
+  loanBookError: null as Error | null,
+  streamsError: null as Error | null,
 };
 
 vi.mock("@/hooks/useLendingLiquidity", () => ({
@@ -30,14 +33,20 @@ vi.mock("@/hooks/useLendingLiquidity", () => ({
     liquidity: hookData.liquidity,
     tooLarge: hookData.tooLarge,
     isLoading: false,
-    error: null,
+    error: hookData.liquidityError,
   }),
 }));
 vi.mock("@/hooks/useLoanBook", () => ({
-  useLoanBook: () => ({ pools: hookData.pools, loans: hookData.loans, tooLarge: false, isLoading: false, error: null }),
+  useLoanBook: () => ({
+    pools: hookData.pools,
+    loans: hookData.loans,
+    tooLarge: false,
+    isLoading: false,
+    error: hookData.loanBookError,
+  }),
 }));
 vi.mock("@/hooks/useHeldStreams", () => ({
-  useHeldStreams: () => ({ streams: hookData.streams, isLoading: false, error: null }),
+  useHeldStreams: () => ({ streams: hookData.streams, isLoading: false, error: hookData.streamsError }),
 }));
 vi.mock("@/hooks/useLending", () => ({
   useLending: () => ({
@@ -123,6 +132,9 @@ beforeEach(() => {
   hookData.pools = [];
   hookData.loans = [];
   hookData.streams = [];
+  hookData.liquidityError = null;
+  hookData.loanBookError = null;
+  hookData.streamsError = null;
 });
 
 describe("SELL removal", () => {
@@ -153,7 +165,7 @@ describe("stream cards", () => {
     hookData.streams = [stream(7)];
     renderList();
     expect(screen.queryByText(/UPFRONT/)).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "BORROW" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "BORROW STREAM #7" })).toBeDisabled();
     expect(screen.getByText("NO LIQUIDITY")).toBeInTheDocument();
   });
 });
@@ -213,5 +225,33 @@ describe("liquidity cards", () => {
     expect(screen.getByText("IDLE 50.00 TESTA")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "ADJUST RATE" }));
     expect(onAction).toHaveBeenCalledWith({ type: "adjust_rate", positionId: 1n });
+  });
+});
+
+describe("per-source error isolation", () => {
+  it("still shows the LIQUIDITY card when the streams (Ponder) source errors", () => {
+    hookData.liquidity = [position(1, 1100, 50n, USER)];
+    hookData.streamsError = new Error("indexer unreachable");
+    renderList();
+    expect(screen.getByText("IDLE 50.00 TESTA")).toBeInTheDocument();
+    expect(screen.getByText("UNABLE TO LOAD STREAMS")).toBeInTheDocument();
+    expect(screen.queryByText("UNABLE TO LOAD LENDING POSITIONS")).not.toBeInTheDocument();
+  });
+
+  it("still shows STREAMS when the on-chain (liquidity/loanBook) source errors", () => {
+    hookData.streams = [stream(7)];
+    hookData.liquidityError = new Error("rpc error");
+    renderList();
+    expect(screen.getByText("50% STREAMED")).toBeInTheDocument();
+    expect(screen.getByText("UNABLE TO LOAD LENDING POSITIONS")).toBeInTheDocument();
+    expect(screen.queryByText("UNABLE TO LOAD STREAMS")).not.toBeInTheDocument();
+  });
+
+  it("shows both error states when both sources fail", () => {
+    hookData.liquidityError = new Error("rpc error");
+    hookData.streamsError = new Error("indexer unreachable");
+    renderList();
+    expect(screen.getByText("UNABLE TO LOAD LENDING POSITIONS")).toBeInTheDocument();
+    expect(screen.getByText("UNABLE TO LOAD STREAMS")).toBeInTheDocument();
   });
 });

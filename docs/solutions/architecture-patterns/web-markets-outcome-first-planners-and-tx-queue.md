@@ -71,7 +71,7 @@ For on-chain rounding directions that display math must mirror, see [repayloan-e
 
 **Planner (`planClaimAll`)** is pure: batch pool claims per lending contract (multicall of `claimLoanPoolShare`), then individual stream claims. Ordering is deterministic — lending addresses ascending, loan ids ascending, stream ids ascending.
 
-**Runner (`useTxQueue`)** executes one tx at a time, advances only on receipt, invalidates after every confirmation, stops on failure, pauses on signer switch, and **`resume()` always takes a fresh plan** recomputed from live data — never a blind retry.
+**Runner (`useTxQueue`)** executes one tx at a time, advances only on receipt, invalidates after every confirmation, stops on failure, pauses on signer switch, and **`resume()` always takes a fresh plan** recomputed from live data — never a blind retry. "Advances only on receipt" means specifically `receipt.data.status === "success"`, not merely a resolved `receipt.isSuccess` — wagmi's `useWaitForTransactionReceipt` resolves without throwing for a transaction that mines but reverts, so the runner must read the receipt's own status to tell a confirmed step from a failed one. See [usetxqueue-on-chain-revert-treated-as-confirmed](../logic-errors/usetxqueue-on-chain-revert-treated-as-confirmed.md).
 
 Pool claims encode a multicall; stream claims call Sablier `withdrawMax`. The modal signs nothing until **CONFIRM QUEUE**; RESUME recomputes from live props.
 

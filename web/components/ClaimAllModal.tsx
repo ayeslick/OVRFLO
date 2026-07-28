@@ -99,7 +99,7 @@ export function ClaimAllModal({ pools, streams, user, onClose }: Props) {
         {queue.paused ? (
           <div className="label mono status-warning">WALLET CHANGED — RE-EVALUATING</div>
         ) : null}
-        {queue.error && queue.failed ? (
+        {queue.failed ? (
           <div className="label mono status-negative">TRANSACTION FAILED — RESUME RE-CHECKS CLAIMABLES</div>
         ) : null}
         {queue.done ? (

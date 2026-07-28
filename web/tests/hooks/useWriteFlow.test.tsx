@@ -13,7 +13,7 @@ const writeContractMock = vi.fn();
 const resetMock = vi.fn();
 const wagmiState = {
   writeData: undefined as `0x${string}` | undefined,
-  receiptData: undefined as { status: "success" } | undefined,
+  receiptData: undefined as { status: "success" | "reverted" } | undefined,
   receiptSuccess: false,
   isPending: false,
   receiptLoading: false,
@@ -64,6 +64,7 @@ describe("useWriteFlow invalidation regression", () => {
 
     wagmiState.writeData = hash;
     wagmiState.receiptSuccess = true;
+    wagmiState.receiptData = { status: "success" };
     rerender();
 
     expect(spy).toHaveBeenCalledTimes(3);
@@ -76,6 +77,26 @@ describe("useWriteFlow invalidation regression", () => {
     expect(spy).toHaveBeenCalledTimes(3);
   });
 
+  it("does not invalidate on a mined-but-reverted receipt", () => {
+    // `receipt.isSuccess` only means the RPC fetch resolved a receipt — a
+    // reverted on-chain tx still mines one, with no thrown write/receipt
+    // error. Only `data.status === "success"` should trigger invalidation.
+    const queryClient = new QueryClient();
+    const spy = vi.spyOn(queryClient, "invalidateQueries");
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    );
+
+    const { rerender } = renderHook(() => useWriteFlow(user), { wrapper });
+
+    wagmiState.writeData = hash;
+    wagmiState.receiptSuccess = true;
+    wagmiState.receiptData = { status: "reverted" };
+    rerender();
+
+    expect(spy).not.toHaveBeenCalled();
+  });
+
   it("re-invalidates the held key on the indexer-lag retry schedule", () => {
     const queryClient = new QueryClient();
     const spy = vi.spyOn(queryClient, "invalidateQueries");
@@ -86,6 +107,7 @@ describe("useWriteFlow invalidation regression", () => {
 
     wagmiState.writeData = hash;
     wagmiState.receiptSuccess = true;
+    wagmiState.receiptData = { status: "success" };
     rerender();
     expect(spy).toHaveBeenCalledTimes(3);
 
@@ -151,6 +173,28 @@ describe("useWriteFlow state forwarding", () => {
     const { result } = renderHook(() => useWriteFlow(user), { wrapper });
     expect(result.current.isConfirming).toBe(true);
     expect(result.current.isConfirmed).toBe(false);
+  });
+
+  it("treats a mined-but-reverted receipt as isReverted, not isConfirmed", () => {
+    // `receipt.isSuccess` only means the fetch resolved a receipt, with no
+    // thrown write/receipt error for a reverted tx — the outcome is only in
+    // `data.status`.
+    wagmiState.writeData = hash;
+    wagmiState.receiptSuccess = true;
+    wagmiState.receiptData = { status: "reverted" };
+    const { result } = renderHook(() => useWriteFlow(user), { wrapper });
+    expect(result.current.isConfirmed).toBe(false);
+    expect(result.current.isReverted).toBe(true);
+    expect(result.current.error).toBeNull();
+  });
+
+  it("surfaces isConfirmed only once the receipt reports status success", () => {
+    wagmiState.writeData = hash;
+    wagmiState.receiptSuccess = true;
+    wagmiState.receiptData = { status: "success" };
+    const { result } = renderHook(() => useWriteFlow(user), { wrapper });
+    expect(result.current.isConfirmed).toBe(true);
+    expect(result.current.isReverted).toBe(false);
   });
 
   it("prefers the write error over the receipt error, and falls back to the receipt error otherwise", () => {

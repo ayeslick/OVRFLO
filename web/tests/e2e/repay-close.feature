@@ -10,6 +10,7 @@ Feature: Repay and close a loan
 
   Scenario: Happy path — repay early reduces the outstanding balance
     Given my wallet has an open loan against a stream
+    And the frontend re-syncs with chain state
     When I expand the active market
     And I open the loan's advanced panel
     And I click the "REPAY EARLY" button
@@ -30,6 +31,7 @@ Feature: Repay and close a loan
 
   Scenario: Error state — repay blocked by insufficient ovrfloToken balance
     Given my wallet has an open loan against a stream
+    And the frontend re-syncs with chain state
     When I expand the active market
     And I open the loan's advanced panel
     And I click the "REPAY EARLY" button
@@ -40,6 +42,7 @@ Feature: Repay and close a loan
 
   Scenario: Error state — the loan disappears while the modal is open
     Given my wallet has an open loan against a stream
+    And the frontend re-syncs with chain state
     When I expand the active market
     And I open the loan's advanced panel
     And I click the "REPAY EARLY" button
@@ -49,6 +52,7 @@ Feature: Repay and close a loan
 
   Scenario: Error state — repay reverts if the balance is drained mid-flow
     Given my wallet has an open loan against a stream
+    And the frontend re-syncs with chain state
     When I expand the active market
     And I open the loan's advanced panel
     And I click the "REPAY EARLY" button

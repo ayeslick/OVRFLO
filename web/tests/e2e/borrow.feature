@@ -17,6 +17,7 @@ Feature: Borrow against a stream
   Scenario: Happy path — borrow against a stream via the rate ladder
     Given a lender has posted liquidity for the active market
     And my wallet holds an eligible stream
+    And the frontend re-syncs with chain state
     When I expand the active market
     And I click the "BORROW" button
     Then the "BORROW AGAINST STREAM" modal is open
@@ -33,6 +34,7 @@ Feature: Borrow against a stream
 
   Scenario: Error state — no liquidity posted for this market
     Given my wallet holds an eligible stream
+    And the frontend re-syncs with chain state
     When I expand the active market
     And I click the "BORROW" button
     Then the "BORROW AGAINST STREAM" modal is open
@@ -44,6 +46,7 @@ Feature: Borrow against a stream
   Scenario: Error state — invalid slippage
     Given a lender has posted liquidity for the active market
     And my wallet holds an eligible stream
+    And the frontend re-syncs with chain state
     When I expand the active market
     And I click the "BORROW" button
     Then the "BORROW AGAINST STREAM" modal is open
@@ -58,6 +61,7 @@ Feature: Borrow against a stream
   Scenario: Error state — stale liquidity triggers an automatic re-quote, not a dead end
     Given a lender has posted liquidity for the active market
     And my wallet holds an eligible stream
+    And the frontend re-syncs with chain state
     When I expand the active market
     And I click the "BORROW" button
     Then the "BORROW AGAINST STREAM" modal is open
@@ -79,6 +83,7 @@ Feature: Borrow against a stream
   Scenario: Cross-cutting — focus trap and Escape (AE2)
     Given a lender has posted liquidity for the active market
     And my wallet holds an eligible stream
+    And the frontend re-syncs with chain state
     When I expand the active market
     And I click the "BORROW" button
     Then the "BORROW AGAINST STREAM" modal is open

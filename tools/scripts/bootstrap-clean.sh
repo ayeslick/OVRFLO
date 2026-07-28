@@ -73,14 +73,37 @@ kill_orphaned_ponder() {
   fi
 }
 
+kill_orphaned_next_dev() {
+  local repo_root pattern pids
+  repo_root="$(pwd)"
+  pattern="${repo_root}/web/node_modules/.bin/next dev"
+  pids=$(pgrep -f "$pattern" 2>/dev/null || true)
+  if [ -n "$pids" ]; then
+    echo "bootstrap-clean: found orphaned next dev process(es) not covered by the recorded pid: $pids"
+    kill $pids 2>/dev/null || true
+    for _ in 1 2 3 4 5; do
+      pids=$(pgrep -f "$pattern" 2>/dev/null || true)
+      [ -z "$pids" ] && break
+      sleep 0.2
+    done
+    pids=$(pgrep -f "$pattern" 2>/dev/null || true)
+    [ -n "$pids" ] && kill -9 $pids 2>/dev/null || true
+    CLEANED=1
+  fi
+}
+
 if [ "$NETWORK" = "local" ]; then
   kill_pid_file "anvil" ".bootstrap.pid"
   kill_pid_file "ponder" ".bootstrap.ponder.pid"
+  kill_pid_file "dev server" ".bootstrap.web.pid"
   kill_orphaned_ponder
+  kill_orphaned_next_dev
   rm_if_exists "anvil log"  ".bootstrap.anvil.log"
   rm_if_exists "ponder log" ".bootstrap.ponder.log"
+  rm_if_exists "web dev log" ".bootstrap.web.log"
   rm_if_exists "env.local"  "web/.env.local"
   rm_if_exists "deployment artifact" "deployments/local.json"
+  rm_if_exists "ponder cache" "tools/ponder/.ponder"
 else
   rm_if_exists "env.devnet" "web/.env.devnet"
   # Intentionally leave deployments/devnet.json — it's the record of what's

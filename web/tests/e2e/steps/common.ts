@@ -5,15 +5,14 @@ import { advancePastExpiry, publicClient, readSecondaryExpiry, readSecondaryMatu
 import { DEV_WALLET_ADDRESS, waitForWalletConnected } from "../fixtures/mock-wallet";
 import { erc20Abi } from "@/lib/abis";
 
-// Scenarios act on whichever container is "in front": an open action modal
-// takes priority over the expanded market row's own action buttons, which in
-// turn takes priority over the bare page (nothing expanded yet). This mirrors
-// how a real user's attention narrows as they drill into a journey.
+// Scenarios act on whichever container is "in front". An open action modal
+// takes priority (it overlays everything). Otherwise search the whole page —
+// action buttons live in different places (market-row detail for SUPPLY /
+// BORROW / DEPOSIT PT, position cards for ADJUST RATE / REPAY / CLOSE / CLAIM
+// ALL), so scoping to the expanded market `region` alone misses half of them.
 async function actionScope(page: Page): Promise<Locator> {
   const dialog = page.getByRole("dialog");
   if (await dialog.count()) return dialog;
-  const region = page.getByRole("region");
-  if (await region.count()) return region.first();
   return page.locator("body");
 }
 
@@ -25,15 +24,43 @@ Given("my wallet is connected", async ({ page }) => {
   await waitForWalletConnected(page);
 });
 
+// Every fixture-direct arrange step (chain.ts helpers, called via a raw viem
+// client) mutates chain state completely outside the app's own write flow —
+// no wagmi hook ever confirms a matching transaction, so `useWriteFlow.ts`'s
+// `invalidateAllOnChainReads` never fires and the page keeps showing
+// whatever it fetched on its FIRST load (before the arrangement), forever:
+// there's no polling and nothing else to trigger a refetch. supply.feature's
+// scenarios never hit this because they create their own liquidity by
+// clicking through the real SUPPLY form — a UI-driven write the app's own
+// invalidation already covers. Anything arranged as a different persona
+// (lender-side liquidity) or via a direct fixture call (streams, deposit
+// caps) needs this explicit step appended as the LAST arrange step in its
+// scenario's Given chain — do not add it when a later step already reloads
+// (e.g. "the market has matured", "the loan's stream has vested enough to
+// close it"), or the scenario reloads twice for no reason.
+Given("the frontend re-syncs with chain state", async ({ page }) => {
+  await page.reload();
+  await waitForWalletConnected(page);
+});
+
 // Every scenario targets the market with the further-out expiry of the two
 // seed-local.sh discovers live on every run (see script/lib/discover-pendle-market.sh)
 // — arbitrary, just needs to be a stable pick between the two. "Matured"
 // scenarios don't need the *other* market: advancing this one's own clock
 // (below) covers every maturity state deterministically, regardless of which
 // real markets got seeded this run.
+//
+// "Ensure expanded", not "toggle": `.row-toggle` is a plain click target that
+// bubbles to the `<tr>`'s own onClick, which flips `expanded ? null : market`
+// (see MarketsTable.tsx) — a second call in the same scenario (e.g. re-check
+// a position card after closing an action modal, which only clears
+// `activeMode` and never touches the row's own expanded state) would
+// collapse the row instead of leaving it open, silently unmounting
+// PositionList right before the next assertion looks for a `.position-card`.
 When("I expand the active market", async ({ page }) => {
-  const row = page.locator("tr", { hasText: readSecondaryMaturityLabel() }).first();
-  await row.locator(".row-toggle").click();
+  const toggle = page.locator("tr", { hasText: readSecondaryMaturityLabel() }).first().locator(".row-toggle");
+  if ((await toggle.getAttribute("aria-expanded")) === "true") return;
+  await toggle.click();
 });
 
 When("I collapse the expanded market row", async ({ page }) => {
@@ -98,8 +125,14 @@ When("I select the second available rate", async ({ page }) => {
   await scope.getByRole("radio").nth(1).click();
 });
 
+// Longer than the default 5s: a just-confirmed write only bumps the enumeration
+// count (e.g. `nextLiquidityId`) via one invalidated read, and the position
+// list itself is a *second* read keyed off that count (see useLendingLiquidity)
+// — it can't refetch with the right args until the first read's new value has
+// round-tripped back and re-rendered, so this is inherently a two-hop refetch,
+// not a single query invalidation.
 Then("I see a {string} position card", async ({ page }, label: string) => {
-  await expect(page.locator(".position-card", { hasText: label }).first()).toBeVisible();
+  await expect(page.locator(".position-card", { hasText: label }).first()).toBeVisible({ timeout: 15_000 });
 });
 
 When("I press Escape", async ({ page }) => {
@@ -115,11 +148,17 @@ Then("no modal is open", async ({ page }) => {
 });
 
 Then("I see the caption {string}", async ({ page }, text: string) => {
-  await expect(page.getByText(text, { exact: true })).toBeVisible();
+  // Two markets can both show the same maturity caption after a shared
+  // time-travel (e.g. "MARKET MATURED" on every row) — assert at least one.
+  // Longer than the default 5s: this step is also used for "CONFIRMED" after
+  // a real on-chain write, which only surfaces once wagmi's own
+  // useWaitForTransactionReceipt polling notices the mined receipt (see the
+  // longer explanation on "I see a mapped error message" below).
+  await expect(page.getByText(text, { exact: true }).first()).toBeVisible({ timeout: 15_000 });
 });
 
 Then("I do not see the caption {string}", async ({ page }, text: string) => {
-  await expect(page.getByText(text, { exact: true })).not.toBeVisible();
+  await expect(page.getByText(text, { exact: true })).toHaveCount(0);
 });
 
 Then("I see text matching {string}", async ({ page }, pattern: string) => {
@@ -130,8 +169,14 @@ When("I fill the slippage field with {string}", async ({ page }, value: string) 
   await page.locator("#borrow-slippage").fill(value);
 });
 
+// Longer than the default 5s: this always follows a real on-chain revert
+// (supply.feature/repay-close.feature's "transaction reverts" scenarios), and
+// the mapped-error caption only appears once wagmi's `useWaitForTransactionReceipt`
+// notices it — that hook polls (viem's default ~4s HTTP polling interval),
+// it doesn't push, so a receipt that's already mined can still take a full
+// poll tick-or-two to surface in the UI.
 Then("I see a mapped error message", async ({ page }) => {
-  await expect(page.locator(".status-negative").first()).toBeVisible();
+  await expect(page.locator(".status-negative").first()).toBeVisible({ timeout: 15_000 });
 });
 
 Then("the {string} button is disabled", async ({ page }, label: string) => {

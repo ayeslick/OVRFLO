@@ -52,7 +52,7 @@ export const lenderClient = walletFor(LENDER_WALLET_ADDRESS);
 // Anvil's default dev-mnemonic account #0 — script/seed-local.sh deploys the
 // factory from this address (`OWNER_PK`'s well-known default), so it doubles
 // as the local "multisig" for admin-gated arrange steps (e.g. deposit caps).
-export const OWNER_ADDRESS: Address = "0xf39Fd6e51aad88F6F4CE6aB8827279cffFb92266";
+export const OWNER_ADDRESS: Address = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
 export const ownerClient = walletFor(OWNER_ADDRESS);
 
 type Deployment = {
@@ -136,8 +136,15 @@ export function readSecondaryMaturityLabel(): string {
   return formatMaturity(readSecondaryExpiry());
 }
 
+// Throws on a reverted tx rather than handing back a receipt with empty logs
+// — otherwise a revert surfaces many steps downstream as a confusing "event
+// not found" error instead of the actual on-chain failure.
 async function mineAndGetReceipt(hash: Hash) {
-  return publicClient.waitForTransactionReceipt({ hash });
+  const receipt = await publicClient.waitForTransactionReceipt({ hash });
+  if (receipt.status !== "success") {
+    throw new Error(`tx ${hash} reverted (block ${receipt.blockNumber}) — see \`cast run ${hash}\` for the trace`);
+  }
+  return receipt;
 }
 
 async function approveIfNeeded(
@@ -184,6 +191,27 @@ export async function advanceSeconds(seconds: number) {
 
 // --- Balance / allowance arrangement -----------------------------------------
 
+// The step calling this (e.g. supply.feature's "transaction reverts") always
+// runs right after a UI click (APPROVE) that fires-and-forgets a write from
+// this same `account` via the browser's own mock-connector client — Playwright
+// resolves that click as soon as the DOM interaction completes, not once the
+// tx is actually mined. Without this wait, this function's own transfer can
+// grab the same pending nonce and collide with it, leaving the browser's
+// write permanently unmined (no receipt ever arrives, no error surfaces — the
+// form just hangs "busy" forever). Waiting for `pending` to catch up to
+// `latest` confirms the mempool for `account` is clear before we submit ours.
+async function waitForNoncesToSettle(account: Address) {
+  for (let i = 0; i < 50; i++) {
+    const [latest, pending] = await Promise.all([
+      rpcCall<string>("eth_getTransactionCount", [account, "latest"]),
+      rpcCall<string>("eth_getTransactionCount", [account, "pending"]),
+    ]);
+    if (latest === pending) return;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  throw new Error(`waitForNoncesToSettle(${account}): pending nonce never caught up to latest`);
+}
+
 // Forces a genuine on-chain revert for a subsequent write from `account` by
 // draining the token balance a signed-but-not-yet-submitted form action
 // depends on. Used for supply.feature's "transaction reverts" scenario
@@ -197,6 +225,7 @@ export async function advanceSeconds(seconds: number) {
 // (that string is only reachable from withdraw/sell/borrow-side paths, never
 // from supplyLiquidity — see src/OVRFLOLending.sol).
 export async function drainTokenBalance(token: Address, account: Address) {
+  await waitForNoncesToSettle(account);
   const balance = await publicClient.readContract({
     address: token,
     abi: erc20Abi,
@@ -251,6 +280,24 @@ export async function readAprBounds(lending: Address) {
     publicClient.readContract({ address: lending, abi: ovrfloLendingAbi, functionName: "aprMaxBps" }),
   ]);
   return { aprMinBps, aprMaxBps };
+}
+
+// OVRFLOLending's constructor sets aprMinBps == aprMaxBps == LAUNCH_APR_BPS
+// (src/OVRFLOLending.sol) — a deliberate single-tick launch default, widened
+// later by governance via setAprBounds. seed-local.sh never widens it, so
+// every freshly-seeded local market starts with exactly one rate tick.
+// adjust-rate.feature's scenarios need a second, distinct tick to move
+// liquidity *to* — arrange one via the same factory-forwarded admin path
+// real governance would use (AGENTS.md: multisig -> factory -> lending,
+// never the lending market directly).
+export async function widenAprBounds(params: { factory: Address; lending: Address; aprMinBps: number; aprMaxBps: number }) {
+  const hash = await ownerClient.writeContract({
+    address: params.factory,
+    abi: ovrfloFactoryAbi,
+    functionName: "setLendingAprBounds",
+    args: [params.lending, params.aprMinBps, params.aprMaxBps],
+  });
+  await mineAndGetReceipt(hash);
 }
 
 // --- Lending arrangement -----------------------------------------------------
@@ -344,6 +391,11 @@ export async function wrapUnderlying(params: { account: Address; ovrflo: Address
 export async function depositPtForStream(params: { account: Address; ovrflo: Address; market: Address; ptToken: Address; ptAmount: bigint }) {
   const client = walletFor(params.account);
   await approveIfNeeded(client, params.ptToken, params.ovrflo, params.ptAmount);
+  // Deposit pulls an underlying fee via safeTransferFrom (see OVRFLO.deposit
+  // NatSpec: "User must approve both PT token and underlying (for fee)").
+  // Over-approve by the full ptAmount — fee is feeBps of the immediate
+  // portion only, so this is always enough and avoids a separate quote.
+  await approveIfNeeded(client, WSTETH, params.ovrflo, params.ptAmount);
   const hash = await client.writeContract({
     address: params.ovrflo,
     abi: ovrfloAbi,
@@ -362,6 +414,70 @@ export async function depositPtForStream(params: { account: Address; ovrflo: Add
     }
   }
   throw new Error("deposit receipt did not contain a Deposited event");
+}
+
+// Sablier streams are Ponder-indexed (see CONCEPTS.md's `Ponder` entry), not
+// a direct on-chain read — a stream just deposited above genuinely does not
+// exist yet from the frontend's point of view until Ponder's own poll cycle
+// (ponder.config.ts's `pollingInterval: 2_000`) notices the new block,
+// processes the event, and commits it. Reloading the page immediately after
+// deposit only forces a *fresh* fetch; it does nothing if that fetch still
+// lands before Ponder has caught up. Callers that arrange a stream a
+// scenario later depends on must await this before triggering "the frontend
+// re-syncs with chain state", or the reload races the indexer and still
+// finds nothing.
+// Queries Ponder's SQL-over-HTTP endpoint directly with a plain `fetch`
+// rather than importing the app's own `@/lib/ponder` (which pulls in
+// `@ponder/client`) — that package's package.json has no `exports` entry
+// resolvable outside Next.js's bundler, so importing it from Playwright's
+// plain Node runtime throws `No "exports" main defined`. This replicates
+// `fetchHeldStreamIds`'s query (same table/columns) independently.
+async function ponderHasStream(recipient: Address, streamId: bigint): Promise<boolean> {
+  const payload = {
+    json: {
+      sql: "select stream_id from sablier_streams where recipient = $1 and stream_id = $2 and canceled = false and depleted = false limit $3",
+      params: [recipient.toLowerCase(), streamId.toString(), 1],
+      typings: ["none", "none", "none"],
+    },
+  };
+  const url = `http://localhost:42069/sql/db?sql=${encodeURIComponent(JSON.stringify(payload))}`;
+  const res = await fetch(url);
+  if (!res.ok) return false;
+  const body = (await res.json()) as { rows?: unknown[] };
+  return Boolean(body.rows?.length);
+}
+
+export async function waitForHeldStream(recipient: Address, streamId: bigint, timeoutMs = 15_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await ponderHasStream(recipient, streamId)) return;
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  throw new Error(`waitForHeldStream: Ponder never indexed stream ${streamId} for ${recipient} within ${timeoutMs}ms`);
+}
+
+// The discounted price of a stream's full remaining face value (see
+// StreamPricing.grossPrice) — a function of the live-discovered market's PT
+// rate and time-to-maturity, NOT the PT amount deposited (OVRFLO.deposit
+// streams only the discount fraction, `_computeSplit`'s `toStream`). Callers
+// that need to borrow a genuinely *partial* amount against a fresh stream
+// (so `createBorrowerLoanPool`'s obligation stays proportional to the
+// borrow rather than jumping to the full-borrow branch, which sets
+// obligation = the entire remaining stream) must size their target against
+// this, not a hardcoded absolute.
+export async function readStreamGrossPrice(params: {
+  lending: Address;
+  market: Address;
+  streamId: bigint;
+  aprBps: number;
+}) {
+  const [grossPrice] = await publicClient.readContract({
+    address: params.lending,
+    abi: ovrfloLendingAbi,
+    functionName: "quote",
+    args: [params.market, params.streamId, params.aprBps, 0n],
+  });
+  return grossPrice;
 }
 
 // Full borrow flow (approve stream, quote, gather, createBorrowerLoanPool) as
@@ -417,11 +533,28 @@ export async function borrowAgainstStream(params: {
   }
   const minAcceptable = (netToBorrower * 99n) / 100n; // 1% slippage, arrangement only
 
+  // `eth_estimateGas`'s result here sits close enough to the true minimum
+  // that it occasionally under-shoots by the time the tx actually mines a
+  // moment later (fill/minAcceptable drift by a few wei as real time passes,
+  // which is enough to flip an SSTORE between its cheap and expensive gas
+  // cost) — the shortfall then surfaces as an out-of-gas revert right at the
+  // nonReentrant guard's exit, immediately after all of the function's real
+  // work (including the BorrowerLoanPoolCreated emit) has already run. Padding
+  // the estimate is the standard wallet-side mitigation for this class of
+  // gas-estimation flakiness.
+  const estimatedGas = await publicClient.estimateContractGas({
+    account: params.account,
+    address: params.lending,
+    abi: ovrfloLendingAbi,
+    functionName: "createBorrowerLoanPool",
+    args: [ids, params.streamId, fill, minAcceptable],
+  });
   const hash = await client.writeContract({
     address: params.lending,
     abi: ovrfloLendingAbi,
     functionName: "createBorrowerLoanPool",
     args: [ids, params.streamId, fill, minAcceptable],
+    gas: (estimatedGas * 130n) / 100n,
   });
   const receipt = await mineAndGetReceipt(hash);
   for (const log of receipt.logs) {
@@ -451,12 +584,16 @@ export async function readLoan(lending: Address, loanId: bigint) {
 // already-open REPAY modal so it discovers "LOAN NOT FOUND" once the
 // borrower-loan list refetches, mirroring the claim-all "claimed elsewhere"
 // pattern for the repay/close journey.
-export async function repayLoanFully(params: { account: Address; lending: Address; loanId: bigint }) {
+export async function repayLoanFully(params: { account: Address; lending: Address; loanId: bigint; ovrfloToken: Address }) {
   const loan = await readLoan(params.lending, params.loanId);
   const satisfied = loan.drawn + loan.repaid;
   const outstanding = satisfied >= loan.obligation ? 0n : loan.obligation - satisfied;
   if (outstanding === 0n) return;
   const client = walletFor(params.account);
+  // repayLoan pulls ovrfloToken via safeTransferFrom (src/OVRFLOLending.sol's
+  // `_pullExact`), same as the UI's own "APPROVE REPAY" step — this direct
+  // fixture call bypasses the UI entirely, so it must approve itself first.
+  await approveIfNeeded(client, params.ovrfloToken, params.lending, outstanding);
   const hash = await client.writeContract({
     address: params.lending,
     abi: ovrfloLendingAbi,

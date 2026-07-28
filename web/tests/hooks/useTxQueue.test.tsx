@@ -18,6 +18,9 @@ const wagmiState = {
   receiptSuccess: false,
   receiptLoading: false,
   receiptError: null as Error | null,
+  // Mined-but-reverted receipts resolve `isSuccess: true` with no JS error —
+  // the on-chain outcome only shows up in `data.status`.
+  receiptStatus: "success" as "success" | "reverted",
 };
 
 vi.mock("wagmi", () => ({
@@ -30,12 +33,14 @@ vi.mock("wagmi", () => ({
       wagmiState.hash = undefined;
       wagmiState.writeError = null;
       wagmiState.receiptSuccess = false;
+      wagmiState.receiptStatus = "success";
     }),
   }),
   useWaitForTransactionReceipt: () => ({
     isLoading: wagmiState.receiptLoading,
     isSuccess: wagmiState.receiptSuccess,
     error: wagmiState.receiptError,
+    data: wagmiState.receiptSuccess ? { status: wagmiState.receiptStatus } : undefined,
   }),
 }));
 
@@ -63,6 +68,13 @@ function confirmCurrent(rerender: () => void, hash: `0x${string}`) {
   act(() => rerender());
 }
 
+function revertCurrent(rerender: () => void, hash: `0x${string}`) {
+  wagmiState.hash = hash;
+  wagmiState.receiptStatus = "reverted";
+  wagmiState.receiptSuccess = true;
+  act(() => rerender());
+}
+
 beforeEach(() => {
   wagmiState.writeContract = vi.fn();
   wagmiState.hash = undefined;
@@ -71,6 +83,7 @@ beforeEach(() => {
   wagmiState.receiptSuccess = false;
   wagmiState.receiptLoading = false;
   wagmiState.receiptError = null;
+  wagmiState.receiptStatus = "success";
 });
 
 describe("useTxQueue", () => {
@@ -115,6 +128,26 @@ describe("useTxQueue", () => {
     expect(result.current.rows[0].status).toBe("confirmed");
     expect(result.current.rows).toHaveLength(2);
     expect(wagmiState.writeContract).toHaveBeenCalledTimes(3);
+  });
+
+  it("treats a mined-but-reverted receipt as a failure, not a confirmation", () => {
+    // Regression: waitForTransactionReceipt resolves isSuccess/isError based on
+    // whether the RPC fetch itself succeeded, not the transaction's on-chain
+    // outcome — a reverted tx (e.g. claiming an already-claimed stream) still
+    // mines a receipt with no write/receipt error, only `data.status`.
+    const { result, rerender, invalidateSpy } = setup();
+    act(() => result.current.start([{ kind: "stream-claim", streamId: 7n }]));
+    expect(wagmiState.writeContract).toHaveBeenCalledTimes(1);
+
+    revertCurrent(() => rerender({ u: userA }), "0xhash1");
+
+    expect(result.current.rows[0].status).toBe("failed");
+    expect(result.current.failed).toBe(true);
+    expect(result.current.running).toBe(false);
+    expect(result.current.done).toBe(false);
+    // No further advance and no invalidation for the reverted tx.
+    expect(wagmiState.writeContract).toHaveBeenCalledTimes(1);
+    expect(invalidateSpy).not.toHaveBeenCalled();
   });
 
   it("pauses after the in-flight tx when the connected wallet changes", () => {

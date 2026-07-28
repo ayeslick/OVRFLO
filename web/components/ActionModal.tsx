@@ -147,6 +147,7 @@ function TxState({ tx, pendingLabel }: { tx: WriteFlow; pendingLabel?: string | 
       </div>
     );
   if (tx.isConfirmed) return <div className="label mono status-positive">CONFIRMED</div>;
+  if (tx.isReverted) return <div className="label mono status-negative">TRANSACTION REVERTED ON-CHAIN</div>;
   if (tx.error) return <div className="label mono status-negative">{userFacingError(tx.error)}</div>;
   return null;
 }
@@ -161,6 +162,7 @@ function ApproveTxState({ tx, label }: { tx: WriteFlow; label: string }) {
         {label}: CONFIRMING {tx.hash?.slice(0, 10)}…
       </div>
     );
+  if (tx.isReverted) return <div className="label mono status-negative">{label}: REVERTED ON-CHAIN</div>;
   if (tx.error) return <div className="label mono status-negative">{userFacingError(tx.error)}</div>;
   return null;
 }
@@ -329,7 +331,12 @@ function SupplyForm({
       <div className="summary-row mono" aria-live="polite">
         SUPPLY {formatTokenAmount(amount, underlyingSymbol)} @ {aprBps !== null ? formatAprBps(aprBps) : "—"}
       </div>
-      <StepIndicator steps={steps} activeIndex={activeIndex} error={Boolean(approveTx.error ?? actionTx.error)} accent={accent} />
+      <StepIndicator
+        steps={steps}
+        activeIndex={activeIndex}
+        error={Boolean(approveTx.error ?? actionTx.error) || approveTx.isReverted || actionTx.isReverted}
+        accent={accent}
+      />
       {!approvalCovers ? (
         <button
           className={`button ${accentClass(accent)} mono`}
@@ -475,7 +482,7 @@ function SimpleActionForm({
       <div className="summary-row mono" aria-live="polite">
         {summary}
       </div>
-      <StepIndicator steps={steps} activeIndex={activeIndex} error={Boolean(tx.error)} accent={accent} />
+      <StepIndicator steps={steps} activeIndex={activeIndex} error={Boolean(tx.error) || tx.isReverted} accent={accent} />
       <button
         className={`button ${accentClass(accent)} mono`}
         disabled={!writeArgs || tx.isSigning || tx.isConfirming}
@@ -654,7 +661,12 @@ function ConvertForm({
       {mode === "claim_matured" && !matured ? (
         <div className="label mono status-negative">CLAIM ENABLES AFTER MATURITY</div>
       ) : null}
-      <StepIndicator steps={steps} activeIndex={activeIndex} error={Boolean(approveTx.error ?? actionTx.error)} accent={accent} />
+      <StepIndicator
+        steps={steps}
+        activeIndex={activeIndex}
+        error={Boolean(approveTx.error ?? actionTx.error) || approveTx.isReverted || actionTx.isReverted}
+        accent={accent}
+      />
       {needsPtApproval ? (
         <button
           className={`button ${accentClass(accent)} mono`}
@@ -1057,7 +1069,7 @@ function BorrowForm({
       <StepIndicator
         steps={steps}
         activeIndex={activeIndex}
-        error={Boolean(approveTx.error ?? actionTx.error)}
+        error={Boolean(approveTx.error ?? actionTx.error) || approveTx.isReverted || actionTx.isReverted}
         accent={accent}
       />
 
@@ -1068,6 +1080,9 @@ function BorrowForm({
       ) : null}
       {terminal ? (
         <div className="label mono status-negative">{userFacingError(actionTx.error)}</div>
+      ) : null}
+      {actionTx.isReverted ? (
+        <div className="label mono status-negative">TRANSACTION REVERTED ON-CHAIN</div>
       ) : null}
 
       {needsApproval ? (
@@ -1314,7 +1329,7 @@ function AdjustRateForm({
       <StepIndicator
         steps={steps}
         activeIndex={activeIndex}
-        error={Boolean(approveTx.error ?? actionTx.error)}
+        error={Boolean(approveTx.error ?? actionTx.error) || approveTx.isReverted || actionTx.isReverted}
         accent={accent}
       />
       {staleRecovery && !actionTx.isConfirmed && !busy ? (
@@ -1323,6 +1338,9 @@ function AdjustRateForm({
         </div>
       ) : null}
       {terminal ? <div className="label mono status-negative">{userFacingError(actionTx.error)}</div> : null}
+      {actionTx.isReverted ? (
+        <div className="label mono status-negative">TRANSACTION REVERTED ON-CHAIN</div>
+      ) : null}
       {needsApproval ? (
         <button
           className={`button ${accentClass(accent)} mono`}
@@ -1422,12 +1440,17 @@ function RepayForm({
     args: connectedAddress && market.lending ? [connectedAddress, market.lending] : undefined,
     query: { enabled: Boolean(connectedAddress && market.lending) },
   });
+  // Polled, not just invalidation-driven: the wallet's ovrfloToken balance can
+  // change from outside this session (a transfer elsewhere, another channel
+  // draining it) with no tx of this modal's own to key an invalidation off
+  // of — same reasoning as useBorrowerLoans's polling for an externally
+  // closed loan.
   const balanceRead = useReadContract({
     address: market.ovrfloToken,
     abi: erc20Abi,
     functionName: "balanceOf",
     args: connectedAddress ? [connectedAddress] : undefined,
-    query: { enabled: Boolean(connectedAddress) },
+    query: { enabled: Boolean(connectedAddress), refetchInterval: 2_000 },
   });
 
   useEffect(() => {
@@ -1453,7 +1476,12 @@ function RepayForm({
   if (borrowerLoans.isLoading) {
     return <div className="label mono">LOADING</div>;
   }
-  if (!loan) {
+  // `loan` itself never disappears from the read (the contract never zeroes
+  // a closed loan's borrower) — closing sets `closed: true` in place. Treat
+  // an externally-closed loan as not found, but not one this form's own
+  // repay just closed (guarded by `actionTx.isConfirmed`), or a just-repaid
+  // loan would flash "LOAN NOT FOUND" instead of the CONFIRMED state below.
+  if (!loan || (loan.closed && !actionTx.isConfirmed)) {
     return <div className="label mono status-negative">LOAN NOT FOUND</div>;
   }
 
@@ -1473,7 +1501,12 @@ function RepayForm({
       <div className="summary-row mono" aria-live="polite">
         REPAY {formatTokenAmount(repayAmount, ovrfloSymbol)} / REMAINING {formatTokenAmount(outstanding - repayAmount, ovrfloSymbol)}
       </div>
-      <StepIndicator steps={steps} activeIndex={activeIndex} error={Boolean(approveTx.error ?? actionTx.error)} accent={accent} />
+      <StepIndicator
+        steps={steps}
+        activeIndex={activeIndex}
+        error={Boolean(approveTx.error ?? actionTx.error) || approveTx.isReverted || actionTx.isReverted}
+        accent={accent}
+      />
       {needsApproval ? (
         <button
           className={`button ${accentClass(accent)} mono`}

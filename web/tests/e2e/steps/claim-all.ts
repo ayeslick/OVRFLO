@@ -8,6 +8,7 @@ import {
   readDeployment,
   readSecondaryMarket,
   readSecondaryPt,
+  waitForHeldStream,
 } from "../fixtures/chain";
 import { DEV_WALLET_ADDRESS } from "../fixtures/mock-wallet";
 
@@ -25,6 +26,7 @@ Given("my wallet holds a stream with a withdrawable balance", async () => {
   // A few minutes of linear vesting is enough for withdrawableAmountOf to be
   // meaningfully nonzero without meaningfully affecting the stream's total.
   await advanceSeconds(600);
+  await waitForHeldStream(DEV_WALLET_ADDRESS, currentStreamId);
 });
 
 Given("the stream has already been claimed elsewhere", async () => {

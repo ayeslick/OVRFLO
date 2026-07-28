@@ -11,7 +11,24 @@ const OVRFLO_FACTORY = (process.env.PONDER_OVRFLO_FACTORY ??
   process.env.NEXT_PUBLIC_OVRFLO_FACTORY ??
   "0x0000000000000000000000000000000000000000") as `0x${string}`;
 
-const START_BLOCK = 24609500;
+// No fixed fallback block: this project's only OVRFLO deployment is always
+// fresh at whatever block the fork happened to be at when seed-local.sh ran
+// (it discovers live Pendle markets and deploys against "now" — see
+// docs/solutions/architecture-patterns/live-pendle-market-discovery-for-seed-
+// and-fork-fixtures.md), so nothing before that block is ever relevant —
+// every OVRFLOLending/Sablier event a run needs is created *during* that same
+// run. A hardcoded historical constant only grows more expensive over time
+// (the real chain head keeps moving away from it, and `disableCache: true`
+// above means every restart re-walks from startBlock from scratch regardless
+// of prior progress), so the caller must always supply the real starting
+// point instead. bootstrap-local.sh passes PONDER_START_BLOCK as the fork's
+// own starting block number (`cast block-number` right after anvil starts).
+if (!process.env.PONDER_START_BLOCK) {
+  throw new Error(
+    "PONDER_START_BLOCK is not set — pass the fork's own starting block (e.g. `cast block-number --rpc-url $PONDER_RPC_URL` right after anvil starts), not a fixed historical constant. See bootstrap-local.sh.",
+  );
+}
+const START_BLOCK = Number(process.env.PONDER_START_BLOCK);
 
 export default createConfig({
   chains: {

@@ -60,18 +60,16 @@ export function PositionList({ market, user, symbols, onAction }: Props) {
   const eligibleStreams = streams.streams.filter((stream) => isSeriesMatchedStream(stream, market));
 
   const isLoading = liquidity.isLoading || loanBook.isLoading || streams.isLoading;
-  const hasError = liquidity.error || loanBook.error || streams.error;
+
+  // liquidity + loanBook are plain on-chain reads; streams comes from the
+  // Ponder indexer (lib/ponder.ts) and can error independently — each source
+  // degrades on its own so an indexer hiccup can't hide on-chain positions
+  // (e.g. a just-created LIQUIDITY position) behind a blanket error message.
+  const onChainError = Boolean(liquidity.error || loanBook.error);
+  const streamsError = Boolean(streams.error);
 
   if (isLoading) {
     return <div className="empty mono">LOADING</div>;
-  }
-
-  if (hasError) {
-    return (
-      <div className="empty mono status-negative">
-        UNABLE TO LOAD POSITIONS
-      </div>
-    );
   }
 
   const underlyingSymbol = symbolFor(symbols, market.underlying);
@@ -94,94 +92,110 @@ export function PositionList({ market, user, symbols, onAction }: Props) {
     ? "SHOWING FIRST 500 — ACTIVE LIQUIDITY MAY EXIST BEYOND SCAN RANGE"
     : "SHOWING FIRST 500 — DATA TRUNCATED";
 
-  const hasLending = userLiquidity.length > 0 || userPools.length > 0;
-  const hasBorrowing = userLoans.length > 0;
-  const hasStreams = eligibleStreams.length > 0;
+  // Each group only reports positions when its own source is error-free —
+  // an indexer error must not read as "no positions" any more than it should
+  // read as "no on-chain positions either."
+  const hasLending = !onChainError && (userLiquidity.length > 0 || userPools.length > 0);
+  const hasBorrowing = !onChainError && userLoans.length > 0;
+  const hasStreams = !streamsError && eligibleStreams.length > 0;
 
-  if (!hasLending && !hasBorrowing && !hasStreams) {
+  if (!onChainError && !streamsError && !hasLending && !hasBorrowing && !hasStreams) {
     return null;
   }
 
   return (
     <div className="position-list">
-      {tooLarge ? <div className="label mono">{truncationCopy}</div> : null}
-      {hasLending ? (
+      {!onChainError && tooLarge ? <div className="label mono">{truncationCopy}</div> : null}
+      {onChainError ? (
         <div className="position-group">
-          <div className="label mono">LENDING</div>
-          <div className="position-cards">
-            {userLiquidity.map((position) => (
-              <div className="position-card" key={`liquidity-${position.id}`}>
-                <div className="card-head mono">
-                  <span>LIQUIDITY {formatId(position.id)}</span>
-                  <span className="card-badge">EARNING {formatAprBps(position.aprBps)}</span>
-                </div>
-                <div className="mono">IDLE {formatTokenAmount(position.availableLiquidity, underlyingSymbol)}</div>
-                <div className="card-actions">
-                  <button
-                    className="button button-gold mono"
-                    type="button"
-                    onClick={() => onAction({ type: "withdraw", positionId: position.id })}
-                  >
-                    WITHDRAW
-                  </button>
-                  <button
-                    className="button button-gold mono"
-                    type="button"
-                    disabled={position.availableLiquidity === 0n}
-                    onClick={() => onAction({ type: "adjust_rate", positionId: position.id })}
-                  >
-                    ADJUST RATE
-                  </button>
-                </div>
-              </div>
-            ))}
-            {userPools.map((pool) => (
-              <div className="position-card" key={`pool-${pool.pool.id}`}>
-                <div className="card-head mono">
-                  <span>POOL {formatId(pool.pool.id)}</span>
-                  <span className="card-badge">EARNING {formatAprBps(pool.pool.aprBps)}</span>
-                </div>
-                <div className="mono">CLAIMABLE {formatTokenAmount(pool.claimable, ovrfloSymbol)}</div>
-                {/* Spec edge state: lender-side note on _claimFair deficit
-                    harvesting — shown only when there is something to claim. */}
-                {pool.claimable > 0n ? (
-                  <div className="label mono">SHORTFALLS HARVEST FROM THE LOAN STREAM ON CLAIM</div>
-                ) : null}
-                <div className="card-actions">
-                  <button
-                    className="button button-gold mono"
-                    type="button"
-                    disabled={pool.claimable === 0n}
-                    onClick={() => onAction({ type: "claim_share", positionId: pool.pool.id })}
-                  >
-                    CLAIM SHARE
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
+          <div className="empty mono status-negative">UNABLE TO LOAD LENDING POSITIONS</div>
         </div>
-      ) : null}
+      ) : (
+        <>
+          {hasLending ? (
+            <div className="position-group">
+              <div className="label mono">LENDING</div>
+              <div className="position-cards">
+                {userLiquidity.map((position) => (
+                  <div className="position-card" key={`liquidity-${position.id}`}>
+                    <div className="card-head mono">
+                      <span>LIQUIDITY {formatId(position.id)}</span>
+                      <span className="card-badge">EARNING {formatAprBps(position.aprBps)}</span>
+                    </div>
+                    <div className="mono">IDLE {formatTokenAmount(position.availableLiquidity, underlyingSymbol)}</div>
+                    <div className="card-actions">
+                      <button
+                        className="button button-gold mono"
+                        type="button"
+                        onClick={() => onAction({ type: "withdraw", positionId: position.id })}
+                      >
+                        WITHDRAW
+                      </button>
+                      <button
+                        className="button button-gold mono"
+                        type="button"
+                        disabled={position.availableLiquidity === 0n}
+                        onClick={() => onAction({ type: "adjust_rate", positionId: position.id })}
+                      >
+                        ADJUST RATE
+                      </button>
+                    </div>
+                  </div>
+                ))}
+                {userPools.map((pool) => (
+                  <div className="position-card" key={`pool-${pool.pool.id}`}>
+                    <div className="card-head mono">
+                      <span>POOL {formatId(pool.pool.id)}</span>
+                      <span className="card-badge">EARNING {formatAprBps(pool.pool.aprBps)}</span>
+                    </div>
+                    <div className="mono">CLAIMABLE {formatTokenAmount(pool.claimable, ovrfloSymbol)}</div>
+                    {/* Spec edge state: lender-side note on _claimFair deficit
+                        harvesting — shown only when there is something to claim. */}
+                    {pool.claimable > 0n ? (
+                      <div className="label mono">SHORTFALLS HARVEST FROM THE LOAN STREAM ON CLAIM</div>
+                    ) : null}
+                    <div className="card-actions">
+                      <button
+                        className="button button-gold mono"
+                        type="button"
+                        disabled={pool.claimable === 0n}
+                        onClick={() => onAction({ type: "claim_share", positionId: pool.pool.id })}
+                      >
+                        CLAIM SHARE
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
 
-      {hasBorrowing ? (
+          {hasBorrowing ? (
+            <div className="position-group">
+              <div className="label mono">BORROWING</div>
+              <div className="position-cards">
+                {userLoans.map(({ loan, pool, withdrawable }) => (
+                  <LoanCard
+                    key={`loan-${loan.id}`}
+                    loan={loan}
+                    pool={pool}
+                    withdrawable={withdrawable}
+                    ovrfloSymbol={ovrfloSymbol}
+                    onAction={onAction}
+                  />
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </>
+      )}
+
+      {streamsError ? (
         <div className="position-group">
-          <div className="label mono">BORROWING</div>
-          <div className="position-cards">
-            {userLoans.map(({ loan, pool, withdrawable }) => (
-              <LoanCard
-                key={`loan-${loan.id}`}
-                loan={loan}
-                pool={pool}
-                withdrawable={withdrawable}
-                ovrfloSymbol={ovrfloSymbol}
-                onAction={onAction}
-              />
-            ))}
-          </div>
+          <div className="label mono">STREAMS</div>
+          <div className="empty mono status-negative">UNABLE TO LOAD STREAMS</div>
         </div>
-      ) : null}
-
-      {hasStreams ? (
+      ) : hasStreams ? (
         <div className="position-group">
           <div className="label mono">STREAMS</div>
           <div className="position-cards">
@@ -318,8 +332,14 @@ function StreamCard({
           </button>
         ) : (
           <span className="action-with-caption">
+            {/* Distinct accessible name from the market-row-detail's own
+                "BORROW" button (MarketRowDetail.tsx) — both can be on screen
+                at once (this card renders once a stream is eligible,
+                independent of whether any liquidity has been posted yet),
+                and an identical name on two buttons is ambiguous for
+                assistive tech and test locators alike. */}
             <button className="button button-cyan mono" type="button" disabled>
-              BORROW
+              BORROW STREAM {formatId(stream.streamId)}
             </button>
             <span className="label mono">NO LIQUIDITY</span>
           </span>

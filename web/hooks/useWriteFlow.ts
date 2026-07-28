@@ -16,13 +16,21 @@ export function useWriteFlow(user?: Address) {
     query: { enabled: Boolean(write.data) },
   });
 
+  // `receipt.isSuccess` only means the RPC fetch resolved a receipt — it says
+  // nothing about the transaction's own outcome. A reverted on-chain tx still
+  // mines a receipt, so the on-chain result must be read from
+  // `receipt.data.status` ('success' | 'reverted') rather than trusted from
+  // isSuccess alone (see docs/solutions/logic-errors/usetxqueue-on-chain-revert-treated-as-confirmed.md).
+  const isConfirmed = receipt.isSuccess && receipt.data?.status === "success";
+  const isReverted = receipt.isSuccess && receipt.data?.status === "reverted";
+
   useEffect(() => {
-    if (!receipt.isSuccess || !write.data || lastInvalidatedHash.current === write.data) return;
+    if (!isConfirmed || !write.data || lastInvalidatedHash.current === write.data) return;
     lastInvalidatedHash.current = write.data;
     invalidateAllOnChainReads(queryClient, user);
     cancelRetry.current?.();
     cancelRetry.current = scheduleHeldStreamsRetry(queryClient, user);
-  }, [queryClient, receipt.isSuccess, user, write.data]);
+  }, [queryClient, isConfirmed, user, write.data]);
 
   useEffect(() => () => cancelRetry.current?.(), []);
 
@@ -33,7 +41,8 @@ export function useWriteFlow(user?: Address) {
     receipt: receipt.data,
     isSigning: write.isPending,
     isConfirming: receipt.isLoading,
-    isConfirmed: receipt.isSuccess,
+    isConfirmed,
+    isReverted,
     error: write.error ?? receipt.error,
   };
 }

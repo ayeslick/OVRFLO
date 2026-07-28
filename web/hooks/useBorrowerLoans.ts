@@ -20,7 +20,15 @@ export function useBorrowerLoans(lending: Address | null | undefined, borrower: 
           { address: lending, abi: ovrfloLendingAbi, functionName: "loanPools" as const, args: [id] as const },
         ])
       : [],
-    query: { enabled: isConfiguredAddress(lending ?? null) && Boolean(borrower) && ids.length > 0 },
+    // Polled, not just invalidation-driven: a loan can close from outside
+    // this session (another channel repaying it, `closeLoan` called
+    // permissionlessly by anyone) with no tx of this client's own to key an
+    // invalidation off of. The repay modal is this hook's only consumer, so
+    // polling here only runs while that modal is mounted.
+    query: {
+      enabled: isConfiguredAddress(lending ?? null) && Boolean(borrower) && ids.length > 0,
+      refetchInterval: 2_000,
+    },
   });
 
   const loans = useMemo(() => {

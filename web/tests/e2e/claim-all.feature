@@ -9,6 +9,7 @@ Feature: Claim all
 
   Scenario: Happy path — claim all queues and confirms every claimable stream
     Given my wallet holds a stream with a withdrawable balance
+    And the frontend re-syncs with chain state
     When I click the "CLAIM ALL" button
     Then the "Claim all" modal is open
     When I click the "CONFIRM QUEUE" button
@@ -18,6 +19,7 @@ Feature: Claim all
 
   Scenario: Error state — a contract revert fails the queue mid-flight
     Given my wallet holds a stream with a withdrawable balance
+    And the frontend re-syncs with chain state
     When I click the "CLAIM ALL" button
     Then the "Claim all" modal is open
     And the stream has already been claimed elsewhere

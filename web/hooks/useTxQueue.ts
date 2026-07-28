@@ -111,9 +111,20 @@ export function useTxQueue(user?: Address) {
   }, [running, user]);
 
   // Receipt confirmed: invalidate, mark, advance (unless paused or done).
+  // `receipt.isSuccess` only means the RPC fetch resolved a receipt — it says
+  // nothing about the transaction's own outcome. A reverted on-chain tx (e.g.
+  // withdrawMax on a stream someone else already fully claimed) still mines
+  // a receipt, so the on-chain result must be read from `receipt.data.status`
+  // ('success' | 'reverted') rather than trusted from isSuccess alone.
   useEffect(() => {
     if (!running || !receipt.isSuccess || !write.data || handledHash.current === write.data) return;
     handledHash.current = write.data;
+    if (receipt.data?.status !== "success") {
+      const failedIndex = index;
+      setRows((current) => current.map((row, i) => (i === failedIndex ? { ...row, status: "failed" } : row)));
+      setRunning(false);
+      return;
+    }
     invalidateAllOnChainReads(queryClient, userRef.current);
     cancelRetry.current?.();
     cancelRetry.current = scheduleHeldStreamsRetry(queryClient, userRef.current);
@@ -127,7 +138,7 @@ export function useTxQueue(user?: Address) {
       return;
     }
     execute(rows[nextIndex].tx);
-  }, [execute, index, paused, queryClient, receipt.isSuccess, rows, running, write]);
+  }, [execute, index, paused, queryClient, receipt.data, receipt.isSuccess, rows, running, write]);
 
   useEffect(() => () => cancelRetry.current?.(), []);
 

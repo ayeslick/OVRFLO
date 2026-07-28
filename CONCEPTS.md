@@ -72,7 +72,7 @@ Direct token transfers or donations to the vault do not increase the wrap reserv
 
 ### Sablier stream
 
-A per-deposit linear vesting stream used by OVRFLO to deliver the discount between a principal token's current value and its face value over time.
+A per-deposit linear vesting stream used by OVRFLO to deliver the discount between a principal token's current value and its face value over time. OVRFLO mints the non-discounted portion to the depositor immediately as ovrfloToken and streams only the remaining discount, so a stream's face value is that discount — not the deposited principal token amount, which can be far larger.
 
 Sablier streams belong to the PT deposit path. Wrap and unwrap do not create, modify, or settle streams.
 
@@ -96,6 +96,8 @@ A borrow in the OVRFLOLending backed by a pledged Sablier stream, where the obli
 
 Total lender recovery is capped at the obligation; the pledged stream is returned to the borrower once the loan closes. A returned stream can be re-pledged to a new loan — the stream's cumulative withdrawn amount spans all loans that have used it, not just the most recent.
 
+A loan's obligation size depends on how much of the pledged stream's discounted price is borrowed: borrowing the stream's entire discounted price sets the obligation to the stream's full remaining value; borrowing any smaller amount scales the obligation to roughly that amount (rounded slightly in the lender's favor) instead. Borrowing the full discounted price is a distinct case, not just the top of a continuous scale — a caller that intends a small, partial borrow must request strictly less than the stream's full discounted price, or it silently becomes a full borrow with a much larger obligation.
+
 ### Self-repaying loan
 
 A loan against a pledged Sablier stream where the stream's deterministic payouts repay the lender without liquidations or health checks. The stream is non-cancelable and pays a fixed asset on a fixed schedule, so it cannot underperform; the lender draws accrued value until the obligation is satisfied, then the residual stream returns to the borrower.
@@ -114,11 +116,29 @@ An atomic loan of deposited PT from the OVRFLO vault, repaid via safeTransferFro
 
 ## Testing infrastructure
 
+### Live market discovery
+
+The process of selecting which Pendle PT markets to seed on a local Anvil mainnet fork that tracks the live chain head, by querying Pendle's public markets API and filtering for the vault's underlying, a minimum remaining time to expiry, and highest liquidity — rather than hardcoding market addresses that eventually expire relative to wall-clock time.
+
+Used by local bootstrap and E2E arrangement. Distinct from pinned fork fixtures, which freeze a specific market choice into a historical block for deterministic Solidity fork tests.
+
+### Pinned fork fixtures
+
+The shared constants (market addresses, expiries, and fork block) that mainnet fork tests load so every run starts from the same historical chain state. The pin itself does not age with wall-clock time; only the hand-chosen market inside the pin can become irrelevant, which is why refreshing those constants is a deliberate, scripted maintenance step rather than live discovery on every test run.
+
 ### Ghost variable
 
 A shadow variable in a fuzz handler that mirrors a piece of protocol state so invariant functions can detect drift between what the protocol recorded and what the fuzzer observed.
 
 Each ghost is updated in the same handler branch that triggers the corresponding state transition. A missing ghost update on one branch causes false-positive invariant violations later (e.g. a re-pledged stream appears still-pledged), which wastes triage time and erodes trust in the suite.
+
+### Fixture-direct arrangement
+
+An E2E arrange step that mutates chain state directly, bypassing the running app's own UI and write flow, for state the connected persona cannot produce by driving the UI itself — most commonly a counterparty's state, such as a different wallet's posted liquidity.
+
+Because the mutation happens outside the app, none of the app's own write-triggered invalidation or refetching fires for it. A later step that depends on the app observing that mutated state must synchronize on an app-observable signal — a full reload, or a UI state that only settles once the app's own prior async effects have finished — rather than on an unrelated step simply having completed. Racing a fixture-direct mutation against the app's in-flight reaction to an earlier UI-driven action can make the wrong side "win," causing the app to discover the mutation through an incidental background effect instead of through the code path the scenario intends to exercise.
+
+When that race makes the scenario's target action unreachable because a client-side validation is correctly and accurately blocking it, the fix belongs in the test's synchronization, not in loosening the validation — a race losing is not evidence the validation itself was wrong, only that the test didn't wait for the app to settle before injecting the mutation. Some state genuinely has no app-observable settle signal to wait for (nothing in the UI changes when the mutation lands); those reads need their own periodic refresh instead, since neither an app write nor a synchronized test step will ever surface the change.
 
 ## Web app processes
 
@@ -128,17 +148,33 @@ The batch exit flow where a connected lender reviews and sequentially confirms a
 
 Each step is a separate on-chain transaction: pool claims batch per lending contract via multicall, then individual stream withdrawals. The UI recomputes the plan from live data on resume rather than retrying stale calldata.
 
+A step failure — including a transaction that mines but reverts on-chain, not only a signature rejection or transport error — halts the queue immediately. Already-confirmed steps stay checked off; resuming always re-plans from live data rather than retrying the step that failed.
+
 ### Loan book
 
 The client-side enumeration of one connected user's full position against one OVRFLOLending market — every loan pool they've contributed to (lender view) plus every loan they've borrowed (borrower view) — assembled from a single multicall over the shared id space rather than two separate scans.
 
 A loan book is not an on-chain concept; it's the frontend's `useLoanBook` hook (`web/hooks/useLoanBook.ts`) reading the same five per-id fields (`loanPools`, `loans`, `loanPoolContributions`, `loanPoolReceived`, `loanPoolProceeds`) once, plus one shared Sablier `withdrawableAmountOf` batch over the union of loans either view needs, then deriving the lender-view `pools` and borrower-view `loans` from that shared result. Capped at `MAX_ENUMERATION_IDS`; a market with more ids than the cap sets `tooLarge` rather than silently truncating. Call sites that only need the lean borrower-only shape for a single loan (e.g. `RepayForm`) intentionally stay on the narrower `useBorrowerLoans` rather than pulling in a full loan book — the merge exists for callers that need both views of the same `(lending, user)` pair (`PositionSummary`, `PositionList`), not as a universal replacement for every lending read.
 
+### Ponder
+
+The off-chain indexer the frontend queries for data assembled from historical chain events rather than a direct RPC read. Current consumers: held-stream discovery for a connected wallet, and the borrow-demand ladder.
+
+Ponder is a different reliability domain than a direct on-chain read: it can lag behind chain head while backfilling, or be briefly unreachable, independent of whether RPC reads are succeeding at the same moment. Frontend surfaces that combine Ponder-sourced data with on-chain data should treat a Ponder failure and an on-chain read failure as distinct, independently-degrading states rather than folding them into one combined error or loading flag.
+
+### Position groups
+
+The three-way split the frontend's position list uses to present one connected user's holdings for a market: LENDING (liquidityPositions plus the lender half of their loan book — see Loan book), BORROWING (the borrower half of their loan book), and STREAMS (Sablier streams held, discovered via Ponder).
+
+LENDING and BORROWING are both sourced from on-chain reads; STREAMS is sourced from Ponder. Because the two sources are different reliability domains (see Ponder), the groups render and fail independently — a Ponder outage hides only STREAMS, and an on-chain read failure hides only LENDING/BORROWING.
+
 ### Stale-recovery classification
 
 The three-way sorting of a failed write transaction that decides what the form offers next: *stale* (on-chain liquidity or pricing moved between quoting and signing — refresh every on-chain read, show a "here's the new number" banner, and offer one explicit re-confirm), *terminal* (the input can never succeed, such as an ineligible stream or self-match — disable the action and say why, never invite a retry), or *retryable* (wallet rejection or transport failure — leave the action live).
 
 Classification is per flow, not global: the same revert can be terminal in one flow and stale in another (an ERC20 shortfall is a liquidity race inside a withdraw-then-supply multicall). A stale outcome is never presented as a dead-end error.
+
+This classification only covers failures that populate the transaction's error signal (wallet rejection, transport failure, or a revert caught before broadcast). A transaction that mines but reverts on-chain populates no error at all and is surfaced as its own distinct failure state outside this three-way sort — see Claim-all above for the queue-level version of that state.
 
 ## Refactoring patterns
 

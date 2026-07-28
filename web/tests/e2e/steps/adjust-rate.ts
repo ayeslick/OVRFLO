@@ -8,10 +8,21 @@ import {
   readSecondaryMarket,
   readSecondaryPt,
   supplyLiquidityAs,
+  widenAprBounds,
 } from "../fixtures/chain";
 import { DEV_WALLET_ADDRESS, LENDER_WALLET_ADDRESS } from "../fixtures/mock-wallet";
 
 const SUPPLY_AMOUNT = parseUnits("5", 18);
+
+// seed-local.sh never widens OVRFLOLending's constructor default of
+// aprMinBps == aprMaxBps (a single-tick launch state — see widenAprBounds's
+// own comment in chain.ts), but every scenario in this file needs a second,
+// distinct tick to move liquidity *to*. Must run before "my wallet has
+// supplied liquidity..." reads aprMinBps, so the Background puts this first.
+Given("the market offers multiple rate ticks", async () => {
+  const deployment = readDeployment();
+  await widenAprBounds({ factory: deployment.factory, lending: deployment.lending, aprMinBps: 1000, aprMaxBps: 1200 });
+});
 
 Given("my wallet has supplied liquidity to the active market", async () => {
   const deployment = readDeployment();

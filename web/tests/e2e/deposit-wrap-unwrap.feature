@@ -14,6 +14,7 @@ Feature: Deposit, claim, wrap, and unwrap
     Then the "DEPOSIT PT" modal is open
     And I fill the amount field with "10"
     And I click the "APPROVE PT" button
+    And I click the "APPROVE wstETH" button
     And I click the "DEPOSIT" button
     Then I see the caption "CONFIRMED"
 
@@ -26,6 +27,7 @@ Feature: Deposit, claim, wrap, and unwrap
 
   Scenario: Error state — deposit disabled once the market's deposit cap is reached
     Given the deposit cap for the active market is reached
+    And the frontend re-syncs with chain state
     When I expand the active market
     And I click the "DEPOSIT PT" button
     Then the "DEPOSIT PT" modal is open
@@ -59,6 +61,7 @@ Feature: Deposit, claim, wrap, and unwrap
   Scenario: Happy path — unwrap ovrfloToken back into underlying
     Given the wrap reserve holds "1"
     And my wallet holds ovrfloToken from a deposit of "10"
+    And the frontend re-syncs with chain state
     When I expand the active market
     And I click the "UNWRAP" button
     Then the "UNWRAP" modal is open

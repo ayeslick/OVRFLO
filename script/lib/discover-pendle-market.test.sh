@@ -29,7 +29,7 @@ CUTOFF="1798761600" # 2027-01-01T00:00:00Z
 EXPECTED="0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa	0x1111111111111111111111111111111111111a	1893456000
 0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb	0x2222222222222222222222222222222222222b	1843430400"
 
-ACTUAL="$(pendle_discover_top2_markets "$FIXTURE_JSON" "$WSTETH" "$CUTOFF")"
+ACTUAL="$(pendle_discover_top2_markets "$WSTETH" "$CUTOFF" <<<"$FIXTURE_JSON")"
 
 if [ "$ACTUAL" != "$EXPECTED" ]; then
   echo "FAIL: pendle_discover_top2_markets output mismatch" >&2
