@@ -21,7 +21,7 @@ script's own guard refused to seed anything). Instead, every run queries Pendle'
 top-2-by-liquidity wstETH markets whose expiry is more than `PENDLE_EXPIRY_BUFFER_DAYS` (default 14) past the
 fork's own block timestamp — see `script/lib/discover-pendle-market.sh` for the pure filter/selection logic (unit
 tested against a fixture in `discover-pendle-market.test.sh`, no network required) and
-`docs/solutions/architecture-patterns/` for the full writeup of why this replaced hardcoded market constants. This
+`docs/solutions/architecture-patterns/live-pendle-market-discovery-for-seed-and-fork-fixtures.md` for the full writeup of why this replaced hardcoded market constants. This
 means every scenario in this suite only exercises whichever market seed-local.sh's live discovery labels
 "secondary" this run (the lower-liquidity of the two seeded markets — arbitrary, just needs to be a stable pick);
 `fixtures/chain.ts`'s `readSecondaryMarket()`/`readSecondaryPt()`/`readSecondaryExpiry()` read it out of
@@ -93,6 +93,17 @@ See `docs/plans/2026-07-23-002-test-web-frontend-test-suite-plan.md` (R2, KTD8) 
     `playwright-bdd` one — this is why `playwright.config.ts`'s `steps` glob must include `fixtures/**/*.ts`, not
     just `steps/**/*.ts` (`bddgen` needs to see this file to find the extended test instance)
 - `qa-checklist.md` — the handful of pixel-level checks E2E structurally cannot verify
+
+**Synchronizing fixture-direct writes:** because `chain.ts`'s arrange helpers write directly on-chain, none of the
+app's own write-triggered invalidation or refetching fires for them — a later step that depends on the app having
+observed a fixture-direct write must synchronize on an app-observable signal, not just on the prior Playwright step
+having returned. The default technique is a full reload (`common.ts`'s `Given "the frontend re-syncs with chain
+state"` step). When a scenario needs to keep an open modal or other in-page state — so a reload isn't viable —
+synchronize on a narrower UI-observable proxy instead (e.g. a button becoming enabled) before performing the
+fixture-direct write, so it lands only after the app's own async effects from the prior UI-driven action have
+already settled. See
+`docs/solutions/test-failures/borrow-stale-liquidity-e2e-fixture-races-approve-invalidation-refetch.md` for a
+worked example of this second technique and the race it fixes.
 
 **On maturity scenarios:** the frontend gates on wall-clock `Date.now()` while the chain gates on
 `block.timestamp` — advancing one never moves the other. `common.ts`'s `Given the market has matured` step
