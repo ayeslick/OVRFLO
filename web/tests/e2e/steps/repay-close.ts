@@ -6,11 +6,13 @@ import {
   depositPtForStream,
   drainTokenBalance,
   lenderSupplyLiquidity,
+  publicClient,
   readAprBounds,
   readDeployment,
+  readSecondaryExpiry,
+  readSecondaryMarket,
+  readSecondaryPt,
   repayLoanFully,
-  SECONDARY_MARKET,
-  SECONDARY_PT,
 } from "../fixtures/chain";
 import { DEV_WALLET_ADDRESS, waitForWalletConnected } from "../fixtures/mock-wallet";
 
@@ -18,18 +20,19 @@ let currentLoanId: bigint | null = null;
 
 Given("my wallet has an open loan against a stream", async () => {
   const deployment = readDeployment();
+  const secondaryMarket = readSecondaryMarket();
   const { aprMinBps } = await readAprBounds(deployment.lending);
   await lenderSupplyLiquidity({
     lending: deployment.lending,
-    market: SECONDARY_MARKET,
+    market: secondaryMarket,
     aprBps: aprMinBps,
     amount: parseUnits("50", 18),
   });
   const streamId = await depositPtForStream({
     account: DEV_WALLET_ADDRESS,
     ovrflo: deployment.ovrflo,
-    market: SECONDARY_MARKET,
-    ptToken: SECONDARY_PT,
+    market: secondaryMarket,
+    ptToken: readSecondaryPt(),
     ptAmount: parseUnits("10", 18),
   });
   // Deliberately small relative to the 10 PT stream — see "the loan's stream
@@ -38,7 +41,7 @@ Given("my wallet has an open loan against a stream", async () => {
   currentLoanId = await borrowAgainstStream({
     account: DEV_WALLET_ADDRESS,
     lending: deployment.lending,
-    market: SECONDARY_MARKET,
+    market: secondaryMarket,
     streamId,
     aprBps: aprMinBps,
     targetBorrow: parseUnits("2", 18),
@@ -46,11 +49,18 @@ Given("my wallet has an open loan against a stream", async () => {
 });
 
 Given("the loan's stream has vested enough to close it", async ({ page }) => {
-  // 180 days into the stream's ~16-month total vesting window (SECONDARY_EXPIRY
-  // is 2027) comfortably exceeds a 2-token obligation on a 10 PT stream, without
-  // approaching the market's own expiry — CLOSE and market maturity are
-  // deliberately kept independent here.
-  await advanceSeconds(180 * 24 * 60 * 60);
+  // OVRFLO.deposit sets the Sablier stream's total duration to exactly
+  // `marketExpiry - block.timestamp` at deposit time (see src/OVRFLO.sol),
+  // so a fixed day count would be safe against one hardcoded expiry but not
+  // against whatever market seed-local.sh's live discovery actually picks
+  // this run (only guaranteed >14 days out — see PENDLE_EXPIRY_BUFFER_DAYS).
+  // Advancing half the *remaining* time to that same expiry vests comfortably
+  // more than a 2-token obligation on a 10 PT stream while staying strictly
+  // before both the stream's end and the market's own maturity, regardless
+  // of which real market got seeded.
+  const latest = await publicClient.getBlock();
+  const secondsRemaining = readSecondaryExpiry() - latest.timestamp;
+  await advanceSeconds(Number(secondsRemaining / 2n));
   await page.reload();
   await waitForWalletConnected(page);
 });

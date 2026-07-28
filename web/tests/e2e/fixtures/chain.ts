@@ -29,26 +29,9 @@ import { formatMaturity } from "@/lib/format";
 import { DEV_WALLET_ADDRESS, LENDER_WALLET_ADDRESS } from "./mock-wallet";
 import { RPC_URL, rpcCall } from "./rpc";
 
-// Fixture constants — must stay in lockstep with script/seed-local.sh and
-// script/lib/OVRFLOTestFixtures.sol. Duplicated rather than parsed out of the
-// bash script because there's no shared source-of-truth file either side can
-// cheaply import; a drift here surfaces immediately as a failed arrange call.
+// wstETH is a deliberately fixed choice for this project (not something to
+// discover — see AGENTS.md), so it alone stays a plain constant here.
 export const WSTETH: Address = "0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0";
-export const PRIMARY_MARKET: Address = "0xcFD848b9f6fEf552204014ac67901223AD6bf679";
-export const PRIMARY_PT: Address = "0x9cE6478EF45bB1BAAC69EFd8A3eA0ed110a43042";
-export const PRIMARY_EXPIRY = 1782345600n;
-export const SECONDARY_MARKET: Address = "0x34280882267ffa6383B363E278B027Be083bBe3b";
-export const SECONDARY_PT: Address = "0xb253Eff1104802b97aC7E3aC9FdD73AecE295a2c";
-export const SECONDARY_EXPIRY = 1830124800n;
-
-// Reuses the app's own formatter (rather than reimplementing the Intl call)
-// so step files can locate a market row by the exact maturity text it
-// renders — the only text that reliably distinguishes the two rows, since
-// both markets share one ovrfloToken/underlying (KTD1-adjacent: cross-market
-// ovrfloToken fungibility is a design feature, so the symbol column is
-// identical for every row).
-export const PRIMARY_MATURITY_LABEL = formatMaturity(PRIMARY_EXPIRY);
-export const SECONDARY_MATURITY_LABEL = formatMaturity(SECONDARY_EXPIRY);
 
 const localChain = {
   id: 1,
@@ -72,7 +55,18 @@ export const lenderClient = walletFor(LENDER_WALLET_ADDRESS);
 export const OWNER_ADDRESS: Address = "0xf39Fd6e51aad88F6F4CE6aB8827279cffFb92266";
 export const ownerClient = walletFor(OWNER_ADDRESS);
 
-type Deployment = { factory: Address; ovrflo: Address; token: Address; lending: Address };
+type Deployment = {
+  factory: Address;
+  ovrflo: Address;
+  token: Address;
+  lending: Address;
+  primaryMarket: Address;
+  primaryPt: Address;
+  primaryExpiry: number;
+  secondaryMarket: Address;
+  secondaryPt: Address;
+  secondaryExpiry: number;
+};
 
 let cachedDeployment: Deployment | null = null;
 
@@ -80,6 +74,13 @@ let cachedDeployment: Deployment | null = null;
 // pretest gate does not re-run it, so a missing file means bootstrap:local
 // hasn't been run yet — surfaced here as a clear error instead of a cryptic
 // "address is undefined" from whichever arrange helper reads it first.
+//
+// This is also where PRIMARY_MARKET/SECONDARY_MARKET (below) ultimately come
+// from: seed-local.sh discovers a live wstETH Pendle market on every run
+// (see script/lib/discover-pendle-market.sh) rather than hardcoding one that
+// would eventually expire, so this file is the single place that knows
+// which two markets got seeded — no separate TS constants to keep in
+// lockstep with the shell script by hand.
 export function readDeployment(): Deployment {
   if (cachedDeployment) return cachedDeployment;
   const jsonPath = process.env.E2E_DEPLOYMENT_JSON ?? path.resolve(process.cwd(), "..", "deployments", "local.json");
@@ -93,6 +94,46 @@ export function readDeployment(): Deployment {
   }
   cachedDeployment = JSON.parse(raw) as Deployment;
   return cachedDeployment;
+}
+
+// Functions, not top-level constants: readDeployment() throws when
+// deployments/local.json doesn't exist yet, and playwright-bdd's `bddgen`
+// actually `require()`s every fixtures/steps file to statically discover
+// their fixture usage — well before any test runs, and well before
+// bootstrap:local has necessarily run. A top-level `const x = readDeployment()`
+// would make codegen itself fail on a clean checkout instead of failing at
+// the first real arrange call, which is where this project wants that error
+// surfaced (see readDeployment's own comment).
+export function readPrimaryMarket(): Address {
+  return readDeployment().primaryMarket;
+}
+export function readPrimaryPt(): Address {
+  return readDeployment().primaryPt;
+}
+export function readPrimaryExpiry(): bigint {
+  return BigInt(readDeployment().primaryExpiry);
+}
+export function readSecondaryMarket(): Address {
+  return readDeployment().secondaryMarket;
+}
+export function readSecondaryPt(): Address {
+  return readDeployment().secondaryPt;
+}
+export function readSecondaryExpiry(): bigint {
+  return BigInt(readDeployment().secondaryExpiry);
+}
+
+// Reuses the app's own formatter (rather than reimplementing the Intl call)
+// so step files can locate a market row by the exact maturity text it
+// renders — the only text that reliably distinguishes the two rows, since
+// both markets share one ovrfloToken/underlying (KTD1-adjacent: cross-market
+// ovrfloToken fungibility is a design feature, so the symbol column is
+// identical for every row).
+export function readPrimaryMaturityLabel(): string {
+  return formatMaturity(readPrimaryExpiry());
+}
+export function readSecondaryMaturityLabel(): string {
+  return formatMaturity(readSecondaryExpiry());
 }
 
 async function mineAndGetReceipt(hash: Hash) {

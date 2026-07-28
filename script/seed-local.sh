@@ -10,12 +10,24 @@
 # paths are not regressed.
 #
 # Usage (from repo root):
-#   anvil --fork-url "$MAINNET_RPC_URL" --chain-id 1 --fork-block-number 24609670
+#   anvil --fork-url "$MAINNET_RPC_URL" --chain-id 1
 #   ./script/seed-local.sh
 #
-# Overrides: PRIVATE_KEY, DEV_WALLET, LENDER_WALLET, RPC.
+# Which two Pendle wstETH markets get seeded is discovered live on every run
+# (see lib/discover-pendle-market.sh), not hardcoded — this script forks the
+# *live* chain head (no --fork-block-number pin), so a hardcoded market
+# would eventually expire relative to real wall-clock time. Contrast with
+# test/fork/*.t.sol, which pin a fixed historical block via
+# script/lib/OVRFLOTestFixtures.sol and are refreshed only occasionally via
+# script/repin-fork-fixtures.sh.
+#
+# Overrides: PRIVATE_KEY, DEV_WALLET, LENDER_WALLET, RPC, PENDLE_EXPIRY_BUFFER_DAYS.
 
 set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=./lib/discover-pendle-market.sh
+source "$SCRIPT_DIR/lib/discover-pendle-market.sh"
 
 RPC=${RPC:-http://127.0.0.1:8545}
 OWNER_PK=${PRIVATE_KEY:-0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80}
@@ -23,23 +35,21 @@ DEV_WALLET=${DEV_WALLET:-0x70997970C51812dc3A010C7d01b50e0d17dc79C8}
 LENDER_WALLET=${LENDER_WALLET:-0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC}
 OWNER=$(cast wallet address "$OWNER_PK")
 
-# Fixture constants — must stay in lockstep with script/lib/OVRFLOTestFixtures.sol.
+# wstETH is a deliberately fixed choice (see AGENTS.md: "wstETH is the
+# correct vault underlying"), not something to discover. The *markets*
+# against it are the part that goes stale — see PRIMARY_MARKET/SECONDARY_MARKET
+# discovery below.
 TREASURY=0x0000000000000000000000000000000000000456
 STETH=0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84
 WSTETH=0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0
 ORACLE=0x9a9Fa8338dd5E5B2188006f1Cd2Ef26d921650C2
-PRIMARY_MARKET=0xcFD848b9f6fEf552204014ac67901223AD6bf679
-PRIMARY_PT=0x9cE6478EF45bB1BAAC69EFd8A3eA0ed110a43042
-PRIMARY_EXPIRY=1782345600
-SECONDARY_MARKET=0x34280882267ffa6383B363E278B027Be083bBe3b
-SECONDARY_PT=0xb253Eff1104802b97aC7E3aC9FdD73AecE295a2c
-SECONDARY_EXPIRY=1830124800
 TWAP=900
 NAME_SUFFIX="Wrapped Staked Ether"
 SYMBOL_SUFFIX="WSTETH"
 PT_SEED_AMOUNT=1000000000000000000000   # 1000 * 1e18
 STETH_SEED_ETH=200ether
 WSTETH_SEED_AMOUNT=60000000000000000000 # 60 * 1e18 per seeded wallet
+PENDLE_EXPIRY_BUFFER_DAYS=${PENDLE_EXPIRY_BUFFER_DAYS:-14}
 
 CHAIN_ID=$(cast chain-id --rpc-url "$RPC")
 if [ "$CHAIN_ID" != "1" ]; then
@@ -49,11 +59,28 @@ if [ "$CHAIN_ID" != "1" ]; then
 fi
 
 BLOCK_TIMESTAMP=$(cast block latest --field timestamp --rpc-url "$RPC")
-if [ "$PRIMARY_EXPIRY" -le "$BLOCK_TIMESTAMP" ] || [ "$SECONDARY_EXPIRY" -le "$BLOCK_TIMESTAMP" ]; then
-  echo "seed-local: fixture markets are expired at fork timestamp $BLOCK_TIMESTAMP" >&2
-  echo "seed-local: repin script/lib/OVRFLOTestFixtures.sol fixtures before seeding" >&2
+
+echo "seed-local: discovering live wstETH Pendle markets (expiry > now + ${PENDLE_EXPIRY_BUFFER_DAYS}d)..."
+CUTOFF=$((BLOCK_TIMESTAMP + PENDLE_EXPIRY_BUFFER_DAYS * 24 * 60 * 60))
+ALL_MARKETS_JSON=$(pendle_fetch_all_markets)
+DISCOVERED=$(pendle_discover_top2_markets "$ALL_MARKETS_JSON" "$WSTETH" "$CUTOFF")
+DISCOVERED_COUNT=$(echo "$DISCOVERED" | grep -c . || true)
+if [ "$DISCOVERED_COUNT" -lt 2 ]; then
+  echo "seed-local: found only $DISCOVERED_COUNT wstETH Pendle market(s) with expiry > now + ${PENDLE_EXPIRY_BUFFER_DAYS}d (need 2)" >&2
+  echo "seed-local: check connectivity to api-v2.pendle.finance, or lower PENDLE_EXPIRY_BUFFER_DAYS if the live pool is thin right now" >&2
   exit 1
 fi
+
+PRIMARY_LINE=$(echo "$DISCOVERED" | sed -n '1p')
+SECONDARY_LINE=$(echo "$DISCOVERED" | sed -n '2p')
+PRIMARY_MARKET=$(cast to-check-sum-address "$(echo "$PRIMARY_LINE" | cut -f1)")
+PRIMARY_PT=$(cast to-check-sum-address "$(echo "$PRIMARY_LINE" | cut -f2)")
+PRIMARY_EXPIRY=$(echo "$PRIMARY_LINE" | cut -f3)
+SECONDARY_MARKET=$(cast to-check-sum-address "$(echo "$SECONDARY_LINE" | cut -f1)")
+SECONDARY_PT=$(cast to-check-sum-address "$(echo "$SECONDARY_LINE" | cut -f2)")
+SECONDARY_EXPIRY=$(echo "$SECONDARY_LINE" | cut -f3)
+echo "      primary   = $PRIMARY_MARKET (pt $PRIMARY_PT, expires $PRIMARY_EXPIRY)"
+echo "      secondary = $SECONDARY_MARKET (pt $SECONDARY_PT, expires $SECONDARY_EXPIRY)"
 
 mkdir -p deployments
 
@@ -146,7 +173,27 @@ jq -n \
   --arg lending   "$LENDING" \
   --arg devWallet "$DEV_WALLET" \
   --arg lenderWallet "$LENDER_WALLET" \
-  '{chainId: 1, factory: $factory, ovrflo: $ovrflo, token: $token, lending: $lending, devWallet: $devWallet, lenderWallet: $lenderWallet}' \
+  --arg primaryMarket "$PRIMARY_MARKET" \
+  --arg primaryPt "$PRIMARY_PT" \
+  --argjson primaryExpiry "$PRIMARY_EXPIRY" \
+  --arg secondaryMarket "$SECONDARY_MARKET" \
+  --arg secondaryPt "$SECONDARY_PT" \
+  --argjson secondaryExpiry "$SECONDARY_EXPIRY" \
+  '{
+    chainId: 1,
+    factory: $factory,
+    ovrflo: $ovrflo,
+    token: $token,
+    lending: $lending,
+    devWallet: $devWallet,
+    lenderWallet: $lenderWallet,
+    primaryMarket: $primaryMarket,
+    primaryPt: $primaryPt,
+    primaryExpiry: $primaryExpiry,
+    secondaryMarket: $secondaryMarket,
+    secondaryPt: $secondaryPt,
+    secondaryExpiry: $secondaryExpiry
+  }' \
   > deployments/local.json
 
 echo

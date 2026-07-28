@@ -5,8 +5,8 @@ import {
   depositPtForStream,
   readAprBounds,
   readDeployment,
-  SECONDARY_MARKET,
-  SECONDARY_PT,
+  readSecondaryMarket,
+  readSecondaryPt,
   supplyLiquidityAs,
 } from "../fixtures/chain";
 import { DEV_WALLET_ADDRESS, LENDER_WALLET_ADDRESS } from "../fixtures/mock-wallet";
@@ -19,7 +19,7 @@ Given("my wallet has supplied liquidity to the active market", async () => {
   await supplyLiquidityAs({
     account: DEV_WALLET_ADDRESS,
     lending: deployment.lending,
-    market: SECONDARY_MARKET,
+    market: readSecondaryMarket(),
     aprBps: aprMinBps,
     amount: SUPPLY_AMOUNT,
   });
@@ -31,18 +31,19 @@ Given("my wallet has supplied liquidity to the active market", async () => {
 // stale-recovery path that AdjustRateForm's pre-submit refetch guards on.
 Given("another borrower draws down that liquidity before I confirm", async () => {
   const deployment = readDeployment();
+  const secondaryMarket = readSecondaryMarket();
   const { aprMinBps } = await readAprBounds(deployment.lending);
   const streamId = await depositPtForStream({
     account: LENDER_WALLET_ADDRESS,
     ovrflo: deployment.ovrflo,
-    market: SECONDARY_MARKET,
-    ptToken: SECONDARY_PT,
+    market: secondaryMarket,
+    ptToken: readSecondaryPt(),
     ptAmount: parseUnits("10", 18),
   });
   await borrowAgainstStream({
     account: LENDER_WALLET_ADDRESS,
     lending: deployment.lending,
-    market: SECONDARY_MARKET,
+    market: secondaryMarket,
     streamId,
     aprBps: aprMinBps,
     targetBorrow: SUPPLY_AMOUNT,

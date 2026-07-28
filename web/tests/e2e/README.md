@@ -14,25 +14,19 @@ BOOT_NO_UI=1 npm --prefix web run bootstrap:local
 `BOOT_NO_UI=1` is required — without it, `bootstrap-local.sh` `exec`s into a foreground dev server and never
 returns control to your shell. This reuses the project's existing seeding script; it is not new infrastructure.
 
-**Known fixture blocker (confirmed against a real run):** `script/seed-local.sh` hardcodes `PRIMARY_EXPIRY` at
-2026-06-25 (see `fixtures/chain.ts`), which as of this writing has already passed. The script has its own explicit
-guard for this (`PRIMARY_EXPIRY <= $BLOCK_TIMESTAMP`, checked against the forked block's own timestamp) and exits
-before seeding anything:
-
-```
-[2/5] seeding OVRFLO (factory + ovrflo + lending + PT/wstETH to dev/lender wallets)
-seed-local: fixture markets are expired at fork timestamp 1785184283
-seed-local: repin script/lib/OVRFLOTestFixtures.sol fixtures before seeding
-```
-
-`SECONDARY_EXPIRY` (2027-12-30) is still comfortably in the future — it's `PRIMARY_EXPIRY` alone tripping the
-guard, but the guard checks both together and aborts the whole run either way. This is a seeding-script problem,
-not an E2E-suite problem; every scenario in this suite already only exercises `SECONDARY_MARKET` for exactly this
-reason, so the suite itself has no dependency on `PRIMARY_EXPIRY` staying valid — but `bootstrap:local` won't get
-far enough to start a dev server at all until the seeding script is fixed (e.g. computing both expiries relative
-to the fork's own block timestamp at seed time). That fix is separate follow-up work and is the one remaining
-blocker to actually running this suite end-to-end; every scenario here has been typechecked, linted, and wired
-through `bddgen` (`npx playwright test --list`), but none have been executed against a live fork.
+**Markets are discovered live, not hardcoded:** `script/seed-local.sh` forks the live chain head (no
+`--fork-block-number` pin), so a specific Pendle market address baked into the script would eventually expire
+relative to real wall-clock time — this actually happened once (a hardcoded `PRIMARY_EXPIRY` went stale and the
+script's own guard refused to seed anything). Instead, every run queries Pendle's `markets/all` API and picks the
+top-2-by-liquidity wstETH markets whose expiry is more than `PENDLE_EXPIRY_BUFFER_DAYS` (default 14) past the
+fork's own block timestamp — see `script/lib/discover-pendle-market.sh` for the pure filter/selection logic (unit
+tested against a fixture in `discover-pendle-market.test.sh`, no network required) and
+`docs/solutions/architecture-patterns/` for the full writeup of why this replaced hardcoded market constants. This
+means every scenario in this suite only exercises whichever market seed-local.sh's live discovery labels
+"secondary" this run (the lower-liquidity of the two seeded markets — arbitrary, just needs to be a stable pick);
+`fixtures/chain.ts`'s `readSecondaryMarket()`/`readSecondaryPt()`/`readSecondaryExpiry()` read it out of
+`deployments/local.json` (written by seed-local.sh) rather than any hardcoded address, so nothing here depends on
+a specific market staying valid.
 
 The dev server must run with `NEXT_PUBLIC_E2E=1` so `lib/wagmi.ts` swaps in the mock wagmi connector (KTD6) instead
 of initializing Reown AppKit — the real wallet-connect UI has no automatable "approve" step, so E2E always signs as
@@ -57,13 +51,12 @@ helpers that sign as Anvil's own unlocked dev accounts.
 
 **Why not Playwright's `webServer` option to auto-start the dev server:** `bootstrap-local.sh` `exec`s into a
 foreground dev server by default (that's what `BOOT_NO_UI=1` above suppresses), so seeding and serving aren't
-cleanly separable into a `webServer` command yet. Revisit this once the `PRIMARY_EXPIRY` seeding blocker above is
-fixed and the full lifecycle (seed -> serve -> test) has actually been run end-to-end against a real fork.
+cleanly separable into a `webServer` command yet.
 
 **Why `workers: 1`:** every scenario mutates the one shared seeded fork's real chain state. `fixtures/fork-snapshot.ts`
 is an `auto: true` fixture that wraps every scenario in `evm_snapshot`/`evm_revert`, which is expected to make
-scenarios safe to parallelize — but that hasn't been validated against a real fork yet (see the `PRIMARY_EXPIRY`
-blocker above), so serial execution stays the default per KTD7 in the plan until it has.
+scenarios safe to parallelize — but that hasn't been validated against a real fork yet, so serial execution stays
+the default per KTD7 in the plan until it has.
 
 ## CI wiring: explicitly deferred, low priority
 

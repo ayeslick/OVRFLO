@@ -5,8 +5,8 @@ import {
   exhaustDepositCap,
   publicClient,
   readDeployment,
-  SECONDARY_MARKET,
-  SECONDARY_PT,
+  readSecondaryMarket,
+  readSecondaryPt,
   wrapUnderlying,
 } from "../fixtures/chain";
 import { DEV_WALLET_ADDRESS, LENDER_WALLET_ADDRESS } from "../fixtures/mock-wallet";
@@ -19,8 +19,8 @@ Given("my wallet holds ovrfloToken from a deposit of {string}", async ({}, ptAmo
   await depositPtForStream({
     account: DEV_WALLET_ADDRESS,
     ovrflo: deployment.ovrflo,
-    market: SECONDARY_MARKET,
-    ptToken: SECONDARY_PT,
+    market: readSecondaryMarket(),
+    ptToken: readSecondaryPt(),
     ptAmount: amount,
   });
 });
@@ -37,19 +37,20 @@ Given("the deposit cap for the active market is reached", async () => {
   // A tiny prior deposit from the lender persona (not DEV_WALLET) bumps
   // marketTotalDeposited above zero without touching the balances this
   // scenario's own assertions read from, then the cap gets pinned to match.
+  const secondaryMarket = readSecondaryMarket();
   await depositPtForStream({
     account: LENDER_WALLET_ADDRESS,
     ovrflo: deployment.ovrflo,
-    market: SECONDARY_MARKET,
-    ptToken: SECONDARY_PT,
+    market: secondaryMarket,
+    ptToken: readSecondaryPt(),
     ptAmount: parseUnits("1", 18),
   });
-  await exhaustDepositCap({ factory: deployment.factory, ovrflo: deployment.ovrflo, market: SECONDARY_MARKET });
+  await exhaustDepositCap({ factory: deployment.factory, ovrflo: deployment.ovrflo, market: secondaryMarket });
 });
 
 When("I fill the amount field with a value exceeding my PT balance", async ({ page }) => {
   const balance = await publicClient.readContract({
-    address: SECONDARY_PT,
+    address: readSecondaryPt(),
     abi: erc20Abi,
     functionName: "balanceOf",
     args: [DEV_WALLET_ADDRESS],

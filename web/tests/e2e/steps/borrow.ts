@@ -5,8 +5,8 @@ import {
   lenderSupplyLiquidity,
   readAprBounds,
   readDeployment,
-  SECONDARY_MARKET,
-  SECONDARY_PT,
+  readSecondaryMarket,
+  readSecondaryPt,
   withdrawLiquidity,
 } from "../fixtures/chain";
 import { DEV_WALLET_ADDRESS } from "../fixtures/mock-wallet";
@@ -21,7 +21,7 @@ Given("a lender has posted liquidity for the active market", async () => {
   const { aprMinBps } = await readAprBounds(deployment.lending);
   liquidityId = await lenderSupplyLiquidity({
     lending: deployment.lending,
-    market: SECONDARY_MARKET,
+    market: readSecondaryMarket(),
     aprBps: aprMinBps,
     amount: parseUnits("50", 18),
   });
@@ -32,8 +32,8 @@ Given("my wallet holds an eligible stream", async () => {
   await depositPtForStream({
     account: DEV_WALLET_ADDRESS,
     ovrflo: deployment.ovrflo,
-    market: SECONDARY_MARKET,
-    ptToken: SECONDARY_PT,
+    market: readSecondaryMarket(),
+    ptToken: readSecondaryPt(),
     ptAmount: parseUnits("10", 18),
   });
 });

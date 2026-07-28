@@ -1,7 +1,7 @@
 import { expect, type Locator, type Page } from "@playwright/test";
 import { formatUnits } from "viem";
 import { Given, Then, When } from "../fixtures/bdd";
-import { advancePastExpiry, publicClient, SECONDARY_EXPIRY, SECONDARY_MATURITY_LABEL, WSTETH } from "../fixtures/chain";
+import { advancePastExpiry, publicClient, readSecondaryExpiry, readSecondaryMaturityLabel, WSTETH } from "../fixtures/chain";
 import { DEV_WALLET_ADDRESS, waitForWalletConnected } from "../fixtures/mock-wallet";
 import { erc20Abi } from "@/lib/abis";
 
@@ -25,13 +25,14 @@ Given("my wallet is connected", async ({ page }) => {
   await waitForWalletConnected(page);
 });
 
-// Every scenario targets the same long-dated (2027) market — the only one
-// currently onboardable at all (see e2e/README.md "known fixture blocker").
-// "Matured" scenarios don't need a second, separately-pinned near-term
-// market: advancing this market's own clock (below) covers every maturity
-// state deterministically, on a fixture that never itself goes stale.
+// Every scenario targets the market with the further-out expiry of the two
+// seed-local.sh discovers live on every run (see script/lib/discover-pendle-market.sh)
+// — arbitrary, just needs to be a stable pick between the two. "Matured"
+// scenarios don't need the *other* market: advancing this one's own clock
+// (below) covers every maturity state deterministically, regardless of which
+// real markets got seeded this run.
 When("I expand the active market", async ({ page }) => {
-  const row = page.locator("tr", { hasText: SECONDARY_MATURITY_LABEL }).first();
+  const row = page.locator("tr", { hasText: readSecondaryMaturityLabel() }).first();
   await row.locator(".row-toggle").click();
 });
 
@@ -51,11 +52,12 @@ When("I open the advanced panel", async ({ page }) => {
 // docs/solutions/integration-issues/indexer-window-wall-clock-vs-chain-time.md
 // for the general chain-time-vs-wall-time pitfall this sidesteps.
 Given("the market has matured", async ({ page }) => {
-  await advancePastExpiry(SECONDARY_EXPIRY);
+  const secondaryExpiry = readSecondaryExpiry();
+  await advancePastExpiry(secondaryExpiry);
   // setFixedTime (not install/tick) — it only freezes Date.now()/`new Date()`,
   // leaving real setTimeout/setInterval alone, so wagmi's own read-polling
   // and query refetch intervals keep working normally after the reload.
-  await page.clock.setFixedTime(new Date(Number(SECONDARY_EXPIRY) * 1000 + 5_000));
+  await page.clock.setFixedTime(new Date(Number(secondaryExpiry) * 1000 + 5_000));
   await page.reload();
   await waitForWalletConnected(page);
 });
