@@ -18,6 +18,12 @@ web/coverage/
 web/.features-gen/
 web/test-results/
 web/playwright-report/
+# Playwright also writes here when invoked from repo root / ponder cwd
+/test-results/
+tools/ponder/test-results/
+# Next regenerates this on `next dev`/`next build` (path flips between
+# `.next/types` and `.next/dev/types` under Turbopack) — keep local only.
+web/next-env.d.ts
 
 # Dotenv file
 .env

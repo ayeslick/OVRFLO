@@ -80,14 +80,28 @@ PONDER_RPC_URL=http://127.0.0.1:8545 PONDER_OVRFLO_FACTORY="$LOCAL_FACTORY" POND
 **3. New `tools/scripts/bootstrap-e2e.sh`** composes existing pieces into one idempotent "tear down and rebuild" command for E2E runs:
 - `tools/scripts/bootstrap-clean.sh local` (teardown)
 - `BOOT_NO_UI=1 tools/scripts/bootstrap-local.sh` (anvil + seed + ponder, now carrying the `PONDER_START_BLOCK` fix)
-- a newly backgrounded dev server, tracked via a new `.bootstrap.web.pid` file mirroring the anvil/ponder pid-file convention:
+- a newly backgrounded dev server, tracked via a new `.bootstrap.web.pid` file mirroring the anvil/ponder pid-file convention, gated by its own readiness poll (`tools/scripts/bootstrap-e2e.sh:56-68`):
   ```bash
   (
     cd web
     NEXT_PUBLIC_E2E=1 nohup npm run dev >"../$WEB_LOG" 2>&1 &
     echo $! > "../$WEB_PID_FILE"
   )
+  READY=0
+  for _ in $(seq 1 30); do
+    if curl -fsS http://localhost:3000 >/dev/null 2>&1; then
+      READY=1
+      break
+    fi
+    sleep 1
+  done
+  if [ "$READY" != "1" ]; then
+    echo "--- dev server log (last 40 lines) ---" >&2
+    tail -n 40 "$WEB_LOG" >&2 || true
+    fail "dev server did not become ready — check $WEB_LOG"
+  fi
   ```
+  Up to 30 one-second retries against `curl -fsS http://localhost:3000` — enough for a typical `next dev` cold compile. On failure it tails the last 40 lines of `.bootstrap.web.log` to stderr and `fail`s (exiting non-zero under `set -euo pipefail`) rather than hanging indefinitely or letting `bddgen`/Playwright start against a server that never came up, which would otherwise surface as a confusing connection-refused error far from the real cause.
 - `npx bddgen` to regenerate Playwright/Gherkin specs
 
 This was added because manually running the steps one-by-one, while a second background agent was concurrently restarting anvil/reseeding, caused real environment corruption (`deployments/local.json`'s addresses shifting under a dev server that only reads `web/.env.local` at process start, plus risk of colliding `evm_snapshot`/`evm_revert` calls against the same shared Anvil process). A single idempotent script removes that whole risk class.

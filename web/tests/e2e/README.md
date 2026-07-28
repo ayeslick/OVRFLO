@@ -47,7 +47,8 @@ By default Playwright targets `http://localhost:3000`; override with `E2E_BASE_U
 elsewhere. This is a Playwright-runner-only variable, not one of the app's `NEXT_PUBLIC_*` runtime knobs, so it
 lives here rather than in `web/.env.example`. Similarly, `E2E_RPC_URL` (default `http://127.0.0.1:8545`) points
 `fixtures/rpc.ts`/`fixtures/chain.ts` at the Anvil fork directly, for `evm_snapshot`/`evm_revert` and the arrange
-helpers that sign as Anvil's own unlocked dev accounts.
+helpers that sign as Anvil's own unlocked dev accounts, and `E2E_PONDER_URL` (default `http://localhost:42069/sql`)
+points `fixtures/chain.ts`'s indexer-sync wait at the local Ponder instance.
 
 **Why not Playwright's `webServer` option to auto-start the dev server:** `bootstrap-local.sh` `exec`s into a
 foreground dev server by default (that's what `BOOT_NO_UI=1` above suppresses), so seeding and serving aren't

@@ -104,15 +104,6 @@ export function readDeployment(): Deployment {
 // would make codegen itself fail on a clean checkout instead of failing at
 // the first real arrange call, which is where this project wants that error
 // surfaced (see readDeployment's own comment).
-export function readPrimaryMarket(): Address {
-  return readDeployment().primaryMarket;
-}
-export function readPrimaryPt(): Address {
-  return readDeployment().primaryPt;
-}
-export function readPrimaryExpiry(): bigint {
-  return BigInt(readDeployment().primaryExpiry);
-}
 export function readSecondaryMarket(): Address {
   return readDeployment().secondaryMarket;
 }
@@ -129,9 +120,6 @@ export function readSecondaryExpiry(): bigint {
 // both markets share one ovrfloToken/underlying (KTD1-adjacent: cross-market
 // ovrfloToken fungibility is a design feature, so the symbol column is
 // identical for every row).
-export function readPrimaryMaturityLabel(): string {
-  return formatMaturity(readPrimaryExpiry());
-}
 export function readSecondaryMaturityLabel(): string {
   return formatMaturity(readSecondaryExpiry());
 }
@@ -440,7 +428,8 @@ async function ponderHasStream(recipient: Address, streamId: bigint): Promise<bo
       typings: ["none", "none", "none"],
     },
   };
-  const url = `http://localhost:42069/sql/db?sql=${encodeURIComponent(JSON.stringify(payload))}`;
+  const ponderUrl = process.env.E2E_PONDER_URL ?? "http://localhost:42069/sql";
+  const url = `${ponderUrl}/db?sql=${encodeURIComponent(JSON.stringify(payload))}`;
   const res = await fetch(url);
   if (!res.ok) return false;
   const body = (await res.json()) as { rows?: unknown[] };

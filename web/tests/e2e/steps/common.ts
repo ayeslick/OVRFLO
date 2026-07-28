@@ -10,6 +10,10 @@ import { erc20Abi } from "@/lib/abis";
 // action buttons live in different places (market-row detail for SUPPLY /
 // BORROW / DEPOSIT PT, position cards for ADJUST RATE / REPAY / CLOSE / CLAIM
 // ALL), so scoping to the expanded market `region` alone misses half of them.
+// Also: PositionSummary's own "Your positions" `<section aria-label=...>`
+// carries an implicit ARIA `region` role too, so `getByRole("region")` isn't
+// even unique to the expanded market once a user has open positions —
+// `.first()` on it would silently grab the wrong one. body is correct here.
 async function actionScope(page: Page): Promise<Locator> {
   const dialog = page.getByRole("dialog");
   if (await dialog.count()) return dialog;
@@ -148,8 +152,11 @@ Then("no modal is open", async ({ page }) => {
 });
 
 Then("I see the caption {string}", async ({ page }, text: string) => {
-  // Two markets can both show the same maturity caption after a shared
-  // time-travel (e.g. "MARKET MATURED" on every row) — assert at least one.
+  // .first(), not a strict match: MarketRowDetail computes supplyCaption and
+  // borrowCaption from the same baseActionCaption() call (see
+  // MarketRowDetail.tsx), so a matured market renders "MARKET MATURED" twice
+  // at once — once per action area, in the SAME market's own row-detail, not
+  // across two markets. A strict getByText would throw on that duplicate.
   // Longer than the default 5s: this step is also used for "CONFIRMED" after
   // a real on-chain write, which only surfaces once wagmi's own
   // useWaitForTransactionReceipt polling notices the mined receipt (see the
