@@ -200,7 +200,8 @@ describe("truncation warning (R26)", () => {
       },
     ];
     render(<PositionList market={market} user={testAddress(0xa11)} symbols={symbols} onAction={vi.fn()} />);
-    expect(screen.getByText("SHOWING FIRST 500 — DATA TRUNCATED")).toBeInTheDocument();
+    // R25: one shared truncation sentence across every capped list.
+    expect(screen.getByText("SHOWING FIRST 500 IDS — DATA TRUNCATED")).toBeInTheDocument();
   });
 });
 

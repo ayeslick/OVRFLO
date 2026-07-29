@@ -25,7 +25,7 @@ import {
 } from "viem";
 import { erc20Abi, ovrfloAbi, ovrfloFactoryAbi, ovrfloLendingAbi, sablierLockupAbi } from "@/lib/abis";
 import { SABLIER_LOCKUP_ADDRESS } from "@/lib/config";
-import { formatMaturity } from "@/lib/format";
+import { formatMaturityDate } from "@/lib/format";
 import { DEV_WALLET_ADDRESS, LENDER_WALLET_ADDRESS } from "./mock-wallet";
 import { RPC_URL, rpcCall } from "./rpc";
 
@@ -121,7 +121,11 @@ export function readSecondaryExpiry(): bigint {
 // ovrfloToken fungibility is a design feature, so the symbol column is
 // identical for every row).
 export function readSecondaryMaturityLabel(): string {
-  return formatMaturity(readSecondaryExpiry());
+  // formatMaturityDate, not formatMaturity: the markets table renders the bare
+  // date and supplies its own surrounding text, while formatMaturity carries
+  // the "Matures " caption prefix (DESIGN.md §10). Using the caption form here
+  // makes the row locator miss and every expand-dependent scenario time out.
+  return formatMaturityDate(readSecondaryExpiry());
 }
 
 // Throws on a reverted tx rather than handing back a receipt with empty logs

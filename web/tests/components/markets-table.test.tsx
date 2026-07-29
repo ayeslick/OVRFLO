@@ -319,3 +319,24 @@ describe("expanded detail escapes the table's width floor (R23)", () => {
     expect(screen.getByRole("region", { name: /ovrfloTESTB market detail/ })).toBeInTheDocument();
   });
 });
+
+// R25/L-2 — the vault list capped at 100 with no disclosure at all, unlike the
+// 500-id scans which at least warned. Markets past the hundredth vanished.
+describe("truncation disclosure (R25)", () => {
+  it("discloses truncation when the vault list is capped", () => {
+    renderTable({ truncated: true });
+    expect(screen.getByText("SHOWING FIRST 100 VAULTS — DATA TRUNCATED")).toBeInTheDocument();
+  });
+
+  it("says nothing when the list is complete", () => {
+    renderTable({ truncated: false });
+    expect(screen.queryByText(/SHOWING FIRST/)).not.toBeInTheDocument();
+  });
+
+  it("uses the same sentence shape as the other capped lists", () => {
+    // The point of the shared component: a reader who has seen one truncation
+    // notice recognises the next one.
+    renderTable({ truncated: true });
+    expect(screen.getByText(/^SHOWING FIRST \d+ \w+ — /)).toBeInTheDocument();
+  });
+});

@@ -46,6 +46,7 @@ export function MarketsApp() {
       <PositionSummary markets={markets.markets} user={connectedAddress} symbols={symbols} />
       <MarketsTable
         markets={markets.markets}
+        truncated={markets.tooLarge}
         symbols={symbols}
         user={connectedAddress}
         selected={selectedMarket}

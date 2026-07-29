@@ -2,6 +2,7 @@
 
 import { useRef } from "react";
 import { formatAprBps } from "@/lib/format";
+import { TruncationNotice } from "./TruncationNotice";
 
 // Shared tick ladder (tickets 06/07). Rows carry pre-formatted display cells so
 // the borrow side (upfront %, borrowable depth) and the supply side (lender
@@ -78,7 +79,7 @@ export function RateLadder({
   return (
     <div className="ladder" role="radiogroup" aria-label={label}>
       {truncated ? (
-        <div className="label mono status-warning">LIQUIDITY LIST TRUNCATED — TOTALS MAY BE UNDERSTATED</div>
+        <TruncationNotice limit={500} noun="IDS" detail="TOTALS MAY BE UNDERSTATED" />
       ) : null}
       {rows.length === 0 ? (
         // Dim, not status-negative: an empty or still-loading ladder is a

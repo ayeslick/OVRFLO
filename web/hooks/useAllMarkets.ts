@@ -93,6 +93,9 @@ export function useAllMarkets() {
 
   return {
     markets,
+    // L-2: vaults cap at 100 and per-vault markets cap too — either one
+    // truncating means the list on screen is not the whole set.
+    tooLarge: ovrflos.tooLarge,
     isLoading: ovrflos.isLoading || marketCountReads.isLoading || marketAddressReads.isLoading || seriesReads.isLoading,
     error: ovrflos.error ?? marketCountReads.error ?? marketAddressReads.error ?? seriesReads.error,
   };

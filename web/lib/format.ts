@@ -30,15 +30,11 @@ export function formatTokenAmount(value: bigint | undefined, symbol: string, dec
   return `${displayWhole}.${displayFraction.toString().padStart(displayDecimals, "0")} ${symbol}`;
 }
 
-// DESIGN.md §10 gives maturity three forms, one per job. L-10: only the bare
-// date existed, so captions read without their verb and identifiers had no
-// compact form at all.
-
-/// Caption form: `Matures Jun 27, 2027`.
-export function formatMaturity(timestamp: bigint | undefined) {
-  if (!timestamp) return "Maturity unknown";
-  return `Matures ${formatMaturityDate(timestamp)}`;
-}
+// DESIGN.md §10 gives maturity distinct forms per job. L-10: only the bare date
+// existed, so identifiers had no compact form and the countdown lost its hours.
+// The spec's caption form ("Matures Jun 27, 2027") has no call site today — no
+// surface renders maturity as prose — so it is deliberately not defined here
+// rather than shipped as dead code (R30). Add it with its first consumer.
 
 /// Bare date, for places that supply their own surrounding prose.
 export function formatMaturityDate(timestamp: bigint | undefined) {

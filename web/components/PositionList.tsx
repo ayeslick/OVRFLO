@@ -20,6 +20,7 @@ import {
   streamedPct,
 } from "@/lib/positions";
 import type { ActiveAction, HeldStream, Loan, LoanPool, MarketInfo } from "@/lib/types";
+import { TruncationNotice } from "./TruncationNotice";
 
 type Props = {
   market: MarketInfo;
@@ -93,9 +94,9 @@ export function PositionList({ market, user, symbols, onAction }: Props) {
   const tooLarge = liquidity.tooLarge || loanBook.tooLarge;
   const allEnumeratedEmpty =
     liquidity.tooLarge && liquidity.liquidity.every((position) => position.availableLiquidity === 0n);
-  const truncationCopy = allEnumeratedEmpty
-    ? "SHOWING FIRST 500 — ACTIVE LIQUIDITY MAY EXIST BEYOND SCAN RANGE"
-    : "SHOWING FIRST 500 — DATA TRUNCATED";
+  const truncationDetail = allEnumeratedEmpty
+    ? "ACTIVE LIQUIDITY MAY EXIST BEYOND SCAN RANGE"
+    : undefined;
 
   // Each group only reports positions when its own source is error-free —
   // an indexer error must not read as "no positions" any more than it should
@@ -110,7 +111,7 @@ export function PositionList({ market, user, symbols, onAction }: Props) {
 
   return (
     <div className="position-list">
-      {!onChainError && tooLarge ? <div className="label mono">{truncationCopy}</div> : null}
+      {!onChainError && tooLarge ? <TruncationNotice limit={500} noun="IDS" detail={truncationDetail} /> : null}
       {onChainError ? (
         <div className="position-group">
           <div className="empty mono status-negative">UNABLE TO LOAD LENDING POSITIONS</div>

@@ -13,9 +13,11 @@ import { aprChoices, formatBpsPct, upfrontBps } from "@/lib/lending-math";
 import { buildLadder } from "@/lib/router";
 import type { ActiveAction, MarketInfo } from "@/lib/types";
 import { MarketRowDetail } from "./MarketRowDetail";
+import { TruncationNotice } from "./TruncationNotice";
 
 type Props = {
   markets: MarketInfo[];
+  truncated?: boolean;
   symbols: SymbolMap;
   user?: Address;
   selected?: MarketInfo | null;
@@ -24,7 +26,7 @@ type Props = {
 };
 
 
-export function MarketsTable({ markets, symbols, user, selected, onSelect, onMode }: Props) {
+export function MarketsTable({ markets, truncated, symbols, user, selected, onSelect, onMode }: Props) {
   const nowSeconds = useNowSecondsHydrationSafe();
 
   const tvlReads = useReadContracts({
@@ -42,6 +44,10 @@ export function MarketsTable({ markets, symbols, user, selected, onSelect, onMod
       <div style={{ marginBottom: "0.75rem" }}>
         <h2>MARKETS</h2>
       </div>
+      {/* L-2: the vault list caps at 100 and said nothing — markets past the
+          hundredth simply vanished. Same disclosure component the 500-id scans
+          use, so every truncated list reads the same way. */}
+      {truncated ? <TruncationNotice limit={100} noun="VAULTS" /> : null}
       <div className="table-container">
         <table>
           <thead>

@@ -214,7 +214,8 @@ describe("BorrowForm ladder", () => {
   it("surfaces the truncated-liquidity warning inside the ladder", () => {
     hookData.tooLarge = true;
     renderBorrow();
-    expect(screen.getByText(/LIQUIDITY LIST TRUNCATED/)).toBeInTheDocument();
+    // Now the shared notice rather than ladder-specific copy (R25).
+    expect(screen.getByText(/SHOWING FIRST 500 IDS — TOTALS MAY BE UNDERSTATED/)).toBeInTheDocument();
   });
 
   it("shows an empty state when no tick has liquidity", () => {

@@ -691,3 +691,35 @@ tbody tr {
     row-gap: 0.25rem;
   }
 }
+
+/* R27/L-13: the copy control reads as the value it carries, not as a button —
+   it sits inline where an address or id was previously plain text. The icon is
+   the only affordance, so it must not shift layout when it swaps to the
+   acknowledgement tick. */
+.copy-value {
+  background: transparent;
+  border: 1px solid transparent;
+  color: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.25rem 0.4rem;
+  min-height: 24px;
+}
+
+.copy-value:hover {
+  border-color: var(--graphite);
+}
+
+.copy-value-icon {
+  color: var(--dim);
+  width: 1ch;
+  text-align: center;
+}
+
+.wallet-identity {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}

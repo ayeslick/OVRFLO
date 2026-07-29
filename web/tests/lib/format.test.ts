@@ -5,7 +5,6 @@ import {
   formatAprBps,
   formatCountdown,
   formatId,
-  formatMaturity,
   formatMaturityDate,
   formatMaturityId,
   formatTokenAmount,
@@ -70,13 +69,9 @@ describe("formatAddress", () => {
 });
 
 describe("formatMaturity / formatId", () => {
-  it("formats the caption form with its verb, per DESIGN.md §10 (L-10)", () => {
-    expect(formatMaturity(1782345600n)).toBe("Matures Jun 25, 2026");
-    expect(formatMaturity(undefined)).toBe("Maturity unknown");
-  });
-
   it("formats the bare date for callers supplying their own prose", () => {
     expect(formatMaturityDate(1782345600n)).toBe("Jun 25, 2026");
+    expect(formatMaturityDate(undefined)).toBe("unknown");
   });
 
   it("formats the compact identifier form (L-10)", () => {
@@ -92,7 +87,7 @@ describe("formatMaturity / formatId", () => {
   });
 
   it("treats a zero timestamp as unknown (the epoch is never a real maturity)", () => {
-    expect(formatMaturity(0n)).toBe("Maturity unknown");
+    expect(formatMaturityDate(0n)).toBe("unknown");
   });
 
   it("prefixes ids with a hash or dashes unknowns", () => {
