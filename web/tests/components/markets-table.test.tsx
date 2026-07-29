@@ -283,3 +283,39 @@ describe("RATES column (R5)", () => {
     expect(screen.getByText(/↑/)).toBeInTheDocument();
   });
 });
+
+// R23/M-11 — the expanded detail used to render as a <tr> inside the markets
+// table, inheriting `table { min-width: 760px }`, so every position card and
+// action button sat in a 760px layout box and overflowed on mobile.
+describe("expanded detail escapes the table's width floor (R23)", () => {
+  it("renders the detail outside the table element", () => {
+    renderTable({ markets: [market] });
+    fireEvent.click(screen.getAllByRole("button", { name: /ovrfloTESTA/ })[0]);
+
+    const region = screen.getByRole("region", { name: /ovrfloTESTA market detail/ });
+    // The assertion that matters: no table ancestor, so no min-width to inherit.
+    expect(region.closest("table")).toBeNull();
+  });
+
+  it("still collapses when the row is toggled off", () => {
+    renderTable({ markets: [market] });
+    const toggle = screen.getAllByRole("button", { name: /ovrfloTESTA/ })[0];
+
+    fireEvent.click(toggle);
+    expect(screen.getByRole("region", { name: /ovrfloTESTA market detail/ })).toBeInTheDocument();
+
+    fireEvent.click(toggle);
+    expect(screen.queryByRole("region", { name: /ovrfloTESTA market detail/ })).not.toBeInTheDocument();
+  });
+
+  it("swaps to the other market's detail rather than showing both", () => {
+    renderTable();
+    const [toggleA, toggleB] = screen.getAllByRole("button", { name: /ovrfloTEST/ });
+
+    fireEvent.click(toggleA);
+    fireEvent.click(toggleB);
+
+    expect(screen.queryByRole("region", { name: /ovrfloTESTA market detail/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("region", { name: /ovrfloTESTB market detail/ })).toBeInTheDocument();
+  });
+});

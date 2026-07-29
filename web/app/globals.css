@@ -54,7 +54,12 @@ button {
 .container {
   width: min(1200px, 100%);
   margin: 0 auto;
+  /* R23/I-4: 100vh ignores the mobile browser's collapsing toolbar, so the
+     container ran taller than the visible viewport and the page always had a
+     phantom scroll. dvh tracks the actual viewport; vh stays as the fallback
+     for engines without it. */
   min-height: 100vh;
+  min-height: 100dvh;
   border-left: 1px solid var(--graphite);
   border-right: 1px solid var(--graphite);
   padding: 0 2rem 4rem;
@@ -203,6 +208,7 @@ tr:last-child td {
   width: 100%;
   padding: 1.5rem;
   max-height: 90vh;
+  max-height: 90dvh;
   overflow-y: auto;
 }
 
@@ -228,6 +234,10 @@ tr:last-child td {
   cursor: pointer;
   padding: 0.25rem 0.5rem;
   line-height: 1;
+  /* Computed to roughly 26x26 — a pass that would break on any font-size
+     change. Pinned so it cannot drift under the minimum silently. */
+  min-height: 24px;
+  min-width: 24px;
   transition: color 0.2s ease;
 }
 
@@ -448,8 +458,23 @@ tr:last-child td {
   padding: 0.75rem;
 }
 
+/* R18/M-10: was `opacity: 0.5`, which composites the whole subtree against the
+   card background — .label text landed near 2.1:1 against a 4.5:1 requirement,
+   and body text at a borderline 4.6:1. A settled card is not a disabled
+   control, so it has no contrast exemption. Explicit dimmed colours keep the
+   visual step down while letting each element clear AA on its own. */
 .card-dimmed {
-  opacity: 0.5;
+  border-color: var(--graphite);
+}
+
+.card-dimmed .mono {
+  color: var(--dim);
+}
+
+.card-dimmed .label {
+  /* --dim would itself fall short once dimmed further, so the settled label
+     holds at the body colour rather than stepping down twice. */
+  color: var(--dim);
 }
 
 .card-head {
@@ -548,22 +573,31 @@ tr:last-child td {
 }
 
 /* --- Expandable markets table (U4) --- */
+/* R17/M-16: `padding: 0` gave these computed heights around 19px and 14px
+   against WCAG 2.2 AA's 24x24 minimum. Neither qualifies for the inline
+   exception — both are standalone controls, and .advanced-toggle gates the
+   only route to WRAP and to REPAY EARLY. */
 .row-toggle {
   background: transparent;
   border: none;
   color: inherit;
   cursor: pointer;
   font-size: inherit;
-  padding: 0;
+  padding: 0.25rem 0;
+  min-height: 24px;
   text-align: left;
 }
-tbody tr:not(.market-row-detail) {
+tbody tr {
   cursor: pointer;
 }
-.market-row-detail > td {
+
+/* Sibling of .table-container, not a row inside it — see MarketsTable. Borders
+   on all sides now that it is no longer bounded by the table's own edges. */
+.market-row-detail {
   cursor: default;
   padding: 1.25rem 1rem;
-  border-bottom: 1px solid var(--graphite);
+  border: 1px solid var(--graphite);
+  border-top: 0;
 }
 .row-detail {
   display: grid;
@@ -579,7 +613,8 @@ tbody tr:not(.market-row-detail) {
   color: var(--dim);
   cursor: pointer;
   justify-self: start;
-  padding: 0;
+  padding: 0.35rem 0;
+  min-height: 24px;
 }
 .advanced-toggle:hover {
   color: var(--chalk);
@@ -636,5 +671,23 @@ tbody tr:not(.market-row-detail) {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+}
+
+/* R23/I-5: the layout jumped straight from the mobile stack to the full desktop
+   grid, leaving the ~800px band with action buttons crowded onto one line. */
+@media (max-width: 860px) {
+  .container {
+    padding: 0 1rem 3rem;
+  }
+
+  .market-detail-actions,
+  .balance-row {
+    flex-wrap: wrap;
+  }
+
+  .ladder-row {
+    flex-wrap: wrap;
+    row-gap: 0.25rem;
   }
 }

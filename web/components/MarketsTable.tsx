@@ -92,20 +92,6 @@ export function MarketsTable({ markets, symbols, user, selected, onSelect, onMod
                         <RatesCell market={market} nowSeconds={nowSeconds} />
                       </td>
                     </tr>
-                    {expanded ? (
-                      <tr className="market-row-detail">
-                        <td colSpan={4} onClick={(e) => e.stopPropagation()}>
-                          <div role="region" aria-label={`${symbol} market detail`}>
-                            <MarketRowDetail
-                              market={market}
-                              user={user}
-                              symbols={symbols}
-                              onMode={(action) => onMode(market, action)}
-                            />
-                          </div>
-                        </td>
-                      </tr>
-                    ) : null}
                   </Fragment>
                 );
               })
@@ -113,6 +99,27 @@ export function MarketsTable({ markets, symbols, user, selected, onSelect, onMod
           </tbody>
         </table>
       </div>
+      {/* R23/M-11: the expanded detail used to be a <tr> inside this table, so
+          it inherited `table { min-width: 760px }` and every position card,
+          balance row, and action button sat in a 760px layout box — overflowing
+          horizontally on mobile, against DESIGN.md §5's "cards render at every
+          breakpoint, not a reflow". Rendering it as a sibling below the table
+          detaches it from that floor entirely. Clipping the overflow would have
+          hidden the symptom while leaving cards unreadable. */}
+      {selected ? (
+        <div
+          className="market-row-detail"
+          role="region"
+          aria-label={`${symbolFor(symbols, selected.ovrfloToken)} market detail`}
+        >
+          <MarketRowDetail
+            market={selected}
+            user={user}
+            symbols={symbols}
+            onMode={(action) => onMode(selected, action)}
+          />
+        </div>
+      ) : null}
     </section>
   );
 }
