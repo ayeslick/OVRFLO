@@ -28,15 +28,20 @@ means every scenario in this suite only exercises whichever market seed-local.sh
 `deployments/local.json` (written by seed-local.sh) rather than any hardcoded address, so nothing here depends on
 a specific market staying valid.
 
-The dev server must run with `NEXT_PUBLIC_E2E=1` so `lib/wagmi.ts` swaps in the mock wagmi connector (KTD6) instead
-of initializing Reown AppKit — the real wallet-connect UI has no automatable "approve" step, so E2E always signs as
-a pre-connected mock account instead:
+The dev server must run with `E2E_WALLET_RUNTIME=1`. That makes Turbopack resolve the `wallet-runtime` module
+specifier to `tests/e2e/support/WalletRuntime.tsx` (mock connector, pre-connected as Anvil's account #1, no Reown
+AppKit) instead of `components/WalletRuntime.tsx` — the real wallet-connect UI has no automatable "approve" step,
+so E2E always signs as a pre-connected mock account.
+
+The seam is **build-time, not runtime**: the app contains no `isE2E` branch, the production bundle contains no test
+code, and selecting the E2E runtime requires this command rather than an environment variable a deploy could
+inherit. `E2E_WALLET_RUNTIME` is deliberately not `NEXT_PUBLIC_*`, so it is never inlined into client code.
 
 ```bash
-NEXT_PUBLIC_E2E=1 npm --prefix web run dev
+E2E_WALLET_RUNTIME=1 npm --prefix web run dev
 ```
 
-With the fork running and the dev server pointed at it (with `NEXT_PUBLIC_E2E=1` set), run:
+With the fork running and the dev server pointed at it (with `E2E_WALLET_RUNTIME=1` set), run:
 
 ```bash
 npm --prefix web run test:e2e       # headless

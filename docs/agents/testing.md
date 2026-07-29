@@ -73,7 +73,7 @@ and rotate it if a fork has run on a shared machine.
 This runs `tools/scripts/bootstrap-e2e.sh`, which:
 1. Tears down any existing local environment unconditionally (`bootstrap-clean.sh local`) — you do not need to check whether something is already running first, and you should not try to reuse a possibly-stale environment from an earlier session.
 2. Brings up Anvil (forked at the live mainnet head — no block pin) + `script/seed-local.sh` (deploys OVRFLO, discovers live Pendle markets, seeds test data) + Ponder, via the existing `bootstrap:local` script.
-3. Starts the Next.js dev server backgrounded with `NEXT_PUBLIC_E2E=1` (swaps in a mock wagmi connector so E2E can sign transactions without a real wallet-connect flow), and polls `http://localhost:3000` until it's ready (up to 30s) before proceeding.
+3. Starts the Next.js dev server backgrounded with `E2E_WALLET_RUNTIME=1` (Turbopack then resolves the `wallet-runtime` module to the mock-connector runtime under `web/tests/e2e/support/`, so E2E can sign transactions without a real wallet-connect flow — a build-time swap, so the production bundle carries no test code), and polls `http://localhost:3000` until it's ready (up to 30s) before proceeding.
 4. Regenerates the Playwright spec files (`bddgen`) from the current `.feature` files.
 
 It prints readiness at the end:
@@ -124,7 +124,7 @@ Don't stream the raw unfiltered log — Playwright's `list` reporter also prints
 
 ### Don't do this instead
 
-The manual multi-step path (`BOOT_NO_UI=1 npm --prefix web run bootstrap:local`, then separately `NEXT_PUBLIC_E2E=1 npm --prefix web run dev` in another process, then `test:e2e`) still works and is what `bootstrap:e2e` composes under the hood — but doing it by hand, especially across repeated runs in one session, is exactly what caused real environment corruption before this script existed: orphaned Ponder/Next.js processes from an incompletely torn-down prior run, a stale `deployments/local.json` pointing at a factory address from a fork that no longer exists, and colliding `evm_snapshot`/`evm_revert` calls if two processes touch the same Anvil instance at once. Use `bootstrap:e2e`.
+The manual multi-step path (`BOOT_NO_UI=1 npm --prefix web run bootstrap:local`, then separately `E2E_WALLET_RUNTIME=1 npm --prefix web run dev` in another process, then `test:e2e`) still works and is what `bootstrap:e2e` composes under the hood — but doing it by hand, especially across repeated runs in one session, is exactly what caused real environment corruption before this script existed: orphaned Ponder/Next.js processes from an incompletely torn-down prior run, a stale `deployments/local.json` pointing at a factory address from a fork that no longer exists, and colliding `evm_snapshot`/`evm_revert` calls if two processes touch the same Anvil instance at once. Use `bootstrap:e2e`.
 
 **Never run two bootstrap/test invocations concurrently against the same local environment** (e.g. from two parallel agent tasks). There is exactly one shared Anvil fork, one Ponder instance, and one dev server; a second process tearing it down or reseeding mid-run from under the first looks *exactly* like a mass test-suite regression (most or all scenarios failing at once) but is actually a self-inflicted collision. If you need to run something else that touches this environment while tests are in flight, don't — wait, or coordinate so only one process owns the environment at a time.
 

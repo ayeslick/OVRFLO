@@ -1,20 +1,32 @@
 "use client";
 
-import { QueryClient } from "@tanstack/react-query";
 import { createAppKit } from "@reown/appkit/react";
 import { WagmiAdapter } from "@reown/appkit-adapter-wagmi";
 import { mainnet } from "@reown/appkit/networks";
-import { mainnet as viemMainnet } from "wagmi/chains";
-import { createConfig, http, type Config } from "wagmi";
-import { mock } from "wagmi/connectors";
-import type { Address } from "viem";
-import { isE2E, reownProjectId, rpcUrl } from "./config";
+import { http, type Config } from "wagmi";
+import { reownProjectId, rpcUrl } from "./config";
+
+// Production wallet stack only. The E2E runtime never imports this module —
+// constructing `WagmiAdapter` performs Reown/WalletConnect setup at module
+// scope, which a sandboxed test runner cannot always reach. See
+// components/WalletRuntime.tsx for the seam.
 
 const networks = [mainnet];
 
 export const wagmiAdapter = new WagmiAdapter({
   networks,
   projectId: reownProjectId,
+  // Not optional. WagmiAdapter spreads its params straight into `createConfig`,
+  // so this reaches wagmi. Without it, wagmi's `Hydrate` calls `onMount()` in
+  // the *render body* rather than in an effect, and `reconnect()` does a
+  // synchronous `config.setState({ status: 'reconnecting' | 'connecting' })`
+  // before its first await — a store write during render, feeding the exact
+  // field `WalletButton` renders on (`connection.status`). That runs during the
+  // build-time prerender pass too: `output: "export"` removes the runtime
+  // server, not the render pass that produces the HTML. Reown's own docs pass
+  // this flag; it defers reconnect to Hydrate's post-commit effect.
+  // Pinned by tests/lib/wagmi-config.test.ts — nothing else covers this file.
+  ssr: true,
   transports: {
     [mainnet.id]: http(rpcUrl),
   },
@@ -26,67 +38,14 @@ export const wagmiAdapter = new WagmiAdapter({
 // different patch than wagmi bundles); the runtime object is the one AppKit drives.
 export const wagmiConfig = wagmiAdapter.wagmiConfig as unknown as Config;
 
-// Ticket 05 / KTD6: Anvil's well-known account #1 — one of ten dev-mnemonic
-// addresses Anvil derives and unlocks internally on every local fork. It is
-// never funded on any real chain and never associated with a private key
-// anywhere in this codebase: the wagmi `mock` connector below only ever
-// forwards requests (eth_sendTransaction, personal_sign, ...) as raw JSON-RPC
-// to the chain the app is pointed at, and Anvil signs for its own default
-// accounts internally. This is also `script/seed-local.sh`'s `$DEV_WALLET`
-// default — keep the two in lockstep.
-export const E2E_DEV_ACCOUNT: Address = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8";
-
-// The mock connector's provider reads `chain.rpcUrls.default.http[0]`
-// directly (see @wagmi/core's connectors/mock.ts) rather than the
-// `transports` map below, so both must point at the local fork.
-const e2eChain = {
-  ...viemMainnet,
-  rpcUrls: { default: { http: [rpcUrl ?? "http://127.0.0.1:8545"] } },
-};
-
-// E2E-only config: no Reown AppKit (avoids WalletConnect relay/cloud calls a
-// sandboxed or offline CI runner can't make), `defaultConnected`+`reconnect`
-// so wagmi's own reconnect-on-mount (`WagmiProvider`'s default
-// `reconnectOnMount`) authenticates the dev wallet before any scenario runs —
-// no Connect-Wallet click ever exercised, matching KTD6.
-//
-// `ssr: true` is required here, not optional: without it, `Hydrate` (wagmi's
-// internal SSR helper) runs the mock connector's reconnect synchronously
-// during the *server* render pass too (see @wagmi/core's `hydrate.js` —
-// `if (!config._internal.ssr) onMount()` fires unconditionally on every
-// render, server included). Once that reconnect resolves server-side, every
-// later SSR response renders the connected address, while each fresh client
-// bundle still starts disconnected pre-hydration — a server/client text
-// mismatch on this exact button (`CONNECT` vs `0x7099…`). React then
-// discards and regenerates the whole client tree to recover, silently
-// resetting in-flight form/wallet state (see the WalletButton hydration
-// mismatch this was written to fix). `ssr: true` defers reconnect to
-// `Hydrate`'s post-commit `useEffect` instead, so first paint always matches
-// on both sides and the wallet connects only after hydration completes.
-export const e2eConfig: Config = createConfig({
-  ssr: true,
-  chains: [e2eChain],
-  connectors: [mock({ accounts: [E2E_DEV_ACCOUNT], features: { defaultConnected: true, reconnect: true } })],
-  transports: { [e2eChain.id]: http(rpcUrl) },
-});
-
-export const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      staleTime: 10_000,
-      refetchOnWindowFocus: false,
-    },
-  },
-});
-
 let appKitCreated = false;
 
 export function ensureAppKit() {
-  // E2E never opens the AppKit modal (KTD6), so skip initializing it entirely —
-  // avoids WalletConnect relay/cloud network calls that a sandboxed or
-  // offline E2E runner may not be able to make.
-  if (isE2E || appKitCreated) return;
+  if (appKitCreated) return;
   createAppKit({
+    // Inline literal, not the shared `networks` const: createAppKit's parameter
+    // is a non-empty tuple `[AppKitNetwork, ...AppKitNetwork[]]`, and a `const`
+    // array widens to `AppKitNetwork[]`, which does not satisfy it.
     adapters: [wagmiAdapter],
     networks: [mainnet],
     projectId: reownProjectId,

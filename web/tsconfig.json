@@ -25,6 +25,9 @@
     "paths": {
       "@/*": [
         "./*"
+      ],
+      "wallet-runtime": [
+        "./components/WalletRuntime.tsx"
       ]
     }
   },

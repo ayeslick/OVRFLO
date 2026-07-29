@@ -20,6 +20,9 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "."),
+      // Unit tests exercise the production wallet runtime — the E2E one is
+      // reachable only through the Turbopack alias in next.config.ts.
+      "wallet-runtime": path.resolve(__dirname, "./components/WalletRuntime.tsx"),
     },
   },
 });

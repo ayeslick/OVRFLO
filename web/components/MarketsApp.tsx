@@ -8,7 +8,7 @@ import type { ActiveAction, MarketInfo } from "@/lib/types";
 import { MarketDetail } from "./MarketDetail";
 import { MarketsTable } from "./MarketsTable";
 import { PositionSummary } from "./PositionSummary";
-import { WalletButton } from "./WalletButton";
+import { WalletButton } from "wallet-runtime";
 
 export function MarketsApp() {
   const connection = useConnection();
