@@ -471,6 +471,14 @@ function SupplyForm({
         max={() => setRaw(formatUnits18(walletBalance))}
       />
       {matured ? <div className="label mono status-negative">MARKET MATURED — SUPPLY CLOSED</div> : null}
+      {/* R35/M-3: a lender cannot choose which way their liquidity is consumed —
+          a borrower may pledge a stream against it, or sell one into it outright
+          — and nothing said so before submitting. The two outcomes differ in
+          what the lender ends up holding, so it belongs before the decision, not
+          after. */}
+      <div className="label mono">
+        LIQUIDITY MAY BE FILLED AS A LOAN OR AS AN OUTRIGHT STREAM PURCHASE — YOU CANNOT RESTRICT IT TO ONE
+      </div>
       <div className="summary-row mono" aria-live="polite">
         SUPPLY {formatTokenAmount(amount, underlyingSymbol)} @ {aprBps !== null ? formatAprBps(aprBps) : "—"}
       </div>

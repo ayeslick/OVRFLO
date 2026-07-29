@@ -599,3 +599,59 @@ export async function repayLoanFully(params: { account: Address; lending: Addres
   });
   await mineAndGetReceipt(hash);
 }
+
+// R46/F2: the sale side of a liquidity position. A lender cannot choose whether
+// their liquidity is drawn as a loan or consumed by an outright sale, and the
+// two leave them holding different things — a loan claim versus the stream NFT
+// itself. This arranges the sale path so the app's own positions view can be
+// checked against it.
+//
+// Deliberately drives the contract rather than the UI: there is no sell-side
+// form (listings stay contract-only by scope), so this is the only way to
+// produce the state the buyer's positions view has to render.
+export async function sellStreamIntoLiquidity(params: {
+  seller: Address;
+  lending: Address;
+  market: Address;
+  streamId: bigint;
+  liquidityId: bigint;
+}) {
+  const client = walletFor(params.seller);
+
+  const approved = await publicClient.readContract({
+    address: SABLIER_LOCKUP_ADDRESS,
+    abi: sablierLockupAbi,
+    functionName: "getApproved",
+    args: [params.streamId],
+  });
+  if (approved.toLowerCase() !== params.lending.toLowerCase()) {
+    const approveHash = await client.writeContract({
+      address: SABLIER_LOCKUP_ADDRESS,
+      abi: sablierLockupAbi,
+      functionName: "approve",
+      args: [params.lending, params.streamId],
+    });
+    await mineAndGetReceipt(approveHash);
+  }
+
+  // minNetOut 0: this fixture is arranging state, not asserting price. A
+  // scenario that cares about the seller's proceeds should assert them itself.
+  const hash = await client.writeContract({
+    address: params.lending,
+    abi: ovrfloLendingAbi,
+    functionName: "sellStreamToLiquidity",
+    args: [params.liquidityId, params.streamId, 0n],
+  });
+  await mineAndGetReceipt(hash);
+}
+
+// The id of the most recently created liquidity position, for pairing a supply
+// with the sale that fills it.
+export async function readLatestLiquidityId(lending: Address): Promise<bigint> {
+  const next = await publicClient.readContract({
+    address: lending,
+    abi: ovrfloLendingAbi,
+    functionName: "nextLiquidityId",
+  });
+  return (next as bigint) - 1n;
+}
