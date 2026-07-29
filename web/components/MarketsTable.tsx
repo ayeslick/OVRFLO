@@ -8,7 +8,7 @@ import { useLendingLiquidity } from "@/hooks/useLendingLiquidity";
 import { symbolFor, type SymbolMap } from "@/hooks/useMarketSymbols";
 import { useNowSecondsHydrationSafe } from "@/hooks/useNowSeconds";
 import { ovrfloAbi } from "@/lib/abis";
-import { formatAprBps, formatMaturity, formatTokenAmount } from "@/lib/format";
+import { formatAprBps, formatCountdown, formatMaturityDate, formatTokenAmount } from "@/lib/format";
 import { aprChoices, formatBpsPct, upfrontBps } from "@/lib/lending-math";
 import { buildLadder } from "@/lib/router";
 import type { ActiveAction, MarketInfo } from "@/lib/types";
@@ -23,7 +23,6 @@ type Props = {
   onMode: (market: MarketInfo, action: ActiveAction) => void;
 };
 
-const DAY_SECONDS = 86_400n;
 
 export function MarketsTable({ markets, symbols, user, selected, onSelect, onMode }: Props) {
   const nowSeconds = useNowSecondsHydrationSafe();
@@ -66,10 +65,8 @@ export function MarketsTable({ markets, symbols, user, selected, onSelect, onMod
                 const expanded = selected?.market === market.market;
                 const tvlResult = tvlReads.data?.[index];
                 const tvl = tvlResult?.status === "success" ? (tvlResult.result as bigint) : undefined;
-                const daysLeft =
-                  nowSeconds !== null && market.expiryCached > nowSeconds
-                    ? (market.expiryCached - nowSeconds) / DAY_SECONDS
-                    : 0n;
+                const secondsLeft =
+                  nowSeconds !== null && market.expiryCached > nowSeconds ? market.expiryCached - nowSeconds : 0n;
                 return (
                   <Fragment key={`${market.vault}-${market.market}`}>
                     {/* aria-expanded lives on the toggle button only — the
@@ -84,8 +81,11 @@ export function MarketsTable({ markets, symbols, user, selected, onSelect, onMod
                         </button>
                       </td>
                       <td className="mono">
-                        {formatMaturity(market.expiryCached)}
-                        <span className="label mono"> {daysLeft.toString()}d</span>
+                        {formatMaturityDate(market.expiryCached)}
+                        {/* Time-to-maturity drives the borrow/deposit decision
+                            here, so DESIGN.md §10's countdown form applies —
+                            days alone hid up to 23 hours of remaining term. */}
+                        <span className="label mono"> {formatCountdown(secondsLeft)}</span>
                       </td>
                       <td className="mono">{formatTokenAmount(tvl, symbolFor(symbols, market.underlying))}</td>
                       <td className="mono">
