@@ -372,6 +372,37 @@ tr:last-child td {
   padding: 0.75rem;
 }
 
+/* R19/L-5: the focus indicator was a border-colour shift on inputs and nothing
+   at all on buttons or ladder rows, so a keyboard user could not tell where
+   they were. DESIGN.md rules out a glow, so the edge thickens instead of
+   growing a halo — the audit's own recommendation. Padding drops by the extra
+   border width so focusing never nudges layout, and :focus-visible keeps the
+   treatment off pointer clicks. */
+.input:focus-visible,
+.button:focus-visible,
+.ladder-row:focus-visible,
+.row-toggle:focus-visible,
+.modal-close:focus-visible,
+.advanced-toggle:focus-visible {
+  outline: none;
+  border-style: solid;
+  border-width: 2px;
+  border-color: var(--chalk);
+}
+
+.input:focus-visible {
+  padding: calc(0.75rem - 1px);
+}
+
+.button:focus-visible {
+  padding: calc(0.65rem - 1px) calc(0.85rem - 1px);
+}
+
+.ladder-row:focus-visible {
+  padding: calc(0.5rem - 1px) calc(0.75rem - 1px);
+}
+
+/* Kept so a pointer click still reads as focused on the field being typed in. */
 .input:focus {
   outline: none;
   border-color: var(--chalk);
@@ -588,5 +619,22 @@ tbody tr:not(.market-row-detail) {
   }
   .summary-cell.action-with-caption .button {
     width: 100%;
+  }
+}
+
+/* R20/M-13: motion had no reduced-motion path at all. The slide-in and the
+   colour transitions are decorative — the state change they accompany happens
+   either way — so a user who has asked for less motion gets the outcome
+   without the movement. `0.01ms` rather than `none` so animationend/
+   transitionend listeners still fire and nothing waits on an event that never
+   arrives. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }
