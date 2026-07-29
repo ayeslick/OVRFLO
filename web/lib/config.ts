@@ -16,12 +16,15 @@ const env = {
   e2e: process.env.NEXT_PUBLIC_E2E,
 };
 
-function parseChainId(raw = "1") {
+// Returns the literal `1`, not `number`: wagmi types `chainId` as the union of
+// the configured chains' ids, so a widened `number` fails to assign when a write
+// names its expected chain (R6).
+function parseChainId(raw = "1"): typeof MAINNET_CHAIN_ID {
   const parsed = Number.parseInt(raw, 10);
   if (parsed !== MAINNET_CHAIN_ID) {
     throw new Error("OVRFLO web requires chain id 1, including local mainnet forks");
   }
-  return parsed;
+  return MAINNET_CHAIN_ID;
 }
 
 function parseAddress(raw: string | undefined, name: string): Address {

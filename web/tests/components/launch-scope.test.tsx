@@ -11,6 +11,7 @@ function testAddress(id: number): Address {
 
 vi.mock("wagmi", () => ({
   useConnection: () => ({ status: "disconnected", addresses: [] }),
+  useSwitchChain: () => ({ switchChain: () => {}, isPending: false, error: null }),
   useReadContract: () => ({ data: undefined }),
   useReadContracts: () => ({ data: [], isLoading: false, error: null }),
   useWaitForTransactionReceipt: () => ({ isLoading: false, isSuccess: false, error: null }),

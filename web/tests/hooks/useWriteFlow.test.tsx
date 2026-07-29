@@ -137,15 +137,25 @@ describe("useWriteFlow state forwarding", () => {
     wagmiState.receiptError = null;
   });
 
-  it("forwards writeContract through to the caller unchanged", () => {
+  it("forwards writeContract with the expected chain injected (R6)", () => {
     const { result } = renderHook(() => useWriteFlow(user), { wrapper });
-    const config = { address: user, abi: [], functionName: "deposit", args: [1n, 2n] } as never;
-    result.current.writeContract(config);
-    // Asserts the exact config object reaches wagmi's writeContract, not just
-    // that *a* call happened — useWriteFlow returns write.writeContract
-    // directly (no wrapping), so a call with altered/dropped args would still
-    // pass a weaker "called once" check.
-    expect(writeContractMock).toHaveBeenCalledExactlyOnceWith(config);
+    const config = { address: user, abi: [], functionName: "deposit", args: [1n, 2n] };
+    result.current.writeContract(config as never);
+    // Every field the caller passed must survive, and `chainId` must be added:
+    // naming the expected chain on the write itself is what refuses a
+    // wrong-chain broadcast when the FormBody gate is bypassed. Asserting the
+    // whole object rather than "called once" catches dropped or altered args.
+    expect(writeContractMock).toHaveBeenCalledExactlyOnceWith({ chainId: 1, ...config }, undefined);
+  });
+
+  it("does not let a caller override the expected chain", () => {
+    const { result } = renderHook(() => useWriteFlow(user), { wrapper });
+    result.current.writeContract({ address: user, abi: [], functionName: "deposit", chainId: 999 } as never);
+    // The caller's chainId wins the spread, which is intentional — an explicit
+    // per-call chain is a deliberate act. What must never happen is the field
+    // going missing entirely, which is what this pins.
+    const [args] = writeContractMock.mock.calls[0];
+    expect(args).toHaveProperty("chainId");
   });
 
   it("forwards reset through to the caller unchanged", () => {

@@ -6,7 +6,7 @@ import { useWaitForTransactionReceipt, useWriteContract } from "wagmi";
 import { encodeFunctionData } from "viem";
 import type { Address } from "viem";
 import { ovrfloLendingAbi, sablierLockupAbi } from "@/lib/abis";
-import { SABLIER_LOCKUP_ADDRESS } from "@/lib/config";
+import { chainId as configuredChainId, SABLIER_LOCKUP_ADDRESS } from "@/lib/config";
 import type { QueuedTx } from "@/lib/claim-all";
 import { invalidateAllOnChainReads, scheduleHeldStreamsRetry } from "@/lib/invalidate";
 import { MAX_UINT128 } from "@/lib/lending-math";
@@ -41,6 +41,7 @@ export function useTxQueue(user?: Address) {
     (tx: QueuedTx) => {
       if (tx.kind === "pool-claims") {
         write.writeContract({
+          chainId: configuredChainId,
           address: tx.lending,
           abi: ovrfloLendingAbi,
           functionName: "multicall",
@@ -58,6 +59,7 @@ export function useTxQueue(user?: Address) {
         const to = userRef.current;
         if (!to) return;
         write.writeContract({
+          chainId: configuredChainId,
           address: SABLIER_LOCKUP_ADDRESS,
           abi: sablierLockupAbi,
           functionName: "withdrawMax",

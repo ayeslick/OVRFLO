@@ -13,7 +13,9 @@ vi.mock("wagmi", () => ({
   useConnection: () => ({
     status: walletState.address ? "connected" : "disconnected",
     addresses: walletState.address ? [walletState.address] : [],
+    chainId: 1,
   }),
+  useSwitchChain: () => ({ switchChain: () => {}, isPending: false, error: null }),
   useReadContract: () => ({ data: undefined }),
   useReadContracts: () => ({ data: [], isLoading: false, error: null }),
 }));

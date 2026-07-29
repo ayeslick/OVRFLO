@@ -14,7 +14,8 @@ function testAddress(id: number): Address {
 }
 
 const WAD = 10n ** 18n;
-const walletState = { address: testAddress(0xa11) as Address | undefined };
+const walletState = { address: testAddress(0xa11) as Address | undefined, chainId: 1 as number | undefined };
+const switchChainMock = vi.fn();
 
 // Per-functionName defaults that keep every one of the 12 forms in a
 // renderable, non-error, non-"LOADING" state without per-row setup. Every
@@ -41,7 +42,9 @@ vi.mock("wagmi", () => ({
   useConnection: () => ({
     status: walletState.address ? "connected" : "disconnected",
     addresses: walletState.address ? [walletState.address] : [],
+    chainId: walletState.chainId,
   }),
+  useSwitchChain: () => ({ switchChain: switchChainMock, isPending: false, error: null }),
   useReadContract: (config?: { functionName?: string }) => {
     const key = config?.functionName ?? "";
     return { data: key in readState ? readState[key] : undefined, error: null };
@@ -171,6 +174,8 @@ function stepIndicatorAccent(container: HTMLElement) {
 
 beforeEach(() => {
   walletState.address = testAddress(0xa11);
+  walletState.chainId = 1;
+  switchChainMock.mockClear();
   writeFlows.calls = 0;
   writeFlows.first = flow();
   writeFlows.second = flow();
@@ -373,5 +378,71 @@ describe("ActionModal / FormBody — all 12 action types", () => {
     expect(call[0].args[1]).toBe((fee * 102n) / 100n);
     expect(call[0].args[1]).not.toBe(fee);
     expect(call[0].args[1]).not.toBe((1n << 256n) - 1n);
+  });
+});
+
+// R5/R6 — wrong-network write safety (finding H-2). The gate lives at FormBody
+// so all six forms are covered at one seam; the write layer carries its own
+// refusal so bypassing the gate is not enough to broadcast.
+describe("wrong-network gate (R5/R6)", () => {
+  const ALL_ACTIONS: ActionType[] = [
+    "supply",
+    "withdraw",
+    "claim_share",
+    "deposit",
+    "claim_matured",
+    "wrap",
+    "unwrap",
+    "borrow",
+    "claim_stream",
+    "adjust_rate",
+    "repay",
+    "close",
+  ];
+
+  it.each(ALL_ACTIONS)("'%s': a wrong chain replaces the form with a switch-network control", (type) => {
+    walletState.chainId = 137;
+    renderAction({ type } as ActiveAction);
+
+    expect(screen.getByRole("button", { name: /SWITCH TO NETWORK 1/ })).toBeInTheDocument();
+    expect(screen.getByText(/WRONG NETWORK/)).toBeInTheDocument();
+    // No form control survives to reach a write.
+    expect(screen.queryByPlaceholderText("0.00")).not.toBeInTheDocument();
+  });
+
+  it("names the connected chain so the user knows what to change from", () => {
+    walletState.chainId = 137;
+    renderAction({ type: "deposit" });
+    expect(screen.getByText(/CONNECTED TO 137, EXPECTED 1/)).toBeInTheDocument();
+  });
+
+  it("activating the control requests a switch to the configured chain", () => {
+    walletState.chainId = 137;
+    renderAction({ type: "deposit" });
+    fireEvent.click(screen.getByRole("button", { name: /SWITCH TO NETWORK 1/ }));
+    expect(switchChainMock).toHaveBeenCalledWith({ chainId: 1 });
+  });
+
+  it("no write is reachable while on the wrong chain", () => {
+    walletState.chainId = 137;
+    renderAction({ type: "deposit" });
+    expect(writeFlows.first.writeContract).not.toHaveBeenCalled();
+    expect(writeFlows.second.writeContract).not.toHaveBeenCalled();
+  });
+
+  it("the right chain renders the form normally", () => {
+    walletState.chainId = 1;
+    renderAction({ type: "deposit" });
+    expect(screen.queryByText(/WRONG NETWORK/)).not.toBeInTheDocument();
+    expect(screen.getByPlaceholderText("0.00")).toBeInTheDocument();
+  });
+
+  it("a disconnected wallet is not treated as wrong-network", () => {
+    // chainId is undefined while disconnected; showing a switch prompt there
+    // would displace the CONNECT WALLET path.
+    walletState.address = undefined;
+    walletState.chainId = undefined;
+    renderAction({ type: "deposit" });
+    expect(screen.queryByText(/WRONG NETWORK/)).not.toBeInTheDocument();
   });
 });

@@ -19,7 +19,9 @@ vi.mock("wagmi", () => ({
   useConnection: () => ({
     status: "connected",
     addresses: [walletState.address],
+    chainId: 1,
   }),
+  useSwitchChain: () => ({ switchChain: () => {}, isPending: false, error: null }),
   useReadContract: (config?: { functionName?: string }) => {
     switch (config?.functionName) {
       case "marketDepositLimits":

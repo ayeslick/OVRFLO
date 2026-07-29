@@ -23,7 +23,9 @@ vi.mock("wagmi", () => ({
   useConnection: () => ({
     status: walletState.address ? "connected" : "disconnected",
     addresses: walletState.address ? [walletState.address] : [],
+    chainId: 1,
   }),
+  useSwitchChain: () => ({ switchChain: () => {}, isPending: false, error: null }),
   useReadContract: (config?: { functionName?: string; args?: unknown[]; query?: { enabled?: boolean } }) => {
     readState.calls.push({ functionName: config?.functionName, args: config?.args, enabled: config?.query?.enabled });
     switch (config?.functionName) {

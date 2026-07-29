@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useWaitForTransactionReceipt, useWriteContract } from "wagmi";
 import type { Address } from "viem";
+import { chainId as configuredChainId } from "@/lib/config";
 import { invalidateAllOnChainReads, scheduleHeldStreamsRetry } from "@/lib/invalidate";
 
 export function useWriteFlow(user?: Address) {
@@ -34,8 +35,25 @@ export function useWriteFlow(user?: Address) {
 
   useEffect(() => () => cancelRetry.current?.(), []);
 
+  // R6/KTD5: every write names its expected chain here rather than at the ~19
+  // call sites, so a wrong-chain broadcast is refused at the write layer even
+  // when the FormBody gate is bypassed — and so a call site added later cannot
+  // forget it. wagmi refuses the write when the connected chain does not match.
+  // The cast is a TypeScript limitation, not a soundness hole. `writeContract`
+  // is generic over the ABI and its parameter is a union of per-variant shapes;
+  // TS will not distribute a spread across that union, and typing the wrapper
+  // erases the generics that give call sites their argument checking. Casting
+  // the wrapper back to the original signature keeps call-site inference exactly
+  // as it was — only the injection is untyped, and `chainId` is valid on every
+  // member of the union.
+  const writeContract = useCallback(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ((args: any, options: any) => write.writeContract({ chainId: configuredChainId, ...args }, options)) as typeof write.writeContract,
+    [write],
+  );
+
   return {
-    writeContract: write.writeContract,
+    writeContract,
     reset: write.reset,
     hash: write.data,
     receipt: receipt.data,

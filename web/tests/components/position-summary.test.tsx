@@ -10,7 +10,8 @@ function testAddress(id: number): Address {
 const userA = testAddress(0xa11);
 
 vi.mock("wagmi", () => ({
-  useConnection: () => ({ status: "connected", addresses: [userA] }),
+  useConnection: () => ({ status: "connected", addresses: [userA], chainId: 1 }),
+  useSwitchChain: () => ({ switchChain: () => {}, isPending: false, error: null }),
   useReadContract: () => ({ data: undefined }),
   useReadContracts: () => ({ data: [], isLoading: false, error: null }),
 }));

@@ -5,6 +5,7 @@ import { encodeFunctionData, formatUnits, parseUnits } from "viem";
 import type { Address } from "viem";
 import { useConnection, useReadContract } from "wagmi";
 import { useBorrowerLoans } from "@/hooks/useBorrowerLoans";
+import { useChainGuard } from "@/hooks/useChainGuard";
 import { useHeldStreams } from "@/hooks/useHeldStreams";
 import { useLending } from "@/hooks/useLending";
 import { useLendingLiquidity } from "@/hooks/useLendingLiquidity";
@@ -87,6 +88,19 @@ export function FormBody({
   accent: Accent;
   onClose: () => void;
 }) {
+  const chainGuard = useChainGuard();
+  if (chainGuard.wrongChain) {
+    return (
+      <WrongNetworkNotice
+        connectedChainId={chainGuard.connectedChainId}
+        expectedChainId={chainGuard.expectedChainId}
+        onSwitch={chainGuard.switchChain}
+        isSwitching={chainGuard.isSwitching}
+        error={chainGuard.switchError}
+      />
+    );
+  }
+
   switch (action.type) {
     case "supply":
       return <SupplyForm market={market} symbols={symbols} accent={accent} onClose={onClose} />;
@@ -200,6 +214,37 @@ function CloseButton({ onClose }: { onClose: () => void }) {
     <button className="button mono" type="button" onClick={onClose}>
       CLOSE
     </button>
+  );
+}
+
+// R5: on a wrong chain every primary action control becomes this one. Gating at
+// FormBody covers all six forms' write paths at a single seam — a per-form gate
+// would have to be re-applied correctly six times and re-applied again for the
+// seventh form. Deliberately stronger than a header-only network indicator,
+// which the ETHSKILLS QA checklist calls insufficient for exactly this case.
+function WrongNetworkNotice({
+  connectedChainId,
+  expectedChainId,
+  onSwitch,
+  isSwitching,
+  error,
+}: {
+  connectedChainId?: number;
+  expectedChainId: number;
+  onSwitch: () => void;
+  isSwitching: boolean;
+  error: Error | null;
+}) {
+  return (
+    <div className="form-grid">
+      <div className="label mono status-warning">
+        WRONG NETWORK — CONNECTED TO {connectedChainId ?? "UNKNOWN"}, EXPECTED {expectedChainId}
+      </div>
+      <button className="button mono" type="button" onClick={onSwitch} disabled={isSwitching}>
+        {isSwitching ? "SWITCHING…" : `SWITCH TO NETWORK ${expectedChainId}`}
+      </button>
+      {error ? <div className="label mono status-negative">SWITCH REJECTED — CHANGE NETWORK IN YOUR WALLET</div> : null}
+    </div>
   );
 }
 
