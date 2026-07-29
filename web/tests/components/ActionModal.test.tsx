@@ -446,3 +446,106 @@ describe("wrong-network gate (R5/R6)", () => {
     expect(screen.queryByText(/WRONG NETWORK/)).not.toBeInTheDocument();
   });
 });
+
+// R7 — post-confirm re-arm (finding H-3). Before this, `busy` dropped back to
+// false on confirmation while the amount field still held the original
+// arguments, so one more click resubmitted the same transaction.
+describe("post-confirm re-arm (R7)", () => {
+  // Forms with a free-text amount field, i.e. the ones where stale arguments
+  // survive a confirmation. AdjustRate and the SimpleAction family have no
+  // amount input to strand.
+  const AMOUNT_FORMS: ActiveAction[] = [
+    { type: "supply" },
+    { type: "deposit" },
+    { type: "wrap" },
+    { type: "unwrap" },
+  ];
+
+  function confirmActionTx() {
+    // The action flow is the second useWriteFlow call in every approve-then-act
+    // form (approveTx first, then actionTx) — see the alternating mock above.
+    writeFlows.second.isConfirmed = true;
+  }
+
+  it.each(AMOUNT_FORMS)("$type: the primary control is disarmed once confirmed", (action) => {
+    const { rerender } = renderAction(action);
+    fireEvent.change(screen.getByPlaceholderText("0.00"), { target: { value: "10" } });
+
+    confirmActionTx();
+    writeFlows.calls = 0;
+    rerender(
+      <FormBody
+        action={action}
+        market={market}
+        user={walletState.address}
+        symbols={symbols}
+        accent={ACTION_META[action.type].accent}
+        onClose={vi.fn()}
+      />,
+    );
+
+    // Every enabled button left on screen is a CLOSE affordance, never a
+    // resubmit of the action that just landed.
+    const enabled = screen
+      .getAllByRole("button")
+      .filter((b) => !(b as HTMLButtonElement).disabled)
+      .map((b) => b.textContent ?? "");
+    expect(enabled.every((label) => /CLOSE/i.test(label))).toBe(true);
+  });
+
+  it("clears the amount field so spent arguments cannot be resubmitted", () => {
+    const action: ActiveAction = { type: "deposit" };
+    const { rerender } = renderAction(action);
+    fireEvent.change(screen.getByPlaceholderText("0.00"), { target: { value: "10" } });
+    expect(screen.getByPlaceholderText("0.00")).toHaveValue("10");
+
+    confirmActionTx();
+    writeFlows.calls = 0;
+    rerender(
+      <FormBody
+        action={action}
+        market={market}
+        user={walletState.address}
+        symbols={symbols}
+        accent={ACTION_META.deposit.accent}
+        onClose={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByPlaceholderText("0.00")).toHaveValue("");
+  });
+
+  it("shows CONFIRMED alongside the cleared field, so empty never reads as untouched", () => {
+    const action: ActiveAction = { type: "deposit" };
+    const { container, rerender } = renderAction(action);
+    fireEvent.change(screen.getByPlaceholderText("0.00"), { target: { value: "10" } });
+
+    confirmActionTx();
+    writeFlows.calls = 0;
+    rerender(
+      <FormBody
+        action={action}
+        market={market}
+        user={walletState.address}
+        symbols={symbols}
+        accent={ACTION_META.deposit.accent}
+        onClose={vi.fn()}
+      />,
+    );
+
+    expect(stepIndicatorText(container)).toContain("CONFIRMED");
+    expect(screen.getByRole("button", { name: /CLOSE/i })).toBeInTheDocument();
+  });
+
+  it("a form that has not confirmed keeps its control armed", () => {
+    // `wrap`, not `deposit`: deposit is separately gated on a previewDeposit
+    // read that beforeEach clears, which would mask what this asserts.
+    renderAction({ type: "wrap" });
+    fireEvent.change(screen.getByPlaceholderText("0.00"), { target: { value: "10" } });
+    expect(screen.getByPlaceholderText("0.00")).toHaveValue("10");
+    // Regression guard on over-correction: disarming must key on confirmation,
+    // not merely on an amount having been entered.
+    const enabled = screen.getAllByRole("button").filter((b) => !(b as HTMLButtonElement).disabled);
+    expect(enabled.length).toBeGreaterThan(0);
+  });
+});

@@ -6,6 +6,7 @@ import type { Address } from "viem";
 import { useConnection, useReadContract } from "wagmi";
 import { useBorrowerLoans } from "@/hooks/useBorrowerLoans";
 import { useChainGuard } from "@/hooks/useChainGuard";
+import { useClearOnConfirm } from "@/hooks/useClearOnConfirm";
 import { useHeldStreams } from "@/hooks/useHeldStreams";
 import { useLending } from "@/hooks/useLending";
 import { useLendingLiquidity } from "@/hooks/useLendingLiquidity";
@@ -342,14 +343,21 @@ function SupplyForm({
     query: { enabled: Boolean(connectedAddress) },
   });
 
+  useClearOnConfirm(actionTx.isConfirmed, () => setRaw(""));
+
   if (guard.walletChanged) return <WalletChangedNotice onContinue={guard.acknowledge} />;
 
   const allowanceAmount = allowance.data ?? 0n;
   const walletBalance = balanceOf.data ?? 0n;
   const validationError = amount > 0n && amount > walletBalance ? "INSUFFICIENT BALANCE" : null;
   const approvalCovers = allowanceAmount >= amount || approvedAmount >= amount;
+  // R7/H-3: `isConfirmed` belongs in the predicate, not just the step
+  // indicator. Without it `busy` drops back to false on confirmation and the
+  // button re-arms with the original arguments still populated — one more
+  // click submits the same transaction again.
   const disabled =
-    !market.lending || aprBps === null || amount === 0n || busy || Boolean(validationError) || matured;
+    !market.lending || aprBps === null || amount === 0n || busy || Boolean(validationError) || matured ||
+    actionTx.isConfirmed;
   const steps = ["APPROVE", "SIGN", "CONFIRMED"];
   const activeIndex = actionTx.isConfirmed || actionTx.isConfirming ? 2 : approvalCovers ? 1 : 0;
 
@@ -536,7 +544,7 @@ function SimpleActionForm({
       <StepIndicator steps={steps} activeIndex={activeIndex} error={Boolean(tx.error) || tx.isReverted} accent={accent} />
       <button
         className={`button ${accentClass(accent)} mono`}
-        disabled={!writeArgs || tx.isSigning || tx.isConfirming}
+        disabled={!writeArgs || tx.isSigning || tx.isConfirming || tx.isConfirmed}
         type="button"
         onClick={() => writeArgs?.()}
       >
@@ -575,7 +583,7 @@ function ConvertForm({
   const ovrfloSymbol = symbolFor(symbols, market.ovrfloToken);
 
   const { approveTx, actionTx, busy } = useApprovalWriteFlows(connectedAddress);
-  const disabled = amount === 0n || busy;
+  const disabled = amount === 0n || busy || actionTx.isConfirmed;
 
   const guard = useWalletChangeReset(connectedAddress, () => {
     setRaw("");
@@ -642,6 +650,8 @@ function ConvertForm({
     args: connectedAddress ? [connectedAddress] : undefined,
     query: { enabled: Boolean(connectedAddress) },
   });
+
+  useClearOnConfirm(actionTx.isConfirmed, () => setRaw(""));
 
   if (guard.walletChanged) return <WalletChangedNotice onContinue={guard.acknowledge} />;
 
@@ -947,6 +957,8 @@ function BorrowForm({
     setStaleRecovery(false);
   }, [selectedStreamId, resetActionTx, setStaleRecovery]);
 
+  useClearOnConfirm(actionTx.isConfirmed, () => setRaw(""));
+
   if (guard.walletChanged) return <WalletChangedNotice onContinue={guard.acknowledge} />;
   if (matured) {
     return (
@@ -986,7 +998,8 @@ function BorrowForm({
     busy ||
     !quoteData ||
     minAcceptable === null ||
-    gatherIds.length === 0;
+    gatherIds.length === 0 ||
+    actionTx.isConfirmed;
 
   const receiptSummary =
     actionTx.isConfirmed && actionTx.receipt && market.lending
@@ -1300,7 +1313,8 @@ function AdjustRateForm({
     sameRate ||
     matured ||
     busy ||
-    terminal;
+    terminal ||
+    actionTx.isConfirmed;
 
   const receiptSummary =
     actionTx.isConfirmed && actionTx.receipt && market.lending
@@ -1510,6 +1524,8 @@ function RepayForm({
     if (approveTx.error) setRepayApprovedAmount(0n);
   }, [approveTx.error]);
 
+  useClearOnConfirm(actionTx.isConfirmed, () => setRaw(""));
+
   if (guard.walletChanged) return <WalletChangedNotice onContinue={guard.acknowledge} />;
 
   const needsApproval =
@@ -1521,7 +1537,8 @@ function RepayForm({
   const validationError = repayAmount > 0n && repayAmount > walletBalance ? "INSUFFICIENT BALANCE" : null;
 
   const disabled =
-    !market.lending || !loan || repayAmount === 0n || busy || Boolean(validationError);
+    !market.lending || !loan || repayAmount === 0n || busy || Boolean(validationError) ||
+    actionTx.isConfirmed;
 
   const steps = ["APPROVE", "SIGN", "CONFIRMED"];
   const activeIndex = actionTx.isConfirmed || actionTx.isConfirming ? 2 : needsApproval ? 0 : 1;
