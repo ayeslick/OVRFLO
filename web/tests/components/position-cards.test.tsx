@@ -27,6 +27,7 @@ const hookData = {
   loanBookError: null as Error | null,
   streamsError: null as Error | null,
   streamsStale: false,
+  indexerLagBlocks: 0,
 };
 
 vi.mock("@/hooks/useLendingLiquidity", () => ({
@@ -53,6 +54,14 @@ vi.mock("@/hooks/useHeldStreams", () => ({
     error: hookData.streamsError,
     stale: hookData.streamsStale ?? false,
     unavailable: Boolean(hookData.streamsError) && !hookData.streamsStale,
+  }),
+}));
+vi.mock("@/hooks/useIndexerSync", () => ({
+  useIndexerSync: () => ({
+    syncedBlock: 100n,
+    headBlock: 100n + BigInt(hookData.indexerLagBlocks),
+    lagBlocks: BigInt(hookData.indexerLagBlocks),
+    lagging: hookData.indexerLagBlocks > 5,
   }),
 }));
 vi.mock("@/hooks/useLending", () => ({
@@ -143,6 +152,7 @@ beforeEach(() => {
   hookData.loanBookError = null;
   hookData.streamsError = null;
   hookData.streamsStale = false;
+  hookData.indexerLagBlocks = 0;
 });
 
 describe("SELL removal", () => {
@@ -296,6 +306,7 @@ describe("degraded indexer states (R43/R44)", () => {
   it("Covers AE8. With no cached set, names the direct-contract route instead of an empty list", () => {
     hookData.streamsError = new Error("indexer unreachable");
     hookData.streamsStale = false;
+  hookData.indexerLagBlocks = 0;
 
     renderList();
 
@@ -325,6 +336,7 @@ describe("degraded indexer states (R43/R44)", () => {
     // asserts staleness disables nothing, whatever the card happens to offer.
     hookData.streamsError = null;
     hookData.streamsStale = false;
+  hookData.indexerLagBlocks = 0;
     renderList();
     const liveButtons = screen
       .getAllByRole("button")

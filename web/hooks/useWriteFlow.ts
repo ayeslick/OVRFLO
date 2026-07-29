@@ -5,11 +5,15 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useWaitForTransactionReceipt, useWriteContract } from "wagmi";
 import type { Address } from "viem";
 import { chainId as configuredChainId } from "@/lib/config";
-import { invalidateAllOnChainReads, scheduleHeldStreamsRetry } from "@/lib/invalidate";
+import { invalidateOnChainReads, scheduleHeldStreamsRetry } from "@/lib/invalidate";
 
 export function useWriteFlow(user?: Address) {
   const queryClient = useQueryClient();
   const lastInvalidatedHash = useRef<`0x${string}` | undefined>(undefined);
+  // R39: the address each write targeted, so invalidation can be scoped to the
+  // reads that write could actually have changed. Captured at submit rather
+  // than derived at confirm time — by then the args are gone.
+  const touched = useRef<Address[]>([]);
   const cancelRetry = useRef<(() => void) | undefined>(undefined);
   const write = useWriteContract();
   const receipt = useWaitForTransactionReceipt({
@@ -28,7 +32,14 @@ export function useWriteFlow(user?: Address) {
   useEffect(() => {
     if (!isConfirmed || !write.data || lastInvalidatedHash.current === write.data) return;
     lastInvalidatedHash.current = write.data;
-    invalidateAllOnChainReads(queryClient, user);
+    invalidateOnChainReads(queryClient, {
+      contracts: touched.current,
+      user,
+      // A write to Sablier moves a stream NFT, and so does one to a lending
+      // market (sale fills and loan escrow both transfer it). Either can change
+      // which streams the user holds.
+      streams: touched.current.length > 0,
+    });
     cancelRetry.current?.();
     cancelRetry.current = scheduleHeldStreamsRetry(queryClient, user);
   }, [queryClient, isConfirmed, user, write.data]);
@@ -48,7 +59,13 @@ export function useWriteFlow(user?: Address) {
   // member of the union.
   const writeContract = useCallback(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ((args: any, options: any) => write.writeContract({ chainId: configuredChainId, ...args }, options)) as typeof write.writeContract,
+    ((args: any, options: any) => {
+      // R39: record the target so the post-confirm invalidation can be scoped
+      // to the reads this write could have changed. Captured here rather than
+      // derived at confirm time, when the args are gone.
+      if (args?.address) touched.current = [args.address as Address];
+      return write.writeContract({ chainId: configuredChainId, ...args }, options);
+    }) as typeof write.writeContract,
     [write],
   );
 

@@ -19,6 +19,9 @@ const readState = {
   calls: [] as ReadCall[],
 };
 
+vi.mock("@/hooks/useIndexerSync", () => ({
+  useIndexerSync: () => ({ syncedBlock: 100n, headBlock: 100n, lagBlocks: 0n, lagging: false }),
+}));
 vi.mock("wagmi", () => ({
   useConnection: () => ({
     status: walletState.address ? "connected" : "disconnected",

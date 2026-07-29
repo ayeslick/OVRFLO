@@ -52,15 +52,22 @@ describe("useWriteFlow invalidation regression", () => {
   });
   afterEach(() => vi.useRealTimers());
 
-  it("invalidates the two wagmi roots and the held key exactly once per confirmed hash", () => {
+  it("invalidates scoped read keys and the held key exactly once per confirmed hash", () => {
+    // R39: was three broad invalidations — the two wagmi roots wholesale plus
+    // the held key — so any write refetched every mounted read in the app. The
+    // read roots are now predicate-matched against the contracts this
+    // transaction actually touched.
     const queryClient = new QueryClient();
     const spy = vi.spyOn(queryClient, "invalidateQueries");
     const wrapper = ({ children }: { children: ReactNode }) => (
       <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
     );
 
-    const { rerender } = renderHook(() => useWriteFlow(user), { wrapper });
+    const { result, rerender } = renderHook(() => useWriteFlow(user), { wrapper });
     expect(spy).not.toHaveBeenCalled();
+
+    // The write records which contract it targeted.
+    result.current.writeContract({ address: user, abi: [], functionName: "deposit" } as never);
 
     wagmiState.writeData = hash;
     wagmiState.receiptSuccess = true;
@@ -68,9 +75,10 @@ describe("useWriteFlow invalidation regression", () => {
     rerender();
 
     expect(spy).toHaveBeenCalledTimes(3);
-    expect(spy).toHaveBeenCalledWith({ queryKey: ["readContract"] });
-    expect(spy).toHaveBeenCalledWith({ queryKey: ["readContracts"] });
-    expect(spy).toHaveBeenCalledWith({ queryKey: streamKeys.held(user) });
+    // Two predicate-scoped read invalidations plus the held key.
+    const calls = spy.mock.calls.map(([arg]) => arg);
+    expect(calls.filter((c) => typeof c?.predicate === "function")).toHaveLength(2);
+    expect(calls).toContainEqual({ queryKey: streamKeys.held(user) });
 
     // Same hash again — no duplicate invalidation.
     rerender();
@@ -103,7 +111,8 @@ describe("useWriteFlow invalidation regression", () => {
     const wrapper = ({ children }: { children: ReactNode }) => (
       <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
     );
-    const { rerender } = renderHook(() => useWriteFlow(user), { wrapper });
+    const { result, rerender } = renderHook(() => useWriteFlow(user), { wrapper });
+    result.current.writeContract({ address: user, abi: [], functionName: "deposit" } as never);
 
     wagmiState.writeData = hash;
     wagmiState.receiptSuccess = true;

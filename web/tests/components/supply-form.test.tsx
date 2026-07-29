@@ -10,6 +10,9 @@ function testAddress(id: number): Address {
 const WAD = 10n ** 18n;
 const walletState = { address: testAddress(0xa11) as Address | undefined };
 
+vi.mock("@/hooks/useIndexerSync", () => ({
+  useIndexerSync: () => ({ syncedBlock: 100n, headBlock: 100n, lagBlocks: 0n, lagging: false }),
+}));
 vi.mock("wagmi", () => ({
   useConnection: () => ({
     status: walletState.address ? "connected" : "disconnected",

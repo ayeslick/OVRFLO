@@ -8,7 +8,7 @@ import type { Address } from "viem";
 import { ovrfloLendingAbi, sablierLockupAbi } from "@/lib/abis";
 import { chainId as configuredChainId, SABLIER_LOCKUP_ADDRESS } from "@/lib/config";
 import type { QueuedTx } from "@/lib/claim-all";
-import { invalidateAllOnChainReads, scheduleHeldStreamsRetry } from "@/lib/invalidate";
+import { invalidateOnChainReads, scheduleHeldStreamsRetry } from "@/lib/invalidate";
 import { MAX_UINT128 } from "@/lib/lending-math";
 
 export type QueueRowStatus = "pending" | "signing" | "confirming" | "confirmed" | "failed";
@@ -127,7 +127,14 @@ export function useTxQueue(user?: Address) {
       setRunning(false);
       return;
     }
-    invalidateAllOnChainReads(queryClient, userRef.current);
+    // R39: the queue alternates between the lending market (pool-share claims)
+    // and Sablier (stream withdrawals), so scope to both rather than the whole
+    // cache. Both move stream state, hence streams: true.
+    invalidateOnChainReads(queryClient, {
+      contracts: [rows[index]?.tx.kind === "pool-claims" ? rows[index].tx.lending : SABLIER_LOCKUP_ADDRESS],
+      user: userRef.current,
+      streams: true,
+    });
     cancelRetry.current?.();
     cancelRetry.current = scheduleHeldStreamsRetry(queryClient, userRef.current);
     const confirmedIndex = index;

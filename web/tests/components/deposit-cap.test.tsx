@@ -15,6 +15,9 @@ const readState = {
   totalDeposited: 0n as bigint,
 };
 
+vi.mock("@/hooks/useIndexerSync", () => ({
+  useIndexerSync: () => ({ syncedBlock: 100n, headBlock: 100n, lagBlocks: 0n, lagging: false }),
+}));
 vi.mock("wagmi", () => ({
   useConnection: () => ({
     status: "connected",

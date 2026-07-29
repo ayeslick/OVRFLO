@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { Address } from "viem";
 import { useNowSeconds } from "@/hooks/useNowSeconds";
 import { useHeldStreams } from "@/hooks/useHeldStreams";
+import { useIndexerSync } from "@/hooks/useIndexerSync";
 import { useLending } from "@/hooks/useLending";
 import { useLendingLiquidity } from "@/hooks/useLendingLiquidity";
 import { useLoanBook } from "@/hooks/useLoanBook";
@@ -73,6 +74,11 @@ export function PositionList({ market, user, symbols, onAction }: Props) {
   // nothing.
   const streamsUnavailable = streams.unavailable;
   const streamsStale = streams.stale;
+  // R40: a lagging indexer is a different condition from an unreachable one —
+  // discovery succeeds, it is just behind, so the set can be short without
+  // anything erroring. Most often that omits a stream acquired through someone
+  // else's transaction, where the viewer has no write of their own to notice.
+  const indexerSync = useIndexerSync();
 
   if (isLoading) {
     return <div className="empty mono">LOADING</div>;
@@ -223,6 +229,11 @@ export function PositionList({ market, user, symbols, onAction }: Props) {
           {streamsStale ? (
             <div className="label mono status-warning" role="status">
               SHOWING LAST KNOWN STREAMS — DISCOVERY IS UNREACHABLE, VALUES ARE LIVE FROM SABLIER
+            </div>
+          ) : indexerSync.lagging ? (
+            <div className="label mono status-warning" role="status">
+              STREAM DISCOVERY IS {indexerSync.lagBlocks?.toString()} BLOCKS BEHIND — RECENTLY ACQUIRED STREAMS MAY BE
+              MISSING
             </div>
           ) : null}
           <div className="position-cards">

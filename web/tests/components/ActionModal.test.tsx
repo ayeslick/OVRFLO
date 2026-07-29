@@ -38,6 +38,9 @@ const readState: Record<string, unknown> = {
   liquidityPositions: [testAddress(0xa11), testAddress(6), 1000, 50n * WAD],
 };
 
+vi.mock("@/hooks/useIndexerSync", () => ({
+  useIndexerSync: () => ({ syncedBlock: 100n, headBlock: 100n, lagBlocks: 0n, lagging: false }),
+}));
 vi.mock("wagmi", () => ({
   useConnection: () => ({
     status: walletState.address ? "connected" : "disconnected",

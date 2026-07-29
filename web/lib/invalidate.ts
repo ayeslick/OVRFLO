@@ -2,22 +2,80 @@ import type { QueryClient } from "@tanstack/react-query";
 import type { Address } from "viem";
 import { streamKeys } from "./query-keys";
 
-// Coarse post-write invalidation (plan KTD5/KTD10), shared by useWriteFlow and the
-// claim-all queue so the two paths cannot drift. wagmi v3 roots useReadContract /
-// useReadContracts keys at these string literals (verified against wagmi 3.7.3),
-// so prefix matching refetches every mounted on-chain read.
+// wagmi v3 roots useReadContract / useReadContracts keys at these string
+// literals, with the call's own parameters — including `address` — nested
+// inside (verified against wagmi 3.7.3).
+const WAGMI_READ_ROOTS = ["readContract", "readContracts"] as const;
+
+/**
+ * Invalidates the on-chain reads a confirmed transaction could have changed.
+ *
+ * R39: this used to prefix-match the two wagmi roots and refetch *every*
+ * mounted read on any write — a deposit into one market refetched every other
+ * market's ladder, balances and loan book. Scoping to the contracts the
+ * transaction actually touched keeps a write's cost proportional to the write.
+ *
+ * `contracts` is the set of addresses the transaction interacted with. A read
+ * matches if any of them appears in its query key. `useReadContracts` batches
+ * several addresses under one key, so a batch is invalidated when it contains
+ * *any* touched contract — splitting the batch to be more precise would cost
+ * more than the occasional extra refetch.
+ */
+export function invalidateOnChainReads(
+  queryClient: QueryClient,
+  options: { contracts: readonly Address[]; user?: Address; streams?: boolean },
+) {
+  const touched = new Set(options.contracts.filter(Boolean).map((address) => address.toLowerCase()));
+
+  for (const root of WAGMI_READ_ROOTS) {
+    queryClient.invalidateQueries({
+      predicate: (query) => query.queryKey[0] === root && keyMentionsAny(query.queryKey, touched),
+    });
+  }
+
+  if (options.streams) {
+    queryClient.invalidateQueries({ queryKey: streamKeys.held(options.user) });
+  }
+}
+
+// Matches on the serialised key rather than walking wagmi's internal key shape:
+// that shape is not part of its public contract, and an address sits at
+// different depths for a single read versus a batched one.
+function keyMentionsAny(queryKey: readonly unknown[], addresses: ReadonlySet<string>): boolean {
+  if (addresses.size === 0) return false;
+  const serialised = JSON.stringify(queryKey, (_key, value) =>
+    typeof value === "bigint" ? value.toString() : value,
+  ).toLowerCase();
+  for (const address of addresses) {
+    if (serialised.includes(address)) return true;
+  }
+  return false;
+}
+
+/**
+ * The deliberately unscoped refresh.
+ *
+ * `useStaleRecovery` fires on a classified stale-liquidity error, which is
+ * caused by *another* party's write — there is no transaction of ours to scope
+ * by, and the whole point is picking up what someone else changed. Handing this
+ * an empty scope would quietly turn it into a no-op and reintroduce the
+ * liquidity race it exists to recover from, so it keeps the broad behaviour and
+ * is named for it.
+ */
 export function invalidateAllOnChainReads(queryClient: QueryClient, user?: Address) {
-  queryClient.invalidateQueries({ queryKey: ["readContract"] });
-  queryClient.invalidateQueries({ queryKey: ["readContracts"] });
+  for (const root of WAGMI_READ_ROOTS) {
+    queryClient.invalidateQueries({ queryKey: [root] });
+  }
   queryClient.invalidateQueries({ queryKey: streamKeys.held(user) });
 }
 
 const bigintSafe = (_key: string, value: unknown) => (typeof value === "bigint" ? value.toString() : value);
 
-// The held-streams list is Ponder-backed, so the instant invalidation above races the
-// indexer (2s polling + indexing time). Re-invalidate on a short schedule, stopping
-// early once the result set changes; 3 attempts total including the immediate one so a
-// persistently stale indexer never loops. Returns a cleanup that cancels pending timers.
+// The held-streams list is indexer-backed, so the instant invalidation above
+// races the indexer (2s polling + indexing time). Re-invalidate on a short
+// schedule, stopping early once the result set changes; 3 attempts total
+// including the immediate one so a persistently stale indexer never loops.
+// Returns a cleanup that cancels pending timers.
 export function scheduleHeldStreamsRetry(
   queryClient: QueryClient,
   user: Address | undefined,
