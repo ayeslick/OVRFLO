@@ -9,17 +9,16 @@ import { useLendingLiquidity } from "@/hooks/useLendingLiquidity";
 import { useLoanBook } from "@/hooks/useLoanBook";
 import { symbolFor, type SymbolMap } from "@/hooks/useMarketSymbols";
 import { formatAprBps, formatId, formatTokenAmount } from "@/lib/format";
-import { aprChoices, formatBpsPct, loanOutstanding } from "@/lib/lending-math";
+import { formatBpsPct, loanOutstanding } from "@/lib/lending-math";
 import { canCloseLoan, isSeriesMatchedStream } from "@/lib/modal-logic";
 import {
-  borrowTeaserBps,
   loanCardState,
+  marketBorrowTeaserBps,
   obligationPct,
   selectForMarket,
   selectLiquidityForLender,
   streamedPct,
 } from "@/lib/positions";
-import { buildLadder } from "@/lib/router";
 import type { ActiveAction, HeldStream, Loan, LoanPool, MarketInfo } from "@/lib/types";
 
 type Props = {
@@ -79,10 +78,16 @@ export function PositionList({ market, user, symbols, onAction }: Props) {
   // supply (they can never borrow against it).
   const matured = nowSeconds >= market.expiryCached;
   const ttmSeconds = matured ? 0n : market.expiryCached - nowSeconds;
-  const ticks =
-    lending.params.aprMaxBps > 0 ? aprChoices(lending.params.aprMinBps, lending.params.aprMaxBps) : [];
-  const ladder = buildLadder(liquidity.liquidity, market.market, ticks, user);
-  const teaserBps = matured ? null : borrowTeaserBps(ladder, ttmSeconds, lending.params.feeBps);
+  const teaserBps = marketBorrowTeaserBps({
+    liquidity: liquidity.liquidity,
+    market: market.market,
+    aprMinBps: lending.params.aprMinBps,
+    aprMaxBps: lending.params.aprMaxBps,
+    feeBps: lending.params.feeBps,
+    ttmSeconds,
+    matured,
+    self: user,
+  });
 
   // R26: enumeration hooks scan the OLDEST 500 ids; degrade visibly, never silently.
   const tooLarge = liquidity.tooLarge || loanBook.tooLarge;

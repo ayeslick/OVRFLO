@@ -22,10 +22,17 @@ vi.mock("wagmi", () => ({
 const hookData = {
   liquidity: [] as unknown[],
   streams: [] as unknown[],
+  liquidityLoading: false,
+  lendingLoading: false,
 };
 
 vi.mock("@/hooks/useLendingLiquidity", () => ({
-  useLendingLiquidity: () => ({ liquidity: hookData.liquidity, tooLarge: false, isLoading: false, error: null }),
+  useLendingLiquidity: () => ({
+    liquidity: hookData.liquidity,
+    tooLarge: false,
+    isLoading: hookData.liquidityLoading,
+    error: null,
+  }),
 }));
 vi.mock("@/hooks/useHeldStreams", () => ({
   useHeldStreams: () => ({ streams: hookData.streams, isLoading: false, error: null }),
@@ -33,7 +40,7 @@ vi.mock("@/hooks/useHeldStreams", () => ({
 vi.mock("@/hooks/useLending", () => ({
   useLending: () => ({
     params: { aprMinBps: 1000, aprMaxBps: 1200, feeBps: 40, nextLiquidityId: 1n, nextLoanId: 1n, nextSaleListingId: 1n },
-    isLoading: false,
+    isLoading: hookData.lendingLoading,
     error: null,
   }),
 }));
@@ -96,7 +103,38 @@ beforeEach(() => {
   walletState.address = testAddress(0xa11);
   hookData.liquidity = [];
   hookData.streams = [];
+  hookData.liquidityLoading = false;
+  hookData.lendingLoading = false;
 });
+
+const WAD = 10n ** 18n;
+
+// Passes isSeriesMatchedStream against `market` — the borrower is otherwise
+// eligible, so liquidity is the only thing left gating BORROW.
+function eligibleStream() {
+  return {
+    streamId: 1n,
+    recipient: walletState.address,
+    sender: market.vault,
+    asset: market.ovrfloToken,
+    endTime: market.expiryCached,
+    canceled: false,
+    depleted: false,
+    deposited: 100n * WAD,
+    withdrawn: 40n * WAD,
+    withdrawable: 10n * WAD,
+  };
+}
+
+function otherLenderLiquidity() {
+  return {
+    id: 1n,
+    lender: testAddress(0xbb),
+    market: market.market,
+    aprBps: 1000,
+    availableLiquidity: 50n * WAD,
+  };
+}
 
 describe("row expansion (R6)", () => {
   it("expands on row click, swaps on second row, collapses on re-click, toggling aria-expanded", () => {
@@ -159,6 +197,60 @@ describe("expanded content states (R7/R8/R27)", () => {
     expect(screen.getByRole("button", { name: "SUPPLY" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "BORROW" })).toBeDisabled();
     expect(screen.getAllByText("LENDING NOT DEPLOYED").length).toBe(2);
+  });
+
+  it("eligible stream but empty ladder: BORROW disabled with NO LIQUIDITY POSTED AT ANY RATE", () => {
+    hookData.streams = [eligibleStream()];
+    renderTable({ markets: [market] });
+    fireEvent.click(screen.getAllByRole("button", { name: /ovrfloTESTA/ })[0]);
+    expect(screen.getByRole("button", { name: "BORROW" })).toBeDisabled();
+    expect(screen.getByText("NO LIQUIDITY POSTED AT ANY RATE")).toBeInTheDocument();
+  });
+
+  it("eligible stream and non-self liquidity at a tick: BORROW enabled with no caption", () => {
+    hookData.streams = [eligibleStream()];
+    hookData.liquidity = [otherLenderLiquidity()];
+    renderTable({ markets: [market] });
+    fireEvent.click(screen.getAllByRole("button", { name: /ovrfloTESTA/ })[0]);
+    expect(screen.getByRole("button", { name: "BORROW" })).toBeEnabled();
+    expect(screen.queryByText("NO LIQUIDITY POSTED AT ANY RATE")).not.toBeInTheDocument();
+  });
+
+  it("self-owned liquidity only: still NO LIQUIDITY POSTED AT ANY RATE (cannot borrow against own supply)", () => {
+    hookData.streams = [eligibleStream()];
+    hookData.liquidity = [{ ...otherLenderLiquidity(), lender: walletState.address }];
+    renderTable({ markets: [market] });
+    fireEvent.click(screen.getAllByRole("button", { name: /ovrfloTESTA/ })[0]);
+    expect(screen.getByRole("button", { name: "BORROW" })).toBeDisabled();
+    expect(screen.getByText("NO LIQUIDITY POSTED AT ANY RATE")).toBeInTheDocument();
+  });
+
+  it("liquidity read still loading: BORROW disabled but does not yet claim no liquidity", () => {
+    hookData.streams = [eligibleStream()];
+    hookData.liquidityLoading = true;
+    renderTable({ markets: [market] });
+    fireEvent.click(screen.getAllByRole("button", { name: /ovrfloTESTA/ })[0]);
+    expect(screen.getByRole("button", { name: "BORROW" })).toBeDisabled();
+    expect(screen.queryByText("NO LIQUIDITY POSTED AT ANY RATE")).not.toBeInTheDocument();
+  });
+
+  it("lending params still loading: BORROW disabled but does not yet claim no liquidity", () => {
+    hookData.streams = [eligibleStream()];
+    hookData.lendingLoading = true;
+    renderTable({ markets: [market] });
+    fireEvent.click(screen.getAllByRole("button", { name: /ovrfloTESTA/ })[0]);
+    expect(screen.getByRole("button", { name: "BORROW" })).toBeDisabled();
+    expect(screen.queryByText("NO LIQUIDITY POSTED AT ANY RATE")).not.toBeInTheDocument();
+  });
+
+  it("no eligible streams outranks the no-liquidity caption", () => {
+    hookData.streams = [];
+    hookData.liquidity = [];
+    renderTable({ markets: [market] });
+    fireEvent.click(screen.getAllByRole("button", { name: /ovrfloTESTA/ })[0]);
+    expect(screen.getByRole("button", { name: "BORROW" })).toBeDisabled();
+    expect(screen.getByText("NO STREAMS AVAILABLE")).toBeInTheDocument();
+    expect(screen.queryByText("NO LIQUIDITY POSTED AT ANY RATE")).not.toBeInTheDocument();
   });
 
   it("WRAP lives behind the ADVANCED disclosure, collapsed by default", () => {

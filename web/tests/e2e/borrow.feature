@@ -3,8 +3,8 @@
 # depth, not their own wallet balance, so there is no wallet-balance guard to
 # violate (confirmed against borrow-form.test.tsx, which has no such case
 # either). "No liquidity posted" is the closest real analog — an empty ladder
-# that keeps the submit control disabled with a reason shown — and stands in
-# for it below.
+# that keeps the market-row control disabled with a reason shown — and stands
+# in for it below.
 Feature: Borrow against a stream
   Entry: BORROW action on a lending market card. Decision: selecting a stream,
   a liquidity rung, and a slippage tolerance. Exit: a new loan appears in the
@@ -32,16 +32,18 @@ Feature: Borrow against a stream
     When I expand the active market
     Then I see a "LOAN" position card
 
+  # Pre-gated at the market row: with an empty ladder the borrow flow never
+  # opens, so no APPROVE STREAM signature is ever requested for a borrow that
+  # could not fill. The modal keeps its own empty-ladder handling as defense in
+  # depth (covered by borrow-form.test.tsx), which is why this no longer clicks
+  # through to it.
   Scenario: Error state — no liquidity posted for this market
     Given my wallet holds an eligible stream
     And the frontend re-syncs with chain state
     When I expand the active market
-    And I click the "BORROW" button
-    Then the "BORROW AGAINST STREAM" modal is open
-    When I select the first available stream
-    And I click the "APPROVE STREAM" button
-    Then I see the caption "NO LIQUIDITY POSTED AT ANY RATE"
-    And the "BORROW" button is disabled
+    Then the "BORROW" button is disabled
+    And I see the caption "NO LIQUIDITY POSTED AT ANY RATE"
+    And no modal is open
 
   Scenario: Error state — invalid slippage
     Given a lender has posted liquidity for the active market

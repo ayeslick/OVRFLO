@@ -17,7 +17,13 @@ import { userFacingError } from "@/lib/errors";
 import { formatAprBps, formatId, formatTokenAmount } from "@/lib/format";
 
 import { applySlippageDown, isSeriesMatchedStream, repayMax } from "@/lib/modal-logic";
-import { convertApprovalNeeds, convertValidationError, depositCapStatus, type ConvertMode } from "@/lib/convert";
+import {
+  bufferedFeeApproveAmount,
+  convertApprovalNeeds,
+  convertValidationError,
+  depositCapStatus,
+  type ConvertMode,
+} from "@/lib/convert";
 import { useApprovalWriteFlows } from "@/hooks/useApprovalWriteFlows";
 import { useStaleRecovery } from "@/hooks/useStaleRecovery";
 import {
@@ -690,7 +696,9 @@ function ConvertForm({
           disabled={disabled}
           type="button"
           onClick={() => {
-            const approveAmount = mode === "wrap" ? amount : feeAmount;
+            // Wrap approves the exact amount it spends; only the deposit fee —
+            // which requotes between blocks — carries the 2% buffer (R9).
+            const approveAmount = mode === "wrap" ? amount : bufferedFeeApproveAmount(feeAmount);
             approveTx.writeContract({
               address: market.underlying,
               abi: erc20Abi,
