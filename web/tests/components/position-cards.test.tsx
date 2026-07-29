@@ -303,6 +303,38 @@ describe("degraded indexer states (R43/R44)", () => {
     expect(screen.queryByText("UNABLE TO LOAD LENDING POSITIONS")).not.toBeInTheDocument();
   });
 
+  it("warns when the cached set is empty, rather than rendering a confident blank", () => {
+    // The gap this closes: `stale` was only rendered inside the branch that had
+    // streams to show, so a cached-but-empty set fell through to "nothing here",
+    // warning and all — and PositionList returned null outright when the user
+    // held no other position. That is the case the warning exists for: the user
+    // acquires a stream while discovery is down, the cached set cannot know
+    // about it, and the app states an absence it cannot verify.
+    hookData.streams = [];
+    hookData.streamsError = new Error("indexer unreachable");
+    hookData.streamsStale = true;
+
+    renderList();
+
+    const notice = screen.getByText(/DISCOVERY IS UNREACHABLE/);
+    expect(notice).toBeInTheDocument();
+    expect(notice.textContent).toMatch(/WOULD NOT APPEAR HERE/);
+    // Stale is not unavailable — the recovery route belongs to the other state.
+    expect(screen.queryByText(/STREAM DISCOVERY UNAVAILABLE/)).not.toBeInTheDocument();
+  });
+
+  it("warns when the cached set holds only other markets' streams", () => {
+    // Same gap, reached the other way: the set is non-empty but nothing in it
+    // is eligible here, so `eligibleStreams` is empty just as above.
+    hookData.streams = [{ ...stream(7), asset: testAddress(0xdead) } as HeldStream];
+    hookData.streamsError = new Error("indexer unreachable");
+    hookData.streamsStale = true;
+
+    renderList();
+
+    expect(screen.getByText(/DISCOVERY IS UNREACHABLE/)).toBeInTheDocument();
+  });
+
   it("Covers AE8. With no cached set, names the direct-contract route instead of an empty list", () => {
     hookData.streamsError = new Error("indexer unreachable");
     hookData.streamsStale = false;

@@ -117,7 +117,22 @@ export function PositionList({ market, user, symbols, onAction }: Props) {
   const hasBorrowing = !onChainError && userLoans.length > 0;
   const hasStreams = !streamsUnavailable && eligibleStreams.length > 0;
 
-  if (!onChainError && !streamsUnavailable && !hasLending && !hasBorrowing && !hasStreams) {
+  // R43: a stale cache holding no eligible stream is still a statement the app
+  // cannot make. `stale` used to be rendered only inside the `hasStreams`
+  // branch, so a cached-but-empty set — or one whose streams all belong to other
+  // markets — fell through to "nothing here", warning and all. That is the exact
+  // case: the user acquires a stream while discovery is down, the cached set
+  // cannot know about it, and the section renders a confident blank. Whether the
+  // last known set happens to be empty says nothing about whether it is current.
+  //
+  // `indexerSync.lagging` deliberately does not join this condition. A few
+  // blocks behind is the resting state of a healthy indexer, so surfacing an
+  // empty STREAMS group on it would put a warning in front of every user who
+  // genuinely holds nothing. `stale` means discovery is erroring — exceptional,
+  // and worth interrupting for.
+  const showStreamsSection = streamsUnavailable || hasStreams || streamsStale;
+
+  if (!onChainError && !hasLending && !hasBorrowing && !showStreamsSection) {
     return null;
   }
 
@@ -220,7 +235,7 @@ export function PositionList({ market, user, symbols, onAction }: Props) {
             {SABLIER_LOCKUP_ADDRESS} USING YOUR STREAM ID.
           </div>
         </div>
-      ) : hasStreams ? (
+      ) : showStreamsSection ? (
         <div className="position-group">
           <div className="label mono">STREAMS</div>
           {/* R43: shown, not hidden, and actions stay enabled — every value on
@@ -228,7 +243,9 @@ export function PositionList({ market, user, symbols, onAction }: Props) {
               each action at submission. */}
           {streamsStale ? (
             <div className="label mono status-warning" role="status">
-              SHOWING LAST KNOWN STREAMS — DISCOVERY IS UNREACHABLE, VALUES ARE LIVE FROM SABLIER
+              {hasStreams
+                ? "SHOWING LAST KNOWN STREAMS — DISCOVERY IS UNREACHABLE, VALUES ARE LIVE FROM SABLIER"
+                : "DISCOVERY IS UNREACHABLE — THE LAST KNOWN SET HELD NO STREAMS FOR THIS MARKET. ONE ACQUIRED SINCE WOULD NOT APPEAR HERE."}
             </div>
           ) : indexerSync.lagging ? (
             <div className="label mono status-warning" role="status">
@@ -236,17 +253,19 @@ export function PositionList({ market, user, symbols, onAction }: Props) {
               MISSING
             </div>
           ) : null}
-          <div className="position-cards">
-            {eligibleStreams.map((stream) => (
-              <StreamCard
-                key={`stream-${stream.streamId}`}
-                stream={stream}
-                teaserBps={teaserBps}
-                ovrfloSymbol={ovrfloSymbol}
-                onAction={onAction}
-              />
-            ))}
-          </div>
+          {hasStreams ? (
+            <div className="position-cards">
+              {eligibleStreams.map((stream) => (
+                <StreamCard
+                  key={`stream-${stream.streamId}`}
+                  stream={stream}
+                  teaserBps={teaserBps}
+                  ovrfloSymbol={ovrfloSymbol}
+                  onAction={onAction}
+                />
+              ))}
+            </div>
+          ) : null}
         </div>
       ) : null}
     </div>

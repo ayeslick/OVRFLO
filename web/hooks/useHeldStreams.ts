@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useReadContracts } from "wagmi";
 import type { Address } from "viem";
@@ -56,8 +56,37 @@ export function useHeldStreams(user: Address | null | undefined) {
   // renders, not what sits on disk. A reload paying one discovery round trip is
   // the cheaper trade.
   const servingCache = Boolean(discovery.isError && discovery.data);
-  const cacheAgeMs = discovery.dataUpdatedAt ? Date.now() - discovery.dataUpdatedAt : Infinity;
-  const cacheExpired = servingCache && cacheAgeMs > MAX_STALE_MS;
+
+  // The cutoff is a deadline, not a render-time comparison. Comparing
+  // `Date.now()` against the cache age only answers the question on renders that
+  // happen for some other reason, and the consumers that matter have no clock:
+  // PositionSummary is mounted for the life of the page, none of its reads poll,
+  // and it re-renders only when a position actually changes. A cache that
+  // expired at minute ten went on backing CLAIM ALL until something unrelated
+  // rendered — so the discard R43 specifies never fired where it mattered most.
+  // Arming a timer at the deadline makes the expiry an event.
+  const staleDeadline =
+    discovery.isError && discovery.dataUpdatedAt ? discovery.dataUpdatedAt + MAX_STALE_MS : null;
+  const [deadlinePassed, setDeadlinePassed] = useState(false);
+  useEffect(() => {
+    if (staleDeadline === null) {
+      setDeadlinePassed(false);
+      return;
+    }
+    const remaining = staleDeadline - Date.now();
+    if (remaining <= 0) {
+      setDeadlinePassed(true);
+      return;
+    }
+    // A refetch that succeeds clears `isError`, which nulls the deadline and
+    // resets this — so a recovered indexer un-expires the cache rather than
+    // leaving a latched flag behind.
+    setDeadlinePassed(false);
+    const timer = setTimeout(() => setDeadlinePassed(true), remaining);
+    return () => clearTimeout(timer);
+  }, [staleDeadline]);
+
+  const cacheExpired = servingCache && deadlinePassed;
 
   const streamIds = useMemo(
     () => (cacheExpired ? [] : (discovery.data ?? [])),
@@ -92,12 +121,15 @@ export function useHeldStreams(user: Address | null | undefined) {
   });
 
   const streams = useMemo<HeldStream[]>(() => {
-    const ids: bigint[] = cacheExpired ? [] : (discovery.data ?? []);
     const results = chainReads.data;
     if (!results) return [];
 
+    // `streamIds`, not a second copy of the same expression: the results below
+    // are indexed positionally against the contracts array built from it, so two
+    // independently-derived id lists is an alignment bug waiting for one of them
+    // to be edited.
     const hydrated: HeldStream[] = [];
-    ids.forEach((streamId, index) => {
+    streamIds.forEach((streamId, index) => {
       const record = results[index * 3];
       const withdrawable = results[index * 3 + 1];
       const owner = results[index * 3 + 2];
@@ -129,7 +161,7 @@ export function useHeldStreams(user: Address | null | undefined) {
       });
     });
     return hydrated;
-  }, [cacheExpired, chainReads.data, discovery.data, user]);
+  }, [chainReads.data, streamIds, user]);
 
   return {
     streams,

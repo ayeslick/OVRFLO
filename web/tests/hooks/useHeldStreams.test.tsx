@@ -1,9 +1,10 @@
-import { describe, expect, it, vi } from "vitest";
-import { renderHook, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { Address } from "viem";
 import type { ReactNode } from "react";
 import { useHeldStreams } from "@/hooks/useHeldStreams";
+import { streamKeys } from "@/lib/query-keys";
 
 const USER = "0x0000000000000000000000000000000000000a11" as Address;
 const OTHER = "0x0000000000000000000000000000000000000b22" as Address;
@@ -223,5 +224,113 @@ describe("useHeldStreams — lifecycle", () => {
     const { result } = renderHook(() => useHeldStreams(USER), { wrapper });
     await waitFor(() => expect(result.current.streams).toHaveLength(1));
     expect(result.current.isLoading).toBe(false);
+  });
+});
+
+// R43: past ten minutes the cached id set is discarded rather than shown behind
+// a warning — an hour-old list of streams is not "slightly stale", it is a
+// different picture of the user's holdings.
+describe("useHeldStreams — the stale cutoff is a deadline, not a render-time check", () => {
+  beforeEach(() => {
+    // shouldAdvanceTime keeps waitFor working: it needs the clock to move on its
+    // own between polls, while still allowing a jump to the deadline.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+  });
+  afterEach(() => vi.useRealTimers());
+
+  function setup() {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const localWrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    );
+    return { queryClient, localWrapper };
+  }
+
+  it("discards the cache when the deadline passes with nothing else rendering", async () => {
+    // The bug this covers: the cutoff used to be `Date.now() - dataUpdatedAt`
+    // evaluated during render, and the consumer that matters most —
+    // PositionSummary — has no clock, none of its reads poll, and it re-renders
+    // only when a position changes. So the clock could run hours past the
+    // deadline while a ten-minute-old set went on backing CLAIM ALL. Nothing in
+    // this test renders the hook after the failure; the expiry has to fire on
+    // its own or not at all.
+    fetchHeldStreamIdsMock = vi
+      .fn()
+      .mockResolvedValueOnce([indexed(1n)])
+      .mockRejectedValue(new Error("indexer down"));
+    chainReadsReturn = { data: readsFor(onChainStream(), 5n, USER), isLoading: false, error: null };
+    const { queryClient, localWrapper } = setup();
+
+    const { result } = renderHook(() => useHeldStreams(USER), { wrapper: localWrapper });
+    await waitFor(() => expect(result.current.streams).toHaveLength(1));
+
+    await act(async () => {
+      await queryClient.refetchQueries({ queryKey: streamKeys.held(USER) });
+    });
+    // The error lands one commit after the refetch promise settles.
+    await waitFor(() => expect(result.current.stale).toBe(true));
+    expect(result.current.streams).toHaveLength(1);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10 * 60 * 1000 + 1);
+    });
+
+    expect(result.current.streams).toEqual([]);
+    expect(result.current.stale).toBe(false);
+    // Past the deadline there is nothing to show and no way to find out, so the
+    // caller must render the direct-contract route (R44) — not an empty list.
+    expect(result.current.unavailable).toBe(true);
+  });
+
+  it("keeps serving the cache right up to the deadline", async () => {
+    fetchHeldStreamIdsMock = vi
+      .fn()
+      .mockResolvedValueOnce([indexed(1n)])
+      .mockRejectedValue(new Error("indexer down"));
+    chainReadsReturn = { data: readsFor(onChainStream(), 5n, USER), isLoading: false, error: null };
+    const { queryClient, localWrapper } = setup();
+
+    const { result } = renderHook(() => useHeldStreams(USER), { wrapper: localWrapper });
+    await waitFor(() => expect(result.current.streams).toHaveLength(1));
+    await act(async () => {
+      await queryClient.refetchQueries({ queryKey: streamKeys.held(USER) });
+    });
+    await waitFor(() => expect(result.current.stale).toBe(true));
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10 * 60 * 1000 - 1000);
+    });
+
+    expect(result.current.streams).toHaveLength(1);
+    expect(result.current.stale).toBe(true);
+  });
+
+  it("un-expires when discovery recovers, rather than latching", async () => {
+    fetchHeldStreamIdsMock = vi
+      .fn()
+      .mockResolvedValueOnce([indexed(1n)])
+      .mockRejectedValueOnce(new Error("indexer down"))
+      .mockResolvedValue([indexed(1n)]);
+    chainReadsReturn = { data: readsFor(onChainStream(), 5n, USER), isLoading: false, error: null };
+    const { queryClient, localWrapper } = setup();
+
+    const { result } = renderHook(() => useHeldStreams(USER), { wrapper: localWrapper });
+    await waitFor(() => expect(result.current.streams).toHaveLength(1));
+    await act(async () => {
+      await queryClient.refetchQueries({ queryKey: streamKeys.held(USER) });
+    });
+    await waitFor(() => expect(result.current.stale).toBe(true));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10 * 60 * 1000 + 1);
+    });
+    expect(result.current.unavailable).toBe(true);
+
+    await act(async () => {
+      await queryClient.refetchQueries({ queryKey: streamKeys.held(USER) });
+    });
+
+    await waitFor(() => expect(result.current.unavailable).toBe(false));
+    expect(result.current.stale).toBe(false);
+    expect(result.current.streams).toHaveLength(1);
   });
 });
