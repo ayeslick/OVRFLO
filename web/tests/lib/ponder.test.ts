@@ -48,8 +48,12 @@ describe("createPonderClient", () => {
 });
 
 describe("null-base-URL handling differs by call: collapse vs surface", () => {
-  it("fetchHeldStreamIds collapses an unconfigured indexer to an empty array", async () => {
-    await expect(fetchHeldStreamIds(USER, undefined)).resolves.toEqual([]);
+  it("fetchHeldStreamIds throws on an unconfigured indexer rather than reporting no streams", async () => {
+    // Was: resolves to []. That is indistinguishable from "this user holds no
+    // streams", so an unconfigured indexer rendered a confident empty list —
+    // the exact reading R44 exists to prevent. The caller has to be able to
+    // tell "none" from "cannot tell".
+    await expect(fetchHeldStreamIds(USER, undefined)).rejects.toThrow(/not configured/i);
     expect(execute).not.toHaveBeenCalled();
   });
 

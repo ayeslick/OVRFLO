@@ -36,6 +36,13 @@ type SablierStream = {
  * is not the connected address is dropped rather than rendered: the indexer
  * naming an id is a hint, not a claim of ownership.
  */
+// R43: how long a cached stream set may be served after discovery starts
+// failing. Past this the set is discarded rather than shown behind a warning —
+// an hour-old list of streams is not "slightly stale", it is a different
+// picture of the user's holdings, and the direct-contract route in R44 is a
+// better answer than a confident wrong one.
+const MAX_STALE_MS = 10 * 60 * 1000;
+
 export function useHeldStreams(user: Address | null | undefined) {
   const discovery = useQuery({
     queryKey: streamKeys.held(user),
@@ -43,7 +50,19 @@ export function useHeldStreams(user: Address | null | undefined) {
     queryFn: () => fetchHeldStreamIds(user as Address),
   });
 
-  const streamIds = useMemo(() => discovery.data?.map((stream) => stream.streamId) ?? [], [discovery.data]);
+  // Cache lives in the in-memory query cache only — deliberately not persisted
+  // across reloads. Persisting it would put one address's stream set at rest in
+  // a possibly-shared browser, and the on-chain recipient re-check protects what
+  // renders, not what sits on disk. A reload paying one discovery round trip is
+  // the cheaper trade.
+  const servingCache = Boolean(discovery.isError && discovery.data);
+  const cacheAgeMs = discovery.dataUpdatedAt ? Date.now() - discovery.dataUpdatedAt : Infinity;
+  const cacheExpired = servingCache && cacheAgeMs > MAX_STALE_MS;
+
+  const streamIds = useMemo(
+    () => (cacheExpired ? [] : (discovery.data?.map((stream) => stream.streamId) ?? [])),
+    [cacheExpired, discovery.data],
+  );
 
   // Three reads per stream, batched into one multicall: the full record, the
   // live withdrawable amount (which the record does not carry), and the NFT
@@ -73,7 +92,7 @@ export function useHeldStreams(user: Address | null | undefined) {
   });
 
   const streams = useMemo<HeldStream[]>(() => {
-    const ids = discovery.data ?? [];
+    const ids = cacheExpired ? [] : (discovery.data ?? []);
     const results = chainReads.data;
     if (!results) return [];
 
@@ -110,11 +129,19 @@ export function useHeldStreams(user: Address | null | undefined) {
       });
     });
     return hydrated;
-  }, [chainReads.data, discovery.data, user]);
+  }, [cacheExpired, chainReads.data, discovery.data, user]);
 
   return {
     streams,
     isLoading: discovery.isLoading || chainReads.isLoading,
     error: discovery.error ?? chainReads.error,
+    // R43: discovery is failing but a usable cached set is still being served,
+    // hydrated from chain. Actions stay enabled — the contracts validate every
+    // one at submission, and blocking them reproduces the H-5 harm of a user
+    // unable to reach their own withdraw path through the app.
+    stale: servingCache && !cacheExpired,
+    // R44: nothing to show and no way to find out. The caller must render the
+    // direct-contract recovery route, never an empty list.
+    unavailable: Boolean(discovery.isError) && (!discovery.data || cacheExpired),
   };
 }

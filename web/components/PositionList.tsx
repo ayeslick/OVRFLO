@@ -10,6 +10,7 @@ import { useLoanBook } from "@/hooks/useLoanBook";
 import { symbolFor, type SymbolMap } from "@/hooks/useMarketSymbols";
 import { formatAprBps, formatId, formatTokenAmount } from "@/lib/format";
 import { formatBpsPct, loanOutstanding } from "@/lib/lending-math";
+import { SABLIER_LOCKUP_ADDRESS } from "@/lib/config";
 import { canCloseLoan, isSeriesMatchedStream } from "@/lib/modal-logic";
 import {
   loanCardState,
@@ -66,7 +67,12 @@ export function PositionList({ market, user, symbols, onAction }: Props) {
   // degrades on its own so an indexer hiccup can't hide on-chain positions
   // (e.g. a just-created LIQUIDITY position) behind a blanket error message.
   const onChainError = Boolean(liquidity.error || loanBook.error);
-  const streamsError = Boolean(streams.error);
+  // R43/R44: three distinct states, where there used to be one. "Unavailable"
+  // must never render as an empty list — a user with no way to see their
+  // streams needs the direct-contract route, not the impression that they hold
+  // nothing.
+  const streamsUnavailable = streams.unavailable;
+  const streamsStale = streams.stale;
 
   if (isLoading) {
     return <div className="empty mono">LOADING</div>;
@@ -103,9 +109,9 @@ export function PositionList({ market, user, symbols, onAction }: Props) {
   // read as "no on-chain positions either."
   const hasLending = !onChainError && (userLiquidity.length > 0 || userPools.length > 0);
   const hasBorrowing = !onChainError && userLoans.length > 0;
-  const hasStreams = !streamsError && eligibleStreams.length > 0;
+  const hasStreams = !streamsUnavailable && eligibleStreams.length > 0;
 
-  if (!onChainError && !streamsError && !hasLending && !hasBorrowing && !hasStreams) {
+  if (!onChainError && !streamsUnavailable && !hasLending && !hasBorrowing && !hasStreams) {
     return null;
   }
 
@@ -196,14 +202,29 @@ export function PositionList({ market, user, symbols, onAction }: Props) {
         </>
       )}
 
-      {streamsError ? (
+      {streamsUnavailable ? (
         <div className="position-group">
           <div className="label mono">STREAMS</div>
-          <div className="empty mono status-negative">UNABLE TO LOAD STREAMS</div>
+          {/* R44: names the recovery route rather than stopping at "unavailable".
+              Stream withdrawals do not depend on this app — Sablier's own
+              contract is reachable directly, and a user cut off from the UI
+              needs to know that, not be left assuming their funds are stuck. */}
+          <div className="empty mono status-negative">
+            STREAM DISCOVERY UNAVAILABLE — YOUR STREAMS ARE UNAFFECTED. WITHDRAW DIRECTLY FROM SABLIER AT{" "}
+            {SABLIER_LOCKUP_ADDRESS} USING YOUR STREAM ID.
+          </div>
         </div>
       ) : hasStreams ? (
         <div className="position-group">
           <div className="label mono">STREAMS</div>
+          {/* R43: shown, not hidden, and actions stay enabled — every value on
+              these cards is hydrated from Sablier, and the contracts validate
+              each action at submission. */}
+          {streamsStale ? (
+            <div className="label mono status-warning" role="status">
+              SHOWING LAST KNOWN STREAMS — DISCOVERY IS UNREACHABLE, VALUES ARE LIVE FROM SABLIER
+            </div>
+          ) : null}
           <div className="position-cards">
             {eligibleStreams.map((stream) => (
               <StreamCard

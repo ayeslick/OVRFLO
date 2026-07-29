@@ -61,7 +61,11 @@ export async function fetchBorrowDemand(
 
 export async function fetchHeldStreamIds(user: Address, baseUrl = ponderUrl, limit = DEFAULT_STREAM_LIMIT): Promise<HeldStream[]> {
   const client = createPonderClient(baseUrl);
-  if (!client) return [];
+  // R44: throws rather than returning [], matching fetchBorrowDemand. An empty
+  // array here is indistinguishable from "this user holds no streams", so the
+  // unconfigured case used to render a confident empty list — the exact reading
+  // R44 exists to prevent. The caller needs to be able to tell the two apart.
+  if (!client) throw new Error("Stream discovery indexer is not configured.");
 
   const normalized = user.toLowerCase() as Address;
   const result = await client.db.execute<StreamRow>(sql`
