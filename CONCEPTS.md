@@ -146,7 +146,7 @@ When that race makes the scenario's target action unreachable because a client-s
 
 The batch exit flow where a connected lender reviews and sequentially confirms all pending pool share claims and withdrawable Sablier stream balances from the position summary strip.
 
-Each step is a separate on-chain transaction: pool claims batch per lending contract via multicall, then individual stream withdrawals. The UI recomputes the plan from live data on resume rather than retrying stale calldata.
+Each step is a separate on-chain transaction: pool claims batch per lending contract via multicall, then individual stream withdrawals. The plan shown for review is a snapshot taken when the flow opens, but the plan actually submitted is recomputed from live data at the moment of confirmation — and again on resume — so work claimed elsewhere in the interval is never re-submitted. A recomputation that comes back empty is reported as such rather than treated as a completed queue.
 
 A step failure — including a transaction that mines but reverts on-chain, not only a signature rejection or transport error — halts the queue immediately. Already-confirmed steps stay checked off; resuming always re-plans from live data rather than retrying the step that failed.
 
@@ -161,6 +161,14 @@ A loan book is not an on-chain concept; it's the frontend's `useLoanBook` hook (
 The off-chain indexer the frontend queries for data assembled from historical chain events rather than a direct RPC read. Current consumers: held-stream discovery for a connected wallet, and the borrow-demand ladder.
 
 Ponder is a different reliability domain than a direct on-chain read: it can lag behind chain head while backfilling, or be briefly unreachable, independent of whether RPC reads are succeeding at the same moment. Frontend surfaces that combine Ponder-sourced data with on-chain data should treat a Ponder failure and an on-chain read failure as distinct, independently-degrading states rather than folding them into one combined error or loading flag.
+
+Ponder is also a different *trust* domain, not only a different reliability one — see Stream discovery for the rule governing which questions it is allowed to answer.
+
+### Stream discovery
+
+Finding which Sablier streams a connected wallet may hold. The indexer answers this one question and nothing else; every value the app then displays or acts on is read from Sablier directly.
+
+The split is a trust boundary, not an optimisation. An indexer naming a stream id is a hint, not a claim of ownership — a stream whose on-chain owner is not the connected address is dropped rather than rendered, and the fields that decide whether a stream is eligible for an action are always re-read from chain. Discovery results are also three-valued: streams, no streams, and *unavailable*. The third must never be presented as the second, since "you hold nothing" and "this list cannot be trusted" call for opposite user responses. A previously-discovered set may be served past a discovery failure only within a bounded staleness window, after which it is discarded rather than shown behind a warning.
 
 ### Position groups
 

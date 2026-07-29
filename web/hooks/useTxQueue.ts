@@ -6,9 +6,9 @@ import { useWaitForTransactionReceipt, useWriteContract } from "wagmi";
 import { encodeFunctionData } from "viem";
 import type { Address } from "viem";
 import { ovrfloLendingAbi, sablierLockupAbi } from "@/lib/abis";
-import { SABLIER_LOCKUP_ADDRESS } from "@/lib/config";
+import { chainId as configuredChainId, SABLIER_LOCKUP_ADDRESS } from "@/lib/config";
 import type { QueuedTx } from "@/lib/claim-all";
-import { invalidateAllOnChainReads, scheduleHeldStreamsRetry } from "@/lib/invalidate";
+import { invalidateOnChainReads, scheduleHeldStreamsRetry } from "@/lib/invalidate";
 import { MAX_UINT128 } from "@/lib/lending-math";
 
 export type QueueRowStatus = "pending" | "signing" | "confirming" | "confirmed" | "failed";
@@ -35,12 +35,20 @@ export function useTxQueue(user?: Address) {
   const previousUser = useRef(user);
   const userRef = useRef(user);
   userRef.current = user;
+  // R42/M-7: the signer the queue was started for. The pause effect and the
+  // receipt-advance effect run in the same commit when a receipt lands on the
+  // render where `user` changed, and the advance effect's closure still holds
+  // the pre-update `paused === false` — so it fires the next transaction at the
+  // new signer. A ref is read at execution time rather than captured in a
+  // closure, so it closes the window regardless of effect ordering.
+  const queueOwner = useRef<Address | undefined>(undefined);
   const cancelRetry = useRef<(() => void) | undefined>(undefined);
 
   const execute = useCallback(
     (tx: QueuedTx) => {
       if (tx.kind === "pool-claims") {
         write.writeContract({
+          chainId: configuredChainId,
           address: tx.lending,
           abi: ovrfloLendingAbi,
           functionName: "multicall",
@@ -58,6 +66,7 @@ export function useTxQueue(user?: Address) {
         const to = userRef.current;
         if (!to) return;
         write.writeContract({
+          chainId: configuredChainId,
           address: SABLIER_LOCKUP_ADDRESS,
           abi: sablierLockupAbi,
           functionName: "withdrawMax",
@@ -72,6 +81,7 @@ export function useTxQueue(user?: Address) {
     (plan: QueuedTx[]) => {
       if (plan.length === 0) return;
       handledHash.current = undefined;
+      queueOwner.current = userRef.current;
       write.reset();
       setRows(plan.map((tx) => ({ tx, status: "pending" as const })));
       setIndex(0);
@@ -88,6 +98,9 @@ export function useTxQueue(user?: Address) {
       const confirmed = rows.filter((row) => row.status === "confirmed");
       const next = [...confirmed, ...freshPlan.map((tx) => ({ tx, status: "pending" as const }))];
       handledHash.current = undefined;
+      // Resuming after a signer switch re-owns the queue for the new signer,
+      // which is explicit and intended — unlike the auto-advance path.
+      queueOwner.current = userRef.current;
       write.reset();
       setRows(next);
       setIndex(confirmed.length);
@@ -125,7 +138,25 @@ export function useTxQueue(user?: Address) {
       setRunning(false);
       return;
     }
-    invalidateAllOnChainReads(queryClient, userRef.current);
+    // R39: the queue alternates between the lending market (pool-share claims)
+    // and Sablier (stream withdrawals), so scope to those rather than the whole
+    // cache. Both move stream state, hence streams: true.
+    //
+    // The payout token goes in the scope too. Every row in this queue pays the
+    // user in an ERC-20 — ovrfloToken from `_claimFair`, the stream's asset from
+    // `withdrawMax` — and that balance is read against the *token* address, not
+    // against the contract the transaction was sent to. Without it the CLAIMABLE
+    // and balance figures behind this modal keep showing pre-claim numbers,
+    // which is the one thing a user checks straight after claiming.
+    const claimed = rows[index]?.tx;
+    invalidateOnChainReads(queryClient, {
+      contracts: [
+        claimed?.kind === "pool-claims" ? claimed.lending : SABLIER_LOCKUP_ADDRESS,
+        ...(claimed?.asset ? [claimed.asset] : []),
+      ],
+      user: userRef.current,
+      streams: true,
+    });
     cancelRetry.current?.();
     cancelRetry.current = scheduleHeldStreamsRetry(queryClient, userRef.current);
     const confirmedIndex = index;
@@ -133,8 +164,12 @@ export function useTxQueue(user?: Address) {
     setRows((current) => current.map((row, i) => (i === confirmedIndex ? { ...row, status: "confirmed" } : row)));
     setIndex(nextIndex);
     write.reset();
-    if (paused || nextIndex >= rows.length) {
+    // Read the owner from the ref, not from `paused`: on the commit where the
+    // signer changed, `paused` here is still the stale `false`.
+    const signerChanged = queueOwner.current !== undefined && queueOwner.current !== userRef.current;
+    if (paused || signerChanged || nextIndex >= rows.length) {
       setRunning(false);
+      if (signerChanged) setPaused(true);
       return;
     }
     execute(rows[nextIndex].tx);

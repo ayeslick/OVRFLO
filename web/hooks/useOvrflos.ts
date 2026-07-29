@@ -76,12 +76,19 @@ export function useOvrflos(factory: Address = factoryAddress) {
 
   return {
     vaults,
+    // L-2: the 100-cap was silent, unlike the 500-cap which at least warned.
+    tooLarge: count > MAX_VAULT_ENUMERATION,
     isLoading: countRead.isLoading || vaultReads.isLoading || infoReads.isLoading,
     error: countRead.error ?? vaultReads.error ?? infoReads.error,
   };
 }
 
+// Caps both the vault enumeration and each vault's market enumeration — every
+// caller of bigintToSafeLength truncates at the same bound, so anything
+// reporting truncation compares against this.
+export const MAX_VAULT_ENUMERATION = 100n;
+
 export function bigintToSafeLength(value: bigint) {
-  if (value > 100n) return 100;
+  if (value > MAX_VAULT_ENUMERATION) return Number(MAX_VAULT_ENUMERATION);
   return Number(value);
 }

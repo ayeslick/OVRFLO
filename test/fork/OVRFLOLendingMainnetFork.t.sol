@@ -279,6 +279,19 @@ contract OVRFLOLendingMainnetForkTest is OVRFLOForkBase {
         (ok,) = address(sablier).call(abi.encodeCall(ISablierV2LockupLinear.withdraw, (streamId, LENDER, withdrawable)));
         assertFalse(ok, "lender should not be able to withdraw");
 
+        // The version-discriminating case, and the only one that disproves
+        // audit-2026-07-28 H-1. The three cases above all pass `to` = caller,
+        // which reverts under v1.1 AND under the later ACL that made
+        // `to == recipient` permissionless — so they cannot tell the two apart.
+        // Pushing a withdrawal TO the recipient (the lending market) is exactly
+        // what H-1 claims a third party can do: permitted post-v1.1, refused by
+        // the v1.1 bytecode deployed here.
+        vm.prank(stranger);
+        (ok,) = address(sablier).call(
+            abi.encodeCall(ISablierV2LockupLinear.withdraw, (streamId, address(lending), withdrawable))
+        );
+        assertFalse(ok, "stranger must not push a withdrawal to the recipient (v1.1 ACL, disproves H-1)");
+
         // Stream withdrawn amount unchanged
         assertEq(sablier.getWithdrawnAmount(streamId), 0, "no withdrawal should have succeeded");
     }

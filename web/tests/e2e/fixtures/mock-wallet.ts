@@ -1,5 +1,6 @@
 // KTD6: the E2E-only wagmi mock connector itself lives in `lib/wagmi.ts`
-// (`e2eConfig`, gated behind `NEXT_PUBLIC_E2E=1`) — it auto-connects on page
+// (`walletConfig` in tests/e2e/support/WalletRuntime.tsx, selected by the
+// build-time `wallet-runtime` alias under E2E_WALLET_RUNTIME=1) — it auto-connects on page
 // load via wagmi's own reconnect-on-mount, so no scenario ever has to drive
 // the real Connect-Wallet/WalletConnect UI. This file is the Playwright-side
 // half: the well-known addresses step definitions assert against and arrange

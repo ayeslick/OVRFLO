@@ -1,11 +1,22 @@
 import { describe, expect, it } from "vitest";
 import { parseUnits, type Address } from "viem";
-import { formatAddress, formatAprBps, formatId, formatMaturity, formatTokenAmount } from "@/lib/format";
+import {
+  formatAddress,
+  formatAprBps,
+  formatCountdown,
+  formatId,
+  formatMaturityDate,
+  formatMaturityId,
+  formatTokenAmount,
+} from "@/lib/format";
 import { formatBpsPct } from "@/lib/lending-math";
 
 describe("formatTokenAmount", () => {
-  it("carries fractional rounding into the whole amount", () => {
-    expect(formatTokenAmount(parseUnits("1.995", 18), "wstETH")).toBe("2.00 wstETH");
+  it("floors rather than rounding up, so a balance is never overstated (R21/M-14)", () => {
+    // Was "2.00" under round-half-up. Displaying more than the user holds
+    // invites them to spend a unit they do not have and eat the revert.
+    expect(formatTokenAmount(parseUnits("1.995", 18), "wstETH")).toBe("1.99 wstETH");
+    expect(formatTokenAmount(parseUnits("0.99999", 18), "wstETH")).toBe("0.9999 wstETH");
   });
 
   it("renders a dash placeholder when the value is undefined", () => {
@@ -22,11 +33,10 @@ describe("formatTokenAmount", () => {
     expect(formatTokenAmount(parseUnits("2.5", 6), "usdc", 6)).toBe("2.50 usdc");
   });
 
-  it("keeps 4 decimals when rounding a sub-1 value carries into a whole number", () => {
-    // 0.999999999999999999 rounds to 1 at 4 decimals, but the decimal COUNT was
-    // already locked to 4 by the pre-rounding whole===0n check, so the display
-    // is "1.0000", not "1.00" — a real edge case, not just a rounding nicety.
-    expect(formatTokenAmount(999_999_999_999_999_999n, "wstETH")).toBe("1.0000 wstETH");
+  it("never lets a sub-1 value display as a whole unit", () => {
+    // Under round-half-up this read "1.0000" — a balance one wei short of 1
+    // presented as a full unit, which is the exact overstatement M-14 names.
+    expect(formatTokenAmount(999_999_999_999_999_999n, "wstETH")).toBe("0.9999 wstETH");
   });
 });
 
@@ -59,13 +69,25 @@ describe("formatAddress", () => {
 });
 
 describe("formatMaturity / formatId", () => {
-  it("formats a UTC maturity date and handles unknowns", () => {
-    expect(formatMaturity(1782345600n)).toBe("Jun 25, 2026");
-    expect(formatMaturity(undefined)).toBe("Maturity unknown");
+  it("formats the bare date for callers supplying their own prose", () => {
+    expect(formatMaturityDate(1782345600n)).toBe("Jun 25, 2026");
+    expect(formatMaturityDate(undefined)).toBe("unknown");
+  });
+
+  it("formats the compact identifier form (L-10)", () => {
+    expect(formatMaturityId(1782345600n)).toBe("25JUN26");
+    expect(formatMaturityId(undefined)).toBe("—");
+  });
+
+  it("formats the countdown with hours, flooring both parts (L-10)", () => {
+    // Days alone hid up to 23 hours of remaining term.
+    expect(formatCountdown(142n * 86_400n + 6n * 3_600n + 59n)).toBe("142d 06h");
+    expect(formatCountdown(0n)).toBe("0d 00h");
+    expect(formatCountdown(-5n)).toBe("0d 00h");
   });
 
   it("treats a zero timestamp as unknown (the epoch is never a real maturity)", () => {
-    expect(formatMaturity(0n)).toBe("Maturity unknown");
+    expect(formatMaturityDate(0n)).toBe("unknown");
   });
 
   it("prefixes ids with a hash or dashes unknowns", () => {

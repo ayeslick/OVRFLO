@@ -9,6 +9,8 @@ import { useTxQueue } from "@/hooks/useTxQueue";
 const userA = "0x0000000000000000000000000000000000000a11" as Address;
 const userB = "0x0000000000000000000000000000000000000b22" as Address;
 const lending = "0x00000000000000000000000000000000000000aa" as Address;
+// Both claim kinds pay out in the market ovrfloToken.
+const asset = "0x00000000000000000000000000000000000000cc" as Address;
 
 const wagmiState = {
   writeContract: vi.fn(),
@@ -45,8 +47,8 @@ vi.mock("wagmi", () => ({
 }));
 
 const plan: QueuedTx[] = [
-  { kind: "pool-claims", lending, loanIds: [1n, 2n] },
-  { kind: "stream-claim", streamId: 7n },
+  { kind: "pool-claims", lending, loanIds: [1n, 2n], asset },
+  { kind: "stream-claim", streamId: 7n, asset },
 ];
 
 function setup(user: Address | undefined = userA) {
@@ -87,6 +89,29 @@ beforeEach(() => {
 });
 
 describe("useTxQueue", () => {
+  it("invalidates the payout token's reads, not only the contract it called", () => {
+    // Every row in this queue pays the user an ERC-20 — ovrfloToken from
+    // _claimFair, the stream's asset from withdrawMax — and that balance is read
+    // against the token address, not the transaction's `to`. Scoping to `to`
+    // alone left CLAIMABLE and the balance behind this modal showing pre-claim
+    // numbers, which is the first thing a user checks after claiming.
+    const queryClient = new QueryClient();
+    const balanceKey = ["readContract", { address: asset, functionName: "balanceOf", args: [userA] }];
+    queryClient.setQueryData(balanceKey, 1n);
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    );
+    const { result, rerender } = renderHook(({ u }: { u?: Address }) => useTxQueue(u), {
+      wrapper,
+      initialProps: { u: userA },
+    });
+
+    act(() => result.current.start([{ kind: "pool-claims", lending, loanIds: [1n], asset }]));
+    confirmCurrent(() => rerender({ u: userA }), "0xhash1");
+
+    expect(queryClient.getQueryState(balanceKey)?.isInvalidated).toBe(true);
+  });
+
   it("does not sign anything until start is called", () => {
     setup();
     expect(wagmiState.writeContract).not.toHaveBeenCalled();
@@ -123,7 +148,7 @@ describe("useTxQueue", () => {
 
     // Resume with a fresh plan (stream now partially claimed elsewhere -> new plan)
     wagmiState.writeError = null;
-    const fresh: QueuedTx[] = [{ kind: "stream-claim", streamId: 7n }];
+    const fresh: QueuedTx[] = [{ kind: "stream-claim", streamId: 7n, asset }];
     act(() => result.current.resume(fresh));
     expect(result.current.rows[0].status).toBe("confirmed");
     expect(result.current.rows).toHaveLength(2);
@@ -136,7 +161,7 @@ describe("useTxQueue", () => {
     // outcome — a reverted tx (e.g. claiming an already-claimed stream) still
     // mines a receipt with no write/receipt error, only `data.status`.
     const { result, rerender, invalidateSpy } = setup();
-    act(() => result.current.start([{ kind: "stream-claim", streamId: 7n }]));
+    act(() => result.current.start([{ kind: "stream-claim", streamId: 7n, asset }]));
     expect(wagmiState.writeContract).toHaveBeenCalledTimes(1);
 
     revertCurrent(() => rerender({ u: userA }), "0xhash1");
@@ -162,5 +187,61 @@ describe("useTxQueue", () => {
     expect(result.current.rows[0].status).toBe("confirmed");
     expect(result.current.running).toBe(false);
     expect(wagmiState.writeContract).toHaveBeenCalledTimes(1);
+  });
+});
+
+// R42/M-7: the pause effect and the receipt-advance effect run in the same
+// commit when a receipt lands on the render where `user` changed, and the
+// advance effect's closure still holds the pre-update `paused === false`. It
+// therefore fired the next transaction at the NEW signer — a wallet prompt the
+// user never initiated, for the previous account's stream. It fails closed
+// on-chain (Sablier rejects a non-recipient), but the prompt is the harm.
+describe("useTxQueue — signer switch cannot be beaten (R42)", () => {
+  it("does not advance when the receipt and the signer change land together", () => {
+    const { result, rerender } = setup();
+    act(() => result.current.start(plan));
+    expect(wagmiState.writeContract).toHaveBeenCalledTimes(1);
+
+    // The commit that both confirms tx 1 and switches the signer — the exact
+    // interleaving that used to slip a second transaction through.
+    wagmiState.hash = "0xhash1";
+    wagmiState.receiptSuccess = true;
+    act(() => rerender({ u: userB }));
+
+    expect(result.current.rows[0].status).toBe("confirmed");
+    // The second transaction must NOT have been dispatched.
+    expect(wagmiState.writeContract).toHaveBeenCalledTimes(1);
+    expect(result.current.running).toBe(false);
+    expect(result.current.paused).toBe(true);
+  });
+
+  it("still advances normally while the signer is unchanged", () => {
+    // Guard against over-correction: the ref check must only stop the queue on
+    // an actual signer change, not on every confirmation.
+    const { result, rerender } = setup();
+    act(() => result.current.start(plan));
+
+    confirmCurrent(() => rerender({ u: userA }), "0xhash1");
+
+    expect(result.current.rows[0].status).toBe("confirmed");
+    expect(wagmiState.writeContract).toHaveBeenCalledTimes(2);
+  });
+
+  it("re-owns the queue for the new signer on an explicit resume", () => {
+    // Resuming after a switch is the user's deliberate act, unlike auto-advance.
+    const { result, rerender } = setup();
+    act(() => result.current.start(plan));
+    act(() => rerender({ u: userB }));
+
+    wagmiState.hash = "0xhash1";
+    wagmiState.receiptSuccess = true;
+    act(() => rerender({ u: userB }));
+    const beforeResume = wagmiState.writeContract.mock.calls.length;
+
+    wagmiState.receiptSuccess = false;
+    wagmiState.hash = undefined;
+    act(() => result.current.resume([plan[1]]));
+
+    expect(wagmiState.writeContract.mock.calls.length).toBe(beforeResume + 1);
   });
 });

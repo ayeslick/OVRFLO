@@ -50,7 +50,11 @@ BOOT_NO_UI=1 tools/scripts/bootstrap-local.sh
 echo "[3/4] starting the E2E dev server in the background"
 (
   cd web
-  NEXT_PUBLIC_E2E=1 nohup npm run dev >"../$WEB_LOG" 2>&1 &
+  # E2E_WALLET_RUNTIME (not NEXT_PUBLIC_*) selects the mock wallet runtime via
+  # the Turbopack alias in next.config.ts. Read in Node at dev-server start, so
+  # it is never inlined into a client bundle and a production `next build`
+  # cannot reach the mock connector by inheriting a stray env var.
+  E2E_WALLET_RUNTIME=1 nohup npm run dev >"../$WEB_LOG" 2>&1 &
   echo $! > "../$WEB_PID_FILE"
 )
 READY=0
@@ -77,5 +81,5 @@ echo "=== e2e testbed ready ==="
 echo "app        : http://localhost:3000  (log: $WEB_LOG)"
 echo "rpc        : http://127.0.0.1:8545  (log: .bootstrap.anvil.log)"
 echo "ponder sql : http://localhost:42069/sql  (log: .bootstrap.ponder.log)"
-echo "run tests  : cd web && NEXT_PUBLIC_E2E=1 npx playwright test [path] [-g \"<pattern>\"]"
+echo "run tests  : cd web && npx playwright test [path] [-g \"<pattern>\"]"
 echo "teardown   : tools/scripts/bootstrap-clean.sh local"

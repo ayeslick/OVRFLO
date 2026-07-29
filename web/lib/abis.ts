@@ -59,6 +59,39 @@ export const sablierLockupAbi = [
   },
   {
     type: "function",
+    name: "getStream",
+    stateMutability: "view",
+    inputs: [{ name: "streamId", type: "uint256" }],
+    outputs: [
+      {
+        name: "stream",
+        type: "tuple",
+        components: [
+          { name: "sender", type: "address" },
+          { name: "startTime", type: "uint40" },
+          { name: "cliffTime", type: "uint40" },
+          { name: "isCancelable", type: "bool" },
+          { name: "wasCanceled", type: "bool" },
+          { name: "asset", type: "address" },
+          { name: "endTime", type: "uint40" },
+          { name: "isDepleted", type: "bool" },
+          { name: "isStream", type: "bool" },
+          { name: "isTransferable", type: "bool" },
+          {
+            name: "amounts",
+            type: "tuple",
+            components: [
+              { name: "deposited", type: "uint128" },
+              { name: "withdrawn", type: "uint128" },
+              { name: "refunded", type: "uint128" },
+            ],
+          },
+        ],
+      },
+    ],
+  },
+  {
+    type: "function",
     name: "approve",
     stateMutability: "nonpayable",
     inputs: [

@@ -8,8 +8,10 @@ import { useTxQueue, type QueueRowStatus } from "@/hooks/useTxQueue";
 import { planClaimAll, type QueuedTx } from "@/lib/claim-all";
 import { formatAddress, formatId } from "@/lib/format";
 
-export type ClaimAllPool = { lending: Address; loanId: bigint; claimable: bigint };
-export type ClaimAllStream = { streamId: bigint; withdrawable: bigint };
+// `asset` is the token the claim pays out in, carried through to the queue so a
+// confirmed claim invalidates the balance read it changed.
+export type ClaimAllPool = { lending: Address; loanId: bigint; claimable: bigint; asset: Address };
+export type ClaimAllStream = { streamId: bigint; withdrawable: bigint; asset: Address };
 
 type Props = {
   pools: ClaimAllPool[];
@@ -44,6 +46,9 @@ export function ClaimAllModal({ pools, streams, user, onClose }: Props) {
   const queue = useTxQueue(user);
   const headingRef = useRef<HTMLHeadingElement>(null);
   const [started, setStarted] = useState(false);
+  // Everything the user reviewed was claimed elsewhere before they confirmed.
+  // Saying so beats queueing nothing and reporting success.
+  const [nothingLeft, setNothingLeft] = useState(false);
   // The initial review plan; RESUME recomputes from the live pools/streams props.
   const [reviewPlan] = useState<QueuedTx[]>(() => planClaimAll({ pools, streams }));
 
@@ -102,6 +107,11 @@ export function ClaimAllModal({ pools, streams, user, onClose }: Props) {
         {queue.failed ? (
           <div className="label mono status-negative">TRANSACTION FAILED — RESUME RE-CHECKS CLAIMABLES</div>
         ) : null}
+        {nothingLeft ? (
+          <div className="label mono status-warning" role="status">
+            NOTHING LEFT TO CLAIM — THESE WERE CLAIMED ELSEWHERE WHILE THIS WAS OPEN
+          </div>
+        ) : null}
         {queue.done ? (
           <>
             <div className="label mono status-positive">ALL CLAIMS CONFIRMED</div>
@@ -115,8 +125,33 @@ export function ClaimAllModal({ pools, streams, user, onClose }: Props) {
             type="button"
             disabled={reviewPlan.length === 0}
             onClick={() => {
+              // R41/M-6: plan at submit, not at modal open. `reviewPlan` is the
+              // snapshot the user is looking at, which is the right thing to
+              // *show* — but between opening the modal and confirming, a stream
+              // can be claimed elsewhere or a pool share drawn down, and
+              // submitting the frozen plan would queue transactions that are
+              // already spent. RESUME always re-planned; the first confirm did
+              // not, which is the asymmetry M-6 identified.
+              //
+              // Planning from live props, not from a forced refetch, is the
+              // deliberate choice. A refetch would narrow the window rather than
+              // close it — the queue runs its transactions sequentially, so the
+              // fifth claim can be spent by another session while the second is
+              // still confirming, and no amount of pre-flight freshness covers
+              // that. The queue already answers it properly: a spent claim
+              // reverts, its row goes FAILED, and RESUME re-plans from live
+              // data. Adding the refetch would also mean planning after an
+              // await, and `pools` reaches this component through a child-effect
+              // to parent-state hop (PositionSummaryMarket's onData) — so what
+              // the plan read would depend on React flush ordering. A guarantee
+              // that holds by timing luck is worse than the honest revert.
+              const fresh = planClaimAll({ pools, streams });
+              if (fresh.length === 0) {
+                setNothingLeft(true);
+                return;
+              }
               setStarted(true);
-              queue.start(reviewPlan);
+              queue.start(fresh);
               // The confirm button unmounts once the queue runs — park focus on
               // the heading so it is never dropped to <body> (R3).
               headingRef.current?.focus();

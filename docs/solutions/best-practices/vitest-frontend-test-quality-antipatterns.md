@@ -3,6 +3,7 @@ title: Test Quality Patterns to Avoid in Vitest/React Frontend Tests
 date: 2026-07-27
 category: docs/solutions/best-practices
 module: web-test-suite-quality
+last_updated: 2026-07-29
 problem_type: best_practice
 component: testing_framework
 severity: medium
@@ -189,6 +190,30 @@ enough set of cases exists (a handful of error-name-to-copy mappings), assert
 the exact expected string per case instead of the negative check; the exact
 check is not meaningfully more code and catches mis-mappings the negative
 check cannot.
+
+### 8. Assert the count, and assert the degenerate input in both directions
+
+`expect(spy).toHaveBeenCalled()` passes whether the code did the right thing
+once or the wrong thing twice. When the behaviour under test is *which* things
+get touched, the count **is** the behaviour — assert it.
+
+For any predicate or filter, also assert the **empty input** explicitly. An
+empty set that matches everything and an empty set that matches nothing are
+both plausible implementations, they differ by one `return`, and the difference
+is invisible in every non-empty test.
+
+This is not theoretical. While building the R39 scoped invalidation, an edit to
+`useWriteFlow` silently failed to apply, so the touched-contract set was never
+populated. The predicate then matched **nothing** and post-write invalidation
+did nothing at all — strictly worse than the coarse behaviour it replaced, and
+with no error anywhere. The only thing that caught it was a test asserting a
+count: 3 expected, 2 observed. Both directions are now pinned
+(`web/tests/lib/invalidate.test.ts:125`).
+
+The general point: **a silently failed edit is not a no-op** when the code it
+targeted was already doing something. `toHaveBeenCalled()` cannot see the
+difference between "invalidates the right two things" and "invalidates
+nothing"; a count can.
 
 ## Why This Matters
 

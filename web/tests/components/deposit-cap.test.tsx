@@ -15,11 +15,16 @@ const readState = {
   totalDeposited: 0n as bigint,
 };
 
+vi.mock("@/hooks/useIndexerSync", () => ({
+  useIndexerSync: () => ({ syncedBlock: 100n, headBlock: 100n, lagBlocks: 0n, lagging: false }),
+}));
 vi.mock("wagmi", () => ({
   useConnection: () => ({
     status: "connected",
     addresses: [walletState.address],
+    chainId: 1,
   }),
+  useSwitchChain: () => ({ switchChain: () => {}, isPending: false, error: null }),
   useReadContract: (config?: { functionName?: string }) => {
     switch (config?.functionName) {
       case "marketDepositLimits":
@@ -71,7 +76,8 @@ vi.mock("@/hooks/useLending", () => ({
 vi.mock("@/hooks/useBorrowDemand", () => ({
   useBorrowDemand: () => ({ status: "ok", demand: [], peak: 0n }),
 }));
-vi.mock("@/lib/invalidate", () => ({
+vi.mock("@/lib/invalidate", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/invalidate")>()),
   invalidateAllOnChainReads: vi.fn(),
   scheduleHeldStreamsRetry: () => () => {},
 }));

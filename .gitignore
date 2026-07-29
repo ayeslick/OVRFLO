@@ -25,8 +25,25 @@ tools/ponder/test-results/
 # `.next/types` and `.next/dev/types` under Turbopack) — keep local only.
 web/next-env.d.ts
 
-# Dotenv file
+# Secrets. The root `.env` entry alone left real gaps: sibling variants
+# (.env.local, .env.production) and any .env at depth (tools/ponder/.env,
+# script/.env) were NOT covered — only web/ had a wildcard. Secrets belong
+# outside the repo entirely (see docs/agents/testing.md), but these patterns
+# make an accidental `git add` fail closed rather than depending on that.
 .env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+*.key
+*.pem
+*.p12
+*.keystore
+mnemonic.txt
+
+# Local tool/agent config, including anything mirroring ~/.config here.
+.config/
 .github/*
 .DS_Store
 .vscode
@@ -57,6 +74,9 @@ AGENTS.md
 .cursor/
 .bootstrap.*
 .scratch
+
+# deepsec workspace install / scan artifacts 
+.deepsec/*
 
 # Fuzz build artifacts (regenerated per run)
 fizz_data/

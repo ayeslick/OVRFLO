@@ -14,7 +14,8 @@ function testAddress(id: number): Address {
 }
 
 const WAD = 10n ** 18n;
-const walletState = { address: testAddress(0xa11) as Address | undefined };
+const walletState = { address: testAddress(0xa11) as Address | undefined, chainId: 1 as number | undefined };
+const switchChainMock = vi.fn();
 
 // Per-functionName defaults that keep every one of the 12 forms in a
 // renderable, non-error, non-"LOADING" state without per-row setup. Every
@@ -37,11 +38,16 @@ const readState: Record<string, unknown> = {
   liquidityPositions: [testAddress(0xa11), testAddress(6), 1000, 50n * WAD],
 };
 
+vi.mock("@/hooks/useIndexerSync", () => ({
+  useIndexerSync: () => ({ syncedBlock: 100n, headBlock: 100n, lagBlocks: 0n, lagging: false }),
+}));
 vi.mock("wagmi", () => ({
   useConnection: () => ({
     status: walletState.address ? "connected" : "disconnected",
     addresses: walletState.address ? [walletState.address] : [],
+    chainId: walletState.chainId,
   }),
+  useSwitchChain: () => ({ switchChain: switchChainMock, isPending: false, error: null }),
   useReadContract: (config?: { functionName?: string }) => {
     const key = config?.functionName ?? "";
     return { data: key in readState ? readState[key] : undefined, error: null };
@@ -120,7 +126,8 @@ vi.mock("@/hooks/useBorrowerLoans", () => ({
   useBorrowerLoans: () => ({ loans: borrowerLoansState.loans, tooLarge: false, isLoading: false, error: null }),
 }));
 
-vi.mock("@/lib/invalidate", () => ({
+vi.mock("@/lib/invalidate", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/invalidate")>()),
   invalidateAllOnChainReads: vi.fn(),
   scheduleHeldStreamsRetry: () => () => {},
 }));
@@ -171,6 +178,8 @@ function stepIndicatorAccent(container: HTMLElement) {
 
 beforeEach(() => {
   walletState.address = testAddress(0xa11);
+  walletState.chainId = 1;
+  switchChainMock.mockClear();
   writeFlows.calls = 0;
   writeFlows.first = flow();
   writeFlows.second = flow();
@@ -278,7 +287,7 @@ const table: Row[] = [
     action: { type: "adjust_rate", positionId: 1n },
     expectedAccent: "gold",
     steps: ["APPROVE", "SIGN", "CONFIRMED"],
-    buttonName: "MOVE LIQUIDITY",
+    buttonName: "ADJUST RATE",
     hasAmountInput: false,
     // Same ladder as supply: aprChoices(1000, 1200) = [1000, 1100, 1200].
     extraFieldCheck: () => expect(screen.getAllByRole("radio")).toHaveLength(3),
@@ -373,5 +382,264 @@ describe("ActionModal / FormBody — all 12 action types", () => {
     expect(call[0].args[1]).toBe((fee * 102n) / 100n);
     expect(call[0].args[1]).not.toBe(fee);
     expect(call[0].args[1]).not.toBe((1n << 256n) - 1n);
+  });
+});
+
+// R5/R6 — wrong-network write safety (finding H-2). The gate lives at FormBody
+// so all six forms are covered at one seam; the write layer carries its own
+// refusal so bypassing the gate is not enough to broadcast.
+describe("wrong-network gate (R5/R6)", () => {
+  const ALL_ACTIONS: ActionType[] = [
+    "supply",
+    "withdraw",
+    "claim_share",
+    "deposit",
+    "claim_matured",
+    "wrap",
+    "unwrap",
+    "borrow",
+    "claim_stream",
+    "adjust_rate",
+    "repay",
+    "close",
+  ];
+
+  it.each(ALL_ACTIONS)("'%s': a wrong chain replaces the form with a switch-network control", (type) => {
+    walletState.chainId = 137;
+    renderAction({ type } as ActiveAction);
+
+    expect(screen.getByRole("button", { name: /SWITCH TO NETWORK 1/ })).toBeInTheDocument();
+    expect(screen.getByText(/WRONG NETWORK/)).toBeInTheDocument();
+    // No form control survives to reach a write.
+    expect(screen.queryByPlaceholderText("0.00")).not.toBeInTheDocument();
+  });
+
+  it("names the connected chain so the user knows what to change from", () => {
+    walletState.chainId = 137;
+    renderAction({ type: "deposit" });
+    expect(screen.getByText(/CONNECTED TO 137, EXPECTED 1/)).toBeInTheDocument();
+  });
+
+  it("activating the control requests a switch to the configured chain", () => {
+    walletState.chainId = 137;
+    renderAction({ type: "deposit" });
+    fireEvent.click(screen.getByRole("button", { name: /SWITCH TO NETWORK 1/ }));
+    expect(switchChainMock).toHaveBeenCalledWith({ chainId: 1 });
+  });
+
+  it("no write is reachable while on the wrong chain", () => {
+    walletState.chainId = 137;
+    renderAction({ type: "deposit" });
+    expect(writeFlows.first.writeContract).not.toHaveBeenCalled();
+    expect(writeFlows.second.writeContract).not.toHaveBeenCalled();
+  });
+
+  it("the right chain renders the form normally", () => {
+    walletState.chainId = 1;
+    renderAction({ type: "deposit" });
+    expect(screen.queryByText(/WRONG NETWORK/)).not.toBeInTheDocument();
+    expect(screen.getByPlaceholderText("0.00")).toBeInTheDocument();
+  });
+
+  it("a disconnected wallet is not treated as wrong-network", () => {
+    // chainId is undefined while disconnected; showing a switch prompt there
+    // would displace the CONNECT WALLET path.
+    walletState.address = undefined;
+    walletState.chainId = undefined;
+    renderAction({ type: "deposit" });
+    expect(screen.queryByText(/WRONG NETWORK/)).not.toBeInTheDocument();
+  });
+});
+
+// R7 — post-confirm re-arm (finding H-3). Before this, `busy` dropped back to
+// false on confirmation while the amount field still held the original
+// arguments, so one more click resubmitted the same transaction.
+describe("post-confirm re-arm (R7)", () => {
+  // Forms with a free-text amount field, i.e. the ones where stale arguments
+  // survive a confirmation. AdjustRate and the SimpleAction family have no
+  // amount input to strand.
+  const AMOUNT_FORMS: ActiveAction[] = [
+    { type: "supply" },
+    { type: "deposit" },
+    { type: "wrap" },
+    { type: "unwrap" },
+  ];
+
+  function confirmActionTx() {
+    // The action flow is the second useWriteFlow call in every approve-then-act
+    // form (approveTx first, then actionTx) — see the alternating mock above.
+    writeFlows.second.isConfirmed = true;
+  }
+
+  it.each(AMOUNT_FORMS)("$type: the primary control is disarmed once confirmed", (action) => {
+    const { rerender } = renderAction(action);
+    fireEvent.change(screen.getByPlaceholderText("0.00"), { target: { value: "10" } });
+
+    confirmActionTx();
+    writeFlows.calls = 0;
+    rerender(
+      <FormBody
+        action={action}
+        market={market}
+        user={walletState.address}
+        symbols={symbols}
+        accent={ACTION_META[action.type].accent}
+        onClose={vi.fn()}
+      />,
+    );
+
+    // No enabled control can submit. CLOSE dismisses and MAX only fills the
+    // field — neither signs anything — so the assertion is about submitting
+    // controls, not about every button on screen.
+    const enabled = screen
+      .getAllByRole("button")
+      .filter((b) => !(b as HTMLButtonElement).disabled)
+      .map((b) => b.textContent ?? "");
+    expect(enabled.every((label) => /CLOSE|MAX/i.test(label))).toBe(true);
+  });
+
+  it("clears the amount field so spent arguments cannot be resubmitted", () => {
+    const action: ActiveAction = { type: "deposit" };
+    const { rerender } = renderAction(action);
+    fireEvent.change(screen.getByPlaceholderText("0.00"), { target: { value: "10" } });
+    expect(screen.getByPlaceholderText("0.00")).toHaveValue("10");
+
+    confirmActionTx();
+    writeFlows.calls = 0;
+    rerender(
+      <FormBody
+        action={action}
+        market={market}
+        user={walletState.address}
+        symbols={symbols}
+        accent={ACTION_META.deposit.accent}
+        onClose={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByPlaceholderText("0.00")).toHaveValue("");
+  });
+
+  it("shows CONFIRMED alongside the cleared field, so empty never reads as untouched", () => {
+    const action: ActiveAction = { type: "deposit" };
+    const { container, rerender } = renderAction(action);
+    fireEvent.change(screen.getByPlaceholderText("0.00"), { target: { value: "10" } });
+
+    confirmActionTx();
+    writeFlows.calls = 0;
+    rerender(
+      <FormBody
+        action={action}
+        market={market}
+        user={walletState.address}
+        symbols={symbols}
+        accent={ACTION_META.deposit.accent}
+        onClose={vi.fn()}
+      />,
+    );
+
+    expect(stepIndicatorText(container)).toContain("CONFIRMED");
+    expect(screen.getByRole("button", { name: /CLOSE/i })).toBeInTheDocument();
+  });
+
+  it("a form that has not confirmed keeps its control armed", () => {
+    // `wrap`, not `deposit`: deposit is separately gated on a previewDeposit
+    // read that beforeEach clears, which would mask what this asserts.
+    renderAction({ type: "wrap" });
+    fireEvent.change(screen.getByPlaceholderText("0.00"), { target: { value: "10" } });
+    expect(screen.getByPlaceholderText("0.00")).toHaveValue("10");
+    // Regression guard on over-correction: disarming must key on confirmation,
+    // not merely on an amount having been entered.
+    const enabled = screen.getAllByRole("button").filter((b) => !(b as HTMLButtonElement).disabled);
+    expect(enabled.length).toBeGreaterThan(0);
+  });
+});
+
+// R14/R22/R24 — amount-input accessibility and correctness (findings M-1, M-12, L-11).
+describe("amount input accessibility (R14/R24)", () => {
+  const WITH_AMOUNT: Array<{ action: ActiveAction; id: string }> = [
+    { action: { type: "supply" }, id: "supply-amount" },
+    { action: { type: "deposit" }, id: "convert-amount" },
+    { action: { type: "wrap" }, id: "convert-amount" },
+    { action: { type: "unwrap" }, id: "convert-amount" },
+    { action: { type: "borrow", streamId: 9n }, id: "borrow-amount" },
+  ];
+
+  it.each(WITH_AMOUNT)("$action.type: the field is labelled and reachable by its label", ({ action, id }) => {
+    renderAction(action);
+    const field = screen.getByPlaceholderText("0.00");
+    expect(field).toHaveAttribute("id", id);
+    // A label associated by `for`/`id` is what makes the field announceable;
+    // the placeholder is not a label.
+    expect(document.querySelector(`label[for="${id}"]`)).toBeTruthy();
+  });
+
+  it.each(WITH_AMOUNT)("$action.type: the field requests a decimal keypad", ({ action }) => {
+    renderAction(action);
+    expect(screen.getByPlaceholderText("0.00")).toHaveAttribute("inputmode", "decimal");
+  });
+
+  it("exposes validation state programmatically, not just as a CSS class", () => {
+    // Type more than the mocked wallet balance to trip INSUFFICIENT BALANCE.
+    readState.balanceOf = 1n;
+    renderAction({ type: "wrap" });
+    const field = screen.getByPlaceholderText("0.00");
+
+    expect(field).toHaveAttribute("aria-invalid", "false");
+
+    fireEvent.change(field, { target: { value: "500" } });
+
+    expect(field).toHaveAttribute("aria-invalid", "true");
+    // The message must be associated with the field, not merely nearby.
+    const describedBy = field.getAttribute("aria-describedby") ?? "";
+    expect(describedBy).toContain("convert-amount-error");
+    expect(document.getElementById("convert-amount-error")?.textContent).toMatch(/INSUFFICIENT BALANCE/);
+  });
+
+  it("shows a balance line and a MAX control where the amount is wallet-bounded", () => {
+    readState.balanceOf = 42n * WAD;
+    renderAction({ type: "wrap" });
+
+    expect(screen.getByText(/BALANCE/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "MAX" }));
+    expect(screen.getByPlaceholderText("0.00")).toHaveValue("42");
+  });
+
+  it("omits the balance line on borrow, which is bounded by ladder depth not wallet", () => {
+    renderAction({ type: "borrow", streamId: 9n });
+    expect(screen.queryByRole("button", { name: "MAX" })).not.toBeInTheDocument();
+  });
+
+  it("disables MAX at a zero balance rather than filling in 0", () => {
+    readState.balanceOf = 0n;
+    renderAction({ type: "wrap" });
+    expect(screen.getByRole("button", { name: "MAX" })).toBeDisabled();
+  });
+});
+
+// R26/L-7 — the same action carried different names in different places:
+// CLAIM LENDING SHARE / CLAIM SHARE / CLAIM, ADJUST RATE / MOVE LIQUIDITY,
+// REPAY LOAN / REPAY EARLY, UNWRAP CAPACITY / WRAP RESERVE EMPTY.
+describe("terminology consistency (R26)", () => {
+  it("claim_share reads the same in its title and its button", () => {
+    const { container } = renderAction({ type: "claim_share", positionId: 1n });
+    expect(ACTION_META.claim_share.title).toBe("CLAIM SHARE");
+    expect(screen.getByRole("button", { name: "CLAIM SHARE" })).toBeInTheDocument();
+    expect(container.textContent).not.toMatch(/CLAIM LENDING SHARE/);
+  });
+
+  it("adjust_rate's submit uses the same verb as its entry point and title", () => {
+    renderAction({ type: "adjust_rate", positionId: 1n });
+    expect(ACTION_META.adjust_rate.title).toBe("ADJUST RATE");
+    expect(screen.getByRole("button", { name: "ADJUST RATE" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "MOVE LIQUIDITY" })).not.toBeInTheDocument();
+  });
+
+  it("names the wrap reserve the same way whether or not it is empty", () => {
+    // Was UNWRAP CAPACITY in the modal and WRAP RESERVE EMPTY in the row detail
+    // for the same underlying quantity.
+    renderAction({ type: "unwrap" });
+    expect(screen.getByText(/WRAP RESERVE/)).toBeInTheDocument();
+    expect(screen.queryByText(/UNWRAP CAPACITY/)).not.toBeInTheDocument();
   });
 });

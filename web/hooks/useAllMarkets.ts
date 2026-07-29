@@ -5,7 +5,7 @@ import { useReadContracts } from "wagmi";
 import { ovrfloAbi, ovrfloFactoryAbi } from "@/lib/abis";
 import { factoryAddress, ZERO_ADDRESS } from "@/lib/config";
 import type { MarketInfo } from "@/lib/types";
-import { bigintToSafeLength, useOvrflos } from "./useOvrflos";
+import { bigintToSafeLength, MAX_VAULT_ENUMERATION, useOvrflos } from "./useOvrflos";
 
 export function useAllMarkets() {
   const ovrflos = useOvrflos(factoryAddress);
@@ -91,8 +91,17 @@ export function useAllMarkets() {
     return rows;
   }, [marketAddressReads.data, marketCountReads.data, ovrflos.vaults, seriesReads.data]);
 
+  // L-2: vaults cap at 100 and per-vault markets cap at 100 each, so the vault
+  // count alone does not say whether the list is complete — a single vault with
+  // 101 approved markets truncates while `ovrflos.tooLarge` stays false. Ask
+  // both, or the notice misses the exact case the cap exists for.
+  const marketsTruncated = (marketCountReads.data ?? []).some(
+    (result) => result.status === "success" && asBigInt(result.result) > MAX_VAULT_ENUMERATION,
+  );
+
   return {
     markets,
+    tooLarge: ovrflos.tooLarge || marketsTruncated,
     isLoading: ovrflos.isLoading || marketCountReads.isLoading || marketAddressReads.isLoading || seriesReads.isLoading,
     error: ovrflos.error ?? marketCountReads.error ?? marketAddressReads.error ?? seriesReads.error,
   };

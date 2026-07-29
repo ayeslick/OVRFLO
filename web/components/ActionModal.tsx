@@ -5,6 +5,8 @@ import { encodeFunctionData, formatUnits, parseUnits } from "viem";
 import type { Address } from "viem";
 import { useConnection, useReadContract } from "wagmi";
 import { useBorrowerLoans } from "@/hooks/useBorrowerLoans";
+import { useChainGuard } from "@/hooks/useChainGuard";
+import { useClearOnConfirm } from "@/hooks/useClearOnConfirm";
 import { useHeldStreams } from "@/hooks/useHeldStreams";
 import { useLending } from "@/hooks/useLending";
 import { useLendingLiquidity } from "@/hooks/useLendingLiquidity";
@@ -15,6 +17,7 @@ import { erc20Abi, ovrfloAbi, ovrfloLendingAbi, sablierLockupAbi } from "@/lib/a
 import { SABLIER_LOCKUP_ADDRESS } from "@/lib/config";
 import { userFacingError } from "@/lib/errors";
 import { formatAprBps, formatId, formatTokenAmount } from "@/lib/format";
+import { marketContracts } from "@/lib/invalidate";
 
 import { applySlippageDown, isSeriesMatchedStream, repayMax } from "@/lib/modal-logic";
 import {
@@ -56,7 +59,7 @@ export type Accent = "gold" | "cyan" | "neutral";
 export const ACTION_META: Record<ActionType, { title: string; accent: Accent }> = {
   supply: { title: "SUPPLY LIQUIDITY", accent: "gold" },
   withdraw: { title: "WITHDRAW LIQUIDITY", accent: "gold" },
-  claim_share: { title: "CLAIM LENDING SHARE", accent: "gold" },
+  claim_share: { title: "CLAIM SHARE", accent: "gold" },
   deposit: { title: "DEPOSIT PT", accent: "gold" },
   claim_matured: { title: "CLAIM MATURED PT", accent: "gold" },
   wrap: { title: "WRAP", accent: "neutral" },
@@ -87,6 +90,19 @@ export function FormBody({
   accent: Accent;
   onClose: () => void;
 }) {
+  const chainGuard = useChainGuard();
+  if (chainGuard.wrongChain) {
+    return (
+      <WrongNetworkNotice
+        connectedChainId={chainGuard.connectedChainId}
+        expectedChainId={chainGuard.expectedChainId}
+        onSwitch={chainGuard.switchChain}
+        isSwitching={chainGuard.isSwitching}
+        error={chainGuard.switchError}
+      />
+    );
+  }
+
   switch (action.type) {
     case "supply":
       return <SupplyForm market={market} symbols={symbols} accent={accent} onClose={onClose} />;
@@ -203,6 +219,111 @@ function CloseButton({ onClose }: { onClose: () => void }) {
   );
 }
 
+// R5: on a wrong chain every primary action control becomes this one. Gating at
+// FormBody covers all six forms' write paths at a single seam — a per-form gate
+// would have to be re-applied correctly six times and re-applied again for the
+// seventh form. Deliberately stronger than a header-only network indicator,
+// which the ETHSKILLS QA checklist calls insufficient for exactly this case.
+function WrongNetworkNotice({
+  connectedChainId,
+  expectedChainId,
+  onSwitch,
+  isSwitching,
+  error,
+}: {
+  connectedChainId?: number;
+  expectedChainId: number;
+  onSwitch: () => void;
+  isSwitching: boolean;
+  error: Error | null;
+}) {
+  return (
+    <div className="form-grid">
+      <div className="label mono status-warning">
+        WRONG NETWORK — CONNECTED TO {connectedChainId ?? "UNKNOWN"}, EXPECTED {expectedChainId}
+      </div>
+      <button className="button mono" type="button" onClick={onSwitch} disabled={isSwitching}>
+        {isSwitching ? "SWITCHING…" : `SWITCH TO NETWORK ${expectedChainId}`}
+      </button>
+      {error ? <div className="label mono status-negative">SWITCH REJECTED — CHANGE NETWORK IN YOUR WALLET</div> : null}
+    </div>
+  );
+}
+
+// R14/R24: the amount field was a bare `<input>` at all four call sites — no
+// programmatic label, no decimal input mode, and a validation state carried only
+// by a CSS class, which assistive technology cannot see. One primitive so the
+// four cannot drift, and so a fifth form inherits the behaviour.
+//
+// `max` is optional. Three forms bound the amount by a wallet balance and expose
+// MAX plus a balance line; BorrowForm does not, because a borrow is bounded by
+// posted ladder depth rather than by anything in the user's wallet — showing a
+// wallet balance there would describe the wrong constraint.
+function AmountInput({
+  id,
+  label,
+  value,
+  onChange,
+  error,
+  balance,
+  symbol,
+  max,
+  maxDisabled,
+}: {
+  id: string;
+  label: string;
+  value: string;
+  onChange: (next: string) => void;
+  error?: string | null;
+  balance?: bigint;
+  symbol?: string;
+  max?: () => void;
+  /// Repay bounds MAX by the outstanding obligation, not the wallet balance.
+  maxDisabled?: boolean;
+}) {
+  const errorId = `${id}-error`;
+  const balanceId = `${id}-balance`;
+  const describedBy = [error ? errorId : null, balance !== undefined ? balanceId : null]
+    .filter(Boolean)
+    .join(" ");
+
+  return (
+    <div className="amount-field">
+      <label className="label mono" htmlFor={id}>
+        {label}
+      </label>
+      <input
+        id={id}
+        className={`input mono ${error ? "input-error" : ""}`}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="0.00"
+        inputMode="decimal"
+        autoComplete="off"
+        aria-invalid={Boolean(error)}
+        aria-describedby={describedBy || undefined}
+      />
+      {balance !== undefined ? (
+        <div className="balance-row">
+          <span id={balanceId} className="label mono">
+            BALANCE {formatTokenAmount(balance, symbol ?? "")}
+          </span>
+          {max ? (
+            <button className="button mono" type="button" disabled={maxDisabled ?? balance === 0n} onClick={max}>
+              MAX
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+      {error ? (
+        <div id={errorId} className="label mono status-negative" role="alert">
+          {error}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function WalletChangedNotice({ onContinue }: { onContinue: () => void }) {
   return (
     <div className="form-grid">
@@ -270,7 +391,7 @@ function SupplyForm({
   const aprBps =
     selectedAprRaw !== null && ticks.includes(selectedAprRaw) ? selectedAprRaw : (ticks[0] ?? null);
 
-  const { approveTx, actionTx, busy } = useApprovalWriteFlows(connectedAddress);
+  const { approveTx, actionTx, zeroFirst, busy } = useApprovalWriteFlows(connectedAddress, marketContracts(market));
 
   const guard = useWalletChangeReset(connectedAddress, () => {
     setRaw("");
@@ -279,8 +400,8 @@ function SupplyForm({
   });
 
   useEffect(() => {
-    if (approveTx.error) setApprovedAmount(0n);
-  }, [approveTx.error]);
+    if (approveTx.hasFailed) setApprovedAmount(0n);
+  }, [approveTx.hasFailed]);
 
   const allowance = useReadContract({
     address: market.underlying,
@@ -297,14 +418,21 @@ function SupplyForm({
     query: { enabled: Boolean(connectedAddress) },
   });
 
+  useClearOnConfirm(actionTx.isConfirmed, () => setRaw(""));
+
   if (guard.walletChanged) return <WalletChangedNotice onContinue={guard.acknowledge} />;
 
   const allowanceAmount = allowance.data ?? 0n;
   const walletBalance = balanceOf.data ?? 0n;
   const validationError = amount > 0n && amount > walletBalance ? "INSUFFICIENT BALANCE" : null;
   const approvalCovers = allowanceAmount >= amount || approvedAmount >= amount;
+  // R7/H-3: `isConfirmed` belongs in the predicate, not just the step
+  // indicator. Without it `busy` drops back to false on confirmation and the
+  // button re-arms with the original arguments still populated — one more
+  // click submits the same transaction again.
   const disabled =
-    !market.lending || aprBps === null || amount === 0n || busy || Boolean(validationError) || matured;
+    !market.lending || aprBps === null || amount === 0n || busy || Boolean(validationError) || matured ||
+    actionTx.isConfirmed;
   const steps = ["APPROVE", "SIGN", "CONFIRMED"];
   const activeIndex = actionTx.isConfirmed || actionTx.isConfirming ? 2 : approvalCovers ? 1 : 0;
 
@@ -331,16 +459,32 @@ function SupplyForm({
         emptyText="LOADING RATES"
       />
       <DemandAnnotation status={demandState.status} />
-      <input className={`input mono ${validationError ? "input-error" : ""}`} value={raw} onChange={(e) => setRaw(e.target.value)} placeholder="0.00" />
-      {validationError ? <div className="label mono status-negative">{validationError}</div> : null}
+      <AmountInput
+        id="supply-amount"
+        label={`AMOUNT (${underlyingSymbol})`}
+        value={raw}
+        onChange={setRaw}
+        error={validationError}
+        balance={walletBalance}
+        symbol={underlyingSymbol}
+        max={() => setRaw(formatUnits18(walletBalance))}
+      />
       {matured ? <div className="label mono status-negative">MARKET MATURED — SUPPLY CLOSED</div> : null}
+      {/* R35/M-3: a lender cannot choose which way their liquidity is consumed —
+          a borrower may pledge a stream against it, or sell one into it outright
+          — and nothing said so before submitting. The two outcomes differ in
+          what the lender ends up holding, so it belongs before the decision, not
+          after. */}
+      <div className="label mono">
+        LIQUIDITY MAY BE FILLED AS A LOAN OR AS AN OUTRIGHT STREAM PURCHASE — YOU CANNOT RESTRICT IT TO ONE
+      </div>
       <div className="summary-row mono" aria-live="polite">
         SUPPLY {formatTokenAmount(amount, underlyingSymbol)} @ {aprBps !== null ? formatAprBps(aprBps) : "—"}
       </div>
       <StepIndicator
         steps={steps}
         activeIndex={activeIndex}
-        error={Boolean(approveTx.error ?? actionTx.error) || approveTx.isReverted || actionTx.isReverted}
+        error={approveTx.hasFailed || actionTx.hasFailed}
         accent={accent}
       />
       {!approvalCovers ? (
@@ -350,12 +494,7 @@ function SupplyForm({
           type="button"
           onClick={() => {
             if (!market.lending) return;
-            approveTx.writeContract({
-              address: market.underlying,
-              abi: erc20Abi,
-              functionName: "approve",
-              args: [market.lending, amount],
-            });
+            zeroFirst.submit(market.underlying, market.lending, amount, allowanceAmount);
             setApprovedAmount(amount);
           }}
         >
@@ -379,6 +518,11 @@ function SupplyForm({
           SUPPLY @ {aprBps !== null ? formatAprBps(aprBps) : "—"}
         </button>
       )}
+      {zeroFirst.clearing ? (
+        <div className="label mono status-warning" role="status">
+          THIS TOKEN REQUIRES CLEARING ITS ALLOWANCE FIRST — APPROVE TWICE
+        </div>
+      ) : null}
       <ApproveTxState tx={approveTx} label="APPROVE" />
       <TxState tx={actionTx} pendingLabel="SUPPLY" />
       {actionTx.isConfirmed ? <CloseButton onClose={onClose} /> : null}
@@ -405,7 +549,7 @@ function SimpleActionForm({
   const [pendingLabel, setPendingLabel] = useState<string | null>(null);
   const connectedAddress = connection.addresses?.[0];
 
-  const tx = useWriteFlow(connectedAddress ?? user);
+  const tx = useWriteFlow(connectedAddress ?? user, marketContracts(market));
 
   const guard = useWalletChangeReset(connectedAddress, () => setPendingLabel(null));
 
@@ -442,7 +586,7 @@ function SimpleActionForm({
         buttonText = "CLAIM SHARE";
         return () => {
           if (!market.lending) return;
-          setPendingLabel("CLAIM");
+          setPendingLabel("CLAIM SHARE");
           tx.writeContract({
             address: market.lending,
             abi: ovrfloLendingAbi,
@@ -456,7 +600,7 @@ function SimpleActionForm({
         buttonText = "CLAIM STREAM";
         return () => {
           if (!connectedAddress) return;
-          setPendingLabel("CLAIM");
+          setPendingLabel("CLAIM STREAM");
           tx.writeContract({
             address: SABLIER_LOCKUP_ADDRESS,
             abi: sablierLockupAbi,
@@ -488,10 +632,10 @@ function SimpleActionForm({
       <div className="summary-row mono" aria-live="polite">
         {summary}
       </div>
-      <StepIndicator steps={steps} activeIndex={activeIndex} error={Boolean(tx.error) || tx.isReverted} accent={accent} />
+      <StepIndicator steps={steps} activeIndex={activeIndex} error={tx.hasFailed} accent={accent} />
       <button
         className={`button ${accentClass(accent)} mono`}
-        disabled={!writeArgs || tx.isSigning || tx.isConfirming}
+        disabled={!writeArgs || tx.isSigning || tx.isConfirming || tx.isConfirmed}
         type="button"
         onClick={() => writeArgs?.()}
       >
@@ -522,15 +666,15 @@ function ConvertForm({
   const [raw, setRaw] = useState("");
   const [ptApprovedAmount, setPtApprovedAmount] = useState(0n);
   const [underlyingApprovedAmount, setUnderlyingApprovedAmount] = useState(0n);
-  const nowSeconds = useNowSeconds();
+  const nowSeconds = useNowSeconds(true);
   const amount = parseAmount(raw);
   const mode = action.type as ConvertMode;
   const connectedAddress = connection.addresses?.[0];
   const underlyingSymbol = symbolFor(symbols, market.underlying);
   const ovrfloSymbol = symbolFor(symbols, market.ovrfloToken);
 
-  const { approveTx, actionTx, busy } = useApprovalWriteFlows(connectedAddress);
-  const disabled = amount === 0n || busy;
+  const { approveTx, actionTx, zeroFirst, busy } = useApprovalWriteFlows(connectedAddress, marketContracts(market));
+  const disabled = amount === 0n || busy || actionTx.isConfirmed;
 
   const guard = useWalletChangeReset(connectedAddress, () => {
     setRaw("");
@@ -539,11 +683,11 @@ function ConvertForm({
   });
 
   useEffect(() => {
-    if (approveTx.error) {
+    if (approveTx.hasFailed) {
       setPtApprovedAmount(0n);
       setUnderlyingApprovedAmount(0n);
     }
-  }, [approveTx.error]);
+  }, [approveTx.hasFailed]);
 
   const matured = nowSeconds >= market.expiryCached;
 
@@ -590,6 +734,9 @@ function ConvertForm({
     query: { enabled: Boolean(connectedAddress) },
   });
   const spendToken = mode === "deposit" ? market.ptToken : mode === "wrap" ? market.underlying : market.ovrfloToken;
+  // PT has no entry in the symbol map — it is not one of the market's named
+  // tokens — so the deposit case names it directly rather than rendering blank.
+  const spendSymbol = mode === "deposit" ? "PT" : mode === "wrap" ? underlyingSymbol : ovrfloSymbol;
   const balanceRead = useReadContract({
     address: spendToken,
     abi: erc20Abi,
@@ -597,6 +744,8 @@ function ConvertForm({
     args: connectedAddress ? [connectedAddress] : undefined,
     query: { enabled: Boolean(connectedAddress) },
   });
+
+  useClearOnConfirm(actionTx.isConfirmed, () => setRaw(""));
 
   if (guard.walletChanged) return <WalletChangedNotice onContinue={guard.acknowledge} />;
 
@@ -633,8 +782,16 @@ function ConvertForm({
 
   return (
     <div className="form-grid">
-      <input className={`input mono ${validationError ? "input-error" : ""}`} value={raw} onChange={(e) => setRaw(e.target.value)} placeholder="0.00" />
-      {validationError ? <div className="label mono status-negative">{validationError}</div> : null}
+      <AmountInput
+        id="convert-amount"
+        label={`AMOUNT (${spendSymbol})`}
+        value={raw}
+        onChange={setRaw}
+        error={validationError}
+        balance={walletBalance}
+        symbol={spendSymbol}
+        max={() => setRaw(formatUnits18(walletBalance))}
+      />
       {mode === "deposit" ? (
         <div className="summary-row mono" aria-live="polite">
           {depositPreview ? (
@@ -650,7 +807,7 @@ function ConvertForm({
         </div>
       ) : null}
       {mode === "unwrap" ? (
-        <div className="label mono">UNWRAP CAPACITY {formatTokenAmount(wrapCapacity, underlyingSymbol)}</div>
+        <div className="label mono">WRAP RESERVE {formatTokenAmount(wrapCapacity, underlyingSymbol)}</div>
       ) : null}
       {mode === "deposit" && capLoaded && capLimit > 0n ? (
         capReached ? (
@@ -670,7 +827,7 @@ function ConvertForm({
       <StepIndicator
         steps={steps}
         activeIndex={activeIndex}
-        error={Boolean(approveTx.error ?? actionTx.error) || approveTx.isReverted || actionTx.isReverted}
+        error={approveTx.hasFailed || actionTx.hasFailed}
         accent={accent}
       />
       {needsPtApproval ? (
@@ -679,12 +836,7 @@ function ConvertForm({
           disabled={disabled}
           type="button"
           onClick={() => {
-            approveTx.writeContract({
-              address: market.ptToken,
-              abi: erc20Abi,
-              functionName: "approve",
-              args: [market.vault, amount],
-            });
+            zeroFirst.submit(market.ptToken, market.vault, amount, ptAllowance.data ?? 0n);
             setPtApprovedAmount(amount);
           }}
         >
@@ -699,12 +851,7 @@ function ConvertForm({
             // Wrap approves the exact amount it spends; only the deposit fee —
             // which requotes between blocks — carries the 2% buffer (R9).
             const approveAmount = mode === "wrap" ? amount : bufferedFeeApproveAmount(feeAmount);
-            approveTx.writeContract({
-              address: market.underlying,
-              abi: erc20Abi,
-              functionName: "approve",
-              args: [market.vault, approveAmount],
-            });
+            zeroFirst.submit(market.underlying, market.vault, approveAmount, underlyingAllowance.data ?? 0n);
             setUnderlyingApprovedAmount(approveAmount);
           }}
         >
@@ -745,6 +892,11 @@ function ConvertForm({
           {mode === "claim_matured" ? "CLAIM" : mode.toUpperCase()}
         </button>
       )}
+      {zeroFirst.clearing ? (
+        <div className="label mono status-warning" role="status">
+          THIS TOKEN REQUIRES CLEARING ITS ALLOWANCE FIRST — APPROVE TWICE
+        </div>
+      ) : null}
       <ApproveTxState tx={approveTx} label="APPROVE" />
       <TxState tx={actionTx} pendingLabel={mode.toUpperCase()} />
       {actionTx.isConfirmed ? <CloseButton onClose={onClose} /> : null}
@@ -785,7 +937,7 @@ function BorrowForm({
   const [submitted, setSubmitted] = useState<{ target: bigint; quotedNet: bigint } | null>(null);
   // Known on the very first render, so a matured market is gated before the
   // ladder or router ever run — not even for a frame.
-  const nowSeconds = useNowSeconds();
+  const nowSeconds = useNowSeconds(true);
 
   const target = parseAmount(raw);
   const connectedAddress = connection.addresses?.[0];
@@ -807,7 +959,7 @@ function BorrowForm({
   const hasOwnLiquidity = ladder.some((tick) => tick.own > 0n);
   const plan = selectedApr !== null ? planSelectedBorrow(ladder, selectedApr, target) : null;
 
-  const { approveTx, actionTx, busy } = useApprovalWriteFlows(connectedAddress);
+  const { approveTx, actionTx, zeroFirst, busy } = useApprovalWriteFlows(connectedAddress, marketContracts(market));
 
   const guard = useWalletChangeReset(connectedAddress, () => {
     setSelectedStreamId(action.streamId ?? null);
@@ -882,8 +1034,8 @@ function BorrowForm({
   });
 
   useEffect(() => {
-    if (approveTx.error) setStreamApprovedId(null);
-  }, [approveTx.error]);
+    if (approveTx.hasFailed) setStreamApprovedId(null);
+  }, [approveTx.hasFailed]);
 
   // A liquidity race is recoverable: refresh every on-chain read so the ladder
   // and quotes reflect the new depth, then ask for one explicit re-confirm.
@@ -901,6 +1053,8 @@ function BorrowForm({
     resetActionTx();
     setStaleRecovery(false);
   }, [selectedStreamId, resetActionTx, setStaleRecovery]);
+
+  useClearOnConfirm(actionTx.isConfirmed, () => setRaw(""));
 
   if (guard.walletChanged) return <WalletChangedNotice onContinue={guard.acknowledge} />;
   if (matured) {
@@ -941,7 +1095,8 @@ function BorrowForm({
     busy ||
     !quoteData ||
     minAcceptable === null ||
-    gatherIds.length === 0;
+    gatherIds.length === 0 ||
+    actionTx.isConfirmed;
 
   const receiptSummary =
     actionTx.isConfirmed && actionTx.receipt && market.lending
@@ -1015,7 +1170,12 @@ function BorrowForm({
         )
       ) : null}
 
-      <input className="input mono" value={raw} onChange={(e) => setRaw(e.target.value)} placeholder="0.00" />
+      <AmountInput
+        id="borrow-amount"
+        label={`AMOUNT (${underlyingSymbol})`}
+        value={raw}
+        onChange={setRaw}
+      />
 
       <label className="label mono" htmlFor="borrow-slippage">
         SLIPPAGE %
@@ -1077,7 +1237,7 @@ function BorrowForm({
       <StepIndicator
         steps={steps}
         activeIndex={activeIndex}
-        error={Boolean(approveTx.error ?? actionTx.error) || approveTx.isReverted || actionTx.isReverted}
+        error={approveTx.hasFailed || actionTx.hasFailed}
         accent={accent}
       />
 
@@ -1133,6 +1293,11 @@ function BorrowForm({
         </button>
       )}
 
+      {zeroFirst.clearing ? (
+        <div className="label mono status-warning" role="status">
+          THIS TOKEN REQUIRES CLEARING ITS ALLOWANCE FIRST — APPROVE TWICE
+        </div>
+      ) : null}
       <ApproveTxState tx={approveTx} label="APPROVE STREAM" />
       {actionTx.isSigning ? <div className="label mono status-warning">BORROW: SIGNING</div> : null}
       {actionTx.isConfirming ? (
@@ -1187,7 +1352,7 @@ function AdjustRateForm({
 
   const [selectedAprRaw, setSelectedAprRaw] = useState<number | null>(null);
   const [approvedAmount, setApprovedAmount] = useState(0n);
-  const nowSeconds = useNowSeconds();
+  const nowSeconds = useNowSeconds(true);
 
   const connectedAddress = connection.addresses?.[0];
   const underlyingSymbol = symbolFor(symbols, market.underlying);
@@ -1206,7 +1371,7 @@ function AdjustRateForm({
   const currentAprBps = positionAprBps ?? null;
   const idleAmount = positionIdleAmount ?? 0n;
 
-  const { approveTx, actionTx, busy } = useApprovalWriteFlows(connectedAddress);
+  const { approveTx, actionTx, zeroFirst, busy } = useApprovalWriteFlows(connectedAddress, marketContracts(market));
 
   // An ERC20 shortfall here is a liquidity race (position shrank after the
   // fresh read), so it routes through the stale-recovery path too.
@@ -1232,8 +1397,8 @@ function AdjustRateForm({
   });
 
   useEffect(() => {
-    if (approveTx.error) setApprovedAmount(0n);
-  }, [approveTx.error]);
+    if (approveTx.hasFailed) setApprovedAmount(0n);
+  }, [approveTx.hasFailed]);
 
   if (guard.walletChanged) return <WalletChangedNotice onContinue={guard.acknowledge} />;
 
@@ -1255,7 +1420,8 @@ function AdjustRateForm({
     sameRate ||
     matured ||
     busy ||
-    terminal;
+    terminal ||
+    actionTx.isConfirmed;
 
   const receiptSummary =
     actionTx.isConfirmed && actionTx.receipt && market.lending
@@ -1337,7 +1503,7 @@ function AdjustRateForm({
       <StepIndicator
         steps={steps}
         activeIndex={activeIndex}
-        error={Boolean(approveTx.error ?? actionTx.error) || approveTx.isReverted || actionTx.isReverted}
+        error={approveTx.hasFailed || actionTx.hasFailed}
         accent={accent}
       />
       {staleRecovery && !actionTx.isConfirmed && !busy ? (
@@ -1356,12 +1522,7 @@ function AdjustRateForm({
           type="button"
           onClick={() => {
             if (!market.lending) return;
-            approveTx.writeContract({
-              address: market.underlying,
-              abi: erc20Abi,
-              functionName: "approve",
-              args: [market.lending, idleAmount],
-            });
+            zeroFirst.submit(market.underlying, market.lending, idleAmount, allowance.data ?? 0n);
             setApprovedAmount(idleAmount);
           }}
         >
@@ -1374,9 +1535,14 @@ function AdjustRateForm({
           type="button"
           onClick={() => void submitAdjust()}
         >
-          {staleRecovery ? "RE-CONFIRM MOVE" : "MOVE LIQUIDITY"}
+          {staleRecovery ? "RE-CONFIRM ADJUST RATE" : "ADJUST RATE"}
         </button>
       )}
+      {zeroFirst.clearing ? (
+        <div className="label mono status-warning" role="status">
+          THIS TOKEN REQUIRES CLEARING ITS ALLOWANCE FIRST — APPROVE TWICE
+        </div>
+      ) : null}
       <ApproveTxState tx={approveTx} label="APPROVE" />
       {actionTx.isSigning ? <div className="label mono status-warning">MOVE: SIGNING</div> : null}
       {actionTx.isConfirming ? (
@@ -1434,7 +1600,7 @@ function RepayForm({
   const outstanding = loan ? loanOutstanding(loan) : 0n;
   const repayAmount = repayInput > outstanding && outstanding > 0n ? outstanding : repayInput;
 
-  const { approveTx, actionTx, busy } = useApprovalWriteFlows(connectedAddress);
+  const { approveTx, actionTx, zeroFirst, busy } = useApprovalWriteFlows(connectedAddress, marketContracts(market));
 
   const guard = useWalletChangeReset(connectedAddress, () => {
     setRaw("");
@@ -1462,8 +1628,10 @@ function RepayForm({
   });
 
   useEffect(() => {
-    if (approveTx.error) setRepayApprovedAmount(0n);
-  }, [approveTx.error]);
+    if (approveTx.hasFailed) setRepayApprovedAmount(0n);
+  }, [approveTx.hasFailed]);
+
+  useClearOnConfirm(actionTx.isConfirmed, () => setRaw(""));
 
   if (guard.walletChanged) return <WalletChangedNotice onContinue={guard.acknowledge} />;
 
@@ -1476,7 +1644,8 @@ function RepayForm({
   const validationError = repayAmount > 0n && repayAmount > walletBalance ? "INSUFFICIENT BALANCE" : null;
 
   const disabled =
-    !market.lending || !loan || repayAmount === 0n || busy || Boolean(validationError);
+    !market.lending || !loan || repayAmount === 0n || busy || Boolean(validationError) ||
+    actionTx.isConfirmed;
 
   const steps = ["APPROVE", "SIGN", "CONFIRMED"];
   const activeIndex = actionTx.isConfirmed || actionTx.isConfirming ? 2 : needsApproval ? 0 : 1;
@@ -1496,23 +1665,24 @@ function RepayForm({
   return (
     <div className="form-grid">
       <div className="label mono">LOAN {formatId(loan.id)} / OUTSTANDING {formatTokenAmount(outstanding, ovrfloSymbol)}</div>
-      <input className={`input mono ${validationError ? "input-error" : ""}`} value={raw} onChange={(e) => setRaw(e.target.value)} placeholder="0.00" />
-      {validationError ? <div className="label mono status-negative">{validationError}</div> : null}
-      <button
-        className="button mono"
-        type="button"
-        disabled={outstanding === 0n}
-        onClick={() => setRaw(formatUnits18(repayMax(loan, walletBalance)))}
-      >
-        MAX
-      </button>
+      <AmountInput
+        id="repay-amount"
+        label={`AMOUNT (${ovrfloSymbol})`}
+        value={raw}
+        onChange={setRaw}
+        error={validationError}
+        balance={walletBalance}
+        symbol={ovrfloSymbol}
+        max={() => setRaw(formatUnits18(repayMax(loan, walletBalance)))}
+        maxDisabled={outstanding === 0n}
+      />
       <div className="summary-row mono" aria-live="polite">
         REPAY {formatTokenAmount(repayAmount, ovrfloSymbol)} / REMAINING {formatTokenAmount(outstanding - repayAmount, ovrfloSymbol)}
       </div>
       <StepIndicator
         steps={steps}
         activeIndex={activeIndex}
-        error={Boolean(approveTx.error ?? actionTx.error) || approveTx.isReverted || actionTx.isReverted}
+        error={approveTx.hasFailed || actionTx.hasFailed}
         accent={accent}
       />
       {needsApproval ? (
@@ -1522,12 +1692,7 @@ function RepayForm({
           type="button"
           onClick={() => {
             if (!market.lending) return;
-            approveTx.writeContract({
-              address: market.ovrfloToken,
-              abi: erc20Abi,
-              functionName: "approve",
-              args: [market.lending, repayAmount],
-            });
+            zeroFirst.submit(market.ovrfloToken, market.lending, repayAmount, repayAllowance.data ?? 0n);
             setRepayApprovedAmount(repayAmount);
           }}
         >
@@ -1551,6 +1716,11 @@ function RepayForm({
           REPAY {formatTokenAmount(repayAmount, ovrfloSymbol)}
         </button>
       )}
+      {zeroFirst.clearing ? (
+        <div className="label mono status-warning" role="status">
+          THIS TOKEN REQUIRES CLEARING ITS ALLOWANCE FIRST — APPROVE TWICE
+        </div>
+      ) : null}
       <ApproveTxState tx={approveTx} label="APPROVE REPAY" />
       <TxState tx={actionTx} pendingLabel="REPAY" />
       {actionTx.isConfirmed ? <CloseButton onClose={onClose} /> : null}

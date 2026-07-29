@@ -9,11 +9,17 @@ function testAddress(id: number): Address {
 
 const walletState = { address: testAddress(0xa11) as Address | undefined };
 
+vi.mock("@/hooks/useIndexerSync", () => ({
+  useIndexerSync: () => ({ syncedBlock: 100n, headBlock: 100n, lagBlocks: 0n, lagging: false }),
+}));
 vi.mock("wagmi", () => ({
+  useBlockNumber: () => ({ data: 100n }),
   useConnection: () => ({
     status: walletState.address ? "connected" : "disconnected",
     addresses: walletState.address ? [walletState.address] : [],
+    chainId: 1,
   }),
+  useSwitchChain: () => ({ switchChain: () => {}, isPending: false, error: null }),
   useReadContract: () => ({ data: undefined }),
   useReadContracts: () => ({ data: [], isLoading: false, error: null }),
 }));
@@ -177,7 +183,7 @@ describe("close gate (R17)", () => {
     expect(screen.queryByText("CLOSE")).not.toBeInTheDocument();
     // Repay lives behind the ADVANCED disclosure on card loans (ticket 08).
     fireEvent.click(screen.getByRole("button", { name: /ADVANCED/ }));
-    expect(screen.getByText("REPAY EARLY")).toBeInTheDocument();
+    expect(screen.getByText("REPAY LOAN")).toBeInTheDocument();
   });
 
   it("shows CLOSE when the stream covers the outstanding obligation", () => {
@@ -198,7 +204,8 @@ describe("truncation warning (R26)", () => {
       },
     ];
     render(<PositionList market={market} user={testAddress(0xa11)} symbols={symbols} onAction={vi.fn()} />);
-    expect(screen.getByText("SHOWING FIRST 500 — DATA TRUNCATED")).toBeInTheDocument();
+    // R25: one shared truncation sentence across every capped list.
+    expect(screen.getByText("SHOWING FIRST 500 IDS — DATA TRUNCATED")).toBeInTheDocument();
   });
 });
 

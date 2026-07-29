@@ -15,7 +15,6 @@
  *
  *   NEXT_PUBLIC_RPC_URL                 → connect-src origin for Ethereum RPC
  *   NEXT_PUBLIC_PONDER_URL              → connect-src origin for Ponder
- *   NEXT_PUBLIC_PRICE_API_URL           → connect-src origin for CoinGecko
  *
  * Static origins for WalletConnect / Reown and their WSS relays are baked
  * into the template since they're not environment-configurable.
@@ -24,8 +23,18 @@
  *   web/vercel.json          (Vercel's authoritative header format)
  *   web/public/_headers      (Cloudflare Pages / Netlify)
  *
- * Fails non-zero if an origin variable is present but syntactically
- * invalid (e.g. "not-a-url"), so deploys can't ship a busted CSP.
+ * R29/M-17: this used to substitute rpc.ankr.com and localhost when the
+ * origins were missing, so a deploy could ship a CSP that blocked its own
+ * RPC and indexer — silently, because the build stayed green. Missing
+ * origins now fail the build. Local builds that genuinely want the
+ * fallbacks opt in with CSP_ALLOW_FALLBACKS=1; forgetting it fails loudly
+ * rather than shipping something broken.
+ *
+ * script-src carries no origins and no 'unsafe-inline' — scripts/csp-hash-inline.mjs
+ * runs after `next build` and adds the exported HTML's inline-script hashes.
+ * That step has to be post-build: this script runs first and writes
+ * public/_headers, which Next copies into out/ during export, so a hash
+ * computed here could never match the HTML it guards.
  */
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -58,23 +67,33 @@ function originOf(rawUrl, envName) {
   }
 }
 
-const rpcOrigin =
-  originOf(process.env.NEXT_PUBLIC_RPC_URL, "NEXT_PUBLIC_RPC_URL") ??
-  "https://rpc.ankr.com";
-const indexerOrigin =
-  originOf(
-    process.env.NEXT_PUBLIC_PONDER_URL,
-    "NEXT_PUBLIC_PONDER_URL"
-  ) ?? "http://localhost:42069";
-const priceApiOrigin =
-  originOf(process.env.NEXT_PUBLIC_PRICE_API_URL, "NEXT_PUBLIC_PRICE_API_URL") ??
-  "https://api.coingecko.com";
+const ALLOW_FALLBACKS = process.env.CSP_ALLOW_FALLBACKS === "1";
 
+function requiredOrigin(rawUrl, envName, devFallback) {
+  const origin = originOf(rawUrl, envName);
+  if (origin) return origin;
+  if (ALLOW_FALLBACKS) return devFallback;
+  throw new Error(
+    `build-csp: ${envName} is not set. A production build cannot ship a CSP ` +
+      `guessed from a dev default — the deployed app would block its own ` +
+      `traffic. Set ${envName}, or pass CSP_ALLOW_FALLBACKS=1 for a local build.`
+  );
+}
+
+const rpcOrigin = requiredOrigin(process.env.NEXT_PUBLIC_RPC_URL, "NEXT_PUBLIC_RPC_URL", "http://127.0.0.1:8545");
+const indexerOrigin = requiredOrigin(
+  process.env.NEXT_PUBLIC_PONDER_URL,
+  "NEXT_PUBLIC_PONDER_URL",
+  "http://localhost:42069"
+);
+
+// R31/L-8: the CoinGecko origin is gone. Nothing in web/ fetches a price —
+// PositionSummary records "no USD" as a deliberate decision — so the origin
+// was allowing traffic the app never makes.
 const connectSrc = [
   "'self'",
   rpcOrigin,
   indexerOrigin,
-  priceApiOrigin,
   ...WALLET_ORIGINS_HTTP,
   ...WALLET_ORIGINS_WSS,
 ];
@@ -85,7 +104,11 @@ const csp = [
   "form-action 'self'",
   "frame-ancestors 'none'",
   "object-src 'none'",
-  `script-src 'self' 'unsafe-inline' ${WALLET_ORIGINS_HTTP.join(" ")}`,
+  // No 'unsafe-inline' and no remote origins: nothing in web/ loads a remote
+  // script, and the wildcard wallet domains only widened the post-XSS blast
+  // radius. Inline-script hashes are appended post-build. Wallet connectivity
+  // rides on connect-src and frame-src, which keep theirs.
+  "script-src 'self'",
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: https:",
   "font-src 'self' data:",
@@ -132,5 +155,5 @@ mkdirSync(dirname(headersPath), { recursive: true });
 writeFileSync(headersPath, headersFileLines.join("\n"));
 
 process.stdout.write(
-  `build-csp: wrote vercel.json and public/_headers (rpc=${rpcOrigin}, indexer=${indexerOrigin}, priceApi=${priceApiOrigin})\n`
+  `build-csp: wrote vercel.json and public/_headers (rpc=${rpcOrigin}, indexer=${indexerOrigin})\n`
 );

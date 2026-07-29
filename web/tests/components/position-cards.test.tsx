@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Address } from "viem";
 import type { HeldStream, LiquidityPosition, MarketInfo } from "@/lib/types";
@@ -26,6 +26,8 @@ const hookData = {
   liquidityError: null as Error | null,
   loanBookError: null as Error | null,
   streamsError: null as Error | null,
+  streamsStale: false,
+  indexerLagBlocks: 0,
 };
 
 vi.mock("@/hooks/useLendingLiquidity", () => ({
@@ -46,7 +48,21 @@ vi.mock("@/hooks/useLoanBook", () => ({
   }),
 }));
 vi.mock("@/hooks/useHeldStreams", () => ({
-  useHeldStreams: () => ({ streams: hookData.streams, isLoading: false, error: hookData.streamsError }),
+  useHeldStreams: () => ({
+    streams: hookData.streams,
+    isLoading: false,
+    error: hookData.streamsError,
+    stale: hookData.streamsStale ?? false,
+    unavailable: Boolean(hookData.streamsError) && !hookData.streamsStale,
+  }),
+}));
+vi.mock("@/hooks/useIndexerSync", () => ({
+  useIndexerSync: () => ({
+    syncedBlock: 100n,
+    headBlock: 100n + BigInt(hookData.indexerLagBlocks),
+    lagBlocks: BigInt(hookData.indexerLagBlocks),
+    lagging: hookData.indexerLagBlocks > 5,
+  }),
 }));
 vi.mock("@/hooks/useLending", () => ({
   useLending: () => ({
@@ -135,6 +151,8 @@ beforeEach(() => {
   hookData.liquidityError = null;
   hookData.loanBookError = null;
   hookData.streamsError = null;
+  hookData.streamsStale = false;
+  hookData.indexerLagBlocks = 0;
 });
 
 describe("SELL removal", () => {
@@ -176,9 +194,9 @@ describe("loan cards", () => {
     const onAction = renderList();
     expect(screen.getByText("SELF-REPAYING")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "CLOSE" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "REPAY EARLY" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "REPAY LOAN" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /ADVANCED/ }));
-    fireEvent.click(screen.getByRole("button", { name: "REPAY EARLY" }));
+    fireEvent.click(screen.getByRole("button", { name: "REPAY LOAN" }));
     expect(onAction).toHaveBeenCalledWith({ type: "repay", loanId: 1n });
   });
 
@@ -234,7 +252,7 @@ describe("per-source error isolation", () => {
     hookData.streamsError = new Error("indexer unreachable");
     renderList();
     expect(screen.getByText("IDLE 50.00 TESTA")).toBeInTheDocument();
-    expect(screen.getByText("UNABLE TO LOAD STREAMS")).toBeInTheDocument();
+    expect(screen.getByText(/STREAM DISCOVERY UNAVAILABLE/)).toBeInTheDocument();
     expect(screen.queryByText("UNABLE TO LOAD LENDING POSITIONS")).not.toBeInTheDocument();
   });
 
@@ -244,7 +262,7 @@ describe("per-source error isolation", () => {
     renderList();
     expect(screen.getByText("50% STREAMED")).toBeInTheDocument();
     expect(screen.getByText("UNABLE TO LOAD LENDING POSITIONS")).toBeInTheDocument();
-    expect(screen.queryByText("UNABLE TO LOAD STREAMS")).not.toBeInTheDocument();
+    expect(screen.queryByText(/STREAM DISCOVERY UNAVAILABLE/)).not.toBeInTheDocument();
   });
 
   it("shows both error states when both sources fail", () => {
@@ -252,6 +270,119 @@ describe("per-source error isolation", () => {
     hookData.streamsError = new Error("indexer unreachable");
     renderList();
     expect(screen.getByText("UNABLE TO LOAD LENDING POSITIONS")).toBeInTheDocument();
-    expect(screen.getByText("UNABLE TO LOAD STREAMS")).toBeInTheDocument();
+    expect(screen.getByText(/STREAM DISCOVERY UNAVAILABLE/)).toBeInTheDocument();
+  });
+});
+
+// R43/R44/F1 — the degraded stream view. Three distinct states where there used
+// to be one: live, stale-but-usable, and genuinely unavailable.
+describe("degraded indexer states (R43/R44)", () => {
+  it("Covers AE7. Serves the cached set behind a staleness indicator, with cards still rendered", () => {
+    hookData.streams = [stream(7)];
+    hookData.streamsError = new Error("indexer unreachable");
+    hookData.streamsStale = true;
+
+    renderList();
+
+    expect(screen.getByText(/SHOWING LAST KNOWN STREAMS/)).toBeInTheDocument();
+    expect(screen.getByText("50% STREAMED")).toBeInTheDocument();
+    // Stale discovery must not read as unavailable — the difference is whether
+    // the user can still see and act on what they hold.
+    expect(screen.queryByText(/STREAM DISCOVERY UNAVAILABLE/)).not.toBeInTheDocument();
+  });
+
+  it("Covers AE7/R45. Liquidity and loans render normally while discovery is down", () => {
+    // Those are on-chain reads and never depended on the indexer — this is the
+    // regression guard for that, which is what R45 reduces to.
+    hookData.liquidity = [position(1, 1100, 50n, USER)];
+    hookData.streamsError = new Error("indexer unreachable");
+
+    renderList();
+
+    expect(screen.getByText("IDLE 50.00 TESTA")).toBeInTheDocument();
+    expect(screen.queryByText("UNABLE TO LOAD LENDING POSITIONS")).not.toBeInTheDocument();
+  });
+
+  it("warns when the cached set is empty, rather than rendering a confident blank", () => {
+    // The gap this closes: `stale` was only rendered inside the branch that had
+    // streams to show, so a cached-but-empty set fell through to "nothing here",
+    // warning and all — and PositionList returned null outright when the user
+    // held no other position. That is the case the warning exists for: the user
+    // acquires a stream while discovery is down, the cached set cannot know
+    // about it, and the app states an absence it cannot verify.
+    hookData.streams = [];
+    hookData.streamsError = new Error("indexer unreachable");
+    hookData.streamsStale = true;
+
+    renderList();
+
+    const notice = screen.getByText(/DISCOVERY IS UNREACHABLE/);
+    expect(notice).toBeInTheDocument();
+    expect(notice.textContent).toMatch(/WOULD NOT APPEAR HERE/);
+    // Stale is not unavailable — the recovery route belongs to the other state.
+    expect(screen.queryByText(/STREAM DISCOVERY UNAVAILABLE/)).not.toBeInTheDocument();
+  });
+
+  it("warns when the cached set holds only other markets' streams", () => {
+    // Same gap, reached the other way: the set is non-empty but nothing in it
+    // is eligible here, so `eligibleStreams` is empty just as above.
+    hookData.streams = [{ ...stream(7), asset: testAddress(0xdead) } as HeldStream];
+    hookData.streamsError = new Error("indexer unreachable");
+    hookData.streamsStale = true;
+
+    renderList();
+
+    expect(screen.getByText(/DISCOVERY IS UNREACHABLE/)).toBeInTheDocument();
+  });
+
+  it("Covers AE8. With no cached set, names the direct-contract route instead of an empty list", () => {
+    hookData.streamsError = new Error("indexer unreachable");
+    hookData.streamsStale = false;
+  hookData.indexerLagBlocks = 0;
+
+    renderList();
+
+    const notice = screen.getByText(/STREAM DISCOVERY UNAVAILABLE/);
+    expect(notice).toBeInTheDocument();
+    // The recovery route has to be actionable, not just acknowledged.
+    expect(notice.textContent).toMatch(/WITHDRAW DIRECTLY FROM SABLIER/);
+    expect(notice.textContent).toMatch(/0x/);
+  });
+
+  it("keeps stream actions available while stale, rather than blocking them", () => {
+    // Blocking here reproduces the H-5 harm: a user unable to reach their own
+    // withdraw path through the app. The contracts validate every action at
+    // submission anyway.
+    hookData.streams = [stream(7)];
+    hookData.streamsError = new Error("indexer unreachable");
+    hookData.streamsStale = true;
+
+    renderList();
+    const staleButtons = screen
+      .getAllByRole("button")
+      .map((b) => `${b.textContent}:${(b as HTMLButtonElement).disabled}`)
+      .sort();
+    cleanup();
+
+    // Compare against the healthy render rather than naming a label: this
+    // asserts staleness disables nothing, whatever the card happens to offer.
+    hookData.streamsError = null;
+    hookData.streamsStale = false;
+  hookData.indexerLagBlocks = 0;
+    renderList();
+    const liveButtons = screen
+      .getAllByRole("button")
+      .map((b) => `${b.textContent}:${(b as HTMLButtonElement).disabled}`)
+      .sort();
+
+    expect(staleButtons).toEqual(liveButtons);
+    expect(staleButtons.length).toBeGreaterThan(0);
+  });
+
+  it("says nothing about staleness when discovery is healthy", () => {
+    hookData.streams = [stream(7)];
+    renderList();
+    expect(screen.queryByText(/SHOWING LAST KNOWN STREAMS/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/STREAM DISCOVERY UNAVAILABLE/)).not.toBeInTheDocument();
   });
 });

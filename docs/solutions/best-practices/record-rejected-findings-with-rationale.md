@@ -3,6 +3,7 @@ title: Record rejected audit and code-review findings with claim, rationale, and
 category: best-practices
 module: docs/audit/rejected-findings-record.md
 date: 2026-06-27
+last_updated: 2026-07-29
 problem_type: best_practice
 component: documentation
 severity: low
@@ -45,8 +46,15 @@ For every finding you reject, record:
 3. **Evidence** with file paths and line numbers, design doc references, or
    external verification (e.g., "verified against sablier-labs/v2-core tag
    v1.1").
-4. **ID** for cross-referencing (e.g., CR-M1, H-2). Future reviewers can
-   search for the ID to find the settled conclusion.
+4. **ID, qualified by its audit** (e.g., `CR-M1`, `H-2`,
+   `audit-2026-07-28 H-1`). Finding IDs are **audit-local and collide**: the
+   internal review and the 2026-07-28 external audit both use `H-1`, `H-2`,
+   `L-1`, `L-2`, and `I-4` for entirely unrelated findings. A bare ID is
+   therefore not a cross-reference — searching for `L-1` returns the internal
+   review's *active* narrowing finding and the external audit's *rejected*
+   decimals finding, and the two say opposite things about whether the ID is
+   settled. Qualify every ID at the point of citation, and carry a collision
+   warning at the top of the record and at the head of each audit's section.
 
 Also record:
 
@@ -63,6 +71,27 @@ Frame every entry as **evidence to challenge**, not a conclusion to accept.
 If a reviewer finds new evidence (e.g., a protocol upgrade changes an ACL
 model), they should re-raise the finding. The record is the starting point,
 not a wall.
+
+### A link to the record is not the record
+
+For the handful of findings that get re-raised repeatedly, **enumerate the
+disproof inline in the agent instruction file** rather than linking to it. The
+three findings below the "Before raising a security finding" heading in
+`AGENTS.md` had each been raised, disproven, and re-raised by a later reviewer
+who read the file containing the link and never opened the target. One hop is
+enough to lose a reader who is deep in a review and treating the instruction
+file as orientation rather than reference material.
+
+The inline enumeration is a summary, not a replacement: it states the claim,
+the one-sentence disproof, and the pointer to the full evidence. That way the
+collision is visible without a second hop, and the reader who *does* have new
+evidence still knows where the detail lives.
+
+Check where you are putting the index before you put it there: in this repo
+`AGENTS.md`, `CLAUDE.md`, `BASE_SECURITY.md`, and `VAULT_SECURITY.md` are all
+gitignored, so a settled-findings index written into any of them reaches only
+the machine that wrote it. The tracked home for enforceable distilled rules is
+`docs/solutions/patterns/ovrflo-critical-patterns.md`.
 
 ## Why This Matters
 
@@ -82,6 +111,15 @@ rejected because Sablier V2 v1.1 has no public withdraw path, but newer
 Sablier docs describe one. An auditor reading the newer docs will re-raise
 this as High; the record points them to the v1.1 verification so they can
 confirm the distinction before re-raising.
+
+That prediction came true. The 2026-07-28 external audit re-raised the same
+claim as its lead blocker (`audit-2026-07-28 H-1`), and two further settled
+items — `R-01` (on-chain 18-decimal enforcement) and critical pattern #4
+(address-scoped self-match prevention) — came back as its `L-1` and `L-12`.
+Three re-raises in one audit is not a reviewer failure; it is the record
+telling you that a link-based index does not reach readers, and that unqualified
+IDs cannot be searched. Both are fixable properties of the record, which is why
+they are guidance above rather than a complaint here.
 
 ## When to Apply
 

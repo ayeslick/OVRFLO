@@ -22,7 +22,10 @@ tags: [audit, audit-fix-campaign, triage, test-coverage, pattern-documentation, 
 
 Between July 1 and July 5, 2026, the OVRFLO project ran a systematic campaign
 against five audit findings (M-01, M-02, M-03, L-01, L-02) spanning the
-secondary market (`OVRFLOBook`) and the vault (`OVRFLO`). The findings ranged
+secondary market (then called `OVRFLOBook`, now `OVRFLOLending`) and the vault
+(`OVRFLO`). Contract and function names below are as they stood during the
+campaign; the code excerpts are historical `BEFORE`/`AFTER` pairs, not current
+source. The findings ranged
 from Medium (stranded minority contributors in shared-pool claims, gross-vs-net
 slippage, stale oracle reads at runtime) to Low (missing input validation in a
 view quote, non-grid-aligned APR bounds). Each one was evaluated against the

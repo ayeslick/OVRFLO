@@ -23,12 +23,18 @@ type Props = {
 export function MarketDetail({ market, user, action, symbols, onClose }: Props) {
   const panelRef = useRef<HTMLDivElement>(null);
   const [reloadKey, setReloadKey] = useState(0);
-  useFocusTrap(panelRef, true);
+  // R16/M-5: one owner for initial focus. This used to be a second effect
+  // racing the trap's own `focusable[0]` call on the same commit. The amount
+  // field is the deterministic target where a form has one; forms that render
+  // none (the SimpleAction family) fall back to the first focusable element,
+  // which is the close button.
+  useFocusTrap(panelRef, true, "input");
   useEscapeKey(onClose);
 
+  // Re-run initial focus when the action changes inside an open panel: the
+  // trap keys on activation, and switching action swaps the whole form body.
   useEffect(() => {
-    const input = panelRef.current?.querySelector("input");
-    input?.focus();
+    panelRef.current?.querySelector<HTMLElement>("input")?.focus();
   }, [action.type]);
 
   const actionMeta = ACTION_META[action.type];

@@ -4,7 +4,7 @@ category: best-practices
 module: web/
 date: 2026-07-27
 problem_type: best_practice
-component: frontend_web
+component: nextjs_react
 severity: medium
 applies_when:
   - "Writing new logic for something that is a common, well-solved problem (deep clone/merge, debounce/throttle, date/time formatting, URL/query-string parsing, retry/backoff, focus trapping, clipboard access, UUID/id generation, deep equality)"
@@ -39,7 +39,7 @@ This is not specific to that one hook. The same failure mode shows up as:
 - Manual debounce/throttle timers hand-rolled with `setTimeout` where the
   codebase (or a tiny, well-known dependency) already has one.
 - Ad-hoc date/number formatting with string concatenation where `Intl.*` or
-  an existing `lib/format.ts` helper already exists in this codebase.
+  an existing `web/lib/format.ts` helper already exists in this codebase.
 - A hand-rolled focus trap, click-outside handler, or portal implementation
   when one is already extracted (this codebase has `useFocusTrap` —
   `web/hooks/useFocusTrap.ts` — for exactly this).

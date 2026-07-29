@@ -8,7 +8,7 @@ import type { ActiveAction, MarketInfo } from "@/lib/types";
 import { MarketDetail } from "./MarketDetail";
 import { MarketsTable } from "./MarketsTable";
 import { PositionSummary } from "./PositionSummary";
-import { WalletButton } from "./WalletButton";
+import { WalletButton } from "wallet-runtime";
 
 export function MarketsApp() {
   const connection = useConnection();
@@ -46,6 +46,7 @@ export function MarketsApp() {
       <PositionSummary markets={markets.markets} user={connectedAddress} symbols={symbols} />
       <MarketsTable
         markets={markets.markets}
+        truncated={markets.tooLarge}
         symbols={symbols}
         user={connectedAddress}
         selected={selectedMarket}

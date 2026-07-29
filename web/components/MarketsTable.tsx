@@ -8,14 +8,16 @@ import { useLendingLiquidity } from "@/hooks/useLendingLiquidity";
 import { symbolFor, type SymbolMap } from "@/hooks/useMarketSymbols";
 import { useNowSecondsHydrationSafe } from "@/hooks/useNowSeconds";
 import { ovrfloAbi } from "@/lib/abis";
-import { formatAprBps, formatMaturity, formatTokenAmount } from "@/lib/format";
+import { formatAprBps, formatCountdown, formatMaturityDate, formatTokenAmount } from "@/lib/format";
 import { aprChoices, formatBpsPct, upfrontBps } from "@/lib/lending-math";
 import { buildLadder } from "@/lib/router";
 import type { ActiveAction, MarketInfo } from "@/lib/types";
 import { MarketRowDetail } from "./MarketRowDetail";
+import { TruncationNotice } from "./TruncationNotice";
 
 type Props = {
   markets: MarketInfo[];
+  truncated?: boolean;
   symbols: SymbolMap;
   user?: Address;
   selected?: MarketInfo | null;
@@ -23,9 +25,8 @@ type Props = {
   onMode: (market: MarketInfo, action: ActiveAction) => void;
 };
 
-const DAY_SECONDS = 86_400n;
 
-export function MarketsTable({ markets, symbols, user, selected, onSelect, onMode }: Props) {
+export function MarketsTable({ markets, truncated, symbols, user, selected, onSelect, onMode }: Props) {
   const nowSeconds = useNowSecondsHydrationSafe();
 
   const tvlReads = useReadContracts({
@@ -43,6 +44,12 @@ export function MarketsTable({ markets, symbols, user, selected, onSelect, onMod
       <div style={{ marginBottom: "0.75rem" }}>
         <h2>MARKETS</h2>
       </div>
+      {/* L-2: the vault list caps at 100 and said nothing — markets past the
+          hundredth simply vanished. Same disclosure component the 500-id scans
+          use, so every truncated list reads the same way. The cap applies twice
+          over (vaults, then each vault's markets), so the noun names what the
+          reader is looking at rather than which of the two caps was hit. */}
+      {truncated ? <TruncationNotice limit={100} noun="VAULTS AND MARKETS PER VAULT" /> : null}
       <div className="table-container">
         <table>
           <thead>
@@ -66,10 +73,8 @@ export function MarketsTable({ markets, symbols, user, selected, onSelect, onMod
                 const expanded = selected?.market === market.market;
                 const tvlResult = tvlReads.data?.[index];
                 const tvl = tvlResult?.status === "success" ? (tvlResult.result as bigint) : undefined;
-                const daysLeft =
-                  nowSeconds !== null && market.expiryCached > nowSeconds
-                    ? (market.expiryCached - nowSeconds) / DAY_SECONDS
-                    : 0n;
+                const secondsLeft =
+                  nowSeconds !== null && market.expiryCached > nowSeconds ? market.expiryCached - nowSeconds : 0n;
                 return (
                   <Fragment key={`${market.vault}-${market.market}`}>
                     {/* aria-expanded lives on the toggle button only — the
@@ -84,28 +89,17 @@ export function MarketsTable({ markets, symbols, user, selected, onSelect, onMod
                         </button>
                       </td>
                       <td className="mono">
-                        {formatMaturity(market.expiryCached)}
-                        <span className="label mono"> {daysLeft.toString()}d</span>
+                        {formatMaturityDate(market.expiryCached)}
+                        {/* Time-to-maturity drives the borrow/deposit decision
+                            here, so DESIGN.md §10's countdown form applies —
+                            days alone hid up to 23 hours of remaining term. */}
+                        <span className="label mono"> {formatCountdown(secondsLeft)}</span>
                       </td>
                       <td className="mono">{formatTokenAmount(tvl, symbolFor(symbols, market.underlying))}</td>
                       <td className="mono">
                         <RatesCell market={market} nowSeconds={nowSeconds} />
                       </td>
                     </tr>
-                    {expanded ? (
-                      <tr className="market-row-detail">
-                        <td colSpan={4} onClick={(e) => e.stopPropagation()}>
-                          <div role="region" aria-label={`${symbol} market detail`}>
-                            <MarketRowDetail
-                              market={market}
-                              user={user}
-                              symbols={symbols}
-                              onMode={(action) => onMode(market, action)}
-                            />
-                          </div>
-                        </td>
-                      </tr>
-                    ) : null}
                   </Fragment>
                 );
               })
@@ -113,6 +107,27 @@ export function MarketsTable({ markets, symbols, user, selected, onSelect, onMod
           </tbody>
         </table>
       </div>
+      {/* R23/M-11: the expanded detail used to be a <tr> inside this table, so
+          it inherited `table { min-width: 760px }` and every position card,
+          balance row, and action button sat in a 760px layout box — overflowing
+          horizontally on mobile, against DESIGN.md §5's "cards render at every
+          breakpoint, not a reflow". Rendering it as a sibling below the table
+          detaches it from that floor entirely. Clipping the overflow would have
+          hidden the symptom while leaving cards unreadable. */}
+      {selected ? (
+        <div
+          className="market-row-detail"
+          role="region"
+          aria-label={`${symbolFor(symbols, selected.ovrfloToken)} market detail`}
+        >
+          <MarketRowDetail
+            market={selected}
+            user={user}
+            symbols={symbols}
+            onMode={(action) => onMode(selected, action)}
+          />
+        </div>
+      ) : null}
     </section>
   );
 }

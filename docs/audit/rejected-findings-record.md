@@ -2,9 +2,13 @@
 
 > The internal 10-persona review's settled conclusions, promoted to a persistent record so the external auditor starts where the last review ended instead of re-deriving it. Every entry is framed as **evidence to challenge**, not a conclusion to accept — if you find new evidence, re-raise it. Source: `x-ray/multi-agent-audit-report.md` (the overlapping detail there is trimmed to point here; the report's severity summary and agent-coverage list remain as backing evidence).
 
+> **Finding IDs are audit-local and collide across audits.** Every ID below without an audit prefix belongs to the internal 10-persona review. The 2026-07-28 external audit reuses `H-1`, `H-2`, `L-1`, `L-2`, and `I-4` for entirely different findings — its entries are qualified `audit-2026-07-28 <ID>` and live in their own section below. When citing an ID anywhere, name the audit.
+
 ## Decision record — settled findings
 
 ### H-2 — Escrow value sink / permissionless withdraw while book holds stream NFT — REJECTED
+
+> Re-raised verbatim by the 2026-07-28 external audit as its **H-1** (its lead blocker). Same claim, same disproof — see `audit-2026-07-28 H-1` below.
 
 - **Original claim (High):** A third party could call `sablier.withdraw(streamId, address(book), amount)` while the book escrows the NFT, reducing `remaining` and stranding `ovrfloToken` on the book.
 - **Disproof:** Sablier V2 v1.1 requires `msg.sender` to be the stream **sender**, **NFT owner**, or **approved operator** — otherwise `SablierV2Lockup_Unauthorized`. There is **no permissionless withdraw** in v1.1. When the book holds the NFT it **is** the recipient; only the book (or its approved operators) can withdraw. The OVRFLO vault as sender may only withdraw `to == recipient` (the book), which is trusted.
@@ -22,6 +26,7 @@
 - **Original claim (High):** `toStream` is cast `uint128(toStream)` for Sablier and `duration` cast `uint40(expiry - block.timestamp)` without explicit bounds; truncation could strand excess minted `ovrfloToken`.
 - **Disproof (downgrade rationale):** With 18-decimal Pendle PT, `toStream > type(uint128).max` (~3.4×10³⁸) is not reachable in practice. Technically valid as a defense-in-depth cast guard; economically unreachable. Downgraded to **L-1** (active Low finding).
 - **Note for the auditor:** Only the **downgrade rationale** is settled here. **L-1 remains an active Low finding** with a recommended fix (`require(toStream <= type(uint128).max)` and `require(duration <= type(uint40).max)` before mint + `createWithDurations`) — see `x-ray/multi-agent-audit-report.md` Findings (severity-ranked). Do not treat L-1 as rejected.
+- **ID collision warning:** this `L-1` is the narrowing finding and is **active**. The 2026-07-28 audit's `L-1` is a different finding (on-chain 18-decimal enforcement) and **is** rejected — see `audit-2026-07-28 L-1` below. The two must not be conflated.
 
 ### Self-loan `repayLoan` revert — REJECTED as security finding, FIXED as correctness guard
 
@@ -167,3 +172,36 @@ The following findings were raised during a focused gap review of `OVRFLOBook` a
 ## Also reviewed — no medium+ issue (consensus)
 
 The internal review's "Reviewed — no medium+ issue (consensus)" table (in `x-ray/multi-agent-audit-report.md`) covers consensus-reviewed design decisions that are neither rejected findings nor resolved Q&A: maker fee snapshots, loan accounting `drawn + repaid ≤ obligation`, stream eligibility vs deposit creation alignment, reentrancy guards on book mutators, admin APR drift as a governance/trust boundary, and book `claimPoolShare`/`closeLoan` Sablier calls (fork-tested). If you are about to raise one of these, it has already been consensus-reviewed — the table entry is the starting point, not a wall.
+
+---
+
+## 2026-07-28 external audit — rejected and no-action findings
+
+Source: `docs/dogfood-reports/audit-2026-07-28.md`. Remediation plan: `docs/plans/2026-07-28-002-fix-audit-2026-07-28-remediation-plan.md`.
+
+**Read the ID-collision warning at the top of this file before citing any ID below.** This audit reuses `H-1`, `H-2`, `L-1`, `L-2`, and `I-4` for findings unrelated to the identically-numbered internal-review entries above. Every ID in this section is qualified `audit-2026-07-28 <ID>`.
+
+### audit-2026-07-28 H-1 — Third-party Sablier withdrawal diverges lending-market accounting — REJECTED (disproven)
+
+- **Original claim (High, the audit's lead blocker, basis for its "do not ship to mainnet" conclusion):** Any third party can push a Sablier withdrawal into the lending market, reducing the stream's remaining value behind the market's back and desynchronising loan accounting.
+- **Disproof:** The deployed Sablier at `0xAFb979d9afAd1aD27C5eFf4E27226E3AB9e5dCC9` is v2-core `v1.1`, whose `withdraw` reverts `SablierV2Lockup_Unauthorized` unless `msg.sender` is the stream sender, the NFT owner, or an approved operator. `src/OVRFLO.sol` has no `sablier.withdraw` code path, so the vault-as-sender cannot push one; `src/OVRFLOLending.sol` never calls `approve` or `setApprovalForAll` on the Sablier NFT, so no operator exists. The divergence the finding describes cannot be produced.
+- **Evidence:** ACL table in `sablier-interface-contract.md`, pinned to `sablier-labs/v2-core` tag `v1.1` and the deployed bytecode. Reproducible on a fork by `test/fork/OVRFLOLendingMainnetFork.t.sol` — including the `to = address(lending)` case, which is the one that discriminates v1.1 from the later permissionless-`to == recipient` ACL.
+- **Consequence:** no code change of any kind, including no defensive clamp on the claim arithmetic. `recovered = drawn + repaid + min(withdrawable, outstanding)` is monotonic non-decreasing across `repayLoan`, `_claimFair`, and `closeLoan`, so the unchecked subtraction has no internal underflow path either. A clamp would imply the threat model is live.
+- **This was predicted.** The internal review rejected the identical claim as its `H-2` (above) and recorded a warning that an auditor reading newer Sablier Lockup docs — which do describe a public withdraw-to-recipient path — would re-raise it as High. That warning was correct, and a pointer alone did not prevent the re-raise.
+
+### audit-2026-07-28 L-1 — On-chain 18-decimal enforcement for PT — REJECTED (settled as R-01)
+
+- **Original claim (Low):** The vault assumes 18-decimal PT without enforcing it on-chain.
+- **Rejection rationale:** Already settled as R-01 in `docs/solutions/patterns/ovrflo-critical-patterns.md`. Pendle PT tokens are always 18 decimals, the invariant is enforced where it matters (`MIN_PT_AMOUNT`), and the timelocked multisig validates series onboarding — the project's standing preference is off-chain multisig verification over redundant on-chain checks. Multi-decimal underlying support is not in scope.
+- **Not to be confused with** the internal review's active `L-1` (uint128/uint40 narrowing), which remains open.
+
+### audit-2026-07-28 L-12 — Self-match prevention is address-scoped — REJECTED (accepted by design, pattern #4)
+
+- **Original claim (Informational):** `_validateLiquidity` rejects `liquidity.lender == borrower`, trivially bypassed with a second EOA.
+- **Rejection rationale:** Already settled as critical pattern #4 in `docs/solutions/patterns/ovrflo-critical-patterns.md`. The guard is a correctness guard against an irrational self-loan state, not a security boundary — self-lending is economically irrational (the borrower pays a fee to themselves via treasury), so there is nothing to defend against a determined second-EOA user doing. The audit itself notes it "presumably accepted"; it is.
+
+### No-action informational findings
+
+- **audit-2026-07-28 I-1 — `nonReentrant` on `OVRFLO.wrap`.** Not added. The audit itself describes the vector as already mitigated by the strict balance-delta assertion and a non-callback underlying. OpenZeppelin's guard is contract-wide, and `src/OVRFLO.sol` documents that `nonReentrant` "blocks nested flash loans but does not block deposit/wrap/unwrap during the callback" — adding it would make any flash borrower that wraps inside its callback revert, breaking a documented property to defend a closed vector.
+- **audit-2026-07-28 I-2 — exemption holds.** No change.
+- **audit-2026-07-28 I-6 — exposure bounded to fee revenue.** No change.

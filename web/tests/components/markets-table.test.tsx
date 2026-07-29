@@ -10,11 +10,17 @@ function testAddress(id: number): Address {
 
 const walletState = { address: testAddress(0xa11) as Address | undefined };
 
+vi.mock("@/hooks/useIndexerSync", () => ({
+  useIndexerSync: () => ({ syncedBlock: 100n, headBlock: 100n, lagBlocks: 0n, lagging: false }),
+}));
 vi.mock("wagmi", () => ({
+  useBlockNumber: () => ({ data: 100n }),
   useConnection: () => ({
     status: walletState.address ? "connected" : "disconnected",
     addresses: walletState.address ? [walletState.address] : [],
+    chainId: 1,
   }),
+  useSwitchChain: () => ({ switchChain: () => {}, isPending: false, error: null }),
   useReadContract: () => ({ data: undefined }),
   useReadContracts: () => ({ data: [], isLoading: false, error: null }),
 }));
@@ -279,5 +285,62 @@ describe("RATES column (R5)", () => {
     renderTable({ markets: [market] });
     expect(screen.getByText(/10\.00%–12\.00% APR/)).toBeInTheDocument();
     expect(screen.getByText(/↑/)).toBeInTheDocument();
+  });
+});
+
+// R23/M-11 — the expanded detail used to render as a <tr> inside the markets
+// table, inheriting `table { min-width: 760px }`, so every position card and
+// action button sat in a 760px layout box and overflowed on mobile.
+describe("expanded detail escapes the table's width floor (R23)", () => {
+  it("renders the detail outside the table element", () => {
+    renderTable({ markets: [market] });
+    fireEvent.click(screen.getAllByRole("button", { name: /ovrfloTESTA/ })[0]);
+
+    const region = screen.getByRole("region", { name: /ovrfloTESTA market detail/ });
+    // The assertion that matters: no table ancestor, so no min-width to inherit.
+    expect(region.closest("table")).toBeNull();
+  });
+
+  it("still collapses when the row is toggled off", () => {
+    renderTable({ markets: [market] });
+    const toggle = screen.getAllByRole("button", { name: /ovrfloTESTA/ })[0];
+
+    fireEvent.click(toggle);
+    expect(screen.getByRole("region", { name: /ovrfloTESTA market detail/ })).toBeInTheDocument();
+
+    fireEvent.click(toggle);
+    expect(screen.queryByRole("region", { name: /ovrfloTESTA market detail/ })).not.toBeInTheDocument();
+  });
+
+  it("swaps to the other market's detail rather than showing both", () => {
+    renderTable();
+    const [toggleA, toggleB] = screen.getAllByRole("button", { name: /ovrfloTEST/ });
+
+    fireEvent.click(toggleA);
+    fireEvent.click(toggleB);
+
+    expect(screen.queryByRole("region", { name: /ovrfloTESTA market detail/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("region", { name: /ovrfloTESTB market detail/ })).toBeInTheDocument();
+  });
+});
+
+// R25/L-2 — the vault list capped at 100 with no disclosure at all, unlike the
+// 500-id scans which at least warned. Markets past the hundredth vanished.
+describe("truncation disclosure (R25)", () => {
+  it("discloses truncation when the vault list is capped", () => {
+    renderTable({ truncated: true });
+    expect(screen.getByText("SHOWING FIRST 100 VAULTS AND MARKETS PER VAULT — DATA TRUNCATED")).toBeInTheDocument();
+  });
+
+  it("says nothing when the list is complete", () => {
+    renderTable({ truncated: false });
+    expect(screen.queryByText(/SHOWING FIRST/)).not.toBeInTheDocument();
+  });
+
+  it("uses the same sentence shape as the other capped lists", () => {
+    // The point of the shared component: a reader who has seen one truncation
+    // notice recognises the next one.
+    renderTable({ truncated: true });
+    expect(screen.getByText(/^SHOWING FIRST \d+ [\w ]+ — /)).toBeInTheDocument();
   });
 });

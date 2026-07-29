@@ -25,7 +25,7 @@ import {
 } from "viem";
 import { erc20Abi, ovrfloAbi, ovrfloFactoryAbi, ovrfloLendingAbi, sablierLockupAbi } from "@/lib/abis";
 import { SABLIER_LOCKUP_ADDRESS } from "@/lib/config";
-import { formatMaturity } from "@/lib/format";
+import { formatMaturityDate } from "@/lib/format";
 import { DEV_WALLET_ADDRESS, LENDER_WALLET_ADDRESS } from "./mock-wallet";
 import { RPC_URL, rpcCall } from "./rpc";
 
@@ -120,8 +120,21 @@ export function readSecondaryExpiry(): bigint {
 // both markets share one ovrfloToken/underlying (KTD1-adjacent: cross-market
 // ovrfloToken fungibility is a design feature, so the symbol column is
 // identical for every row).
+export function readPrimaryMaturityLabel(): string {
+  return formatMaturityDate(BigInt(readDeployment().primaryExpiry));
+}
+
 export function readSecondaryMaturityLabel(): string {
-  return formatMaturity(readSecondaryExpiry());
+  // Must stay on whichever formatter the markets table actually renders —
+  // today `formatMaturityDate`, the bare date, with the table supplying its own
+  // surrounding text. DESIGN.md §10 also specifies a caption form carrying a
+  // "Matures " prefix; it has no consumer and so is deliberately not defined in
+  // web/lib/format.ts. This locator matched against that caption form once, and
+  // the extra prefix made `hasText` miss on every row — nine expand-dependent
+  // scenarios each timed out at 30s, which reads as a mass regression rather
+  // than a fixture drifting from the component. If a caption form is ever added
+  // and adopted by the table, this fixture moves with it.
+  return formatMaturityDate(readSecondaryExpiry());
 }
 
 // Throws on a reverted tx rather than handing back a receipt with empty logs
@@ -414,26 +427,19 @@ export async function depositPtForStream(params: { account: Address; ovrflo: Add
 // scenario later depends on must await this before triggering "the frontend
 // re-syncs with chain state", or the reload races the indexer and still
 // finds nothing.
-// Queries Ponder's SQL-over-HTTP endpoint directly with a plain `fetch`
-// rather than importing the app's own `@/lib/ponder` (which pulls in
-// `@ponder/client`) — that package's package.json has no `exports` entry
-// resolvable outside Next.js's bundler, so importing it from Playwright's
-// plain Node runtime throws `No "exports" main defined`. This replicates
-// `fetchHeldStreamIds`'s query (same table/columns) independently.
+// Plain `fetch` rather than importing the app's own `@/lib/ponder`, which
+// carries Next-only module resolution into Playwright's plain Node runtime.
+// Same endpoint, called directly.
 async function ponderHasStream(recipient: Address, streamId: bigint): Promise<boolean> {
-  const payload = {
-    json: {
-      sql: "select stream_id from sablier_streams where recipient = $1 and stream_id = $2 and canceled = false and depleted = false limit $3",
-      params: [recipient.toLowerCase(), streamId.toString(), 1],
-      typings: ["none", "none", "none"],
-    },
-  };
-  const ponderUrl = process.env.E2E_PONDER_URL ?? "http://localhost:42069/sql";
-  const url = `${ponderUrl}/db?sql=${encodeURIComponent(JSON.stringify(payload))}`;
-  const res = await fetch(url);
+  // R38: the /sql arbitrary-query mount is gone, so this asks the same fixed
+  // endpoint the app uses. That is the better test anyway — the fixture now
+  // waits on exactly the surface the browser depends on, rather than a
+  // parallel query that could keep passing after the real one broke.
+  const base = (process.env.E2E_PONDER_URL ?? "http://localhost:42069").replace(/\/sql\/?$/, "");
+  const res = await fetch(`${base}/streams?owner=${recipient.toLowerCase()}&limit=500`);
   if (!res.ok) return false;
-  const body = (await res.json()) as { rows?: unknown[] };
-  return Boolean(body.rows?.length);
+  const body = (await res.json()) as { streamIds?: string[] };
+  return Boolean(body.streamIds?.includes(streamId.toString()));
 }
 
 export async function waitForHeldStream(recipient: Address, streamId: bigint, timeoutMs = 15_000) {
@@ -590,4 +596,60 @@ export async function repayLoanFully(params: { account: Address; lending: Addres
     args: [params.loanId, outstanding],
   });
   await mineAndGetReceipt(hash);
+}
+
+// R46/F2: the sale side of a liquidity position. A lender cannot choose whether
+// their liquidity is drawn as a loan or consumed by an outright sale, and the
+// two leave them holding different things — a loan claim versus the stream NFT
+// itself. This arranges the sale path so the app's own positions view can be
+// checked against it.
+//
+// Deliberately drives the contract rather than the UI: there is no sell-side
+// form (listings stay contract-only by scope), so this is the only way to
+// produce the state the buyer's positions view has to render.
+export async function sellStreamIntoLiquidity(params: {
+  seller: Address;
+  lending: Address;
+  market: Address;
+  streamId: bigint;
+  liquidityId: bigint;
+}) {
+  const client = walletFor(params.seller);
+
+  const approved = await publicClient.readContract({
+    address: SABLIER_LOCKUP_ADDRESS,
+    abi: sablierLockupAbi,
+    functionName: "getApproved",
+    args: [params.streamId],
+  });
+  if (approved.toLowerCase() !== params.lending.toLowerCase()) {
+    const approveHash = await client.writeContract({
+      address: SABLIER_LOCKUP_ADDRESS,
+      abi: sablierLockupAbi,
+      functionName: "approve",
+      args: [params.lending, params.streamId],
+    });
+    await mineAndGetReceipt(approveHash);
+  }
+
+  // minNetOut 0: this fixture is arranging state, not asserting price. A
+  // scenario that cares about the seller's proceeds should assert them itself.
+  const hash = await client.writeContract({
+    address: params.lending,
+    abi: ovrfloLendingAbi,
+    functionName: "sellStreamToLiquidity",
+    args: [params.liquidityId, params.streamId, 0n],
+  });
+  await mineAndGetReceipt(hash);
+}
+
+// The id of the most recently created liquidity position, for pairing a supply
+// with the sale that fills it.
+export async function readLatestLiquidityId(lending: Address): Promise<bigint> {
+  const next = await publicClient.readContract({
+    address: lending,
+    abi: ovrfloLendingAbi,
+    functionName: "nextLiquidityId",
+  });
+  return (next as bigint) - 1n;
 }

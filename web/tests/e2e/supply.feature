@@ -58,3 +58,14 @@ Feature: Supply liquidity
       | width | height |
       | 800   | 900    |
       | 1200  | 900    |
+
+  # R46/F2. A lender cannot restrict how their liquidity is consumed, so the
+  # sale path has to leave them with something the app can actually show. This
+  # is a regression guard on an existing behaviour, not new rendering — but the
+  # discovery hop it depends on (NFT transfer, then the indexer rewriting the
+  # stream's recipient) is exactly the part a component test cannot exercise.
+  Scenario: Cross-cutting — liquidity filled by a sale leaves the stream in my positions
+    Given my supplied liquidity is filled by an outright stream sale
+    And the frontend re-syncs with chain state
+    When I expand the active market
+    Then I see a "STREAM" position card
