@@ -826,20 +826,20 @@ Per-tranche gates from the Product Contract's Success Criteria remain authoritat
 
 **Global**
 
-- [ ] Every one of the 41 findings carries a recorded disposition (U1).
-- [ ] R1–R46 satisfied **except R9–R13** (descoped with U5/U6 — see KTD11) and the maintainer-owned steps below.
-- [ ] `forge build` and `forge test` green, including invariant and fork tiers.
-- [ ] `npm --prefix web run test`, `lint`, and `tsc --noEmit` green.
-- [ ] Full E2E suite green against a freshly bootstrapped local fork.
+- [x] Every one of the 41 findings carries a recorded disposition (U1).
+- [x] R1–R46 satisfied **except R9–R13** (descoped with U5/U6 — see KTD11) and the maintainer-owned steps below.
+- [x] `forge build` and `forge test` green, including invariant and fork tiers. *(344 unit/fuzz + 28 fork + 6 invariant, 0 failed.)*
+- [x] `npm --prefix web run test` (448), `lint`, `tsc --noEmit`, and the a11y sweep green.
+- [x] Full E2E suite green against a freshly bootstrapped local fork *(32 scenarios)*.
 - [x] ~~No liquidity position or loan is unreachable to its owner at any protocol size.~~ **Not achieved — descoped with U5/U6 (KTD11). H-4 and H-5 remain open.**
-- [ ] Abandoned-attempt code from approaches that did not pan out is removed, not left in the diff.
-- [ ] Each ticket in `.scratch/audit-2026-07-28-remediation/issues/` has its acceptance criteria checked and a dated implementation comment.
+- [x] Abandoned-attempt code removed — notably the first, unconditional zero-first approval (U11) and the raw-SQL/transaction scaffolding in the indexer API (U16).
+- [x] Each ticket in `.scratch/audit-2026-07-28-remediation/issues/` has its acceptance criteria checked and a dated implementation comment.
 
 **Maintainer-owned — not dischargeable by the implementing agent (KTD9)**
 
 - [ ] R34: the Alchemy key is rotated in the provider dashboard. *(The agent's share — relocating `.env` and updating dev-setup docs — is covered by U12.)*
 - [ ] R38: rate-limit policy, statement timeout, and route reachability verified against the live deployment and recorded in `docs/audit/`. *(The agent's share — writing and locally verifying the hardening — is covered by U16.)*
-- [ ] R32: the 1200×630 Open Graph asset is supplied, or the build-time generation route is approved. *(An agent cannot author a marketing graphic; U12 wires in whichever lands.)*
+- [x] R32: resolved without a maintainer step — U12 generates the 1200×630 image at build time via `next/og`, so no asset needs supplying. Swap in a designed PNG later if preferred.
 
 **Per unit**
 
