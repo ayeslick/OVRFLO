@@ -60,7 +60,7 @@ export function useHeldStreams(user: Address | null | undefined) {
   const cacheExpired = servingCache && cacheAgeMs > MAX_STALE_MS;
 
   const streamIds = useMemo(
-    () => (cacheExpired ? [] : (discovery.data?.map((stream) => stream.streamId) ?? [])),
+    () => (cacheExpired ? [] : (discovery.data ?? [])),
     [cacheExpired, discovery.data],
   );
 
@@ -92,12 +92,12 @@ export function useHeldStreams(user: Address | null | undefined) {
   });
 
   const streams = useMemo<HeldStream[]>(() => {
-    const ids = cacheExpired ? [] : (discovery.data ?? []);
+    const ids: bigint[] = cacheExpired ? [] : (discovery.data ?? []);
     const results = chainReads.data;
     if (!results) return [];
 
     const hydrated: HeldStream[] = [];
-    ids.forEach((indexed, index) => {
+    ids.forEach((streamId, index) => {
       const record = results[index * 3];
       const withdrawable = results[index * 3 + 1];
       const owner = results[index * 3 + 2];
@@ -115,7 +115,7 @@ export function useHeldStreams(user: Address | null | undefined) {
       if ((owner.result as Address).toLowerCase() !== (user ?? "").toLowerCase()) return;
 
       hydrated.push({
-        streamId: indexed.streamId,
+        streamId,
         recipient: owner.result as Address,
         sender: stream.sender,
         asset: stream.asset,

@@ -422,26 +422,19 @@ export async function depositPtForStream(params: { account: Address; ovrflo: Add
 // scenario later depends on must await this before triggering "the frontend
 // re-syncs with chain state", or the reload races the indexer and still
 // finds nothing.
-// Queries Ponder's SQL-over-HTTP endpoint directly with a plain `fetch`
-// rather than importing the app's own `@/lib/ponder` (which pulls in
-// `@ponder/client`) — that package's package.json has no `exports` entry
-// resolvable outside Next.js's bundler, so importing it from Playwright's
-// plain Node runtime throws `No "exports" main defined`. This replicates
-// `fetchHeldStreamIds`'s query (same table/columns) independently.
+// Plain `fetch` rather than importing the app's own `@/lib/ponder`, which
+// carries Next-only module resolution into Playwright's plain Node runtime.
+// Same endpoint, called directly.
 async function ponderHasStream(recipient: Address, streamId: bigint): Promise<boolean> {
-  const payload = {
-    json: {
-      sql: "select stream_id from sablier_streams where recipient = $1 and stream_id = $2 and canceled = false and depleted = false limit $3",
-      params: [recipient.toLowerCase(), streamId.toString(), 1],
-      typings: ["none", "none", "none"],
-    },
-  };
-  const ponderUrl = process.env.E2E_PONDER_URL ?? "http://localhost:42069/sql";
-  const url = `${ponderUrl}/db?sql=${encodeURIComponent(JSON.stringify(payload))}`;
-  const res = await fetch(url);
+  // R38: the /sql arbitrary-query mount is gone, so this asks the same fixed
+  // endpoint the app uses. That is the better test anyway — the fixture now
+  // waits on exactly the surface the browser depends on, rather than a
+  // parallel query that could keep passing after the real one broke.
+  const base = (process.env.E2E_PONDER_URL ?? "http://localhost:42069").replace(/\/sql\/?$/, "");
+  const res = await fetch(`${base}/streams?owner=${recipient.toLowerCase()}&limit=500`);
   if (!res.ok) return false;
-  const body = (await res.json()) as { rows?: unknown[] };
-  return Boolean(body.rows?.length);
+  const body = (await res.json()) as { streamIds?: string[] };
+  return Boolean(body.streamIds?.includes(streamId.toString()));
 }
 
 export async function waitForHeldStream(recipient: Address, streamId: bigint, timeoutMs = 15_000) {

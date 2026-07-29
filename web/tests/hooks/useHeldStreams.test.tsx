@@ -4,7 +4,6 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { Address } from "viem";
 import type { ReactNode } from "react";
 import { useHeldStreams } from "@/hooks/useHeldStreams";
-import type { HeldStream } from "@/lib/types";
 
 const USER = "0x0000000000000000000000000000000000000a11" as Address;
 const OTHER = "0x0000000000000000000000000000000000000b22" as Address;
@@ -15,20 +14,11 @@ const ASSET = "0x0000000000000000000000000000000000000444" as Address;
 // Everything the app displays or gates on comes from Sablier, so these fixtures
 // deliberately give the indexer *wrong* values: any test that passes by reading
 // them has caught the regression.
-function indexed(streamId: bigint, overrides: Partial<HeldStream> = {}): HeldStream {
-  return {
-    streamId,
-    recipient: OTHER,
-    sender: "0x00000000000000000000000000000000deadbeef" as Address,
-    asset: "0x00000000000000000000000000000000feedface" as Address,
-    endTime: 1n,
-    canceled: true,
-    depleted: true,
-    deposited: 1n,
-    withdrawn: 1n,
-    withdrawable: 1n,
-    ...overrides,
-  };
+// Discovery yields ids only now (R38): the endpoint returns nothing else,
+// because R37 made every other field dead. There is no longer an indexer copy
+// of recipient/sender/asset to accidentally trust.
+function indexed(streamId: bigint): bigint {
+  return streamId;
 }
 
 function onChainStream(overrides: Record<string, unknown> = {}) {
@@ -48,7 +38,7 @@ function onChainStream(overrides: Record<string, unknown> = {}) {
   };
 }
 
-let fetchHeldStreamIdsMock: (...args: unknown[]) => Promise<HeldStream[]>;
+let fetchHeldStreamIdsMock: (...args: unknown[]) => Promise<bigint[]>;
 vi.mock("@/lib/ponder", () => ({
   fetchHeldStreamIds: (...args: unknown[]) => fetchHeldStreamIdsMock(...args),
 }));
@@ -99,7 +89,7 @@ describe("useHeldStreams — chain is the source of truth (R37)", () => {
 
   it("Covers AE6. Drops a stream the connected address does not own on-chain", async () => {
     // The indexer says it is the user's; ownerOf says otherwise. The chain wins.
-    fetchHeldStreamIdsMock = vi.fn().mockResolvedValue([indexed(1n, { recipient: USER })]);
+    fetchHeldStreamIdsMock = vi.fn().mockResolvedValue([indexed(1n)]);
     chainReadsReturn = { data: readsFor(onChainStream(), 5n, OTHER), isLoading: false, error: null };
 
     const { result } = renderHook(() => useHeldStreams(USER), { wrapper });
