@@ -120,6 +120,10 @@ export function readSecondaryExpiry(): bigint {
 // both markets share one ovrfloToken/underlying (KTD1-adjacent: cross-market
 // ovrfloToken fungibility is a design feature, so the symbol column is
 // identical for every row).
+export function readPrimaryMaturityLabel(): string {
+  return formatMaturityDate(BigInt(readDeployment().primaryExpiry));
+}
+
 export function readSecondaryMaturityLabel(): string {
   // formatMaturityDate, not formatMaturity: the markets table renders the bare
   // date and supplies its own surrounding text, while formatMaturity carries

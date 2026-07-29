@@ -13,6 +13,7 @@ import { useLendingLiquidity } from "@/hooks/useLendingLiquidity";
 import { symbolFor, type SymbolMap } from "@/hooks/useMarketSymbols";
 import { useWalletChangeReset } from "@/hooks/useWalletChangeReset";
 import { useWriteFlow } from "@/hooks/useWriteFlow";
+import { useZeroFirstApprove } from "@/hooks/useZeroFirstApprove";
 import { erc20Abi, ovrfloAbi, ovrfloLendingAbi, sablierLockupAbi } from "@/lib/abis";
 import { SABLIER_LOCKUP_ADDRESS } from "@/lib/config";
 import { userFacingError } from "@/lib/errors";
@@ -391,6 +392,7 @@ function SupplyForm({
     selectedAprRaw !== null && ticks.includes(selectedAprRaw) ? selectedAprRaw : (ticks[0] ?? null);
 
   const { approveTx, actionTx, busy } = useApprovalWriteFlows(connectedAddress);
+  const zeroFirst = useZeroFirstApprove(approveTx);
 
   const guard = useWalletChangeReset(connectedAddress, () => {
     setRaw("");
@@ -485,12 +487,7 @@ function SupplyForm({
           type="button"
           onClick={() => {
             if (!market.lending) return;
-            approveTx.writeContract({
-              address: market.underlying,
-              abi: erc20Abi,
-              functionName: "approve",
-              args: [market.lending, amount],
-            });
+            zeroFirst.submit(market.underlying, market.lending, amount, allowanceAmount);
             setApprovedAmount(amount);
           }}
         >
@@ -514,6 +511,11 @@ function SupplyForm({
           SUPPLY @ {aprBps !== null ? formatAprBps(aprBps) : "—"}
         </button>
       )}
+      {zeroFirst.clearing ? (
+        <div className="label mono status-warning" role="status">
+          THIS TOKEN REQUIRES CLEARING ITS ALLOWANCE FIRST — APPROVE TWICE
+        </div>
+      ) : null}
       <ApproveTxState tx={approveTx} label="APPROVE" />
       <TxState tx={actionTx} pendingLabel="SUPPLY" />
       {actionTx.isConfirmed ? <CloseButton onClose={onClose} /> : null}
@@ -665,6 +667,7 @@ function ConvertForm({
   const ovrfloSymbol = symbolFor(symbols, market.ovrfloToken);
 
   const { approveTx, actionTx, busy } = useApprovalWriteFlows(connectedAddress);
+  const zeroFirst = useZeroFirstApprove(approveTx);
   const disabled = amount === 0n || busy || actionTx.isConfirmed;
 
   const guard = useWalletChangeReset(connectedAddress, () => {
@@ -827,12 +830,7 @@ function ConvertForm({
           disabled={disabled}
           type="button"
           onClick={() => {
-            approveTx.writeContract({
-              address: market.ptToken,
-              abi: erc20Abi,
-              functionName: "approve",
-              args: [market.vault, amount],
-            });
+            zeroFirst.submit(market.ptToken, market.vault, amount, ptAllowance.data ?? 0n);
             setPtApprovedAmount(amount);
           }}
         >
@@ -847,12 +845,7 @@ function ConvertForm({
             // Wrap approves the exact amount it spends; only the deposit fee —
             // which requotes between blocks — carries the 2% buffer (R9).
             const approveAmount = mode === "wrap" ? amount : bufferedFeeApproveAmount(feeAmount);
-            approveTx.writeContract({
-              address: market.underlying,
-              abi: erc20Abi,
-              functionName: "approve",
-              args: [market.vault, approveAmount],
-            });
+            zeroFirst.submit(market.underlying, market.vault, approveAmount, underlyingAllowance.data ?? 0n);
             setUnderlyingApprovedAmount(approveAmount);
           }}
         >
@@ -893,6 +886,11 @@ function ConvertForm({
           {mode === "claim_matured" ? "CLAIM" : mode.toUpperCase()}
         </button>
       )}
+      {zeroFirst.clearing ? (
+        <div className="label mono status-warning" role="status">
+          THIS TOKEN REQUIRES CLEARING ITS ALLOWANCE FIRST — APPROVE TWICE
+        </div>
+      ) : null}
       <ApproveTxState tx={approveTx} label="APPROVE" />
       <TxState tx={actionTx} pendingLabel={mode.toUpperCase()} />
       {actionTx.isConfirmed ? <CloseButton onClose={onClose} /> : null}
@@ -956,6 +954,7 @@ function BorrowForm({
   const plan = selectedApr !== null ? planSelectedBorrow(ladder, selectedApr, target) : null;
 
   const { approveTx, actionTx, busy } = useApprovalWriteFlows(connectedAddress);
+  const zeroFirst = useZeroFirstApprove(approveTx);
 
   const guard = useWalletChangeReset(connectedAddress, () => {
     setSelectedStreamId(action.streamId ?? null);
@@ -1289,6 +1288,11 @@ function BorrowForm({
         </button>
       )}
 
+      {zeroFirst.clearing ? (
+        <div className="label mono status-warning" role="status">
+          THIS TOKEN REQUIRES CLEARING ITS ALLOWANCE FIRST — APPROVE TWICE
+        </div>
+      ) : null}
       <ApproveTxState tx={approveTx} label="APPROVE STREAM" />
       {actionTx.isSigning ? <div className="label mono status-warning">BORROW: SIGNING</div> : null}
       {actionTx.isConfirming ? (
@@ -1363,6 +1367,7 @@ function AdjustRateForm({
   const idleAmount = positionIdleAmount ?? 0n;
 
   const { approveTx, actionTx, busy } = useApprovalWriteFlows(connectedAddress);
+  const zeroFirst = useZeroFirstApprove(approveTx);
 
   // An ERC20 shortfall here is a liquidity race (position shrank after the
   // fresh read), so it routes through the stale-recovery path too.
@@ -1513,12 +1518,7 @@ function AdjustRateForm({
           type="button"
           onClick={() => {
             if (!market.lending) return;
-            approveTx.writeContract({
-              address: market.underlying,
-              abi: erc20Abi,
-              functionName: "approve",
-              args: [market.lending, idleAmount],
-            });
+            zeroFirst.submit(market.underlying, market.lending, idleAmount, allowance.data ?? 0n);
             setApprovedAmount(idleAmount);
           }}
         >
@@ -1534,6 +1534,11 @@ function AdjustRateForm({
           {staleRecovery ? "RE-CONFIRM ADJUST RATE" : "ADJUST RATE"}
         </button>
       )}
+      {zeroFirst.clearing ? (
+        <div className="label mono status-warning" role="status">
+          THIS TOKEN REQUIRES CLEARING ITS ALLOWANCE FIRST — APPROVE TWICE
+        </div>
+      ) : null}
       <ApproveTxState tx={approveTx} label="APPROVE" />
       {actionTx.isSigning ? <div className="label mono status-warning">MOVE: SIGNING</div> : null}
       {actionTx.isConfirming ? (
@@ -1592,6 +1597,7 @@ function RepayForm({
   const repayAmount = repayInput > outstanding && outstanding > 0n ? outstanding : repayInput;
 
   const { approveTx, actionTx, busy } = useApprovalWriteFlows(connectedAddress);
+  const zeroFirst = useZeroFirstApprove(approveTx);
 
   const guard = useWalletChangeReset(connectedAddress, () => {
     setRaw("");
@@ -1683,12 +1689,7 @@ function RepayForm({
           type="button"
           onClick={() => {
             if (!market.lending) return;
-            approveTx.writeContract({
-              address: market.ovrfloToken,
-              abi: erc20Abi,
-              functionName: "approve",
-              args: [market.lending, repayAmount],
-            });
+            zeroFirst.submit(market.ovrfloToken, market.lending, repayAmount, repayAllowance.data ?? 0n);
             setRepayApprovedAmount(repayAmount);
           }}
         >
@@ -1712,6 +1713,11 @@ function RepayForm({
           REPAY {formatTokenAmount(repayAmount, ovrfloSymbol)}
         </button>
       )}
+      {zeroFirst.clearing ? (
+        <div className="label mono status-warning" role="status">
+          THIS TOKEN REQUIRES CLEARING ITS ALLOWANCE FIRST — APPROVE TWICE
+        </div>
+      ) : null}
       <ApproveTxState tx={approveTx} label="APPROVE REPAY" />
       <TxState tx={actionTx} pendingLabel="REPAY" />
       {actionTx.isConfirmed ? <CloseButton onClose={onClose} /> : null}

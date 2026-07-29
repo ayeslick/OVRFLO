@@ -1,7 +1,14 @@
 import { expect, type Locator, type Page } from "@playwright/test";
 import { formatUnits } from "viem";
 import { Given, Then, When } from "../fixtures/bdd";
-import { advancePastExpiry, publicClient, readSecondaryExpiry, readSecondaryMaturityLabel, WSTETH } from "../fixtures/chain";
+import {
+  advancePastExpiry,
+  publicClient,
+  readPrimaryMaturityLabel,
+  readSecondaryExpiry,
+  readSecondaryMaturityLabel,
+  WSTETH,
+} from "../fixtures/chain";
 import { DEV_WALLET_ADDRESS, waitForWalletConnected } from "../fixtures/mock-wallet";
 import { erc20Abi } from "@/lib/abis";
 
@@ -63,6 +70,20 @@ Given("the frontend re-syncs with chain state", async ({ page }) => {
 // PositionList right before the next assertion looks for a `.position-card`.
 When("I expand the active market", async ({ page }) => {
   const toggle = page.locator("tr", { hasText: readSecondaryMaturityLabel() }).first().locator(".row-toggle");
+  if ((await toggle.getAttribute("aria-expanded")) === "true") return;
+  await toggle.click();
+});
+
+// The empty-categories scenario asserts an ABSENCE, so it needs a market where
+// absence is guaranteed rather than incidental. Every arrange step in this suite
+// targets the secondary market; the primary one is seeded but never transacted
+// in by the dev wallet, so it is empty by construction. Asserting against the
+// secondary market instead made the scenario pass only when whatever ran before
+// it happened to leave the wallet clean — it failed in any run that put the
+// borrow scenarios ahead of it, which reads as a regression in whatever changed
+// most recently rather than as the ordering dependency it actually is.
+When("I expand a market I hold no positions in", async ({ page }) => {
+  const toggle = page.locator("tr", { hasText: readPrimaryMaturityLabel() }).first().locator(".row-toggle");
   if ((await toggle.getAttribute("aria-expanded")) === "true") return;
   await toggle.click();
 });

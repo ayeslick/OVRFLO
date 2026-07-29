@@ -28,7 +28,7 @@ Feature: Claim all
     And the "RESUME" button is enabled
 
   Scenario: Cross-cutting — empty position categories render nothing, not placeholder text
-    When I expand the active market
+    When I expand a market I hold no positions in
     Then there is no "LENDING" position group
     And there is no "BORROWING" position group
     And there is no "STREAMS" position group
