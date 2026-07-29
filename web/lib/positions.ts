@@ -1,8 +1,8 @@
 import { parseEventLogs, type Address, type Log } from "viem";
 import { ovrfloLendingAbi } from "./generated";
-import { loanOutstanding, upfrontBps } from "./lending-math";
+import { aprChoices, loanOutstanding, upfrontBps } from "./lending-math";
 import { classifyBorrowError, resolveSelectedTick, type BorrowErrorKind } from "./borrow";
-import type { TickDepth } from "./router";
+import { buildLadder, type TickDepth } from "./router";
 import type { Loan, LiquidityPosition, LoanPool } from "./types";
 
 // Pure card-state logic for the positions panel (ticket 08).
@@ -72,6 +72,34 @@ export function borrowTeaserBps(ladder: TickDepth[], ttmSeconds: bigint, feeBps:
   const best = resolveSelectedTick(ladder, null);
   if (best === null) return null;
   return upfrontBps(best, ttmSeconds, feeBps);
+}
+
+// Market-level teaser from raw reads: builds the tick ladder, then prices the
+// best liquid tick. Null means no postable (non-self) liquidity at any rate —
+// the one definition of "empty" shared by the stream cards and the market-row
+// BORROW gate, so the two can never drift apart on what empty means.
+export function marketBorrowTeaserBps({
+  liquidity,
+  market,
+  aprMinBps,
+  aprMaxBps,
+  feeBps,
+  ttmSeconds,
+  matured,
+  self,
+}: {
+  liquidity: LiquidityPosition[];
+  market: Address;
+  aprMinBps: number;
+  aprMaxBps: number;
+  feeBps: number;
+  ttmSeconds: bigint;
+  matured: boolean;
+  self?: Address;
+}): bigint | null {
+  if (matured) return null;
+  const ticks = aprMaxBps > 0 ? aprChoices(aprMinBps, aprMaxBps) : [];
+  return borrowTeaserBps(buildLadder(liquidity, market, ticks, self), ttmSeconds, feeBps);
 }
 
 // The receipt is the source of truth for what an adjust-rate actually did.

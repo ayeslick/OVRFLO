@@ -180,6 +180,7 @@ beforeEach(() => {
   readState.marketTotalDeposited = 0n;
   readState.wrappedUnderlying = 1_000_000n * WAD;
   readState.liquidityPositions = [testAddress(0xa11), testAddress(6), 1000, 50n * WAD];
+  delete readState.previewDeposit;
 });
 
 type Row = {
@@ -353,5 +354,24 @@ describe("ActionModal / FormBody — all 12 action types", () => {
     expect(stepIndicatorText(container)).toContain("[3] CONFIRMED");
     expect(container.querySelectorAll(".modal-step-list span")).toHaveLength(3);
     expect(screen.getByRole("button", { name: "APPROVE PT" })).toBeInTheDocument();
+  });
+
+  it("deposit: approves the fee with a 2% buffer, never the exact fee and never unlimited", () => {
+    // Both allowance reads share one mock key, so pick an allowance that covers
+    // the typed PT amount (no PT approve step) but not the fee (underlying
+    // approve step armed).
+    const fee = 20n * WAD;
+    readState.allowance = 10n * WAD;
+    readState.previewDeposit = [10n * WAD, 10n * WAD, fee, 0n];
+    renderAction({ type: "deposit" });
+
+    fireEvent.change(screen.getByPlaceholderText("0.00"), { target: { value: "10" } });
+    fireEvent.click(screen.getByRole("button", { name: "APPROVE TESTA" }));
+
+    const [call] = writeFlows.first.writeContract.mock.calls;
+    expect(call[0].functionName).toBe("approve");
+    expect(call[0].args[1]).toBe((fee * 102n) / 100n);
+    expect(call[0].args[1]).not.toBe(fee);
+    expect(call[0].args[1]).not.toBe((1n << 256n) - 1n);
   });
 });

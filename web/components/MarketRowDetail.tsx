@@ -4,11 +4,14 @@ import { useState } from "react";
 import type { Address } from "viem";
 import { useReadContract, useReadContracts } from "wagmi";
 import { useHeldStreams } from "@/hooks/useHeldStreams";
+import { useLending } from "@/hooks/useLending";
+import { useLendingLiquidity } from "@/hooks/useLendingLiquidity";
 import { symbolFor, type SymbolMap } from "@/hooks/useMarketSymbols";
 import { useNowSeconds } from "@/hooks/useNowSeconds";
 import { erc20Abi, ovrfloAbi } from "@/lib/abis";
 import { formatTokenAmount } from "@/lib/format";
 import { isSeriesMatchedStream } from "@/lib/modal-logic";
+import { marketBorrowTeaserBps } from "@/lib/positions";
 import type { ActiveAction, MarketInfo } from "@/lib/types";
 import { PositionList } from "./PositionList";
 
@@ -61,6 +64,22 @@ export function MarketRowDetail({ market, user, symbols, onMode }: Props) {
   const streams = useHeldStreams(user);
   const eligibleStreams = streams.streams.filter((stream) => isSeriesMatchedStream(stream, market));
 
+  // Same ladder/teaser path PositionList prices its stream cards from, so the
+  // market-row gate and the per-stream placeholder always agree on "empty".
+  const lending = useLending(market.lending);
+  const liquidity = useLendingLiquidity(market.lending);
+  const liquiditySettled = !lending.isLoading && !liquidity.isLoading;
+  const borrowTeaserBps = marketBorrowTeaserBps({
+    liquidity: liquidity.liquidity,
+    market: market.market,
+    aprMinBps: lending.params.aprMinBps,
+    aprMaxBps: lending.params.aprMaxBps,
+    feeBps: lending.params.feeBps,
+    ttmSeconds: matured ? 0n : market.expiryCached - nowSeconds,
+    matured,
+    self: user,
+  });
+
   const ovrfloBal = ovrfloBalance?.status === "success" ? ovrfloBalance.result : 0n;
   const underlyingBal = underlyingBalance?.status === "success" ? underlyingBalance.result : 0n;
   const ptBal = ptBalance?.status === "success" ? ptBalance.result : 0n;
@@ -71,7 +90,13 @@ export function MarketRowDetail({ market, user, symbols, onMode }: Props) {
   const supplyCaption = baseActionCaption(disconnected, Boolean(market.lending), matured);
   const borrowCaption =
     baseActionCaption(disconnected, Boolean(market.lending), matured) ??
-    (eligibleStreams.length === 0 ? "NO STREAMS AVAILABLE" : null);
+    (eligibleStreams.length === 0 ? "NO STREAMS AVAILABLE" : null) ??
+    // Only claim "no liquidity" once the reads settle — an in-flight read is
+    // not-yet-known, not empty (KTD2).
+    (liquiditySettled && borrowTeaserBps === null ? "NO LIQUIDITY POSTED AT ANY RATE" : null);
+  // An unsettled read keeps BORROW disabled without asserting why: opening the
+  // flow blind is what walks a borrower into a wasted APPROVE STREAM signature.
+  const borrowDisabled = Boolean(borrowCaption) || !liquiditySettled;
   const depositCaption = disconnected ? "CONNECT WALLET" : null;
 
   return (
@@ -177,7 +202,7 @@ export function MarketRowDetail({ market, user, symbols, onMode }: Props) {
           <button
             className="button button-cyan mono"
             type="button"
-            disabled={Boolean(borrowCaption)}
+            disabled={borrowDisabled}
             onClick={() => onMode({ type: "borrow" })}
           >
             BORROW
