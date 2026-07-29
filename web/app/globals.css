@@ -250,24 +250,6 @@ tr:last-child td {
   max-width: 640px;
 }
 
-.market-detail-meta {
-  display: flex;
-  gap: 1.5rem;
-  margin-top: 0.35rem;
-  color: var(--dim);
-  font-size: 0.78rem;
-}
-
-.market-detail-section {
-  padding-top: 1.25rem;
-  border-top: 1px solid var(--graphite);
-}
-
-.market-detail-section:first-of-type {
-  border-top: none;
-  padding-top: 0;
-}
-
 .market-detail-actions {
   display: flex;
   gap: 1rem;
@@ -341,13 +323,6 @@ tr:last-child td {
 
 .position-group table {
   min-width: 0;
-}
-
-.position-summary {
-  border: 1px solid var(--graphite);
-  padding: 1rem;
-  display: grid;
-  gap: 0.5rem;
 }
 
 /* Balance summary */
@@ -621,6 +596,13 @@ tbody tr {
 }
 
 /* --- Summary strip + claim-all queue (U5) --- */
+/* Referenced by PositionSummary but previously undefined (R30). The strip is a
+   distinct band above the markets table, so it carries its own top rule rather
+   than inheriting only .section's padding. */
+.summary-strip {
+  border-top: 1px solid var(--graphite);
+}
+
 .summary-strip-cells {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
@@ -649,7 +631,14 @@ tbody tr {
   align-items: stretch;
 }
 @media (max-width: 800px) {
-  .summary-strip-cells {
+  /* Referenced by PositionSummary but previously undefined (R30). The strip is a
+   distinct band above the markets table, so it carries its own top rule rather
+   than inheriting only .section's padding. */
+.summary-strip {
+  border-top: 1px solid var(--graphite);
+}
+
+.summary-strip-cells {
     grid-template-columns: 1fr;
   }
   .summary-cell.action-with-caption .button {

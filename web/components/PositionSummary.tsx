@@ -33,6 +33,15 @@ export type MarketAggregate = {
 // R1 summary strip: four aggregate cells, amounts grouped per token symbol —
 // never summed across different tokens, no USD. Renders only when connected
 // with at least one position (R4). Its single action is CLAIM ALL (R2).
+//
+// R31/L-8 — the no-USD choice is a deliberate deviation, recorded rather than
+// left implicit. ETHSKILLS /frontend-ux Rule 4 asks for dollar context wherever
+// amounts matter, and this app shows none. A price feed is a third-party
+// runtime dependency whose staleness is its own hazard: a wrong USD figure next
+// to a correct token amount is worse than no USD figure, and every number here
+// is already denominated in the asset the user actually holds and acts on. The
+// dead CoinGecko CSP origin and NEXT_PUBLIC_PRICE_API_URL that implied a
+// half-built price path have been removed rather than left as a placeholder.
 export function PositionSummary({ markets, user, symbols }: Props) {
   const streams = useHeldStreams(user);
   const [aggregates, setAggregates] = useState<Record<string, MarketAggregate>>({});

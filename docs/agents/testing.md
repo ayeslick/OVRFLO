@@ -50,9 +50,25 @@ These are the tier that actually needs a live environment, and the tier where ag
 ### One-shot setup (use this, not the manual steps)
 
 ```bash
-export MAINNET_RPC_URL=...     # a paid archive RPC — required
+set -a && . ~/.config/ovrflo/env && set +a   # loads MAINNET_RPC_URL
 npm --prefix web run bootstrap:e2e
 ```
+
+**Secrets live outside the repository** (R34/L-9). The archive-RPC credential
+used to sit in `/.env` at the repo root, where Foundry auto-loaded it — one
+`git add -f` from being committed, and readable by any local process. It now
+lives at `~/.config/ovrflo/env` with mode 600. Nothing auto-loads it, so export
+it explicitly as above before any command that needs it — `forge` fork tests
+included:
+
+```bash
+set -a && . ~/.config/ovrflo/env && set +a
+forge test --match-path "test/fork/*" --fork-url $MAINNET_RPC_URL
+```
+
+Note that a forked Anvil carries the credential on its own command line, so it
+is visible to `ps` for the lifetime of the process. Treat the key as rotatable
+and rotate it if a fork has run on a shared machine.
 
 This runs `tools/scripts/bootstrap-e2e.sh`, which:
 1. Tears down any existing local environment unconditionally (`bootstrap-clean.sh local`) — you do not need to check whether something is already running first, and you should not try to reuse a possibly-stale environment from an earlier session.

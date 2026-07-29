@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev --turbopack",
     "typegen": "wagmi generate",
-    "build": "npm run typegen && node scripts/build-csp.mjs && next build && node scripts/verify-static-export.mjs",
+    "build": "npm run typegen && node scripts/build-csp.mjs && next build && node scripts/csp-hash-inline.mjs && node scripts/verify-static-export.mjs",
     "build:csp": "node scripts/build-csp.mjs",
     "start": "next start",
     "lint": "eslint .",

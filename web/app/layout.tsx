@@ -1,18 +1,25 @@
 import type { Metadata } from "next";
 import "./globals.css";
 
+// R32/L-4: absolute URLs for social unfurls, from configuration rather than
+// inferred. A static export has no request context to infer a host from, and a
+// relative OG image URL does not resolve for the crawlers that read it. The
+// literal stays as the fallback so a local build still produces valid metadata.
+const siteOrigin = process.env.NEXT_PUBLIC_SITE_ORIGIN || "https://overflow.finance";
+
 export const metadata: Metadata = {
+  metadataBase: new URL(siteOrigin),
   title: "OVRFLO Markets",
   description: "Markets UI for OVRFLO self-repaying loans and vault flows.",
   openGraph: {
     title: "OVRFLO Markets",
     description: "Markets UI for OVRFLO self-repaying loans and vault flows.",
-    url: "https://overflow.finance",
+    url: siteOrigin,
     siteName: "OVRFLO",
     type: "website",
   },
   twitter: {
-    card: "summary",
+    card: "summary_large_image",
     title: "OVRFLO Markets",
     description: "Markets UI for OVRFLO self-repaying loans and vault flows.",
   },
