@@ -1,8 +1,22 @@
 ---
 kind: required_reading
 scope: ovrflo
-last_updated: 2026-07-27
+last_updated: 2026-07-29
 audience: [lenders, ai-agents]
+---
+
+## Settled security findings — read before raising one
+
+Three findings have been raised, disproven, and then re-raised by a later reviewer who followed the documented entry points but did not take the second hop into the record. They are enumerated here, inline, so the collision is visible without opening another file. If your finding matches one, the record is your starting point — bring new evidence or move on.
+
+- **Third-party Sablier withdrawal diverging lending accounting.** Raised as `H-2` by the internal review, again as `H-1` by the 2026-07-28 audit (where it was the lead blocker behind a "do not ship" conclusion). **Disproven both times.** The deployed Sablier at `0xAFb979d9afAd1aD27C5eFf4E27226E3AB9e5dCC9` is v2-core `v1.1`, whose `withdraw` reverts `SablierV2Lockup_Unauthorized` unless the caller is the stream sender, NFT owner, or approved operator. `src/OVRFLO.sol` has no withdraw path; `src/OVRFLOLending.sol` approves no operator. Newer Sablier Lockup docs describe a public withdraw-to-recipient path — **a different version than the one deployed here.** Reproducible: `test_LendingEscrow_StrangerCannotWithdrawFromEscrowedStream` in `test/fork/OVRFLOLendingMainnetFork.t.sol` includes the `to = address(lending)` case that discriminates the two ACLs.
+- **R-01 — on-chain 18-decimal enforcement for PT.** Declined by design (see below). Re-raised as the 2026-07-28 audit's `L-1`.
+- **Pattern #4 — address-scoped self-match prevention.** A correctness guard against an irrational self-loan state, not a security boundary (see below). Re-raised as the 2026-07-28 audit's `L-12`.
+
+**Finding IDs collide across audits.** The internal review and the 2026-07-28 audit both use `H-1`, `H-2`, `L-1`, `L-2`, and `I-4` for unrelated findings — notably, the internal review's `L-1` (uint128/uint40 narrowing) is **still active** while the 2026-07-28 `L-1` is rejected. Always qualify an ID with its audit.
+
+Full disproofs: `docs/audit/rejected-findings-record.md`. Sablier ACL table: `docs/audit/sablier-interface-contract.md`.
+
 ---
 
 <!--
