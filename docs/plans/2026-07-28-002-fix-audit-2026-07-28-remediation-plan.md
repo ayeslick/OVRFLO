@@ -268,6 +268,10 @@ These are pipeline practices rather than audit findings, so they sit outside the
 
 - KTD9. Two requirements are maintainer-owned and cannot be discharged by the implementing agent. R34's key rotation is a credential action performed in the provider's dashboard; the agent's share is relocating the file out of the repository root and updating dev-setup docs. R38's "verified against the live deployment" needs access to the deployed Ponder instance; the agent's share is writing and locally verifying the hardening. Both units are complete from the agent's side without those steps and must say so rather than claiming the requirement closed.
 
+- KTD11. **U5 and U6 are descoped; no Solidity changes ship in this plan.** *(session-settled: user-directed — chosen over landing the per-user indexes and bounded gather: the user declined the contract change outright.)* The consequence is not cosmetic and is recorded rather than absorbed: **H-4 and H-5 remain open**, and **R9–R13 are unmet**. A lender's positions past the client's 500-id enumeration window stay unreachable through the app, and every position view keeps paying a cost that scales with total protocol history. The audit's two highest-consequence *real* findings are therefore still live after this plan completes. The Definition of Done below is amended accordingly — it can no longer claim R1–R46.
+
+  Downstream effects: U15's R45 ("positions, loans, and ladder depth remain available while the indexer is unreachable") already holds today, because those are on-chain reads — it becomes a regression guard rather than a consequence of U6. U17 loses its U6 dependency, since there are no new query keys to register.
+
 - KTD10. Tranche order is review cadence, not dependency. Four blocking edges are real: **U5 and U6 land together** (the `gatherLiquidity` signature change breaks its callers on contact — including `test/fizz/handlers/OVRFLOLendingHandler.sol`, which `forge build` compiles, so U5 alone turns its own gate red); U15 cannot start before U6 and U14 (its degraded-view claim depends on ladder reads being off the indexer, and its cached-entry hydration *is* U14's mechanism); and U17 cannot land before U6 (scoped invalidation only refetches registered keys, so removing the prefix-match blanket before U6 registers its per-user and paginated-gather keys reintroduces H-5's symptom through the fix). Every other unit is independently startable. *(session-settled: user-directed — chosen over hard-blocking each tranche on the one before it: most tickets have no code dependency on their predecessor, and serializing them would idle work that could land in parallel. The four edges above are code dependencies, not cadence.)*
 
 ### Unit dependency graph
@@ -309,8 +313,8 @@ Units map 1:1 onto the approved tickets in `.scratch/audit-2026-07-28-remediatio
 | U2 | Wrong-network write safety | `web/components/ActionModal.tsx`, `web/lib/config.ts` | — |
 | U3 | Post-confirm control re-arm | `web/components/ActionModal.tsx` | — |
 | U4 | Reverted approval as failure | `web/lib/convert.ts`, `web/components/ActionModal.tsx` | — |
-| U5 | Contract per-user indexes + bounded gather | `src/OVRFLOLending.sol`, `test/`, ABI callers | lands with U6 |
-| U6 | Client consumes indexes + paginated ladder | `web/hooks/`, `web/lib/lending-math.ts`, `web/components/ActionModal.tsx` | U5 (same landing) |
+| ~~U5~~ | ~~Contract per-user indexes + bounded gather~~ | — | **descoped (KTD11)** |
+| ~~U6~~ | ~~Client consumes indexes + paginated ladder~~ | — | **descoped (KTD11)** |
 | U7 | Amount input accessibility & correctness | `web/components/ActionModal.tsx`, `web/hooks/useNowSeconds.ts` | — |
 | U8 | Ladder & modal interaction accessibility | `web/components/ActionModal.tsx`, `web/app/globals.css` | — |
 | U9 | Touch targets, contrast, mobile layout | `web/app/globals.css`, `web/components/PositionList.tsx`, `web/components/MarketsTable.tsx` | — |
@@ -321,7 +325,7 @@ Units map 1:1 onto the approved tickets in `.scratch/audit-2026-07-28-remediatio
 | U14 | Stream values hydrated from Sablier | `web/hooks/useHeldStreams.ts`, `web/lib/ponder.ts` | — |
 | U15 | Degraded-indexer UX | `web/hooks/useHeldStreams.ts`, `web/components/PositionList.tsx` | U6, U14 |
 | U16 | Hardened indexer read surface | `tools/ponder/src/api/index.ts`, `tools/ponder/ponder.config.ts`, `web/lib/ponder.ts` | — |
-| U17 | Scoped cache invalidation & sync staleness | `web/lib/invalidate.ts`, `web/lib/query-keys.ts`, `web/hooks/useTxQueue.ts` | U6 |
+| U17 | Scoped cache invalidation & sync staleness | `web/lib/invalidate.ts`, `web/lib/query-keys.ts`, `web/hooks/useTxQueue.ts` | — |
 | U18 | Claim-plan freshness & signer-switch guard | `web/components/ActionModal.tsx` | — |
 
 ### U1. Audit disposition record
@@ -416,7 +420,10 @@ Units map 1:1 onto the approved tickets in `.scratch/audit-2026-07-28-remediatio
 
 **Verification:** `npm --prefix web run test` green.
 
-### U5. Contract: per-user indexes and bounded gather
+### U5. Contract: per-user indexes and bounded gather — DESCOPED
+
+**Status:** not implemented. See KTD11 — the user declined the Solidity change. H-4 and H-5 remain open and R9–R13 unmet. The design below is preserved verbatim so a later session can pick it up without re-deriving it.
+
 
 **Goal:** A lender's or borrower's own positions are a direct read with no global scan, and `gatherLiquidity` becomes bounded and cursored.
 
@@ -454,7 +461,10 @@ Units map 1:1 onto the approved tickets in `.scratch/audit-2026-07-28-remediatio
 
 **Verification:** `forge build` then `forge test`; invariant and fork tests green; a re-audit note recorded in `docs/audit/` describing the new index and view surface.
 
-### U6. Client consumes per-user indexes and paginated ladder
+### U6. Client consumes per-user indexes and paginated ladder — DESCOPED
+
+**Status:** not implemented; blocked by U5's descope (KTD11). The client keeps its 500-id oldest-first enumeration.
+
 
 **Goal:** No position or loan is unreachable to its owner at any protocol size, and no position view's cost scales with total protocol history.
 
@@ -797,15 +807,13 @@ R36 is a guard, not a change (KTD8): add a check that fails if the handler or ta
 
 | Gate | Command / check | Applies to |
 |---|---|---|
-| Solidity build and test | `forge build` then `forge test` | U5 |
-| Invariant suite | `FOUNDRY_PROFILE=invariant forge test --match-contract OVRFLOLendingInvariant` | U5 |
-| Fork tests | `forge test --match-path "test/fork/*" --fork-url $MAINNET_RPC_URL` | U5 |
-| Frontend unit | `npm --prefix web run test` | U2–U4, U6–U18 |
+| Solidity build and test | `forge build` then `forge test` | U1 (fork evidence only; U5 descoped) |
+| Frontend unit | `npm --prefix web run test` | U2–U4, U7–U18 |
 | Lint | `npm --prefix web run lint` | all web units |
 | Typecheck | `web/node_modules/.bin/tsc --noEmit` | all web units |
 | Accessibility | `npm --prefix web run a11y` | U7, U8, U9 |
 | Production build | `npm --prefix web run build` with production origins set, and again with one missing | U12 |
-| E2E | `npm --prefix web run bootstrap:e2e` then `npm --prefix web run test:e2e` | U6, U13, U15 |
+| E2E | `npm --prefix web run bootstrap:e2e` then `npm --prefix web run test:e2e` | U13, U15 |
 | Fork (H-1 evidence) | `forge test --match-path "test/fork/*" --fork-url $MAINNET_RPC_URL` | U1 |
 
 Read `docs/agents/testing.md` before running the E2E tier and before treating a mass failure as a regression — there is one shared Anvil/Ponder/dev-server environment, and a collision looks exactly like a suite-wide break.
@@ -819,11 +827,11 @@ Per-tranche gates from the Product Contract's Success Criteria remain authoritat
 **Global**
 
 - [ ] Every one of the 41 findings carries a recorded disposition (U1).
-- [ ] R1–R46 satisfied, except the two maintainer-owned steps recorded below.
+- [ ] R1–R46 satisfied **except R9–R13** (descoped with U5/U6 — see KTD11) and the maintainer-owned steps below.
 - [ ] `forge build` and `forge test` green, including invariant and fork tiers.
 - [ ] `npm --prefix web run test`, `lint`, and `tsc --noEmit` green.
 - [ ] Full E2E suite green against a freshly bootstrapped local fork.
-- [ ] No liquidity position or loan is unreachable to its owner at any protocol size.
+- [x] ~~No liquidity position or loan is unreachable to its owner at any protocol size.~~ **Not achieved — descoped with U5/U6 (KTD11). H-4 and H-5 remain open.**
 - [ ] Abandoned-attempt code from approaches that did not pan out is removed, not left in the diff.
 - [ ] Each ticket in `.scratch/audit-2026-07-28-remediation/issues/` has its acceptance criteria checked and a dated implementation comment.
 

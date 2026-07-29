@@ -484,13 +484,14 @@ describe("post-confirm re-arm (R7)", () => {
       />,
     );
 
-    // Every enabled button left on screen is a CLOSE affordance, never a
-    // resubmit of the action that just landed.
+    // No enabled control can submit. CLOSE dismisses and MAX only fills the
+    // field — neither signs anything — so the assertion is about submitting
+    // controls, not about every button on screen.
     const enabled = screen
       .getAllByRole("button")
       .filter((b) => !(b as HTMLButtonElement).disabled)
       .map((b) => b.textContent ?? "");
-    expect(enabled.every((label) => /CLOSE/i.test(label))).toBe(true);
+    expect(enabled.every((label) => /CLOSE|MAX/i.test(label))).toBe(true);
   });
 
   it("clears the amount field so spent arguments cannot be resubmitted", () => {
@@ -547,5 +548,67 @@ describe("post-confirm re-arm (R7)", () => {
     // not merely on an amount having been entered.
     const enabled = screen.getAllByRole("button").filter((b) => !(b as HTMLButtonElement).disabled);
     expect(enabled.length).toBeGreaterThan(0);
+  });
+});
+
+// R14/R22/R24 — amount-input accessibility and correctness (findings M-1, M-12, L-11).
+describe("amount input accessibility (R14/R24)", () => {
+  const WITH_AMOUNT: Array<{ action: ActiveAction; id: string }> = [
+    { action: { type: "supply" }, id: "supply-amount" },
+    { action: { type: "deposit" }, id: "convert-amount" },
+    { action: { type: "wrap" }, id: "convert-amount" },
+    { action: { type: "unwrap" }, id: "convert-amount" },
+    { action: { type: "borrow", streamId: 9n }, id: "borrow-amount" },
+  ];
+
+  it.each(WITH_AMOUNT)("$action.type: the field is labelled and reachable by its label", ({ action, id }) => {
+    renderAction(action);
+    const field = screen.getByPlaceholderText("0.00");
+    expect(field).toHaveAttribute("id", id);
+    // A label associated by `for`/`id` is what makes the field announceable;
+    // the placeholder is not a label.
+    expect(document.querySelector(`label[for="${id}"]`)).toBeTruthy();
+  });
+
+  it.each(WITH_AMOUNT)("$action.type: the field requests a decimal keypad", ({ action }) => {
+    renderAction(action);
+    expect(screen.getByPlaceholderText("0.00")).toHaveAttribute("inputmode", "decimal");
+  });
+
+  it("exposes validation state programmatically, not just as a CSS class", () => {
+    // Type more than the mocked wallet balance to trip INSUFFICIENT BALANCE.
+    readState.balanceOf = 1n;
+    renderAction({ type: "wrap" });
+    const field = screen.getByPlaceholderText("0.00");
+
+    expect(field).toHaveAttribute("aria-invalid", "false");
+
+    fireEvent.change(field, { target: { value: "500" } });
+
+    expect(field).toHaveAttribute("aria-invalid", "true");
+    // The message must be associated with the field, not merely nearby.
+    const describedBy = field.getAttribute("aria-describedby") ?? "";
+    expect(describedBy).toContain("convert-amount-error");
+    expect(document.getElementById("convert-amount-error")?.textContent).toMatch(/INSUFFICIENT BALANCE/);
+  });
+
+  it("shows a balance line and a MAX control where the amount is wallet-bounded", () => {
+    readState.balanceOf = 42n * WAD;
+    renderAction({ type: "wrap" });
+
+    expect(screen.getByText(/BALANCE/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "MAX" }));
+    expect(screen.getByPlaceholderText("0.00")).toHaveValue("42");
+  });
+
+  it("omits the balance line on borrow, which is bounded by ladder depth not wallet", () => {
+    renderAction({ type: "borrow", streamId: 9n });
+    expect(screen.queryByRole("button", { name: "MAX" })).not.toBeInTheDocument();
+  });
+
+  it("disables MAX at a zero balance rather than filling in 0", () => {
+    readState.balanceOf = 0n;
+    renderAction({ type: "wrap" });
+    expect(screen.getByRole("button", { name: "MAX" })).toBeDisabled();
   });
 });

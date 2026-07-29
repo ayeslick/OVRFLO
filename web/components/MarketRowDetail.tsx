@@ -35,7 +35,7 @@ function baseActionCaption(disconnected: boolean, lendingDeployed: boolean, matu
 // then the three mode buttons. Disabled modes always say why (DESIGN.md §8) —
 // never hidden without a caption, except DEPOSIT PT which R7 hides post-maturity.
 export function MarketRowDetail({ market, user, symbols, onMode }: Props) {
-  const nowSeconds = useNowSeconds();
+  const nowSeconds = useNowSeconds(true);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const matured = nowSeconds >= market.expiryCached;
 

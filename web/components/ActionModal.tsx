@@ -249,6 +249,80 @@ function WrongNetworkNotice({
   );
 }
 
+// R14/R24: the amount field was a bare `<input>` at all four call sites — no
+// programmatic label, no decimal input mode, and a validation state carried only
+// by a CSS class, which assistive technology cannot see. One primitive so the
+// four cannot drift, and so a fifth form inherits the behaviour.
+//
+// `max` is optional. Three forms bound the amount by a wallet balance and expose
+// MAX plus a balance line; BorrowForm does not, because a borrow is bounded by
+// posted ladder depth rather than by anything in the user's wallet — showing a
+// wallet balance there would describe the wrong constraint.
+function AmountInput({
+  id,
+  label,
+  value,
+  onChange,
+  error,
+  balance,
+  symbol,
+  max,
+  maxDisabled,
+}: {
+  id: string;
+  label: string;
+  value: string;
+  onChange: (next: string) => void;
+  error?: string | null;
+  balance?: bigint;
+  symbol?: string;
+  max?: () => void;
+  /// Repay bounds MAX by the outstanding obligation, not the wallet balance.
+  maxDisabled?: boolean;
+}) {
+  const errorId = `${id}-error`;
+  const balanceId = `${id}-balance`;
+  const describedBy = [error ? errorId : null, balance !== undefined ? balanceId : null]
+    .filter(Boolean)
+    .join(" ");
+
+  return (
+    <div className="amount-field">
+      <label className="label mono" htmlFor={id}>
+        {label}
+      </label>
+      <input
+        id={id}
+        className={`input mono ${error ? "input-error" : ""}`}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="0.00"
+        inputMode="decimal"
+        autoComplete="off"
+        aria-invalid={Boolean(error)}
+        aria-describedby={describedBy || undefined}
+      />
+      {balance !== undefined ? (
+        <div className="balance-row">
+          <span id={balanceId} className="label mono">
+            BALANCE {formatTokenAmount(balance, symbol ?? "")}
+          </span>
+          {max ? (
+            <button className="button mono" type="button" disabled={maxDisabled ?? balance === 0n} onClick={max}>
+              MAX
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+      {error ? (
+        <div id={errorId} className="label mono status-negative" role="alert">
+          {error}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function WalletChangedNotice({ onContinue }: { onContinue: () => void }) {
   return (
     <div className="form-grid">
@@ -384,8 +458,16 @@ function SupplyForm({
         emptyText="LOADING RATES"
       />
       <DemandAnnotation status={demandState.status} />
-      <input className={`input mono ${validationError ? "input-error" : ""}`} value={raw} onChange={(e) => setRaw(e.target.value)} placeholder="0.00" />
-      {validationError ? <div className="label mono status-negative">{validationError}</div> : null}
+      <AmountInput
+        id="supply-amount"
+        label={`AMOUNT (${underlyingSymbol})`}
+        value={raw}
+        onChange={setRaw}
+        error={validationError}
+        balance={walletBalance}
+        symbol={underlyingSymbol}
+        max={() => setRaw(formatUnits18(walletBalance))}
+      />
       {matured ? <div className="label mono status-negative">MARKET MATURED — SUPPLY CLOSED</div> : null}
       <div className="summary-row mono" aria-live="polite">
         SUPPLY {formatTokenAmount(amount, underlyingSymbol)} @ {aprBps !== null ? formatAprBps(aprBps) : "—"}
@@ -575,7 +657,7 @@ function ConvertForm({
   const [raw, setRaw] = useState("");
   const [ptApprovedAmount, setPtApprovedAmount] = useState(0n);
   const [underlyingApprovedAmount, setUnderlyingApprovedAmount] = useState(0n);
-  const nowSeconds = useNowSeconds();
+  const nowSeconds = useNowSeconds(true);
   const amount = parseAmount(raw);
   const mode = action.type as ConvertMode;
   const connectedAddress = connection.addresses?.[0];
@@ -643,6 +725,9 @@ function ConvertForm({
     query: { enabled: Boolean(connectedAddress) },
   });
   const spendToken = mode === "deposit" ? market.ptToken : mode === "wrap" ? market.underlying : market.ovrfloToken;
+  // PT has no entry in the symbol map — it is not one of the market's named
+  // tokens — so the deposit case names it directly rather than rendering blank.
+  const spendSymbol = mode === "deposit" ? "PT" : mode === "wrap" ? underlyingSymbol : ovrfloSymbol;
   const balanceRead = useReadContract({
     address: spendToken,
     abi: erc20Abi,
@@ -688,8 +773,16 @@ function ConvertForm({
 
   return (
     <div className="form-grid">
-      <input className={`input mono ${validationError ? "input-error" : ""}`} value={raw} onChange={(e) => setRaw(e.target.value)} placeholder="0.00" />
-      {validationError ? <div className="label mono status-negative">{validationError}</div> : null}
+      <AmountInput
+        id="convert-amount"
+        label={`AMOUNT (${spendSymbol})`}
+        value={raw}
+        onChange={setRaw}
+        error={validationError}
+        balance={walletBalance}
+        symbol={spendSymbol}
+        max={() => setRaw(formatUnits18(walletBalance))}
+      />
       {mode === "deposit" ? (
         <div className="summary-row mono" aria-live="polite">
           {depositPreview ? (
@@ -840,7 +933,7 @@ function BorrowForm({
   const [submitted, setSubmitted] = useState<{ target: bigint; quotedNet: bigint } | null>(null);
   // Known on the very first render, so a matured market is gated before the
   // ladder or router ever run — not even for a frame.
-  const nowSeconds = useNowSeconds();
+  const nowSeconds = useNowSeconds(true);
 
   const target = parseAmount(raw);
   const connectedAddress = connection.addresses?.[0];
@@ -1073,7 +1166,12 @@ function BorrowForm({
         )
       ) : null}
 
-      <input className="input mono" value={raw} onChange={(e) => setRaw(e.target.value)} placeholder="0.00" />
+      <AmountInput
+        id="borrow-amount"
+        label={`AMOUNT (${underlyingSymbol})`}
+        value={raw}
+        onChange={setRaw}
+      />
 
       <label className="label mono" htmlFor="borrow-slippage">
         SLIPPAGE %
@@ -1245,7 +1343,7 @@ function AdjustRateForm({
 
   const [selectedAprRaw, setSelectedAprRaw] = useState<number | null>(null);
   const [approvedAmount, setApprovedAmount] = useState(0n);
-  const nowSeconds = useNowSeconds();
+  const nowSeconds = useNowSeconds(true);
 
   const connectedAddress = connection.addresses?.[0];
   const underlyingSymbol = symbolFor(symbols, market.underlying);
@@ -1558,16 +1656,17 @@ function RepayForm({
   return (
     <div className="form-grid">
       <div className="label mono">LOAN {formatId(loan.id)} / OUTSTANDING {formatTokenAmount(outstanding, ovrfloSymbol)}</div>
-      <input className={`input mono ${validationError ? "input-error" : ""}`} value={raw} onChange={(e) => setRaw(e.target.value)} placeholder="0.00" />
-      {validationError ? <div className="label mono status-negative">{validationError}</div> : null}
-      <button
-        className="button mono"
-        type="button"
-        disabled={outstanding === 0n}
-        onClick={() => setRaw(formatUnits18(repayMax(loan, walletBalance)))}
-      >
-        MAX
-      </button>
+      <AmountInput
+        id="repay-amount"
+        label={`AMOUNT (${ovrfloSymbol})`}
+        value={raw}
+        onChange={setRaw}
+        error={validationError}
+        balance={walletBalance}
+        symbol={ovrfloSymbol}
+        max={() => setRaw(formatUnits18(repayMax(loan, walletBalance)))}
+        maxDisabled={outstanding === 0n}
+      />
       <div className="summary-row mono" aria-live="polite">
         REPAY {formatTokenAmount(repayAmount, ovrfloSymbol)} / REMAINING {formatTokenAmount(outstanding - repayAmount, ovrfloSymbol)}
       </div>

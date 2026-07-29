@@ -386,6 +386,14 @@ tr:last-child td {
   gap: 0.75rem;
 }
 
+/* Groups the label, field, balance line, and validation message so they read as
+   one control. Gap is tighter than .form-grid's so the group stays visually
+   distinct from the fields around it. */
+.amount-field {
+  display: grid;
+  gap: 0.375rem;
+}
+
 .summary-row {
   border: 1px solid var(--graphite);
   color: var(--chalk);

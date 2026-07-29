@@ -50,7 +50,7 @@ export function PositionList({ market, user, symbols, onAction }: Props) {
   const liquidity = useLendingLiquidity(market.lending);
   const loanBook = useLoanBook(market.lending, user);
   const streams = useHeldStreams(user);
-  const nowSeconds = useNowSeconds();
+  const nowSeconds = useNowSeconds(true);
 
   const normalizedUser = user?.toLowerCase();
   const userLiquidity = selectLiquidityForLender(liquidity.liquidity, market.market, normalizedUser);
