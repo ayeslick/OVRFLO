@@ -125,10 +125,15 @@ export function readPrimaryMaturityLabel(): string {
 }
 
 export function readSecondaryMaturityLabel(): string {
-  // formatMaturityDate, not formatMaturity: the markets table renders the bare
-  // date and supplies its own surrounding text, while formatMaturity carries
-  // the "Matures " caption prefix (DESIGN.md §10). Using the caption form here
-  // makes the row locator miss and every expand-dependent scenario time out.
+  // Must stay on whichever formatter the markets table actually renders —
+  // today `formatMaturityDate`, the bare date, with the table supplying its own
+  // surrounding text. DESIGN.md §10 also specifies a caption form carrying a
+  // "Matures " prefix; it has no consumer and so is deliberately not defined in
+  // web/lib/format.ts. This locator matched against that caption form once, and
+  // the extra prefix made `hasText` miss on every row — nine expand-dependent
+  // scenarios each timed out at 30s, which reads as a mass regression rather
+  // than a fixture drifting from the component. If a caption form is ever added
+  // and adopted by the table, this fixture moves with it.
   return formatMaturityDate(readSecondaryExpiry());
 }
 

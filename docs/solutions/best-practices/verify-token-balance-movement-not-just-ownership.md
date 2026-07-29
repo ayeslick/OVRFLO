@@ -1,43 +1,54 @@
 ---
 title: Non-fork tests must verify token balance movement, not just ownership/NFT/state checks
 category: best-practices
-module: test/OVRFLOBook.t.sol
+module: test/OVRFLOLending.t.sol
 date: 2026-06-27
+last_updated: 2026-07-29
 problem_type: best_practice
 component: testing_framework
 severity: low
 applies_when:
-  - "Writing or reviewing non-fork tests for OVRFLOBook that exercise offers, listings, loans, or any flow that moves underlying or ovrfloToken between parties"
+  - "Writing or reviewing non-fork tests for OVRFLOLending that exercise liquidity positions, listings, loans, or any flow that moves underlying or ovrfloToken between parties"
   - "A test checks stream ownership (sablier.ownerOf), loan state, or capacity but skips verifying the actual token balance deltas for seller, buyer, treasury, and the contract"
-  - "Deciding what to assert after a book operation to prove money moved correctly rather than only that an entry changed hands"
-tags: [testing, foundry, assertions, token-balances, money-movement, ovrflobook, non-fork-tests, sablier]
+  - "Deciding what to assert after a lending-market operation to prove money moved correctly rather than only that an entry changed hands"
+tags: [testing, foundry, assertions, token-balances, money-movement, ovrflolending, non-fork-tests, sablier]
 ---
 
 # Non-fork tests must verify token balance movement, not just ownership/NFT/state checks
 
 ## Context
 
-`OVRFLOBook` is a value-routing contract: every entry function pulls underlying
+> **Naming note (2026-07-29):** this learning was written when the secondary
+> market was called `OVRFLOBook`. The contract is now `OVRFLOLending`, and the
+> pool-only consolidation renamed or removed several entry points:
+> `sellIntoOffer` → `sellStreamToLiquidity`, `createBorrowPool` →
+> `createBorrowerLoanPool`, `claimPoolShare` → `claimLoanPoolShare`, and
+> `createLenderPool` is gone (loan pools are now the only lending mechanism).
+> The historical narrative below keeps the old names where it describes what was
+> done in June 2026; the guidance and the "When to Apply" list use current ones.
+
+`OVRFLOLending` is a value-routing contract: every entry function pulls underlying
 from one party, pays net to another, routes a fee to the treasury, and either
-escrows or releases a Sablier stream NFT. The non-fork test suite (240 tests
-across all non-fork files, with `test/OVRFLOBook.t.sol` as the primary file)
-covered the control flow well, but a review surfaced a systematic blind spot:
+escrows or releases a Sablier stream NFT. The non-fork test suite as it stood in
+June 2026 (240 tests across all non-fork files, with the primary file then named
+`test/OVRFLOBook.t.sol` — now `test/OVRFLOLending.t.sol`) covered the control
+flow well, but a review surfaced a systematic blind spot:
 the tests asserted **state flags and NFT ownership** without asserting the
 **token balances** that those state transitions are supposed to produce.
 
 A representative case, `test_HitOffer_PricesFromRemainingAfterPriorWithdrawals`,
 confirmed that the sale offer's `capacity` dropped to `0` and that
 `sablier.ownerOf(28)` moved to `BUYER`, but it never checked
-`underlying.balanceOf(address(book))`, `underlying.balanceOf(TREASURY)`, or
+`underlying.balanceOf(address(lending))`, `underlying.balanceOf(TREASURY)`, or
 `underlying.balanceOf(BUYER)`. In other words, the test proved the offer was
 *consumed* and the stream was *transferred*, but not that the underlying
-*left the book*, that the *fee was paid*, or that the upfront-liquidity provider
+*left the market*, that the *fee was paid*, or that the upfront-liquidity provider
 ended up at zero. The same shape recurred across `sellIntoOffer`, `buyListing`,
 `createBorrowPool`, `createLenderPool`, and the loan-servicing paths
 (`claimPoolShare`, `closeLoan`, `repayLoan`).
 
 The friction this created: a future refactor that breaks `_payUnderlying` (wrong
-payee, skipped fee, value stranded in the book, double-pay) would pass every
+payee, skipped fee, value stranded in the market, double-pay) would pass every
 flag and ownership assertion in the suite and ship a fund-loss bug. State flags
 and NFT ownership are necessary but not sufficient evidence that value routed
 correctly, and value routing is the entire reason this contract exists.
@@ -92,13 +103,13 @@ a Sablier stream rather than underlying, assert `ovrfloToken.balanceOf`,
 
 ## Why This Matters
 
-The highest-severity bug class in `OVRFLOBook` is a misrouted payment: value
+The highest-severity bug class in `OVRFLOLending` is a misrouted payment: value
 sent to the wrong address, a fee skipped or double-charged, or funds stranded in
 the contract after an entry is torn down. None of those are caught by
 `capacity == 0`, `active == false`, or `sablier.ownerOf(...) == X`:
 
 - `capacity == 0` proves the offer was consumed; it does not prove the
-  underlying left the book.
+  underlying left the market.
 - `sablier.ownerOf(28) == BUYER` proves the stream was transferred; it does not
   prove the seller was paid.
 - `loan.closed == true` proves the loan was closed; it does not prove the lender
@@ -122,12 +133,14 @@ measurable runtime cost, and all 240 non-fork tests still pass.
 
 - Any non-fork **or** fork test that calls a function transferring `underlying`,
   `ovrfloToken`, or a Sablier stream NFT.
-- New tests written for `OVRFLOBook` entry/teardown functions: `sellIntoOffer`,
-  `buyListing`, `createBorrowPool`, `createLenderPool`, the `cancel*`
-  functions, and `claimPoolShare` / `closeLoan` / `repayLoan`.
+- New tests written for `OVRFLOLending` entry/teardown functions:
+  `supplyLiquidity`, `withdrawLiquidity`, `sellStreamToLiquidity`,
+  `postSaleListing`, `cancelSaleListing`, `buyListing`, and the loan-servicing
+  paths `createBorrowerLoanPool` / `claimLoanPoolShare` / `closeLoan` /
+  `repayLoan`.
 - During test PR review: if a balance assertion is missing for a party that
   touched value, request it before approving. The four-party check (actor,
-  counterparty, treasury, book) is the minimum, not a nice-to-have.
+  counterparty, treasury, market) is the minimum, not a nice-to-have.
 - On revert paths that expect no state change, asserting that all balances are
   unchanged is a cheap and worth-keeping invariant.
 - Skip only for pure view-function tests or tests that assert nothing but event
@@ -199,10 +212,10 @@ money actually moved to the right places."
 
 ## Related
 
-- `test/OVRFLOBook.t.sol` — the ~15 tests updated with full balance assertions
-  (`sellIntoOffer`, `buyListing`, `createBorrowPool`, `createLenderPool`,
-  `claimPoolShare`, `closeLoan`, `repayLoan` paths).
-- `src/OVRFLOBook.sol` — the entry/teardown and loan-servicing functions whose
+- `test/OVRFLOLending.t.sol` — the ~15 tests updated with full balance
+  assertions during the June 2026 pass (then named `test/OVRFLOBook.t.sol`);
+  the practice held, and the file now carries 73 `balanceOf` assertions.
+- `src/OVRFLOLending.sol` — the entry/teardown and loan-servicing functions whose
   value routing these assertions guard (`_payUnderlying`, `_pullExact`, and the
   per-flow payout logic).
 - [patterns/ovrflo-critical-patterns.md](../patterns/ovrflo-critical-patterns.md)

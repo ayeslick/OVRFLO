@@ -5,7 +5,7 @@ module: test/
 date: 2026-07-03
 last_updated: 2026-07-15
 problem_type: best_practice
-component: test_suite
+component: testing_framework
 severity: low
 applies_when:
   - "Auditing Solidity test coverage for regression hardening"
