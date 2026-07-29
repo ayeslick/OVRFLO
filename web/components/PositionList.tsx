@@ -288,7 +288,7 @@ function LoanCard({
                   type="button"
                   onClick={() => onAction({ type: "repay", loanId: loan.id })}
                 >
-                  REPAY EARLY
+                  REPAY LOAN
                 </button>
               ) : null}
             </>

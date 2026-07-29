@@ -179,7 +179,7 @@ describe("close gate (R17)", () => {
     expect(screen.queryByText("CLOSE")).not.toBeInTheDocument();
     // Repay lives behind the ADVANCED disclosure on card loans (ticket 08).
     fireEvent.click(screen.getByRole("button", { name: /ADVANCED/ }));
-    expect(screen.getByText("REPAY EARLY")).toBeInTheDocument();
+    expect(screen.getByText("REPAY LOAN")).toBeInTheDocument();
   });
 
   it("shows CLOSE when the stream covers the outstanding obligation", () => {

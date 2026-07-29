@@ -58,7 +58,7 @@ export type Accent = "gold" | "cyan" | "neutral";
 export const ACTION_META: Record<ActionType, { title: string; accent: Accent }> = {
   supply: { title: "SUPPLY LIQUIDITY", accent: "gold" },
   withdraw: { title: "WITHDRAW LIQUIDITY", accent: "gold" },
-  claim_share: { title: "CLAIM LENDING SHARE", accent: "gold" },
+  claim_share: { title: "CLAIM SHARE", accent: "gold" },
   deposit: { title: "DEPOSIT PT", accent: "gold" },
   claim_matured: { title: "CLAIM MATURED PT", accent: "gold" },
   wrap: { title: "WRAP", accent: "neutral" },
@@ -577,7 +577,7 @@ function SimpleActionForm({
         buttonText = "CLAIM SHARE";
         return () => {
           if (!market.lending) return;
-          setPendingLabel("CLAIM");
+          setPendingLabel("CLAIM SHARE");
           tx.writeContract({
             address: market.lending,
             abi: ovrfloLendingAbi,
@@ -591,7 +591,7 @@ function SimpleActionForm({
         buttonText = "CLAIM STREAM";
         return () => {
           if (!connectedAddress) return;
-          setPendingLabel("CLAIM");
+          setPendingLabel("CLAIM STREAM");
           tx.writeContract({
             address: SABLIER_LOCKUP_ADDRESS,
             abi: sablierLockupAbi,
@@ -798,7 +798,7 @@ function ConvertForm({
         </div>
       ) : null}
       {mode === "unwrap" ? (
-        <div className="label mono">UNWRAP CAPACITY {formatTokenAmount(wrapCapacity, underlyingSymbol)}</div>
+        <div className="label mono">WRAP RESERVE {formatTokenAmount(wrapCapacity, underlyingSymbol)}</div>
       ) : null}
       {mode === "deposit" && capLoaded && capLimit > 0n ? (
         capReached ? (
@@ -1531,7 +1531,7 @@ function AdjustRateForm({
           type="button"
           onClick={() => void submitAdjust()}
         >
-          {staleRecovery ? "RE-CONFIRM MOVE" : "MOVE LIQUIDITY"}
+          {staleRecovery ? "RE-CONFIRM ADJUST RATE" : "ADJUST RATE"}
         </button>
       )}
       <ApproveTxState tx={approveTx} label="APPROVE" />

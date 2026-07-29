@@ -283,7 +283,7 @@ const table: Row[] = [
     action: { type: "adjust_rate", positionId: 1n },
     expectedAccent: "gold",
     steps: ["APPROVE", "SIGN", "CONFIRMED"],
-    buttonName: "MOVE LIQUIDITY",
+    buttonName: "ADJUST RATE",
     hasAmountInput: false,
     // Same ladder as supply: aprChoices(1000, 1200) = [1000, 1100, 1200].
     extraFieldCheck: () => expect(screen.getAllByRole("radio")).toHaveLength(3),
@@ -610,5 +610,32 @@ describe("amount input accessibility (R14/R24)", () => {
     readState.balanceOf = 0n;
     renderAction({ type: "wrap" });
     expect(screen.getByRole("button", { name: "MAX" })).toBeDisabled();
+  });
+});
+
+// R26/L-7 — the same action carried different names in different places:
+// CLAIM LENDING SHARE / CLAIM SHARE / CLAIM, ADJUST RATE / MOVE LIQUIDITY,
+// REPAY LOAN / REPAY EARLY, UNWRAP CAPACITY / WRAP RESERVE EMPTY.
+describe("terminology consistency (R26)", () => {
+  it("claim_share reads the same in its title and its button", () => {
+    const { container } = renderAction({ type: "claim_share", positionId: 1n });
+    expect(ACTION_META.claim_share.title).toBe("CLAIM SHARE");
+    expect(screen.getByRole("button", { name: "CLAIM SHARE" })).toBeInTheDocument();
+    expect(container.textContent).not.toMatch(/CLAIM LENDING SHARE/);
+  });
+
+  it("adjust_rate's submit uses the same verb as its entry point and title", () => {
+    renderAction({ type: "adjust_rate", positionId: 1n });
+    expect(ACTION_META.adjust_rate.title).toBe("ADJUST RATE");
+    expect(screen.getByRole("button", { name: "ADJUST RATE" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "MOVE LIQUIDITY" })).not.toBeInTheDocument();
+  });
+
+  it("names the wrap reserve the same way whether or not it is empty", () => {
+    // Was UNWRAP CAPACITY in the modal and WRAP RESERVE EMPTY in the row detail
+    // for the same underlying quantity.
+    renderAction({ type: "unwrap" });
+    expect(screen.getByText(/WRAP RESERVE/)).toBeInTheDocument();
+    expect(screen.queryByText(/UNWRAP CAPACITY/)).not.toBeInTheDocument();
   });
 });

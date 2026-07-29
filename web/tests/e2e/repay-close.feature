@@ -1,5 +1,5 @@
 Feature: Repay and close a loan
-  Entry: REPAY EARLY (behind ADVANCED) or CLOSE on an open loan card. Decision:
+  Entry: REPAY LOAN (behind ADVANCED) or CLOSE on an open loan card. Decision:
   for repay, how much to pay down early; close takes no input. Exit: the
   loan's outstanding balance drops, or the loan settles and the stream
   returns to the borrower.
@@ -13,7 +13,7 @@ Feature: Repay and close a loan
     And the frontend re-syncs with chain state
     When I expand the active market
     And I open the loan's advanced panel
-    And I click the "REPAY EARLY" button
+    And I click the "REPAY LOAN" button
     Then the "REPAY LOAN" modal is open
     And I fill the amount field with "0.5"
     And I click the "APPROVE REPAY" button
@@ -34,7 +34,7 @@ Feature: Repay and close a loan
     And the frontend re-syncs with chain state
     When I expand the active market
     And I open the loan's advanced panel
-    And I click the "REPAY EARLY" button
+    And I click the "REPAY LOAN" button
     Then the "REPAY LOAN" modal is open
     And my ovrfloToken balance is drained
     And I fill the amount field with "0.5"
@@ -45,7 +45,7 @@ Feature: Repay and close a loan
     And the frontend re-syncs with chain state
     When I expand the active market
     And I open the loan's advanced panel
-    And I click the "REPAY EARLY" button
+    And I click the "REPAY LOAN" button
     Then the "REPAY LOAN" modal is open
     And the loan is fully repaid from another channel
     Then I see the caption "LOAN NOT FOUND"
@@ -55,7 +55,7 @@ Feature: Repay and close a loan
     And the frontend re-syncs with chain state
     When I expand the active market
     And I open the loan's advanced panel
-    And I click the "REPAY EARLY" button
+    And I click the "REPAY LOAN" button
     Then the "REPAY LOAN" modal is open
     And I fill the amount field with "0.5"
     And I click the "APPROVE REPAY" button

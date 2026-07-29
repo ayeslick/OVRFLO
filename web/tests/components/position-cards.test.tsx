@@ -176,9 +176,9 @@ describe("loan cards", () => {
     const onAction = renderList();
     expect(screen.getByText("SELF-REPAYING")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "CLOSE" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "REPAY EARLY" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "REPAY LOAN" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /ADVANCED/ }));
-    fireEvent.click(screen.getByRole("button", { name: "REPAY EARLY" }));
+    fireEvent.click(screen.getByRole("button", { name: "REPAY LOAN" }));
     expect(onAction).toHaveBeenCalledWith({ type: "repay", loanId: 1n });
   });
 
