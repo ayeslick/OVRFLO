@@ -52,9 +52,34 @@ const WINDOW_MS = 60_000;
 const MAX_REQUESTS = Number(process.env.PONDER_RATE_LIMIT ?? 120);
 const hits = new Map<string, { count: number; resetAt: number }>();
 
+// CF-Connecting-IP and X-Forwarded-For are set by whatever is in front of this
+// service — and, on a direct connection, by the caller. Trusting them
+// unconditionally does not weaken the limit, it removes it: a client that sets
+// its own X-Forwarded-For gets a fresh counter on every request, so no window
+// ever fills. Defence in depth still has to defend against someone who has read
+// the code.
+//
+// So the headers are believed only when the deployment says something in front
+// is setting them (and stripping inbound copies). Otherwise the key is the peer
+// address of the connection itself, which a caller cannot choose.
+const TRUST_PROXY_HEADERS = /^(1|true|yes)$/i.test(process.env.PONDER_TRUST_PROXY ?? "");
+
+// The Node adapter Ponder serves through exposes the request socket on the Hono
+// env. Read defensively: an adapter that does not is a reason to fall back to a
+// shared bucket, not to start believing the headers again.
+function peerAddress(env: unknown): string | undefined {
+  const socket = (env as { incoming?: { socket?: { remoteAddress?: unknown } } } | undefined)?.incoming?.socket;
+  return typeof socket?.remoteAddress === "string" ? socket.remoteAddress : undefined;
+}
+
 app.use("*", async (c, next) => {
-  const key =
-    c.req.header("CF-Connecting-IP") ?? c.req.header("X-Forwarded-For")?.split(",")[0]?.trim() ?? "unknown";
+  const forwarded = TRUST_PROXY_HEADERS
+    ? (c.req.header("CF-Connecting-IP") ?? c.req.header("X-Forwarded-For")?.split(",")[0]?.trim())
+    : undefined;
+  // "unknown" is a single shared bucket, so an unidentifiable caller is rate
+  // limited together with every other unidentifiable caller. That errs strict:
+  // the failure is a 429 for a misconfigured deployment, not a silent bypass.
+  const key = forwarded || peerAddress(c.env) || "unknown";
   const now = Date.now();
   const entry = hits.get(key);
 

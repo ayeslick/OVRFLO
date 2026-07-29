@@ -46,8 +46,10 @@ export function MarketsTable({ markets, truncated, symbols, user, selected, onSe
       </div>
       {/* L-2: the vault list caps at 100 and said nothing — markets past the
           hundredth simply vanished. Same disclosure component the 500-id scans
-          use, so every truncated list reads the same way. */}
-      {truncated ? <TruncationNotice limit={100} noun="VAULTS" /> : null}
+          use, so every truncated list reads the same way. The cap applies twice
+          over (vaults, then each vault's markets), so the noun names what the
+          reader is looking at rather than which of the two caps was hit. */}
+      {truncated ? <TruncationNotice limit={100} noun="VAULTS AND MARKETS PER VAULT" /> : null}
       <div className="table-container">
         <table>
           <thead>

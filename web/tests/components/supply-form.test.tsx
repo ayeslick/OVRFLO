@@ -97,7 +97,8 @@ vi.mock("@/hooks/useLending", () => ({
     error: null,
   }),
 }));
-vi.mock("@/lib/invalidate", () => ({
+vi.mock("@/lib/invalidate", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/invalidate")>()),
   invalidateAllOnChainReads: vi.fn(),
   scheduleHeldStreamsRetry: () => () => {},
 }));

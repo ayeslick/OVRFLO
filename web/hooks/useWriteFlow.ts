@@ -7,13 +7,24 @@ import type { Address } from "viem";
 import { chainId as configuredChainId } from "@/lib/config";
 import { invalidateOnChainReads, scheduleHeldStreamsRetry } from "@/lib/invalidate";
 
-export function useWriteFlow(user?: Address) {
+/**
+ * @param related Contracts whose reads a write from this flow can change even
+ * though the transaction is not addressed to them — the tokens it pulls or
+ * mints, the Sablier stream it moves. Pass `marketContracts(market)`; without
+ * it, invalidation is scoped to the transaction's `to` and token balances and
+ * allowances stay stale after the receipt.
+ */
+export function useWriteFlow(user?: Address, related: readonly Address[] = EMPTY) {
   const queryClient = useQueryClient();
   const lastInvalidatedHash = useRef<`0x${string}` | undefined>(undefined);
-  // R39: the address each write targeted, so invalidation can be scoped to the
-  // reads that write could actually have changed. Captured at submit rather
-  // than derived at confirm time — by then the args are gone.
+  // R39: the addresses each write could have changed, so invalidation can be
+  // scoped to those reads. Captured at submit rather than derived at confirm
+  // time — by then the args are gone.
   const touched = useRef<Address[]>([]);
+  // Read at submit time rather than closed over, so a call site that recomputes
+  // its market set between renders cannot pin an old one into `writeContract`.
+  const relatedRef = useRef(related);
+  relatedRef.current = related;
   const cancelRetry = useRef<(() => void) | undefined>(undefined);
   const write = useWriteContract();
   const receipt = useWaitForTransactionReceipt({
@@ -60,10 +71,14 @@ export function useWriteFlow(user?: Address) {
   const writeContract = useCallback(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ((args: any, options: any) => {
-      // R39: record the target so the post-confirm invalidation can be scoped
-      // to the reads this write could have changed. Captured here rather than
-      // derived at confirm time, when the args are gone.
-      if (args?.address) touched.current = [args.address as Address];
+      // R39: record the target *and* the market's other contracts, so the
+      // post-confirm invalidation covers the reads this write could have
+      // changed — including the token balances and allowances a call to the
+      // vault or the lending market moves. Captured here rather than derived at
+      // confirm time, when the args are gone.
+      touched.current = args?.address
+        ? [args.address as Address, ...relatedRef.current]
+        : [...relatedRef.current];
       return write.writeContract({ chainId: configuredChainId, ...args }, options);
     }) as typeof write.writeContract,
     [write],
@@ -87,3 +102,6 @@ export function useWriteFlow(user?: Address) {
     hasFailed: Boolean(write.error ?? receipt.error) || isReverted,
   };
 }
+
+// Module-level so the default argument keeps a stable identity across renders.
+const EMPTY: readonly Address[] = [];

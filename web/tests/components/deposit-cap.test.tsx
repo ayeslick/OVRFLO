@@ -76,7 +76,8 @@ vi.mock("@/hooks/useLending", () => ({
 vi.mock("@/hooks/useBorrowDemand", () => ({
   useBorrowDemand: () => ({ status: "ok", demand: [], peak: 0n }),
 }));
-vi.mock("@/lib/invalidate", () => ({
+vi.mock("@/lib/invalidate", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/invalidate")>()),
   invalidateAllOnChainReads: vi.fn(),
   scheduleHeldStreamsRetry: () => () => {},
 }));

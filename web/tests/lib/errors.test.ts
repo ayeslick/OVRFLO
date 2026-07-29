@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { BaseError, ContractFunctionRevertedError } from "viem";
-import { eligibilityErrorNames, STALE_LIQUIDITY_REASONS, userFacingError } from "@/lib/errors";
+import { BaseError, ContractFunctionRevertedError, UserRejectedRequestError } from "viem";
+import {
+  eligibilityErrorNames,
+  isRevertFailure,
+  isUserRejection,
+  STALE_LIQUIDITY_REASONS,
+  userFacingError,
+} from "@/lib/errors";
 
 describe("userFacingError", () => {
   it("maps the current lending stale-liquidity string to refresh copy", () => {
@@ -97,5 +103,33 @@ describe("eligibilityErrorNames", () => {
         "RemainingZero",
       ].sort(),
     );
+  });
+});
+
+describe("failure classification for the zero-first approve fallback", () => {
+  it("does not call a rejected signature a revert", () => {
+    // The fallback spends a second signature, so it must not fire on a failure
+    // that says nothing about the token: answering "user declined" with another
+    // wallet prompt buries the error the user needs to see.
+    expect(isUserRejection(Object.assign(new Error("User rejected the request."), { code: 4001 }))).toBe(true);
+    expect(isRevertFailure(Object.assign(new Error("User rejected the request."), { code: 4001 }))).toBe(false);
+    expect(isRevertFailure(new UserRejectedRequestError(new Error("denied")))).toBe(false);
+  });
+
+  it("does not call an unreachable RPC a revert", () => {
+    expect(isRevertFailure(new Error("HTTP request failed. Status: 503"))).toBe(false);
+    expect(isRevertFailure(null)).toBe(false);
+  });
+
+  it("recognises a revert whether it mined or was refused before broadcast", () => {
+    // A USDT-class approve usually fails at simulate/estimate, so matching only
+    // the mined case would miss the path the fallback exists for.
+    expect(isRevertFailure(null, true)).toBe(true);
+    expect(isRevertFailure(new Error('execution reverted: The contract function "approve" reverted.'))).toBe(true);
+    const reverted = Object.assign(
+      Object.create(ContractFunctionRevertedError.prototype) as ContractFunctionRevertedError,
+      { data: undefined, message: "" },
+    );
+    expect(isRevertFailure(reverted)).toBe(true);
   });
 });

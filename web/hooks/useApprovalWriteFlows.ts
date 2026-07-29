@@ -16,9 +16,12 @@ import { useZeroFirstApprove } from "./useZeroFirstApprove";
 // entirely from `approveTx` and every consumer paired the two identically — a
 // form that wired one without the other would be a bug, so the pairing is not
 // the caller's to get right.
-export function useApprovalWriteFlows(user?: Address) {
-  const approveTx = useWriteFlow(user);
-  const actionTx = useWriteFlow(user);
+//
+// `related` is the market's contract set (see `marketContracts`), forwarded to
+// both flows so an approval and the action it unlocks invalidate the same reads.
+export function useApprovalWriteFlows(user?: Address, related?: readonly Address[]) {
+  const approveTx = useWriteFlow(user, related);
+  const actionTx = useWriteFlow(user, related);
   const zeroFirst = useZeroFirstApprove(approveTx);
   const busy = approveTx.isSigning || approveTx.isConfirming || actionTx.isSigning || actionTx.isConfirming;
   return { approveTx, actionTx, zeroFirst, busy };

@@ -7,6 +7,9 @@ import { useWriteFlow } from "@/hooks/useWriteFlow";
 import { streamKeys } from "@/lib/query-keys";
 
 const user = "0x0000000000000000000000000000000000000a11" as Address;
+const lending = "0x0000000000000000000000000000000000000b22" as Address;
+const token = "0x0000000000000000000000000000000000000c33" as Address;
+const unrelated = "0x0000000000000000000000000000000000000d44" as Address;
 const hash = "0xabc0000000000000000000000000000000000000000000000000000000000001" as const;
 
 const writeContractMock = vi.fn();
@@ -83,6 +86,35 @@ describe("useWriteFlow invalidation regression", () => {
     // Same hash again — no duplicate invalidation.
     rerender();
     expect(spy).toHaveBeenCalledTimes(3);
+  });
+
+  it("invalidates token reads the transaction moved but was not addressed to", () => {
+    // R39 scoped invalidation to the transaction's `to`, which is not the whole
+    // set a call changes: `supplyLiquidity` is addressed to the lending market
+    // and pulls the underlying ERC-20, so the user's balance and allowance —
+    // read against the *token* address — kept showing pre-transaction numbers.
+    // With focus refetching off and the balance view still mounted behind the
+    // modal, that stale number survived until a reload.
+    const queryClient = new QueryClient();
+    const balanceKey = ["readContract", { address: token, functionName: "balanceOf", args: [user] }];
+    const otherMarketKey = ["readContract", { address: unrelated, functionName: "balanceOf", args: [user] }];
+    queryClient.setQueryData(balanceKey, 1n);
+    queryClient.setQueryData(otherMarketKey, 1n);
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    );
+
+    const { result, rerender } = renderHook(() => useWriteFlow(user, [token]), { wrapper });
+    result.current.writeContract({ address: lending, abi: [], functionName: "supplyLiquidity" } as never);
+
+    wagmiState.writeData = hash;
+    wagmiState.receiptSuccess = true;
+    wagmiState.receiptData = { status: "success" };
+    rerender();
+
+    expect(queryClient.getQueryState(balanceKey)?.isInvalidated).toBe(true);
+    // Still scoped: a read belonging to some other market is left alone.
+    expect(queryClient.getQueryState(otherMarketKey)?.isInvalidated).toBe(false);
   });
 
   it("does not invalidate on a mined-but-reverted receipt", () => {

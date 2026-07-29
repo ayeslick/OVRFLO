@@ -104,7 +104,7 @@ export function PositionSummary({ markets, user, symbols }: Props) {
   const claimAllPools: ClaimAllPool[] = rows.filter((r) => r.status === "ready").flatMap((r) => r.pools);
   const claimAllStreams: ClaimAllStream[] = streams.streams
     .filter((stream) => stream.withdrawable > 0n)
-    .map((stream) => ({ streamId: stream.streamId, withdrawable: stream.withdrawable }));
+    .map((stream) => ({ streamId: stream.streamId, withdrawable: stream.withdrawable, asset: stream.asset }));
 
   const totalClaimable =
     claimAllPools.reduce((acc, pool) => acc + pool.claimable, 0n) +
@@ -259,7 +259,13 @@ function PositionSummaryMarket({
       loanObligation: openLoans.reduce((acc, { loan }) => acc + loan.obligation, 0n),
       pools: marketPools
         .filter(({ claimable }) => claimable > 0n)
-        .map(({ pool, claimable }) => ({ lending: market.lending, loanId: pool.id, claimable })),
+        // Pool shares pay out in the market's ovrfloToken (OVRFLOLending._claimFair).
+        .map(({ pool, claimable }) => ({
+          lending: market.lending,
+          loanId: pool.id,
+          claimable,
+          asset: market.ovrfloToken,
+        })),
       status: "ready",
     };
   }, [
@@ -270,6 +276,7 @@ function PositionSummaryMarket({
     liquidity.liquidity,
     market.lending,
     market.market,
+    market.ovrfloToken,
     normalizedUser,
     ovrfloSymbol,
     underlyingSymbol,

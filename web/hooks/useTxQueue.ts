@@ -139,10 +139,21 @@ export function useTxQueue(user?: Address) {
       return;
     }
     // R39: the queue alternates between the lending market (pool-share claims)
-    // and Sablier (stream withdrawals), so scope to both rather than the whole
+    // and Sablier (stream withdrawals), so scope to those rather than the whole
     // cache. Both move stream state, hence streams: true.
+    //
+    // The payout token goes in the scope too. Every row in this queue pays the
+    // user in an ERC-20 — ovrfloToken from `_claimFair`, the stream's asset from
+    // `withdrawMax` — and that balance is read against the *token* address, not
+    // against the contract the transaction was sent to. Without it the CLAIMABLE
+    // and balance figures behind this modal keep showing pre-claim numbers,
+    // which is the one thing a user checks straight after claiming.
+    const claimed = rows[index]?.tx;
     invalidateOnChainReads(queryClient, {
-      contracts: [rows[index]?.tx.kind === "pool-claims" ? rows[index].tx.lending : SABLIER_LOCKUP_ADDRESS],
+      contracts: [
+        claimed?.kind === "pool-claims" ? claimed.lending : SABLIER_LOCKUP_ADDRESS,
+        ...(claimed?.asset ? [claimed.asset] : []),
+      ],
       user: userRef.current,
       streams: true,
     });

@@ -1,7 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
 import type { Address } from "viem";
-import { invalidateAllOnChainReads, invalidateOnChainReads, scheduleHeldStreamsRetry } from "@/lib/invalidate";
+import { SABLIER_LOCKUP_ADDRESS } from "@/lib/config";
+import {
+  invalidateAllOnChainReads,
+  invalidateOnChainReads,
+  marketContracts,
+  scheduleHeldStreamsRetry,
+} from "@/lib/invalidate";
 import { streamKeys } from "@/lib/query-keys";
 
 const user = "0x0000000000000000000000000000000000000a11" as Address;
@@ -140,5 +146,43 @@ describe("invalidateOnChainReads (R39)", () => {
 
     invalidateOnChainReads(client, { contracts: [MARKET_A], user, streams: true });
     expect(spy.mock.calls.map((call) => call[0] as unknown)).toContainEqual({ queryKey: streamKeys.held(user) });
+  });
+});
+
+describe("marketContracts", () => {
+  it("names the tokens a write moves, not just the contract it is addressed to", () => {
+    // `supplyLiquidity` goes to the lending market and pulls the underlying;
+    // `deposit` goes to the vault and pulls PT. Those balance and allowance
+    // reads are keyed by token address, so scoping to the transaction's `to`
+    // alone left them stale behind an open modal.
+    const market = {
+      vault: "0x0000000000000000000000000000000000000001" as Address,
+      lending: "0x0000000000000000000000000000000000000002" as Address,
+      underlying: "0x0000000000000000000000000000000000000003" as Address,
+      ovrfloToken: "0x0000000000000000000000000000000000000004" as Address,
+      ptToken: "0x0000000000000000000000000000000000000005" as Address,
+    };
+    expect(marketContracts(market)).toEqual([
+      market.vault,
+      market.lending,
+      market.underlying,
+      market.ovrfloToken,
+      market.ptToken,
+      SABLIER_LOCKUP_ADDRESS,
+    ]);
+  });
+
+  it("drops a market with no lending deployment rather than emitting a null", () => {
+    // A null in the scope would serialise into the predicate match and could
+    // widen it; `lending` is legitimately absent before the market is paired.
+    const contracts = marketContracts({
+      vault: "0x0000000000000000000000000000000000000001" as Address,
+      lending: null,
+      underlying: "0x0000000000000000000000000000000000000003" as Address,
+      ovrfloToken: "0x0000000000000000000000000000000000000004" as Address,
+      ptToken: "0x0000000000000000000000000000000000000005" as Address,
+    });
+    expect(contracts).not.toContain(null);
+    expect(contracts).toHaveLength(5);
   });
 });

@@ -29,7 +29,7 @@ const vaultB: VaultInfo = { ...vault, vault: VAULT_B };
 const success = (result: unknown) => ({ status: "success" as const, result });
 const seriesTuple = (ptToken: Address) => [900, 40, 1_800_000_000n, ptToken, OVRFLO_TOKEN, UNDERLYING, ORACLE];
 
-let ovrflosState: { vaults: VaultInfo[]; isLoading: boolean; error: unknown };
+let ovrflosState: { vaults: VaultInfo[]; isLoading: boolean; error: unknown; tooLarge?: boolean };
 vi.mock("@/hooks/useOvrflos", async () => {
   const actual = await vi.importActual<typeof import("@/hooks/useOvrflos")>("@/hooks/useOvrflos");
   return { ...actual, useOvrflos: () => ovrflosState };
@@ -127,6 +127,45 @@ describe("useAllMarkets", () => {
 
     const { result } = renderHook(() => useAllMarkets());
     expect(result.current.markets).toEqual([]);
+  });
+
+  it("reports truncation when a single vault has more approved markets than the cap", () => {
+    // L-2: the cap applies twice — to the vault list, and to each vault's market
+    // list. Reporting only the vault count meant a factory with two vaults, one
+    // holding 101 markets, truncated silently: the enumeration stopped at 100
+    // and the notice never rendered, which is exactly the case the disclosure
+    // exists for.
+    ovrflosState = { vaults: [vault], isLoading: false, error: null, tooLarge: false };
+    marketCountReturn = { data: [success(101n)], isLoading: false, error: null };
+    marketAddressReturn = { data: [success(MARKET_A)], isLoading: false, error: null };
+    seriesReturn = { data: [success(seriesTuple(PT_TOKEN))], isLoading: false, error: null };
+
+    const { result } = renderHook(() => useAllMarkets());
+    expect(result.current.tooLarge).toBe(true);
+  });
+
+  it("says nothing when both the vault list and every market list fit", () => {
+    ovrflosState = { vaults: [vault], isLoading: false, error: null, tooLarge: false };
+    marketCountReturn = { data: [success(100n)], isLoading: false, error: null };
+    marketAddressReturn = { data: [success(MARKET_A)], isLoading: false, error: null };
+    seriesReturn = { data: [success(seriesTuple(PT_TOKEN))], isLoading: false, error: null };
+
+    const { result } = renderHook(() => useAllMarkets());
+    expect(result.current.tooLarge).toBe(false);
+  });
+
+  it("still reports truncation from the vault count alone", () => {
+    ovrflosState = { vaults: [vault], isLoading: false, error: null, tooLarge: true };
+    marketCountReturn = { data: [success(2n)], isLoading: false, error: null };
+    marketAddressReturn = { data: [success(MARKET_A), success(MARKET_B)], isLoading: false, error: null };
+    seriesReturn = {
+      data: [success(seriesTuple(PT_TOKEN)), success(seriesTuple(PT_TOKEN))],
+      isLoading: false,
+      error: null,
+    };
+
+    const { result } = renderHook(() => useAllMarkets());
+    expect(result.current.tooLarge).toBe(true);
   });
 
   it("propagates loading/error from the upstream useOvrflos hook", () => {

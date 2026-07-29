@@ -329,7 +329,7 @@ describe("expanded detail escapes the table's width floor (R23)", () => {
 describe("truncation disclosure (R25)", () => {
   it("discloses truncation when the vault list is capped", () => {
     renderTable({ truncated: true });
-    expect(screen.getByText("SHOWING FIRST 100 VAULTS — DATA TRUNCATED")).toBeInTheDocument();
+    expect(screen.getByText("SHOWING FIRST 100 VAULTS AND MARKETS PER VAULT — DATA TRUNCATED")).toBeInTheDocument();
   });
 
   it("says nothing when the list is complete", () => {
@@ -341,6 +341,6 @@ describe("truncation disclosure (R25)", () => {
     // The point of the shared component: a reader who has seen one truncation
     // notice recognises the next one.
     renderTable({ truncated: true });
-    expect(screen.getByText(/^SHOWING FIRST \d+ \w+ — /)).toBeInTheDocument();
+    expect(screen.getByText(/^SHOWING FIRST \d+ [\w ]+ — /)).toBeInTheDocument();
   });
 });

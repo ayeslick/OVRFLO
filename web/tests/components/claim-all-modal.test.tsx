@@ -4,6 +4,7 @@ import type { Address } from "viem";
 
 const USER = "0x0000000000000000000000000000000000000a11" as Address;
 const LENDING = "0x00000000000000000000000000000000000000aa" as Address;
+const ASSET = "0x00000000000000000000000000000000000000cc" as Address;
 
 const queueState = {
   start: vi.fn(),
@@ -30,8 +31,8 @@ import { ClaimAllModal } from "@/components/ClaimAllModal";
 // Between opening and confirming, a stream can be claimed elsewhere or a pool
 // share drawn down, and the frozen plan would queue transactions already spent.
 function renderModal(props: {
-  pools?: { lending: Address; loanId: bigint; claimable: bigint }[];
-  streams?: { streamId: bigint; withdrawable: bigint }[];
+  pools?: { lending: Address; loanId: bigint; claimable: bigint; asset: Address }[];
+  streams?: { streamId: bigint; withdrawable: bigint; asset: Address }[];
 }) {
   const { rerender, ...rest } = render(
     <ClaimAllModal pools={props.pools ?? []} streams={props.streams ?? []} user={USER} onClose={vi.fn()} />,
@@ -50,7 +51,7 @@ describe("ClaimAllModal — plan freshness (R41)", () => {
   });
 
   it("submits a plan recomputed at confirm time, not the one shown at open", () => {
-    const streams = [{ streamId: 1n, withdrawable: 5n }];
+    const streams = [{ streamId: 1n, withdrawable: 5n, asset: ASSET }];
     const { rerender } = renderModal({ streams });
 
     // The stream is claimed elsewhere while the modal sits open, and a second
@@ -59,8 +60,8 @@ describe("ClaimAllModal — plan freshness (R41)", () => {
       <ClaimAllModal
         pools={[]}
         streams={[
-          { streamId: 1n, withdrawable: 0n },
-          { streamId: 2n, withdrawable: 9n },
+          { streamId: 1n, withdrawable: 0n, asset: ASSET },
+          { streamId: 2n, withdrawable: 9n, asset: ASSET },
         ]}
         user={USER}
         onClose={vi.fn()}
@@ -76,10 +77,10 @@ describe("ClaimAllModal — plan freshness (R41)", () => {
   });
 
   it("says so rather than queueing nothing when everything was claimed elsewhere", () => {
-    const { rerender } = renderModal({ streams: [{ streamId: 1n, withdrawable: 5n }] });
+    const { rerender } = renderModal({ streams: [{ streamId: 1n, withdrawable: 5n, asset: ASSET }] });
 
     rerender(
-      <ClaimAllModal pools={[]} streams={[{ streamId: 1n, withdrawable: 0n }]} user={USER} onClose={vi.fn()} />,
+      <ClaimAllModal pools={[]} streams={[{ streamId: 1n, withdrawable: 0n, asset: ASSET }]} user={USER} onClose={vi.fn()} />,
     );
 
     fireEvent.click(screen.getByRole("button", { name: "CONFIRM QUEUE" }));
@@ -91,8 +92,8 @@ describe("ClaimAllModal — plan freshness (R41)", () => {
   it("submits the reviewed work unchanged when nothing moved", () => {
     // Guard against over-correction: recomputing must not drop valid work.
     renderModal({
-      pools: [{ lending: LENDING, loanId: 1n, claimable: 100n }],
-      streams: [{ streamId: 7n, withdrawable: 5n }],
+      pools: [{ lending: LENDING, loanId: 1n, claimable: 100n, asset: ASSET }],
+      streams: [{ streamId: 7n, withdrawable: 5n, asset: ASSET }],
     });
 
     fireEvent.click(screen.getByRole("button", { name: "CONFIRM QUEUE" }));

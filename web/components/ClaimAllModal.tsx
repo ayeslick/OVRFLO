@@ -8,8 +8,10 @@ import { useTxQueue, type QueueRowStatus } from "@/hooks/useTxQueue";
 import { planClaimAll, type QueuedTx } from "@/lib/claim-all";
 import { formatAddress, formatId } from "@/lib/format";
 
-export type ClaimAllPool = { lending: Address; loanId: bigint; claimable: bigint };
-export type ClaimAllStream = { streamId: bigint; withdrawable: bigint };
+// `asset` is the token the claim pays out in, carried through to the queue so a
+// confirmed claim invalidates the balance read it changed.
+export type ClaimAllPool = { lending: Address; loanId: bigint; claimable: bigint; asset: Address };
+export type ClaimAllStream = { streamId: bigint; withdrawable: bigint; asset: Address };
 
 type Props = {
   pools: ClaimAllPool[];
@@ -130,6 +132,19 @@ export function ClaimAllModal({ pools, streams, user, onClose }: Props) {
               // submitting the frozen plan would queue transactions that are
               // already spent. RESUME always re-planned; the first confirm did
               // not, which is the asymmetry M-6 identified.
+              //
+              // Planning from live props, not from a forced refetch, is the
+              // deliberate choice. A refetch would narrow the window rather than
+              // close it — the queue runs its transactions sequentially, so the
+              // fifth claim can be spent by another session while the second is
+              // still confirming, and no amount of pre-flight freshness covers
+              // that. The queue already answers it properly: a spent claim
+              // reverts, its row goes FAILED, and RESUME re-plans from live
+              // data. Adding the refetch would also mean planning after an
+              // await, and `pools` reaches this component through a child-effect
+              // to parent-state hop (PositionSummaryMarket's onData) — so what
+              // the plan read would depend on React flush ordering. A guarantee
+              // that holds by timing luck is worse than the honest revert.
               const fresh = planClaimAll({ pools, streams });
               if (fresh.length === 0) {
                 setNothingLeft(true);

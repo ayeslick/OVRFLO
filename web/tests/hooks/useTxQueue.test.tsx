@@ -9,6 +9,8 @@ import { useTxQueue } from "@/hooks/useTxQueue";
 const userA = "0x0000000000000000000000000000000000000a11" as Address;
 const userB = "0x0000000000000000000000000000000000000b22" as Address;
 const lending = "0x00000000000000000000000000000000000000aa" as Address;
+// Both claim kinds pay out in the market ovrfloToken.
+const asset = "0x00000000000000000000000000000000000000cc" as Address;
 
 const wagmiState = {
   writeContract: vi.fn(),
@@ -45,8 +47,8 @@ vi.mock("wagmi", () => ({
 }));
 
 const plan: QueuedTx[] = [
-  { kind: "pool-claims", lending, loanIds: [1n, 2n] },
-  { kind: "stream-claim", streamId: 7n },
+  { kind: "pool-claims", lending, loanIds: [1n, 2n], asset },
+  { kind: "stream-claim", streamId: 7n, asset },
 ];
 
 function setup(user: Address | undefined = userA) {
@@ -87,6 +89,29 @@ beforeEach(() => {
 });
 
 describe("useTxQueue", () => {
+  it("invalidates the payout token's reads, not only the contract it called", () => {
+    // Every row in this queue pays the user an ERC-20 — ovrfloToken from
+    // _claimFair, the stream's asset from withdrawMax — and that balance is read
+    // against the token address, not the transaction's `to`. Scoping to `to`
+    // alone left CLAIMABLE and the balance behind this modal showing pre-claim
+    // numbers, which is the first thing a user checks after claiming.
+    const queryClient = new QueryClient();
+    const balanceKey = ["readContract", { address: asset, functionName: "balanceOf", args: [userA] }];
+    queryClient.setQueryData(balanceKey, 1n);
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    );
+    const { result, rerender } = renderHook(({ u }: { u?: Address }) => useTxQueue(u), {
+      wrapper,
+      initialProps: { u: userA },
+    });
+
+    act(() => result.current.start([{ kind: "pool-claims", lending, loanIds: [1n], asset }]));
+    confirmCurrent(() => rerender({ u: userA }), "0xhash1");
+
+    expect(queryClient.getQueryState(balanceKey)?.isInvalidated).toBe(true);
+  });
+
   it("does not sign anything until start is called", () => {
     setup();
     expect(wagmiState.writeContract).not.toHaveBeenCalled();
@@ -123,7 +148,7 @@ describe("useTxQueue", () => {
 
     // Resume with a fresh plan (stream now partially claimed elsewhere -> new plan)
     wagmiState.writeError = null;
-    const fresh: QueuedTx[] = [{ kind: "stream-claim", streamId: 7n }];
+    const fresh: QueuedTx[] = [{ kind: "stream-claim", streamId: 7n, asset }];
     act(() => result.current.resume(fresh));
     expect(result.current.rows[0].status).toBe("confirmed");
     expect(result.current.rows).toHaveLength(2);
@@ -136,7 +161,7 @@ describe("useTxQueue", () => {
     // outcome — a reverted tx (e.g. claiming an already-claimed stream) still
     // mines a receipt with no write/receipt error, only `data.status`.
     const { result, rerender, invalidateSpy } = setup();
-    act(() => result.current.start([{ kind: "stream-claim", streamId: 7n }]));
+    act(() => result.current.start([{ kind: "stream-claim", streamId: 7n, asset }]));
     expect(wagmiState.writeContract).toHaveBeenCalledTimes(1);
 
     revertCurrent(() => rerender({ u: userA }), "0xhash1");

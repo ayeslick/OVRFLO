@@ -83,7 +83,10 @@ export function useOvrflos(factory: Address = factoryAddress) {
   };
 }
 
-const MAX_VAULT_ENUMERATION = 100n;
+// Caps both the vault enumeration and each vault's market enumeration — every
+// caller of bigintToSafeLength truncates at the same bound, so anything
+// reporting truncation compares against this.
+export const MAX_VAULT_ENUMERATION = 100n;
 
 export function bigintToSafeLength(value: bigint) {
   if (value > MAX_VAULT_ENUMERATION) return Number(MAX_VAULT_ENUMERATION);

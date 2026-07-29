@@ -1,4 +1,4 @@
-import { BaseError, ContractFunctionRevertedError } from "viem";
+import { BaseError, ContractFunctionRevertedError, ExecutionRevertedError, UserRejectedRequestError } from "viem";
 
 const customErrorCopy: Record<string, string> = {
   MarketNotApproved: "This market is not approved for OVRFLO.",
@@ -87,4 +87,38 @@ function findRevert(error: unknown): ContractFunctionRevertedError | undefined {
       | undefined;
   }
   return undefined;
+}
+
+/** The wallet handed the request back: the user declined, nothing was broadcast. */
+export function isUserRejection(error: unknown): boolean {
+  if (!error) return false;
+  if (error instanceof UserRejectedRequestError) return true;
+  if (error instanceof BaseError && error.walk((cause) => cause instanceof UserRejectedRequestError)) return true;
+  // EIP-1193 rejection code, for providers that do not surface a viem error.
+  return (error as { code?: unknown }).code === 4001;
+}
+
+/**
+ * Whether a failure was the *contract* refusing the call, as opposed to the user
+ * declining it or the RPC never getting an answer.
+ *
+ * Callers that spend a second signature on a failure (R28's zero-first approve)
+ * have to tell these apart: "the write flow failed" covers a rejected signature
+ * and a dropped connection too, and reacting to those with another wallet prompt
+ * buries the error the user actually needs to see.
+ *
+ * A revert reaches us two ways: mined and reverted on chain, or refused during
+ * the wallet's simulate/estimate before broadcast — which is how a USDT-class
+ * approve usually fails, so matching only the mined case would miss the common
+ * path. `revertedOnChain` carries the first; the error chain carries the second.
+ */
+export function isRevertFailure(error: unknown, revertedOnChain = false): boolean {
+  if (revertedOnChain) return true;
+  if (!error || isUserRejection(error)) return false;
+  if (findRevert(error)) return true;
+  if (error instanceof BaseError && error.walk((cause) => cause instanceof ExecutionRevertedError)) return true;
+  // Bare `require(...)` reverts can reach us as a plain execution error with no
+  // decodable data, so fall back to the message the node returned.
+  const message = error instanceof Error ? error.message : String(error);
+  return /revert/i.test(message);
 }

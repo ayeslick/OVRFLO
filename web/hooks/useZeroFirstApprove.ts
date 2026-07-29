@@ -4,11 +4,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { Address } from "viem";
 import { erc20Abi } from "@/lib/abis";
 import { chainId as configuredChainId } from "@/lib/config";
+import { isRevertFailure } from "@/lib/errors";
 
 type WriteFlow = {
   writeContract: (args: never) => void;
   isConfirmed: boolean;
   hasFailed: boolean;
+  isReverted: boolean;
+  error: unknown;
 };
 
 type Attempt = { token: Address; spender: Address; amount: bigint; allowance: bigint };
@@ -25,10 +28,10 @@ type Attempt = { token: Address; spender: Address; amount: bigint; allowance: bi
  * and recoverable, the cost only needs paying when it is real.
  *
  * The common path is one transaction. The fallback triggers only when all of:
- * the approve failed, the existing allowance was non-zero, and the target was
- * also non-zero — the exact shape of the revert this defends against. It
- * retries once, so a token failing for some other reason surfaces its error
- * instead of looping.
+ * the approve failed *by reverting*, the existing allowance was non-zero, and
+ * the target was also non-zero — the exact shape of the revert this defends
+ * against. It retries once, so a token failing for some other reason surfaces
+ * its error instead of looping.
  */
 export function useZeroFirstApprove(approveTx: WriteFlow) {
   // The attempt that is currently in flight, so a failure can be classified.
@@ -53,12 +56,15 @@ export function useZeroFirstApprove(approveTx: WriteFlow) {
     [approveTx],
   );
 
-  function submit(token: Address, spender: Address, amount: bigint, currentAllowance: bigint) {
-    attempt.current = { token, spender, amount, allowance: currentAllowance };
-    pending.current = null;
-    setUsedFallback(false);
-    write(token, spender, amount);
-  }
+  const submit = useCallback(
+    (token: Address, spender: Address, amount: bigint, currentAllowance: bigint) => {
+      attempt.current = { token, spender, amount, allowance: currentAllowance };
+      pending.current = null;
+      setUsedFallback(false);
+      write(token, spender, amount);
+    },
+    [write],
+  );
 
   useEffect(() => {
     if (clearing) {
@@ -107,10 +113,13 @@ export function useZeroFirstApprove(approveTx: WriteFlow) {
     const failed = attempt.current;
     if (!failed) return;
 
-    // Only the non-zero-to-non-zero shape is worth retrying. Anything else — a
-    // rejected signature, an RPC failure, a token that reverts for its own
-    // reasons — is a real error the user needs to see.
-    const looksLikeNonZeroReset = failed.allowance > 0n && failed.amount > 0n;
+    // Only a revert with the non-zero-to-non-zero shape is worth retrying.
+    // `hasFailed` alone is too broad: it also covers a rejected signature and an
+    // RPC that never answered, and neither says anything about the token. Firing
+    // the fallback on those asks the wallet to approve zero right after the user
+    // declined, and buries the real error behind a second prompt.
+    const looksLikeNonZeroReset =
+      failed.allowance > 0n && failed.amount > 0n && isRevertFailure(approveTx.error, approveTx.isReverted);
     if (!looksLikeNonZeroReset) {
       attempt.current = null;
       return;

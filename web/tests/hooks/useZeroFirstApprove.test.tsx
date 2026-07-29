@@ -16,10 +16,24 @@ const SPENDER = "0x0000000000000000000000000000000000000002" as const;
 // hook's effect observe a state change. Mutating one object in place would
 // leave the reference stable and the effect would never re-run — an artifact of
 // the harness, not of the hook.
-const state = { writeContract: vi.fn(), isConfirmed: false, hasFailed: false };
+const state = {
+  writeContract: vi.fn(),
+  isConfirmed: false,
+  hasFailed: false,
+  isReverted: false,
+  error: null as unknown,
+};
 
 function flow() {
   return { ...state, writeContract: state.writeContract };
+}
+
+// The default failure in these tests is the one the fallback exists for: the
+// token refused the approve. `hasFailed` alone no longer earns a retry.
+function failWithRevert() {
+  state.hasFailed = true;
+  state.isReverted = true;
+  state.error = null;
 }
 
 function argsOf(mock: ReturnType<typeof vi.fn>, call: number) {
@@ -31,6 +45,8 @@ describe("useZeroFirstApprove (R28)", () => {
     state.writeContract = vi.fn();
     state.isConfirmed = false;
     state.hasFailed = false;
+    state.isReverted = false;
+    state.error = null;
   });
 
   it("approves directly in one transaction — the common path costs nothing extra", () => {
@@ -56,7 +72,7 @@ describe("useZeroFirstApprove (R28)", () => {
     const { result, rerender } = renderHook(() => useZeroFirstApprove(flow()));
     act(() => result.current.submit(TOKEN, SPENDER, 100n, 75n));
 
-    state.hasFailed = true;
+    failWithRevert();
     rerender();
 
     expect(state.writeContract).toHaveBeenCalledTimes(2);
@@ -69,10 +85,11 @@ describe("useZeroFirstApprove (R28)", () => {
     const { result, rerender } = renderHook(() => useZeroFirstApprove(flow()));
     act(() => result.current.submit(TOKEN, SPENDER, 100n, 75n));
 
-    state.hasFailed = true;
+    failWithRevert();
     rerender();
     // The write flow resets when the clearing approve goes out...
     state.hasFailed = false;
+    state.isReverted = false;
     rerender();
     // ...and then that approve confirms.
     state.isConfirmed = true;
@@ -88,7 +105,7 @@ describe("useZeroFirstApprove (R28)", () => {
     const { result, rerender } = renderHook(() => useZeroFirstApprove(flow()));
     act(() => result.current.submit(TOKEN, SPENDER, 100n, 0n));
 
-    state.hasFailed = true;
+    failWithRevert();
     rerender();
 
     expect(state.writeContract).toHaveBeenCalledTimes(1);
@@ -99,7 +116,7 @@ describe("useZeroFirstApprove (R28)", () => {
     const { result, rerender } = renderHook(() => useZeroFirstApprove(flow()));
     act(() => result.current.submit(TOKEN, SPENDER, 0n, 75n));
 
-    state.hasFailed = true;
+    failWithRevert();
     rerender();
 
     expect(state.writeContract).toHaveBeenCalledTimes(1);
@@ -109,12 +126,12 @@ describe("useZeroFirstApprove (R28)", () => {
     const { result, rerender } = renderHook(() => useZeroFirstApprove(flow()));
     act(() => result.current.submit(TOKEN, SPENDER, 100n, 75n));
 
-    state.hasFailed = true;
+    failWithRevert();
     rerender();
     // Flow resets, then the clearing approve fails on its own account.
     state.hasFailed = false;
     rerender();
-    state.hasFailed = true;
+    failWithRevert();
     rerender();
     rerender();
 
@@ -123,11 +140,66 @@ describe("useZeroFirstApprove (R28)", () => {
   });
 });
 
+describe("useZeroFirstApprove — only reverts earn the second signature", () => {
+  beforeEach(() => {
+    state.writeContract = vi.fn();
+    state.isConfirmed = false;
+    state.hasFailed = false;
+    state.isReverted = false;
+    state.error = null;
+  });
+
+  it("does not re-prompt after the user rejects the approval", () => {
+    // The allowance shape alone used to be enough, so declining the wallet
+    // prompt was answered with a second wallet prompt — asking to approve zero —
+    // and the rejection the user needed to see was buried behind it.
+    const { result, rerender } = renderHook(() => useZeroFirstApprove(flow()));
+    act(() => result.current.submit(TOKEN, SPENDER, 100n, 75n));
+
+    state.hasFailed = true;
+    state.error = Object.assign(new Error("User rejected the request."), { code: 4001 });
+    rerender();
+
+    expect(state.writeContract).toHaveBeenCalledTimes(1);
+    expect(result.current.usedFallback).toBe(false);
+    expect(result.current.clearing).toBe(false);
+  });
+
+  it("does not re-prompt when the RPC never answered", () => {
+    const { result, rerender } = renderHook(() => useZeroFirstApprove(flow()));
+    act(() => result.current.submit(TOKEN, SPENDER, 100n, 75n));
+
+    state.hasFailed = true;
+    state.error = new Error("HTTP request failed. Status: 503");
+    rerender();
+
+    expect(state.writeContract).toHaveBeenCalledTimes(1);
+    expect(result.current.usedFallback).toBe(false);
+  });
+
+  it("still falls back when the wallet refuses the approve before broadcast", () => {
+    // A USDT-class approve usually fails at simulate/estimate rather than
+    // mining, so `isReverted` is false and the revert is only in the error.
+    const { result, rerender } = renderHook(() => useZeroFirstApprove(flow()));
+    act(() => result.current.submit(TOKEN, SPENDER, 100n, 75n));
+
+    state.hasFailed = true;
+    state.error = new Error('execution reverted: The contract function "approve" reverted.');
+    rerender();
+
+    expect(state.writeContract).toHaveBeenCalledTimes(2);
+    expect(argsOf(state.writeContract, 1)).toEqual([SPENDER, 0n]);
+    expect(result.current.usedFallback).toBe(true);
+  });
+});
+
 describe("useZeroFirstApprove — stale attempt (regression)", () => {
   beforeEach(() => {
     state.writeContract = vi.fn();
     state.isConfirmed = false;
     state.hasFailed = false;
+    state.isReverted = false;
+    state.error = null;
   });
 
   it("does not re-fire for an approve that already succeeded", () => {
@@ -144,7 +216,7 @@ describe("useZeroFirstApprove — stale attempt (regression)", () => {
 
     // Some later, unrelated approve failure in the same form.
     state.isConfirmed = false;
-    state.hasFailed = true;
+    failWithRevert();
     rerender();
 
     expect(state.writeContract).toHaveBeenCalledTimes(1);

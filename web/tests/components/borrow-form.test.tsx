@@ -108,7 +108,8 @@ vi.mock("@/hooks/useLending", () => ({
 }));
 
 const invalidateSpy = vi.fn();
-vi.mock("@/lib/invalidate", () => ({
+vi.mock("@/lib/invalidate", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/invalidate")>()),
   invalidateAllOnChainReads: (...args: unknown[]) => invalidateSpy(...args),
   scheduleHeldStreamsRetry: () => () => {},
 }));

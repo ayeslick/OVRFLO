@@ -1,6 +1,8 @@
 import type { QueryClient } from "@tanstack/react-query";
 import type { Address } from "viem";
+import { SABLIER_LOCKUP_ADDRESS } from "./config";
 import { streamKeys } from "./query-keys";
+import type { MarketInfo } from "./types";
 
 // wagmi v3 roots useReadContract / useReadContracts keys at these string
 // literals, with the call's own parameters — including `address` — nested
@@ -50,6 +52,31 @@ function keyMentionsAny(queryKey: readonly unknown[], addresses: ReadonlySet<str
     if (serialised.includes(address)) return true;
   }
   return false;
+}
+
+/**
+ * Every contract a write inside one market can change the reads of.
+ *
+ * The transaction's `to` address is not the whole answer: `supplyLiquidity`
+ * targets the lending market but pulls the underlying ERC-20, `deposit` targets
+ * the vault but pulls PT and mints ovrfloToken, and `repayLoan` moves underlying
+ * back. Those balance/allowance reads are keyed by *token* address, so scoping
+ * to `to` alone leaves the balance the user is about to act on next showing a
+ * pre-transaction number — and with window-focus refetching off, it stays that
+ * way until the view remounts.
+ *
+ * Naming the market's whole contract set keeps the invalidation honest while
+ * staying proportional: one market's reads refresh, not every market's.
+ */
+export function marketContracts(market: Pick<MarketInfo, "vault" | "lending" | "underlying" | "ovrfloToken" | "ptToken">) {
+  return [
+    market.vault,
+    market.lending,
+    market.underlying,
+    market.ovrfloToken,
+    market.ptToken,
+    SABLIER_LOCKUP_ADDRESS,
+  ].filter((address): address is Address => Boolean(address));
 }
 
 /**

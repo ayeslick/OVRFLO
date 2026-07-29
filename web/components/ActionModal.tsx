@@ -17,6 +17,7 @@ import { erc20Abi, ovrfloAbi, ovrfloLendingAbi, sablierLockupAbi } from "@/lib/a
 import { SABLIER_LOCKUP_ADDRESS } from "@/lib/config";
 import { userFacingError } from "@/lib/errors";
 import { formatAprBps, formatId, formatTokenAmount } from "@/lib/format";
+import { marketContracts } from "@/lib/invalidate";
 
 import { applySlippageDown, isSeriesMatchedStream, repayMax } from "@/lib/modal-logic";
 import {
@@ -390,7 +391,7 @@ function SupplyForm({
   const aprBps =
     selectedAprRaw !== null && ticks.includes(selectedAprRaw) ? selectedAprRaw : (ticks[0] ?? null);
 
-  const { approveTx, actionTx, zeroFirst, busy } = useApprovalWriteFlows(connectedAddress);
+  const { approveTx, actionTx, zeroFirst, busy } = useApprovalWriteFlows(connectedAddress, marketContracts(market));
 
   const guard = useWalletChangeReset(connectedAddress, () => {
     setRaw("");
@@ -548,7 +549,7 @@ function SimpleActionForm({
   const [pendingLabel, setPendingLabel] = useState<string | null>(null);
   const connectedAddress = connection.addresses?.[0];
 
-  const tx = useWriteFlow(connectedAddress ?? user);
+  const tx = useWriteFlow(connectedAddress ?? user, marketContracts(market));
 
   const guard = useWalletChangeReset(connectedAddress, () => setPendingLabel(null));
 
@@ -672,7 +673,7 @@ function ConvertForm({
   const underlyingSymbol = symbolFor(symbols, market.underlying);
   const ovrfloSymbol = symbolFor(symbols, market.ovrfloToken);
 
-  const { approveTx, actionTx, zeroFirst, busy } = useApprovalWriteFlows(connectedAddress);
+  const { approveTx, actionTx, zeroFirst, busy } = useApprovalWriteFlows(connectedAddress, marketContracts(market));
   const disabled = amount === 0n || busy || actionTx.isConfirmed;
 
   const guard = useWalletChangeReset(connectedAddress, () => {
@@ -958,7 +959,7 @@ function BorrowForm({
   const hasOwnLiquidity = ladder.some((tick) => tick.own > 0n);
   const plan = selectedApr !== null ? planSelectedBorrow(ladder, selectedApr, target) : null;
 
-  const { approveTx, actionTx, zeroFirst, busy } = useApprovalWriteFlows(connectedAddress);
+  const { approveTx, actionTx, zeroFirst, busy } = useApprovalWriteFlows(connectedAddress, marketContracts(market));
 
   const guard = useWalletChangeReset(connectedAddress, () => {
     setSelectedStreamId(action.streamId ?? null);
@@ -1370,7 +1371,7 @@ function AdjustRateForm({
   const currentAprBps = positionAprBps ?? null;
   const idleAmount = positionIdleAmount ?? 0n;
 
-  const { approveTx, actionTx, zeroFirst, busy } = useApprovalWriteFlows(connectedAddress);
+  const { approveTx, actionTx, zeroFirst, busy } = useApprovalWriteFlows(connectedAddress, marketContracts(market));
 
   // An ERC20 shortfall here is a liquidity race (position shrank after the
   // fresh read), so it routes through the stale-recovery path too.
@@ -1599,7 +1600,7 @@ function RepayForm({
   const outstanding = loan ? loanOutstanding(loan) : 0n;
   const repayAmount = repayInput > outstanding && outstanding > 0n ? outstanding : repayInput;
 
-  const { approveTx, actionTx, zeroFirst, busy } = useApprovalWriteFlows(connectedAddress);
+  const { approveTx, actionTx, zeroFirst, busy } = useApprovalWriteFlows(connectedAddress, marketContracts(market));
 
   const guard = useWalletChangeReset(connectedAddress, () => {
     setRaw("");
