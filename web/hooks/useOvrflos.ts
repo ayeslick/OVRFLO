@@ -83,7 +83,7 @@ export function useOvrflos(factory: Address = factoryAddress) {
   };
 }
 
-export const MAX_VAULT_ENUMERATION = 100n;
+const MAX_VAULT_ENUMERATION = 100n;
 
 export function bigintToSafeLength(value: bigint) {
   if (value > MAX_VAULT_ENUMERATION) return Number(MAX_VAULT_ENUMERATION);

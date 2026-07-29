@@ -1,7 +1,7 @@
 import type { Address } from "viem";
 import { isAddress } from "viem";
 
-export const MAINNET_CHAIN_ID = 1;
+const MAINNET_CHAIN_ID = 1;
 export const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as const;
 export const SABLIER_LOCKUP_ADDRESS =
   "0xAFb979d9afAd1aD27C5eFf4E27226E3AB9e5dCC9" as const;
