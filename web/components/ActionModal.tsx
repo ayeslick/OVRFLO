@@ -325,8 +325,8 @@ function SupplyForm({
   });
 
   useEffect(() => {
-    if (approveTx.error) setApprovedAmount(0n);
-  }, [approveTx.error]);
+    if (approveTx.hasFailed) setApprovedAmount(0n);
+  }, [approveTx.hasFailed]);
 
   const allowance = useReadContract({
     address: market.underlying,
@@ -393,7 +393,7 @@ function SupplyForm({
       <StepIndicator
         steps={steps}
         activeIndex={activeIndex}
-        error={Boolean(approveTx.error ?? actionTx.error) || approveTx.isReverted || actionTx.isReverted}
+        error={approveTx.hasFailed || actionTx.hasFailed}
         accent={accent}
       />
       {!approvalCovers ? (
@@ -541,7 +541,7 @@ function SimpleActionForm({
       <div className="summary-row mono" aria-live="polite">
         {summary}
       </div>
-      <StepIndicator steps={steps} activeIndex={activeIndex} error={Boolean(tx.error) || tx.isReverted} accent={accent} />
+      <StepIndicator steps={steps} activeIndex={activeIndex} error={tx.hasFailed} accent={accent} />
       <button
         className={`button ${accentClass(accent)} mono`}
         disabled={!writeArgs || tx.isSigning || tx.isConfirming || tx.isConfirmed}
@@ -592,11 +592,11 @@ function ConvertForm({
   });
 
   useEffect(() => {
-    if (approveTx.error) {
+    if (approveTx.hasFailed) {
       setPtApprovedAmount(0n);
       setUnderlyingApprovedAmount(0n);
     }
-  }, [approveTx.error]);
+  }, [approveTx.hasFailed]);
 
   const matured = nowSeconds >= market.expiryCached;
 
@@ -725,7 +725,7 @@ function ConvertForm({
       <StepIndicator
         steps={steps}
         activeIndex={activeIndex}
-        error={Boolean(approveTx.error ?? actionTx.error) || approveTx.isReverted || actionTx.isReverted}
+        error={approveTx.hasFailed || actionTx.hasFailed}
         accent={accent}
       />
       {needsPtApproval ? (
@@ -937,8 +937,8 @@ function BorrowForm({
   });
 
   useEffect(() => {
-    if (approveTx.error) setStreamApprovedId(null);
-  }, [approveTx.error]);
+    if (approveTx.hasFailed) setStreamApprovedId(null);
+  }, [approveTx.hasFailed]);
 
   // A liquidity race is recoverable: refresh every on-chain read so the ladder
   // and quotes reflect the new depth, then ask for one explicit re-confirm.
@@ -1135,7 +1135,7 @@ function BorrowForm({
       <StepIndicator
         steps={steps}
         activeIndex={activeIndex}
-        error={Boolean(approveTx.error ?? actionTx.error) || approveTx.isReverted || actionTx.isReverted}
+        error={approveTx.hasFailed || actionTx.hasFailed}
         accent={accent}
       />
 
@@ -1290,8 +1290,8 @@ function AdjustRateForm({
   });
 
   useEffect(() => {
-    if (approveTx.error) setApprovedAmount(0n);
-  }, [approveTx.error]);
+    if (approveTx.hasFailed) setApprovedAmount(0n);
+  }, [approveTx.hasFailed]);
 
   if (guard.walletChanged) return <WalletChangedNotice onContinue={guard.acknowledge} />;
 
@@ -1396,7 +1396,7 @@ function AdjustRateForm({
       <StepIndicator
         steps={steps}
         activeIndex={activeIndex}
-        error={Boolean(approveTx.error ?? actionTx.error) || approveTx.isReverted || actionTx.isReverted}
+        error={approveTx.hasFailed || actionTx.hasFailed}
         accent={accent}
       />
       {staleRecovery && !actionTx.isConfirmed && !busy ? (
@@ -1521,8 +1521,8 @@ function RepayForm({
   });
 
   useEffect(() => {
-    if (approveTx.error) setRepayApprovedAmount(0n);
-  }, [approveTx.error]);
+    if (approveTx.hasFailed) setRepayApprovedAmount(0n);
+  }, [approveTx.hasFailed]);
 
   useClearOnConfirm(actionTx.isConfirmed, () => setRaw(""));
 
@@ -1574,7 +1574,7 @@ function RepayForm({
       <StepIndicator
         steps={steps}
         activeIndex={activeIndex}
-        error={Boolean(approveTx.error ?? actionTx.error) || approveTx.isReverted || actionTx.isReverted}
+        error={approveTx.hasFailed || actionTx.hasFailed}
         accent={accent}
       />
       {needsApproval ? (

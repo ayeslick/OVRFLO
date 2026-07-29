@@ -62,5 +62,11 @@ export function useWriteFlow(user?: Address) {
     isConfirmed,
     isReverted,
     error: write.error ?? receipt.error,
+    // R8/M-2: the single "did this fail" signal. `error` alone is null on an
+    // on-chain revert — the receipt fetch succeeded, the transaction did not —
+    // so five consumers independently reset their optimistic approval state on
+    // `error` and silently kept it through a reverted approve. Anything asking
+    // whether a write failed must ask this, not `error`.
+    hasFailed: Boolean(write.error ?? receipt.error) || isReverted,
   };
 }

@@ -221,3 +221,60 @@ describe("useWriteFlow state forwarding", () => {
     expect(withReceiptError.current.error).toBe(receiptError);
   });
 });
+
+// R8/M-2: `error` is null on an on-chain revert — the receipt fetch succeeded,
+// the transaction did not. Five consumers reset optimistic approval state on
+// `error` alone and silently kept it through a reverted approve. `hasFailed` is
+// the single signal they now share.
+describe("hasFailed (R8)", () => {
+  const wrapper = ({ children }: { children: ReactNode }) => {
+    const queryClient = new QueryClient();
+    return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+  };
+
+  beforeEach(() => {
+    wagmiState.writeData = undefined;
+    wagmiState.receiptData = undefined;
+    wagmiState.receiptSuccess = false;
+    wagmiState.isPending = false;
+    wagmiState.receiptLoading = false;
+    wagmiState.writeError = null;
+    wagmiState.receiptError = null;
+  });
+
+  it("is true when the transaction reverted on-chain, even though error is null", () => {
+    wagmiState.receiptSuccess = true;
+    wagmiState.receiptData = { status: "reverted" };
+    const { result } = renderHook(() => useWriteFlow(user), { wrapper });
+    // The exact shape that made M-2 invisible.
+    expect(result.current.error).toBeNull();
+    expect(result.current.isReverted).toBe(true);
+    expect(result.current.hasFailed).toBe(true);
+  });
+
+  it("is true when the write itself errored", () => {
+    wagmiState.writeError = new Error("user rejected");
+    const { result } = renderHook(() => useWriteFlow(user), { wrapper });
+    expect(result.current.hasFailed).toBe(true);
+  });
+
+  it("is true when the receipt fetch errored", () => {
+    wagmiState.receiptError = new Error("rpc down");
+    const { result } = renderHook(() => useWriteFlow(user), { wrapper });
+    expect(result.current.hasFailed).toBe(true);
+  });
+
+  it("is false on a successful confirmation", () => {
+    wagmiState.receiptSuccess = true;
+    wagmiState.receiptData = { status: "success" };
+    const { result } = renderHook(() => useWriteFlow(user), { wrapper });
+    expect(result.current.isConfirmed).toBe(true);
+    expect(result.current.hasFailed).toBe(false);
+  });
+
+  it("is false while still pending", () => {
+    wagmiState.isPending = true;
+    const { result } = renderHook(() => useWriteFlow(user), { wrapper });
+    expect(result.current.hasFailed).toBe(false);
+  });
+});
