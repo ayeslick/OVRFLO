@@ -164,3 +164,59 @@ describe("useTxQueue", () => {
     expect(wagmiState.writeContract).toHaveBeenCalledTimes(1);
   });
 });
+
+// R42/M-7: the pause effect and the receipt-advance effect run in the same
+// commit when a receipt lands on the render where `user` changed, and the
+// advance effect's closure still holds the pre-update `paused === false`. It
+// therefore fired the next transaction at the NEW signer — a wallet prompt the
+// user never initiated, for the previous account's stream. It fails closed
+// on-chain (Sablier rejects a non-recipient), but the prompt is the harm.
+describe("useTxQueue — signer switch cannot be beaten (R42)", () => {
+  it("does not advance when the receipt and the signer change land together", () => {
+    const { result, rerender } = setup();
+    act(() => result.current.start(plan));
+    expect(wagmiState.writeContract).toHaveBeenCalledTimes(1);
+
+    // The commit that both confirms tx 1 and switches the signer — the exact
+    // interleaving that used to slip a second transaction through.
+    wagmiState.hash = "0xhash1";
+    wagmiState.receiptSuccess = true;
+    act(() => rerender({ u: userB }));
+
+    expect(result.current.rows[0].status).toBe("confirmed");
+    // The second transaction must NOT have been dispatched.
+    expect(wagmiState.writeContract).toHaveBeenCalledTimes(1);
+    expect(result.current.running).toBe(false);
+    expect(result.current.paused).toBe(true);
+  });
+
+  it("still advances normally while the signer is unchanged", () => {
+    // Guard against over-correction: the ref check must only stop the queue on
+    // an actual signer change, not on every confirmation.
+    const { result, rerender } = setup();
+    act(() => result.current.start(plan));
+
+    confirmCurrent(() => rerender({ u: userA }), "0xhash1");
+
+    expect(result.current.rows[0].status).toBe("confirmed");
+    expect(wagmiState.writeContract).toHaveBeenCalledTimes(2);
+  });
+
+  it("re-owns the queue for the new signer on an explicit resume", () => {
+    // Resuming after a switch is the user's deliberate act, unlike auto-advance.
+    const { result, rerender } = setup();
+    act(() => result.current.start(plan));
+    act(() => rerender({ u: userB }));
+
+    wagmiState.hash = "0xhash1";
+    wagmiState.receiptSuccess = true;
+    act(() => rerender({ u: userB }));
+    const beforeResume = wagmiState.writeContract.mock.calls.length;
+
+    wagmiState.receiptSuccess = false;
+    wagmiState.hash = undefined;
+    act(() => result.current.resume([plan[1]]));
+
+    expect(wagmiState.writeContract.mock.calls.length).toBe(beforeResume + 1);
+  });
+});

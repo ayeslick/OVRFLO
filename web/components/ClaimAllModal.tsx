@@ -44,6 +44,9 @@ export function ClaimAllModal({ pools, streams, user, onClose }: Props) {
   const queue = useTxQueue(user);
   const headingRef = useRef<HTMLHeadingElement>(null);
   const [started, setStarted] = useState(false);
+  // Everything the user reviewed was claimed elsewhere before they confirmed.
+  // Saying so beats queueing nothing and reporting success.
+  const [nothingLeft, setNothingLeft] = useState(false);
   // The initial review plan; RESUME recomputes from the live pools/streams props.
   const [reviewPlan] = useState<QueuedTx[]>(() => planClaimAll({ pools, streams }));
 
@@ -102,6 +105,11 @@ export function ClaimAllModal({ pools, streams, user, onClose }: Props) {
         {queue.failed ? (
           <div className="label mono status-negative">TRANSACTION FAILED — RESUME RE-CHECKS CLAIMABLES</div>
         ) : null}
+        {nothingLeft ? (
+          <div className="label mono status-warning" role="status">
+            NOTHING LEFT TO CLAIM — THESE WERE CLAIMED ELSEWHERE WHILE THIS WAS OPEN
+          </div>
+        ) : null}
         {queue.done ? (
           <>
             <div className="label mono status-positive">ALL CLAIMS CONFIRMED</div>
@@ -115,8 +123,20 @@ export function ClaimAllModal({ pools, streams, user, onClose }: Props) {
             type="button"
             disabled={reviewPlan.length === 0}
             onClick={() => {
+              // R41/M-6: plan at submit, not at modal open. `reviewPlan` is the
+              // snapshot the user is looking at, which is the right thing to
+              // *show* — but between opening the modal and confirming, a stream
+              // can be claimed elsewhere or a pool share drawn down, and
+              // submitting the frozen plan would queue transactions that are
+              // already spent. RESUME always re-planned; the first confirm did
+              // not, which is the asymmetry M-6 identified.
+              const fresh = planClaimAll({ pools, streams });
+              if (fresh.length === 0) {
+                setNothingLeft(true);
+                return;
+              }
               setStarted(true);
-              queue.start(reviewPlan);
+              queue.start(fresh);
               // The confirm button unmounts once the queue runs — park focus on
               // the heading so it is never dropped to <body> (R3).
               headingRef.current?.focus();
