@@ -1,214 +1,489 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
-import { useWaitForTransactionReceipt, useWriteContract } from "wagmi";
-import { encodeFunctionData } from "viem";
-import type { Address } from "viem";
-import { ovrfloLendingAbi, sablierLockupAbi } from "@/lib/abis";
-import { chainId as configuredChainId, SABLIER_LOCKUP_ADDRESS } from "@/lib/config";
-import type { QueuedTx } from "@/lib/claim-all";
-import { invalidateOnChainReads, scheduleHeldStreamsRetry } from "@/lib/invalidate";
-import { MAX_UINT128 } from "@/lib/lending-math";
+import type {
+  ActionExecutionResult,
+  ExecutionPlan,
+} from "@/lib/action-runtime";
+import type { ActionIdentity } from "@/lib/actions/types";
+import {
+  reconcileQueuedTx,
+  type ClaimAllRowReconciliation,
+  type QueuedTx,
+} from "@/lib/claim-all";
 
-export type QueueRowStatus = "pending" | "signing" | "confirming" | "confirmed" | "failed";
-export type QueueRow = { tx: QueuedTx; status: "pending" | "confirmed" | "failed" };
+export type QueuePauseReason =
+  | "completeness"
+  | "agreement"
+  | "hydration"
+  | "account"
+  | "chain";
 
-// Sequential claim-all runner (KTD4): one tx at a time, advance only on receipt,
-// coarse invalidation after EVERY confirmed receipt. A failure stops the queue
-// after the in-flight tx; resume() takes a FRESH plan recomputed from live data
-// (never a blind retry) and keeps confirmed rows checked off. A signer switch
-// pauses auto-advance after the in-flight tx settles.
-export function useTxQueue(user?: Address) {
-  const queryClient = useQueryClient();
-  const write = useWriteContract();
-  const receipt = useWaitForTransactionReceipt({
-    hash: write.data,
-    query: { enabled: Boolean(write.data) },
-  });
+export type QueueInvariant =
+  | { ready: true }
+  | { ready: false; reason: QueuePauseReason };
 
-  const [rows, setRows] = useState<QueueRow[]>([]);
-  const [index, setIndex] = useState(0);
+export type QueueRowStatus =
+  | "pending"
+  | "preparing"
+  | "confirmed"
+  | "skipped"
+  | "needs-review"
+  | "paused"
+  | "refresh-failed"
+  | "failed";
+
+export type QueueRow = {
+  tx: QueuedTx;
+  status: QueueRowStatus;
+  replacement?: QueuedTx;
+};
+
+export type QueueOutcome =
+  | "idle"
+  | "in_progress"
+  | "complete_success"
+  | "complete_with_skips"
+  | "partial_completion";
+
+export type ClaimAllRowBuild =
+  | { status: "ready"; plan: ExecutionPlan }
+  | Extract<ClaimAllRowReconciliation, { status: "needs-review" | "skipped" }>;
+
+export type ClaimAllQueueExecutor = {
+  confirm: (plan: ExecutionPlan) => Promise<ActionExecutionResult>;
+  retryRefresh: () => Promise<ActionExecutionResult | null>;
+};
+
+export type UseTxQueueOptions = {
+  identity: ActionIdentity | null;
+  invariants: () => QueueInvariant;
+  rebuild: (
+    tx: QueuedTx,
+    identity: ActionIdentity,
+  ) => Promise<ClaimAllRowBuild>;
+  executor: ClaimAllQueueExecutor;
+};
+
+function txGroupKey(tx: QueuedTx): string {
+  return tx.kind === "pool-claims"
+    ? `pool:${tx.lending.toLowerCase()}`
+    : `stream:${tx.streamId}`;
+}
+
+function txCoverageKeys(tx: QueuedTx): string[] {
+  return tx.kind === "pool-claims"
+    ? tx.claims.map(
+        (claim) => `pool:${tx.lending.toLowerCase()}:${claim.loanId}`,
+      )
+    : [`stream:${tx.streamId}`];
+}
+
+function withoutCompleted(
+  tx: QueuedTx,
+  completed: ReadonlySet<string>,
+): QueuedTx | null {
+  if (tx.kind === "stream-claim") {
+    return completed.has(txCoverageKeys(tx)[0]) ? null : tx;
+  }
+  const claims = tx.claims.filter(
+    (claim) =>
+      !completed.has(`pool:${tx.lending.toLowerCase()}:${claim.loanId}`),
+  );
+  return claims.length === 0 ? null : { ...tx, claims };
+}
+
+/**
+ * Sequential Claim All orchestration over U6's executor.
+ *
+ * This hook owns queue history and execution-time guards only. It never
+ * simulates, signs, waits for receipts, or refreshes data itself. A row becomes
+ * confirmed only when the injected executor resolves `success`, which is after
+ * its successful receipt and critical refresh. Every unsent row is rebuilt
+ * immediately before that executor is allowed to prompt the wallet.
+ */
+export function useTxQueue(options: UseTxQueueOptions) {
+  const optionsRef = useRef(options);
+  optionsRef.current = options;
+  const identityRef = useRef(options.identity);
+  identityRef.current = options.identity;
+  const queueOwner = useRef<ActionIdentity | null>(null);
+  const generation = useRef(0);
+  const rowsRef = useRef<QueueRow[]>([]);
+  const refreshFailure = useRef<{
+    index: number;
+    result: Extract<ActionExecutionResult, { status: "refresh_failed" }>;
+  } | null>(null);
+  const processAtRef = useRef<
+    ((index: number, run: number) => Promise<void>) | null
+  >(null);
+
+  const [rows, setRowsState] = useState<QueueRow[]>([]);
   const [running, setRunning] = useState(false);
   const [paused, setPaused] = useState(false);
-  const handledHash = useRef<`0x${string}` | undefined>(undefined);
-  const previousUser = useRef(user);
-  const userRef = useRef(user);
-  userRef.current = user;
-  // R42/M-7: the signer the queue was started for. The pause effect and the
-  // receipt-advance effect run in the same commit when a receipt lands on the
-  // render where `user` changed, and the advance effect's closure still holds
-  // the pre-update `paused === false` — so it fires the next transaction at the
-  // new signer. A ref is read at execution time rather than captured in a
-  // closure, so it closes the window regardless of effect ordering.
-  const queueOwner = useRef<Address | undefined>(undefined);
-  const cancelRetry = useRef<(() => void) | undefined>(undefined);
+  const [pauseReason, setPauseReason] = useState<QueuePauseReason | null>(null);
+  const [error, setError] = useState<unknown>(null);
 
-  const execute = useCallback(
-    (tx: QueuedTx) => {
-      if (tx.kind === "pool-claims") {
-        write.writeContract({
-          chainId: configuredChainId,
-          address: tx.lending,
-          abi: ovrfloLendingAbi,
-          functionName: "multicall",
-          args: [
-            tx.loanIds.map((loanId) =>
-              encodeFunctionData({
-                abi: ovrfloLendingAbi,
-                functionName: "claimLoanPoolShare",
-                args: [loanId, MAX_UINT128],
-              }),
-            ),
-          ],
-        });
-      } else {
-        const to = userRef.current;
-        if (!to) return;
-        write.writeContract({
-          chainId: configuredChainId,
-          address: SABLIER_LOCKUP_ADDRESS,
-          abi: sablierLockupAbi,
-          functionName: "withdrawMax",
-          args: [tx.streamId, to],
-        });
-      }
+  const setRows = useCallback(
+    (next: QueueRow[] | ((current: QueueRow[]) => QueueRow[])) => {
+      const resolved =
+        typeof next === "function" ? next(rowsRef.current) : next;
+      rowsRef.current = resolved;
+      setRowsState(resolved);
     },
-    [write],
+    [],
   );
+
+  const updateRow = useCallback(
+    (
+      index: number,
+      status: QueueRowStatus,
+      replacement?: QueuedTx,
+    ) => {
+      setRows((current) =>
+        current.map((row, rowIndex) => {
+          if (rowIndex !== index || row.status === "confirmed") return row;
+          return {
+            ...row,
+            status,
+            ...(replacement ? { replacement } : {}),
+          };
+        }),
+      );
+    },
+    [setRows],
+  );
+
+  const pauseAt = useCallback(
+    (index: number, reason: QueuePauseReason) => {
+      updateRow(index, "paused");
+      setPauseReason(reason);
+      setPaused(true);
+      setRunning(false);
+    },
+    [updateRow],
+  );
+
+  const invariantNow = useCallback((): QueueInvariant => {
+    const owner = queueOwner.current;
+    const current = identityRef.current;
+    if (!owner || !current) return { ready: false, reason: "account" };
+    if (owner.chainId !== current.chainId) return { ready: false, reason: "chain" };
+    if (owner.account.toLowerCase() !== current.account.toLowerCase()) {
+      return { ready: false, reason: "account" };
+    }
+    return optionsRef.current.invariants();
+  }, []);
+
+  const processAt = useCallback(
+    async (index: number, run: number) => {
+      if (generation.current !== run) return;
+      const row = rowsRef.current[index];
+      if (!row) {
+        setRunning(false);
+        return;
+      }
+      if (row.status === "confirmed" || row.status === "skipped") {
+        await processAtRef.current?.(index + 1, run);
+        return;
+      }
+      const beforeRebuild = invariantNow();
+      if (!beforeRebuild.ready) {
+        pauseAt(index, beforeRebuild.reason);
+        return;
+      }
+      const identity = identityRef.current;
+      if (!identity) {
+        pauseAt(index, "account");
+        return;
+      }
+
+      updateRow(index, "preparing");
+      let rebuilt: ClaimAllRowBuild;
+      try {
+        rebuilt = await optionsRef.current.rebuild(row.tx, identity);
+      } catch (nextError) {
+        if (generation.current !== run) return;
+        setError(nextError);
+        updateRow(index, "failed");
+        setRunning(false);
+        return;
+      }
+      if (generation.current !== run) return;
+      if (rebuilt.status === "skipped") {
+        updateRow(index, "skipped");
+        await processAtRef.current?.(index + 1, run);
+        return;
+      }
+      if (rebuilt.status === "needs-review") {
+        updateRow(index, "needs-review", rebuilt.replacement);
+        setRunning(false);
+        return;
+      }
+
+      // Re-check after the async rebuild and immediately before the executor
+      // can reach a wallet prompt.
+      const beforeExecutor = invariantNow();
+      if (!beforeExecutor.ready) {
+        pauseAt(index, beforeExecutor.reason);
+        return;
+      }
+
+      let result: ActionExecutionResult;
+      try {
+        result = await optionsRef.current.executor.confirm(rebuilt.plan);
+      } catch (nextError) {
+        if (generation.current !== run) return;
+        setError(nextError);
+        updateRow(index, "failed");
+        setRunning(false);
+        return;
+      }
+      if (generation.current !== run) return;
+
+      if (result.status === "success") {
+        updateRow(index, "confirmed");
+        await processAtRef.current?.(index + 1, run);
+        return;
+      }
+      if (result.status === "refresh_failed") {
+        refreshFailure.current = { index, result };
+        setError(result.error);
+        updateRow(index, "refresh-failed");
+        setRunning(false);
+        return;
+      }
+      if (result.status === "needs_review") {
+        updateRow(index, "needs-review");
+        setRunning(false);
+        return;
+      }
+      if (result.status === "identity_changed") {
+        const current = identityRef.current;
+        pauseAt(
+          index,
+          queueOwner.current?.chainId !== current?.chainId ? "chain" : "account",
+        );
+        return;
+      }
+      if (
+        result.status === "invalid" &&
+        result.errors.length > 0 &&
+        result.errors.every(
+          (invalid) =>
+            invalid.code === "nothing-claimable" ||
+            invalid.code === "stream-not-owned",
+        )
+      ) {
+        updateRow(index, "skipped");
+        await processAtRef.current?.(index + 1, run);
+        return;
+      }
+      setError("error" in result ? result.error : result);
+      updateRow(index, "failed");
+      setRunning(false);
+    },
+    [invariantNow, pauseAt, updateRow],
+  );
+  processAtRef.current = processAt;
 
   const start = useCallback(
-    (plan: QueuedTx[]) => {
-      if (plan.length === 0) return;
-      handledHash.current = undefined;
-      queueOwner.current = userRef.current;
-      write.reset();
-      setRows(plan.map((tx) => ({ tx, status: "pending" as const })));
-      setIndex(0);
+    (plan: readonly QueuedTx[]) => {
+      if (plan.length === 0 || !identityRef.current) return;
+      const run = generation.current + 1;
+      generation.current = run;
+      queueOwner.current = identityRef.current;
+      refreshFailure.current = null;
+      setError(null);
       setPaused(false);
+      setPauseReason(null);
+      setRows(plan.map((tx) => ({ tx, status: "pending" })));
       setRunning(true);
-      execute(plan[0]);
+      void processAtRef.current?.(0, run);
     },
-    [execute, write],
+    [setRows],
   );
 
-  // Fresh plan for the remainder; already-confirmed rows stay checked off.
   const resume = useCallback(
-    (freshPlan: QueuedTx[]) => {
-      const confirmed = rows.filter((row) => row.status === "confirmed");
-      const next = [...confirmed, ...freshPlan.map((tx) => ({ tx, status: "pending" as const }))];
-      handledHash.current = undefined;
-      // Resuming after a signer switch re-owns the queue for the new signer,
-      // which is explicit and intended — unlike the auto-advance path.
-      queueOwner.current = userRef.current;
-      write.reset();
-      setRows(next);
-      setIndex(confirmed.length);
+    (freshPlan: readonly QueuedTx[]) => {
+      if (!identityRef.current) return;
+      const run = generation.current + 1;
+      generation.current = run;
+      queueOwner.current = identityRef.current;
+      setError(null);
       setPaused(false);
-      if (freshPlan.length === 0) {
+      setPauseReason(null);
+      setRunning(true);
+
+      const retainedRefresh = refreshFailure.current;
+      if (retainedRefresh) {
+        void (async () => {
+          const invariant = invariantNow();
+          if (!invariant.ready) {
+            pauseAt(retainedRefresh.index, invariant.reason);
+            return;
+          }
+          updateRow(retainedRefresh.index, "preparing");
+          let result: ActionExecutionResult | null;
+          try {
+            result = await optionsRef.current.executor.retryRefresh();
+          } catch (nextError) {
+            if (generation.current !== run) return;
+            setError(nextError);
+            updateRow(retainedRefresh.index, "refresh-failed");
+            setRunning(false);
+            return;
+          }
+          if (generation.current !== run) return;
+          if (result?.status === "success") {
+            refreshFailure.current = null;
+            updateRow(retainedRefresh.index, "confirmed");
+            await processAtRef.current?.(retainedRefresh.index + 1, run);
+          } else if (result?.status === "identity_changed") {
+            pauseAt(retainedRefresh.index, "account");
+          } else {
+            if (result?.status === "refresh_failed") {
+              refreshFailure.current = {
+                index: retainedRefresh.index,
+                result,
+              };
+              setError(result.error);
+            }
+            updateRow(retainedRefresh.index, "refresh-failed");
+            setRunning(false);
+          }
+        })();
+        return;
+      }
+
+      const history = rowsRef.current.filter(
+        (row) => row.status === "confirmed" || row.status === "skipped",
+      );
+      const completed = new Set(history.flatMap((row) => txCoverageKeys(row.tx)));
+      const current = freshPlan
+        .map((tx) => withoutCompleted(tx, completed))
+        .filter((tx): tx is QueuedTx => tx !== null);
+      const currentByGroup = new Map(
+        current.map((tx) => [txGroupKey(tx), tx] as const),
+      );
+      const matched = new Set<string>();
+      const unresolved: QueueRow[] = [];
+      let requiresReview = false;
+
+      for (const row of rowsRef.current) {
+        if (row.status === "confirmed" || row.status === "skipped") continue;
+        const reviewed = withoutCompleted(row.tx, completed);
+        if (!reviewed) continue;
+        const group = txGroupKey(reviewed);
+        const latest = currentByGroup.get(group) ?? null;
+        if (latest) matched.add(group);
+        const reconciliation = reconcileQueuedTx(reviewed, latest);
+        if (reconciliation.status === "skipped") {
+          unresolved.push({ tx: reviewed, status: "skipped" });
+        } else if (reconciliation.status === "needs-review") {
+          unresolved.push({
+            tx: reviewed,
+            status: "needs-review",
+            replacement: reconciliation.replacement,
+          });
+          requiresReview = true;
+        } else {
+          unresolved.push({ tx: reviewed, status: "pending" });
+        }
+      }
+      for (const tx of current) {
+        if (matched.has(txGroupKey(tx))) continue;
+        unresolved.push({ tx, status: "needs-review", replacement: tx });
+        requiresReview = true;
+      }
+
+      setRows([...history, ...unresolved]);
+      const firstPending = unresolved.findIndex((row) => row.status === "pending");
+      if (requiresReview || firstPending === -1) {
+        setRunning(false);
+        return;
+      }
+      void processAtRef.current?.(history.length + firstPending, run);
+    },
+    [invariantNow, pauseAt, setRows, updateRow],
+  );
+
+  const acceptReview = useCallback(
+    (reviewedPlan: readonly QueuedTx[]) => {
+      if (!identityRef.current) return;
+      const run = generation.current + 1;
+      generation.current = run;
+      queueOwner.current = identityRef.current;
+      refreshFailure.current = null;
+      setError(null);
+      setPaused(false);
+      setPauseReason(null);
+      const history = rowsRef.current.filter(
+        (row) => row.status === "confirmed" || row.status === "skipped",
+      );
+      const completed = new Set(history.flatMap((row) => txCoverageKeys(row.tx)));
+      const pending = reviewedPlan
+        .map((tx) => withoutCompleted(tx, completed))
+        .filter((tx): tx is QueuedTx => tx !== null)
+        .map((tx) => ({ tx, status: "pending" as const }));
+      setRows([...history, ...pending]);
+      if (pending.length === 0) {
         setRunning(false);
         return;
       }
       setRunning(true);
-      execute(freshPlan[0]);
+      void processAtRef.current?.(history.length, run);
     },
-    [execute, rows, write],
+    [setRows],
   );
 
-  // Signer switch: never keep firing txs at a different signer (KTD4).
-  useEffect(() => {
-    if (previousUser.current !== undefined && user !== previousUser.current && running) {
-      setPaused(true);
-    }
-    previousUser.current = user;
-  }, [running, user]);
-
-  // Receipt confirmed: invalidate, mark, advance (unless paused or done).
-  // `receipt.isSuccess` only means the RPC fetch resolved a receipt — it says
-  // nothing about the transaction's own outcome. A reverted on-chain tx (e.g.
-  // withdrawMax on a stream someone else already fully claimed) still mines
-  // a receipt, so the on-chain result must be read from `receipt.data.status`
-  // ('success' | 'reverted') rather than trusted from isSuccess alone.
-  useEffect(() => {
-    if (!running || !receipt.isSuccess || !write.data || handledHash.current === write.data) return;
-    handledHash.current = write.data;
-    if (receipt.data?.status !== "success") {
-      const failedIndex = index;
-      setRows((current) => current.map((row, i) => (i === failedIndex ? { ...row, status: "failed" } : row)));
-      setRunning(false);
-      return;
-    }
-    // R39: the queue alternates between the lending market (pool-share claims)
-    // and Sablier (stream withdrawals), so scope to those rather than the whole
-    // cache. Both move stream state, hence streams: true.
-    //
-    // The payout token goes in the scope too. Every row in this queue pays the
-    // user in an ERC-20 — ovrfloToken from `_claimFair`, the stream's asset from
-    // `withdrawMax` — and that balance is read against the *token* address, not
-    // against the contract the transaction was sent to. Without it the CLAIMABLE
-    // and balance figures behind this modal keep showing pre-claim numbers,
-    // which is the one thing a user checks straight after claiming.
-    const claimed = rows[index]?.tx;
-    invalidateOnChainReads(queryClient, {
-      contracts: [
-        claimed?.kind === "pool-claims" ? claimed.lending : SABLIER_LOCKUP_ADDRESS,
-        ...(claimed?.asset ? [claimed.asset] : []),
-      ],
-      user: userRef.current,
-      streams: true,
-    });
-    cancelRetry.current?.();
-    cancelRetry.current = scheduleHeldStreamsRetry(queryClient, userRef.current);
-    const confirmedIndex = index;
-    const nextIndex = confirmedIndex + 1;
-    setRows((current) => current.map((row, i) => (i === confirmedIndex ? { ...row, status: "confirmed" } : row)));
-    setIndex(nextIndex);
-    write.reset();
-    // Read the owner from the ref, not from `paused`: on the commit where the
-    // signer changed, `paused` here is still the stale `false`.
-    const signerChanged = queueOwner.current !== undefined && queueOwner.current !== userRef.current;
-    if (paused || signerChanged || nextIndex >= rows.length) {
-      setRunning(false);
-      if (signerChanged) setPaused(true);
-      return;
-    }
-    execute(rows[nextIndex].tx);
-  }, [execute, index, paused, queryClient, receipt.data, receipt.isSuccess, rows, running, write]);
-
-  useEffect(() => () => cancelRetry.current?.(), []);
-
-  // Failure (rejected signature or reverted tx): stop after the in-flight tx.
-  const failure = write.error ?? receipt.error ?? null;
-  useEffect(() => {
-    if (!running || !failure) return;
-    const failedIndex = index;
-    setRows((current) => current.map((row, i) => (i === failedIndex ? { ...row, status: "failed" } : row)));
-    setRunning(false);
-  }, [failure, index, running]);
-
-  const statusOf = (i: number): QueueRowStatus => {
-    const stored = rows[i]?.status ?? "pending";
-    if (stored !== "pending") return stored;
-    if (i === index && running) {
-      if (write.isPending) return "signing";
-      if (receipt.isLoading) return "confirming";
-    }
-    return "pending";
-  };
+  useEffect(
+    () => () => {
+      generation.current += 1;
+    },
+    [],
+  );
 
   const confirmedCount = rows.filter((row) => row.status === "confirmed").length;
-  const failed = rows.some((row) => row.status === "failed");
+  const terminal = rows.every(
+    (row) => row.status === "confirmed" || row.status === "skipped",
+  );
+  const done = rows.length > 0 && terminal;
+  const outcome: QueueOutcome =
+    rows.length === 0
+      ? "idle"
+      : done
+        ? rows.some((row) => row.status === "skipped")
+          ? "complete_with_skips"
+          : "complete_success"
+        : confirmedCount > 0 &&
+            rows.some((row) =>
+              [
+                "paused",
+                "needs-review",
+                "refresh-failed",
+                "failed",
+              ].includes(row.status),
+            )
+          ? "partial_completion"
+          : "in_progress";
 
   return {
     rows,
-    statusOf,
+    statusOf: (index: number) => rows[index]?.status ?? "pending",
     start,
     resume,
+    acceptReview,
     running,
     paused,
-    failed,
-    error: failure,
-    inFlight: running && (write.isPending || receipt.isLoading),
-    done: rows.length > 0 && confirmedCount === rows.length,
+    pauseReason,
+    needsReview: rows.some((row) => row.status === "needs-review"),
+    failed: rows.some(
+      (row) => row.status === "failed" || row.status === "refresh-failed",
+    ),
+    error,
+    inFlight: running,
+    done,
+    outcome,
   };
 }

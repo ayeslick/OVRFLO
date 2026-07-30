@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Address } from "viem";
 import { useHeldStreams } from "@/hooks/useHeldStreams";
+import { useClaimAllExecution } from "@/hooks/useClaimAllExecution";
 import { useLendingLiquidity } from "@/hooks/useLendingLiquidity";
 import { useLoanBook } from "@/hooks/useLoanBook";
 import { symbolFor, type SymbolMap } from "@/hooks/useMarketSymbols";
@@ -109,6 +110,11 @@ export function PositionSummary({ markets, user, symbols }: Props) {
   const totalClaimable =
     claimAllPools.reduce((acc, pool) => acc + pool.claimable, 0n) +
     claimAllStreams.reduce((acc, stream) => acc + stream.withdrawable, 0n);
+  const claimAllExecution = useClaimAllExecution(
+    { pools: claimAllPools, streams: claimAllStreams },
+    markets,
+    user,
+  );
 
   const hasPositions =
     streams.streams.length > 0 ||
@@ -201,6 +207,7 @@ export function PositionSummary({ markets, user, symbols }: Props) {
           pools={claimAllPools}
           streams={claimAllStreams}
           user={user}
+          execution={claimAllExecution}
           onClose={() => setClaimAllOpen(false)}
         />
       ) : null}

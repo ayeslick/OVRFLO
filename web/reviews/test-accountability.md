@@ -35,3 +35,26 @@ Owner: Codex U6 implementation
   temporary uncapped `gatherLiquidity` bridge plus direct hydration, and
   renewed review when calldata changes. This bridge changes transaction
   authority only; the legacy live discovery surfaces remain in place for U9.
+
+## 2026-07-30 — U7 Claim All executor orchestration
+
+Owner: Codex U7 implementation
+
+- `tests/hooks/useTxQueue.test.tsx`: replaced the queue's private wagmi
+  write/receipt mock with an injected U6 executor contract. The replacement
+  preserves the same-commit account-change race and normal sequential advance
+  proofs, and adds completeness/agreement/hydration pauses, grouped-row
+  needs-review/skipped outcomes, immutable confirmations, and refresh-only
+  retry. Direct receipt, exact-simulation, invalidation, and refresh behavior
+  remain covered at their new owner in `useTransactionExecutor`,
+  `action-runtime`, and `query-resource-registry` tests.
+- `tests/components/claim-all-modal.test.tsx`: inserted the new fail-closed
+  preflight-to-review transition before the existing frozen-review/fresh-submit
+  assertions, and requires changed visible work to receive another explicit
+  review.
+- `tests/components/position-summary.test.tsx`: replaced the legacy expectation
+  that the indexer-backed summary could proceed directly to `CONFIRM QUEUE`
+  with the U7 fail-closed verifier-unavailable boundary. U9 owns replacing that
+  shadow producer; individual verified recovery remains available.
+- Added pure preflight/cache/reconciliation, source-progress UI, and concrete
+  grouped U6 execution-plan coverage. No safe freshness assertion was relaxed.

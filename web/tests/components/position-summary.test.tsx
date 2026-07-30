@@ -58,6 +58,9 @@ const heldStreams = { streams: [] as unknown[] };
 vi.mock("@/hooks/useHeldStreams", () => ({
   useHeldStreams: () => ({ streams: heldStreams.streams, isLoading: false, error: null }),
 }));
+vi.mock("@/hooks/useClaimAllExecution", () => ({
+  useClaimAllExecution: () => undefined,
+}));
 
 const queueState = {
   startedPlans: [] as unknown[],
@@ -186,7 +189,7 @@ describe("summary strip (R1/R2/R4)", () => {
 });
 
 describe("claim-all modal (R3)", () => {
-  it("opens on CLAIM ALL and does not start signing until CONFIRM QUEUE", () => {
+  it("opens on CLAIM ALL but legacy discovery cannot bypass the U7 preflight", () => {
     entry(lendingA).pools = [
       {
         pool: { id: 3n, borrower: testAddress(0xb), aprBps: 1000, market: marketA.market, totalContributed: 100n },
@@ -201,10 +204,12 @@ describe("claim-all modal (R3)", () => {
     render(<PositionSummary markets={[marketA]} user={userA} symbols={symbols} />);
     fireEvent.click(screen.getByRole("button", { name: "CLAIM ALL" }));
     expect(screen.getByRole("dialog", { name: "Claim all" })).toBeInTheDocument();
-    expect(screen.getByText(/CLAIM 1 POOL SHARE/)).toBeInTheDocument();
+    expect(
+      screen.getByText("INDEPENDENT VERIFIER UNAVAILABLE — BATCH DISABLED"),
+    ).toBeInTheDocument();
     expect(queueState.startedPlans).toHaveLength(0);
-
-    fireEvent.click(screen.getByRole("button", { name: "CONFIRM QUEUE" }));
-    expect(queueState.startedPlans).toHaveLength(1);
+    expect(
+      screen.queryByRole("button", { name: "CONFIRM QUEUE" }),
+    ).not.toBeInTheDocument();
   });
 });

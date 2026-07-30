@@ -406,6 +406,7 @@ export function useWriteFlow(
     isReverted: executor.isReverted,
     refreshFailed: executor.refreshFailed,
     needsReview: executor.needsReview,
+    confirmPlan: executor.confirm,
     review:
       executor.result?.status === "needs_review"
         ? executor.result.draft.action.review

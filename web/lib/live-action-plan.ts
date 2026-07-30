@@ -3,6 +3,7 @@ import {
   formatUnits,
   isAddressEqual,
   type Address,
+  type Hex,
   type PublicClient,
 } from "viem";
 import { erc20Abi, ovrfloAbi, ovrfloLendingAbi, sablierLockupAbi } from "./abis";
@@ -48,7 +49,12 @@ export type LiveWriteArgs = {
   value?: bigint;
 };
 
-type LiveClient = Pick<PublicClient, "getBlock" | "readContract">;
+export type LiveClient = Pick<PublicClient, "getBlock" | "readContract">;
+export type LiveBlockSnapshot = {
+  number: bigint;
+  hash: Hex | null;
+  timestamp: bigint;
+};
 
 type ParsedAction = {
   intent: ActionIntent;
@@ -263,8 +269,9 @@ async function loadSnapshot(
   identity: ActionIdentity,
   scope: LiveMarketScope,
   client: LiveClient,
+  pinnedBlock?: LiveBlockSnapshot,
 ): Promise<ActionSnapshot> {
-  const block = await client.getBlock({ blockTag: "latest" });
+  const block = pinnedBlock ?? await client.getBlock({ blockTag: "latest" });
   if (!block.hash) throw new Error("Action snapshot block has no hash");
   const metadata = { blockNumber: block.number, blockHash: block.hash };
   const market = marketContext(scope, block.timestamp);
@@ -754,9 +761,35 @@ async function buildLiveAction(
   identity: ActionIdentity,
   scope: LiveMarketScope,
   client: LiveClient,
+  pinnedBlock?: LiveBlockSnapshot,
 ): Promise<ActionBuildResult> {
-  const snapshot = await loadSnapshot(parsed, identity, scope, client);
+  const snapshot = await loadSnapshot(
+    parsed,
+    identity,
+    scope,
+    client,
+    pinnedBlock,
+  );
   return buildAction(parsed.intent, snapshot);
+}
+
+export async function createLiveActionDraft(
+  raw: LiveWriteArgs,
+  identity: ActionIdentity,
+  scope: LiveMarketScope,
+  client: LiveClient,
+  pinnedBlock?: LiveBlockSnapshot,
+): Promise<
+  | { status: "ready"; draft: ActionExecutionDraft }
+  | { status: "invalid"; errors: Extract<ActionBuildResult, { status: "invalid" }>["errors"] }
+  | null
+> {
+  const parsed = parseAction(raw);
+  if (!parsed) return null;
+  return actionResultToDraft(
+    await buildLiveAction(parsed, identity, scope, client, pinnedBlock),
+    requestForAction,
+  );
 }
 
 export async function createLiveExecutionPlan(
@@ -770,26 +803,35 @@ export async function createLiveExecutionPlan(
   | { status: "needs_review"; draft: ActionExecutionDraft; plan: ExecutionPlan }
   | null
 > {
-  const parsed = parseAction(raw);
-  if (!parsed) return null;
-  const initial = await buildLiveAction(parsed, identity, scope, client);
-  if (initial.status === "invalid") {
-    return initial;
-  }
-  const accepted = {
-    action: initial.action,
-    request: requestForAction(initial.action),
-  };
+  const initial = await createLiveActionDraft(raw, identity, scope, client);
+  if (!initial) return null;
+  if (initial.status === "invalid") return initial;
+  const accepted = initial.draft;
   const plan: ExecutionPlan = {
-    flowId: initial.action.type,
+    flowId: accepted.action.type,
     accepted,
-    rebuild: async (currentIdentity) =>
-      actionResultToDraft(
-        await buildLiveAction(parsed, currentIdentity, scope, client),
-        requestForAction,
-      ),
+    rebuild: async (currentIdentity) => {
+      const rebuilt = await createLiveActionDraft(
+        raw,
+        currentIdentity,
+        scope,
+        client,
+      );
+      if (!rebuilt) {
+        return {
+          status: "invalid",
+          errors: [
+            {
+              code: "action-snapshot-mismatch",
+              message: "Action is no longer supported",
+            },
+          ],
+        };
+      }
+      return rebuilt;
+    },
   };
-  if (!rawCallMatches(raw, initial.action)) {
+  if (!rawCallMatches(raw, accepted.action)) {
     return { status: "needs_review", draft: accepted, plan };
   }
   return { status: "ready", plan };
