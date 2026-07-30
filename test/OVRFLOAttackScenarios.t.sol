@@ -288,6 +288,8 @@ contract OVRFLOAttackScenariosTest is VaultMockHelpers {
         // Post liquidity
         vm.prank(lender);
         uint256 liquidityId = lending.supplyLiquidity(BOOK_MARKET, 1000, 50 ether);
+        assertEq(lending.marketAvailableLiquidity(BOOK_MARKET), 50 ether);
+        assertEq(lending.marketAprAvailableLiquidity(BOOK_MARKET, 1000), 50 ether);
 
         // Create borrow pool with single liquidity
         vm.startPrank(borrowerAddr);
@@ -295,6 +297,8 @@ contract OVRFLOAttackScenariosTest is VaultMockHelpers {
         uint256 loanPoolId = lending.createBorrowerLoanPool(_singletonArray(liquidityId), streamId, 50 ether, 0);
         vm.stopPrank();
         uint256 loanId = 1;
+        assertEq(lending.marketAvailableLiquidity(BOOK_MARKET), 0);
+        assertEq(lending.marketAprAvailableLiquidity(BOOK_MARKET, 1000), 0);
 
         // Read loan state
         (,, uint128 obligation,,,) = lending.loans(loanId);

@@ -2,6 +2,8 @@
 pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
+import {stdError} from "forge-std/StdError.sol";
+import {Vm} from "forge-std/Vm.sol";
 import {OVRFLOLending} from "../src/OVRFLOLending.sol";
 import {StreamPricing} from "../src/StreamPricing.sol";
 import {TestERC20} from "./mocks/TestERC20.sol";
@@ -12,6 +14,21 @@ contract ShortTransferERC20 is TestERC20 {
 
     function transferFrom(address from, address to, uint256 amount) public override returns (bool) {
         return super.transferFrom(from, to, amount - 1);
+    }
+}
+
+contract SelectiveFailTransferERC20 is TestERC20 {
+    address public failedRecipient;
+
+    constructor() TestERC20("Selective Fail Transfer", "FAIL") {}
+
+    function setFailedRecipient(address recipient) external {
+        failedRecipient = recipient;
+    }
+
+    function transfer(address to, uint256 amount) public override returns (bool) {
+        if (to == failedRecipient) return false;
+        return super.transfer(to, amount);
     }
 }
 
@@ -50,6 +67,35 @@ contract LendingInternalHarness is OVRFLOLending {
     function exposed_toUint128(uint256 amount) external pure returns (uint128) {
         return _toUint128(amount);
     }
+
+    function exposed_setAvailableLiquidity(
+        uint256 liquidityId,
+        uint128 availableLiquidity,
+        uint8 reason,
+        uint256 referenceId
+    ) external {
+        _setAvailableLiquidity(liquidityId, availableLiquidity, reason, referenceId);
+    }
+
+    function exposed_corruptMarketAggregate(address market, uint256 amount) external {
+        marketAvailableLiquidity[market] = amount;
+    }
+
+    function exposed_corruptMarketAprAggregate(address market, uint16 aprBps, uint256 amount) external {
+        marketAprAvailableLiquidity[market][aprBps] = amount;
+    }
+
+    function exposed_seedLiquidityPosition(
+        uint256 liquidityId,
+        address lender,
+        address market,
+        uint16 aprBps,
+        uint128 availableLiquidity
+    ) external {
+        liquidityPositions[liquidityId] = LiquidityPosition({
+            lender: lender, market: market, aprBps: aprBps, availableLiquidity: availableLiquidity
+        });
+    }
 }
 
 contract OVRFLOLendingTest is Test {
@@ -82,6 +128,15 @@ contract OVRFLOLendingTest is Test {
         uint128 availableLiquidity
     );
     event LiquidityWithdrawn(uint256 indexed liquidityId, address indexed lender, uint128 refunded);
+    event LiquidityCheckpoint(
+        address indexed lender,
+        address indexed market,
+        uint16 indexed aprBps,
+        uint256 liquidityId,
+        uint128 availableLiquidity,
+        uint8 reason,
+        uint256 referenceId
+    );
     event StreamSoldToLiquidity(
         uint256 indexed liquidityId,
         uint256 indexed streamId,
@@ -104,7 +159,11 @@ contract OVRFLOLendingTest is Test {
     event LoanClosed(uint256 indexed loanId, address indexed borrower, uint128 finalDraw);
     event LoanRepaid(uint256 indexed loanId, address indexed borrower, uint128 amount, bool closed);
     event BorrowerLoanPoolCreated(
-        uint256 indexed loanId, address indexed borrower, address indexed market, uint16 aprBps, uint128 totalContributed
+        uint256 indexed loanId,
+        address indexed borrower,
+        address indexed market,
+        uint16 aprBps,
+        uint128 totalContributed
     );
     event LoanPoolShareClaimed(uint256 indexed loanId, address indexed lender, uint128 amount);
 
@@ -292,6 +351,276 @@ contract OVRFLOLendingTest is Test {
         assertEq(availableLiquidity, 100 ether);
         assertEq(underlying.balanceOf(address(lending)), 100 ether);
         assertEq(underlying.balanceOf(BUYER), 0);
+    }
+
+    function test_LiquidityDepthAndCheckpoints_ConserveSupplyPartialSaleAndWithdrawal() public {
+        uint8 supplyReason = lending.LIQUIDITY_REASON_V1_SUPPLY();
+        uint8 saleReason = lending.LIQUIDITY_REASON_V1_STREAM_SALE();
+        uint8 withdrawalReason = lending.LIQUIDITY_REASON_V1_WITHDRAWAL();
+        underlying.mint(BUYER, 250 ether);
+        vm.startPrank(BUYER);
+        underlying.approve(address(lending), 250 ether);
+        vm.recordLogs();
+        vm.expectEmit(true, true, true, true, address(lending));
+        emit LiquidityCheckpoint(BUYER, MARKET, 1000, 1, 250 ether, supplyReason, 0);
+        uint256 liquidityId = lending.supplyLiquidity(MARKET, 1000, 250 ether);
+        _assertCheckpointCount(vm.getRecordedLogs(), 1);
+        vm.stopPrank();
+
+        assertEq(lending.marketAvailableLiquidity(MARKET), 250 ether);
+        assertEq(lending.marketAprAvailableLiquidity(MARKET, 1000), 250 ether);
+
+        _mintEligibleStream(5, SELLER, 110 ether, 0);
+        vm.startPrank(SELLER);
+        sablier.approve(address(lending), 5);
+        vm.recordLogs();
+        vm.expectEmit(true, true, true, true, address(lending));
+        emit LiquidityCheckpoint(BUYER, MARKET, 1000, liquidityId, 150 ether, saleReason, 5);
+        lending.sellStreamToLiquidity(liquidityId, 5, 0);
+        _assertCheckpointCount(vm.getRecordedLogs(), 1);
+        vm.stopPrank();
+
+        (,,, uint128 afterSale) = lending.liquidityPositions(liquidityId);
+        assertEq(afterSale, 150 ether);
+        assertEq(lending.marketAvailableLiquidity(MARKET), 150 ether);
+        assertEq(lending.marketAprAvailableLiquidity(MARKET, 1000), 150 ether);
+
+        vm.startPrank(BUYER);
+        vm.recordLogs();
+        vm.expectEmit(true, true, true, true, address(lending));
+        emit LiquidityCheckpoint(BUYER, MARKET, 1000, liquidityId, 0, withdrawalReason, 0);
+        lending.withdrawLiquidity(liquidityId);
+        _assertCheckpointCount(vm.getRecordedLogs(), 1);
+        vm.stopPrank();
+
+        (,,, uint128 afterWithdrawal) = lending.liquidityPositions(liquidityId);
+        assertEq(afterWithdrawal, 0);
+        assertEq(lending.marketAvailableLiquidity(MARKET), 0);
+        assertEq(lending.marketAprAvailableLiquidity(MARKET, 1000), 0);
+    }
+
+    function test_LiquidityCheckpoints_LoanEmitsOnlyForConsumedPositionsAndKeepsLoanReference() public {
+        uint256 liquidity1 = _supplyLiquidity(BUYER, 50 ether);
+        uint256 liquidity2 = _supplyLiquidity(BUYER, 60 ether);
+        uint256 liquidity3 = _supplyLiquidity(address(0x7777), 70 ether);
+        _mintEligibleStream(100, SELLER, 110 ether, 0);
+
+        uint256[] memory liquidityIds = new uint256[](3);
+        liquidityIds[0] = liquidity1;
+        liquidityIds[1] = liquidity2;
+        liquidityIds[2] = liquidity3;
+
+        vm.recordLogs();
+        vm.startPrank(SELLER);
+        sablier.approve(address(lending), 100);
+        uint256 loanId = lending.createBorrowerLoanPool(liquidityIds, 100, 100 ether, 0);
+        vm.stopPrank();
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+
+        bytes32 checkpointTopic = OVRFLOLending.LiquidityCheckpoint.selector;
+        uint8 loanReason = lending.LIQUIDITY_REASON_V1_LOAN_CONSUMPTION();
+        uint256 checkpointCount;
+        for (uint256 i; i < logs.length; i++) {
+            if (logs[i].emitter != address(lending) || logs[i].topics[0] != checkpointTopic) continue;
+
+            (uint256 checkpointLiquidityId, uint128 availableLiquidity, uint8 reason, uint256 referenceId) =
+                abi.decode(logs[i].data, (uint256, uint128, uint8, uint256));
+            assertEq(uint16(uint256(logs[i].topics[3])), 1000);
+            assertEq(reason, loanReason);
+            assertEq(referenceId, loanId);
+
+            if (checkpointCount == 0) {
+                assertEq(address(uint160(uint256(logs[i].topics[1]))), BUYER);
+                assertEq(checkpointLiquidityId, liquidity1);
+                assertEq(availableLiquidity, 0);
+            } else if (checkpointCount == 1) {
+                assertEq(address(uint160(uint256(logs[i].topics[1]))), BUYER);
+                assertEq(checkpointLiquidityId, liquidity2);
+                assertEq(availableLiquidity, 10 ether);
+            }
+            checkpointCount++;
+        }
+
+        assertEq(checkpointCount, 2, "only consumed positions checkpoint");
+        (,,, uint128 trailingAvailability) = lending.liquidityPositions(liquidity3);
+        assertEq(trailingAvailability, 70 ether);
+        assertEq(lending.loanPoolContributions(loanId, BUYER), 100 ether);
+        assertEq(lending.marketAvailableLiquidity(MARKET), 80 ether);
+        assertEq(lending.marketAprAvailableLiquidity(MARKET, 1000), 80 ether);
+    }
+
+    function testFuzz_LiquidityDepthUsesSummationSafeWidth(uint128 amountA, uint128 amountB) public {
+        amountA = uint128(bound(amountA, 1, type(uint128).max));
+        amountB = uint128(bound(amountB, 1, type(uint128).max));
+
+        _supplyLiquidity(address(0x7001), amountA);
+        _supplyLiquidity(address(0x7002), amountB);
+
+        uint256 expected = uint256(amountA) + uint256(amountB);
+        assertEq(lending.marketAvailableLiquidity(MARKET), expected);
+        assertEq(lending.marketAprAvailableLiquidity(MARKET, 1000), expected);
+    }
+
+    function test_CreateBorrowerLoanPool_RejectsMoreThanMaxRouteIds() public {
+        uint256[] memory liquidityIds = new uint256[](lending.MAX_ROUTE_IDS() + 1);
+
+        vm.expectRevert("OVRFLOLending: too many liquidity ids");
+        lending.createBorrowerLoanPool(liquidityIds, 1, 1, 0);
+    }
+
+    function test_MaxRouteIds_WorstCaseCalldataAndGasStayBounded() public {
+        uint256 maxRouteIds = lending.MAX_ROUTE_IDS();
+        uint256[] memory liquidityIds = new uint256[](maxRouteIds);
+        for (uint256 i; i < maxRouteIds; i++) {
+            address lender = address(uint160(0x10_000 + i));
+            liquidityIds[i] = _supplyLiquidity(lender, 1 ether);
+        }
+        _mintEligibleStream(901, SELLER, 141 ether, 0);
+        vm.prank(SELLER);
+        sablier.approve(address(lending), 901);
+
+        bytes memory callData = abi.encodeCall(
+            OVRFLOLending.createBorrowerLoanPool, (liquidityIds, 901, uint128(maxRouteIds * 1 ether), 0)
+        );
+        assertEq(callData.length, 4_260, "MAX_ROUTE_IDS calldata measurement changed");
+
+        vm.prank(SELLER);
+        uint256 gasBefore = gasleft();
+        lending.createBorrowerLoanPool(liquidityIds, 901, uint128(maxRouteIds * 1 ether), 0);
+        uint256 gasUsed = gasBefore - gasleft();
+        emit log_named_uint("MAX_ROUTE_IDS worst-case gas", gasUsed);
+
+        assertLt(gasUsed, 5_000_000, "MAX_ROUTE_IDS exceeds gas budget");
+        assertEq(lending.marketAvailableLiquidity(MARKET), 0);
+        assertEq(lending.marketAprAvailableLiquidity(MARKET, 1000), 0);
+    }
+
+    function test_MaxRouteIds_500DustPositionsCannotForceAnOversizedRoute() public {
+        for (uint256 i; i < 501; i++) {
+            _supplyLiquidity(BUYER, 1);
+        }
+        uint256 usefulLiquidityId = _supplyLiquidity(STRANGER, 100 ether);
+        _mintEligibleStream(902, SELLER, 110 ether, 0);
+
+        uint256[] memory directRoute = new uint256[](1);
+        directRoute[0] = usefulLiquidityId;
+        vm.startPrank(SELLER);
+        sablier.approve(address(lending), 902);
+        lending.createBorrowerLoanPool(directRoute, 902, 100 ether, 0);
+        vm.stopPrank();
+
+        assertEq(lending.marketAvailableLiquidity(MARKET), 501);
+        assertEq(lending.marketAprAvailableLiquidity(MARKET, 1000), 501);
+        (,,, uint128 remainingUsefulLiquidity) = lending.liquidityPositions(usefulLiquidityId);
+        assertEq(remainingUsefulLiquidity, 0);
+    }
+
+    function test_LiquidityCheckpoint_InvalidReasonReferenceIdentityAndUnderflowFailClosed() public {
+        LendingInternalHarness harness = new LendingInternalHarness(address(factory), address(core), address(sablier));
+        underlying.mint(BUYER, 100 ether);
+        vm.startPrank(BUYER);
+        underlying.approve(address(harness), 100 ether);
+        uint256 liquidityId = harness.supplyLiquidity(MARKET, 1000, 100 ether);
+        vm.stopPrank();
+
+        vm.expectRevert("OVRFLOLending: unknown liquidity reason");
+        harness.exposed_setAvailableLiquidity(liquidityId, 50 ether, 99, 1);
+
+        uint8 supplyReason = harness.LIQUIDITY_REASON_V1_SUPPLY();
+        vm.expectRevert("OVRFLOLending: invalid supply checkpoint");
+        harness.exposed_setAvailableLiquidity(liquidityId, 100 ether, supplyReason, 0);
+
+        uint8 saleReason = harness.LIQUIDITY_REASON_V1_STREAM_SALE();
+        vm.expectRevert("OVRFLOLending: invalid stream reference");
+        harness.exposed_setAvailableLiquidity(liquidityId, 50 ether, saleReason, 0);
+        vm.expectRevert("OVRFLOLending: invalid stream sale checkpoint");
+        harness.exposed_setAvailableLiquidity(liquidityId, 100 ether, saleReason, 1);
+
+        uint8 loanReason = harness.LIQUIDITY_REASON_V1_LOAN_CONSUMPTION();
+        vm.expectRevert("OVRFLOLending: invalid loan reference");
+        harness.exposed_setAvailableLiquidity(liquidityId, 50 ether, loanReason, 0);
+        vm.expectRevert("OVRFLOLending: invalid loan checkpoint");
+        harness.exposed_setAvailableLiquidity(liquidityId, 100 ether, loanReason, 1);
+
+        vm.expectRevert("OVRFLOLending: liquidity lender zero");
+        harness.exposed_setAvailableLiquidity(999, 1, supplyReason, 0);
+
+        harness.exposed_seedLiquidityPosition(2, BUYER, MARKET, 1000, 0);
+        vm.expectRevert("OVRFLOLending: invalid supply reference");
+        harness.exposed_setAvailableLiquidity(2, 1, supplyReason, 1);
+
+        harness.exposed_seedLiquidityPosition(3, BUYER, address(0), 1000, 0);
+        vm.expectRevert("OVRFLOLending: liquidity market zero");
+        harness.exposed_setAvailableLiquidity(3, 1, supplyReason, 0);
+
+        (,,, uint128 availableLiquidity) = harness.liquidityPositions(liquidityId);
+        assertEq(availableLiquidity, 100 ether);
+        assertEq(harness.marketAvailableLiquidity(MARKET), 100 ether);
+        assertEq(harness.marketAprAvailableLiquidity(MARKET, 1000), 100 ether);
+
+        harness.exposed_corruptMarketAggregate(MARKET, 0);
+        uint8 withdrawalReason = harness.LIQUIDITY_REASON_V1_WITHDRAWAL();
+        vm.expectRevert(stdError.arithmeticError);
+        harness.exposed_setAvailableLiquidity(liquidityId, 0, withdrawalReason, 0);
+        (,,, availableLiquidity) = harness.liquidityPositions(liquidityId);
+        assertEq(availableLiquidity, 100 ether, "underflow cannot mutate position");
+        assertEq(harness.marketAprAvailableLiquidity(MARKET, 1000), 100 ether, "underflow rolls back APR aggregate");
+
+        harness.exposed_corruptMarketAggregate(MARKET, 100 ether);
+        harness.exposed_corruptMarketAprAggregate(MARKET, 1000, 0);
+        vm.expectRevert(stdError.arithmeticError);
+        harness.exposed_setAvailableLiquidity(liquidityId, 0, withdrawalReason, 0);
+        (,,, availableLiquidity) = harness.liquidityPositions(liquidityId);
+        assertEq(availableLiquidity, 100 ether, "APR underflow cannot mutate position");
+    }
+
+    function test_LiquidityDepth_RollsBackWhenSaleOrLoanPayoutFails() public {
+        SelectiveFailTransferERC20 failUnderlying = new SelectiveFailTransferERC20();
+        TestERC20 failOvrfloToken = new TestERC20("Fail OVRFLO", "ovFAIL");
+        MockLendingFactory failFactory = new MockLendingFactory();
+        MockLendingCore failCore = new MockLendingCore();
+        MockLendingSablier failSablier = new MockLendingSablier();
+        failFactory.setInfo(address(failCore), TREASURY, address(failUnderlying), address(failOvrfloToken));
+        failCore.setSeries(MARKET, expiry, address(failOvrfloToken), address(failUnderlying));
+        OVRFLOLending failLending = new OVRFLOLending(address(failFactory), address(failCore), address(failSablier));
+        failLending.setFee(100);
+
+        failUnderlying.mint(BUYER, 100 ether);
+        vm.startPrank(BUYER);
+        failUnderlying.approve(address(failLending), 100 ether);
+        uint256 liquidityId = failLending.supplyLiquidity(MARKET, 1000, 100 ether);
+        vm.stopPrank();
+
+        failSablier.setStream(903, SELLER, address(failCore), failOvrfloToken, uint40(expiry), 0, false, 110 ether, 0);
+        vm.prank(SELLER);
+        failSablier.approve(address(failLending), 903);
+
+        uint256[] memory liquidityIds = new uint256[](1);
+        liquidityIds[0] = liquidityId;
+
+        failUnderlying.setFailedRecipient(SELLER);
+        vm.prank(SELLER);
+        vm.expectRevert();
+        failLending.sellStreamToLiquidity(liquidityId, 903, 0);
+        _assertFailedPayoutRolledBack(failLending, failSablier, failUnderlying, liquidityId);
+
+        failUnderlying.setFailedRecipient(TREASURY);
+        vm.prank(SELLER);
+        vm.expectRevert();
+        failLending.sellStreamToLiquidity(liquidityId, 903, 0);
+        _assertFailedPayoutRolledBack(failLending, failSablier, failUnderlying, liquidityId);
+
+        failUnderlying.setFailedRecipient(SELLER);
+        vm.prank(SELLER);
+        vm.expectRevert();
+        failLending.createBorrowerLoanPool(liquidityIds, 903, 100 ether, 0);
+        _assertFailedPayoutRolledBack(failLending, failSablier, failUnderlying, liquidityId);
+
+        failUnderlying.setFailedRecipient(TREASURY);
+        vm.prank(SELLER);
+        vm.expectRevert();
+        failLending.createBorrowerLoanPool(liquidityIds, 903, 100 ether, 0);
+        _assertFailedPayoutRolledBack(failLending, failSablier, failUnderlying, liquidityId);
     }
 
     function test_HitLiquidity_SettlesSaleAndConsumesCapacity() public {
@@ -735,10 +1064,39 @@ contract OVRFLOLendingTest is Test {
         assertEq(residual, 0);
     }
 
-    function test_Quote_RevertsForAprOutOfBounds() public {
+    function test_HistoricalApr_RemainsVisibleQuoteableAndExecutableAfterBoundsNarrow() public {
+        lending.setAprBounds(500, 1000);
+        uint256 liquidityId = _supplyLiquidityAtApr(BUYER, 100 ether, 500);
         _mintEligibleStream(32, SELLER, 110 ether, 0);
+
+        lending.setAprBounds(1000, 1000);
+
+        underlying.mint(STRANGER, 100 ether);
+        vm.startPrank(STRANGER);
+        underlying.approve(address(lending), 100 ether);
         vm.expectRevert("OVRFLOLending: apr out of bounds");
-        lending.quote(MARKET, 32, 500, 0);
+        lending.supplyLiquidity(MARKET, 500, 100 ether);
+        vm.stopPrank();
+
+        _mintEligibleStream(321, STRANGER, 110 ether, 0);
+        vm.prank(STRANGER);
+        vm.expectRevert("OVRFLOLending: apr out of bounds");
+        lending.postSaleListing(MARKET, 321, 500);
+
+        (uint256 grossPrice,,,,) = lending.quote(MARKET, 32, 500, 0);
+        assertGt(grossPrice, 100 ether);
+        assertEq(lending.marketAvailableLiquidity(MARKET), 100 ether);
+        assertEq(lending.marketAprAvailableLiquidity(MARKET, 500), 100 ether);
+
+        uint256[] memory liquidityIds = new uint256[](1);
+        liquidityIds[0] = liquidityId;
+        vm.startPrank(SELLER);
+        sablier.approve(address(lending), 32);
+        lending.createBorrowerLoanPool(liquidityIds, 32, 100 ether, 0);
+        vm.stopPrank();
+
+        assertEq(lending.marketAvailableLiquidity(MARKET), 0);
+        assertEq(lending.marketAprAvailableLiquidity(MARKET, 500), 0);
     }
 
     function test_Quote_RevertsForNonWholeApr() public {
@@ -851,6 +1209,31 @@ contract OVRFLOLendingTest is Test {
         sablier.setStream(streamId, owner, address(core), ovrfloToken, uint40(expiry), 0, false, deposited, withdrawn);
     }
 
+    function _assertFailedPayoutRolledBack(
+        OVRFLOLending failLending,
+        MockLendingSablier failSablier,
+        TestERC20 failUnderlying,
+        uint256 liquidityId
+    ) internal view {
+        (,,, uint128 availableLiquidity) = failLending.liquidityPositions(liquidityId);
+        assertEq(availableLiquidity, 100 ether);
+        assertEq(failLending.marketAvailableLiquidity(MARKET), 100 ether);
+        assertEq(failLending.marketAprAvailableLiquidity(MARKET, 1000), 100 ether);
+        assertEq(failLending.nextLoanId(), 1);
+        assertEq(failSablier.ownerOf(903), SELLER);
+        assertEq(failUnderlying.balanceOf(SELLER), 0);
+        assertEq(failUnderlying.balanceOf(TREASURY), 0);
+    }
+
+    function _assertCheckpointCount(Vm.Log[] memory logs, uint256 expected) internal view {
+        bytes32 checkpointTopic = OVRFLOLending.LiquidityCheckpoint.selector;
+        uint256 count;
+        for (uint256 i; i < logs.length; i++) {
+            if (logs[i].emitter == address(lending) && logs[i].topics[0] == checkpointTopic) count++;
+        }
+        assertEq(count, expected, "unexpected LiquidityCheckpoint count");
+    }
+
     /*//////////////////////////////////////////////////////////////
                     COVERAGE: UNCOVERED BRANCH TESTS
     //////////////////////////////////////////////////////////////*/
@@ -908,6 +1291,11 @@ contract OVRFLOLendingTest is Test {
         vm.expectRevert("OVRFLOLending: transfer mismatch");
         shortLending.supplyLiquidity(MARKET, 1000, 100 ether);
         vm.stopPrank();
+
+        assertEq(shortLending.marketAvailableLiquidity(MARKET), 0);
+        assertEq(shortLending.marketAprAvailableLiquidity(MARKET, 1000), 0);
+        (,,, uint128 availableLiquidity) = shortLending.liquidityPositions(1);
+        assertEq(availableLiquidity, 0);
     }
 
     function test_CloseLoan_RevertForUnknownLoan() public {
@@ -1844,6 +2232,8 @@ contract OVRFLOLendingTest is Test {
         assertEq(lending.nextLoanId(), 1, "pool id not incremented");
         (,,, uint128 cap) = lending.liquidityPositions(liquidityId);
         assertEq(cap, 100 ether, "liquidity capacity not consumed");
+        assertEq(lending.marketAvailableLiquidity(MARKET), 100 ether, "market aggregate rolled back");
+        assertEq(lending.marketAprAvailableLiquidity(MARKET, 1000), 100 ether, "APR aggregate rolled back");
         assertEq(sablier.ownerOf(301), SELLER, "stream still owned by borrower");
     }
 
@@ -1905,6 +2295,8 @@ contract OVRFLOLendingTest is Test {
 
         (,,, uint128 cap) = lending.liquidityPositions(liquidityId);
         assertEq(cap, 100 ether, "capacity unchanged");
+        assertEq(lending.marketAvailableLiquidity(MARKET), 100 ether, "market aggregate unchanged");
+        assertEq(lending.marketAprAvailableLiquidity(MARKET, 1000), 100 ether, "APR aggregate unchanged");
         assertEq(sablier.ownerOf(305), SELLER, "stream still owned by seller");
     }
 
@@ -2363,7 +2755,9 @@ contract OVRFLOLendingTest is Test {
 
         // Reentry was attempted but blocked by nonReentrant
         assertTrue(ReentrantLendingUnderlying(address(reentrantToken)).reentered(), "reentry was attempted");
-        assertFalse(ReentrantLendingUnderlying(address(reentrantToken)).reenterSucceeded(), "reentry succeeded - guard failed");
+        assertFalse(
+            ReentrantLendingUnderlying(address(reentrantToken)).reenterSucceeded(), "reentry succeeded - guard failed"
+        );
     }
 
     /*//////////////////////////////////////////////////////////////

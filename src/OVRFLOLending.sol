@@ -40,6 +40,18 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
     uint16 public constant MAX_FEE_BPS = 10_000;
     /// @notice Minimum remaining face value for a stream to be pledged or sold.
     uint256 public constant MIN_STREAM_AMOUNT = 1e6;
+    /// @notice Maximum number of liquidity positions accepted by one borrower loan route.
+    /// @dev Measured by `test_MaxRouteIds_WorstCaseCalldataAndGasStayBounded`.
+    uint256 public constant MAX_ROUTE_IDS = 128;
+
+    /// @notice Checkpoint reason: a new liquidity position was supplied.
+    uint8 public constant LIQUIDITY_REASON_V1_SUPPLY = 1;
+    /// @notice Checkpoint reason: remaining liquidity was withdrawn.
+    uint8 public constant LIQUIDITY_REASON_V1_WITHDRAWAL = 2;
+    /// @notice Checkpoint reason: liquidity bought a Sablier stream.
+    uint8 public constant LIQUIDITY_REASON_V1_STREAM_SALE = 3;
+    /// @notice Checkpoint reason: liquidity funded a borrower loan.
+    uint8 public constant LIQUIDITY_REASON_V1_LOAN_CONSUMPTION = 4;
 
     /*//////////////////////////////////////////////////////////////
                                 IMMUTABLES
@@ -147,6 +159,10 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
 
     /// @notice Liquidity position id => liquidity position.
     mapping(uint256 => LiquidityPosition) public liquidityPositions;
+    /// @notice Market => total currently available liquidity across every APR.
+    mapping(address => uint256) public marketAvailableLiquidity;
+    /// @notice Market => APR => total currently available liquidity.
+    mapping(address => mapping(uint16 => uint256)) public marketAprAvailableLiquidity;
     /// @notice Sale listing id => listing.
     mapping(uint256 => SaleListing) public saleListings;
     /// @notice Loan id => loan.
@@ -180,6 +196,19 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
     );
     /// @notice Emitted when liquidity is withdrawn and its remaining amount refunded.
     event LiquidityWithdrawn(uint256 indexed liquidityId, address indexed lender, uint128 refunded);
+    /// @notice Absolute, replay-safe checkpoint for every liquidity availability mutation.
+    /// @dev `reason` is one of the versioned `LIQUIDITY_REASON_V1_*` constants. Supply and
+    ///      withdrawal use a zero reference; stream sales reference the stream id and loan
+    ///      consumption references the loan id.
+    event LiquidityCheckpoint(
+        address indexed lender,
+        address indexed market,
+        uint16 indexed aprBps,
+        uint256 liquidityId,
+        uint128 availableLiquidity,
+        uint8 reason,
+        uint256 referenceId
+    );
     /// @notice Emitted when a seller sells a stream into liquidity.
     event StreamSoldToLiquidity(
         uint256 indexed liquidityId,
@@ -217,7 +246,11 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
     event LoanRepaid(uint256 indexed loanId, address indexed borrower, uint128 amount, bool closed);
     /// @notice Emitted when a borrower loan pool is created.
     event BorrowerLoanPoolCreated(
-        uint256 indexed loanId, address indexed borrower, address indexed market, uint16 aprBps, uint128 totalContributed
+        uint256 indexed loanId,
+        address indexed borrower,
+        address indexed market,
+        uint16 aprBps,
+        uint128 totalContributed
     );
     /// @notice Emitted when a lender claims ovrfloToken from loan-pool proceeds.
     event LoanPoolShareClaimed(uint256 indexed loanId, address indexed lender, uint128 amount);
@@ -258,7 +291,7 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Sets the accepted APR range for new posts.
-    /// @dev Does not affect existing liquidity positions or listings. Enforced per-post via `_validateApr`.
+    /// @dev Does not affect existing liquidity positions or listings. Enforced per-post via `_validatePostingApr`.
     ///      Both bounds must be multiples of `APR_STEP_BPS`.
     /// @param aprMinBps_ New minimum APR in basis points.
     /// @param aprMaxBps_ New maximum APR in basis points.
@@ -315,14 +348,14 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
         nonReentrant
         returns (uint256 liquidityId)
     {
-        _validateApr(aprBps);
+        _validatePostingApr(aprBps);
         _requireMarketActive(market);
         require(availableLiquidity > 0, "OVRFLOLending: availableLiquidity zero");
 
         liquidityId = nextLiquidityId++;
-        liquidityPositions[liquidityId] = LiquidityPosition({
-            lender: msg.sender, market: market, aprBps: aprBps, availableLiquidity: availableLiquidity
-        });
+        liquidityPositions[liquidityId] =
+            LiquidityPosition({lender: msg.sender, market: market, aprBps: aprBps, availableLiquidity: 0});
+        _setAvailableLiquidity(liquidityId, availableLiquidity, LIQUIDITY_REASON_V1_SUPPLY, 0);
 
         _pullExact(IERC20(underlying), msg.sender, address(this), availableLiquidity);
 
@@ -337,7 +370,7 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
         require(liquidity.lender == msg.sender, "OVRFLOLending: not lender");
 
         uint128 refund = liquidity.availableLiquidity;
-        liquidity.availableLiquidity = 0;
+        _setAvailableLiquidity(liquidityId, 0, LIQUIDITY_REASON_V1_WITHDRAWAL, 0);
 
         _payUnderlying(msg.sender, refund);
 
@@ -362,7 +395,12 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
         uint256 netToSeller = grossPrice - feeAmount;
         require(netToSeller >= minNetOut, "OVRFLOLending: slippage");
 
-        liquidity.availableLiquidity -= _toUint128(grossPrice);
+        _setAvailableLiquidity(
+            liquidityId,
+            liquidity.availableLiquidity - _toUint128(grossPrice),
+            LIQUIDITY_REASON_V1_STREAM_SALE,
+            streamId
+        );
 
         sablier.transferFrom(msg.sender, liquidity.lender, streamId);
         _payUnderlying(msg.sender, netToSeller);
@@ -390,7 +428,7 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
         nonReentrant
         returns (uint256 listingId)
     {
-        _validateApr(aprBps);
+        _validatePostingApr(aprBps);
         _requireEligible(market, streamId);
 
         listingId = nextSaleListingId++;
@@ -527,13 +565,14 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
     /// @param minAcceptable Minimum net proceeds the borrower will accept (after fees).
     /// @return loanId The new loan (and pool) id.
     function createBorrowerLoanPool(
-        uint256[] memory liquidityIds,
+        uint256[] calldata liquidityIds,
         uint256 streamId,
         uint128 targetBorrow,
         uint128 minAcceptable
     ) external nonReentrant returns (uint256 loanId) {
         require(targetBorrow > 0, "OVRFLOLending: borrow zero");
         require(liquidityIds.length > 0, "OVRFLOLending: empty liquidity");
+        require(liquidityIds.length <= MAX_ROUTE_IDS, "OVRFLOLending: too many liquidity ids");
 
         address market;
         uint16 aprBps;
@@ -662,7 +701,7 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
         view
         returns (uint256 grossPrice, uint128 obligation, uint256 feeAmount, uint256 netToBorrower, uint128 residual)
     {
-        _validateApr(aprBps);
+        _validateAprDomain(aprBps);
         StreamPricing.Eligibility memory eligibility;
         uint256 timeToMaturity;
         (eligibility, grossPrice, timeToMaturity) = _priceStream(market, streamId, aprBps);
@@ -737,7 +776,7 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
 
     /// @dev Validates all liquidity positions in a borrower loan pool: available, same market,
     ///      same aprBps, and no self-match. Returns total available liquidity.
-    function _validateLiquidity(uint256[] memory liquidityIds, address market, uint16 aprBps, address borrower)
+    function _validateLiquidity(uint256[] calldata liquidityIds, address market, uint16 aprBps, address borrower)
         internal
         view
         returns (uint256 totalAvailable)
@@ -754,22 +793,78 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
     }
 
     /// @dev Consumes liquidity positions up to `actualBorrow`, recording per-lender contributions.
-    function _consumeLiquidity(uint256[] memory liquidityIds, uint256 loanId, uint256 actualBorrow) internal {
+    function _consumeLiquidity(uint256[] calldata liquidityIds, uint256 loanId, uint256 actualBorrow) internal {
         uint256 toBorrow = actualBorrow;
         for (uint256 i; i < liquidityIds.length; i++) {
             if (toBorrow == 0) break;
             LiquidityPosition storage liquidity = liquidityPositions[liquidityIds[i]];
             uint256 consumed = toBorrow < liquidity.availableLiquidity ? toBorrow : liquidity.availableLiquidity;
-            liquidity.availableLiquidity -= _toUint128(consumed);
-            loanPoolContributions[loanId][liquidity.lender] += _toUint128(consumed);
+            uint128 consumed128 = _toUint128(consumed);
+            _setAvailableLiquidity(
+                liquidityIds[i],
+                liquidity.availableLiquidity - consumed128,
+                LIQUIDITY_REASON_V1_LOAN_CONSUMPTION,
+                loanId
+            );
+            loanPoolContributions[loanId][liquidity.lender] += consumed128;
             toBorrow -= consumed;
         }
     }
 
-    /// @dev Reverts if `aprBps` is outside the current `[aprMinBps, aprMaxBps]` bounds.
-    function _validateApr(uint16 aprBps) internal view {
+    /// @dev Reverts if `aprBps` is outside the current posting bounds.
+    function _validatePostingApr(uint16 aprBps) internal view {
         require(aprBps >= aprMinBps && aprBps <= aprMaxBps, "OVRFLOLending: apr out of bounds");
+        _validateAprDomain(aprBps);
+    }
+
+    /// @dev Validates the immutable APR quote/execution domain independently of posting policy.
+    function _validateAprDomain(uint16 aprBps) internal pure {
+        require(aprBps <= APR_MAX_CEILING, "OVRFLOLending: apr too high");
         require(aprBps % APR_STEP_BPS == 0, "OVRFLOLending: apr not whole");
+    }
+
+    /// @dev Applies one absolute position availability update, conserves both aggregate levels,
+    ///      validates the versioned reason/reference shape, and emits the canonical checkpoint.
+    ///      External calls must remain outside this helper.
+    function _setAvailableLiquidity(uint256 liquidityId, uint128 availableLiquidity, uint8 reason, uint256 referenceId)
+        internal
+    {
+        LiquidityPosition storage liquidity = liquidityPositions[liquidityId];
+        require(liquidity.lender != address(0), "OVRFLOLending: liquidity lender zero");
+        require(liquidity.market != address(0), "OVRFLOLending: liquidity market zero");
+        _validateAprDomain(liquidity.aprBps);
+
+        uint128 previousAvailability = liquidity.availableLiquidity;
+        if (reason == LIQUIDITY_REASON_V1_SUPPLY) {
+            require(previousAvailability == 0 && availableLiquidity > 0, "OVRFLOLending: invalid supply checkpoint");
+            require(referenceId == 0, "OVRFLOLending: invalid supply reference");
+        } else if (reason == LIQUIDITY_REASON_V1_WITHDRAWAL) {
+            require(previousAvailability > 0 && availableLiquidity == 0, "OVRFLOLending: invalid withdrawal checkpoint");
+            require(referenceId == 0, "OVRFLOLending: invalid withdrawal reference");
+        } else if (reason == LIQUIDITY_REASON_V1_STREAM_SALE) {
+            require(previousAvailability > availableLiquidity, "OVRFLOLending: invalid stream sale checkpoint");
+            require(referenceId != 0, "OVRFLOLending: invalid stream reference");
+        } else if (reason == LIQUIDITY_REASON_V1_LOAN_CONSUMPTION) {
+            require(previousAvailability > availableLiquidity, "OVRFLOLending: invalid loan checkpoint");
+            require(referenceId != 0, "OVRFLOLending: invalid loan reference");
+        } else {
+            revert("OVRFLOLending: unknown liquidity reason");
+        }
+
+        if (availableLiquidity > previousAvailability) {
+            uint256 increase = uint256(availableLiquidity) - uint256(previousAvailability);
+            marketAvailableLiquidity[liquidity.market] += increase;
+            marketAprAvailableLiquidity[liquidity.market][liquidity.aprBps] += increase;
+        } else {
+            uint256 decrease = uint256(previousAvailability) - uint256(availableLiquidity);
+            marketAvailableLiquidity[liquidity.market] -= decrease;
+            marketAprAvailableLiquidity[liquidity.market][liquidity.aprBps] -= decrease;
+        }
+
+        liquidity.availableLiquidity = availableLiquidity;
+        emit LiquidityCheckpoint(
+            liquidity.lender, liquidity.market, liquidity.aprBps, liquidityId, availableLiquidity, reason, referenceId
+        );
     }
 
     /// @dev Stream-level eligibility gate; delegates to `StreamPricing.requireEligible`
