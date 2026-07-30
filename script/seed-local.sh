@@ -58,6 +58,9 @@ if [ "$CHAIN_ID" != "1" ]; then
   exit 1
 fi
 
+FORK_BLOCK=$(cast block-number --rpc-url "$RPC")
+FORK_BLOCK_HASH=$(cast block "$FORK_BLOCK" --field hash --rpc-url "$RPC")
+
 BLOCK_TIMESTAMP=$(cast block latest --field timestamp --rpc-url "$RPC")
 
 echo "seed-local: discovering live wstETH Pendle markets (expiry > now + ${PENDLE_EXPIRY_BUFFER_DAYS}d)..."
@@ -100,6 +103,11 @@ FACTORY_JSON=$(
     --constructor-args "$OWNER" "$ORACLE"
 )
 FACTORY=$(echo "$FACTORY_JSON" | jq -r '.deployedTo')
+FACTORY_TX=$(echo "$FACTORY_JSON" | jq -r '.transactionHash')
+if [ -z "$FACTORY_TX" ] || [ "$FACTORY_TX" = "null" ]; then
+  echo "seed-local: forge create did not return the factory transaction hash" >&2
+  exit 1
+fi
 echo "      factory = $FACTORY"
 
 echo "[2/7] configure + deploy OVRFLO + OVRFLOToken"
@@ -127,7 +135,8 @@ send "$FACTORY" 'addMarket(address,address,uint32,uint16)' \
   "$OVRFLO" "$SECONDARY_MARKET" "$TWAP" 10
 
 echo "[5/7] deploy OVRFLOLending"
-send "$FACTORY" 'deployLending(address)' "$OVRFLO"
+LENDING_RECEIPT=$(cast send --rpc-url "$RPC" --private-key "$OWNER_PK" --legacy --json \
+  "$FACTORY" 'deployLending(address)' "$OVRFLO")
 LENDING=$(cast call --rpc-url "$RPC" "$FACTORY" 'ovrfloToLending(address)(address)' "$OVRFLO")
 echo "      lending = $LENDING"
 
@@ -178,12 +187,24 @@ jq -n \
   --arg secondaryMarket "$SECONDARY_MARKET" \
   --arg secondaryPt "$SECONDARY_PT" \
   --argjson secondaryExpiry "$SECONDARY_EXPIRY" \
+  --argjson forkBlock "$FORK_BLOCK" \
+  --arg forkBlockHash "$FORK_BLOCK_HASH" \
+  --arg factoryTransactionHash "$FACTORY_TX" \
+  --arg lendingTransactionHash "$(echo "$LENDING_RECEIPT" | jq -r '.transactionHash')" \
   '{
+    formatVersion: 1,
+    projectionSchemaVersion: 1,
+    abiVersion: 1,
+    freshGeneration: true,
     chainId: 1,
+    forkBlock: $forkBlock,
+    forkBlockHash: $forkBlockHash,
     factory: $factory,
+    factoryTransactionHash: $factoryTransactionHash,
     ovrflo: $ovrflo,
     token: $token,
     lending: $lending,
+    lendingTransactionHash: $lendingTransactionHash,
     devWallet: $devWallet,
     lenderWallet: $lenderWallet,
     primaryMarket: $primaryMarket,
@@ -194,6 +215,8 @@ jq -n \
     secondaryExpiry: $secondaryExpiry
   }' \
   > deployments/local.json
+
+DEPLOYMENT_RPC_URL="$RPC" node tools/scripts/write-deployment-artifact.mjs deployments/local.json
 
 echo
 echo "=== OVRFLO seed complete ==="

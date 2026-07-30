@@ -79,8 +79,8 @@ export function useWriteFlow(user?: Address, related: readonly Address[] = EMPTY
       touched.current = args?.address
         ? [args.address as Address, ...relatedRef.current]
         : [...relatedRef.current];
-      return write.writeContract({ chainId: configuredChainId, ...args }, options);
-    }) as typeof write.writeContract,
+      return write.writeContract({ ...args, chainId: configuredChainId }, options);
+    }) as MainnetWriteContract,
     [write],
   );
 
@@ -105,3 +105,11 @@ export function useWriteFlow(user?: Address, related: readonly Address[] = EMPTY
 
 // Module-level so the default argument keeps a stable identity across renders.
 const EMPTY: readonly Address[] = [];
+
+type WagmiWriteContract = ReturnType<typeof useWriteContract>["writeContract"];
+type WagmiWriteArgs = Parameters<WagmiWriteContract>[0];
+type WagmiWriteOptions = Parameters<WagmiWriteContract>[1];
+type MainnetWriteContract = (
+  args: Omit<WagmiWriteArgs, "chainId"> & { chainId?: never },
+  options?: WagmiWriteOptions,
+) => ReturnType<WagmiWriteContract>;

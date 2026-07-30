@@ -57,6 +57,8 @@ forge script script/SeedDevnet.s.sol:SeedDevnet \
   --rpc-url "$TENDERLY_RPC_URL" \
   --broadcast \
   --slow
+DEPLOYMENT_RPC_URL="$TENDERLY_RPC_URL" \
+  node tools/scripts/write-deployment-artifact.mjs deployments/devnet.json
 
 echo "[2/2] writing web/.env.devnet"
 RPC_URL="$TENDERLY_RPC_URL" \

@@ -44,6 +44,11 @@ vi.mock("@/lib/ponder", () => ({
   fetchHeldStreamIds: (...args: unknown[]) => fetchHeldStreamIdsMock(...args),
 }));
 
+let browserDiscoveryEnabled = true;
+vi.mock("@/lib/browser-runtime", () => ({
+  canStartBrowserDiscovery: () => browserDiscoveryEnabled,
+}));
+
 let chainReadsReturn: { data?: unknown[]; isLoading: boolean; error: unknown };
 const readContractsConfig = vi.fn();
 vi.mock("wagmi", () => ({
@@ -62,6 +67,10 @@ const readsFor = (stream: unknown, withdrawable: bigint, owner: Address) => [
   success(withdrawable),
   success(owner),
 ];
+
+beforeEach(() => {
+  browserDiscoveryEnabled = true;
+});
 
 function wrapper({ children }: { children: ReactNode }) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -195,6 +204,19 @@ describe("useHeldStreams — lifecycle", () => {
     const { result } = renderHook(() => useHeldStreams(undefined), { wrapper });
     expect(result.current.streams).toEqual([]);
     expect(fetchHeldStreamIdsMock).not.toHaveBeenCalled();
+  });
+
+  it("does not start discovery or chain hydration during prerender", () => {
+    browserDiscoveryEnabled = false;
+    fetchHeldStreamIdsMock = vi.fn().mockResolvedValue([1n]);
+    chainReadsReturn = { data: [], isLoading: false, error: null };
+
+    renderHook(() => useHeldStreams(USER), { wrapper });
+
+    expect(fetchHeldStreamIdsMock).not.toHaveBeenCalled();
+    expect(readContractsConfig).toHaveBeenLastCalledWith(
+      expect.objectContaining({ query: { enabled: false } }),
+    );
   });
 
   it("propagates a discovery failure as the hook's error", async () => {

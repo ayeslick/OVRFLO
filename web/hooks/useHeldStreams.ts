@@ -6,6 +6,7 @@ import { useReadContracts } from "wagmi";
 import type { Address } from "viem";
 import { sablierLockupAbi } from "@/lib/abis";
 import { SABLIER_LOCKUP_ADDRESS } from "@/lib/config";
+import { canStartBrowserDiscovery } from "@/lib/browser-runtime";
 import { fetchHeldStreamIds } from "@/lib/ponder";
 import { streamKeys } from "@/lib/query-keys";
 import type { HeldStream } from "@/lib/types";
@@ -44,9 +45,10 @@ type SablierStream = {
 const MAX_STALE_MS = 10 * 60 * 1000;
 
 export function useHeldStreams(user: Address | null | undefined) {
+  const browserDiscoveryEnabled = canStartBrowserDiscovery();
   const discovery = useQuery({
     queryKey: streamKeys.held(user),
-    enabled: Boolean(user),
+    enabled: Boolean(user) && browserDiscoveryEnabled,
     queryFn: () => fetchHeldStreamIds(user as Address),
   });
 
@@ -117,7 +119,7 @@ export function useHeldStreams(user: Address | null | undefined) {
         args: [streamId] as const,
       },
     ]),
-    query: { enabled: streamIds.length > 0 },
+    query: { enabled: browserDiscoveryEnabled && streamIds.length > 0 },
   });
 
   const streams = useMemo<HeldStream[]>(() => {

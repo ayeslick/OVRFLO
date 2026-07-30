@@ -1115,18 +1115,24 @@ function BorrowForm({
   return (
     <div className="form-grid">
       {action.streamId === undefined ? (
-        <select
-          className="input mono"
-          value={selectedStreamId?.toString() ?? ""}
-          onChange={(e) => setSelectedStreamId(e.target.value ? BigInt(e.target.value) : null)}
-        >
-          <option value="">SELECT STREAM</option>
-          {eligibleStreams.map((stream) => (
-            <option key={stream.streamId.toString()} value={stream.streamId.toString()}>
-              {stream.streamId.toString()} / {formatTokenAmount(stream.deposited - stream.withdrawn, ovrfloSymbol)}
-            </option>
-          ))}
-        </select>
+        <>
+          <label className="label mono" htmlFor="borrow-stream">
+            COLLATERAL STREAM
+          </label>
+          <select
+            id="borrow-stream"
+            className="input mono"
+            value={selectedStreamId?.toString() ?? ""}
+            onChange={(e) => setSelectedStreamId(e.target.value ? BigInt(e.target.value) : null)}
+          >
+            <option value="">SELECT STREAM</option>
+            {eligibleStreams.map((stream) => (
+              <option key={stream.streamId.toString()} value={stream.streamId.toString()}>
+                {stream.streamId.toString()} / {formatTokenAmount(stream.deposited - stream.withdrawn, ovrfloSymbol)}
+              </option>
+            ))}
+          </select>
+        </>
       ) : (
         <div className="label mono">STREAM {formatId(selectedStreamId ?? undefined)}</div>
       )}

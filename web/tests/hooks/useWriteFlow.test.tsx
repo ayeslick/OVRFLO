@@ -189,23 +189,11 @@ describe("useWriteFlow state forwarding", () => {
     expect(writeContractMock).toHaveBeenCalledExactlyOnceWith({ chainId: 1, ...config }, undefined);
   });
 
-  it("keeps a chain the caller named, rather than overwriting it", () => {
-    // `{chainId: configured, ...args}` — the injection is a default, not a lock,
-    // and useZeroFirstApprove relies on passing through it (naming the same
-    // configured chain). That is safe because the injection does not decide
-    // which chain is right: wagmi refuses the write when the connected chain
-    // does not match, so what R6 buys is that the check always happens, on every
-    // write, including one a later call site forgets to think about.
-    //
-    // This used to be titled "does not let a caller override the expected
-    // chain", which is the opposite of what the code does — and it asserted only
-    // that the key existed, so it passed under either spread order and pinned
-    // neither. The "never goes missing" half is covered above, by the
-    // exact-object assertion.
+  it("does not let a caller override the configured mainnet chain", () => {
     const { result } = renderHook(() => useWriteFlow(user), { wrapper });
     result.current.writeContract({ address: user, abi: [], functionName: "deposit", chainId: 999 } as never);
     const [args] = writeContractMock.mock.calls[0];
-    expect((args as { chainId: number }).chainId).toBe(999);
+    expect((args as { chainId: number }).chainId).toBe(1);
   });
 
   it("forwards reset through to the caller unchanged", () => {
