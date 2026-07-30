@@ -4,6 +4,7 @@ import {
   aggregateDemand,
   DEMAND_WINDOW_SECONDS,
   demandLevel,
+  findDemandCutoffBlock,
   type BorrowDemandEvent,
 } from "@/lib/demand";
 
@@ -83,5 +84,37 @@ describe("demandLevel", () => {
 
   it("flips from MODERATE to HIGH the instant amount*3 crosses peak*2", () => {
     expect(demandLevel(201n, 300n)).toBe("HIGH"); // 201*3 == 603 > 600
+  });
+});
+
+describe("findDemandCutoffBlock", () => {
+  it("uses captured chain time and bounded binary search rather than wall clock", async () => {
+    const timestamps = new Map<bigint, bigint>([
+      [10n, NOW - DEMAND_WINDOW_SECONDS - 10n],
+      [11n, NOW - DEMAND_WINDOW_SECONDS],
+      [12n, NOW - DEMAND_WINDOW_SECONDS + 10n],
+      [20n, NOW],
+    ]);
+    const reads: bigint[] = [];
+    const block = await findDemandCutoffBlock({
+      fromBlock: 10n,
+      head: { number: 20n, timestamp: NOW },
+      getBlock: async (blockNumber) => {
+        reads.push(blockNumber);
+        return { number: blockNumber, timestamp: timestamps.get(blockNumber) ?? NOW - (20n - blockNumber) * 10n };
+      },
+    });
+    expect(block).toBe(11n);
+    expect(reads.length).toBeLessThanOrEqual(5);
+  });
+
+  it("returns the deployment anchor when the full history is inside the window", async () => {
+    await expect(
+      findDemandCutoffBlock({
+        fromBlock: 100n,
+        head: { number: 101n, timestamp: NOW },
+        getBlock: async (number) => ({ number, timestamp: NOW - 1n }),
+      }),
+    ).resolves.toBe(100n);
   });
 });

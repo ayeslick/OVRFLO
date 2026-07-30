@@ -44,3 +44,28 @@ export function demandLevel(amount: bigint, peak: bigint): DemandLevel {
   if (amount * 3n <= peak * 2n) return "MODERATE";
   return "HIGH";
 }
+
+export async function findDemandCutoffBlock({
+  fromBlock,
+  head,
+  getBlock,
+}: {
+  fromBlock: bigint;
+  head: { number: bigint; timestamp: bigint };
+  getBlock(blockNumber: bigint): Promise<{ number: bigint; timestamp: bigint }>;
+}): Promise<bigint> {
+  if (fromBlock > head.number) throw new Error("Demand anchor is after the captured head");
+  const cutoffTimestamp = head.timestamp - DEMAND_WINDOW_SECONDS;
+  const anchor = await getBlock(fromBlock);
+  if (anchor.timestamp >= cutoffTimestamp) return fromBlock;
+
+  let low = fromBlock + 1n;
+  let high = head.number;
+  while (low < high) {
+    const midpoint = low + (high - low) / 2n;
+    const block = await getBlock(midpoint);
+    if (block.timestamp < cutoffTimestamp) low = midpoint + 1n;
+    else high = midpoint;
+  }
+  return low;
+}

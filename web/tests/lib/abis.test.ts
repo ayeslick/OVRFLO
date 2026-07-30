@@ -53,6 +53,20 @@ describe("ABI drift checks", () => {
     expect(functionNames).not.toContain("calculateMinFeeWei");
   });
 
+  it("includes the verified ERC721 Transfer event used for recipient-scoped discovery", () => {
+    const local = sablierLockupAbi.find((entry) => entry.type === "event" && entry.name === "Transfer");
+    const verified = sablierVerifiedAbi.find((entry) => entry.type === "event" && entry.name === "Transfer");
+    expect(local).toEqual(verified);
+  });
+
+  it("includes generated checkpoint and borrower-pool events used by the scanner", () => {
+    const eventNames = ovrfloLendingAbi
+      .filter((entry) => entry.type === "event")
+      .map((entry) => entry.name);
+    expect(eventNames).toContain("LiquidityCheckpoint");
+    expect(eventNames).toContain("BorrowerLoanPoolCreated");
+  });
+
   it("keeps exactly the 8 StreamPricing errors in the generated lending ABI", () => {
     const allErrorNames: string[] = ovrfloLendingAbi.filter((entry) => entry.type === "error").map((entry) => entry.name);
     const errorNames = allErrorNames.filter((name) => streamPricingErrors.includes(name));
