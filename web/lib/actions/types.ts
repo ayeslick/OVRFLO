@@ -273,6 +273,11 @@ export type FinalCall = {
 };
 
 export type TouchedResource =
+  /**
+   * Compatibility tag for an already-scoped legacy call site. New action
+   * definitions should prefer the domain-specific variants below.
+   */
+  | { kind: "contract"; address: Address }
   | { kind: "market"; vault: Address; market: Address }
   | { kind: "market-depth"; lending: Address; market: Address; aprBps?: number }
   | { kind: "liquidity-position"; lending: Address; id: bigint }

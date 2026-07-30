@@ -17,7 +17,6 @@ import { erc20Abi, ovrfloAbi, ovrfloLendingAbi, sablierLockupAbi } from "@/lib/a
 import { SABLIER_LOCKUP_ADDRESS } from "@/lib/config";
 import { userFacingError } from "@/lib/errors";
 import { formatAprBps, formatId, formatTokenAmount } from "@/lib/format";
-import { marketContracts } from "@/lib/invalidate";
 
 import { applySlippageDown, isSeriesMatchedStream, repayMax } from "@/lib/modal-logic";
 import {
@@ -159,6 +158,49 @@ function StepIndicator({
 
 type WriteFlow = ReturnType<typeof useWriteFlow>;
 
+function ReviewChangedState({ tx }: { tx: WriteFlow }) {
+  if (!tx.needsReview) return null;
+  return (
+    <div className="label mono status-warning" role="status">
+      ACTION INPUTS CHANGED — REVIEW AND CONFIRM AGAIN
+      {tx.review ? (
+        <div>
+          UPDATED {tx.review.title}: {tx.review.call.functionName}{" "}
+          {JSON.stringify(tx.review.call.args, (_key, value) =>
+            typeof value === "bigint" ? value.toString() : value,
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function RefreshTxState({
+  tx,
+  refreshingLabel,
+  failedLabel,
+}: {
+  tx: WriteFlow;
+  refreshingLabel: string;
+  failedLabel: string;
+}) {
+  if (tx.needsReview) return <ReviewChangedState tx={tx} />;
+  if (tx.isRefreshing) {
+    return <div className="label mono status-warning">{refreshingLabel}</div>;
+  }
+  if (!tx.refreshFailed) return null;
+  return (
+    <div className="form-grid" role="alert">
+      <div className="label mono status-warning">
+        {failedLabel} {tx.hash?.slice(0, 10)}…
+      </div>
+      <button className="button mono" type="button" onClick={() => void tx.retryRefresh()}>
+        RETRY REFRESH
+      </button>
+    </div>
+  );
+}
+
 function TxState({ tx, pendingLabel }: { tx: WriteFlow; pendingLabel?: string | null }) {
   if (tx.isSigning)
     return <div className="label mono status-warning">{pendingLabel ? `${pendingLabel}: SIGNING` : "SIGNING"}</div>;
@@ -168,7 +210,16 @@ function TxState({ tx, pendingLabel }: { tx: WriteFlow; pendingLabel?: string | 
         {pendingLabel ? `${pendingLabel}: CONFIRMING` : "CONFIRMING"} {tx.hash?.slice(0, 10)}…
       </div>
     );
+  if (tx.isRefreshing || tx.refreshFailed)
+    return (
+      <RefreshTxState
+        tx={tx}
+        refreshingLabel="CONFIRMED — REFRESHING"
+        failedLabel="TRANSACTION CONFIRMED — REFRESH FAILED"
+      />
+    );
   if (tx.isConfirmed) return <div className="label mono status-positive">CONFIRMED</div>;
+  if (tx.needsReview) return <ReviewChangedState tx={tx} />;
   if (tx.isReverted) return <div className="label mono status-negative">TRANSACTION REVERTED ON-CHAIN</div>;
   if (tx.error) return <div className="label mono status-negative">{userFacingError(tx.error)}</div>;
   return null;
@@ -183,6 +234,14 @@ function ApproveTxState({ tx, label }: { tx: WriteFlow; label: string }) {
       <div className="label mono status-warning">
         {label}: CONFIRMING {tx.hash?.slice(0, 10)}…
       </div>
+    );
+  if (tx.isRefreshing || tx.refreshFailed)
+    return (
+      <RefreshTxState
+        tx={tx}
+        refreshingLabel={`${label}: REFRESHING`}
+        failedLabel={`${label}: CONFIRMED — REFRESH FAILED`}
+      />
     );
   if (tx.isReverted) return <div className="label mono status-negative">{label}: REVERTED ON-CHAIN</div>;
   if (tx.error) return <div className="label mono status-negative">{userFacingError(tx.error)}</div>;
@@ -391,7 +450,7 @@ function SupplyForm({
   const aprBps =
     selectedAprRaw !== null && ticks.includes(selectedAprRaw) ? selectedAprRaw : (ticks[0] ?? null);
 
-  const { approveTx, actionTx, zeroFirst, busy } = useApprovalWriteFlows(connectedAddress, marketContracts(market));
+  const { approveTx, actionTx, zeroFirst, busy } = useApprovalWriteFlows(connectedAddress, market);
 
   const guard = useWalletChangeReset(connectedAddress, () => {
     setRaw("");
@@ -549,7 +608,7 @@ function SimpleActionForm({
   const [pendingLabel, setPendingLabel] = useState<string | null>(null);
   const connectedAddress = connection.addresses?.[0];
 
-  const tx = useWriteFlow(connectedAddress ?? user, marketContracts(market));
+  const tx = useWriteFlow(connectedAddress ?? user, market);
 
   const guard = useWalletChangeReset(connectedAddress, () => setPendingLabel(null));
 
@@ -635,7 +694,12 @@ function SimpleActionForm({
       <StepIndicator steps={steps} activeIndex={activeIndex} error={tx.hasFailed} accent={accent} />
       <button
         className={`button ${accentClass(accent)} mono`}
-        disabled={!writeArgs || tx.isSigning || tx.isConfirming || tx.isConfirmed}
+        disabled={
+          !writeArgs ||
+          tx.isInFlight ||
+          tx.isConfirmed ||
+          tx.refreshFailed
+        }
         type="button"
         onClick={() => writeArgs?.()}
       >
@@ -673,7 +737,7 @@ function ConvertForm({
   const underlyingSymbol = symbolFor(symbols, market.underlying);
   const ovrfloSymbol = symbolFor(symbols, market.ovrfloToken);
 
-  const { approveTx, actionTx, zeroFirst, busy } = useApprovalWriteFlows(connectedAddress, marketContracts(market));
+  const { approveTx, actionTx, zeroFirst, busy } = useApprovalWriteFlows(connectedAddress, market);
   const disabled = amount === 0n || busy || actionTx.isConfirmed;
 
   const guard = useWalletChangeReset(connectedAddress, () => {
@@ -959,7 +1023,7 @@ function BorrowForm({
   const hasOwnLiquidity = ladder.some((tick) => tick.own > 0n);
   const plan = selectedApr !== null ? planSelectedBorrow(ladder, selectedApr, target) : null;
 
-  const { approveTx, actionTx, zeroFirst, busy } = useApprovalWriteFlows(connectedAddress, marketContracts(market));
+  const { approveTx, actionTx, zeroFirst, busy } = useApprovalWriteFlows(connectedAddress, market);
 
   const guard = useWalletChangeReset(connectedAddress, () => {
     setSelectedStreamId(action.streamId ?? null);
@@ -1309,8 +1373,13 @@ function BorrowForm({
       {actionTx.isConfirming ? (
         <div className="label mono status-warning">BORROW: CONFIRMING {actionTx.hash?.slice(0, 10)}…</div>
       ) : null}
+      <RefreshTxState
+        tx={actionTx}
+        refreshingLabel="BORROW: CONFIRMED — REFRESHING"
+        failedLabel="BORROW CONFIRMED — REFRESH FAILED"
+      />
       {actionTx.isConfirmed ? <div className="label mono status-positive">CONFIRMED</div> : null}
-      {errorKind === "retryable" ? (
+      {errorKind === "retryable" && !actionTx.refreshFailed ? (
         <div className="label mono status-negative">{userFacingError(actionTx.error)}</div>
       ) : null}
 
@@ -1377,7 +1446,7 @@ function AdjustRateForm({
   const currentAprBps = positionAprBps ?? null;
   const idleAmount = positionIdleAmount ?? 0n;
 
-  const { approveTx, actionTx, zeroFirst, busy } = useApprovalWriteFlows(connectedAddress, marketContracts(market));
+  const { approveTx, actionTx, zeroFirst, busy } = useApprovalWriteFlows(connectedAddress, market);
 
   // An ERC20 shortfall here is a liquidity race (position shrank after the
   // fresh read), so it routes through the stale-recovery path too.
@@ -1554,8 +1623,13 @@ function AdjustRateForm({
       {actionTx.isConfirming ? (
         <div className="label mono status-warning">MOVE: CONFIRMING {actionTx.hash?.slice(0, 10)}…</div>
       ) : null}
+      <RefreshTxState
+        tx={actionTx}
+        refreshingLabel="MOVE: CONFIRMED — REFRESHING"
+        failedLabel="MOVE CONFIRMED — REFRESH FAILED"
+      />
       {actionTx.isConfirmed ? <div className="label mono status-positive">CONFIRMED</div> : null}
-      {errorKind === "retryable" ? (
+      {errorKind === "retryable" && !actionTx.refreshFailed ? (
         <div className="label mono status-negative">{userFacingError(actionTx.error)}</div>
       ) : null}
       {actionTx.isConfirmed && receiptSummary ? (
@@ -1606,7 +1680,7 @@ function RepayForm({
   const outstanding = loan ? loanOutstanding(loan) : 0n;
   const repayAmount = repayInput > outstanding && outstanding > 0n ? outstanding : repayInput;
 
-  const { approveTx, actionTx, zeroFirst, busy } = useApprovalWriteFlows(connectedAddress, marketContracts(market));
+  const { approveTx, actionTx, zeroFirst, busy } = useApprovalWriteFlows(connectedAddress, market);
 
   const guard = useWalletChangeReset(connectedAddress, () => {
     setRaw("");

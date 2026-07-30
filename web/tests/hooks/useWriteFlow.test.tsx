@@ -1,318 +1,524 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { renderHook } from "@testing-library/react";
+import { act, renderHook } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { Address } from "viem";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
+import type { Address, Hash } from "viem";
 import { useWriteFlow } from "@/hooks/useWriteFlow";
-import { streamKeys } from "@/lib/query-keys";
+import { clearTransactionExecutionRegistryForTests } from "@/hooks/useTransactionExecutor";
+import { projectionKeys } from "@/lib/query-keys";
+import { readyOutcome } from "@/lib/read-outcome";
 
 const user = "0x0000000000000000000000000000000000000a11" as Address;
 const lending = "0x0000000000000000000000000000000000000b22" as Address;
 const token = "0x0000000000000000000000000000000000000c33" as Address;
-const unrelated = "0x0000000000000000000000000000000000000d44" as Address;
-const hash = "0xabc0000000000000000000000000000000000000000000000000000000000001" as const;
+const vault = "0x0000000000000000000000000000000000000d44" as Address;
+const ovrfloToken = "0x0000000000000000000000000000000000000e55" as Address;
+const ptToken = "0x0000000000000000000000000000000000000f66" as Address;
+const hash = `0x${"ab".repeat(32)}` as Hash;
+const blockHash = `0x${"cd".repeat(32)}` as Hash;
 
-const writeContractMock = vi.fn();
-const resetMock = vi.fn();
+const publicClient = {
+  simulateContract: vi.fn(),
+  waitForTransactionReceipt: vi.fn(),
+  getBlock: vi.fn(),
+  readContract: vi.fn(),
+  getBytecode: vi.fn(),
+};
+const walletClient = { writeContract: vi.fn() };
 const wagmiState = {
-  writeData: undefined as `0x${string}` | undefined,
-  receiptData: undefined as { status: "success" | "reverted" } | undefined,
-  receiptSuccess: false,
-  isPending: false,
-  receiptLoading: false,
-  writeError: null as Error | null,
-  receiptError: null as Error | null,
+  address: user,
+  chainId: 1,
 };
 
 vi.mock("wagmi", () => ({
-  useWriteContract: () => ({
-    writeContract: writeContractMock,
-    reset: resetMock,
-    isPending: wagmiState.isPending,
-    data: wagmiState.writeData,
-    error: wagmiState.writeError,
+  useConnection: () => ({
+    addresses: [wagmiState.address],
+    chainId: wagmiState.chainId,
+    status: "connected",
   }),
-  useWaitForTransactionReceipt: () => ({
-    data: wagmiState.receiptData,
-    isLoading: wagmiState.receiptLoading,
-    isSuccess: wagmiState.receiptSuccess,
-    error: wagmiState.receiptError,
-  }),
+  usePublicClient: () => publicClient,
+  useWalletClient: () => ({ data: walletClient }),
+  // Imported by useWriteFlow only to preserve its public generic call type.
+  useWriteContract: vi.fn(),
 }));
 
-describe("useWriteFlow invalidation regression", () => {
+function createWrapper(projectionMarket = token) {
+  const queryClient = new QueryClient();
+  const projectionKey = projectionKeys.scope({
+    chainId: 1,
+    factoryAnchor: { number: 1n, hash: blockHash },
+    lending,
+    kind: "market-apr",
+    market: projectionMarket,
+    aprBps: 1_000,
+  });
+  queryClient.setQueryDefaults(projectionKey, {
+    queryFn: async () =>
+      readyOutcome(
+        { ids: [1n] },
+        { blockNumber: 101n, blockHash },
+      ),
+  });
+  queryClient.setQueryData(
+    projectionKey,
+    readyOutcome(
+      { ids: [1n] },
+      { blockNumber: 101n, blockHash },
+    ),
+  );
+  const wrapper = ({ children }: { children: ReactNode }) => (
+    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+  );
+  return { queryClient, wrapper };
+}
+
+async function submit(result: { current: ReturnType<typeof useWriteFlow> }) {
+  act(() => {
+    result.current.writeContract({
+      address: lending,
+      abi: [],
+      functionName: "supplyLiquidity",
+      args: [token, 1_000, 10n],
+    } as never);
+  });
+  await vi.waitFor(() => expect(publicClient.waitForTransactionReceipt).toHaveBeenCalled());
+}
+
+describe("useWriteFlow executor adapter", () => {
   beforeEach(() => {
-    vi.useFakeTimers();
-    writeContractMock.mockClear();
-    resetMock.mockClear();
-    wagmiState.writeData = undefined;
-    wagmiState.receiptData = undefined;
-    wagmiState.receiptSuccess = false;
-    wagmiState.isPending = false;
-    wagmiState.receiptLoading = false;
-    wagmiState.writeError = null;
-    wagmiState.receiptError = null;
+    clearTransactionExecutionRegistryForTests();
+    wagmiState.address = user;
+    wagmiState.chainId = 1;
+    publicClient.simulateContract.mockReset();
+    publicClient.waitForTransactionReceipt.mockReset();
+    publicClient.getBlock.mockReset();
+    publicClient.readContract.mockReset();
+    publicClient.getBytecode.mockReset();
+    walletClient.writeContract.mockReset();
+    publicClient.simulateContract.mockImplementation(async (request) => ({
+      request: { ...request, gas: 123n },
+    }));
+    walletClient.writeContract.mockResolvedValue(hash);
+    publicClient.waitForTransactionReceipt.mockResolvedValue({
+      transactionHash: hash,
+      status: "success",
+      blockNumber: 100n,
+      logs: [],
+    });
+    publicClient.getBlock.mockResolvedValue({
+      number: 101n,
+      hash: blockHash,
+      timestamp: 50n,
+    });
+    publicClient.readContract.mockResolvedValue(0n);
+    publicClient.getBytecode.mockResolvedValue("0x01");
   });
-  afterEach(() => vi.useRealTimers());
 
-  it("invalidates scoped read keys and the held key exactly once per confirmed hash", () => {
-    // R39: was three broad invalidations — the two wagmi roots wholesale plus
-    // the held key — so any write refetched every mounted read in the app. The
-    // read roots are now predicate-matched against the contracts this
-    // transaction actually touched.
-    const queryClient = new QueryClient();
-    const spy = vi.spyOn(queryClient, "invalidateQueries");
-    const wrapper = ({ children }: { children: ReactNode }) => (
-      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+  it("simulates first and submits the returned request object unchanged", async () => {
+    const { wrapper } = createWrapper();
+    const hook = renderHook(() => useWriteFlow(user, [token]), { wrapper });
+
+    await submit(hook.result);
+
+    const simulated = await publicClient.simulateContract.mock.results[0].value;
+    expect(walletClient.writeContract).toHaveBeenCalledExactlyOnceWith(simulated.request);
+    expect(walletClient.writeContract.mock.calls[0][0]).toBe(simulated.request);
+    expect(simulated.request.chainId).toBe(1);
+    await vi.waitFor(() => expect(hook.result.current.isConfirmed).toBe(true));
+  });
+
+  it("rebuilds a live market action through its U5 definition before simulation", async () => {
+    publicClient.readContract.mockImplementation(async (request: { functionName: string }) => {
+      switch (request.functionName) {
+        case "balanceOf":
+          return 100n;
+        case "allowance":
+          return 100n;
+        case "aprMinBps":
+          return 100;
+        case "aprMaxBps":
+          return 5_000;
+        case "marketAprAvailableLiquidity":
+          return 10n;
+        default:
+          return 0n;
+      }
+    });
+    const marketScope = {
+      vault,
+      lending,
+      market: token,
+      underlying: token,
+      ovrfloToken,
+      ptToken,
+      expiryCached: 1_000n,
+    };
+    const { wrapper } = createWrapper(token);
+    const hook = renderHook(() => useWriteFlow(user, marketScope), { wrapper });
+
+    act(() => {
+      hook.result.current.writeContract({
+        address: lending,
+        abi: [],
+        functionName: "supplyLiquidity",
+        args: [token, 1_000, 10n],
+      } as never);
+    });
+
+    await vi.waitFor(() => expect(hook.result.current.isConfirmed).toBe(true));
+    expect(publicClient.readContract).toHaveBeenCalledWith(
+      expect.objectContaining({ functionName: "aprMinBps", blockNumber: 101n }),
     );
-
-    const { result, rerender } = renderHook(() => useWriteFlow(user), { wrapper });
-    expect(spy).not.toHaveBeenCalled();
-
-    // The write records which contract it targeted.
-    result.current.writeContract({ address: user, abi: [], functionName: "deposit" } as never);
-
-    wagmiState.writeData = hash;
-    wagmiState.receiptSuccess = true;
-    wagmiState.receiptData = { status: "success" };
-    rerender();
-
-    expect(spy).toHaveBeenCalledTimes(3);
-    // Two predicate-scoped read invalidations plus the held key.
-    const calls = spy.mock.calls.map(([arg]) => arg);
-    expect(calls.filter((c) => typeof c?.predicate === "function")).toHaveLength(2);
-    expect(calls).toContainEqual({ queryKey: streamKeys.held(user) });
-
-    // Same hash again — no duplicate invalidation.
-    rerender();
-    expect(spy).toHaveBeenCalledTimes(3);
+    expect(publicClient.getBlock).toHaveBeenCalledTimes(3);
+    const simulated = await publicClient.simulateContract.mock.results[0].value;
+    expect(walletClient.writeContract.mock.calls[0][0]).toBe(simulated.request);
   });
 
-  it("invalidates token reads the transaction moved but was not addressed to", () => {
-    // R39 scoped invalidation to the transaction's `to`, which is not the whole
-    // set a call changes: `supplyLiquidity` is addressed to the lending market
-    // and pulls the underlying ERC-20, so the user's balance and allowance —
-    // read against the *token* address — kept showing pre-transaction numbers.
-    // With focus refetching off and the balance view still mounted behind the
-    // modal, that stale number survived until a reload.
-    const queryClient = new QueryClient();
-    const balanceKey = ["readContract", { address: token, functionName: "balanceOf", args: [user] }];
-    const otherMarketKey = ["readContract", { address: unrelated, functionName: "balanceOf", args: [user] }];
-    queryClient.setQueryData(balanceKey, 1n);
-    queryClient.setQueryData(otherMarketKey, 1n);
-    const wrapper = ({ children }: { children: ReactNode }) => (
-      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+  it("overwrites a JavaScript caller's chain override before simulation", async () => {
+    const { wrapper } = createWrapper();
+    const hook = renderHook(() => useWriteFlow(user), { wrapper });
+
+    act(() => {
+      hook.result.current.writeContract({
+        address: lending,
+        abi: [],
+        functionName: "withdrawLiquidity",
+        args: [1n],
+        chainId: 999,
+      } as never);
+    });
+    await vi.waitFor(() => expect(publicClient.simulateContract).toHaveBeenCalled());
+
+    expect(publicClient.simulateContract.mock.calls[0][0].chainId).toBe(1);
+  });
+
+  it("fails before snapshot loading or simulation when the wallet starts on another chain", async () => {
+    wagmiState.chainId = 10;
+    const { wrapper } = createWrapper();
+    const hook = renderHook(() => useWriteFlow(user), { wrapper });
+
+    act(() => {
+      hook.result.current.writeContract({
+        address: lending,
+        abi: [],
+        functionName: "withdrawLiquidity",
+        args: [1n],
+      } as never);
+    });
+
+    await vi.waitFor(() => expect(hook.result.current.hasFailed).toBe(true));
+    expect(publicClient.getBlock).not.toHaveBeenCalled();
+    expect(publicClient.simulateContract).not.toHaveBeenCalled();
+    expect(walletClient.writeContract).not.toHaveBeenCalled();
+  });
+
+  it("does not prompt the wallet after a simulation failure", async () => {
+    publicClient.simulateContract.mockRejectedValue(
+      new Error("execution reverted: stale route"),
     );
+    const { wrapper } = createWrapper();
+    const hook = renderHook(() => useWriteFlow(user), { wrapper });
 
-    const { result, rerender } = renderHook(() => useWriteFlow(user, [token]), { wrapper });
-    result.current.writeContract({ address: lending, abi: [], functionName: "supplyLiquidity" } as never);
+    act(() => {
+      hook.result.current.writeContract({
+        address: lending,
+        abi: [],
+        functionName: "withdrawLiquidity",
+        args: [1n],
+      } as never);
+    });
 
-    wagmiState.writeData = hash;
-    wagmiState.receiptSuccess = true;
-    wagmiState.receiptData = { status: "success" };
-    rerender();
-
-    expect(queryClient.getQueryState(balanceKey)?.isInvalidated).toBe(true);
-    // Still scoped: a read belonging to some other market is left alone.
-    expect(queryClient.getQueryState(otherMarketKey)?.isInvalidated).toBe(false);
+    await vi.waitFor(() => expect(hook.result.current.hasFailed).toBe(true));
+    expect(walletClient.writeContract).not.toHaveBeenCalled();
   });
 
-  it("does not invalidate on a mined-but-reverted receipt", () => {
-    // `receipt.isSuccess` only means the RPC fetch resolved a receipt — a
-    // reverted on-chain tx still mines one, with no thrown write/receipt
-    // error. Only `data.status === "success"` should trigger invalidation.
-    const queryClient = new QueryClient();
-    const spy = vi.spyOn(queryClient, "invalidateQueries");
-    const wrapper = ({ children }: { children: ReactNode }) => (
-      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+  it("treats a mined revert as failure and skips critical refresh", async () => {
+    publicClient.waitForTransactionReceipt.mockResolvedValue({
+      transactionHash: hash,
+      status: "reverted",
+      blockNumber: 100n,
+      logs: [],
+    });
+    const { wrapper } = createWrapper();
+    const hook = renderHook(() => useWriteFlow(user), { wrapper });
+
+    await submit(hook.result);
+
+    await vi.waitFor(() => expect(hook.result.current.isReverted).toBe(true));
+    expect(hook.result.current.isConfirmed).toBe(false);
+    expect(publicClient.getBlock).not.toHaveBeenCalled();
+  });
+
+  it("preserves a successful hash when refresh fails and retries refresh without writing", async () => {
+    publicClient.getBlock
+      .mockRejectedValueOnce(new Error("head unavailable"))
+      .mockResolvedValueOnce({ number: 101n, hash: blockHash });
+    const { wrapper } = createWrapper();
+    const hook = renderHook(() => useWriteFlow(user), { wrapper });
+
+    await submit(hook.result);
+    await vi.waitFor(() => expect(hook.result.current.refreshFailed).toBe(true));
+    expect(hook.result.current.hash).toBe(hash);
+
+    await act(async () => {
+      await hook.result.current.retryRefresh();
+    });
+    expect(hook.result.current.isConfirmed).toBe(true);
+    expect(publicClient.simulateContract).toHaveBeenCalledTimes(1);
+    expect(walletClient.writeContract).toHaveBeenCalledTimes(1);
+    expect(publicClient.waitForTransactionReceipt).toHaveBeenCalledTimes(1);
+  });
+
+  it("stops before submission when account or chain changes after simulation", async () => {
+    let releaseSimulation!: () => void;
+    publicClient.simulateContract.mockImplementationOnce(
+      (request) =>
+        new Promise((resolve) => {
+          releaseSimulation = () =>
+            resolve({ request: { ...request, gas: 123n } });
+        }),
     );
+    const { wrapper } = createWrapper();
+    const hook = renderHook(() => useWriteFlow(user), { wrapper });
 
-    const { rerender } = renderHook(() => useWriteFlow(user), { wrapper });
+    act(() => {
+      hook.result.current.writeContract({
+        address: lending,
+        abi: [],
+        functionName: "withdrawLiquidity",
+        args: [1n],
+      } as never);
+    });
 
-    wagmiState.writeData = hash;
-    wagmiState.receiptSuccess = true;
-    wagmiState.receiptData = { status: "reverted" };
-    rerender();
-
-    expect(spy).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(publicClient.simulateContract).toHaveBeenCalledTimes(1));
+    act(() => {
+      wagmiState.chainId = 10;
+      hook.rerender();
+    });
+    await act(async () => {
+      releaseSimulation();
+    });
+    await vi.waitFor(() => expect(hook.result.current.hasFailed).toBe(true));
+    expect(walletClient.writeContract).not.toHaveBeenCalled();
   });
 
-  it("re-invalidates the held key on the indexer-lag retry schedule", () => {
-    const queryClient = new QueryClient();
-    const spy = vi.spyOn(queryClient, "invalidateQueries");
-    const wrapper = ({ children }: { children: ReactNode }) => (
-      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+  it("coalesces duplicate confirmation while the fresh snapshot is loading", async () => {
+    publicClient.readContract.mockImplementation(async (request: { functionName: string }) => {
+      switch (request.functionName) {
+        case "balanceOf":
+        case "allowance":
+          return 100n;
+        case "aprMinBps":
+          return 100;
+        case "aprMaxBps":
+          return 5_000;
+        default:
+          return 0n;
+      }
+    });
+    let release!: () => void;
+    publicClient.getBlock
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            release = () => resolve({ number: 101n, hash: blockHash, timestamp: 50n });
+          }),
+      )
+      .mockResolvedValue({ number: 101n, hash: blockHash, timestamp: 50n });
+    const marketScope = {
+      vault,
+      lending,
+      market: token,
+      underlying: token,
+      ovrfloToken,
+      ptToken,
+      expiryCached: 1_000n,
+    };
+    const { wrapper } = createWrapper(token);
+    const hook = renderHook(() => useWriteFlow(user, marketScope), { wrapper });
+    const request = {
+      address: lending,
+      abi: [],
+      functionName: "supplyLiquidity",
+      args: [token, 1_000, 10n],
+    } as never;
+
+    act(() => {
+      hook.result.current.writeContract(request);
+      hook.result.current.writeContract(request);
+    });
+    await vi.waitFor(() => expect(hook.result.current.isInFlight).toBe(true));
+    await act(async () => release());
+    await vi.waitFor(() => expect(hook.result.current.isConfirmed).toBe(true));
+
+    expect(publicClient.simulateContract).toHaveBeenCalledTimes(1);
+    expect(walletClient.writeContract).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not prompt for approval after identity changes during approval simulation", async () => {
+    publicClient.readContract.mockImplementation(async (request: { functionName: string }) => {
+      switch (request.functionName) {
+        case "balanceOf":
+          return 100n;
+        case "allowance":
+          return 0n;
+        case "aprMinBps":
+          return 100;
+        case "aprMaxBps":
+          return 5_000;
+        default:
+          return 0n;
+      }
+    });
+    let releaseApprovalSimulation!: () => void;
+    publicClient.simulateContract.mockImplementationOnce(
+      (request) =>
+        new Promise((resolve) => {
+          releaseApprovalSimulation = () =>
+            resolve({ request: { ...request, gas: 123n } });
+        }),
     );
-    const { result, rerender } = renderHook(() => useWriteFlow(user), { wrapper });
-    result.current.writeContract({ address: user, abi: [], functionName: "deposit" } as never);
+    const marketScope = {
+      vault,
+      lending,
+      market: token,
+      underlying: token,
+      ovrfloToken,
+      ptToken,
+      expiryCached: 1_000n,
+    };
+    const { wrapper } = createWrapper(token);
+    const hook = renderHook(() => useWriteFlow(user, marketScope), { wrapper });
 
-    wagmiState.writeData = hash;
-    wagmiState.receiptSuccess = true;
-    wagmiState.receiptData = { status: "success" };
-    rerender();
-    expect(spy).toHaveBeenCalledTimes(3);
+    act(() => {
+      hook.result.current.writeContract({
+        address: lending,
+        abi: [],
+        functionName: "supplyLiquidity",
+        args: [token, 1_000, 10n],
+      } as never);
+    });
+    await vi.waitFor(() => expect(publicClient.simulateContract).toHaveBeenCalledTimes(1));
+    act(() => {
+      wagmiState.address = token;
+      hook.rerender();
+    });
+    await act(async () => releaseApprovalSimulation());
+    await vi.waitFor(() => expect(hook.result.current.hasFailed).toBe(true));
 
-    vi.advanceTimersByTime(5000);
-    const heldCalls = spy.mock.calls.filter(
-      ([arg]) => JSON.stringify(arg?.queryKey) === JSON.stringify(streamKeys.held(user)),
-    );
-    expect(heldCalls.length).toBe(3);
-  });
-});
-
-describe("useWriteFlow state forwarding", () => {
-  const wrapper = ({ children }: { children: ReactNode }) => {
-    const queryClient = new QueryClient();
-    return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
-  };
-
-  beforeEach(() => {
-    writeContractMock.mockClear();
-    resetMock.mockClear();
-    wagmiState.writeData = undefined;
-    wagmiState.receiptData = undefined;
-    wagmiState.receiptSuccess = false;
-    wagmiState.isPending = false;
-    wagmiState.receiptLoading = false;
-    wagmiState.writeError = null;
-    wagmiState.receiptError = null;
+    expect(walletClient.writeContract).not.toHaveBeenCalled();
+    expect(hook.result.current.isConfirmed).toBe(false);
   });
 
-  it("forwards writeContract with the expected chain injected (R6)", () => {
-    const { result } = renderHook(() => useWriteFlow(user), { wrapper });
-    const config = { address: user, abi: [], functionName: "deposit", args: [1n, 2n] };
-    result.current.writeContract(config as never);
-    // Every field the caller passed must survive, and `chainId` must be added:
-    // naming the expected chain on the write itself is what refuses a
-    // wrong-chain broadcast when the FormBody gate is bypassed. Asserting the
-    // whole object rather than "called once" catches dropped or altered args.
-    expect(writeContractMock).toHaveBeenCalledExactlyOnceWith({ chainId: 1, ...config }, undefined);
+  it("hands a changed fresh call back for review before a second confirmation", async () => {
+    publicClient.readContract.mockImplementation(async (request: {
+      functionName: string;
+      args?: readonly unknown[];
+    }) => {
+      switch (request.functionName) {
+        case "balanceOf":
+        case "allowance":
+          return 100n;
+        case "marketDepositLimits":
+          return 1_000n;
+        case "marketTotalDeposited":
+          return 0n;
+        case "previewDeposit":
+          return [request.args?.[1] as bigint, 0n, 0n, 1n];
+        default:
+          return 0n;
+      }
+    });
+    const marketScope = {
+      vault,
+      lending,
+      market: token,
+      underlying: token,
+      ovrfloToken,
+      ptToken,
+      expiryCached: 1_000n,
+    };
+    const { wrapper } = createWrapper(token);
+    const hook = renderHook(() => useWriteFlow(user, marketScope), { wrapper });
+    const staleRequest = {
+      address: vault,
+      abi: [],
+      functionName: "deposit",
+      args: [token, 10n, 0n],
+    } as never;
+
+    await act(async () => {
+      await (hook.result.current.writeContract(staleRequest) as unknown as Promise<void>);
+    });
+    expect(hook.result.current.needsReview).toBe(true);
+    expect(publicClient.simulateContract).not.toHaveBeenCalled();
+    expect(hook.result.current.review?.call.args).toEqual([token, 10n, 9n]);
+
+    await act(async () => {
+      await (hook.result.current.writeContract(staleRequest) as unknown as Promise<void>);
+    });
+    expect(hook.result.current.isConfirmed).toBe(true);
+
+    expect(publicClient.simulateContract).toHaveBeenCalledTimes(1);
+    expect(walletClient.writeContract).toHaveBeenCalledTimes(1);
   });
 
-  it("does not let a caller override the configured mainnet chain", () => {
-    const { result } = renderHook(() => useWriteFlow(user), { wrapper });
-    result.current.writeContract({ address: user, abi: [], functionName: "deposit", chainId: 999 } as never);
-    const [args] = writeContractMock.mock.calls[0];
-    expect((args as { chainId: number }).chainId).toBe(1);
-  });
+  it("falls back to zero-first after a mined nonzero-to-nonzero approval revert", async () => {
+    let allowance = 1n;
+    publicClient.readContract.mockImplementation(async (request: { functionName: string }) => {
+      switch (request.functionName) {
+        case "balanceOf":
+          return 100n;
+        case "allowance":
+          return allowance;
+        case "aprMinBps":
+          return 100;
+        case "aprMaxBps":
+          return 5_000;
+        default:
+          return 0n;
+      }
+    });
+    walletClient.writeContract
+      .mockResolvedValueOnce(`0x${"01".repeat(32)}`)
+      .mockResolvedValueOnce(`0x${"02".repeat(32)}`)
+      .mockResolvedValueOnce(`0x${"03".repeat(32)}`)
+      .mockResolvedValueOnce(hash);
+    let receiptIndex = 0;
+    publicClient.waitForTransactionReceipt.mockImplementation(async ({ hash: currentHash }) => {
+      receiptIndex += 1;
+      if (receiptIndex === 3) allowance = 100n;
+      return {
+        transactionHash: currentHash,
+        status: receiptIndex === 1 ? "reverted" : "success",
+        blockNumber: 100n,
+        logs: [],
+      };
+    });
+    const marketScope = {
+      vault,
+      lending,
+      market: token,
+      underlying: token,
+      ovrfloToken,
+      ptToken,
+      expiryCached: 1_000n,
+    };
+    const { wrapper } = createWrapper(token);
+    const hook = renderHook(() => useWriteFlow(user, marketScope), { wrapper });
 
-  it("forwards reset through to the caller unchanged", () => {
-    const { result } = renderHook(() => useWriteFlow(user), { wrapper });
-    result.current.reset();
-    expect(resetMock).toHaveBeenCalledExactlyOnceWith();
-  });
+    await act(async () => {
+      await (hook.result.current.writeContract({
+        address: lending,
+        abi: [],
+        functionName: "supplyLiquidity",
+        args: [token, 1_000, 10n],
+      } as never) as unknown as Promise<void>);
+    });
 
-  it("forwards the receipt data through as `receipt`", () => {
-    wagmiState.receiptData = { status: "success" };
-    const { result } = renderHook(() => useWriteFlow(user), { wrapper });
-    expect(result.current.receipt).toBe(wagmiState.receiptData);
-  });
-
-  it("surfaces isSigning while the wallet write is pending", () => {
-    wagmiState.isPending = true;
-    const { result } = renderHook(() => useWriteFlow(user), { wrapper });
-    expect(result.current.isSigning).toBe(true);
-    expect(result.current.isConfirming).toBe(false);
-  });
-
-  it("surfaces isConfirming while waiting on the receipt", () => {
-    wagmiState.writeData = hash;
-    wagmiState.receiptLoading = true;
-    const { result } = renderHook(() => useWriteFlow(user), { wrapper });
-    expect(result.current.isConfirming).toBe(true);
-    expect(result.current.isConfirmed).toBe(false);
-  });
-
-  it("treats a mined-but-reverted receipt as isReverted, not isConfirmed", () => {
-    // `receipt.isSuccess` only means the fetch resolved a receipt, with no
-    // thrown write/receipt error for a reverted tx — the outcome is only in
-    // `data.status`.
-    wagmiState.writeData = hash;
-    wagmiState.receiptSuccess = true;
-    wagmiState.receiptData = { status: "reverted" };
-    const { result } = renderHook(() => useWriteFlow(user), { wrapper });
-    expect(result.current.isConfirmed).toBe(false);
-    expect(result.current.isReverted).toBe(true);
-    expect(result.current.error).toBeNull();
-  });
-
-  it("surfaces isConfirmed only once the receipt reports status success", () => {
-    wagmiState.writeData = hash;
-    wagmiState.receiptSuccess = true;
-    wagmiState.receiptData = { status: "success" };
-    const { result } = renderHook(() => useWriteFlow(user), { wrapper });
-    expect(result.current.isConfirmed).toBe(true);
-    expect(result.current.isReverted).toBe(false);
-  });
-
-  it("prefers the write error over the receipt error, and falls back to the receipt error otherwise", () => {
-    const writeError = new Error("user rejected");
-    wagmiState.writeError = writeError;
-    wagmiState.receiptError = new Error("should be shadowed");
-    const { result: withWriteError } = renderHook(() => useWriteFlow(user), { wrapper });
-    expect(withWriteError.current.error).toBe(writeError);
-
-    wagmiState.writeError = null;
-    const receiptError = new Error("reverted");
-    wagmiState.receiptError = receiptError;
-    const { result: withReceiptError } = renderHook(() => useWriteFlow(user), { wrapper });
-    expect(withReceiptError.current.error).toBe(receiptError);
-  });
-});
-
-// R8/M-2: `error` is null on an on-chain revert — the receipt fetch succeeded,
-// the transaction did not. Five consumers reset optimistic approval state on
-// `error` alone and silently kept it through a reverted approve. `hasFailed` is
-// the single signal they now share.
-describe("hasFailed (R8)", () => {
-  const wrapper = ({ children }: { children: ReactNode }) => {
-    const queryClient = new QueryClient();
-    return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
-  };
-
-  beforeEach(() => {
-    wagmiState.writeData = undefined;
-    wagmiState.receiptData = undefined;
-    wagmiState.receiptSuccess = false;
-    wagmiState.isPending = false;
-    wagmiState.receiptLoading = false;
-    wagmiState.writeError = null;
-    wagmiState.receiptError = null;
-  });
-
-  it("is true when the transaction reverted on-chain, even though error is null", () => {
-    wagmiState.receiptSuccess = true;
-    wagmiState.receiptData = { status: "reverted" };
-    const { result } = renderHook(() => useWriteFlow(user), { wrapper });
-    // The exact shape that made M-2 invisible.
-    expect(result.current.error).toBeNull();
-    expect(result.current.isReverted).toBe(true);
-    expect(result.current.hasFailed).toBe(true);
-  });
-
-  it("is true when the write itself errored", () => {
-    wagmiState.writeError = new Error("user rejected");
-    const { result } = renderHook(() => useWriteFlow(user), { wrapper });
-    expect(result.current.hasFailed).toBe(true);
-  });
-
-  it("is true when the receipt fetch errored", () => {
-    wagmiState.receiptError = new Error("rpc down");
-    const { result } = renderHook(() => useWriteFlow(user), { wrapper });
-    expect(result.current.hasFailed).toBe(true);
-  });
-
-  it("is false on a successful confirmation", () => {
-    wagmiState.receiptSuccess = true;
-    wagmiState.receiptData = { status: "success" };
-    const { result } = renderHook(() => useWriteFlow(user), { wrapper });
-    expect(result.current.isConfirmed).toBe(true);
-    expect(result.current.hasFailed).toBe(false);
-  });
-
-  it("is false while still pending", () => {
-    wagmiState.isPending = true;
-    const { result } = renderHook(() => useWriteFlow(user), { wrapper });
-    expect(result.current.hasFailed).toBe(false);
+    expect(hook.result.current.isConfirmed).toBe(true);
+    expect(publicClient.simulateContract).toHaveBeenCalledTimes(4);
+    expect(walletClient.writeContract).toHaveBeenCalledTimes(4);
+    expect(publicClient.waitForTransactionReceipt).toHaveBeenCalledTimes(4);
   });
 });

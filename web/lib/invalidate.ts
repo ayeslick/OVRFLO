@@ -7,7 +7,7 @@ import type { MarketInfo } from "./types";
 // wagmi v3 roots useReadContract / useReadContracts keys at these string
 // literals, with the call's own parameters — including `address` — nested
 // inside (verified against wagmi 3.7.3).
-const WAGMI_READ_ROOTS = ["readContract", "readContracts"] as const;
+export const WAGMI_READ_ROOTS = ["readContract", "readContracts"] as const;
 
 /**
  * Invalidates the on-chain reads a confirmed transaction could have changed.
@@ -43,7 +43,10 @@ export function invalidateOnChainReads(
 // Matches on the serialised key rather than walking wagmi's internal key shape:
 // that shape is not part of its public contract, and an address sits at
 // different depths for a single read versus a batched one.
-function keyMentionsAny(queryKey: readonly unknown[], addresses: ReadonlySet<string>): boolean {
+export function keyMentionsAny(
+  queryKey: readonly unknown[],
+  addresses: ReadonlySet<string>,
+): boolean {
   if (addresses.size === 0) return false;
   const serialised = JSON.stringify(queryKey, (_key, value) =>
     typeof value === "bigint" ? value.toString() : value,

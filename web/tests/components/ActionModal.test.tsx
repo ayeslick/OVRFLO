@@ -58,11 +58,17 @@ vi.mock("wagmi", () => ({
 type WriteFlowState = {
   writeContract: ReturnType<typeof vi.fn>;
   reset: ReturnType<typeof vi.fn>;
-  hash: undefined;
+  retryRefresh: ReturnType<typeof vi.fn>;
+  hash: `0x${string}` | undefined;
   receipt?: undefined;
   isSigning: boolean;
   isConfirming: boolean;
+  isRefreshing: boolean;
+  isInFlight: boolean;
   isConfirmed: boolean;
+  isReverted: boolean;
+  refreshFailed: boolean;
+  hasFailed: boolean;
   error: Error | null;
 };
 
@@ -70,11 +76,17 @@ function flow(): WriteFlowState {
   return {
     writeContract: vi.fn(),
     reset: vi.fn(),
+    retryRefresh: vi.fn(),
     hash: undefined,
     receipt: undefined,
     isSigning: false,
     isConfirming: false,
+    isRefreshing: false,
+    isInFlight: false,
     isConfirmed: false,
+    isReverted: false,
+    refreshFailed: false,
+    hasFailed: false,
     error: null,
   };
 }
@@ -320,6 +332,20 @@ describe("ActionModal / FormBody — all 12 action types", () => {
     // though this file's table stays at 12 until someone adds a row for it.
     const types = table.map((row) => row.type).sort();
     expect(types).toEqual(Object.keys(ACTION_META).sort());
+  });
+
+  it("preserves a confirmed receipt while refresh failed and retries refresh only", () => {
+    writeFlows.first.refreshFailed = true;
+    writeFlows.first.hasFailed = true;
+    writeFlows.first.hash = `0x${"12".repeat(32)}`;
+
+    renderAction({ type: "withdraw", positionId: 1n });
+
+    expect(screen.getByText(/TRANSACTION CONFIRMED — REFRESH FAILED/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "WITHDRAW" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "RETRY REFRESH" }));
+    expect(writeFlows.first.retryRefresh).toHaveBeenCalledTimes(1);
+    expect(writeFlows.first.writeContract).not.toHaveBeenCalled();
   });
 
   it.each(table)(
