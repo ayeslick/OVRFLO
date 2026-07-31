@@ -9,9 +9,6 @@ function testAddress(id: number): Address {
 
 const walletState = { address: testAddress(0xa11) as Address | undefined };
 
-vi.mock("@/hooks/useIndexerSync", () => ({
-  useIndexerSync: () => ({ syncedBlock: 100n, headBlock: 100n, lagBlocks: 0n, lagging: false }),
-}));
 vi.mock("wagmi", () => ({
   useBlockNumber: () => ({ data: 100n }),
   useConnection: () => ({
@@ -193,8 +190,8 @@ describe("close gate (R17)", () => {
   });
 });
 
-describe("truncation warning (R26)", () => {
-  it("renders the generic truncation copy when an enumeration hook reports tooLarge", () => {
+describe("uncapped projection cutover", () => {
+  it("does not render the retired first-500 warning", () => {
     hookData.tooLarge = true;
     hookData.loans = [
       {
@@ -204,8 +201,7 @@ describe("truncation warning (R26)", () => {
       },
     ];
     render(<PositionList market={market} user={testAddress(0xa11)} symbols={symbols} onAction={vi.fn()} />);
-    // R25: one shared truncation sentence across every capped list.
-    expect(screen.getByText("SHOWING FIRST 500 IDS — DATA TRUNCATED")).toBeInTheDocument();
+    expect(screen.queryByText(/SHOWING FIRST 500/)).not.toBeInTheDocument();
   });
 });
 

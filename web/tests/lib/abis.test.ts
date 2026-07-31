@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { erc20Abi as viemErc20Abi } from "viem";
-import sablierVerifiedAbi from "../../../tools/envio/abi/SablierV2LockupLinear.json";
+import sablierVerifiedAbi from "../fixtures/SablierV2LockupLinear.verified-abi.json";
 import { erc20Abi, ovrfloLendingAbi, sablierLockupAbi } from "@/lib/abis";
 
 const sablierFunctions = [
@@ -51,6 +51,20 @@ describe("ABI drift checks", () => {
     // absence check that TS flags as disjoint-literal-types.
     const functionNames: string[] = sablierLockupAbi.filter((e) => e.type === "function").map((e) => e.name);
     expect(functionNames).not.toContain("calculateMinFeeWei");
+  });
+
+  it("includes the verified ERC721 Transfer event used for recipient-scoped discovery", () => {
+    const local = sablierLockupAbi.find((entry) => entry.type === "event" && entry.name === "Transfer");
+    const verified = sablierVerifiedAbi.find((entry) => entry.type === "event" && entry.name === "Transfer");
+    expect(local).toEqual(verified);
+  });
+
+  it("includes generated checkpoint and borrower-pool events used by the scanner", () => {
+    const eventNames = ovrfloLendingAbi
+      .filter((entry) => entry.type === "event")
+      .map((entry) => entry.name);
+    expect(eventNames).toContain("LiquidityCheckpoint");
+    expect(eventNames).toContain("BorrowerLoanPoolCreated");
   });
 
   it("keeps exactly the 8 StreamPricing errors in the generated lending ABI", () => {

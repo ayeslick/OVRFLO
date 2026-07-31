@@ -21,6 +21,7 @@
 
 set -euo pipefail
 
+REPO_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 RPC=${RPC:-http://127.0.0.1:8545}
 OWNER_PK=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
 OWNER_ADDR=$(cast wallet address "$OWNER_PK")
@@ -28,7 +29,7 @@ OWNER_ADDR=$(cast wallet address "$OWNER_PK")
 DEV_PK=0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d
 DEV_ADDR=$(cast wallet address "$DEV_PK")
 # Anvil #2 — seeded with PT + wstETH by seed-local.sh
-LENDER_PK=0x5de4b78989770766708d133e5f9f8a3153a9c256b0f65a5f8c66d3c2de7f25ac
+LENDER_PK=0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a
 LENDER_ADDR=$(cast wallet address "$LENDER_PK")
 # Anvil #3 — has ETH but no PT/wstETH (we seed it in lively)
 LENDER2_PK=0x7c8522cb19db42cfd581d6c15a277a8e68b8a4e6b15fb8b00c1f1e5e5c6083e8
@@ -62,6 +63,8 @@ WSTETH=0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0
 
 send() { cast send --rpc-url "$RPC" --private-key "$1" --legacy "${@:2}" 2>&1; }
 call() { cast call --rpc-url "$RPC" "$@"; }
+
+declare -A ROUTE_IDS_BY_APR=()
 
 approve_token() {
   local token=$1 pk=$2 spender=$3 amount=$4
@@ -98,9 +101,13 @@ deposit_and_get_stream() {
   cast --to-dec "$stream_hex" 2>/dev/null || echo ""
 }
 
-# Borrow against a stream at a specific tick. Automates:
+# Borrow against a stream at a specific tick. Candidate IDs come from this
+# fixture's successful supply receipts, then every candidate is hydrated from
+# the lending contract before selection. This keeps the walkthrough on the
+# same projection -> direct hydration -> bounded route model as the app.
+# Automates:
 # 1. Approve lending contract on the Sablier NFT
-# 2. Call gatherLiquidity to find liquidity IDs at the tick
+# 2. Hydrate projected fixture IDs and build a bounded route
 # 3. Call createBorrowerLoanPool with minAcceptable=0 (no slippage guard for testing)
 borrow_against_stream() {
   local pk=$1 stream_id=$2 apr=$3 amount=$4 borrower=$5
@@ -110,17 +117,50 @@ borrow_against_stream() {
   fi
   # 1. Approve lending contract to transfer the stream NFT
   send "$pk" "$SABLIER" 'approve(address,uint256)' "$LENDING" "$stream_id" >/dev/null 2>&1
-  # 2. Gather liquidity IDs at the target tick (exclude borrower's own positions)
-  local gather_result
-  gather_result=$(call "$LENDING" \
-    'gatherLiquidity(address,uint16,uint128,uint256,address)(uint256[],bool)' \
-    "$PRIMARY_MARKET" "$apr" "$amount" 1 "$borrower" 2>/dev/null || echo "")
-  local ids
-  ids=$(echo "$gather_result" | head -1 | sed 's/\[\]//; s/\[//g; s/\]//g; s/,/,/g' | tr -d ' ')
-  if [ -z "$ids" ] || [ "$ids" = "false" ] || [ "$ids" = "true" ]; then
-    echo "    SKIP: no liquidity at ${apr}bps (gather returned empty)"
+  # 2. Directly hydrate the IDs this fixture projected while supplying.
+  local projected=${ROUTE_IDS_BY_APR[$apr]:-}
+  local max_route
+  max_route=$(call "$LENDING" 'MAX_ROUTE_IDS()(uint256)' | awk '{print $1}')
+  local positions_json='[]'
+  local id tuple lender position_market position_apr available
+  IFS=',' read -r -a projected_ids <<< "$projected"
+  for id in "${projected_ids[@]}"; do
+    [ -n "$id" ] || continue
+    tuple=$(call "$LENDING" 'liquidityPositions(uint256)(address,address,uint16,uint128)' "$id")
+    lender=$(echo "$tuple" | sed -n '1p' | awk '{print $1}')
+    position_market=$(echo "$tuple" | sed -n '2p' | awk '{print $1}')
+    position_apr=$(echo "$tuple" | sed -n '3p' | awk '{print $1}')
+    available=$(echo "$tuple" | sed -n '4p' | awk '{print $1}')
+    if [ "${position_market,,}" != "${PRIMARY_MARKET,,}" ] ||
+       [ "$position_apr" != "$apr" ] ||
+       [ "$available" = "0" ]; then
+      continue
+    fi
+    positions_json=$(jq -c \
+      --arg id "$id" \
+      --arg lender "$lender" \
+      --arg market "$position_market" \
+      --argjson aprBps "$position_apr" \
+      --arg availableLiquidity "$available" \
+      '. + [{id: $id, lender: $lender, market: $market, aprBps: $aprBps, availableLiquidity: $availableLiquidity}]' \
+      <<< "$positions_json")
+  done
+  local aggregate_depth route route_status ids
+  aggregate_depth=$(call "$LENDING" 'marketAprAvailableLiquidity(address,uint16)(uint256)' "$PRIMARY_MARKET" "$apr" | awk '{print $1}')
+  route=$(jq -n -c \
+    --argjson positions "$positions_json" \
+    --arg borrower "$borrower" \
+    --arg target "$amount" \
+    --arg aggregateDepth "$aggregate_depth" \
+    --argjson maxRouteIds "$max_route" \
+    '{positions: $positions, borrower: $borrower, target: $target, aggregateDepth: $aggregateDepth, maxRouteIds: $maxRouteIds}' |
+    node --no-warnings --experimental-strip-types "$REPO_ROOT/web/scripts/select-hydrated-route.mjs")
+  route_status=$(jq -r '.status' <<< "$route")
+  if [ "$route_status" != "ready" ]; then
+    echo "    SKIP: projected route at ${apr}bps is incomplete after direct hydration"
     return 1
   fi
+  ids=$(jq -r '.selectedIds | join(",")' <<< "$route")
   # 3. Submit the borrow
   send "$pk" "$LENDING" \
     'createBorrowerLoanPool(uint256[],uint256,uint128,uint128)' \
@@ -135,8 +175,11 @@ borrow_against_stream() {
 
 supply_liquidity() {
   local pk=$1 apr=$2 amount=$3
+  local liquidity_id
+  liquidity_id=$(next_id)
   approve_token "$WSTETH" "$pk" "$LENDING" "$amount" >/dev/null 2>&1
   send "$pk" "$LENDING" 'supplyLiquidity(address,uint16,uint128)' "$PRIMARY_MARKET" "$apr" "$amount" >/dev/null 2>&1
+  ROUTE_IDS_BY_APR[$apr]="${ROUTE_IDS_BY_APR[$apr]:+${ROUTE_IDS_BY_APR[$apr]},}$liquidity_id"
 }
 
 withdraw_position() {
@@ -666,9 +709,9 @@ edge_wrap_short() {
 }
 
 edge_truncation() {
-  banner "EDGE: Truncation (501+ positions)"
+  banner "EDGE: Uncapped projection (501+ positions)"
   echo "  Supplies 501 positions at 10% tick, 0.1 wstETH each from lender."
-  echo "  This triggers the tooLarge flag (enumeration cap = 500)."
+  echo "  This proves positions beyond the retired 500-ID cap remain discoverable."
   local amount=100000000000000000 # 0.1 wstETH
   local start=$(next_id)
   approve_token "$WSTETH" "$LENDER_PK" "$LENDING" "$(python3 -c 'print(501 * 10**17)')" >/dev/null 2>&1
@@ -678,7 +721,7 @@ edge_truncation() {
   done
   echo
   echo "  Done. nextLiquidityId=$(next_id) (was $start)."
-  check "Expand market → position list: 'SHOWING FIRST 500 — DATA TRUNCATED'. BORROW mode ladder: truncation warning inside. If all 500 are withdrawn: 'SHOWING FIRST 500 — ACTIVE LIQUIDITY MAY EXIST BEYOND SCAN RANGE' (stronger copy)."
+  check "Expand market → position list and BORROW ladder: all 501 positions contribute to the ready aggregate/projection view with no truncation warning."
 }
 
 # ─── UTILITIES ────────────────────────────────────────────────────────────────
@@ -714,7 +757,7 @@ declare -A SCENARIOS=(
   [deposit-cap]="EDGE: Deposit cap enforcement"
   [self-match]="EDGE: Self-match exclusion (own liquidity excluded from ladder)"
   [wrap-short]="EDGE: Wrap reserve empty (UNWRAP disabled)"
-  [truncation]="EDGE: 501+ positions (truncation warning)"
+  [truncation]="EDGE: 501+ positions (uncapped projection)"
   [advance]="UTILITY: Advance time (for stream vesting / claimable accrual)"
 )
 

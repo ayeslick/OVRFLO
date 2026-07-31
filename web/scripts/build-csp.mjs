@@ -1,47 +1,11 @@
 #!/usr/bin/env node
-/**
- * build-csp.mjs — R20 + R21 + R19
- *
- * Generates the static-host security headers (Vercel + Cloudflare Pages /
- * Netlify) from a single CSP template parameterized by the same
- * NEXT_PUBLIC_* origins the browser bundle embeds at build time. The
- * `next.config.ts` `headers()` API is a no-op under `output: "export"`
- * (R19) — real CSP has to ship as deploy-target config, so this script
- * emits both formats so we can deploy to either surface with no rewrites.
- *
- * Reads from environment (all optional — script falls back to sensible
- * defaults so local `npm run build` without env still produces valid
- * output):
- *
- *   NEXT_PUBLIC_RPC_URL                 → connect-src origin for Ethereum RPC
- *   NEXT_PUBLIC_PONDER_URL              → connect-src origin for Ponder
- *
- * Static origins for WalletConnect / Reown and their WSS relays are baked
- * into the template since they're not environment-configurable.
- *
- * Emits:
- *   web/vercel.json          (Vercel's authoritative header format)
- *   web/public/_headers      (Cloudflare Pages / Netlify)
- *
- * R29/M-17: this used to substitute rpc.ankr.com and localhost when the
- * origins were missing, so a deploy could ship a CSP that blocked its own
- * RPC and indexer — silently, because the build stayed green. Missing
- * origins now fail the build. Local builds that genuinely want the
- * fallbacks opt in with CSP_ALLOW_FALLBACKS=1; forgetting it fails loudly
- * rather than shipping something broken.
- *
- * script-src carries no origins and no 'unsafe-inline' — scripts/csp-hash-inline.mjs
- * runs after `next build` and adds the exported HTML's inline-script hashes.
- * That step has to be post-build: this script runs first and writes
- * public/_headers, which Next copies into out/ during export, so a hash
- * computed here could never match the HTML it guards.
- */
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const WEB_ROOT = resolve(__dirname, "..");
+const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
+const WEB_ROOT = resolve(SCRIPT_DIR, "..");
+export const BASE_HEADERS_PATH = resolve(WEB_ROOT, "build", "security-headers.base.json");
 
 const WALLET_ORIGINS_HTTP = [
   "https://*.walletconnect.com",
@@ -54,106 +18,118 @@ const WALLET_ORIGINS_WSS = [
   "wss://*.reown.com",
 ];
 
-function originOf(rawUrl, envName) {
-  if (!rawUrl) return null;
-  try {
-    const u = new URL(rawUrl);
-    // Strip path/search/hash — CSP allows origins only.
-    return `${u.protocol}//${u.host}`;
-  } catch {
-    throw new Error(
-      `build-csp: ${envName}="${rawUrl}" is not a valid URL. Fix your env before running build.`
-    );
+/** @param {Record<string, string | undefined>} environment */
+export function buildSecurityHeaders(environment = process.env) {
+  const profile = environment.NEXT_PUBLIC_RUNTIME_PROFILE ?? "production";
+  if (profile !== "local" && profile !== "production") {
+    throw new Error("build-csp: NEXT_PUBLIC_RUNTIME_PROFILE must be local or production");
   }
+  if (
+    profile === "local" &&
+    (environment.VERCEL_ENV === "production" || environment.OVRFLO_DEPLOYABLE_BUILD === "1")
+  ) {
+    throw new Error("build-csp: the local profile cannot activate in a deployable production build");
+  }
+
+  const rpcOrigins = configuredRpcOrigins(environment, profile);
+  const historicalOrigin = requiredOrigin(
+    environment.NEXT_PUBLIC_HISTORICAL_RPC_URL ??
+      (profile === "local" ? environment.NEXT_PUBLIC_RPC_URL ?? "http://127.0.0.1:8545" : undefined),
+    "NEXT_PUBLIC_HISTORICAL_RPC_URL",
+    profile,
+  );
+  const connectSrc = [
+    "'self'",
+    ...new Set([...rpcOrigins, historicalOrigin]),
+    ...WALLET_ORIGINS_HTTP,
+    ...WALLET_ORIGINS_WSS,
+  ];
+
+  const csp = [
+    "default-src 'self'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+    "object-src 'none'",
+    "script-src 'self'",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: https:",
+    "font-src 'self' data:",
+    `connect-src ${connectSrc.join(" ")}`,
+    `frame-src ${WALLET_ORIGINS_HTTP.join(" ")}`,
+  ].join("; ");
+  if (profile === "production" && /localhost|127\.0\.0\.1|\[::1\]/i.test(csp)) {
+    throw new Error("build-csp: production CSP contains a localhost origin");
+  }
+
+  return [
+    { key: "Content-Security-Policy", value: csp },
+    { key: "X-Frame-Options", value: "DENY" },
+    { key: "X-Content-Type-Options", value: "nosniff" },
+    { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+    { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
+    {
+      key: "Strict-Transport-Security",
+      value: "max-age=63072000; includeSubDomains; preload",
+    },
+  ];
 }
 
-const ALLOW_FALLBACKS = process.env.CSP_ALLOW_FALLBACKS === "1";
+function configuredRpcOrigins(environment, profile) {
+  const primary =
+    environment.NEXT_PUBLIC_RPC_URL ??
+    (profile === "local" ? "http://127.0.0.1:8545" : undefined);
+  const fallbacks = (environment.NEXT_PUBLIC_RPC_FALLBACK_URLS ?? "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+  return [
+    requiredOrigin(primary, "NEXT_PUBLIC_RPC_URL", profile),
+    ...fallbacks.map((value, index) =>
+      requiredOrigin(value, `NEXT_PUBLIC_RPC_FALLBACK_URLS[${index}]`, profile),
+    ),
+  ];
+}
 
-function requiredOrigin(rawUrl, envName, devFallback) {
-  const origin = originOf(rawUrl, envName);
-  if (origin) return origin;
-  if (ALLOW_FALLBACKS) return devFallback;
-  throw new Error(
-    `build-csp: ${envName} is not set. A production build cannot ship a CSP ` +
-      `guessed from a dev default — the deployed app would block its own ` +
-      `traffic. Set ${envName}, or pass CSP_ALLOW_FALLBACKS=1 for a local build.`
+function requiredOrigin(rawUrl, envName, profile) {
+  if (!rawUrl) throw new Error(`build-csp: ${envName} is required`);
+  let url;
+  try {
+    url = new URL(rawUrl);
+  } catch {
+    throw new Error(`build-csp: ${envName} is not a valid URL`);
+  }
+  if (url.hostname === "alchemyapi.io" || url.hostname.endsWith(".alchemyapi.io")) {
+    throw new Error(`build-csp: ${envName} uses deprecated alchemyapi.io`);
+  }
+  const local =
+    url.hostname === "localhost" ||
+    url.hostname === "127.0.0.1" ||
+    url.hostname === "::1" ||
+    url.hostname.endsWith(".localhost");
+  if (profile === "production" && (url.protocol !== "https:" || local)) {
+    throw new Error(`build-csp: ${envName} cannot use a local or non-HTTPS origin in production`);
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new Error(`build-csp: ${envName} must use http or https`);
+  }
+  return url.origin;
+}
+
+/**
+ * @param {Record<string, string | undefined>} environment
+ * @param {string} outputPath
+ */
+export function writeBaseSecurityHeaders(environment = process.env, outputPath = BASE_HEADERS_PATH) {
+  const headers = buildSecurityHeaders(environment);
+  mkdirSync(dirname(outputPath), { recursive: true });
+  writeFileSync(outputPath, `${JSON.stringify(headers, null, 2)}\n`);
+  return headers;
+}
+
+if (import.meta.url === pathToFileURL(process.argv[1]).href) {
+  const headers = writeBaseSecurityHeaders();
+  process.stdout.write(
+    `build-csp: staged ${headers.length} headers under build/ without modifying tracked inputs\n`,
   );
 }
-
-const rpcOrigin = requiredOrigin(process.env.NEXT_PUBLIC_RPC_URL, "NEXT_PUBLIC_RPC_URL", "http://127.0.0.1:8545");
-const indexerOrigin = requiredOrigin(
-  process.env.NEXT_PUBLIC_PONDER_URL,
-  "NEXT_PUBLIC_PONDER_URL",
-  "http://localhost:42069"
-);
-
-// R31/L-8: the CoinGecko origin is gone. Nothing in web/ fetches a price —
-// PositionSummary records "no USD" as a deliberate decision — so the origin
-// was allowing traffic the app never makes.
-const connectSrc = [
-  "'self'",
-  rpcOrigin,
-  indexerOrigin,
-  ...WALLET_ORIGINS_HTTP,
-  ...WALLET_ORIGINS_WSS,
-];
-
-const csp = [
-  "default-src 'self'",
-  "base-uri 'self'",
-  "form-action 'self'",
-  "frame-ancestors 'none'",
-  "object-src 'none'",
-  // No 'unsafe-inline' and no remote origins: nothing in web/ loads a remote
-  // script, and the wildcard wallet domains only widened the post-XSS blast
-  // radius. Inline-script hashes are appended post-build. Wallet connectivity
-  // rides on connect-src and frame-src, which keep theirs.
-  "script-src 'self'",
-  "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: https:",
-  "font-src 'self' data:",
-  `connect-src ${connectSrc.join(" ")}`,
-  `frame-src ${WALLET_ORIGINS_HTTP.join(" ")}`,
-].join("; ");
-
-const COMMON_HEADERS = [
-  { key: "Content-Security-Policy", value: csp },
-  { key: "X-Frame-Options", value: "DENY" },
-  { key: "X-Content-Type-Options", value: "nosniff" },
-  { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
-  {
-    key: "Permissions-Policy",
-    value: "camera=(), microphone=(), geolocation=()",
-  },
-  {
-    key: "Strict-Transport-Security",
-    value: "max-age=63072000; includeSubDomains; preload",
-  },
-];
-
-const vercelJson = {
-  $schema: "https://openapi.vercel.sh/vercel.json",
-  headers: [
-    {
-      source: "/(.*)",
-      headers: COMMON_HEADERS,
-    },
-  ],
-};
-
-const headersFileLines = [
-  "/*",
-  ...COMMON_HEADERS.map(({ key, value }) => `  ${key}: ${value}`),
-  "",
-];
-
-const vercelPath = resolve(WEB_ROOT, "vercel.json");
-const headersPath = resolve(WEB_ROOT, "public", "_headers");
-
-writeFileSync(vercelPath, JSON.stringify(vercelJson, null, 2) + "\n");
-mkdirSync(dirname(headersPath), { recursive: true });
-writeFileSync(headersPath, headersFileLines.join("\n"));
-
-process.stdout.write(
-  `build-csp: wrote vercel.json and public/_headers (rpc=${rpcOrigin}, indexer=${indexerOrigin})\n`
-);

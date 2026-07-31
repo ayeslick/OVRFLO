@@ -4,7 +4,6 @@ import { useState } from "react";
 import type { Address } from "viem";
 import { useNowSeconds } from "@/hooks/useNowSeconds";
 import { useHeldStreams } from "@/hooks/useHeldStreams";
-import { useIndexerSync } from "@/hooks/useIndexerSync";
 import { useLending } from "@/hooks/useLending";
 import { useLendingLiquidity } from "@/hooks/useLendingLiquidity";
 import { useLoanBook } from "@/hooks/useLoanBook";
@@ -22,7 +21,6 @@ import {
   streamedPct,
 } from "@/lib/positions";
 import type { ActiveAction, HeldStream, Loan, LoanPool, MarketInfo } from "@/lib/types";
-import { TruncationNotice } from "./TruncationNotice";
 
 type Props = {
   market: MarketInfo;
@@ -50,7 +48,7 @@ function ProgressBar({ pct, label, tone }: { pct: number; label: string; tone: "
 
 export function PositionList({ market, user, symbols, onAction }: Props) {
   const lending = useLending(market.lending);
-  const liquidity = useLendingLiquidity(market.lending);
+  const liquidity = useLendingLiquidity(market.lending, market.market);
   const loanBook = useLoanBook(market.lending, user);
   const streams = useHeldStreams(user);
   const nowSeconds = useNowSeconds(true);
@@ -63,23 +61,13 @@ export function PositionList({ market, user, symbols, onAction }: Props) {
 
   const isLoading = liquidity.isLoading || loanBook.isLoading || streams.isLoading;
 
-  // liquidity + loanBook are plain on-chain reads; streams comes from the
-  // Ponder indexer (lib/ponder.ts) and can error independently — each source
-  // degrades on its own so an indexer hiccup can't hide on-chain positions
-  // (e.g. a just-created LIQUIDITY position) behind a blanket error message.
+  // Each projection is independently fail-closed so a stream RPC failure
+  // cannot hide otherwise-ready lending positions.
   const onChainError = Boolean(liquidity.error || loanBook.error);
-  // R43/R44: three distinct states, where there used to be one. "Unavailable"
-  // must never render as an empty list — a user with no way to see their
-  // streams needs the direct-contract route, not the impression that they hold
-  // nothing.
+  // "Unavailable" must never render as an empty list — a user with no way to
+  // see their streams needs the direct-contract route, not the impression
+  // that they hold nothing.
   const streamsUnavailable = streams.unavailable;
-  const streamsStale = streams.stale;
-  // R40: a lagging indexer is a different condition from an unreachable one —
-  // discovery succeeds, it is just behind, so the set can be short without
-  // anything erroring. Most often that omits a stream acquired through someone
-  // else's transaction, where the viewer has no write of their own to notice.
-  const indexerSync = useIndexerSync();
-
   if (isLoading) {
     return <div className="empty mono">LOADING</div>;
   }
@@ -102,35 +90,12 @@ export function PositionList({ market, user, symbols, onAction }: Props) {
     self: user,
   });
 
-  // R26: enumeration hooks scan the OLDEST 500 ids; degrade visibly, never silently.
-  const tooLarge = liquidity.tooLarge || loanBook.tooLarge;
-  const allEnumeratedEmpty =
-    liquidity.tooLarge && liquidity.liquidity.every((position) => position.availableLiquidity === 0n);
-  const truncationDetail = allEnumeratedEmpty
-    ? "ACTIVE LIQUIDITY MAY EXIST BEYOND SCAN RANGE"
-    : undefined;
-
-  // Each group only reports positions when its own source is error-free —
-  // an indexer error must not read as "no positions" any more than it should
-  // read as "no on-chain positions either."
+  // Each group only reports positions when its own projection is ready.
   const hasLending = !onChainError && (userLiquidity.length > 0 || userPools.length > 0);
   const hasBorrowing = !onChainError && userLoans.length > 0;
   const hasStreams = !streamsUnavailable && eligibleStreams.length > 0;
 
-  // R43: a stale cache holding no eligible stream is still a statement the app
-  // cannot make. `stale` used to be rendered only inside the `hasStreams`
-  // branch, so a cached-but-empty set — or one whose streams all belong to other
-  // markets — fell through to "nothing here", warning and all. That is the exact
-  // case: the user acquires a stream while discovery is down, the cached set
-  // cannot know about it, and the section renders a confident blank. Whether the
-  // last known set happens to be empty says nothing about whether it is current.
-  //
-  // `indexerSync.lagging` deliberately does not join this condition. A few
-  // blocks behind is the resting state of a healthy indexer, so surfacing an
-  // empty STREAMS group on it would put a warning in front of every user who
-  // genuinely holds nothing. `stale` means discovery is erroring — exceptional,
-  // and worth interrupting for.
-  const showStreamsSection = streamsUnavailable || hasStreams || streamsStale;
+  const showStreamsSection = streamsUnavailable || hasStreams;
 
   if (!onChainError && !hasLending && !hasBorrowing && !showStreamsSection) {
     return null;
@@ -138,7 +103,6 @@ export function PositionList({ market, user, symbols, onAction }: Props) {
 
   return (
     <div className="position-list">
-      {!onChainError && tooLarge ? <TruncationNotice limit={500} noun="IDS" detail={truncationDetail} /> : null}
       {onChainError ? (
         <div className="position-group">
           <div className="empty mono status-negative">UNABLE TO LOAD LENDING POSITIONS</div>
@@ -238,21 +202,6 @@ export function PositionList({ market, user, symbols, onAction }: Props) {
       ) : showStreamsSection ? (
         <div className="position-group">
           <div className="label mono">STREAMS</div>
-          {/* R43: shown, not hidden, and actions stay enabled — every value on
-              these cards is hydrated from Sablier, and the contracts validate
-              each action at submission. */}
-          {streamsStale ? (
-            <div className="label mono status-warning" role="status">
-              {hasStreams
-                ? "SHOWING LAST KNOWN STREAMS — DISCOVERY IS UNREACHABLE, VALUES ARE LIVE FROM SABLIER"
-                : "DISCOVERY IS UNREACHABLE — THE LAST KNOWN SET HELD NO STREAMS FOR THIS MARKET. ONE ACQUIRED SINCE WOULD NOT APPEAR HERE."}
-            </div>
-          ) : indexerSync.lagging ? (
-            <div className="label mono status-warning" role="status">
-              STREAM DISCOVERY IS {indexerSync.lagBlocks?.toString()} BLOCKS BEHIND — RECENTLY ACQUIRED STREAMS MAY BE
-              MISSING
-            </div>
-          ) : null}
           {hasStreams ? (
             <div className="position-cards">
               {eligibleStreams.map((stream) => (

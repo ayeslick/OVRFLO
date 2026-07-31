@@ -8,7 +8,7 @@ There are three independent tiers. They don't share setup — running one doesn'
 |---|---|---|
 | Solidity | `forge build` / `forge test` | Nothing extra for unit/fuzz/invariant. `MAINNET_RPC_URL` for `test/fork/*` (self-skips without it). |
 | Frontend unit | Vitest, `web/lib` + `web/hooks` | Nothing extra. |
-| E2E | Playwright + Gherkin, `web/tests/e2e` | A seeded local Anvil fork + Ponder + dev server. `MAINNET_RPC_URL` (a paid archive RPC — Alchemy/QuickNode/paid Infura; the free tier will not work for this). |
+| E2E | Playwright + Gherkin, `web/tests/e2e` | A seeded local Anvil fork + dev server. `MAINNET_RPC_URL` (a paid archive RPC — Alchemy/QuickNode/paid Infura; the free tier will not work for this). |
 
 ## Solidity
 
@@ -72,7 +72,7 @@ and rotate it if a fork has run on a shared machine.
 
 This runs `tools/scripts/bootstrap-e2e.sh`, which:
 1. Tears down any existing local environment unconditionally (`bootstrap-clean.sh local`) — you do not need to check whether something is already running first, and you should not try to reuse a possibly-stale environment from an earlier session.
-2. Brings up Anvil (forked at the live mainnet head — no block pin) + `script/seed-local.sh` (deploys OVRFLO, discovers live Pendle markets, seeds test data) + Ponder, via the existing `bootstrap:local` script.
+2. Brings up Anvil (forked at the live mainnet head — no block pin) + `script/seed-local.sh` (deploys OVRFLO, discovers live Pendle markets, seeds test data), via the existing `bootstrap:local` script.
 3. Starts the Next.js dev server backgrounded with `E2E_WALLET_RUNTIME=1` (Turbopack then resolves the `wallet-runtime` module to the mock-connector runtime under `web/tests/e2e/support/`, so E2E can sign transactions without a real wallet-connect flow — a build-time swap, so the production bundle carries no test code), and polls `http://localhost:3000` until it's ready (up to 30s) before proceeding.
 4. Regenerates the Playwright spec files (`bddgen`) from the current `.feature` files.
 
@@ -81,7 +81,8 @@ It prints readiness at the end:
 === e2e testbed ready ===
 app        : http://localhost:3000
 rpc        : http://127.0.0.1:8545
-ponder sql : http://localhost:42069/sql
+run tests  : cd web && npx playwright test [path] [-g "<pattern>"]
+teardown   : tools/scripts/bootstrap-clean.sh local
 ```
 
 Then run the suite:
@@ -91,7 +92,7 @@ npm --prefix web run test:e2e          # headless
 npm --prefix web run test:e2e:ui       # Playwright UI mode (local debugging only, not for an agent)
 ```
 
-**Tear down when you're done — but only if you're the one who brought the environment up, and nothing else is still using it.** There is exactly one shared Anvil fork/Ponder instance/dev server for the whole repo (see the concurrency warning below); tearing it down out from under another running test invocation, a human developer poking at `localhost:3000`, or another agent's in-progress session kills their work, not just yours. Before cleaning up:
+**Tear down when you're done — but only if you're the one who brought the environment up, and nothing else is still using it.** There is exactly one shared Anvil fork/dev server for the whole repo (see the concurrency warning below); tearing it down out from under another running test invocation, a human developer poking at `localhost:3000`, or another agent's in-progress session kills their work, not just yours. Before cleaning up:
 
 - If you started this environment yourself in this session (ran `bootstrap:e2e`/`bootstrap:local` yourself) and nothing else has touched it since, it's yours to tear down.
 - If you attached to an environment you didn't start (it was already up when you began), leave it running — don't clean up state you don't own.
@@ -124,9 +125,9 @@ Don't stream the raw unfiltered log — Playwright's `list` reporter also prints
 
 ### Don't do this instead
 
-The manual multi-step path (`BOOT_NO_UI=1 npm --prefix web run bootstrap:local`, then separately `E2E_WALLET_RUNTIME=1 npm --prefix web run dev` in another process, then `test:e2e`) still works and is what `bootstrap:e2e` composes under the hood — but doing it by hand, especially across repeated runs in one session, is exactly what caused real environment corruption before this script existed: orphaned Ponder/Next.js processes from an incompletely torn-down prior run, a stale `deployments/local.json` pointing at a factory address from a fork that no longer exists, and colliding `evm_snapshot`/`evm_revert` calls if two processes touch the same Anvil instance at once. Use `bootstrap:e2e`.
+The manual multi-step path (`BOOT_NO_UI=1 npm --prefix web run bootstrap:local`, then separately `E2E_WALLET_RUNTIME=1 npm --prefix web run dev` in another process, then `test:e2e`) still works and is what `bootstrap:e2e` composes under the hood — but doing it by hand, especially across repeated runs in one session, is exactly what caused real environment corruption before this script existed: orphaned Next.js processes from an incompletely torn-down prior run, a stale `deployments/local.json` pointing at a factory address from a fork that no longer exists, and colliding `evm_snapshot`/`evm_revert` calls if two processes touch the same Anvil instance at once. Use `bootstrap:e2e`.
 
-**Never run two bootstrap/test invocations concurrently against the same local environment** (e.g. from two parallel agent tasks). There is exactly one shared Anvil fork, one Ponder instance, and one dev server; a second process tearing it down or reseeding mid-run from under the first looks *exactly* like a mass test-suite regression (most or all scenarios failing at once) but is actually a self-inflicted collision. If you need to run something else that touches this environment while tests are in flight, don't — wait, or coordinate so only one process owns the environment at a time.
+**Never run two bootstrap/test invocations concurrently against the same local environment** (e.g. from two parallel agent tasks). There is exactly one shared Anvil fork and one dev server; a second process tearing it down or reseeding mid-run from under the first looks *exactly* like a mass test-suite regression (most or all scenarios failing at once) but is actually a self-inflicted collision. If you need to run something else that touches this environment while tests are in flight, don't — wait, or coordinate so only one process owns the environment at a time.
 
 ### Before concluding a failure is real
 
@@ -135,18 +136,16 @@ If you see a **mass cascade of failures** (most/all scenarios failing, not one o
 ```bash
 cast block-number --rpc-url http://127.0.0.1:8545          # is Anvil even up?
 curl -s -o /dev/null -w '%{http_code}\n' http://localhost:3000   # dev server responding? (200 expected)
-curl -s http://localhost:42069/status                        # Ponder status
 ```
 
 Specific known-shapes that are environment issues, not code bugs:
 
-- **Ponder shows `backfill` instead of `live`, or the app shows "UNABLE TO LOAD POSITIONS" / no stream data.** Check `curl -s http://localhost:42069/status` — if it's still backfilling, wait; don't treat missing Sablier/lending data as a frontend bug until Ponder reports `live`. (Historically this was actually a bug — a hardcoded stale `startBlock` — but that's fixed; if you see backfill lasting more than a few seconds after a fresh `bootstrap:e2e`, something regressed, see `docs/solutions/integration-issues/ponder-hardcoded-start-block-drifts-from-live-fork-head.md`.)
 - **A form's submit button stays permanently disabled until the test times out**, with near-zero RPC traffic during the stall. This is very likely a nonce collision between a fixture-direct write and an in-flight UI-driven transaction from the same account, not an app bug — see `docs/solutions/test-failures/supply-e2e-drain-fixture-nonce-collision-with-approve-tx.md` for the mechanism and the fix pattern (wait for an app-observable confirmation signal, not just nonce parity).
 - **A `getByRole` locator ambiguously matches more than one element**, or a click lands on the wrong (possibly disabled) element. Check whether two different components can render a button with the same literal accessible name at the same time — see `docs/solutions/ui-bugs/stream-card-borrow-button-accessible-name-collides-with-market-row-borrow.md` for a worked example. Don't just add `.first()` and move on; that silences the ambiguity without resolving it.
 - **A step that "should" be a no-op (e.g. re-expanding an already-expanded row) actually changes state.** Some shared step definitions are plain toggles, not idempotent "ensure" actions — check the step's implementation before assuming a later assertion's failure is unrelated. See `docs/solutions/test-failures/expand-active-market-step-toggle-not-idempotent-collapses-position-list.md`.
 - **A scenario's action button never becomes clickable even though you clicked the approval button.** Some flows need more than one ERC-20 approval (e.g. deposit needs both a PT approval and a separate underlying-token fee approval) — check `web/components/ActionModal.tsx`'s `needsPtApproval`/`needsUnderlyingApproval` gating before assuming one approval is enough. See `docs/solutions/test-failures/deposit-e2e-scenario-missing-underlying-fee-approval-step.md`.
 
-If none of the above match and the environment checks come back healthy (Anvil responsive, dev server 200, Ponder `live`), it's plausibly a real regression — proceed to debug the actual scenario.
+If none of the above match and the environment checks come back healthy (Anvil responsive, dev server 200), it's plausibly a real regression — proceed to debug the actual scenario.
 
 ### Other things worth knowing
 

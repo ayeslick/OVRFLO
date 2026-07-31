@@ -10,22 +10,26 @@ Feature: Claim all
   Scenario: Happy path — claim all queues and confirms every claimable stream
     Given my wallet holds a stream with a withdrawable balance
     And the frontend re-syncs with chain state
-    When I click the "CLAIM ALL" button
+    When I click the "LOAD POSITIONS" button
+    And I click the "CLAIM ALL" button
     Then the "Claim all" modal is open
-    When I click the "CONFIRM QUEUE" button
+    When I click the "REVIEW CLAIMS" button
+    And I click the "CONFIRM QUEUE" button
     Then I see the caption "ALL CLAIMS CONFIRMED"
     When I click the "DONE" button
     Then no modal is open
 
-  Scenario: Error state — a contract revert fails the queue mid-flight
+  Scenario: Error state — an externally claimed stream is skipped, never submitted
     Given my wallet holds a stream with a withdrawable balance
     And the frontend re-syncs with chain state
-    When I click the "CLAIM ALL" button
+    When I click the "LOAD POSITIONS" button
+    And I click the "CLAIM ALL" button
     Then the "Claim all" modal is open
     And the stream has already been claimed elsewhere
-    When I click the "CONFIRM QUEUE" button
-    Then I see the caption "TRANSACTION FAILED — RESUME RE-CHECKS CLAIMABLES"
-    And the "RESUME" button is enabled
+    When I click the "REVIEW CLAIMS" button
+    And I click the "CONFIRM QUEUE" button
+    Then I see the caption "ALL AVAILABLE CLAIMS CONFIRMED — SOME ROWS SKIPPED"
+    And I see text matching "SKIPPED"
 
   Scenario: Cross-cutting — empty position categories render nothing, not placeholder text
     When I expand a market I hold no positions in

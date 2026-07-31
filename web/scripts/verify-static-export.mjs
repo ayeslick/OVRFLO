@@ -10,7 +10,7 @@
  * script fails the build if those appear, so the regression is caught
  * in CI instead of at deploy time.
  */
-import { existsSync, statSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -45,6 +45,24 @@ if (violations.length > 0) {
   console.error(
     'Static export is required (R19). Remove the server-only code path that produced these.'
   );
+  process.exit(1);
+}
+
+const headersPath = resolve(out, "_headers");
+if (!existsSync(headersPath)) {
+  console.error("verify-static-export: generated _headers artifact is missing.");
+  process.exit(1);
+}
+const headers = readFileSync(headersPath, "utf8");
+if (!/Content-Security-Policy:/.test(headers) || !/script-src 'self' 'sha256-/.test(headers)) {
+  console.error("verify-static-export: enforcing CSP with inline-script hashes is missing.");
+  process.exit(1);
+}
+if (
+  process.env.NEXT_PUBLIC_RUNTIME_PROFILE === "production" &&
+  /localhost|127\.0\.0\.1|\[::1\]/i.test(headers)
+) {
+  console.error("verify-static-export: production headers contain localhost.");
   process.exit(1);
 }
 

@@ -48,7 +48,7 @@ export function streamedPct({
 // depending on the primitive string in a useMemo/useEffect deps array
 // instead of the market object's identity.
 export function selectLiquidityForLender(
-  liquidity: LiquidityPosition[],
+  liquidity: readonly LiquidityPosition[],
   marketAddress: Address,
   normalizedUser: string | undefined,
 ) {
@@ -61,7 +61,10 @@ export function selectLiquidityForLender(
   );
 }
 
-export function selectForMarket<T extends { pool: Pick<LoanPool, "market"> }>(rows: T[], marketAddress: Address) {
+export function selectForMarket<T extends { pool: Pick<LoanPool, "market"> }>(
+  rows: readonly T[],
+  marketAddress: Address,
+) {
   const marketKey = marketAddress.toLowerCase();
   return rows.filter(({ pool }) => pool.market.toLowerCase() === marketKey);
 }
@@ -98,7 +101,17 @@ export function marketBorrowTeaserBps({
   self?: Address;
 }): bigint | null {
   if (matured) return null;
-  const ticks = aprMaxBps > 0 ? aprChoices(aprMinBps, aprMaxBps) : [];
+  const ticks = [
+    ...new Set([
+      ...(aprMaxBps > 0 ? aprChoices(aprMinBps, aprMaxBps) : []),
+      ...liquidity
+        .filter(
+          (position) =>
+            position.market.toLowerCase() === market.toLowerCase(),
+        )
+        .map((position) => position.aprBps),
+    ]),
+  ].sort((left, right) => left - right);
   return borrowTeaserBps(buildLadder(liquidity, market, ticks, self), ttmSeconds, feeBps);
 }
 

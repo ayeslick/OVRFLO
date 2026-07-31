@@ -1101,8 +1101,43 @@ export const ovrfloLendingAbi = [
   {
     type: 'function',
     inputs: [],
+    name: 'LIQUIDITY_REASON_V1_LOAN_CONSUMPTION',
+    outputs: [{ name: '', internalType: 'uint8', type: 'uint8' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'LIQUIDITY_REASON_V1_STREAM_SALE',
+    outputs: [{ name: '', internalType: 'uint8', type: 'uint8' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'LIQUIDITY_REASON_V1_SUPPLY',
+    outputs: [{ name: '', internalType: 'uint8', type: 'uint8' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'LIQUIDITY_REASON_V1_WITHDRAWAL',
+    outputs: [{ name: '', internalType: 'uint8', type: 'uint8' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
     name: 'MAX_FEE_BPS',
     outputs: [{ name: '', internalType: 'uint16', type: 'uint16' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'MAX_ROUTE_IDS',
+    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
     stateMutability: 'view',
   },
   {
@@ -1208,22 +1243,6 @@ export const ovrfloLendingAbi = [
   },
   {
     type: 'function',
-    inputs: [
-      { name: 'market', internalType: 'address', type: 'address' },
-      { name: 'aprBps', internalType: 'uint16', type: 'uint16' },
-      { name: 'targetAmount', internalType: 'uint128', type: 'uint128' },
-      { name: 'startId', internalType: 'uint256', type: 'uint256' },
-      { name: 'borrower', internalType: 'address', type: 'address' },
-    ],
-    name: 'gatherLiquidity',
-    outputs: [
-      { name: 'ids', internalType: 'uint256[]', type: 'uint256[]' },
-      { name: 'sufficient', internalType: 'bool', type: 'bool' },
-    ],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
     inputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
     name: 'liquidityPositions',
     outputs: [
@@ -1285,6 +1304,23 @@ export const ovrfloLendingAbi = [
       { name: 'repaid', internalType: 'uint128', type: 'uint128' },
       { name: 'closed', internalType: 'bool', type: 'bool' },
     ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: '', internalType: 'address', type: 'address' },
+      { name: '', internalType: 'uint16', type: 'uint16' },
+    ],
+    name: 'marketAprAvailableLiquidity',
+    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: '', internalType: 'address', type: 'address' }],
+    name: 'marketAvailableLiquidity',
+    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
     stateMutability: 'view',
   },
   {
@@ -1566,6 +1602,45 @@ export const ovrfloLendingAbi = [
       },
     ],
     name: 'LendingTreasurySet',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'lender',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'market',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      { name: 'aprBps', internalType: 'uint16', type: 'uint16', indexed: true },
+      {
+        name: 'liquidityId',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
+      {
+        name: 'availableLiquidity',
+        internalType: 'uint128',
+        type: 'uint128',
+        indexed: false,
+      },
+      { name: 'reason', internalType: 'uint8', type: 'uint8', indexed: false },
+      {
+        name: 'referenceId',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
+    ],
+    name: 'LiquidityCheckpoint',
   },
   {
     type: 'event',

@@ -53,12 +53,16 @@ contract OVRFLOLendingMainnetForkTest is OVRFLOForkBase {
         IERC20(WSTETH).approve(address(lending), borrowAmount);
         uint256 liquidityId = lending.supplyLiquidity(PRIMARY_MARKET, lending.LAUNCH_APR_BPS(), borrowAmount);
         vm.stopPrank();
+        assertEq(lending.marketAvailableLiquidity(PRIMARY_MARKET), borrowAmount);
+        assertEq(lending.marketAprAvailableLiquidity(PRIMARY_MARKET, lending.LAUNCH_APR_BPS()), borrowAmount);
 
         vm.prank(USER);
         _approveStream(address(sablier), address(lending), streamId);
         vm.prank(USER);
         uint256 loanPoolId = lending.createBorrowerLoanPool(_singletonArray(liquidityId), streamId, borrowAmount, 0);
         uint256 loanId = 1;
+        assertEq(lending.marketAvailableLiquidity(PRIMARY_MARKET), 0);
+        assertEq(lending.marketAprAvailableLiquidity(PRIMARY_MARKET, lending.LAUNCH_APR_BPS()), 0);
 
         uint256 claimTimestamp = block.timestamp + (PRIMARY_EXPIRY - block.timestamp) / 4;
         vm.warp(claimTimestamp);
@@ -152,6 +156,8 @@ contract OVRFLOLendingMainnetForkTest is OVRFLOForkBase {
         IERC20(WSTETH).approve(address(lending), grossPrice);
         uint256 liquidityId = lending.supplyLiquidity(PRIMARY_MARKET, launchApr, uint128(grossPrice));
         vm.stopPrank();
+        assertEq(lending.marketAvailableLiquidity(PRIMARY_MARKET), grossPrice);
+        assertEq(lending.marketAprAvailableLiquidity(PRIMARY_MARKET, launchApr), grossPrice);
 
         // User sells stream into the liquidity
         vm.prank(USER);
@@ -168,6 +174,8 @@ contract OVRFLOLendingMainnetForkTest is OVRFLOForkBase {
         // LiquidityPosition availableLiquidity consumed
         (,,, uint128 remainingCapacity) = lending.liquidityPositions(liquidityId);
         assertEq(remainingCapacity, 0, "availableLiquidity should be 0 after full fill");
+        assertEq(lending.marketAvailableLiquidity(PRIMARY_MARKET), 0);
+        assertEq(lending.marketAprAvailableLiquidity(PRIMARY_MARKET, launchApr), 0);
     }
 
     function _deployApprovedPrimarySeries(uint16 feeBps)
@@ -287,9 +295,8 @@ contract OVRFLOLendingMainnetForkTest is OVRFLOForkBase {
         // what H-1 claims a third party can do: permitted post-v1.1, refused by
         // the v1.1 bytecode deployed here.
         vm.prank(stranger);
-        (ok,) = address(sablier).call(
-            abi.encodeCall(ISablierV2LockupLinear.withdraw, (streamId, address(lending), withdrawable))
-        );
+        (ok,) = address(sablier)
+            .call(abi.encodeCall(ISablierV2LockupLinear.withdraw, (streamId, address(lending), withdrawable)));
         assertFalse(ok, "stranger must not push a withdrawal to the recipient (v1.1 ACL, disproves H-1)");
 
         // Stream withdrawn amount unchanged

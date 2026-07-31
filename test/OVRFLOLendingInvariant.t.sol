@@ -392,6 +392,22 @@ contract OVRFLOLendingInvariantTest is Test {
         );
     }
 
+    /// @notice Indexed market and APR depth must exactly equal the canonical position sum.
+    function invariant_LiquidityDepthEqualsPositionAvailability() public view {
+        uint256 expected;
+        uint256 nextLiquidity = lending.nextLiquidityId();
+        for (uint256 i = 1; i < nextLiquidity; i++) {
+            (, address positionMarket, uint16 aprBps, uint128 availableLiquidity) = lending.liquidityPositions(i);
+            if (positionMarket == MARKET && aprBps == 1000) {
+                expected += availableLiquidity;
+            }
+        }
+
+        assertEq(lending.marketAvailableLiquidity(MARKET), expected, "market liquidity depth drifted");
+        assertEq(lending.marketAprAvailableLiquidity(MARKET, 1000), expected, "APR liquidity depth drifted");
+        assertEq(expected, handler.totalActiveLiquidityCapacity(), "position sum != handler liquidity ghost");
+    }
+
     /// @notice R10: For every loan pool, proceeds + sum(received) == drawn + repaid.
     ///         This verifies that recovered funds are fully accounted for: either still
     ///         in the pool's proceeds pot or already paid out to lenders.

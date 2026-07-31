@@ -1,5 +1,5 @@
 import { parseEventLogs, type Address, type Log } from "viem";
-import { eligibilityErrorNames, STALE_LIQUIDITY_REASONS } from "./errors";
+import { eligibilityErrorNames, REBUILD_STALE_REASONS, STALE_LIQUIDITY_REASONS } from "./errors";
 import { ovrfloLendingAbi } from "./generated";
 import { BPS } from "./lending-math";
 import type { TickDepth } from "./router";
@@ -58,6 +58,7 @@ export type BorrowErrorKind = "stale" | "terminal" | "retryable";
 export function classifyBorrowError(error: unknown): BorrowErrorKind {
   const message = error instanceof Error ? error.message : String(error);
   if (STALE_LIQUIDITY_REASONS.some((reason) => message.includes(reason))) return "stale";
+  if (REBUILD_STALE_REASONS.some((reason) => message.includes(reason))) return "stale";
   if (message.includes("OVRFLOLending:")) return "terminal";
   if (eligibilityErrorNames.some((name) => message.includes(name))) return "terminal";
   return "retryable";
