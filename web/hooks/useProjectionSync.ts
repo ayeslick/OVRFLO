@@ -26,8 +26,25 @@ import { canStartBrowserDiscovery } from "@/lib/browser-runtime";
 
 type ProjectionTransportRole = "primary" | "verifier";
 
-let primaryClient: ProjectionReadClient | undefined;
-let verifierClient: ProjectionReadClient | undefined;
+// Cached per URL rather than as bare singletons: a credential forward-roll
+// (docs/operations/rpc-credential-forward-roll.md) or an env change must not
+// leave every later getProjectionClient() call silently pinned to the
+// transport that was active at first render.
+const clientsByUrl = new Map<string, ProjectionReadClient>();
+
+function clientFor(url: string): ProjectionReadClient {
+  let client = clientsByUrl.get(url);
+  if (!client) {
+    client = createProjectionReadClient(
+      createPublicClient({
+        chain: mainnet,
+        transport: createHistoricalTransport(url),
+      }),
+    );
+    clientsByUrl.set(url, client);
+  }
+  return client;
+}
 
 function verifierRpcUrl(): string | null {
   return rpcUrls.find((candidate) => candidate !== historicalRpcUrl) ?? null;
@@ -37,13 +54,7 @@ export function getProjectionClient(
   role: ProjectionTransportRole,
 ): ProjectionReadClient {
   if (role === "primary") {
-    primaryClient ??= createProjectionReadClient(
-      createPublicClient({
-        chain: mainnet,
-        transport: createHistoricalTransport(historicalRpcUrl),
-      }),
-    );
-    return primaryClient;
+    return clientFor(historicalRpcUrl);
   }
 
   const url = verifierRpcUrl();
@@ -52,13 +63,7 @@ export function getProjectionClient(
       "Claim All requires a second RPC provider distinct from the historical projection provider",
     );
   }
-  verifierClient ??= createProjectionReadClient(
-    createPublicClient({
-      chain: mainnet,
-      transport: createHistoricalTransport(url),
-    }),
-  );
-  return verifierClient;
+  return clientFor(url);
 }
 
 type ProjectionQueryInput<T> = {

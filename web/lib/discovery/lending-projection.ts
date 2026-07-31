@@ -1,5 +1,6 @@
 import { decodeEventLog, encodeEventTopics, isAddressEqual, type Address, type Hex } from "viem";
 import { ovrfloLendingAbi } from "../abis";
+import { ZERO_ADDRESS } from "../config";
 import type { BlockIdentity, ValidatedLog } from "./types";
 
 export const LIQUIDITY_REASON_V1_SUPPLY = 1;
@@ -327,10 +328,10 @@ export function compareClaimAllCandidates(primary: CandidateProjection, verifier
 
 function validateCheckpoint(checkpoint: LiquidityCheckpoint): void {
   if (checkpoint.liquidityId === 0n) throw new Error("Liquidity checkpoint id is zero");
-  if (checkpoint.lender === "0x0000000000000000000000000000000000000000") {
+  if (isAddressEqual(checkpoint.lender, ZERO_ADDRESS)) {
     throw new Error("Liquidity checkpoint lender is zero");
   }
-  if (checkpoint.market === "0x0000000000000000000000000000000000000000") {
+  if (isAddressEqual(checkpoint.market, ZERO_ADDRESS)) {
     throw new Error("Liquidity checkpoint market is zero");
   }
   const referenceRequired =
