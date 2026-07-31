@@ -21,7 +21,6 @@ function productionEnvironment() {
     NEXT_PUBLIC_RPC_URL: "https://eth-mainnet.g.alchemy.com/v2/public-key",
     NEXT_PUBLIC_RPC_FALLBACK_URLS: "https://fallback.example.com",
     NEXT_PUBLIC_HISTORICAL_RPC_URL: "https://history.example.com",
-    NEXT_PUBLIC_PONDER_URL: "https://ponder.example.com",
   };
 }
 
@@ -32,7 +31,7 @@ describe("CSP generation", () => {
     expect(csp).toContain("https://eth-mainnet.g.alchemy.com");
     expect(csp).toContain("https://fallback.example.com");
     expect(csp).toContain("https://history.example.com");
-    expect(csp).toContain("https://ponder.example.com");
+    expect(csp).not.toContain("ponder");
     expect(csp).not.toMatch(/localhost|127\.0\.0\.1/);
   });
 

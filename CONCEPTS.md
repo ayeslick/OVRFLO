@@ -158,11 +158,7 @@ A loan book is not an on-chain concept; it's the frontend's `useLoanBook` hook (
 
 ### Ponder
 
-The off-chain indexer the frontend queries for data assembled from historical chain events rather than a direct RPC read. Current consumers: held-stream discovery for a connected wallet, and the borrow-demand ladder.
-
-Ponder is a different reliability domain than a direct on-chain read: it can lag behind chain head while backfilling, or be briefly unreachable, independent of whether RPC reads are succeeding at the same moment. Frontend surfaces that combine Ponder-sourced data with on-chain data should treat a Ponder failure and an on-chain read failure as distinct, independently-degrading states rather than folding them into one combined error or loading flag.
-
-Ponder is also a different *trust* domain, not only a different reliability one — see Stream discovery for the rule governing which questions it is allowed to answer.
+The off-chain indexer the frontend used to query for data assembled from historical chain events rather than a direct RPC read (held-stream discovery for a connected wallet, and the borrow-demand ladder). Removed 2026-07-31 (plan 005 U12) in favor of browser-side verified-log projection plus direct contract hydration — see `web/lib/discovery/live-projection.ts`. See Stream discovery below for the rule now governing which questions on-chain discovery is allowed to answer.
 
 ### Stream discovery
 
@@ -172,9 +168,9 @@ The split is a trust boundary, not an optimisation. An indexer naming a stream i
 
 ### Position groups
 
-The three-way split the frontend's position list uses to present one connected user's holdings for a market: LENDING (liquidityPositions plus the lender half of their loan book — see Loan book), BORROWING (the borrower half of their loan book), and STREAMS (Sablier streams held, discovered via Ponder).
+The three-way split the frontend's position list uses to present one connected user's holdings for a market: LENDING (liquidityPositions plus the lender half of their loan book — see Loan book), BORROWING (the borrower half of their loan book), and STREAMS (Sablier streams held, discovered via the browser-side on-chain event projection — see Stream discovery).
 
-LENDING and BORROWING are both sourced from on-chain reads; STREAMS is sourced from Ponder. Because the two sources are different reliability domains (see Ponder), the groups render and fail independently — a Ponder outage hides only STREAMS, and an on-chain read failure hides only LENDING/BORROWING.
+LENDING and BORROWING are sourced from direct contract reads; STREAMS is sourced from the same on-chain projection transport (verified-log scan plus direct Sablier hydration) but through a different code path. The groups still render and fail independently — a projection-layer failure hides only STREAMS, and a direct-read failure hides only LENDING/BORROWING — but the source for all three is now on-chain data rather than a separate indexer.
 
 ### Stale-recovery classification
 

@@ -38,15 +38,9 @@ export function buildSecurityHeaders(environment = process.env) {
     "NEXT_PUBLIC_HISTORICAL_RPC_URL",
     profile,
   );
-  const indexerOrigin = requiredOrigin(
-    environment.NEXT_PUBLIC_PONDER_URL ??
-      (profile === "local" ? "http://localhost:42069" : undefined),
-    "NEXT_PUBLIC_PONDER_URL",
-    profile,
-  );
   const connectSrc = [
     "'self'",
-    ...new Set([...rpcOrigins, historicalOrigin, indexerOrigin]),
+    ...new Set([...rpcOrigins, historicalOrigin]),
     ...WALLET_ORIGINS_HTTP,
     ...WALLET_ORIGINS_WSS,
   ];

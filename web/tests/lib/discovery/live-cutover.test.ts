@@ -35,22 +35,18 @@ describe("U9 live discovery cutover", () => {
     }
   });
 
-  it("routes the legacy indexer through parity instrumentation only", () => {
-    const liveConsumers = [
+  it("keeps the deleted indexer stack out of every source tree", () => {
+    const consumers = [
       ...sourceFiles("components"),
-      ...sourceFiles("hooks").filter(
-        (path) => path !== "hooks/useIndexerSync.ts",
-      ),
+      ...sourceFiles("hooks"),
+      ...sourceFiles("lib"),
       ...sourceFiles("tests/e2e"),
     ];
 
-    for (const consumer of liveConsumers) {
+    for (const consumer of consumers) {
       expect(source(consumer), consumer).not.toMatch(
-        /from ["']@?\/?.*(?:ponder|useIndexerSync)["']/,
+        /from ["']@?\/?.*(?:\/ponder|useIndexerSync)["']/,
       );
     }
-    const parity = source("lib/discovery/parity-instrumentation.ts");
-    expect(parity).toContain("fetchBorrowDemand");
-    expect(parity).toContain("fetchHeldStreamIds");
   });
 });

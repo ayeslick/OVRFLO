@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # bootstrap-devnet.sh — deploy + seed OVRFLO against a Tenderly Virtual Testnet
 # and write web/.env.devnet pointing the UI at the VTN. Devnet stream discovery
-# requires a Ponder instance indexing that same VTN RPC.
 #
 # Idempotency (R8): EXISTING_FACTORY=<0x...> reuses an already-deployed
 # factory and only re-seeds the dev wallet. Otherwise a fresh deploy runs.
@@ -10,7 +9,6 @@
 #   PRIVATE_KEY        hex deployer key, pre-funded on the VTN (~10 ETH)
 #   DEV_WALLET         address receiving PT + stETH for UI testing
 #   TENDERLY_RPC_URL   full Tenderly VTN JSON-RPC URL
-#   PONDER_URL         SQL endpoint for a Ponder instance on that VTN
 #
 # Optional env:
 #   REOWN_PROJECT_ID       baked into web/.env.devnet
@@ -37,7 +35,6 @@ require_cmd npm   "Install Node 18+."
 require_env PRIVATE_KEY
 require_env DEV_WALLET
 require_env TENDERLY_RPC_URL "Create a Tenderly Virtual Testnet and export its JSON-RPC URL."
-require_env PONDER_URL "Run a Ponder instance against the same VTN and export its /sql URL."
 
 # chain-id must be 1 — OVRFLO hardcodes mainnet protocol deps and the UI
 # enforces the same check. Tenderly's VTNs are configured mainnet by default.
@@ -62,7 +59,6 @@ DEPLOYMENT_RPC_URL="$TENDERLY_RPC_URL" \
 
 echo "[2/2] writing web/.env.devnet"
 RPC_URL="$TENDERLY_RPC_URL" \
-PONDER_URL="$PONDER_URL" \
   tools/scripts/write-env.sh devnet
 
 echo

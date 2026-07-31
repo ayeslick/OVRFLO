@@ -11,8 +11,7 @@ const EMPTY_STREAMS: readonly never[] = [];
 /**
  * Discovers OVRFLO-origin streams from verified logs, intersects them with
  * recipient Transfer logs, then hydrates every surviving ID directly from
- * Sablier at the projection block. Ponder remains available only to the U9
- * parity harness.
+ * Sablier at the projection block.
  */
 export function useHeldStreams(user: Address | null | undefined) {
   const registry = useOvrflos(factoryAddress);

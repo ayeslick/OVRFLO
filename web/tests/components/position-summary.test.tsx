@@ -9,9 +9,6 @@ function testAddress(id: number): Address {
 
 const userA = testAddress(0xa11);
 
-vi.mock("@/hooks/useIndexerSync", () => ({
-  useIndexerSync: () => ({ syncedBlock: 100n, headBlock: 100n, lagBlocks: 0n, lagging: false }),
-}));
 vi.mock("wagmi", () => ({
   useBlockNumber: () => ({ data: 100n }),
   useConnection: () => ({ status: "connected", addresses: [userA], chainId: 1 }),

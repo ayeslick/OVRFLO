@@ -1,5 +1,27 @@
 # Test accountability
 
+## 2026-07-31 — U12 Ponder/Envio deletion (ticket 11)
+
+Owner: Claude ticket-11 implementation
+
+- `web/tests/lib/ponder.test.ts` and `web/tests/indexer/scope-guard.test.ts`:
+  deleted with the modules they tested (`lib/ponder.ts`,
+  `hooks/useIndexerSync.ts`, the Ponder runtime under `tools/ponder/`). Stream
+  and demand discovery are covered at their new owners:
+  `tests/lib/discovery/live-projection.test.ts` (verified-log projection),
+  `tests/hooks/useHeldStreams.test.tsx`, `tests/hooks/useBorrowDemand` paths,
+  and the seeded-fork E2E suite running without any indexer process. Final
+  streams/demand parity between projection and Ponder was recorded green
+  against the post-`gatherLiquidity` ABI before deletion (ticket 11 note).
+- `web/tests/lib/discovery/live-cutover.test.ts`: the "parity instrumentation
+  only" test became "keeps the deleted indexer stack out of every source
+  tree" — the instrumentation module it inspected is deleted, so the
+  assertion tightened from an allowlisted exception to a repo-wide negative.
+- `web/tests/scripts/security-packaging.test.ts`: the CSP assertion flipped
+  from "includes the Ponder origin" to "contains no ponder origin".
+- Component tests: dead `vi.mock("@/hooks/useIndexerSync")` boilerplate
+  stripped from 8 files; no assertion changed.
+
 ## 2026-07-31 — U11 `gatherLiquidity` removal (ticket 10)
 
 Owner: Claude ticket-10 implementation

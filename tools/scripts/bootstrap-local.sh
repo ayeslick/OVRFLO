@@ -8,7 +8,6 @@
 #      docs/solutions/architecture-patterns/live-pendle-market-discovery-for-seed-and-fork-fixtures.md)
 #      (PID written to .bootstrap.pid; refuse a second up without :clean)
 #   3. script/seed-local.sh  (deploy factory + ovrflo + oracles + seed dev wallet)
-#   4. npm --prefix web run ponder:dev  (starts Ponder stream discovery)
 #   5. tools/scripts/write-env.sh local  (web/.env.local)
 #   6. npm --prefix web run dev  (foreground; Ctrl-C unwinds everything
 #      unless BOOT_NO_UI=1, in which case bootstrap exits 0 and the
@@ -44,7 +43,6 @@ require_cmd forge "Install Foundry: curl -L https://foundry.paradigm.xyz | bash"
 require_cmd cast  "Install Foundry: curl -L https://foundry.paradigm.xyz | bash"
 require_cmd jq    "brew install jq"
 require_cmd npm   "Install Node 18+."
-require_cmd curl  "curl is required for the Ponder readiness check."
 require_env MAINNET_RPC_URL "Export your mainnet archive RPC (Alchemy, QuickNode, paid Infura)."
 
 # ─── anvil fork ──────────────────────────────────────────────────────────────
@@ -56,7 +54,7 @@ if [ -f "$ANVIL_PID_FILE" ]; then
   rm -f "$ANVIL_PID_FILE"
 fi
 
-echo "[1/5] starting anvil fork at live mainnet head"
+echo "[1/4] starting anvil fork at live mainnet head"
 anvil \
   --fork-url "$MAINNET_RPC_URL" \
   --chain-id 1 \
@@ -82,44 +80,11 @@ FORK_START_BLOCK=$(cast block-number --rpc-url http://127.0.0.1:8545)
 echo "      pid=$ANVIL_PID  rpc=http://127.0.0.1:8545  block=$FORK_START_BLOCK  log=$ANVIL_LOG"
 
 # ─── seed ─────────────────────────────────────────────────────────────────────
-echo "[2/5] seeding OVRFLO (factory + ovrflo + lending + PT/wstETH to dev/lender wallets)"
+echo "[2/4] seeding OVRFLO (factory + ovrflo + lending + PT/wstETH to dev/lender wallets)"
 ./script/seed-local.sh
 
-# ─── ponder ───────────────────────────────────────────────────────────────────
-echo "[3/5] starting local Sablier Ponder indexer (sql:http://localhost:42069/sql)"
-LOCAL_FACTORY=$(jq -r '.factory' deployments/local.json)
-PONDER_RPC_URL=http://127.0.0.1:8545 PONDER_OVRFLO_FACTORY="$LOCAL_FACTORY" PONDER_START_BLOCK="$FORK_START_BLOCK" npm --prefix web run ponder:dev >".bootstrap.ponder.log" 2>&1 &
-PONDER_PID=$!
-echo "$PONDER_PID" > ".bootstrap.ponder.pid"
-for _ in $(seq 1 60); do
-  if curl -fsS http://localhost:42069/status >/dev/null 2>&1; then
-    break
-  fi
-  sleep 0.5
-done
-if ! kill -0 "$PONDER_PID" 2>/dev/null; then
-  echo "--- ponder log (last 80 lines) ---" >&2
-  tail -n 80 ".bootstrap.ponder.log" >&2 || true
-  rm -f ".bootstrap.ponder.pid"
-  fail "ponder exited before accepting requests."
-fi
-echo "      pid=$PONDER_PID  log=.bootstrap.ponder.log  sql=http://localhost:42069/sql"
-
-# ─── ponder factory health check ─────────────────────────────────────────────
-# Confirms the factory address Ponder is watching actually emitted a
-# LendingDeployed event, so a wrong address (e.g. silently defaulted to the
-# zero address) is visible immediately instead of surfacing later as
-# "NO DEMAND DATA" everywhere.
-LENDING_DEPLOYED_COUNT=$(cast logs "LendingDeployed(address,address)" \
-  --address "$LOCAL_FACTORY" --from-block "$FORK_START_BLOCK" --rpc-url http://127.0.0.1:8545 --json | jq 'length')
-if [ "$LENDING_DEPLOYED_COUNT" -gt 0 ]; then
-  echo "      health check: factory $LOCAL_FACTORY emitted $LENDING_DEPLOYED_COUNT LendingDeployed event(s) — Ponder should index it"
-else
-  echo "      WARNING: factory $LOCAL_FACTORY emitted zero LendingDeployed events — Ponder's borrow-demand indexing will find nothing" >&2
-fi
-
 # ─── env.local ────────────────────────────────────────────────────────────────
-echo "[4/5] writing web/.env.local"
+echo "[3/4] writing web/.env.local"
 tools/scripts/write-env.sh local
 
 # ─── ui ───────────────────────────────────────────────────────────────────────
@@ -127,15 +92,13 @@ if [ "${BOOT_NO_UI:-0}" = "1" ]; then
   echo
   echo "=== bootstrap:local complete (BOOT_NO_UI=1) ==="
   echo "anvil pid : $ANVIL_PID"
-  echo "ponder pid: $PONDER_PID"
   echo "rpc       : http://127.0.0.1:8545"
-  echo "sql       : http://localhost:42069/sql"
   echo "env file  : web/.env.local"
   echo "teardown  : npm --prefix web run bootstrap:local:clean"
   exit 0
 fi
 
-echo "[5/5] launching next dev (Ctrl-C to stop; anvil + envio keep running)"
+echo "[4/4] launching next dev (Ctrl-C to stop; anvil keeps running)"
 echo "      teardown: npm --prefix web run bootstrap:local:clean"
 echo
 exec npm --prefix web run dev

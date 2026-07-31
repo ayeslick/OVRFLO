@@ -10,9 +10,6 @@ function testAddress(id: number): Address {
 
 const walletState = { address: testAddress(0xa11) as Address | undefined };
 
-vi.mock("@/hooks/useIndexerSync", () => ({
-  useIndexerSync: () => ({ syncedBlock: 100n, headBlock: 100n, lagBlocks: 0n, lagging: false }),
-}));
 vi.mock("wagmi", () => ({
   useBlockNumber: () => ({ data: 100n }),
   useConnection: () => ({

@@ -26,8 +26,6 @@ const env = {
   rpcFallbackUrls: process.env.NEXT_PUBLIC_RPC_FALLBACK_URLS,
   historicalRpcUrl: process.env.NEXT_PUBLIC_HISTORICAL_RPC_URL,
   reownProjectId: process.env.NEXT_PUBLIC_REOWN_PROJECT_ID,
-  ponderUrl: process.env.NEXT_PUBLIC_PONDER_URL,
-  sablierIndexerUrl: process.env.NEXT_PUBLIC_SABLIER_INDEXER_URL,
   vercelEnv: process.env.VERCEL_ENV,
   nodeEnv: process.env.NODE_ENV,
   deployableBuild: process.env.OVRFLO_DEPLOYABLE_BUILD,
@@ -245,11 +243,6 @@ export const historicalRpcUrl = parseUrl(
   runtimeProfile,
 );
 export const reownProjectId = parseReownProjectId(runtimeProfile);
-export const ponderUrl = optionalUrl(
-  env.ponderUrl ?? env.sablierIndexerUrl,
-  env.ponderUrl ? "NEXT_PUBLIC_PONDER_URL" : "NEXT_PUBLIC_SABLIER_INDEXER_URL",
-  runtimeProfile,
-);
 
 export function isConfiguredAddress(address: Address | null | undefined) {
   return Boolean(address && address.toLowerCase() !== ZERO_ADDRESS);

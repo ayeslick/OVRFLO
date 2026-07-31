@@ -234,7 +234,7 @@ describe("liquidity cards", () => {
 });
 
 describe("per-source error isolation", () => {
-  it("still shows the LIQUIDITY card when the streams (Ponder) source errors", () => {
+  it("still shows the LIQUIDITY card when the stream-discovery source errors", () => {
     hookData.liquidity = [position(1, 1100, 50n, USER)];
     hookData.streamsError = new Error("indexer unreachable");
     renderList();
@@ -261,7 +261,7 @@ describe("per-source error isolation", () => {
   });
 });
 
-// U9 replaces the Ponder cache with an explicit block-pinned projection
+// U9 replaced the indexer cache with an explicit block-pinned projection
 // outcome. A failed projection cannot safely serve an unverifiable cached set.
 describe("direct stream projection failure states (R43/R44)", () => {
   it("fails closed instead of rendering cached stream data when discovery is unavailable", () => {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { erc20Abi as viemErc20Abi } from "viem";
-import sablierVerifiedAbi from "../../../tools/envio/abi/SablierV2LockupLinear.json";
+import sablierVerifiedAbi from "../fixtures/SablierV2LockupLinear.verified-abi.json";
 import { erc20Abi, ovrfloLendingAbi, sablierLockupAbi } from "@/lib/abis";
 
 const sablierFunctions = [

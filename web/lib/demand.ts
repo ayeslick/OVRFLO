@@ -1,7 +1,7 @@
 import type { Address } from "viem";
 
 // Pure aggregation for the trailing 30-day borrow-demand column (ticket 09).
-// Fetching stays in lib/ponder.ts; the hook decides reachable-vs-empty.
+// Events come from the browser-side projection; the hook decides reachable-vs-empty.
 
 export const DEMAND_WINDOW_SECONDS = 30n * 24n * 60n * 60n;
 

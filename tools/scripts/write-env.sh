@@ -14,9 +14,6 @@
 # Env overrides:
 #   RPC_URL                          — NEXT_PUBLIC_RPC_URL (default: per-profile)
 #   REOWN_PROJECT_ID                 — NEXT_PUBLIC_REOWN_PROJECT_ID
-#   PONDER_URL                       — NEXT_PUBLIC_PONDER_URL
-#                                      (default: localhost:42069/sql for local;
-#                                      required for devnet)
 #   DEPLOYMENTS_JSON                 — path override (default: deployments/<network>.json)
 #   OUT                              — output path override (default: web/.env.<local|devnet>)
 
@@ -85,13 +82,11 @@ case "$NETWORK" in
     # one Anvil, so publish it under a second hostname alias; corroboration
     # semantics are exercised, provider independence is not (local-only).
     DEFAULT_RPC_FALLBACKS="http://localhost:8545"
-    DEFAULT_PONDER="http://localhost:42069/sql"
     OUT_DEFAULT="web/.env.local"
     ;;
   devnet)
     # Intentionally empty — operator must supply TENDERLY_RPC_URL via RPC_URL.
     DEFAULT_RPC=""
-    DEFAULT_PONDER=""
     OUT_DEFAULT="web/.env.devnet"
     ;;
 esac
@@ -99,16 +94,11 @@ esac
 RPC_URL="${RPC_URL:-$DEFAULT_RPC}"
 RPC_FALLBACK_URLS="${RPC_FALLBACK_URLS:-${DEFAULT_RPC_FALLBACKS:-}}"
 HISTORICAL_RPC_URL="${HISTORICAL_RPC_URL:-$RPC_URL}"
-PONDER_URL="${PONDER_URL:-${NEXT_PUBLIC_PONDER_URL:-$DEFAULT_PONDER}}"
 REOWN_PROJECT_ID="${REOWN_PROJECT_ID:-}"
 OUT="${OUT:-$OUT_DEFAULT}"
 
 if [ "$NETWORK" = "devnet" ] && [ -z "$RPC_URL" ]; then
   echo "write-env: RPC_URL is required for devnet (Tenderly Virtual Testnet URL)." >&2
-  exit 1
-fi
-if [ "$NETWORK" = "devnet" ] && [ -z "$PONDER_URL" ]; then
-  echo "write-env: PONDER_URL is required for devnet stream discovery." >&2
   exit 1
 fi
 
@@ -145,13 +135,10 @@ trap 'rm -f "$TMP"' EXIT
     echo "# NEXT_PUBLIC_REOWN_PROJECT_ID must be set before running the UI."
     echo "# NEXT_PUBLIC_REOWN_PROJECT_ID="
   fi
-  if [ -n "$PONDER_URL" ]; then
-    echo "NEXT_PUBLIC_PONDER_URL=$PONDER_URL"
-  fi
 } > "$TMP"
 
 mv "$TMP" "$OUT"
 trap - EXIT
 
 echo "write-env: wrote $OUT"
-echo "           factory=$FACTORY@$FACTORY_BLOCK  rpc=${RPC_URL:-<unset>}  ponder=${PONDER_URL:-<unset>}"
+echo "           factory=$FACTORY@$FACTORY_BLOCK  rpc=${RPC_URL:-<unset>}"

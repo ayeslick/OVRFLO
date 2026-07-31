@@ -533,22 +533,21 @@ npm --prefix web run bootstrap:local
 
 This orchestrates (in order):
 
-1. `anvil --fork-url $MAINNET_RPC_URL --chain-id 1 --fork-block-number 24609670`
-   (PID tracked in `.bootstrap.pid`).
-2. `script/seed-local.sh` — deploys OVRFLO + factory + token, approves the
-   wstETH markets, and seeds PT + stETH to anvil account #1. Writes
+1. `anvil --fork-url $MAINNET_RPC_URL --chain-id 1` forked at the live
+   mainnet head (PID tracked in `.bootstrap.pid`).
+2. `script/seed-local.sh` — deploys OVRFLO + factory + token, discovers live
+   Pendle markets, and seeds PT + wstETH to the dev/lender wallets. Writes
    `deployments/local.json`.
-3. `npm run envio:up` — starts the local Sablier indexer under
-   [`tools/envio/`](tools/envio/README.md) (Postgres:5433, Hasura:8080,
-   indexer:8081) via Envio's internal docker stack.
-4. `tools/scripts/write-env.sh local` — renders `web/.env.local` from the
+3. `tools/scripts/write-env.sh local` — renders `web/.env.local` from the
    deployment artifact.
-5. `npm run dev` — boots `next dev` against the local stack.
+4. `npm run dev` — boots `next dev` against the local stack.
 
-Each step is also runnable standalone: `anvil:fork`, `deploy:seed:local`,
-`envio:up`, `env:write:local`, `ui:dev`. Teardown:
-`npm --prefix web run bootstrap:local:clean` kills anvil + envio, wipes
-`web/.env.local` + Envio's Postgres volume.
+No indexer or backend process is involved: the frontend discovers positions,
+loans, streams, and demand from standard RPC event logs plus direct contract
+hydration. Each step is also runnable standalone: `anvil:fork`,
+`deploy:seed:local`, `env:write:local`, `ui:dev`. Teardown:
+`npm --prefix web run bootstrap:local:clean` kills anvil and the dev server
+and wipes `web/.env.local`.
 
 The seed driver uses `forge create` + `cast send` instead of
 `forge script --broadcast`; see the header comment in
@@ -562,8 +561,9 @@ npm --prefix web run bootstrap:devnet
 ```
 
 Runs `forge script SeedDevnet.s.sol --broadcast` against the VTN and writes
-`web/.env.devnet`. Devnet uses the hosted Sablier indexer (no local Envio).
-Teardown: `npm --prefix web run bootstrap:devnet:clean`.
+`web/.env.devnet`. Discovery runs in the browser against the VTN RPC — no
+indexer service is required. Teardown:
+`npm --prefix web run bootstrap:devnet:clean`.
 
 ## Integration Guide
 
