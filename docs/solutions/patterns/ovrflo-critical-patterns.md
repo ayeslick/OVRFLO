@@ -138,39 +138,38 @@ const logs = await publicClient.getLogs({
 // current recipient will never see this stream in their dashboard.
 ```
 
-### ✅ CORRECT (ask whatever is authoritative for current ownership)
+### ✅ CORRECT (discover candidates, then ask the token for current ownership)
 
 ```typescript
-// Option A — indexer that tracks current recipient (preferred for dashboards):
-const { data } = await fetch(SABLIER_ENVIO_URL, {
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({
-    query: GET_USER_STREAMS,
-    variables: {
-      user: user.toLowerCase(),
-      senders: ovrfloAddresses.map((a) => a.toLowerCase()),
-    },
-  }),
-}).then((r) => r.json());
+// Candidate discovery may use verified OVRFLO Deposited logs intersected with
+// Sablier Transfer logs to the connected wallet (web/lib/discovery/).
+// That answers "which ids might be mine?" — never "who owns this now?"
+const candidateIds = discoverHeldStreamCandidates({ origins, transfers, account });
 
-// Option B — ask the token contract directly (preferred for single-stream views):
+// Authority for ownership / eligibility is always Sablier hydration:
 const owner = await publicClient.readContract({
   address: SABLIER_LOCKUP,
   abi: sablierLockupAbi,
   functionName: "ownerOf",
   args: [tokenId],
 });
+// Drop any candidate whose ownerOf is not the connected address. Gate fields
+// (sender, asset, endTime, canceled, depleted) come from getStream, not from
+// the discovery projection.
 ```
 
 **Why:** ERC-721 tokens carry mutable ownership. The only canonical source of
-"who owns token `X` right now" is the NFT contract itself (via `ownerOf`, or
-an indexer that tracks the `Transfer` events it emits). Events from *upstream*
-protocols — OVRFLO's `Deposited`, Pendle's `PTBought`, anything that records a
-recipient at mint time — answer a different question: "who did the protocol
-first pay out to?". Using them as a proxy for current ownership breaks silently
-the moment the NFT is transferred, which is exactly what NFTs are designed to
-support.
+"who owns token `X` right now" is the NFT contract itself (via `ownerOf`).
+Events from *upstream* protocols — OVRFLO's `Deposited`, Pendle's `PTBought`,
+anything that records a recipient at mint time — answer a different question:
+"who did the protocol first pay out to?". Using mint events alone as a proxy
+for current ownership breaks silently the moment the NFT is transferred.
+
+Browser-side discovery may still *scan* `Deposited` and `Transfer` logs to
+build a candidate id set. That scan is a hint/candidate generator, not an
+ownership authority — see
+`docs/solutions/security-issues/indexer-is-a-discovery-hint-not-an-authority.md`
+and `web/lib/discovery/live-projection.ts`.
 
 **Placement/Context:** Any UI code path that discovers, lists, or gates on
 NFTs the user currently owns. Applies to Sablier stream NFTs (OVRFLO's primary
@@ -181,16 +180,18 @@ or equivalent, never derived protocol state.
 
 **How to detect violation:**
 
-- Grep check that `eth_getLogs`-style discovery of user-owned NFTs is
-  absent from `web/lib/**`:
+- Grep for paths that treat OVRFLO `Deposited` (or other mint-time) fields as
+  current ownership / eligibility without a following `ownerOf` (and related
+  Sablier hydration) filter:
 
   ```bash
-  rg "event Deposited|watchContractEvent|getLogs.*Deposited" web/lib
+  rg "Deposited|ownerOf" web/lib/discovery web/hooks/useHeldStreams.ts
   ```
 
-- Unit test: given a mocked indexer response where `recipient != originalMinter`,
-  the UI MUST still show the stream. `web/tests/lib/sablier.test.ts` covers this
-  for Sablier today; extend it for any future NFT integration.
+- Unit / projection tests: a transferred stream must appear for the new owner
+  and disappear for the old one; a candidate whose `ownerOf` is not the
+  connected address must be dropped. See `web/tests/lib/discovery/` and
+  `docs/solutions/security-issues/indexer-is-a-discovery-hint-not-an-authority.md`.
 
 **Documented in:** [`docs/solutions/integration-issues/transferred-sablier-nfts-invisible-WebUI-20260421.md`](../integration-issues/transferred-sablier-nfts-invisible-WebUI-20260421.md)
 

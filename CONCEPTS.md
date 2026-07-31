@@ -142,11 +142,19 @@ When that race makes the scenario's target action unreachable because a client-s
 
 ## Web app processes
 
+### Runtime profile
+
+The web app's explicit operating mode: `local` for developer/fork convenience, or `production` for mainnet packaging and runtime. Production fail-closed checks (required anchors, zero-address rejection, verified deployment artifact binding) apply only in production. A deployable production build must refuse to activate the local profile — local relaxations must never ride into a packaged artifact.
+
+### Reviewed action
+
+A user-confirmed write proposal that still must be rebuilt and identity-checked before every wallet prompt and submission. "Reviewed" is a latch, not a capability: chain state and the connected account can move between review and broadcast, so the executor rebuilds the exact calldata and rechecks the latched account/chain before approve or submit. Material drift (including borrow route changes) returns the user to review rather than silently resubmitting. Reviewed numeric bounds (for example a deposit min-to-wallet) are honored across mid-flow block advances while they remain as protective as the fresh floor; outside that window the rebuild forces re-review instead of recomputing silently on every block.
+
 ### Claim-all
 
 The batch exit flow where a connected lender reviews and sequentially confirms all pending pool share claims and withdrawable Sablier stream balances from the position summary strip.
 
-Each step is a separate on-chain transaction: pool claims batch per lending contract via multicall, then individual stream withdrawals. The plan shown for review is a snapshot taken when the flow opens, but the plan actually submitted is recomputed from live data at the moment of confirmation — and again on resume — so work claimed elsewhere in the interval is never re-submitted. A recomputation that comes back empty is reported as such rather than treated as a completed queue.
+Each step is a separate on-chain transaction: pool claims batch per lending contract via multicall, then individual stream withdrawals. The plan shown for review is a snapshot taken when the flow opens, but the plan actually submitted is recomputed from live data at the moment of confirmation — and again on resume — so work claimed elsewhere in the interval is never re-submitted. A recomputation that comes back empty is reported as such rather than treated as a completed queue. Resume subtracts already-confirmed and skipped claim IDs so an expanded pool group cannot replay finished work; changed or newly appearing constituents require explicit re-review before the queue continues.
 
 A step failure — including a transaction that mines but reverts on-chain, not only a signature rejection or transport error — halts the queue immediately. Already-confirmed steps stay checked off; resuming always re-plans from live data rather than retrying the step that failed.
 
@@ -158,13 +166,13 @@ A loan book is not an on-chain concept; it's the frontend's `useLoanBook` hook (
 
 ### Ponder
 
-The off-chain indexer the frontend used to query for data assembled from historical chain events rather than a direct RPC read (held-stream discovery for a connected wallet, and the borrow-demand ladder). Removed 2026-07-31 (plan 005 U12) in favor of browser-side verified-log projection plus direct contract hydration — see `web/lib/discovery/live-projection.ts`. See Stream discovery below for the rule now governing which questions on-chain discovery is allowed to answer.
+The off-chain indexer the frontend used to query for data assembled from historical chain events rather than a direct RPC read (held-stream discovery for a connected wallet, and the borrow-demand ladder). Removed in favor of browser-side verified-log projection plus direct contract hydration. See Stream discovery below for the rule now governing which questions on-chain discovery is allowed to answer.
 
 ### Stream discovery
 
-Finding which Sablier streams a connected wallet may hold. The indexer answers this one question and nothing else; every value the app then displays or acts on is read from Sablier directly.
+Finding which Sablier streams a connected wallet may hold. Browser-side on-chain discovery answers this one question and nothing else; every value the app then displays or acts on is read from Sablier directly.
 
-The split is a trust boundary, not an optimisation. An indexer naming a stream id is a hint, not a claim of ownership — a stream whose on-chain owner is not the connected address is dropped rather than rendered, and the fields that decide whether a stream is eligible for an action are always re-read from chain. Discovery results are also three-valued: streams, no streams, and *unavailable*. The third must never be presented as the second, since "you hold nothing" and "this list cannot be trusted" call for opposite user responses. A previously-discovered set may be served past a discovery failure only within a bounded staleness window, after which it is discarded rather than shown behind a warning.
+The split is a trust boundary, not an optimisation. A discovery projection naming a stream id is a candidate set, not a claim of ownership — a stream whose on-chain owner is not the connected address is dropped rather than rendered, and the fields that decide whether a stream is eligible for an action are always re-read from chain. Discovery results are also three-valued: streams, no streams, and *unavailable*. The third must never be presented as the second, since "you hold nothing" and "this list cannot be trusted" call for opposite user responses. Partial or stale projections stay unavailable/preparing, never ready-empty or actionable. A previously-discovered set may be served past a discovery failure only within a bounded staleness window, after which it is discarded rather than shown behind a warning.
 
 ### Position groups
 
@@ -176,9 +184,9 @@ LENDING and BORROWING are sourced from direct contract reads; STREAMS is sourced
 
 The three-way sorting of a failed write transaction that decides what the form offers next: *stale* (on-chain liquidity or pricing moved between quoting and signing — refresh every on-chain read, show a "here's the new number" banner, and offer one explicit re-confirm), *terminal* (the input can never succeed, such as an ineligible stream or self-match — disable the action and say why, never invite a retry), or *retryable* (wallet rejection or transport failure — leave the action live).
 
-Classification is per flow, not global: the same revert can be terminal in one flow and stale in another (an ERC20 shortfall is a liquidity race inside a withdraw-then-supply multicall). A stale outcome is never presented as a dead-end error.
+Classification is per flow, not global: the same revert can be terminal in one flow and stale in another (an ERC20 shortfall is a liquidity race inside a withdraw-then-supply multicall). A stale outcome is never presented as a dead-end error. Pre-submit rebuild failures that only carry structured `errors` must still be surfaced as a single consumer-visible error so this classification can run — an `invalid` result that hides its payload dead-ends the recovery path.
 
-This classification only covers failures that populate the transaction's error signal (wallet rejection, transport failure, or a revert caught before broadcast). A transaction that mines but reverts on-chain populates no error at all and is surfaced as its own distinct failure state outside this three-way sort — see Claim-all above for the queue-level version of that state.
+This classification only covers failures that populate the transaction's error signal (wallet rejection, transport failure, a revert caught before broadcast, or a synthesized rebuild error). A transaction that mines but reverts on-chain populates no error at all and is surfaced as its own distinct failure state outside this three-way sort — see Claim-all above for the queue-level version of that state.
 
 ## Refactoring patterns
 

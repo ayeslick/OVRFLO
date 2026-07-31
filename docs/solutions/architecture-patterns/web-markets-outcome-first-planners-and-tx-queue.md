@@ -6,7 +6,7 @@ module: web
 problem_type: architecture_pattern
 component: frontend_stimulus
 severity: medium
-last_updated: 2026-07-27
+last_updated: 2026-07-31
 applies_when:
   - "Rebuilding or extending the OVRFLO web markets UI where borrow/claim flows depend on on-chain StreamPricing quotes and OVRFLOLending liquidity"
   - "Separating outcome-first routing and batch planning into pure TypeScript modules testable without React"
@@ -71,27 +71,51 @@ For on-chain rounding directions that display math must mirror, see [repayloan-e
 
 **Planner (`planClaimAll`)** is pure: batch pool claims per lending contract (multicall of `claimLoanPoolShare`), then individual stream claims. Ordering is deterministic — lending addresses ascending, loan ids ascending, stream ids ascending.
 
-**Runner (`useTxQueue`)** executes one tx at a time, advances only on receipt, invalidates after every confirmation, stops on failure, pauses on signer switch, and **`resume()` always takes a fresh plan** recomputed from live data — never a blind retry. "Advances only on receipt" means specifically `receipt.data.status === "success"`, not merely a resolved `receipt.isSuccess` — wagmi's `useWaitForTransactionReceipt` resolves without throwing for a transaction that mines but reverts, so the runner must read the receipt's own status to tell a confirmed step from a failed one. See [usetxqueue-on-chain-revert-treated-as-confirmed](../logic-errors/usetxqueue-on-chain-revert-treated-as-confirmed.md).
+**Runner (`useTxQueue`)** advances one row at a time, but it no longer owns
+simulate/sign/receipt/refresh itself. Callers inject a `ClaimAllQueueExecutor`
+(`confirm` + `retryRefresh`); the queue rebuilds every unsent row before the
+next confirm, pauses on invariant failures (account/chain/completeness), and
+**`resume()` always takes a fresh plan** recomputed from live data — never a
+blind retry. Receipt truth still means the mined receipt's own success status,
+not merely a resolved wait hook — see
+[usetxqueue-on-chain-revert-treated-as-confirmed](../logic-errors/usetxqueue-on-chain-revert-treated-as-confirmed.md).
 
 Pool claims encode a multicall; stream claims call Sablier `withdrawMax`. The modal signs nothing until **CONFIRM QUEUE**; RESUME recomputes from live props.
 
 ### 4. TanStack Query invalidation patterns
 
-**Coarse invalidation** after every write path (`useWriteFlow` and `useTxQueue`) via a shared helper so the two paths cannot drift:
+**Scoped invalidation** after a confirmed write via `invalidateOnChainReads`
+(predicate-match on touched contracts) plus **projection refresh** via
+`buildRefreshPlan` / `refreshQueryResources` so wagmi reads and discovery
+scopes stay coherent:
 
-```5:13:web/lib/invalidate.ts
-// Coarse post-write invalidation (plan KTD5/KTD10), shared by useWriteFlow and the
-// claim-all queue so the two paths cannot drift. wagmi v3 roots useReadContract /
-// useReadContracts keys at these string literals (verified against wagmi 3.7.3),
-// so prefix matching refetches every mounted on-chain read.
-export function invalidateAllOnChainReads(queryClient: QueryClient, user?: Address) {
-  queryClient.invalidateQueries({ queryKey: ["readContract"] });
-  queryClient.invalidateQueries({ queryKey: ["readContracts"] });
-  queryClient.invalidateQueries({ queryKey: streamKeys.held(user) });
-}
+```ts
+// web/lib/invalidate.ts — scoped wagmi refresh (R39)
+export function invalidateOnChainReads(
+  queryClient: QueryClient,
+  options: { contracts: readonly Address[]; user?: Address; streams?: boolean },
+) { /* predicate-match touched contracts under WAGMI_READ_ROOTS */ }
+
+// web/lib/query-resource-registry.ts — projection + contract refresh plan
+export function buildRefreshPlan(
+  resources: readonly TouchedResource[],
+  identity: ActionIdentity,
+): RefreshPlan { /* … */ }
 ```
 
-**Indexer lag retry** for Ponder-backed held streams: re-invalidate at 2s and 5s only if data unchanged, capped at three attempts total. `useWriteFlow` replaced per-form `invalidateKeys` arrays with this shared path.
+`useWriteFlow` declares `touchedResources` on the ready action and refreshes
+through the resource registry. `useTxQueue` no longer calls invalidation
+helpers directly — it injects an executor whose confirm/refresh path owns
+receipt-gated refresh (same registry contract).
+
+**Named exception:** `invalidateAllOnChainReads` remains the deliberately
+unscoped refresh for other-party stale-liquidity recovery (`useStaleRecovery`).
+Do not hand it an empty scoped set — that quietly turns recovery into a no-op.
+See [scoped-cache-invalidation-and-its-named-exception](./scoped-cache-invalidation-and-its-named-exception.md).
+
+Tick-scoped `market-depth` resources must also match whole-market projection
+keys (`aprBps` null) — see
+[tick-scoped-market-depth-refresh-must-match-whole-market-keys](../logic-errors/tick-scoped-market-depth-refresh-must-match-whole-market-keys.md).
 
 ### 5. Expandable table + overlay UX
 
@@ -117,7 +141,7 @@ The R1 strip aggregates STREAMS / SUPPLIED / LOANS / CLAIMABLE **per token symbo
 
 2. **Safety boundaries** — Display math is explicitly separated from transaction inputs. The router is price-blind so UI rate previews cannot drift into submitted calldata. Wallet-change guards prevent signing with stale form state after account switch.
 
-3. **Consistency under writes** — Shared coarse invalidation means single-tx forms and multi-tx claim-all queues refetch the same query keys. Indexer lag retry handles the one off-chain data source (held streams) without infinite polling loops.
+3. **Consistency under writes** — Shared refresh planning means single-tx forms and multi-tx claim-all queues refetch the same wagmi and projection query keys. Projection scopes for held streams / demand are invalidated from declared touched resources rather than unbounded polling loops. Claim-all's queue injects an executor for confirm/refresh rather than calling invalidation helpers itself.
 
 4. **Progressive disclosure** — Expandable rows keep the markets list scannable; overlays isolate transaction complexity. Disabled buttons with captions reduce support burden vs. mysteriously grayed controls.
 
@@ -130,7 +154,7 @@ Apply this layered pattern when building DeFi frontends that:
 - **Route across on-chain liquidity** (order books, tick ladders, pool aggregation) — extract routing into pure functions mirroring contract semantics (self-match exclusion, strictly-increasing ids).
 - **Show pricing previews** that mirror Solidity math — duplicate the formula in a display module with an explicit "never submit from here" contract; always read `quote()` or equivalent for tx args.
 - **Batch multiple writes** (claims, approvals + actions, multicalls) — use a planner (what to send) separate from a runner (when to send), sequential execution, invalidation per receipt, fresh replan on resume.
-- **Mix on-chain reads (wagmi) with indexer data (Ponder/Envio)** — coarse invalidation for chain reads plus capped retry for indexer-backed keys.
+- **Mix wagmi contract reads with browser-side discovery projections** — scoped invalidation for chain reads plus resource-registry refresh for projection keys.
 - **Use expandable tables for primary navigation** — two-level state (selection vs. modal), collapse on signer switch, aria-expanded for accessibility.
 - **Aggregate multi-market positions** — reporter-child pattern so React hook rules stay satisfied and partial failures degrade gracefully per symbol.
 
@@ -138,18 +162,17 @@ Skip the full stack for trivial single-action pages (one contract, one read, one
 
 ## Examples
 
-### Per-form invalidation → shared coarse invalidation
+### Per-form invalidation → scoped + registry refresh
 
 **Before** (`629d6ff^`): each form passed its own `invalidateKeys`; easy to miss a key when adding a new read.
 
-**After**: one helper, shared with `useTxQueue`:
+**After**: declare `touchedResources`, refresh through `buildRefreshPlan` /
+`refreshQueryResources`, and keep `invalidateAllOnChainReads` only as the
+named other-party recovery exception (see scoped-cache learning).
 
-```9:13:web/lib/invalidate.ts
-export function invalidateAllOnChainReads(queryClient: QueryClient, user?: Address) {
-  queryClient.invalidateQueries({ queryKey: ["readContract"] });
-  queryClient.invalidateQueries({ queryKey: ["readContracts"] });
-  queryClient.invalidateQueries({ queryKey: streamKeys.held(user) });
-}
+```ts
+const plan = buildRefreshPlan(resources, identity);
+await refreshQueryResources(queryClient, plan, { captureHead, hydrate });
 ```
 
 ### Hardcoded symbols → batched ERC20 reads
@@ -190,6 +213,9 @@ Queue advances on receipt with invalidation every step; `resume()` recomputes pl
 - [Solidity batch function safety](../design-patterns/solidity-batch-function-safety-patterns.md) — on-chain claim/pool semantics the planner targets
 - [Adjust-rate multicall shrink race](../logic-errors/adjust-rate-multicall-shrink-race.md) — receipt-truth and per-flow error classification for the withdraw-then-supply multicall (tickets 06–08)
 - [wagmi read-batching enabled-predicate safety](wagmi-read-batching-requires-matching-enabled-predicates.md) — the safety condition for merging `useReadContract` calls into a `useReadContracts` batch like the symbol batching described above
+- [Scope cache invalidation to what a write touched](./scoped-cache-invalidation-and-its-named-exception.md) — R39 scoped invalidation + named unscoped recovery
+- [Freeze what you show, recompute what you submit](../design-patterns/freeze-what-you-show-recompute-what-you-submit.md) — claim-all review snapshot vs submit replan
+- [Unified executor must latch identity and rebuild before every write](../logic-errors/unified-executor-must-latch-identity-and-rebuild-before-write.md) — single-action executor races this architecture now routes through
 
 ## Related files (quick index)
 

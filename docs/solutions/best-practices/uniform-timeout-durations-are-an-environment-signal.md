@@ -126,5 +126,4 @@ accepts the connection and never answers, which is why the process looks alive.
 
 - [Vary one thing before blaming your own change for a flake](./vary-one-thing-before-blaming-your-own-change-for-a-flake.md) — the same discipline where the suspect is a code change rather than the environment
 - [E2E shared fork requires serial workers until snapshot isolation](../architecture-patterns/e2e-shared-fork-requires-serial-workers-until-snapshot-isolation.md) — why one shared environment backs the whole suite
-- [Orphaned ponder dev process survives bootstrap clean](../runtime-errors/orphaned-ponder-dev-process-survives-bootstrap-clean.md) — a concrete way the environment reaches a wedged-looking state
-- [The indexer is a discovery hint, not an authority](../security-issues/indexer-is-a-discovery-hint-not-an-authority.md) — the "empty is not cannot-ask" rule, applied in the app rather than the fixtures
+- [Stream discovery is a candidate set, not an authority](../security-issues/indexer-is-a-discovery-hint-not-an-authority.md) — the "empty is not cannot-ask" rule, applied in the app rather than the fixtures

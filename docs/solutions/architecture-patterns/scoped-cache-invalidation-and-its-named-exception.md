@@ -10,7 +10,7 @@ applies_when:
   - A confirmed write invalidates React Query / wagmi read caches
   - Refetch cost grows with the number of mounted reads rather than the size of the write
   - A refresh must pick up a change made by someone other than the current user
-tags: [react-query, wagmi, cache-invalidation, query-keys, indexer, scoping]
+tags: [react-query, wagmi, cache-invalidation, query-keys, discovery, scoping]
 ---
 
 # Scope cache invalidation to what a write touched, and name the exception
@@ -25,20 +25,19 @@ touched.
 
 ## Guidance
 
-**Capture the write's target at submit time, then predicate-match the
-serialised query key against it.**
+**Capture what the write touched on the action (or at submit), then
+predicate-match the serialised query key against it.**
 
-Capture at submit, not at confirm — by confirm time the call arguments are gone
-(`web/hooks/useWriteFlow.ts:66`):
-
-```ts
-if (args?.address) touched.current = [args.address as Address];
-```
+Today the live path declares `touchedResources` on the ready action and
+refreshes through `buildRefreshPlan` / `refreshQueryResources` (see
+`web/hooks/useWriteFlow.ts` and `web/lib/query-resource-registry.ts`). Capture
+before confirm — by receipt time the call arguments alone are not enough to
+reconstruct every affected read.
 
 Match on the **serialised** key rather than walking wagmi's key shape
-(`web/lib/invalidate.ts:44`). That shape is not part of wagmi's public
-contract, and an address sits at different depths for a single read versus a
-batched one:
+(`web/lib/invalidate.ts` `keyMentionsAny`). That shape is not part of wagmi's
+public contract, and an address sits at different depths for a single read
+versus a batched one:
 
 ```ts
 const serialised = JSON.stringify(queryKey, (_key, value) =>
@@ -54,11 +53,13 @@ Three judgement calls worth carrying forward:
 - **An empty scope must match nothing, not everything.** `keyMentionsAny`
   returns `false` immediately on an empty set. This is the single most
   dangerous line in the file, in both directions — see below.
-- **Instant invalidation races the indexer.** The held-streams list is
-  indexer-backed and the indexer polls on its own schedule, so
-  `scheduleHeldStreamsRetry` re-invalidates on a short ladder, stops early once
-  the result set changes, and caps total attempts so a persistently stale
-  indexer never loops.
+- **Projection-backed reads need an explicit refresh plan.** Held streams and
+  other discovery views live under `projectionKeys` and are refreshed through
+  `buildRefreshPlan` / `refreshQueryResources` after writes declare touched
+  resources. Tick-scoped `market-depth` resources must also match whole-market
+  projection keys (`aprBps` null) — see the related learning. `scheduleHeldStreamsRetry`
+  remains as a capped ladder helper against `streamKeys.held`, but live write
+  refresh should prefer the resource registry so projection scopes stay coherent.
 
 **Name the unscoped path instead of deleting it.** `useStaleRecovery` fires on
 a classified stale-liquidity error caused by *another party's* write. There is
@@ -98,7 +99,7 @@ call with a default argument.
 - Any write-then-refetch path in a wagmi/React Query app
 - When a "refresh everything" call is being narrowed — check whether each caller
   has a scope to narrow *to* before assuming it does
-- When invalidation depends on data an indexer supplies asynchronously
+- When invalidation depends on projection-scoped discovery reads
 
 ## Examples
 
@@ -132,6 +133,7 @@ export function invalidateAllOnChainReads(queryClient: QueryClient, user?: Addre
 
 ## Related
 
-- [Anchor indexer staleness to chain head](../integration-issues/anchor-indexer-staleness-to-chain-head.md) — the same "whose write is it?" question, answered for the staleness signal
+- [Live discovery cutover must keep partial and stale reads fail-closed](../integration-issues/live-discovery-cutover-must-keep-partial-stale-reads-fail-closed.md) — freshness for projection-backed views after a write
+- [Tick-scoped market-depth refresh must also match whole-market projection keys](../logic-errors/tick-scoped-market-depth-refresh-must-match-whole-market-keys.md) — null `aprBps` keys are aggregates; tick selectors must invalidate them
 - [wagmi query-key dedup makes cross-component hook duplication free](./wagmi-query-key-dedup-makes-cross-component-hook-duplication-free.md) — why the key shape is what invalidation has to match against
 - [repayform loan and balance reads never refetch without polling](../ui-bugs/repayform-loan-and-balance-reads-never-refetch-without-polling.md) — the too-narrow failure, observed

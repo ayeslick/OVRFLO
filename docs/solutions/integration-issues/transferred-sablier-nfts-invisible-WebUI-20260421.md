@@ -1,16 +1,16 @@
 ---
-module: Web UI
+module: web/lib/discovery/live-projection.ts, web/lib/discovery/stream-discovery.ts
 date: 2026-04-21
 problem_type: integration_issue
 component: nextjs_react
 symptoms:
   - "A Sablier stream NFT transferred to a new wallet never appeared in the new recipient's dashboard"
-  - "StreamList stayed empty for the new owner even though the ERC-721 transfer succeeded on-chain"
-  - "Scanning logs from the factory's deploy block returned the original recipient only, so transferred streams were lost"
+  - "Stream list stayed empty for the new owner even though the ERC-721 transfer succeeded on-chain"
+  - "Scanning only OVRFLO Deposited logs returned the original recipient, so transferred streams were lost"
 root_cause: wrong_api
 resolution_type: code_fix
 severity: high
-tags: [sablier, envio, graphql, erc721, stream-discovery, indexer, viem]
+tags: [sablier, erc721, stream-discovery, discovery, ownerOf, viem]
 ---
 
 # Troubleshooting: Transferred Sablier NFTs invisible to the new recipient
@@ -19,180 +19,106 @@ tags: [sablier, envio, graphql, erc721, stream-discovery, indexer, viem]
 
 After a user transferred a Sablier V2 Lockup Linear NFT (the stream receipt minted by
 OVRFLO on deposit) to a different wallet, that new wallet never saw the stream in its
-dashboard. The original recipient also stopped seeing it (since they no longer owned it),
-so the stream effectively vanished from the UI even though it was active on-chain.
+dashboard. The original recipient also stopped seeing it (since they no longer owned
+the NFT), so the stream effectively vanished from the UI even though it was active
+on-chain.
 
 ## Environment
 
 - Module: Web UI (`web/`)
-- Stack: Next.js 15 / React 19, viem 2.x, wagmi 2.x, TanStack Query 5
-- Affected files:
-  - `web/lib/sablier.ts`
-  - `web/hooks/useStreams.ts`
-  - `web/components/StreamList.tsx`
-  - `web/lib/contracts.ts` (Sablier Lockup ABI)
-  - `web/lib/config.ts`
-- Date solved: 2026-04-21
-- External service: Sablier Envio indexer — `https://indexer.hyperindex.xyz/53b7e25/v1/graphql`
+- Stack: Next.js / React, viem, wagmi, TanStack Query
+- Current discovery path: `web/lib/discovery/` (browser-side verified-log projection)
+- Date originally solved: 2026-04-21 (Envio indexer interim); live on-chain cutover
+  2026-07-31 replaced indexer transports
 
 ## Symptoms
 
-- Dashboard "Your Streams" table was empty for a wallet that had just received a
-  Sablier NFT via `safeTransferFrom`.
-- The original depositor wallet no longer saw the stream (correct — they don't own
-  the NFT anymore), but the new owner did not see it either.
-- `eth_getLogs` traffic spiked on the configured RPC as the UI replayed OVRFLO
-  `Deposited(user, market, ptAmount, toUser, toStream, streamId)` events from
-  `NEXT_PUBLIC_FACTORY_FROM_BLOCK` forward.
-- Error banner copy mentioned "on-chain stream scan" and `NEXT_PUBLIC_FACTORY_FROM_BLOCK`.
+- Dashboard stream list was empty for a wallet that had just received a Sablier NFT
+  via `safeTransferFrom`.
+- The original depositor wallet no longer saw the stream (correct), but the new owner
+  did not see it either.
+- Discovery keyed only on OVRFLO `Deposited(..., user, ..., streamId)` never considered
+  token IDs whose mint recipient was someone else.
 
 ## What Didn't Work
 
-**Attempted Solution 1: Keep the on-chain `Deposited` log scan and add a second pass over
-`Transfer(from, to, tokenId)` to re-attribute ownership.**
+**Attempted Solution 1: `Deposited`-only log scan.**
 
-- Why it failed: Still incorrect in the limit. Any intermediate wallet in the transfer
-  chain had to be scanned, and we had no reliable bound on how far back to look on mainnet
-  (Sablier Lockup has been live for years). It also multiplied the `eth_getLogs` cost and
-  needed chunked block windows to avoid provider limits.
+- Why it failed: `Deposited` records the *initial* recipient at mint time, not the
+  current ERC-721 owner.
 
-**Attempted Solution 2: Call `Sablier.ownerOf(tokenId)` for every deposit discovered from
-the `Deposited` event and only show the stream if it belonged to the current user.**
+**Attempted Solution 2 (early): `ownerOf` for every historical deposit without a
+recipient-side candidate set.**
 
-- Why it failed: Solved visibility for *old* owners but not for *new* owners — the new
-  recipient's wallet had no `Deposited` event pointing at it, so the scan never even
-  considered their `tokenId`s. It also added one RPC round-trip per historical deposit.
+- Why it failed alone: solved visibility for *old* owners checking their mint events,
+  but a new recipient had no `Deposited` row pointing at them, so their token IDs were
+  never considered.
 
-**Attempted Solution 3: Walk forward from `ownerOf` by scanning ERC-721 `Transfer` logs
-on the Sablier Lockup contract filtered on `to == user`.**
+**Attempted Solution 3 (interim): Sablier Envio GraphQL / later Ponder indexer.**
 
-- Why it failed: Expensive (Sablier Lockup handles every stream transfer on the chain,
-  not just OVRFLO's), and still required composing with the OVRFLO `Deposited` scan to
-  tell "OVRFLO streams" apart from arbitrary Sablier streams.
+- Worked as a discovery hint while those services were live, but both indexer
+  transports were removed in the 2026-07-31 on-chain liquidity discovery cutover.
+  Treating indexer fields as ownership/eligibility authority was separately fixed —
+  see the discovery trust-boundary learning.
 
 ## Solution
 
-Revert the stream-discovery path to the Sablier Envio GraphQL indexer we had used
-originally. Envio already tracks *current* `recipient` for every Sablier stream, so one
-query answers "give me all Sablier streams whose current recipient is `user` and whose
-sender is one of our OVRFLO instances" — which is exactly the UI's question.
+**Current approach (post-cutover):** browser-side verified-log projection builds a
+*candidate* id set, then Sablier hydration is the ownership authority.
 
-**Key code (`web/lib/sablier.ts`):**
+1. Scan OVRFLO `Deposited` origins (OVRFLO-issued streams only).
+2. Scan Sablier `Transfer` logs where `to == connected account` (current-recipient
+   candidates), bounded by the factory deployment / projection anchors.
+3. Intersect origins with recipient transfers (`web/lib/discovery/stream-discovery.ts`).
+4. Hydrate every surviving id from Sablier (`getStream`, `withdrawableAmountOf`,
+   `ownerOf`) and **drop** any stream whose `ownerOf` is not the connected address
+   (`web/lib/discovery/live-projection.ts`, `useHeldStreams`).
 
 ```typescript
-import type { PublicClient } from "viem";
-import { CHAIN_ID, SABLIER_ENVIO_URL, SABLIER_LOCKUP } from "./config";
+// Candidate set — not ownership authority
+const candidateIds = intersectOriginsWithRecipientTransfers({
+  origins,
+  recipientTransfers,
+  account,
+});
 
-const GET_USER_STREAMS = `
-query GetUserStreams($user: String!, $senders: [String!]!) {
-  Stream(
-    where: {
-      recipient: { _eq: $user },
-      sender: { _in: $senders },
-      contract: { _eq: "${SABLIER_LOCKUP.toLowerCase()}" },
-      chainId: { _eq: "${CHAIN_ID}" }
-    },
-    order_by: { tokenId: desc }
-  ) {
-    id
-    tokenId
-    depositAmount
-    withdrawnAmount
-    startTime
-    endTime
-    canceled
-    depleted
-    intactAmount
-    asset { symbol decimals address }
-    sender
-  }
-}`;
-
-export async function fetchUserStreams({
-  user,
-  ovrfloAddresses,
-}: FetchUserStreamsArgs): Promise<SablierStream[]> {
-  if (!ovrfloAddresses.length) return [];
-
-  const res = await fetch(SABLIER_ENVIO_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      query: GET_USER_STREAMS,
-      variables: {
-        user: user.toLowerCase(),
-        senders: ovrfloAddresses.map((a) => a.toLowerCase()),
-      },
-    }),
-  });
-  // ...error handling + return json.data?.Stream ?? [];
-}
+// Authority — drop mismatches
+const owner = await client.readContract({
+  address: SABLIER_LOCKUP,
+  abi: sablierLockupAbi,
+  functionName: "ownerOf",
+  args: [tokenId],
+});
 ```
 
-**Supporting changes:**
-
-- `web/lib/config.ts` gained the constant:
-
-  ```typescript
-  export const SABLIER_ENVIO_URL =
-    "https://indexer.hyperindex.xyz/53b7e25/v1/graphql" as const;
-  ```
-
-- `web/lib/contracts.ts` dropped the Sablier Lockup ABI entries that only served the
-  on-chain scanner (`getStartTime`, `getEndTime`, etc.), keeping just what the UI
-  still needs to execute: `withdrawMax`, `withdrawableAmountOf`, `calculateMinFeeWei`.
-- `web/components/StreamList.tsx` updated its error copy from
-  "on-chain stream scan … NEXT_PUBLIC_FACTORY_FROM_BLOCK" to "Could not load Sablier
-  streams … Confirm the Sablier indexer is reachable".
-- `web/hooks/useStreams.ts` stopped passing `publicClient` for stream discovery; the
-  argument is still accepted by `fetchUserStreams` for call-site compatibility but
-  is unused.
-- `NEXT_PUBLIC_FACTORY_FROM_BLOCK` and its parser were later removed entirely
-  (see the developer-experience writeup linked below).
+The earlier "Transfer + Deposited" attempts failed because they lacked bounded
+anchors, fail-closed projection outcomes, and mandatory `ownerOf` filtering. Those
+are now first-class in the discovery stack.
 
 ## Why This Works
 
-The Sablier NFT is the **authoritative record of ownership** — whoever currently holds
-`tokenId` is entitled to withdraw the stream. The Envio indexer already maintains a
-denormalized `Stream` table keyed by `recipient`, updated on every `Transfer`. Querying
-`recipient == user` therefore sees post-transfer ownership for free, regardless of how
-many hops the NFT went through.
-
-The original on-chain log scan tried to reconstruct ownership from OVRFLO's `Deposited`
-event, which records the *initial* recipient at mint time. That encoding is correct for
-OVRFLO's purposes (it tells you who the protocol streamed value to) but is not a source
-of truth for current ownership. Any approach built on top of that event has to carry
-around a "is this still the owner?" side channel, which recreates the indexer we just
-stopped using.
-
-The indexer request is a single HTTP `POST`, so it also eliminates the `eth_getLogs`
-fan-out that made cold page loads slow on free-tier RPCs.
+The Sablier NFT is the **authoritative record of ownership**. Log scans answer only
+"which ids might be mine?" — the expensive discovery question. `ownerOf` (and the
+rest of Sablier hydration) answers "do I own it / can I act on it?" Mint-time
+protocol events remain useful for *origin filtering* (OVRFLO vs arbitrary Sablier
+streams) but must never be the gate for current ownership.
 
 ## Prevention
 
-- Whenever the UI asks "who owns this NFT right now?", prefer an indexer or
-  `ownerOf(tokenId)` over derived state from contract events.
-- Treat `Transfer(tokenId)`-bearing NFTs (ERC-721) as mutable ownership; the emitting
-  contract's own events are the only canonical source of current ownership,
-  *not* upstream protocol events.
-- When adding a new discovery path, write the failure mode explicitly:
-  "what happens if the NFT is transferred?" and "what happens if it is transferred
-  twice?" belong in the design note before coding.
-- Keep a single discovery surface. The on-chain scanner and the indexer path coexisted
-  briefly while debugging — that kind of dual mode is a maintenance trap. If you
-  reintroduce a scanner, delete it on the same PR that ships the replacement.
-- Tests: `web/tests/lib/sablier.test.ts` mocks `global.fetch` and asserts the GraphQL
-  payload shape (`recipient`, `sender`, `contract`, `chainId`). Keep that contract
-  test in place so an accidental revert back to `eth_getLogs` fails immediately.
+- Whenever the UI asks "who owns this NFT right now?", use `ownerOf(tokenId)` (or
+  equivalent hydration). Discovery projections and indexers may name candidates only.
+- Treat `Transfer`-bearing NFTs as mutable ownership; upstream protocol mint events
+  are not a source of truth for the current holder.
+- When adding a discovery path, write the failure mode explicitly: "what happens if
+  the NFT is transferred?" and "what happens if it is transferred twice?"
+- Keep empty vs unavailable distinct for discovery failures
+  (`docs/solutions/security-issues/indexer-is-a-discovery-hint-not-an-authority.md`).
 
 ## Related Issues
 
-- **Required reading:** [`../patterns/ovrflo-critical-patterns.md#1-erc-721-current-ownership-comes-from-the-token-not-from-derived-protocol-events-always-required`](../patterns/ovrflo-critical-patterns.md)
-  — the rule extracted from this fix: current NFT ownership must come from the
-  token contract (or an indexer that tracks its `Transfer` events), never from
-  upstream protocol events like OVRFLO's `Deposited`.
-- See also: [../developer-experience/post-refactor-dead-code-WebUI-20260421.md](../developer-experience/post-refactor-dead-code-WebUI-20260421.md)
-  — the follow-up that removed the now-unused `FACTORY_FROM_BLOCK`, `parseFromBlock`,
-  the `Deposited` ABI event, and Sablier log-scan ABI entries left behind by this fix.
-- Related: [../ui-bugs/usd-prices-not-shown-in-modals-WebUI-20260421.md](../ui-bugs/usd-prices-not-shown-in-modals-WebUI-20260421.md)
-  — shipped in the same session; covers the Dashboard/modal rewiring.
+- **Required reading:** [`../patterns/ovrflo-critical-patterns.md`](../patterns/ovrflo-critical-patterns.md)
+  — pattern #1: current NFT ownership comes from the token, not derived mint events.
+- [Stream discovery is a candidate set, not an authority](../security-issues/indexer-is-a-discovery-hint-not-an-authority.md)
+- [Live discovery cutover must keep partial and stale reads fail-closed](./live-discovery-cutover-must-keep-partial-stale-reads-fail-closed.md)
+- [post-refactor dead code](../developer-experience/post-refactor-dead-code-WebUI-20260421.md)
+  — historical cleanup after the first scanner→indexer swing.
