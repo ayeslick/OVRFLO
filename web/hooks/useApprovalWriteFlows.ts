@@ -1,6 +1,7 @@
 "use client";
 
 import type { Address } from "viem";
+import type { MarketInfo } from "@/lib/types";
 import { useWriteFlow } from "./useWriteFlow";
 import { useZeroFirstApprove } from "./useZeroFirstApprove";
 
@@ -17,12 +18,28 @@ import { useZeroFirstApprove } from "./useZeroFirstApprove";
 // form that wired one without the other would be a bug, so the pairing is not
 // the caller's to get right.
 //
-// `related` is the market's contract set (see `marketContracts`), forwarded to
-// both flows so an approval and the action it unlocks invalidate the same reads.
-export function useApprovalWriteFlows(user?: Address, related?: readonly Address[]) {
-  const approveTx = useWriteFlow(user, related);
-  const actionTx = useWriteFlow(user, related);
+// `scope` is forwarded to both flows so an approval and the action it unlocks
+// refresh the same market reads.
+export function useApprovalWriteFlows(
+  user?: Address,
+  scope?: Pick<
+    MarketInfo,
+    | "vault"
+    | "lending"
+    | "market"
+    | "underlying"
+    | "ovrfloToken"
+    | "ptToken"
+    | "expiryCached"
+  > | readonly Address[],
+) {
+  const approveTx = useWriteFlow(user, scope);
+  const actionTx = useWriteFlow(user, scope);
   const zeroFirst = useZeroFirstApprove(approveTx);
-  const busy = approveTx.isSigning || approveTx.isConfirming || actionTx.isSigning || actionTx.isConfirming;
+  const busy =
+    approveTx.isInFlight ||
+    approveTx.refreshFailed ||
+    actionTx.isInFlight ||
+    actionTx.refreshFailed;
   return { approveTx, actionTx, zeroFirst, busy };
 }

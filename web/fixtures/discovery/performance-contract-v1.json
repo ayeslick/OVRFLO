@@ -1,0 +1,92 @@
+{
+  "contractVersion": 1,
+  "lockedBeforeUnit": "U3",
+  "timingMethod": {
+    "runs": 30,
+    "percentile": 95,
+    "clock": "Performance API monotonic milliseconds",
+    "coldCache": "new browser context, empty application/query cache",
+    "warmCache": "same context after one complete synchronization"
+  },
+  "tasks": {
+    "initialMarketDepth": {
+      "ceilingMs": 2000,
+      "readyDefinition": "all configured market aggregate reads complete"
+    },
+    "typicalColdBorrowRoute": {
+      "ceilingMs": 5000,
+      "readyDefinition": "scope complete, same-block conservation passes, selected candidates are hydrated"
+    },
+    "firstVerifiedPortfolioRow": {
+      "ceilingMs": 5000,
+      "readyDefinition": "one discovered row has direct ownership/contribution and state verification"
+    },
+    "claimAllDiscoveredPlan": {
+      "ceilingMs": 15000,
+      "readyDefinition": "both independent candidate sets agree at one block/hash and action-critical hydration is complete"
+    }
+  },
+  "clients": {
+    "desktopReference": {
+      "browser": "Chromium 151.0.7922.34",
+      "logicalCpuCores": 4,
+      "memoryMiB": 8192,
+      "cpuThrottleRate": 1,
+      "network": {
+        "latencyMs": 40,
+        "downloadKbps": 10000,
+        "uploadKbps": 5000
+      }
+    },
+    "constrainedMobileClass": {
+      "browser": "Chromium 151.0.7922.34",
+      "logicalCpuCores": 4,
+      "memoryMiB": 2048,
+      "cpuThrottleRate": 4,
+      "network": {
+        "latencyMs": 150,
+        "downloadKbps": 1600,
+        "uploadKbps": 750
+      }
+    }
+  },
+  "providerProfile": {
+    "tier": "Alchemy PAYG or provider-equivalent historical tier",
+    "region": "us-east",
+    "transportIdentityEvidence": "provider name plus SHA-256 of origin; never a full RPC URL",
+    "anchor": "verified fresh-generation factory deployment block/hash from the candidate artifact",
+    "cacheStates": ["cold", "warm"]
+  },
+  "fixtures": {
+    "markets": 24,
+    "aprTicksPerMarket": 101,
+    "typicalLiquidityPositions": 1200,
+    "fragmentedLiquidityPositions": 600,
+    "typicalWalletStreams": 25,
+    "highVolumeWalletStreams": 5000,
+    "unrelatedOriginStreams": 10000,
+    "cleanReloads": 3
+  },
+  "currentPonderBaseline": {
+    "capturedAt": "2026-07-30",
+    "result": "semantic-failure",
+    "reason": "The current implementation caps global enumeration at 500 and Claim All uses one uncorroborated Ponder projection, so none of the four tasks can produce the complete ready state defined above. Recording a p95 to a false-ready state would be misleading.",
+    "implementationRefs": [
+      "web/hooks/useLendingLiquidity.ts",
+      "web/hooks/useLoanBook.ts",
+      "web/hooks/useBorrowerLoans.ts",
+      "web/hooks/useHeldStreams.ts"
+    ]
+  },
+  "validHistoryChurn": {
+    "horizonDays": 90,
+    "gasPriceGwei": 10,
+    "minimumAttackCostEth": 10,
+    "minimumAttackGas": "1000000000",
+    "fixtures": [
+      "repeated dust supply/withdraw cycles with zero ending availability",
+      "valid OVRFLO-origin streams unrelated to the target wallet"
+    ],
+    "stopDecision": "If the least-cost valid history that pushes any constrained-mobile first-client task past its ceiling costs less than 10 ETH at 10 gwei over 90 days, stop scanner implementation and require an economic floor or architecture revision. Browser persistence is not mitigation."
+  }
+}

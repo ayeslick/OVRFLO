@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Address } from "viem";
 import { useHeldStreams } from "@/hooks/useHeldStreams";
+import { useClaimAllExecution } from "@/hooks/useClaimAllExecution";
+import { useClaimAllPreflight } from "@/hooks/useClaimAllPreflight";
 import { useLendingLiquidity } from "@/hooks/useLendingLiquidity";
 import { useLoanBook } from "@/hooks/useLoanBook";
 import { symbolFor, type SymbolMap } from "@/hooks/useMarketSymbols";
@@ -18,6 +20,8 @@ type Props = {
   symbols: SymbolMap;
 };
 
+type LoadedProps = Omit<Props, "user"> & { user: Address };
+
 export type MarketAggregate = {
   underlyingSymbol: string;
   ovrfloSymbol: string;
@@ -30,9 +34,10 @@ export type MarketAggregate = {
   status: "loading" | "error" | "ready";
 };
 
-// Four aggregate cells, amounts grouped per token symbol — never summed across
-// different tokens, no USD. CLAIM ALL appears in the heading only when there is
-// something to claim, so a dormant utility does not become a fifth peer metric.
+// R1 summary strip: four aggregate cells, amounts grouped per token symbol —
+// never summed across different tokens, no USD. Connected wallets get an
+// explicit load surface before personal history scans begin (R4/R53). Its
+// single loaded-state action is CLAIM ALL (R2).
 //
 // R31/L-8 — the no-USD choice is a deliberate deviation, recorded rather than
 // left implicit. ETHSKILLS /frontend-ux Rule 4 asks for dollar context wherever
@@ -43,6 +48,41 @@ export type MarketAggregate = {
 // dead CoinGecko CSP origin and NEXT_PUBLIC_PRICE_API_URL that implied a
 // half-built price path have been removed rather than left as a placeholder.
 export function PositionSummary({ markets, user, symbols }: Props) {
+  const [loadedUser, setLoadedUser] = useState<Address | null>(null);
+  if (!user) return null;
+  const loaded = loadedUser?.toLowerCase() === user.toLowerCase();
+  if (!loaded) {
+    return (
+      <section className="section summary-strip" aria-label="Your positions">
+        <div className="label mono">YOUR POSITIONS</div>
+        <div className="summary-strip-cells">
+          <div className="summary-cell action-with-caption">
+            <button
+              className="button button-gold mono"
+              type="button"
+              onClick={() => setLoadedUser(user)}
+            >
+              LOAD POSITIONS
+            </button>
+            <span className="label mono">
+              PERSONAL HISTORY LOADS ONLY WHEN REQUESTED
+            </span>
+          </div>
+        </div>
+      </section>
+    );
+  }
+  return (
+    <LoadedPositionSummary
+      key={user.toLowerCase()}
+      markets={markets}
+      user={user}
+      symbols={symbols}
+    />
+  );
+}
+
+function LoadedPositionSummary({ markets, user, symbols }: LoadedProps) {
   const streams = useHeldStreams(user);
   const [aggregates, setAggregates] = useState<Record<string, MarketAggregate>>({});
   const [claimAllOpen, setClaimAllOpen] = useState(false);
@@ -50,9 +90,11 @@ export function PositionSummary({ markets, user, symbols }: Props) {
   const onData = useCallback((key: string, data: MarketAggregate | null) => {
     setAggregates((current) => {
       if (data === null) {
+        if (!(key in current)) return current;
         const { [key]: _removed, ...rest } = current;
         return rest;
       }
+      if (current[key] === data) return current;
       return { ...current, [key]: data };
     });
   }, []);
@@ -109,11 +151,12 @@ export function PositionSummary({ markets, user, symbols }: Props) {
   const totalClaimable =
     claimAllPools.reduce((acc, pool) => acc + pool.claimable, 0n) +
     claimAllStreams.reduce((acc, stream) => acc + stream.withdrawable, 0n);
-
-  const hasPositions =
-    streams.streams.length > 0 ||
-    rows.some((r) => r.status !== "ready") ||
-    rows.some((r) => r.suppliedCount > 0 || r.openLoanCount > 0 || r.pools.length > 0);
+  const claimAllExecution = useClaimAllExecution(
+    { pools: claimAllPools, streams: claimAllStreams },
+    markets,
+    user,
+  );
+  const claimAllPreflight = useClaimAllPreflight(user, claimAllOpen);
 
   return (
     <>
@@ -126,20 +169,8 @@ export function PositionSummary({ markets, user, symbols }: Props) {
           onData={onData}
         />
       ))}
-      {user && hasPositions ? (
-        <section className="section summary-strip" aria-label="Your positions">
-          <div className="summary-strip-head">
-            <h2>YOUR POSITIONS</h2>
-            {totalClaimable > 0n ? (
-              <button
-                className="button button-gold mono"
-                type="button"
-                onClick={() => setClaimAllOpen(true)}
-              >
-                CLAIM ALL
-              </button>
-            ) : null}
-          </div>
+      <section className="section summary-strip" aria-label="Your positions">
+          <div className="label mono">YOUR POSITIONS</div>
           <div className="summary-strip-cells">
             <div className="summary-cell">
               <div className="label mono">STREAMS</div>
@@ -193,14 +224,27 @@ export function PositionSummary({ markets, user, symbols }: Props) {
                 })
               )}
             </div>
+            <div className="summary-cell action-with-caption">
+              <button
+                className="button button-gold mono"
+                type="button"
+                disabled={totalClaimable === 0n}
+                onClick={() => setClaimAllOpen(true)}
+              >
+                CLAIM ALL
+              </button>
+              {totalClaimable === 0n ? <span className="label mono">NOTHING CLAIMABLE YET</span> : null}
+            </div>
           </div>
-        </section>
-      ) : null}
-      {claimAllOpen && user ? (
+      </section>
+      {claimAllOpen ? (
         <ClaimAllModal
           pools={claimAllPools}
           streams={claimAllStreams}
           user={user}
+          execution={claimAllExecution}
+          preflight={claimAllPreflight.evaluation}
+          onRetryPreflight={() => void claimAllPreflight.retry()}
           onClose={() => setClaimAllOpen(false)}
         />
       ) : null}
@@ -221,7 +265,7 @@ function PositionSummaryMarket({
   symbols: SymbolMap;
   onData: (key: string, data: MarketAggregate | null) => void;
 }) {
-  const liquidity = useLendingLiquidity(market.lending);
+  const liquidity = useLendingLiquidity(market.lending, market.market);
   const book = useLoanBook(market.lending, user);
 
   const key = `${market.lending}-${market.market}`;
@@ -284,8 +328,11 @@ function PositionSummaryMarket({
 
   useEffect(() => {
     onData(key, aggregate);
-    return () => onData(key, null);
   }, [aggregate, key, onData]);
+  useEffect(
+    () => () => onData(key, null),
+    [key, onData],
+  );
 
   return null;
 }

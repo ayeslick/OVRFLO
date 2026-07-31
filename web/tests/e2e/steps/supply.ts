@@ -25,6 +25,17 @@ import { DEV_WALLET_ADDRESS, LENDER_WALLET_ADDRESS } from "../fixtures/mock-wall
 // (`.status-warning`, ActionModal.tsx's ApproveTxState) to clear ties this to
 // the real on-chain event instead of a guessed timing window.
 When("my wstETH balance is drained", async ({ page }) => {
+  // Waiting only for `.status-warning` absence is trivially satisfied in the
+  // caption-free window between clicking APPROVE and the SIGNING caption
+  // rendering, letting the drain land before the app's awaited post-approve
+  // refresh — which then honestly reads the drained balance and fail-closes
+  // the form before submit. Wait for the positive signal instead: SUPPLY
+  // becoming enabled proves approval covered, the refresh completed, and the
+  // balance was read pre-drain, so the UI holds a stale balance and the
+  // submit genuinely reverts on-chain (the scenario's premise).
+  await expect(
+    page.getByRole("dialog").getByRole("button", { name: /^SUPPLY @/ }).first(),
+  ).toBeEnabled({ timeout: 15_000 });
   await expect(page.locator(".status-warning")).toHaveCount(0, { timeout: 15_000 });
   await drainUnderlyingBalance(DEV_WALLET_ADDRESS);
 });
@@ -33,10 +44,10 @@ When("my wstETH balance is drained", async ({ page }) => {
 // own wallet, so the acquired stream has to surface in the view under test.
 //
 // This is deliberately an E2E rather than a component test: the chain that can
-// actually regress runs `sellStreamToLiquidity` transferring the NFT, then
-// Ponder's Transfer handler rewriting `recipient` in `sablier_streams`, then
-// the app discovering it. A component test mocks `useHeldStreams` wholesale and
-// would only prove PositionList renders a stream it was handed.
+// actually regress runs `sellStreamToLiquidity` transferring the NFT, then the
+// verified-log projection intersects that Transfer with its vault origin and
+// hydrates the surviving ID. A component test mocks `useHeldStreams` wholesale
+// and would only prove PositionList renders a stream it was handed.
 Given("my supplied liquidity is filled by an outright stream sale", async () => {
   const deployment = readDeployment();
   const market = readSecondaryMarket();
@@ -69,7 +80,7 @@ Given("my supplied liquidity is filled by an outright stream sale", async () => 
     liquidityId,
   });
 
-  // The NFT is the buyer's now — wait for the indexer to agree before the app
-  // is asked to render it.
+  // The NFT is the buyer's now — wait for the direct projection to agree
+  // before the app is asked to render it.
   await waitForHeldStream(DEV_WALLET_ADDRESS, streamId);
 });

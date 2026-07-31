@@ -1,247 +1,304 @@
 import { act, renderHook } from "@testing-library/react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { Address } from "viem";
-import type { ReactNode } from "react";
+import { describe, expect, it, vi } from "vitest";
+import type { Address, Hash } from "viem";
+import type {
+  ActionExecutionDraft,
+  ActionExecutionResult,
+  ExecutionPlan,
+} from "@/lib/action-runtime";
+import type { ActionIdentity, ReadyAction } from "@/lib/actions/types";
 import type { QueuedTx } from "@/lib/claim-all";
-import { useTxQueue } from "@/hooks/useTxQueue";
+import {
+  useTxQueue,
+  type ClaimAllRowBuild,
+  type QueueInvariant,
+} from "@/hooks/useTxQueue";
 
 const userA = "0x0000000000000000000000000000000000000a11" as Address;
 const userB = "0x0000000000000000000000000000000000000b22" as Address;
 const lending = "0x00000000000000000000000000000000000000aa" as Address;
-// Both claim kinds pay out in the market ovrfloToken.
 const asset = "0x00000000000000000000000000000000000000cc" as Address;
+const hash = `0x${"12".repeat(32)}` as Hash;
 
-const wagmiState = {
-  writeContract: vi.fn(),
-  hash: undefined as `0x${string}` | undefined,
-  isPending: false,
-  writeError: null as Error | null,
-  receiptSuccess: false,
-  receiptLoading: false,
-  receiptError: null as Error | null,
-  // Mined-but-reverted receipts resolve `isSuccess: true` with no JS error —
-  // the on-chain outcome only shows up in `data.status`.
-  receiptStatus: "success" as "success" | "reverted",
-};
-
-vi.mock("wagmi", () => ({
-  useWriteContract: () => ({
-    writeContract: wagmiState.writeContract,
-    data: wagmiState.hash,
-    isPending: wagmiState.isPending,
-    error: wagmiState.writeError,
-    reset: vi.fn(() => {
-      wagmiState.hash = undefined;
-      wagmiState.writeError = null;
-      wagmiState.receiptSuccess = false;
-      wagmiState.receiptStatus = "success";
-    }),
-  }),
-  useWaitForTransactionReceipt: () => ({
-    isLoading: wagmiState.receiptLoading,
-    isSuccess: wagmiState.receiptSuccess,
-    error: wagmiState.receiptError,
-    data: wagmiState.receiptSuccess ? { status: wagmiState.receiptStatus } : undefined,
-  }),
-}));
-
-const plan: QueuedTx[] = [
-  { kind: "pool-claims", lending, loanIds: [1n, 2n], asset },
-  { kind: "stream-claim", streamId: 7n, asset },
+const rows: QueuedTx[] = [
+  {
+    kind: "pool-claims",
+    lending,
+    claims: [
+      { loanId: 1n, claimable: 5n },
+      { loanId: 2n, claimable: 7n },
+    ],
+    asset,
+  },
+  { kind: "stream-claim", streamId: 7n, withdrawable: 9n, asset },
 ];
 
-function setup(user: Address | undefined = userA) {
-  const queryClient = new QueryClient();
-  const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
-  const wrapper = ({ children }: { children: ReactNode }) => (
-    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+function executionPlan(tx: QueuedTx, identity: ActionIdentity): ExecutionPlan {
+  const call = {
+    target: tx.kind === "pool-claims" ? tx.lending : lending,
+    contract: "lending" as const,
+    functionName: tx.kind,
+    args: [] as const,
+    value: 0n,
+  };
+  const action = {
+    type: "claim_share" as const,
+    identity,
+    preconditions: ["claim-all-row"],
+    authorizations: [],
+    call,
+    touchedResources: [],
+    review: {
+      actionType: "claim_share" as const,
+      title: "CLAIM ALL ROW",
+      identity,
+      call,
+      authorizations: [],
+      economics: {},
+    },
+    receiptSummary: {
+      source: call.target,
+      eventName: null,
+      label: "CLAIMED",
+      expectedIds: [],
+      expectedAmounts: {},
+    },
+  } satisfies ReadyAction;
+  const accepted: ActionExecutionDraft = { action, request: { address: call.target } };
+  return {
+    flowId: `claim-all:${tx.kind}`,
+    accepted,
+    rebuild: vi.fn().mockResolvedValue({ status: "ready", draft: accepted }),
+  };
+}
+
+function success(plan: ExecutionPlan): ActionExecutionResult {
+  return {
+    status: "success",
+    hash,
+    receipt: { transactionHash: hash, status: "success", blockNumber: 100n },
+    draft: plan.accepted,
+    identity: plan.accepted.action.identity,
+  };
+}
+
+function setup(initialIdentity: ActionIdentity = { account: userA, chainId: 1 }) {
+  let invariant: QueueInvariant = { ready: true };
+  const rebuild = vi.fn(async (
+    tx: QueuedTx,
+    identity: ActionIdentity,
+  ): Promise<ClaimAllRowBuild> => ({
+    status: "ready" as const,
+    plan: executionPlan(tx, identity),
+  }));
+  const executor = {
+    confirm: vi.fn(
+      async (plan: ExecutionPlan): Promise<ActionExecutionResult> =>
+        success(plan),
+    ),
+    retryRefresh: vi.fn(
+      async (): Promise<ActionExecutionResult | null> => null,
+    ),
+  };
+  const hook = renderHook(
+    ({ identity }: { identity: ActionIdentity }) =>
+      useTxQueue({
+        identity,
+        invariants: () => invariant,
+        rebuild,
+        executor,
+      }),
+    { initialProps: { identity: initialIdentity } },
   );
-  const hook = renderHook(({ u }: { u?: Address }) => useTxQueue(u), {
-    wrapper,
-    initialProps: { u: user },
+  return {
+    ...hook,
+    rebuild,
+    executor,
+    setInvariant(next: QueueInvariant) {
+      invariant = next;
+    },
+  };
+}
+
+describe("useTxQueue executor orchestration", () => {
+  it("rebuilds and delegates one row at a time, advancing only after executor success plus refresh", async () => {
+    const { result, rebuild, executor } = setup();
+    let releaseFirst!: () => void;
+    executor.confirm
+      .mockImplementationOnce(
+        (plan) =>
+          new Promise<ActionExecutionResult>((resolve) => {
+            releaseFirst = () => resolve(success(plan));
+          }),
+      )
+      .mockImplementation(async (plan) => success(plan));
+
+    act(() => result.current.start(rows));
+    await vi.waitFor(() => expect(executor.confirm).toHaveBeenCalledTimes(1));
+    expect(rebuild).toHaveBeenCalledTimes(1);
+
+    await act(async () => releaseFirst());
+    await vi.waitFor(() => expect(executor.confirm).toHaveBeenCalledTimes(2));
+    expect(rebuild).toHaveBeenCalledTimes(2);
+    await vi.waitFor(() => expect(result.current.done).toBe(true));
+    expect(result.current.rows.map((row) => row.status)).toEqual(["confirmed", "confirmed"]);
   });
-  return { ...hook, invalidateSpy };
-}
 
-function confirmCurrent(rerender: () => void, hash: `0x${string}`) {
-  wagmiState.hash = hash;
-  wagmiState.receiptSuccess = true;
-  act(() => rerender());
-}
+  it.each(["completeness", "agreement", "hydration"] as const)(
+    "preserves confirmed rows and pauses before another executor prompt when %s is lost",
+    async (reason) => {
+      const { result, executor, setInvariant } = setup();
+      executor.confirm.mockImplementationOnce(async (plan) => {
+        setInvariant({ ready: false, reason });
+        return success(plan);
+      });
 
-function revertCurrent(rerender: () => void, hash: `0x${string}`) {
-  wagmiState.hash = hash;
-  wagmiState.receiptStatus = "reverted";
-  wagmiState.receiptSuccess = true;
-  act(() => rerender());
-}
+      act(() => result.current.start(rows));
 
-beforeEach(() => {
-  wagmiState.writeContract = vi.fn();
-  wagmiState.hash = undefined;
-  wagmiState.isPending = false;
-  wagmiState.writeError = null;
-  wagmiState.receiptSuccess = false;
-  wagmiState.receiptLoading = false;
-  wagmiState.receiptError = null;
-  wagmiState.receiptStatus = "success";
-});
+      await vi.waitFor(() => expect(result.current.paused).toBe(true));
+      expect(result.current.rows[0].status).toBe("confirmed");
+      expect(result.current.rows[1].status).toBe("paused");
+      expect(executor.confirm).toHaveBeenCalledTimes(1);
+    },
+  );
 
-describe("useTxQueue", () => {
-  it("invalidates the payout token's reads, not only the contract it called", () => {
-    // Every row in this queue pays the user an ERC-20 — ovrfloToken from
-    // _claimFair, the stream's asset from withdrawMax — and that balance is read
-    // against the token address, not the transaction's `to`. Scoping to `to`
-    // alone left CLAIMABLE and the balance behind this modal showing pre-claim
-    // numbers, which is the first thing a user checks after claiming.
-    const queryClient = new QueryClient();
-    const balanceKey = ["readContract", { address: asset, functionName: "balanceOf", args: [userA] }];
-    queryClient.setQueryData(balanceKey, 1n);
-    const wrapper = ({ children }: { children: ReactNode }) => (
-      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-    );
-    const { result, rerender } = renderHook(({ u }: { u?: Address }) => useTxQueue(u), {
-      wrapper,
-      initialProps: { u: userA },
+  it("marks changed grouped rows needs-review and fully disappeared rows skipped without executing them", async () => {
+    const changed = setup();
+    changed.rebuild.mockResolvedValueOnce({
+      status: "needs-review",
+      replacement: {
+        ...rows[0],
+        claims: [{ loanId: 1n, claimable: 5n }],
+      } as QueuedTx,
     });
+    act(() => changed.result.current.start([rows[0]]));
+    await vi.waitFor(() => expect(changed.result.current.rows[0].status).toBe("needs-review"));
+    expect(changed.executor.confirm).not.toHaveBeenCalled();
 
-    act(() => result.current.start([{ kind: "pool-claims", lending, loanIds: [1n], asset }]));
-    confirmCurrent(() => rerender({ u: userA }), "0xhash1");
-
-    expect(queryClient.getQueryState(balanceKey)?.isInvalidated).toBe(true);
+    const disappeared = setup();
+    disappeared.rebuild.mockResolvedValueOnce({ status: "skipped" });
+    act(() => disappeared.result.current.start([rows[0], rows[1]]));
+    await vi.waitFor(() => expect(disappeared.result.current.done).toBe(true));
+    expect(disappeared.result.current.rows.map((row) => row.status)).toEqual(["skipped", "confirmed"]);
+    expect(disappeared.executor.confirm).toHaveBeenCalledTimes(1);
+    expect(disappeared.result.current.outcome).toBe("complete_with_skips");
   });
 
-  it("does not sign anything until start is called", () => {
-    setup();
-    expect(wagmiState.writeContract).not.toHaveBeenCalled();
+  it("treats a directly revalidated spent or transferred claim as skipped without a wallet prompt", async () => {
+    const spent = setup();
+    spent.executor.confirm = vi.fn(async (): Promise<ActionExecutionResult> => ({
+      status: "invalid",
+      errors: [
+        {
+          code: "nothing-claimable",
+          message: "No pool share is currently claimable",
+        },
+      ],
+    }));
+
+    act(() => spent.result.current.start([rows[0], rows[1]]));
+
+    await vi.waitFor(() => expect(spent.result.current.done).toBe(true));
+    expect(spent.result.current.rows.map((row) => row.status)).toEqual([
+      "skipped",
+      "skipped",
+    ]);
   });
 
-  it("executes sequentially, advancing only per confirmed receipt, invalidating each time", () => {
-    const { result, rerender, invalidateSpy } = setup();
-    act(() => result.current.start(plan));
-    expect(wagmiState.writeContract).toHaveBeenCalledTimes(1);
-    expect(wagmiState.writeContract.mock.calls[0][0]).toMatchObject({ functionName: "multicall", address: lending });
+  it("retries a post-receipt refresh through the executor without confirming or writing the row again", async () => {
+    const { result, executor } = setup();
+    executor.confirm.mockImplementationOnce(async (plan) => ({
+      status: "refresh_failed",
+      hash,
+      receipt: { transactionHash: hash, status: "success", blockNumber: 100n },
+      draft: plan.accepted,
+      identity: plan.accepted.action.identity,
+      error: new Error("hydration failed"),
+    }));
+    executor.retryRefresh.mockImplementationOnce(async () => success(executionPlan(rows[0], {
+      account: userA,
+      chainId: 1,
+    })));
 
-    confirmCurrent(() => rerender({ u: userA }), "0xhash1");
+    act(() => result.current.start(rows));
+    await vi.waitFor(() => expect(result.current.rows[0].status).toBe("refresh-failed"));
+
+    act(() => result.current.resume(rows.slice(1)));
+    await vi.waitFor(() => expect(result.current.done).toBe(true));
+    expect(executor.retryRefresh).toHaveBeenCalledTimes(1);
+    expect(executor.confirm).toHaveBeenCalledTimes(2);
     expect(result.current.rows[0].status).toBe("confirmed");
-    expect(invalidateSpy.mock.calls.length).toBeGreaterThanOrEqual(3);
-    expect(wagmiState.writeContract).toHaveBeenCalledTimes(2);
-    expect(wagmiState.writeContract.mock.calls[1][0]).toMatchObject({ functionName: "withdrawMax" });
-
-    confirmCurrent(() => rerender({ u: userA }), "0xhash2");
-    expect(result.current.done).toBe(true);
-    expect(result.current.running).toBe(false);
   });
 
-  it("stops on failure and resumes from a fresh plan keeping confirmed rows", () => {
-    const { result, rerender } = setup();
-    act(() => result.current.start(plan));
-    confirmCurrent(() => rerender({ u: userA }), "0xhash1");
-    expect(wagmiState.writeContract).toHaveBeenCalledTimes(2);
+  it("never repeats confirmed grouped constituents when a fresh resume plan adds work", async () => {
+    const { result, executor, rebuild } = setup();
+    executor.confirm
+      .mockImplementationOnce(async (plan) => success(plan))
+      .mockImplementationOnce(async () => ({
+        status: "transport_failed",
+        error: new Error("RPC unavailable"),
+      }))
+      .mockImplementation(async (plan) => success(plan));
 
-    wagmiState.writeError = new Error("user rejected");
-    act(() => rerender({ u: userA }));
-    expect(result.current.failed).toBe(true);
-    expect(result.current.running).toBe(false);
-    expect(result.current.rows[1].status).toBe("failed");
-
-    // Resume with a fresh plan (stream now partially claimed elsewhere -> new plan)
-    wagmiState.writeError = null;
-    const fresh: QueuedTx[] = [{ kind: "stream-claim", streamId: 7n, asset }];
-    act(() => result.current.resume(fresh));
+    act(() => result.current.start(rows));
+    await vi.waitFor(() => expect(result.current.failed).toBe(true));
     expect(result.current.rows[0].status).toBe("confirmed");
-    expect(result.current.rows).toHaveLength(2);
-    expect(wagmiState.writeContract).toHaveBeenCalledTimes(3);
-  });
 
-  it("treats a mined-but-reverted receipt as a failure, not a confirmation", () => {
-    // Regression: waitForTransactionReceipt resolves isSuccess/isError based on
-    // whether the RPC fetch itself succeeded, not the transaction's on-chain
-    // outcome — a reverted tx (e.g. claiming an already-claimed stream) still
-    // mines a receipt with no write/receipt error, only `data.status`.
-    const { result, rerender, invalidateSpy } = setup();
-    act(() => result.current.start([{ kind: "stream-claim", streamId: 7n, asset }]));
-    expect(wagmiState.writeContract).toHaveBeenCalledTimes(1);
+    const expanded: QueuedTx[] = [
+      {
+        ...rows[0],
+        claims: [
+          ...(rows[0].kind === "pool-claims" ? rows[0].claims : []),
+          { loanId: 3n, claimable: 11n },
+        ],
+      } as QueuedTx,
+      rows[1],
+    ];
+    act(() => result.current.resume(expanded));
 
-    revertCurrent(() => rerender({ u: userA }), "0xhash1");
-
-    expect(result.current.rows[0].status).toBe("failed");
-    expect(result.current.failed).toBe(true);
-    expect(result.current.running).toBe(false);
-    expect(result.current.done).toBe(false);
-    // No further advance and no invalidation for the reverted tx.
-    expect(wagmiState.writeContract).toHaveBeenCalledTimes(1);
-    expect(invalidateSpy).not.toHaveBeenCalled();
-  });
-
-  it("pauses after the in-flight tx when the connected wallet changes", () => {
-    const { result, rerender } = setup();
-    act(() => result.current.start(plan));
-
-    act(() => rerender({ u: userB }));
-    expect(result.current.paused).toBe(true);
-
-    confirmCurrent(() => rerender({ u: userB }), "0xhash1");
-    // first tx confirmed, but no auto-advance to the second
+    expect(result.current.needsReview).toBe(true);
     expect(result.current.rows[0].status).toBe("confirmed");
-    expect(result.current.running).toBe(false);
-    expect(wagmiState.writeContract).toHaveBeenCalledTimes(1);
-  });
-});
+    expect(executor.confirm).toHaveBeenCalledTimes(2);
 
-// R42/M-7: the pause effect and the receipt-advance effect run in the same
-// commit when a receipt lands on the render where `user` changed, and the
-// advance effect's closure still holds the pre-update `paused === false`. It
-// therefore fired the next transaction at the NEW signer — a wallet prompt the
-// user never initiated, for the previous account's stream. It fails closed
-// on-chain (Sablier rejects a non-recipient), but the prompt is the harm.
-describe("useTxQueue — signer switch cannot be beaten (R42)", () => {
-  it("does not advance when the receipt and the signer change land together", () => {
-    const { result, rerender } = setup();
-    act(() => result.current.start(plan));
-    expect(wagmiState.writeContract).toHaveBeenCalledTimes(1);
-
-    // The commit that both confirms tx 1 and switches the signer — the exact
-    // interleaving that used to slip a second transaction through.
-    wagmiState.hash = "0xhash1";
-    wagmiState.receiptSuccess = true;
-    act(() => rerender({ u: userB }));
-
-    expect(result.current.rows[0].status).toBe("confirmed");
-    // The second transaction must NOT have been dispatched.
-    expect(wagmiState.writeContract).toHaveBeenCalledTimes(1);
-    expect(result.current.running).toBe(false);
-    expect(result.current.paused).toBe(true);
+    act(() => result.current.acceptReview(expanded));
+    await vi.waitFor(() => expect(result.current.done).toBe(true));
+    const rebuiltAfterReview = rebuild.mock.calls.slice(-2).map(([tx]) => tx);
+    expect(rebuiltAfterReview).toEqual([
+      {
+        kind: "pool-claims",
+        lending,
+        claims: [{ loanId: 3n, claimable: 11n }],
+        asset,
+      },
+      rows[1],
+    ]);
   });
 
-  it("still advances normally while the signer is unchanged", () => {
-    // Guard against over-correction: the ref check must only stop the queue on
-    // an actual signer change, not on every confirmation.
-    const { result, rerender } = setup();
-    act(() => result.current.start(plan));
+  it.each([
+    [{ account: userB, chainId: 1 }, "account"],
+    [{ account: userA, chainId: 10 }, "chain"],
+  ] as const)(
+    "cannot lose the account/chain guard when identity changes with receipt resolution",
+    async (nextIdentity, expectedReason) => {
+      const setupResult = setup();
+      const { result, executor, rerender } = setupResult;
+      let releaseFirst!: () => void;
+      executor.confirm.mockImplementationOnce(
+        (plan) =>
+          new Promise<ActionExecutionResult>((resolve) => {
+            releaseFirst = () => resolve(success(plan));
+          }),
+      );
 
-    confirmCurrent(() => rerender({ u: userA }), "0xhash1");
+      act(() => result.current.start(rows));
+      await vi.waitFor(() => expect(executor.confirm).toHaveBeenCalledTimes(1));
+      act(() => rerender({ identity: nextIdentity }));
+      await act(async () => releaseFirst());
 
-    expect(result.current.rows[0].status).toBe("confirmed");
-    expect(wagmiState.writeContract).toHaveBeenCalledTimes(2);
-  });
-
-  it("re-owns the queue for the new signer on an explicit resume", () => {
-    // Resuming after a switch is the user's deliberate act, unlike auto-advance.
-    const { result, rerender } = setup();
-    act(() => result.current.start(plan));
-    act(() => rerender({ u: userB }));
-
-    wagmiState.hash = "0xhash1";
-    wagmiState.receiptSuccess = true;
-    act(() => rerender({ u: userB }));
-    const beforeResume = wagmiState.writeContract.mock.calls.length;
-
-    wagmiState.receiptSuccess = false;
-    wagmiState.hash = undefined;
-    act(() => result.current.resume([plan[1]]));
-
-    expect(wagmiState.writeContract.mock.calls.length).toBe(beforeResume + 1);
-  });
+      await vi.waitFor(() => expect(result.current.paused).toBe(true));
+      expect(result.current.rows[0].status).toBe("confirmed");
+      expect(result.current.pauseReason).toBe(expectedReason);
+      expect(executor.confirm).toHaveBeenCalledTimes(1);
+    },
+  );
 });

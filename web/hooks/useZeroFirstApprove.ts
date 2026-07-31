@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Address } from "viem";
 import { erc20Abi } from "@/lib/abis";
-import { chainId as configuredChainId } from "@/lib/config";
 import { isRevertFailure } from "@/lib/errors";
 
 type WriteFlow = {
@@ -46,7 +45,6 @@ export function useZeroFirstApprove(approveTx: WriteFlow) {
   const write = useCallback(
     (token: Address, spender: Address, amount: bigint) => {
       approveTx.writeContract({
-        chainId: configuredChainId,
         address: token,
         abi: erc20Abi,
         functionName: "approve",

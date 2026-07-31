@@ -123,3 +123,4 @@ it("submits the reviewed work unchanged when nothing moved", …)   // over-corr
 - [Refs beat state for cross-effect race guards](./refs-beat-state-for-cross-effect-race-guards.md) — the sibling race in the same queue, fixed in the same unit
 - [adjust-rate multicall shrink race](../logic-errors/adjust-rate-multicall-shrink-race.md) — the on-chain version of submitting against state that moved
 - [Web markets outcome-first planners and tx queue](../architecture-patterns/web-markets-outcome-first-planners-and-tx-queue.md) — the planner/queue split this pattern operates inside
+- [Deposit reviewed slippage bound must survive mid-flow block advances](../logic-errors/deposit-reviewed-slippage-bound-must-survive-mid-flow-blocks.md) — for single-tx rebuilds, the reviewed numeric bound is the frozen consent; recompute only when that bound is no longer protective

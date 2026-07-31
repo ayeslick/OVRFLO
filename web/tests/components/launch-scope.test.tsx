@@ -9,9 +9,6 @@ function testAddress(id: number): Address {
   return `0x${id.toString(16).padStart(40, "0")}` as Address;
 }
 
-vi.mock("@/hooks/useIndexerSync", () => ({
-  useIndexerSync: () => ({ syncedBlock: 100n, headBlock: 100n, lagBlocks: 0n, lagging: false }),
-}));
 vi.mock("wagmi", () => ({
   useBlockNumber: () => ({ data: 100n }),
   useConnection: () => ({ status: "disconnected", addresses: [] }),

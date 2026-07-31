@@ -905,6 +905,20 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
         );
     }
 
+    /// @notice SP-101: both indexed depth levels decrease by the touched position delta.
+    function property_liquidityDepthDecreased(uint256 decrease) internal {
+        eq(
+            stateBefore.marketLiquidityDepth - stateAfter.marketLiquidityDepth,
+            decrease,
+            "SP-101: market liquidity depth delta"
+        );
+        eq(
+            stateBefore.marketAprLiquidityDepth - stateAfter.marketAprLiquidityDepth,
+            decrease,
+            "SP-101: APR liquidity depth delta"
+        );
+    }
+
     /// @notice SP-71: Non-lender cannot cancel liquidity (sanity: caller was the lender)
     function property_nonMakerCannotWithdrawLiquidity(uint256 liquidityId) internal {
         (address lender,,,) = lending.liquidityPositions(liquidityId);
@@ -1075,9 +1089,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
         (, uint256 streamId,,,,) = lending.loans(loanPoolId);
         // Quote with borrowAmount=0 to get grossPrice independently (never reverts on LTV check)
         uint256 grossPrice;
-        try lending.quote(poolMarket, streamId, aprBps, 0) returns (
-            uint256 price, uint128, uint256, uint256, uint128
-        ) {
+        try lending.quote(poolMarket, streamId, aprBps, 0) returns (uint256 price, uint128, uint256, uint256, uint128) {
             grossPrice = price;
         } catch {
             return; // Invalid state — cannot test

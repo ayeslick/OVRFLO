@@ -15,7 +15,7 @@ enums have been widened to reflect our stack; everything else matches the upstre
 - `performance-issues/` — slow queries, extra RPC calls, memory bloat
 - `security-issues/` — auth, access control, slippage, oracle issues
 - `ui-bugs/` — frontend rendering, data-not-shown, layout
-- `integration-issues/` — Pendle, Sablier, Envio, CoinGecko, wallets
+- `integration-issues/` — Pendle, Sablier, on-chain discovery, CoinGecko, wallets
 - `logic-errors/` — business-logic bugs in contracts or client code
 - `developer-experience/` — DX issues: dead code, env layout, dev setup
 - `best-practices/` — testing, workflow, and code-quality practices distilled from real review work
@@ -82,8 +82,23 @@ enums have been widened to reflect our stack; everything else matches the upstre
   TanStack Query invalidation.
 - [integration-issues/transferred-sablier-nfts-invisible-WebUI-20260421.md](integration-issues/transferred-sablier-nfts-invisible-WebUI-20260421.md) —
   Streams whose Sablier NFT was transferred to a new wallet never appeared for the new
-  recipient. Fixed by reverting from on-chain `Deposited` log scanning to the Sablier
-  Envio GraphQL indexer.
+  recipient. Fixed by candidate discovery (Deposited ∩ Transfer) plus mandatory
+  Sablier `ownerOf` hydration — mint-time events alone are not current ownership.
+- [security-issues/indexer-is-a-discovery-hint-not-an-authority.md](security-issues/indexer-is-a-discovery-hint-not-an-authority.md) —
+  Stream discovery is a candidate set; empty must not mean unavailable. Live path is
+  browser-side projection under `web/lib/discovery/`.
+- [integration-issues/live-discovery-cutover-must-keep-partial-stale-reads-fail-closed.md](integration-issues/live-discovery-cutover-must-keep-partial-stale-reads-fail-closed.md) —
+  Post-indexer cutover: partial/stale projections stay fail-closed in live consumers.
+- [logic-errors/tick-scoped-market-depth-refresh-must-match-whole-market-keys.md](logic-errors/tick-scoped-market-depth-refresh-must-match-whole-market-keys.md) —
+  Tick-scoped market-depth refresh must also invalidate whole-market (`aprBps` null) projection keys.
+- [logic-errors/invalid-presubmit-rebuild-must-surface-errors-for-stale-recovery.md](logic-errors/invalid-presubmit-rebuild-must-surface-errors-for-stale-recovery.md) —
+  `invalid` rebuild results carry `errors[]`; surface a consumer `error` or stale recovery never runs.
+- [logic-errors/deposit-reviewed-slippage-bound-must-survive-mid-flow-blocks.md](logic-errors/deposit-reviewed-slippage-bound-must-survive-mid-flow-blocks.md) —
+  Honor the reviewed deposit min-to-wallet across mid-flow blocks while it remains protective.
+- [logic-errors/unified-executor-must-latch-identity-and-rebuild-before-write.md](logic-errors/unified-executor-must-latch-identity-and-rebuild-before-write.md) —
+  Rebuild + identity latch before every live write/approval; races become explicit statuses.
+- [runtime-errors/projection-rpc-clients-must-be-cached-per-url-for-credential-forward-roll.md](runtime-errors/projection-rpc-clients-must-be-cached-per-url-for-credential-forward-roll.md) —
+  Cache projection RPC clients per URL so credential forward-roll is not pinned to first render.
 - [ui-bugs/usd-prices-not-shown-in-modals-WebUI-20260421.md](ui-bugs/usd-prices-not-shown-in-modals-WebUI-20260421.md) —
   `useUsdPrices` was implemented but neither the Dashboard nor the Deposit/Claim modals
   ever rendered dollar values. Fixed by plumbing the `prices` prop through and rendering

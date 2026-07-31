@@ -24,7 +24,7 @@ origins the browser bundle embeds.
 
 When those origins were missing, the script substituted `rpc.ankr.com` and
 `localhost`. A production deploy could therefore ship a CSP that **blocked its
-own RPC and indexer** — and the build stayed green throughout (finding M-17,
+own RPC** — and the build stayed green throughout (finding M-17,
 requirement R29).
 
 ## Guidance
@@ -102,7 +102,7 @@ const rpcOrigin = originOf(process.env.NEXT_PUBLIC_RPC_URL) ?? "https://rpc.ankr
 ```js
 // R29/M-17: this used to substitute rpc.ankr.com and localhost when the
 // origins were missing, so a deploy could ship a CSP that blocked its own
-// RPC and indexer — silently, because the build stayed green. Missing
+// RPC — silently, because the build stayed green. Missing
 // origins now fail the build. Local builds that genuinely want the
 // fallbacks opt in with CSP_ALLOW_FALLBACKS=1; forgetting it fails loudly
 // rather than shipping something broken.
@@ -113,6 +113,6 @@ succeeds with them, exporting cleanly with the inline scripts hashed.
 
 ## Related
 
-- [Narrow the Ponder read surface to the app's queries](../architecture-patterns/narrow-the-ponder-read-surface-to-the-app-queries.md) — the other half of "a static export has no server side to hold anything"
-- [The indexer is a discovery hint, not an authority](../security-issues/indexer-is-a-discovery-hint-not-an-authority.md) — the same fail-closed rule applied to a runtime read
+- [Deployable builds must reject the local runtime profile](../security-issues/deployable-builds-must-reject-local-runtime-profile.md) — another packaging fail-closed gate with no silent fallback
+- [Stream discovery is a candidate set, not an authority](../security-issues/indexer-is-a-discovery-hint-not-an-authority.md) — the same fail-closed rule applied to a runtime read
 - [Anvil forge script broadcast out of funds](../integration-issues/anvil-forge-script-broadcast-out-of-funds-LocalSeeding-20260421.md) — the neighbouring class of build/deploy toolchain trap

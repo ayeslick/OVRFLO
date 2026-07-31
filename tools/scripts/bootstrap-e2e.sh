@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # bootstrap-e2e.sh — tear down any existing local E2E environment and bring
-# up a fresh one (anvil fork + seed + Ponder + dev server + generated
+# up a fresh one (anvil fork + seed + dev server + generated
 # Playwright specs), ready for `npx playwright test` with no manual steps in
 # between. Composes the existing bootstrap-clean.sh / bootstrap-local.sh
 # rather than duplicating them; the only genuinely new pieces here are (a)
@@ -17,7 +17,7 @@
 #
 # Teardown: tools/scripts/bootstrap-clean.sh local also stops the dev server
 # started here (tracked via .bootstrap.web.pid, the same convention as
-# anvil/ponder's own pid files).
+# anvil's own pid files).
 
 set -euo pipefail
 
@@ -37,13 +37,13 @@ WEB_PID_FILE=".bootstrap.web.pid"
 WEB_LOG=".bootstrap.web.log"
 
 # ─── teardown ────────────────────────────────────────────────────────────────
-# bootstrap-clean.sh handles anvil, ponder (incl. its orphaned-grandchild
+# bootstrap-clean.sh handles anvil
 # case), and — now — this script's own dev server pid file the same way.
 echo "[1/4] tearing down any existing local environment"
 tools/scripts/bootstrap-clean.sh local
 
-# ─── bring up anvil + seed + ponder ──────────────────────────────────────────
-echo "[2/4] bootstrapping anvil + seed + ponder (bootstrap-local.sh)"
+# ─── bring up anvil + seed ──────────────────────────────────────────────────
+echo "[2/4] bootstrapping anvil + seed (bootstrap-local.sh)"
 BOOT_NO_UI=1 tools/scripts/bootstrap-local.sh
 
 # ─── dev server ───────────────────────────────────────────────────────────────
@@ -80,6 +80,5 @@ echo
 echo "=== e2e testbed ready ==="
 echo "app        : http://localhost:3000  (log: $WEB_LOG)"
 echo "rpc        : http://127.0.0.1:8545  (log: .bootstrap.anvil.log)"
-echo "ponder sql : http://localhost:42069/sql  (log: .bootstrap.ponder.log)"
 echo "run tests  : cd web && npx playwright test [path] [-g \"<pattern>\"]"
 echo "teardown   : tools/scripts/bootstrap-clean.sh local"

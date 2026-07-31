@@ -18,9 +18,9 @@ vi.mock("wagmi", () => ({
 }));
 
 describe("useLending", () => {
-  it("unpacks the 6 params in declared order on success", () => {
+  it("unpacks the 7 params in declared order on success", () => {
     mockReturn = {
-      data: [success(1000), success(1200), success(40), success(3n), success(7n), success(2n)],
+      data: [success(1000), success(1200), success(40), success(3n), success(7n), success(2n), success(128n)],
       isLoading: false,
       error: null,
     };
@@ -32,6 +32,7 @@ describe("useLending", () => {
       nextLiquidityId: 3n,
       nextLoanId: 7n,
       nextSaleListingId: 2n,
+      maxRouteIds: 128,
     });
     expect(result.current.isLoading).toBe(false);
     expect(result.current.error).toBeNull();
@@ -50,6 +51,7 @@ describe("useLending", () => {
           expect.objectContaining({ functionName: "nextLiquidityId" }),
           expect.objectContaining({ functionName: "nextLoanId" }),
           expect.objectContaining({ functionName: "nextSaleListingId" }),
+          expect.objectContaining({ functionName: "MAX_ROUTE_IDS" }),
         ],
       }),
     );
@@ -65,20 +67,24 @@ describe("useLending", () => {
       nextLiquidityId: 1n,
       nextLoanId: 1n,
       nextSaleListingId: 1n,
+      maxRouteIds: 0,
     });
     expect(result.current.isLoading).toBe(true);
   });
 
-  it("falls back per-field when only some reads fail", () => {
+  it("fails closed when any required parameter read fails", () => {
     mockReturn = {
-      data: [success(1000), failure(new Error("rpc")), success(40), success(3n), success(7n), success(2n)],
+      data: [success(1000), failure(new Error("rpc")), success(40), success(3n), success(7n), success(2n), success(128n)],
       isLoading: false,
       error: null,
     };
     const { result } = renderHook(() => useLending(LENDING));
     expect(result.current.params.aprMinBps).toBe(1000);
-    expect(result.current.params.aprMaxBps).toBe(0); // failed read defaults, doesn't poison siblings
+    expect(result.current.params.aprMaxBps).toBe(0);
     expect(result.current.params.feeBps).toBe(40);
+    expect(result.current.error).toEqual(
+      new Error("Required lending parameters are incomplete"),
+    );
   });
 
   it("propagates the read error", () => {

@@ -4,7 +4,8 @@ import { createAppKit } from "@reown/appkit/react";
 import { WagmiAdapter } from "@reown/appkit-adapter-wagmi";
 import { mainnet } from "@reown/appkit/networks";
 import { http, type Config } from "wagmi";
-import { reownProjectId, rpcUrl } from "./config";
+import { reownProjectId, rpcUrls } from "./config";
+import { createOrderedReadTransport } from "./rpc";
 
 // Production wallet stack only. The E2E runtime never imports this module —
 // constructing `WagmiAdapter` performs Reown/WalletConnect setup at module
@@ -28,7 +29,7 @@ export const wagmiAdapter = new WagmiAdapter({
   // Pinned by tests/lib/wagmi-config.test.ts — nothing else covers this file.
   ssr: true,
   transports: {
-    [mainnet.id]: http(rpcUrl),
+    [mainnet.id]: createOrderedReadTransport(rpcUrls.map((url) => http(url))),
   },
 });
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { demandKeys, streamKeys } from "@/lib/query-keys";
+import { demandKeys, projectionKeys, streamKeys } from "@/lib/query-keys";
 
 const USER_A = "0x1234567890abcdef1234567890abcdef12345678" as const;
 const USER_B = "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd" as const;
@@ -36,5 +36,56 @@ describe("demandKeys", () => {
 
   it("never collides with a streamKeys key even when called with the same address", () => {
     expect(demandKeys.market(USER_A)).not.toEqual(streamKeys.held(USER_A));
+  });
+});
+
+describe("projectionKeys", () => {
+  const anchor = {
+    number: 100n,
+    hash: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" as const,
+  };
+
+  it("keys stable scope identity without captured heads", () => {
+    const key = projectionKeys.scope({
+      chainId: 1,
+      factoryAnchor: anchor,
+      lending: USER_A,
+      kind: "market-apr",
+      market: USER_B,
+      aprBps: 1000,
+    });
+    expect(key).toEqual([
+      "projection",
+      1,
+      1,
+      "100",
+      anchor.hash,
+      USER_A,
+      "market-apr",
+      USER_B,
+      1000,
+      null,
+      "primary",
+    ]);
+    expect(key.join(":")).not.toContain("latest");
+    expect(key.join(":")).not.toContain("finalized");
+  });
+
+  it("keeps independent Claim All verifier cache state separate", () => {
+    const primary = projectionKeys.scope({
+      chainId: 1,
+      factoryAnchor: anchor,
+      kind: "claim-verifier",
+      account: USER_A,
+      transportRole: "primary",
+    });
+    const verifier = projectionKeys.scope({
+      chainId: 1,
+      factoryAnchor: anchor,
+      kind: "claim-verifier",
+      account: USER_A,
+      transportRole: "verifier",
+    });
+    expect(primary).not.toEqual(verifier);
   });
 });

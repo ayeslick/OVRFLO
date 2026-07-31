@@ -10,9 +10,6 @@ function testAddress(id: number): Address {
 
 const walletState = { address: testAddress(0xa11) as Address | undefined };
 
-vi.mock("@/hooks/useIndexerSync", () => ({
-  useIndexerSync: () => ({ syncedBlock: 100n, headBlock: 100n, lagBlocks: 0n, lagging: false }),
-}));
 vi.mock("wagmi", () => ({
   useBlockNumber: () => ({ data: 100n }),
   useConnection: () => ({
@@ -22,7 +19,26 @@ vi.mock("wagmi", () => ({
   }),
   useSwitchChain: () => ({ switchChain: () => {}, isPending: false, error: null }),
   useReadContract: () => ({ data: undefined }),
-  useReadContracts: () => ({ data: [], isLoading: false, error: null }),
+  useReadContracts: ({ contracts }: { contracts?: Array<{ functionName?: string; args?: readonly unknown[] }> }) => ({
+    data:
+      contracts?.[0]?.functionName === "marketAprAvailableLiquidity"
+        ? contracts.map((contract) => ({
+            ...(hookData.rateDepthFailures.has(
+              contract.args?.[1] as number,
+            )
+              ? { status: "failure", error: new Error("rate unavailable") }
+              : {
+                  status: "success",
+                  result:
+                    hookData.rateDepths.get(
+                      contract.args?.[1] as number,
+                    ) ?? 0n,
+                }),
+          }))
+        : [],
+    isLoading: false,
+    error: null,
+  }),
 }));
 
 const hookData = {
@@ -30,6 +46,10 @@ const hookData = {
   streams: [] as unknown[],
   liquidityLoading: false,
   lendingLoading: false,
+  aprMinBps: 1000,
+  aprMaxBps: 1200,
+  rateDepths: new Map<number, bigint>(),
+  rateDepthFailures: new Set<number>(),
 };
 
 vi.mock("@/hooks/useLendingLiquidity", () => ({
@@ -45,7 +65,14 @@ vi.mock("@/hooks/useHeldStreams", () => ({
 }));
 vi.mock("@/hooks/useLending", () => ({
   useLending: () => ({
-    params: { aprMinBps: 1000, aprMaxBps: 1200, feeBps: 40, nextLiquidityId: 1n, nextLoanId: 1n, nextSaleListingId: 1n },
+    params: {
+      aprMinBps: hookData.aprMinBps,
+      aprMaxBps: hookData.aprMaxBps,
+      feeBps: 40,
+      nextLiquidityId: 1n,
+      nextLoanId: 1n,
+      nextSaleListingId: 1n,
+    },
     isLoading: hookData.lendingLoading,
     error: null,
   }),
@@ -111,6 +138,10 @@ beforeEach(() => {
   hookData.streams = [];
   hookData.liquidityLoading = false;
   hookData.lendingLoading = false;
+  hookData.aprMinBps = 1000;
+  hookData.aprMaxBps = 1200;
+  hookData.rateDepths = new Map();
+  hookData.rateDepthFailures = new Set();
 });
 
 const WAD = 10n ** 18n;
@@ -141,28 +172,6 @@ function otherLenderLiquidity() {
     availableLiquidity: 50n * WAD,
   };
 }
-
-describe("market list states", () => {
-  it("distinguishes loading from an empty market list", () => {
-    renderTable({ markets: [], isLoading: true });
-
-    expect(screen.getByText("LOADING MARKETS")).toBeInTheDocument();
-    expect(screen.queryByText("NO APPROVED MARKETS")).not.toBeInTheDocument();
-  });
-
-  it("distinguishes a load failure from an empty market list", () => {
-    renderTable({ markets: [], error: new Error("network unavailable") });
-
-    expect(screen.getByText("UNABLE TO LOAD MARKETS — REFRESH")).toBeInTheDocument();
-    expect(screen.queryByText("NO APPROVED MARKETS")).not.toBeInTheDocument();
-  });
-
-  it("names the true empty state", () => {
-    renderTable({ markets: [] });
-
-    expect(screen.getByText("NO APPROVED MARKETS")).toBeInTheDocument();
-  });
-});
 
 describe("row expansion (R6)", () => {
   it("expands on row click, swaps on second row, collapses on re-click, toggling aria-expanded", () => {
@@ -195,15 +204,15 @@ describe("row expansion (R6)", () => {
 });
 
 describe("expanded content states (R7/R8/R27)", () => {
-  it("disconnected: no balances, primary mode buttons disabled with CONNECT WALLET", () => {
+  it("disconnected: no balances, all mode buttons disabled with CONNECT WALLET", () => {
     walletState.address = undefined;
     renderTable({ user: undefined });
     fireEvent.click(screen.getAllByRole("button", { name: /ovrfloTESTA/ })[0]);
     expect(screen.queryByText("BALANCES")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "SUPPLY" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "BORROW" })).toBeDisabled();
-    expect(screen.queryByRole("button", { name: "DEPOSIT PT" })).not.toBeInTheDocument();
-    expect(screen.getAllByText("CONNECT WALLET").length).toBe(2);
+    expect(screen.getByRole("button", { name: "DEPOSIT PT" })).toBeDisabled();
+    expect(screen.getAllByText("CONNECT WALLET").length).toBe(3);
   });
 
   it("matured market: DEPOSIT hidden, SUPPLY/BORROW disabled MARKET MATURED, verb is CLAIM PT", () => {
@@ -242,6 +251,21 @@ describe("expanded content states (R7/R8/R27)", () => {
     fireEvent.click(screen.getAllByRole("button", { name: /ovrfloTESTA/ })[0]);
     expect(screen.getByRole("button", { name: "BORROW" })).toBeEnabled();
     expect(screen.queryByText("NO LIQUIDITY POSTED AT ANY RATE")).not.toBeInTheDocument();
+  });
+
+  it("keeps the market-row Borrow gate open for liquidity at an old tick", () => {
+    hookData.streams = [eligibleStream()];
+    hookData.aprMinBps = 1100;
+    hookData.aprMaxBps = 1200;
+    hookData.liquidity = [otherLenderLiquidity()];
+    renderTable({ markets: [market] });
+    fireEvent.click(
+      screen.getAllByRole("button", { name: /ovrfloTESTA/ })[0],
+    );
+    expect(screen.getByRole("button", { name: "BORROW" })).toBeEnabled();
+    expect(
+      screen.queryByText("NO LIQUIDITY POSTED AT ANY RATE"),
+    ).not.toBeInTheDocument();
   });
 
   it("self-owned liquidity only: still NO LIQUIDITY POSTED AT ANY RATE (cannot borrow against own supply)", () => {
@@ -294,21 +318,30 @@ describe("expanded content states (R7/R8/R27)", () => {
 });
 
 describe("RATES column (R5)", () => {
-  it("states when the market has no liquidity at any tick", () => {
+  it("renders a dash when the market has no liquidity at any tick", () => {
     renderTable({ markets: [market] });
-    expect(screen.getAllByText("NO LIQUIDITY").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("—").length).toBeGreaterThan(0);
   });
 
-  it("renders the tick range in explicitly labeled lender and borrower lenses", () => {
-    hookData.liquidity = [
-      { id: 1n, lender: testAddress(0xff), market: market.market, aprBps: 1000, availableLiquidity: 10n ** 18n },
-      { id: 2n, lender: testAddress(0xff), market: market.market, aprBps: 1200, availableLiquidity: 10n ** 18n },
-    ];
+  it("renders the tick range in both lenses when liquidity exists", () => {
+    hookData.rateDepths = new Map([
+      [1000, 10n ** 18n],
+      [1200, 10n ** 18n],
+    ]);
     renderTable({ markets: [market] });
     expect(screen.getByText(/10\.00%–12\.00% APR/)).toBeInTheDocument();
-    expect(screen.getByText("LEND")).toBeInTheDocument();
-    expect(screen.getByText("BORROW")).toBeInTheDocument();
-    expect(screen.getByText(/UPFRONT/)).toBeInTheDocument();
+    expect(screen.getByText(/↑/)).toBeInTheDocument();
+  });
+
+  it("fails closed instead of rendering a partial range when one depth read fails", () => {
+    hookData.rateDepths = new Map([
+      [1000, 10n ** 18n],
+      [1200, 10n ** 18n],
+    ]);
+    hookData.rateDepthFailures.add(1100);
+    renderTable({ markets: [market] });
+    expect(screen.getByText("UNAVAILABLE")).toBeInTheDocument();
+    expect(screen.queryByText(/10\.00%–12\.00% APR/)).not.toBeInTheDocument();
   });
 });
 
@@ -348,23 +381,30 @@ describe("expanded detail escapes the table's width floor (R23)", () => {
   });
 });
 
-// R25/L-2 — the vault list capped at 100 with no disclosure at all, unlike the
-// 500-id scans which at least warned. Markets past the hundredth vanished.
-describe("truncation disclosure (R25)", () => {
-  it("discloses truncation when the vault list is capped", () => {
+// U9 rejects an incomplete registry instead of presenting a capped prefix as
+// usable market truth.
+describe("registry budget failure", () => {
+  it("distinguishes an incomplete registry from a ready empty registry", () => {
+    renderTable({ markets: [], registryStatus: "unavailable" });
+    expect(
+      screen.getByText("MARKET REGISTRY UNAVAILABLE — RETRY"),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("NO APPROVED MARKETS")).not.toBeInTheDocument();
+  });
+
+  it("fails closed when the registry discovery budget is exceeded", () => {
     renderTable({ truncated: true });
-    expect(screen.getByText("SHOWING FIRST 100 VAULTS AND MARKETS PER VAULT — DATA TRUNCATED")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "COMPLETE MARKET REGISTRY UNAVAILABLE — DISCOVERY BUDGET EXCEEDED",
+      ),
+    ).toBeInTheDocument();
   });
 
   it("says nothing when the list is complete", () => {
     renderTable({ truncated: false });
-    expect(screen.queryByText(/SHOWING FIRST/)).not.toBeInTheDocument();
-  });
-
-  it("uses the same sentence shape as the other capped lists", () => {
-    // The point of the shared component: a reader who has seen one truncation
-    // notice recognises the next one.
-    renderTable({ truncated: true });
-    expect(screen.getByText(/^SHOWING FIRST \d+ [\w ]+ — /)).toBeInTheDocument();
+    expect(
+      screen.queryByText(/COMPLETE MARKET REGISTRY UNAVAILABLE/),
+    ).not.toBeInTheDocument();
   });
 });

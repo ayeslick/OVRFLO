@@ -25,7 +25,13 @@ import {
 } from "viem";
 import { erc20Abi, ovrfloAbi, ovrfloFactoryAbi, ovrfloLendingAbi, sablierLockupAbi } from "@/lib/abis";
 import { SABLIER_LOCKUP_ADDRESS } from "@/lib/config";
+import {
+  createProjectionReadClient,
+  discoverHeldStreams,
+  discoverMarketLiquidity,
+} from "@/lib/discovery/live-projection";
 import { formatMaturityDate } from "@/lib/format";
+import { selectHydratedRoute } from "@/lib/router";
 import { DEV_WALLET_ADDRESS, LENDER_WALLET_ADDRESS } from "./mock-wallet";
 import { RPC_URL, rpcCall } from "./rpc";
 
@@ -66,6 +72,7 @@ type Deployment = {
   secondaryMarket: Address;
   secondaryPt: Address;
   secondaryExpiry: number;
+  factoryDeploymentBlock: string;
 };
 
 let cachedDeployment: Deployment | null = null;
@@ -417,38 +424,28 @@ export async function depositPtForStream(params: { account: Address; ovrflo: Add
   throw new Error("deposit receipt did not contain a Deposited event");
 }
 
-// Sablier streams are Ponder-indexed (see CONCEPTS.md's `Ponder` entry), not
-// a direct on-chain read — a stream just deposited above genuinely does not
-// exist yet from the frontend's point of view until Ponder's own poll cycle
-// (ponder.config.ts's `pollingInterval: 2_000`) notices the new block,
-// processes the event, and commits it. Reloading the page immediately after
-// deposit only forces a *fresh* fetch; it does nothing if that fetch still
-// lands before Ponder has caught up. Callers that arrange a stream a
-// scenario later depends on must await this before triggering "the frontend
-// re-syncs with chain state", or the reload races the indexer and still
-// finds nothing.
-// Plain `fetch` rather than importing the app's own `@/lib/ponder`, which
-// carries Next-only module resolution into Playwright's plain Node runtime.
-// Same endpoint, called directly.
-async function ponderHasStream(recipient: Address, streamId: bigint): Promise<boolean> {
-  // R38: the /sql arbitrary-query mount is gone, so this asks the same fixed
-  // endpoint the app uses. That is the better test anyway — the fixture now
-  // waits on exactly the surface the browser depends on, rather than a
-  // parallel query that could keep passing after the real one broke.
-  const base = (process.env.E2E_PONDER_URL ?? "http://localhost:42069").replace(/\/sql\/?$/, "");
-  const res = await fetch(`${base}/streams?owner=${recipient.toLowerCase()}&limit=500`);
-  if (!res.ok) return false;
-  const body = (await res.json()) as { streamIds?: string[] };
-  return Boolean(body.streamIds?.includes(streamId.toString()));
-}
-
 export async function waitForHeldStream(recipient: Address, streamId: bigint, timeoutMs = 15_000) {
+  const deployment = readDeployment();
+  const client = createProjectionReadClient(publicClient);
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    if (await ponderHasStream(recipient, streamId)) return;
+    const projection = await discoverHeldStreams({
+      client,
+      vaults: [deployment.ovrflo],
+      account: recipient,
+      fromBlock: BigInt(deployment.factoryDeploymentBlock),
+    });
+    if (
+      projection.status === "ready" &&
+      projection.data.streams.some((stream) => stream.streamId === streamId)
+    ) {
+      return;
+    }
     await new Promise((resolve) => setTimeout(resolve, 500));
   }
-  throw new Error(`waitForHeldStream: Ponder never indexed stream ${streamId} for ${recipient} within ${timeoutMs}ms`);
+  throw new Error(
+    `waitForHeldStream: direct projection did not hydrate stream ${streamId} for ${recipient} within ${timeoutMs}ms`,
+  );
 }
 
 // The discounted price of a stream's full remaining face value (see
@@ -517,15 +514,43 @@ export async function borrowAgainstStream(params: {
     functionName: "quote",
     args: [params.market, params.streamId, params.aprBps, fill],
   });
-  const [ids, sufficient] = await publicClient.readContract({
+  const projection = await discoverMarketLiquidity({
+    client: createProjectionReadClient(publicClient),
+    lending: params.lending,
+    market: params.market,
+    // Anchor at the deployment block like every other fixture scan: from
+    // genesis, the chunked getLogs sweep of a mainnet fork forwards hundreds
+    // of pre-fork ranges upstream and blows the per-test timeout.
+    fromBlock: BigInt(readDeployment().factoryDeploymentBlock),
+  });
+  if (projection.status !== "ready") {
+    throw new Error(
+      `borrowAgainstStream: projected liquidity unavailable — ${projection.failures
+        .map((failure) => failure.message)
+        .join("; ")}`,
+    );
+  }
+  const maxRouteIds = await publicClient.readContract({
     address: params.lending,
     abi: ovrfloLendingAbi,
-    functionName: "gatherLiquidity",
-    args: [params.market, params.aprBps, fill, 1n, params.account],
+    functionName: "MAX_ROUTE_IDS",
   });
-  if (!sufficient || ids.length === 0) {
-    throw new Error("borrowAgainstStream: gatherLiquidity found insufficient posted liquidity — supply more first");
+  const route = selectHydratedRoute({
+    positions: projection.data.positions.filter(
+      (position) => position.aprBps === params.aprBps,
+    ),
+    borrower: params.account,
+    target: fill,
+    aggregateDepth:
+      projection.data.aggregateByApr.get(params.aprBps) ?? 0n,
+    maxRouteIds: Number(maxRouteIds),
+  });
+  if (route.status !== "ready") {
+    throw new Error(
+      `borrowAgainstStream: projected route is ${route.status} — supply more first`,
+    );
   }
+  const ids = route.selectedIds;
   const minAcceptable = (netToBorrower * 99n) / 100n; // 1% slippage, arrangement only
 
   // `eth_estimateGas`'s result here sits close enough to the true minimum

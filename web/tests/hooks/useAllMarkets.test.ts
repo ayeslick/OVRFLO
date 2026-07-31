@@ -136,7 +136,7 @@ describe("useAllMarkets", () => {
     // and the notice never rendered, which is exactly the case the disclosure
     // exists for.
     ovrflosState = { vaults: [vault], isLoading: false, error: null, tooLarge: false };
-    marketCountReturn = { data: [success(101n)], isLoading: false, error: null };
+    marketCountReturn = { data: [success(2_049n)], isLoading: false, error: null };
     marketAddressReturn = { data: [success(MARKET_A)], isLoading: false, error: null };
     seriesReturn = { data: [success(seriesTuple(PT_TOKEN))], isLoading: false, error: null };
 
@@ -144,14 +144,39 @@ describe("useAllMarkets", () => {
     expect(result.current.tooLarge).toBe(true);
   });
 
-  it("says nothing when both the vault list and every market list fit", () => {
+  it("says nothing when the registry fits the global market budget", () => {
     ovrflosState = { vaults: [vault], isLoading: false, error: null, tooLarge: false };
-    marketCountReturn = { data: [success(100n)], isLoading: false, error: null };
+    marketCountReturn = { data: [success(1n)], isLoading: false, error: null };
     marketAddressReturn = { data: [success(MARKET_A)], isLoading: false, error: null };
     seriesReturn = { data: [success(seriesTuple(PT_TOKEN))], isLoading: false, error: null };
 
     const { result } = renderHook(() => useAllMarkets());
     expect(result.current.tooLarge).toBe(false);
+    expect(result.current.markets).toHaveLength(1);
+  });
+
+  it("fails closed when multiple individually valid vaults exceed the global market budget", () => {
+    ovrflosState = { vaults: [vault, vaultB], isLoading: false, error: null, tooLarge: false };
+    marketCountReturn = { data: [success(1_025n), success(1_025n)], isLoading: false, error: null };
+    marketAddressReturn = { data: [], isLoading: false, error: null };
+    seriesReturn = { data: [], isLoading: false, error: null };
+
+    const { result } = renderHook(() => useAllMarkets());
+    expect(result.current.tooLarge).toBe(true);
+    expect(result.current.markets).toEqual([]);
+  });
+
+  it("fails closed when any approved-market address read is incomplete", () => {
+    ovrflosState = { vaults: [vault], isLoading: false, error: null, tooLarge: false };
+    marketCountReturn = { data: [success(2n)], isLoading: false, error: null };
+    marketAddressReturn = { data: [success(MARKET_A)], isLoading: false, error: null };
+    seriesReturn = { data: [], isLoading: false, error: null };
+
+    const { result } = renderHook(() => useAllMarkets());
+    expect(result.current.markets).toEqual([]);
+    expect(result.current.error).toEqual(
+      new Error("Market registry hydration is incomplete"),
+    );
   });
 
   it("still reports truncation from the vault count alone", () => {

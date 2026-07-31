@@ -23,5 +23,22 @@ contract OVRFLOScript is Script {
         console.log("Owner (multisig):", multisig);
 
         vm.stopBroadcast();
+
+        // This manifest is intentionally not deployable yet: the browser
+        // requires factory/lending block hashes and a verified LendingDeployed
+        // identity. After the vault + lending transactions complete, add their
+        // addresses (or let the verifier derive the single pair) and run:
+        // DEPLOYMENT_RPC_URL=... node tools/scripts/write-deployment-artifact.mjs \
+        //   deployments/production.json
+        // Runtime/build config rejects this partial file, so a factory address
+        // alone can never become an implicit discovery anchor.
+        string memory objectKey = "ovrflo_production_deployment";
+        vm.serializeUint(objectKey, "formatVersion", 1);
+        vm.serializeUint(objectKey, "projectionSchemaVersion", 1);
+        vm.serializeUint(objectKey, "abiVersion", 1);
+        vm.serializeBool(objectKey, "freshGeneration", true);
+        vm.serializeUint(objectKey, "chainId", block.chainid);
+        string memory pending = vm.serializeAddress(objectKey, "factory", address(factory));
+        vm.writeJson(pending, "deployments/production.json");
     }
 }
