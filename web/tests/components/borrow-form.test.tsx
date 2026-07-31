@@ -16,6 +16,10 @@ const readState = {
   grossPrice: 1_000n * WAD,
   fillQuote: [1_000n * WAD, 40n * WAD, 1n * WAD, 29n * WAD, 60n * WAD] as unknown,
   gather: [[1n], true] as unknown,
+  quoteError: null as Error | null,
+  gatherError: null as Error | null,
+  quoteLoading: false,
+  quoteFetching: false,
   calls: [] as ReadCall[],
 };
 
@@ -34,11 +38,21 @@ vi.mock("wagmi", () => ({
     switch (config?.functionName) {
       case "quote":
         if (config.args?.[3] === 0n) {
-          return { data: [readState.grossPrice, 0n, 0n, 0n, 0n], error: null };
+          return {
+            data: [readState.grossPrice, 0n, 0n, 0n, 0n],
+            error: readState.quoteError,
+            isLoading: readState.quoteLoading,
+            isFetching: readState.quoteFetching,
+          };
         }
-        return { data: readState.fillQuote, error: null };
+        return {
+          data: readState.fillQuote,
+          error: readState.quoteError,
+          isLoading: readState.quoteLoading,
+          isFetching: readState.quoteFetching,
+        };
       case "gatherLiquidity":
-        return { data: readState.gather, error: null };
+        return { data: readState.gather, error: readState.gatherError, isLoading: false, isFetching: false };
       case "getRecipient":
         return { data: walletState.address, error: null };
       case "isApprovedForAll":
@@ -85,7 +99,11 @@ vi.mock("@/hooks/useWriteFlow", () => ({
 const hookData = {
   liquidity: [] as LiquidityPosition[],
   tooLarge: false,
+  liquidityError: null as Error | null,
+  lendingError: null as Error | null,
   streams: [] as unknown[],
+  streamsError: null as Error | null,
+  streamsStale: false,
 };
 
 vi.mock("@/hooks/useLendingLiquidity", () => ({
@@ -93,17 +111,23 @@ vi.mock("@/hooks/useLendingLiquidity", () => ({
     liquidity: hookData.liquidity,
     tooLarge: hookData.tooLarge,
     isLoading: false,
-    error: null,
+    error: hookData.liquidityError,
   }),
 }));
 vi.mock("@/hooks/useHeldStreams", () => ({
-  useHeldStreams: () => ({ streams: hookData.streams, isLoading: false, error: null }),
+  useHeldStreams: () => ({
+    streams: hookData.streams,
+    isLoading: false,
+    error: hookData.streamsError,
+    stale: hookData.streamsStale,
+    unavailable: Boolean(hookData.streamsError && !hookData.streamsStale),
+  }),
 }));
 vi.mock("@/hooks/useLending", () => ({
   useLending: () => ({
     params: { aprMinBps: 1000, aprMaxBps: 1200, feeBps: 40, nextLiquidityId: 5n, nextLoanId: 1n, nextSaleListingId: 1n },
     isLoading: false,
-    error: null,
+    error: hookData.lendingError,
   }),
 }));
 
@@ -185,6 +209,10 @@ beforeEach(() => {
   hookData.tooLarge = false;
   readState.grossPrice = 1_000n * WAD;
   readState.gather = [[1n], true];
+  readState.quoteError = null;
+  readState.gatherError = null;
+  readState.quoteLoading = false;
+  readState.quoteFetching = false;
   readState.calls = [];
   writeFlows.approve = flow();
   writeFlows.action = flow();
@@ -193,6 +221,10 @@ beforeEach(() => {
   demandState.status = "ok";
   demandState.demand = [];
   demandState.peak = 0n;
+  hookData.liquidityError = null;
+  hookData.lendingError = null;
+  hookData.streamsError = null;
+  hookData.streamsStale = false;
 });
 
 describe("BorrowForm ladder", () => {
@@ -251,6 +283,7 @@ describe("BorrowForm partial fills", () => {
   it("quotes a partial fill and hides the alternative behind an explicit click", () => {
     renderBorrow();
     enterAmount("90");
+    expect(screen.getByRole("status")).toHaveAttribute("data-borrow-outcome", "partial");
     expect(screen.getByText(/PARTIAL FILL — 30\.00 TESTA OF 90\.00 TESTA/)).toBeInTheDocument();
     expect(screen.queryByText(/SWITCH TO/)).not.toBeInTheDocument();
     fireEvent.click(screen.getByText("SHOW OTHER OPTIONS"));
@@ -266,6 +299,43 @@ describe("BorrowForm partial fills", () => {
     enterAmount("900");
     expect(screen.getByText(/PARTIAL FILL/)).toBeInTheDocument();
     expect(screen.queryByText("SHOW OTHER OPTIONS")).not.toBeInTheDocument();
+  });
+});
+
+describe("BorrowForm outcome classifier", () => {
+  it("announces source-read failures as unavailable instead of true zero", () => {
+    hookData.liquidityError = new Error("RPC unavailable");
+    renderBorrow();
+
+    expect(screen.getByRole("status")).toHaveAttribute("data-borrow-outcome", "unavailable");
+  });
+
+  it("announces quote reads while they are still preparing", () => {
+    readState.quoteLoading = true;
+    renderBorrow();
+    enterAmount("10");
+
+    expect(screen.getByRole("status")).toHaveAttribute("data-borrow-outcome", "preparing");
+  });
+
+  it("keeps terminal quote failures in terminal error copy", () => {
+    readState.quoteError = new Error("reverted: OVRFLOLending: self-match");
+    renderBorrow();
+    enterAmount("10");
+
+    expect(document.querySelector('[data-borrow-outcome="unavailable"]')).not.toBeInTheDocument();
+    expect(screen.getByText("You cannot borrow from your own liquidity.")).toBeInTheDocument();
+  });
+
+  it.each([
+    ["true-zero", [] as LiquidityPosition[]],
+    ["insufficient", [position(3, 1000, 20n, testAddress(0xa11))]],
+  ] as Array<[string, LiquidityPosition[]]>)("distinguishes %s when the ladder has no executable depth", (outcome, liquidity) => {
+    hookData.liquidity = liquidity;
+    renderBorrow();
+    enterAmount("10");
+
+    expect(screen.getByRole("status")).toHaveAttribute("data-borrow-outcome", outcome);
   });
 });
 

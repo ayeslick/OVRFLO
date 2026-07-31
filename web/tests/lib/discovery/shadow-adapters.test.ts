@@ -751,7 +751,10 @@ describe("shadow discovery adapters", () => {
     }
     expect(forbiddenImports).toEqual([]);
 
-    const actionModal = readFileSync(resolve(process.cwd(), "components/ActionModal.tsx"), "utf8");
-    expect(actionModal).toContain('functionName: "gatherLiquidity"');
+    // U8 makes ActionModal a composition surface and moves the temporary
+    // legacy Borrow bridge into its extracted flow. U9 owns replacing this
+    // bridge, so assert against the live flow rather than its router.
+    const borrowFlow = readFileSync(resolve(process.cwd(), "components/action-flow/BorrowFlow.tsx"), "utf8");
+    expect(borrowFlow).toContain('functionName: "gatherLiquidity"');
   });
 });

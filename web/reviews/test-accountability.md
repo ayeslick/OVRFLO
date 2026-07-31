@@ -1,5 +1,24 @@
 # Test accountability
 
+## 2026-07-31 — U8 shared flow shell and modal split
+
+Owner: Codex U8 implementation
+
+- `tests/lib/discovery/shadow-adapters.test.ts`: moved the temporary
+  `gatherLiquidity` bridge assertion from `ActionModal.tsx` to the extracted
+  live `action-flow/BorrowFlow.tsx`. This is a path update caused by the U8
+  composition split, not a relaxation: U9 still owns and must remove the
+  legacy bridge.
+- `tests/components/ActionModal.test.tsx`: added explicit coverage for every
+  Borrow outcome notice, including polite atomic announcements and the
+  no-range-flood invariant, plus write-contract assertions for the extracted
+  claim/position/convert/repay routing paths.
+- `tests/components/borrow-form.test.tsx`: added flow-level classifier coverage
+  for source-read failure, pending route reads, terminal quote errors, partial
+  fills, insufficient own-only depth, and true-zero depth. Existing tests still
+  cover stale-route recovery and the truncated-enumeration warning separately;
+  no legacy discovery or executor authority was replaced.
+
 ## 2026-07-30 — U1 fail-closed runtime and anchors
 
 Owner: Codex U1 implementation

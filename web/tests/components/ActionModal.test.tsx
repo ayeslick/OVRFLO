@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Address } from "viem";
 import type { ActionType, ActiveAction, Loan, LoanPool, MarketInfo } from "@/lib/types";
+import { SABLIER_LOCKUP_ADDRESS } from "@/lib/config";
 
 // Consolidates the step-indicator/accent/field/button-label assertions that
 // were previously scattered incidentally across supply-form.test.tsx,
@@ -148,6 +149,7 @@ vi.mock("@tanstack/react-query", () => ({
 }));
 
 import { ACTION_META, FormBody } from "@/components/ActionModal";
+import { BorrowOutcomeNotice, type BorrowOutcome } from "@/components/action-flow/BorrowFlow";
 
 const FUTURE = 99_999_999_999n;
 
@@ -408,6 +410,64 @@ describe("ActionModal / FormBody — all 12 action types", () => {
     expect(call[0].args[1]).toBe((fee * 102n) / 100n);
     expect(call[0].args[1]).not.toBe(fee);
     expect(call[0].args[1]).not.toBe((1n << 256n) - 1n);
+  });
+});
+
+describe("Borrow outcome notices", () => {
+  it.each([
+    ["preparing", /PREPARING/],
+    ["partial", /PARTIAL LIQUIDITY/],
+    ["unavailable", /UNAVAILABLE/],
+    ["stale-route", /ROUTE CHANGED/],
+    ["fragmented", /FRAGMENTED/],
+    ["insufficient", /INSUFFICIENT/],
+    ["true-zero", /NO EXECUTABLE/],
+  ] as Array<[BorrowOutcome, RegExp]>)("explains %s without range-level copy", (outcome, copy) => {
+    const { rerender } = render(<BorrowOutcomeNotice outcome={outcome} />);
+    const notice = screen.getByRole("status");
+    expect(notice).toHaveAttribute("aria-live", "polite");
+    expect(notice).toHaveAttribute("data-borrow-outcome", outcome);
+    expect(notice).toHaveTextContent(copy);
+
+    rerender(<BorrowOutcomeNotice outcome={outcome} />);
+    expect(screen.getAllByRole("status")).toHaveLength(1);
+  });
+});
+
+describe("ActionModal action routing writes", () => {
+  it.each([
+    ["withdraw", { type: "withdraw", positionId: 1n }, "WITHDRAW", "withdrawLiquidity", market.lending, [1n]],
+    [
+      "claim share",
+      { type: "claim_share", positionId: 1n },
+      "CLAIM SHARE",
+      "claimLoanPoolShare",
+      market.lending,
+      [1n, (1n << 128n) - 1n],
+    ],
+    ["claim stream", { type: "claim_stream", streamId: 1n }, "CLAIM STREAM", "withdrawMax", SABLIER_LOCKUP_ADDRESS, [1n, walletState.address]],
+    ["close", { type: "close", loanId: 1n }, "CLOSE LOAN", "closeLoan", market.lending, [1n]],
+  ] as const)("preserves the %s write contract", (_name, action, buttonName, functionName, address, args) => {
+    renderAction(action as ActiveAction);
+    fireEvent.click(screen.getByRole("button", { name: buttonName }));
+
+    expect(writeFlows.first.writeContract).toHaveBeenCalledWith(
+      expect.objectContaining({ address, functionName, args }),
+    );
+  });
+
+  it.each([
+    ["wrap", { type: "wrap" }, "WRAP", "wrap", [5n * WAD]],
+    ["unwrap", { type: "unwrap" }, "UNWRAP", "unwrap", [5n * WAD]],
+    ["repay", { type: "repay", loanId: REPAY_LOAN_ID }, "REPAY 5.00 TESTO", "repayLoan", [REPAY_LOAN_ID, 5n * WAD]],
+  ] as const)("preserves the %s action-flow write", (_name, action, buttonName, functionName, args) => {
+    renderAction(action as ActiveAction);
+    fireEvent.change(screen.getByPlaceholderText("0.00"), { target: { value: "5" } });
+    fireEvent.click(screen.getByRole("button", { name: buttonName }));
+
+    expect(writeFlows.second.writeContract).toHaveBeenCalledWith(
+      expect.objectContaining({ functionName, args }),
+    );
   });
 });
 
