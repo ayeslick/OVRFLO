@@ -30,9 +30,9 @@ export type MarketAggregate = {
   status: "loading" | "error" | "ready";
 };
 
-// R1 summary strip: four aggregate cells, amounts grouped per token symbol —
-// never summed across different tokens, no USD. Renders only when connected
-// with at least one position (R4). Its single action is CLAIM ALL (R2).
+// Four aggregate cells, amounts grouped per token symbol — never summed across
+// different tokens, no USD. CLAIM ALL appears in the heading only when there is
+// something to claim, so a dormant utility does not become a fifth peer metric.
 //
 // R31/L-8 — the no-USD choice is a deliberate deviation, recorded rather than
 // left implicit. ETHSKILLS /frontend-ux Rule 4 asks for dollar context wherever
@@ -128,7 +128,18 @@ export function PositionSummary({ markets, user, symbols }: Props) {
       ))}
       {user && hasPositions ? (
         <section className="section summary-strip" aria-label="Your positions">
-          <div className="label mono">YOUR POSITIONS</div>
+          <div className="summary-strip-head">
+            <h2>YOUR POSITIONS</h2>
+            {totalClaimable > 0n ? (
+              <button
+                className="button button-gold mono"
+                type="button"
+                onClick={() => setClaimAllOpen(true)}
+              >
+                CLAIM ALL
+              </button>
+            ) : null}
+          </div>
           <div className="summary-strip-cells">
             <div className="summary-cell">
               <div className="label mono">STREAMS</div>
@@ -181,17 +192,6 @@ export function PositionSummary({ markets, user, symbols }: Props) {
                   );
                 })
               )}
-            </div>
-            <div className="summary-cell action-with-caption">
-              <button
-                className="button button-gold mono"
-                type="button"
-                disabled={totalClaimable === 0n}
-                onClick={() => setClaimAllOpen(true)}
-              >
-                CLAIM ALL
-              </button>
-              {totalClaimable === 0n ? <span className="label mono">NOTHING CLAIMABLE YET</span> : null}
             </div>
           </div>
         </section>

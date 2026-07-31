@@ -142,6 +142,28 @@ function otherLenderLiquidity() {
   };
 }
 
+describe("market list states", () => {
+  it("distinguishes loading from an empty market list", () => {
+    renderTable({ markets: [], isLoading: true });
+
+    expect(screen.getByText("LOADING MARKETS")).toBeInTheDocument();
+    expect(screen.queryByText("NO APPROVED MARKETS")).not.toBeInTheDocument();
+  });
+
+  it("distinguishes a load failure from an empty market list", () => {
+    renderTable({ markets: [], error: new Error("network unavailable") });
+
+    expect(screen.getByText("UNABLE TO LOAD MARKETS — REFRESH")).toBeInTheDocument();
+    expect(screen.queryByText("NO APPROVED MARKETS")).not.toBeInTheDocument();
+  });
+
+  it("names the true empty state", () => {
+    renderTable({ markets: [] });
+
+    expect(screen.getByText("NO APPROVED MARKETS")).toBeInTheDocument();
+  });
+});
+
 describe("row expansion (R6)", () => {
   it("expands on row click, swaps on second row, collapses on re-click, toggling aria-expanded", () => {
     renderTable();
@@ -173,15 +195,15 @@ describe("row expansion (R6)", () => {
 });
 
 describe("expanded content states (R7/R8/R27)", () => {
-  it("disconnected: no balances, all mode buttons disabled with CONNECT WALLET", () => {
+  it("disconnected: no balances, primary mode buttons disabled with CONNECT WALLET", () => {
     walletState.address = undefined;
     renderTable({ user: undefined });
     fireEvent.click(screen.getAllByRole("button", { name: /ovrfloTESTA/ })[0]);
     expect(screen.queryByText("BALANCES")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "SUPPLY" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "BORROW" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "DEPOSIT PT" })).toBeDisabled();
-    expect(screen.getAllByText("CONNECT WALLET").length).toBe(3);
+    expect(screen.queryByRole("button", { name: "DEPOSIT PT" })).not.toBeInTheDocument();
+    expect(screen.getAllByText("CONNECT WALLET").length).toBe(2);
   });
 
   it("matured market: DEPOSIT hidden, SUPPLY/BORROW disabled MARKET MATURED, verb is CLAIM PT", () => {
@@ -272,19 +294,21 @@ describe("expanded content states (R7/R8/R27)", () => {
 });
 
 describe("RATES column (R5)", () => {
-  it("renders a dash when the market has no liquidity at any tick", () => {
+  it("states when the market has no liquidity at any tick", () => {
     renderTable({ markets: [market] });
-    expect(screen.getAllByText("—").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("NO LIQUIDITY").length).toBeGreaterThan(0);
   });
 
-  it("renders the tick range in both lenses when liquidity exists", () => {
+  it("renders the tick range in explicitly labeled lender and borrower lenses", () => {
     hookData.liquidity = [
       { id: 1n, lender: testAddress(0xff), market: market.market, aprBps: 1000, availableLiquidity: 10n ** 18n },
       { id: 2n, lender: testAddress(0xff), market: market.market, aprBps: 1200, availableLiquidity: 10n ** 18n },
     ];
     renderTable({ markets: [market] });
     expect(screen.getByText(/10\.00%–12\.00% APR/)).toBeInTheDocument();
-    expect(screen.getByText(/↑/)).toBeInTheDocument();
+    expect(screen.getByText("LEND")).toBeInTheDocument();
+    expect(screen.getByText("BORROW")).toBeInTheDocument();
+    expect(screen.getByText(/UPFRONT/)).toBeInTheDocument();
   });
 });
 

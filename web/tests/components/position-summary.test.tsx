@@ -167,11 +167,10 @@ describe("summary strip (R1/R2/R4)", () => {
     expect(screen.getByText("2 REPAYING · 74%")).toBeInTheDocument();
   });
 
-  it("disables CLAIM ALL with a caption when positions exist but nothing is claimable", () => {
+  it("omits CLAIM ALL when positions exist but nothing is claimable", () => {
     liquidityPosition(lendingA, marketA.market, 5n * 10n ** 18n);
     render(<PositionSummary markets={[marketA]} user={userA} symbols={symbols} />);
-    expect(screen.getByRole("button", { name: "CLAIM ALL" })).toBeDisabled();
-    expect(screen.getByText("NOTHING CLAIMABLE YET")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "CLAIM ALL" })).not.toBeInTheDocument();
   });
 
   it("renders a dash for an errored market's symbol without stalling the other market (R33)", () => {

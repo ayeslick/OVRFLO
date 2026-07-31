@@ -47,6 +47,7 @@ mnemonic.txt
 .github/*
 .DS_Store
 .vscode
+.agents/*
 web/node_modules/
 web/.next/
 web/out/
@@ -72,6 +73,7 @@ BASE_SECURITY.md
 CLAUDE.md 
 AGENTS.md
 .cursor/
+.codex/*
 .bootstrap.*
 .scratch
 

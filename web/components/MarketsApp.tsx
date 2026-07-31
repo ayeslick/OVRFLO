@@ -37,16 +37,17 @@ export function MarketsApp() {
           <img src="/images/logo-mark.png" alt="" />
           <h1>OVRFLO</h1>
         </div>
-        <nav className="nav">
-          <span className="label mono">MARKETS</span>
+        <div className="nav">
           <WalletButton />
-        </nav>
+        </div>
       </header>
 
       <PositionSummary markets={markets.markets} user={connectedAddress} symbols={symbols} />
       <MarketsTable
         markets={markets.markets}
         truncated={markets.tooLarge}
+        isLoading={markets.isLoading}
+        error={markets.error}
         symbols={symbols}
         user={connectedAddress}
         selected={selectedMarket}

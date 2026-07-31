@@ -31,9 +31,9 @@ function baseActionCaption(disconnected: boolean, lendingDeployed: boolean, matu
   return null;
 }
 
-// Expanded-row content (R7): balances with context verbs, this market's positions,
-// then the three mode buttons. Disabled modes always say why (DESIGN.md §8) —
-// never hidden without a caption, except DEPOSIT PT which R7 hides post-maturity.
+// Expanded-row content: contextual balance utilities, this market's positions,
+// then the two primary market actions. Deposit stays beside the PT balance so
+// it has one canonical entry point instead of competing with Supply/Borrow.
 export function MarketRowDetail({ market, user, symbols, onMode }: Props) {
   const nowSeconds = useNowSeconds(true);
   const [advancedOpen, setAdvancedOpen] = useState(false);
@@ -97,8 +97,6 @@ export function MarketRowDetail({ market, user, symbols, onMode }: Props) {
   // An unsettled read keeps BORROW disabled without asserting why: opening the
   // flow blind is what walks a borrower into a wasted APPROVE STREAM signature.
   const borrowDisabled = Boolean(borrowCaption) || !liquiditySettled;
-  const depositCaption = disconnected ? "CONNECT WALLET" : null;
-
   return (
     <div className="row-detail">
       {user ? (
@@ -209,23 +207,6 @@ export function MarketRowDetail({ market, user, symbols, onMode }: Props) {
           </button>
           {borrowCaption ? <span className="label mono">{borrowCaption}</span> : null}
         </div>
-        {!matured ? (
-          <div className="action-with-caption">
-            <button
-              className="button button-gold mono"
-              type="button"
-              disabled={Boolean(depositCaption) || ptBal === 0n}
-              onClick={() => onMode({ type: "deposit" })}
-            >
-              DEPOSIT PT
-            </button>
-            {depositCaption ? (
-              <span className="label mono">{depositCaption}</span>
-            ) : ptBal === 0n ? (
-              <span className="label mono">NO PT BALANCE</span>
-            ) : null}
-          </div>
-        ) : null}
       </div>
     </div>
   );

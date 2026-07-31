@@ -153,6 +153,18 @@ h3 {
   padding-top: 2rem;
 }
 
+.section-heading {
+  display: grid;
+  gap: 0.35rem;
+  margin-bottom: 0.75rem;
+}
+
+.section-heading p {
+  color: var(--dim);
+  margin: 0;
+  max-width: 60ch;
+}
+
 .table-container {
   overflow-x: auto;
   border: 1px solid var(--graphite);
@@ -566,6 +578,14 @@ tbody tr {
   cursor: pointer;
 }
 
+.row-expanded {
+  background: var(--carbon);
+}
+
+.row-expanded .row-toggle {
+  color: var(--chalk);
+}
+
 /* Sibling of .table-container, not a row inside it — see MarketsTable. Borders
    on all sides now that it is no longer bounded by the table's own edges. */
 .market-row-detail {
@@ -573,6 +593,14 @@ tbody tr {
   padding: 1.25rem 1rem;
   border: 1px solid var(--graphite);
   border-top: 0;
+}
+.market-detail-heading {
+  align-items: baseline;
+  border-bottom: 1px solid var(--graphite);
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+  padding-bottom: 0.75rem;
 }
 .row-detail {
   display: grid;
@@ -603,9 +631,16 @@ tbody tr {
   border-top: 1px solid var(--graphite);
 }
 
+.summary-strip-head {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+}
+
 .summary-strip-cells {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 1rem;
   align-items: start;
 }
@@ -626,10 +661,6 @@ tbody tr {
   gap: 1rem;
   padding-bottom: 0.5rem;
 }
-.summary-cell.action-with-caption {
-  flex-direction: column;
-  align-items: stretch;
-}
 @media (max-width: 800px) {
   /* Referenced by PositionSummary but previously undefined (R30). The strip is a
    distinct band above the markets table, so it carries its own top rule rather
@@ -638,28 +669,45 @@ tbody tr {
   border-top: 1px solid var(--graphite);
 }
 
-.summary-strip-cells {
+  .summary-strip-cells {
     grid-template-columns: 1fr;
   }
-  .summary-cell.action-with-caption .button {
+
+  .summary-strip-head {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .summary-strip-head .button {
     width: 100%;
   }
 }
 
-/* R20/M-13: motion had no reduced-motion path at all. The slide-in and the
-   colour transitions are decorative — the state change they accompany happens
-   either way — so a user who has asked for less motion gets the outcome
-   without the movement. `0.01ms` rather than `none` so animationend/
-   transitionend listeners still fire and nothing waits on an event that never
-   arrives. */
+.rate-pair {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.rate-pair > span {
+  display: grid;
+  grid-template-columns: 4.5rem 1fr;
+  gap: 0.5rem;
+}
+
+.rate-lend {
+  color: var(--accent-gold);
+}
+
+.rate-borrow {
+  color: var(--accent-cyan);
+}
+
+/* The market-detail slide is the only spatial motion in the interface. Its
+   content and hierarchy are complete without the entrance animation. */
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-    scroll-behavior: auto !important;
+  .market-detail-view {
+    animation: none;
   }
 }
 
