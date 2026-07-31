@@ -4,20 +4,18 @@ import { Fragment } from "react";
 import type { Address } from "viem";
 import { useReadContracts } from "wagmi";
 import { useLending } from "@/hooks/useLending";
-import { useLendingLiquidity } from "@/hooks/useLendingLiquidity";
 import { symbolFor, type SymbolMap } from "@/hooks/useMarketSymbols";
 import { useNowSecondsHydrationSafe } from "@/hooks/useNowSeconds";
-import { ovrfloAbi } from "@/lib/abis";
+import { ovrfloAbi, ovrfloLendingAbi } from "@/lib/abis";
 import { formatAprBps, formatCountdown, formatMaturityDate, formatTokenAmount } from "@/lib/format";
 import { aprChoices, formatBpsPct, upfrontBps } from "@/lib/lending-math";
-import { buildLadder } from "@/lib/router";
 import type { ActiveAction, MarketInfo } from "@/lib/types";
 import { MarketRowDetail } from "./MarketRowDetail";
-import { TruncationNotice } from "./TruncationNotice";
 
 type Props = {
   markets: MarketInfo[];
   truncated?: boolean;
+  registryStatus?: "loading" | "ready" | "unavailable";
   symbols: SymbolMap;
   user?: Address;
   selected?: MarketInfo | null;
@@ -26,7 +24,16 @@ type Props = {
 };
 
 
-export function MarketsTable({ markets, truncated, symbols, user, selected, onSelect, onMode }: Props) {
+export function MarketsTable({
+  markets,
+  truncated,
+  registryStatus = "ready",
+  symbols,
+  user,
+  selected,
+  onSelect,
+  onMode,
+}: Props) {
   const nowSeconds = useNowSecondsHydrationSafe();
 
   const tvlReads = useReadContracts({
@@ -44,12 +51,11 @@ export function MarketsTable({ markets, truncated, symbols, user, selected, onSe
       <div style={{ marginBottom: "0.75rem" }}>
         <h2>MARKETS</h2>
       </div>
-      {/* L-2: the vault list caps at 100 and said nothing — markets past the
-          hundredth simply vanished. Same disclosure component the 500-id scans
-          use, so every truncated list reads the same way. The cap applies twice
-          over (vaults, then each vault's markets), so the noun names what the
-          reader is looking at rather than which of the two caps was hit. */}
-      {truncated ? <TruncationNotice limit={100} noun="VAULTS AND MARKETS PER VAULT" /> : null}
+      {truncated ? (
+        <div className="label mono status-negative">
+          COMPLETE MARKET REGISTRY UNAVAILABLE — DISCOVERY BUDGET EXCEEDED
+        </div>
+      ) : null}
       <div className="table-container">
         <table>
           <thead>
@@ -64,7 +70,13 @@ export function MarketsTable({ markets, truncated, symbols, user, selected, onSe
             {markets.length === 0 ? (
               <tr>
                 <td className="empty mono" colSpan={4}>
-                  NO APPROVED MARKETS
+                  {truncated
+                    ? "MARKET REGISTRY UNAVAILABLE — DISCOVERY BUDGET EXCEEDED"
+                    : registryStatus === "loading"
+                      ? "LOADING MARKETS"
+                      : registryStatus === "unavailable"
+                        ? "MARKET REGISTRY UNAVAILABLE — RETRY"
+                        : "NO APPROVED MARKETS"}
                 </td>
               </tr>
             ) : (
@@ -133,19 +145,40 @@ export function MarketsTable({ markets, truncated, symbols, user, selected, onSe
 }
 
 // R5 RATES: the market's live tick range in both lenses ("10.00%–12.00% APR · 90.2%–94.3% ↑"),
-// pure math over enumerated liquidity — zero extra reads beyond the hooks' own.
+// Aggregate-only initial view: no historical scan or candidate hydration runs
+// until the user opens a market or portfolio flow.
 function RatesCell({ market, nowSeconds }: { market: MarketInfo; nowSeconds: bigint | null }) {
   const lending = useLending(market.lending);
-  const liquidity = useLendingLiquidity(market.lending);
+  const ticks = aprChoices(lending.params.aprMinBps, lending.params.aprMaxBps);
+  const depths = useReadContracts({
+    contracts:
+      market.lending && ticks.length > 0
+        ? ticks.map((aprBps) => ({
+            address: market.lending as Address,
+            abi: ovrfloLendingAbi,
+            functionName: "marketAprAvailableLiquidity" as const,
+            args: [market.market, aprBps] as const,
+          }))
+        : [],
+    query: { enabled: Boolean(market.lending && ticks.length > 0) },
+  });
 
   if (!market.lending || nowSeconds === null) return <>—</>;
-  const ticks = aprChoices(lending.params.aprMinBps, lending.params.aprMaxBps);
-  const liquid = buildLadder(liquidity.liquidity, market.market, ticks).filter((tick) => tick.total > 0n);
+  if (lending.isLoading || depths.isLoading) return <>LOADING</>;
+  const depthsComplete =
+    depths.data?.length === ticks.length &&
+    depths.data.every((result) => result.status === "success");
+  if (lending.error || depths.error || !depthsComplete) return <>UNAVAILABLE</>;
+  const liquid = ticks.filter(
+    (_tick, index) =>
+      depths.data?.[index]?.status === "success" &&
+      (depths.data[index].result as bigint) > 0n,
+  );
   if (liquid.length === 0) return <>—</>;
 
   const ttm = market.expiryCached > nowSeconds ? market.expiryCached - nowSeconds : 0n;
-  const minTick = liquid[0].aprBps;
-  const maxTick = liquid[liquid.length - 1].aprBps;
+  const minTick = liquid[0];
+  const maxTick = liquid[liquid.length - 1];
   const upAtMax = upfrontBps(maxTick, ttm, lending.params.feeBps);
   const upAtMin = upfrontBps(minTick, ttm, lending.params.feeBps);
   const apr = minTick === maxTick ? formatAprBps(minTick) : `${formatAprBps(minTick)}–${formatAprBps(maxTick)}`;

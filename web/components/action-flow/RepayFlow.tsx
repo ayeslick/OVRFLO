@@ -36,7 +36,12 @@ export function RepayFlow({
   onClose,
 }: ActionFlowProps) {
   const connection = useConnection();
-  const borrowerLoans = useBorrowerLoans(market.lending, user);
+  // Poll while this modal is mounted (the pre-cutover read did the same):
+  // an externally repaid/closed loan has no local write to key an
+  // invalidation off of, and without a refresh the LOAN NOT FOUND state
+  // below can never fire. The executor's pre-submit rebuild still fails
+  // closed regardless — this is display freshness, not the safety boundary.
+  const borrowerLoans = useBorrowerLoans(market.lending, user, 2_000);
   const loanEntry = borrowerLoans.loans.find(({ loan }) => loan.id === action.loanId);
   const loan = loanEntry?.loan;
 

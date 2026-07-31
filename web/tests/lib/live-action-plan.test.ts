@@ -32,7 +32,13 @@ const scope: LiveMarketScope = {
   expiryCached: 2_000n,
 };
 
-function client() {
+function client({
+  aprMinBps = 100,
+  aprMaxBps = 5_000,
+}: {
+  aprMinBps?: number;
+  aprMaxBps?: number;
+} = {}) {
   return {
     getBlock: vi.fn().mockResolvedValue({
       number: 100n,
@@ -51,9 +57,9 @@ function client() {
         case "allowance":
           return 0n;
         case "aprMinBps":
-          return 100;
+          return aprMinBps;
         case "aprMaxBps":
-          return 5_000;
+          return aprMaxBps;
         case "liquidityPositions":
           return [args[0] === 4n || args[0] === 5n ? other : account, market, 1_000, 10n * WAD];
         case "loans":
@@ -78,8 +84,6 @@ function client() {
           return 1_000n * WAD;
         case "wrappedUnderlying":
           return 1_000n * WAD;
-        case "gatherLiquidity":
-          return [[4n], true];
         case "getRecipient":
           return account;
         case "getApproved":
@@ -98,6 +102,19 @@ function client() {
     }),
   };
 }
+
+const projectedRoute = vi.fn().mockResolvedValue({
+  positions: [
+    {
+      id: 4n,
+      lender: other,
+      market,
+      aprBps: 1_000,
+      availableLiquidity: 10n * WAD,
+    },
+  ],
+  aggregateDepth: 10n * WAD,
+});
 
 function adjustCall(positionId = 1n, newAprBps = 1_100): LiveWriteArgs {
   return {
@@ -187,6 +204,7 @@ describe("live action execution plans", () => {
         identity,
         actionScope,
         client() as never,
+        projectedRoute,
       );
 
       expect(prepared?.status).toBe("ready");
@@ -206,29 +224,38 @@ describe("live action execution plans", () => {
     });
   }
 
-  it("fails closed when fresh gatherLiquidity cannot fill a borrow", async () => {
-    const current = client();
-    current.readContract.mockImplementation(async (request: { functionName: string }) => {
-      if (request.functionName === "gatherLiquidity") return [[], false];
-      return client().readContract(request as never);
-    });
+  it("fails closed when the fresh projected route cannot fill a borrow", async () => {
     const raw = calls.find(([type]) => type === "borrow")![1];
 
     await expect(
-      createLiveExecutionPlan(raw, identity, scope, current as never),
+      createLiveExecutionPlan(raw, identity, scope, client() as never, async () => ({
+        positions: [],
+        aggregateDepth: 0n,
+      })),
     ).rejects.toThrow(/cannot fill/i);
   });
 
-  it("requires renewed review when fresh gatherLiquidity selects another route", async () => {
-    const current = client();
-    const fallback = current.readContract.getMockImplementation()!;
-    current.readContract.mockImplementation(async (request: { functionName: string }) => {
-      if (request.functionName === "gatherLiquidity") return [[5n], true];
-      return fallback(request as never);
-    });
+  it("requires renewed review when the fresh projection selects another route", async () => {
     const raw = calls.find(([type]) => type === "borrow")![1];
 
-    const prepared = await createLiveExecutionPlan(raw, identity, scope, current as never);
+    const prepared = await createLiveExecutionPlan(
+      raw,
+      identity,
+      scope,
+      client() as never,
+      async () => ({
+        positions: [
+          {
+            id: 5n,
+            lender: other,
+            market,
+            aprBps: 1_000,
+            availableLiquidity: 10n * WAD,
+          },
+        ],
+        aggregateDepth: 10n * WAD,
+      }),
+    );
 
     expect(prepared?.status).toBe("needs_review");
     if (!prepared || prepared.status !== "needs_review") {
@@ -237,24 +264,35 @@ describe("live action execution plans", () => {
     expect(prepared.draft.action.review.route?.ids).toEqual([5n]);
   });
 
-  it("fails closed when a gathered Borrow position cannot be directly hydrated", async () => {
-    const current = client();
-    const fallback = current.readContract.getMockImplementation()!;
-    current.readContract.mockImplementation(async (request: {
-      functionName: string;
-      args?: readonly unknown[];
-    }) => {
-      if (request.functionName === "gatherLiquidity") return [[5n], true];
-      if (request.functionName === "liquidityPositions" && request.args?.[0] === 5n) {
-        return ["0x0000000000000000000000000000000000000000", market, 1_000, 0n];
-      }
-      return fallback(request as never);
-    });
+  it("fails closed when projected Borrow hydration is unavailable", async () => {
     const raw = calls.find(([type]) => type === "borrow")![1];
 
     await expect(
-      createLiveExecutionPlan(raw, identity, scope, current as never),
+      createLiveExecutionPlan(raw, identity, scope, client() as never, async () => {
+        throw new Error("Projected position could not be hydrated");
+      }),
     ).rejects.toThrow(/could not be hydrated/i);
+  });
+
+  it("quotes a projected old-tick route even after configured APR bounds move past it", async () => {
+    const raw = calls.find(([type]) => type === "borrow")![1];
+    const liveClient = client({ aprMinBps: 1_100, aprMaxBps: 1_200 });
+
+    const prepared = await createLiveExecutionPlan(
+      raw,
+      identity,
+      scope,
+      liveClient as never,
+      projectedRoute,
+    );
+
+    expect(prepared?.status).toBe("ready");
+    expect(liveClient.readContract).toHaveBeenCalledWith(
+      expect.objectContaining({
+        functionName: "quote",
+        args: [market, 3n, 1_000, 4n * WAD],
+      }),
+    );
   });
 
   it("requires renewed review when the fresh definition changes submitted calldata", async () => {

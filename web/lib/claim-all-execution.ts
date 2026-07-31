@@ -258,9 +258,11 @@ export function createClaimAllRowExecutionPlan(
           executionScope,
           client,
           {
-            number: block.number,
-            hash: block.hash,
-            timestamp: block.timestamp,
+            pinnedBlock: {
+              number: block.number,
+              hash: block.hash,
+              timestamp: block.timestamp,
+            },
           },
         );
         if (!rebuilt || rebuilt.status === "invalid") {

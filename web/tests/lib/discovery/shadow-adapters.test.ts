@@ -755,6 +755,7 @@ describe("shadow discovery adapters", () => {
     // legacy Borrow bridge into its extracted flow. U9 owns replacing this
     // bridge, so assert against the live flow rather than its router.
     const borrowFlow = readFileSync(resolve(process.cwd(), "components/action-flow/BorrowFlow.tsx"), "utf8");
-    expect(borrowFlow).toContain('functionName: "gatherLiquidity"');
+    expect(borrowFlow).not.toContain('functionName: "gatherLiquidity"');
+    expect(borrowFlow).toContain("selectHydratedRoute");
   });
 });

@@ -52,8 +52,21 @@ export type LiveWriteArgs = {
 export type LiveClient = Pick<PublicClient, "getBlock" | "readContract">;
 export type LiveBlockSnapshot = {
   number: bigint;
-  hash: Hex | null;
+  hash: Hex;
   timestamp: bigint;
+};
+export type LiveBorrowProjectionLoader = (input: {
+  lending: Address;
+  market: Address;
+  aprBps: number;
+  block: LiveBlockSnapshot;
+}) => Promise<{
+  positions: readonly LiquidityPosition[];
+  aggregateDepth: bigint;
+}>;
+type LiveSnapshotOptions = {
+  pinnedBlock?: LiveBlockSnapshot;
+  loadBorrowProjection?: LiveBorrowProjectionLoader;
 };
 
 type ParsedAction = {
@@ -269,11 +282,15 @@ async function loadSnapshot(
   identity: ActionIdentity,
   scope: LiveMarketScope,
   client: LiveClient,
-  pinnedBlock?: LiveBlockSnapshot,
+  {
+    pinnedBlock,
+    loadBorrowProjection,
+  }: LiveSnapshotOptions = {},
 ): Promise<ActionSnapshot> {
   const block = pinnedBlock ?? await client.getBlock({ blockTag: "latest" });
   if (!block.hash) throw new Error("Action snapshot block has no hash");
-  const metadata = { blockNumber: block.number, blockHash: block.hash };
+  const blockHash = block.hash;
+  const metadata = { blockNumber: block.number, blockHash };
   const market = marketContext(scope, block.timestamp);
   const blockNumber = block.number;
   const lending = scope.lending;
@@ -376,6 +393,7 @@ async function loadSnapshot(
     }
     case "deposit": {
       const amountIn = requireBigint(parsed.raw.args?.[1], "deposit amount");
+      const reviewedMin = requireBigint(parsed.raw.args?.[2], "minimum received");
       const [walletBalance, ptAllowance, underlyingAllowance, capLimit, capUsed, preview] =
         await Promise.all([
           read<bigint>(client, blockNumber, {
@@ -431,7 +449,18 @@ async function loadSnapshot(
               toWallet: preview[0],
               toStream: preview[1],
               fee: preview[2],
-              minToWallet: applySlippageDown(preview[0]),
+              // Honor the bound the user reviewed, but only while it is at
+              // least as protective as the freshly-computed floor and still
+              // satisfiable. Recomputing unconditionally makes every mid-flow
+              // block advance change the rebuilt args and re-trip the review
+              // gate; honoring unconditionally would wave a degenerate (e.g.
+              // zero) bound through with no slippage protection. Outside the
+              // window the recomputed bound routes to needs_review with the
+              // updated number.
+              minToWallet:
+                reviewedMin >= applySlippageDown(preview[0]) && reviewedMin <= preview[0]
+                  ? reviewedMin
+                  : applySlippageDown(preview[0]),
             },
           },
           metadata,
@@ -514,6 +543,9 @@ async function loadSnapshot(
     }
     case "borrow": {
       if (!lending) throw new Error("Lending is not configured");
+      if (!loadBorrowProjection) {
+        throw new Error("Fresh projected borrow routing is unavailable");
+      }
       const streamId = parsed.intent.streamId;
       const target = requireBigint(parsed.raw.args?.[2], "borrow amount");
       const reviewedMin = requireBigint(parsed.raw.args?.[3], "minimum received");
@@ -529,13 +561,17 @@ async function loadSnapshot(
       );
       if (!reviewedFirst) throw new Error("Reviewed route is no longer available");
       const aprBps = reviewedFirst.aprBps;
-      const [gathered, recipient, approved, approvedForAll, quote, maxRouteIds] =
+      const [projectedRoute, recipient, approved, approvedForAll, quote, maxRouteIds] =
         await Promise.all([
-          read<[bigint[], boolean]>(client, blockNumber, {
-            address: lending,
-            abi: ovrfloLendingAbi,
-            functionName: "gatherLiquidity",
-            args: [scope.market, aprBps, target, 1n, identity.account],
+          loadBorrowProjection({
+            lending,
+            market: scope.market,
+            aprBps,
+            block: {
+              number: blockNumber,
+              hash: blockHash,
+              timestamp: block.timestamp,
+            },
           }),
           read<Address>(client, blockNumber, {
             address: SABLIER_LOCKUP_ADDRESS,
@@ -567,21 +603,9 @@ async function loadSnapshot(
             functionName: "MAX_ROUTE_IDS",
           }),
         ]);
-      if (!gathered[1] || gathered[0].length === 0) {
-        throw new Error("Fresh liquidity cannot fill the reviewed borrow");
+      if (projectedRoute.positions.length === 0) {
+        throw new Error("Fresh projected liquidity cannot fill the reviewed borrow");
       }
-      const positions = (
-        await Promise.all(
-          gathered[0].map((id) => positionAt(client, lending, id, blockNumber)),
-        )
-      ).filter((position): position is LiquidityPosition => position !== null);
-      if (positions.length !== gathered[0].length) {
-        throw new Error("A gathered liquidity position could not be hydrated");
-      }
-      const aggregateDepth = positions.reduce(
-        (sum, position) => sum + position.availableLiquidity,
-        0n,
-      );
       return {
         type: "borrow",
         identity,
@@ -600,13 +624,16 @@ async function loadSnapshot(
           {
             market: scope.market,
             aprBps,
-            candidateIds: gathered[0],
-            aggregateDepth,
+            candidateIds: projectedRoute.positions.map((position) => position.id),
+            aggregateDepth: projectedRoute.aggregateDepth,
             maxRouteIds: Number(maxRouteIds),
           },
           metadata,
         ),
-        hydration: readyOutcome({ positions }, metadata),
+        hydration: readyOutcome(
+          { positions: projectedRoute.positions },
+          metadata,
+        ),
         quote: readyOutcome(
           {
             market: scope.market,
@@ -761,15 +788,9 @@ async function buildLiveAction(
   identity: ActionIdentity,
   scope: LiveMarketScope,
   client: LiveClient,
-  pinnedBlock?: LiveBlockSnapshot,
+  options: LiveSnapshotOptions = {},
 ): Promise<ActionBuildResult> {
-  const snapshot = await loadSnapshot(
-    parsed,
-    identity,
-    scope,
-    client,
-    pinnedBlock,
-  );
+  const snapshot = await loadSnapshot(parsed, identity, scope, client, options);
   return buildAction(parsed.intent, snapshot);
 }
 
@@ -778,7 +799,7 @@ export async function createLiveActionDraft(
   identity: ActionIdentity,
   scope: LiveMarketScope,
   client: LiveClient,
-  pinnedBlock?: LiveBlockSnapshot,
+  options: LiveSnapshotOptions = {},
 ): Promise<
   | { status: "ready"; draft: ActionExecutionDraft }
   | { status: "invalid"; errors: Extract<ActionBuildResult, { status: "invalid" }>["errors"] }
@@ -787,7 +808,7 @@ export async function createLiveActionDraft(
   const parsed = parseAction(raw);
   if (!parsed) return null;
   return actionResultToDraft(
-    await buildLiveAction(parsed, identity, scope, client, pinnedBlock),
+    await buildLiveAction(parsed, identity, scope, client, options),
     requestForAction,
   );
 }
@@ -797,13 +818,20 @@ export async function createLiveExecutionPlan(
   identity: ActionIdentity,
   scope: LiveMarketScope,
   client: LiveClient,
+  loadBorrowProjection?: LiveBorrowProjectionLoader,
 ): Promise<
   | { status: "ready"; plan: ExecutionPlan }
   | { status: "invalid"; errors: Extract<ActionBuildResult, { status: "invalid" }>["errors"] }
   | { status: "needs_review"; draft: ActionExecutionDraft; plan: ExecutionPlan }
   | null
 > {
-  const initial = await createLiveActionDraft(raw, identity, scope, client);
+  const initial = await createLiveActionDraft(
+    raw,
+    identity,
+    scope,
+    client,
+    { loadBorrowProjection },
+  );
   if (!initial) return null;
   if (initial.status === "invalid") return initial;
   const accepted = initial.draft;
@@ -816,6 +844,7 @@ export async function createLiveExecutionPlan(
         currentIdentity,
         scope,
         client,
+        { loadBorrowProjection },
       );
       if (!rebuilt) {
         return {

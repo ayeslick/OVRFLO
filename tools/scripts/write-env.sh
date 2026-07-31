@@ -80,6 +80,11 @@ fi
 case "$NETWORK" in
   local)
     DEFAULT_RPC="http://127.0.0.1:8545"
+    # Claim All's verifier requires a provider URL string-distinct from the
+    # historical one (useProjectionSync's verifierRpcUrl). Locally there is
+    # one Anvil, so publish it under a second hostname alias; corroboration
+    # semantics are exercised, provider independence is not (local-only).
+    DEFAULT_RPC_FALLBACKS="http://localhost:8545"
     DEFAULT_PONDER="http://localhost:42069/sql"
     OUT_DEFAULT="web/.env.local"
     ;;
@@ -92,7 +97,7 @@ case "$NETWORK" in
 esac
 
 RPC_URL="${RPC_URL:-$DEFAULT_RPC}"
-RPC_FALLBACK_URLS="${RPC_FALLBACK_URLS:-}"
+RPC_FALLBACK_URLS="${RPC_FALLBACK_URLS:-${DEFAULT_RPC_FALLBACKS:-}}"
 HISTORICAL_RPC_URL="${HISTORICAL_RPC_URL:-$RPC_URL}"
 PONDER_URL="${PONDER_URL:-${NEXT_PUBLIC_PONDER_URL:-$DEFAULT_PONDER}}"
 REOWN_PROJECT_ID="${REOWN_PROJECT_ID:-}"

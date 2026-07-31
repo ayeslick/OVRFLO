@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useConnection,
@@ -26,8 +26,13 @@ import type {
 import { erc20Abi, ovrfloAbi, ovrfloLendingAbi, sablierLockupAbi } from "@/lib/abis";
 import {
   chainId as configuredChainId,
+  factoryDeployment,
   SABLIER_LOCKUP_ADDRESS,
 } from "@/lib/config";
+import {
+  discoverMarketLiquidity,
+} from "@/lib/discovery/live-projection";
+import { captureHeadSnapshot } from "@/lib/discovery/log-scanner";
 import { buildRefreshPlan, refreshQueryResources } from "@/lib/query-resource-registry";
 import { marketContracts } from "@/lib/invalidate";
 import { isRevertFailure } from "@/lib/errors";
@@ -36,6 +41,7 @@ import {
   createLiveExecutionPlan,
   type LiveMarketScope,
 } from "@/lib/live-action-plan";
+import { getProjectionClient } from "./useProjectionSync";
 
 /**
  * Form-facing adapter for the single transaction executor.
@@ -73,11 +79,27 @@ export function useWriteFlow(
   const scopeRef = useRef(scope);
   scopeRef.current = scope;
   const preparationRef = useRef<Promise<void> | null>(null);
+  const preparationAbortRef = useRef<AbortController | null>(null);
+  const preparationGenerationRef = useRef(0);
+  const mountedRef = useRef(false);
   const pendingReviewRef = useRef<{
     fingerprint: string;
     plan: ExecutionPlan;
   } | null>(null);
   const [isPreparing, setIsPreparing] = useState(false);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      preparationGenerationRef.current += 1;
+      preparationAbortRef.current?.abort(
+        new DOMException("Action preparation cancelled", "AbortError"),
+      );
+      preparationAbortRef.current = null;
+      pendingReviewRef.current = null;
+    };
+  }, []);
 
   const runtime = useMemo<ActionExecutionRuntime>(
     () => ({
@@ -276,7 +298,14 @@ export function useWriteFlow(
   const executor = useTransactionExecutor(runtime);
   const resetExecutor = executor.reset;
   const reset = useCallback(() => {
+    preparationGenerationRef.current += 1;
+    preparationAbortRef.current?.abort(
+      new DOMException("Action preparation cancelled", "AbortError"),
+    );
+    preparationAbortRef.current = null;
+    preparationRef.current = null;
     pendingReviewRef.current = null;
+    if (mountedRef.current) setIsPreparing(false);
     resetExecutor();
   }, [resetExecutor]);
   const receipt = useMemo(
@@ -313,19 +342,65 @@ export function useWriteFlow(
         }
         pendingReviewRef.current = null;
         let handled = false;
+        const generation = preparationGenerationRef.current + 1;
+        preparationGenerationRef.current = generation;
+        const preparationAbort = new AbortController();
+        preparationAbortRef.current = preparationAbort;
+        const isCurrentPreparation = () =>
+          mountedRef.current &&
+          preparationGenerationRef.current === generation &&
+          !preparationAbort.signal.aborted;
         const prepareAndExecute = (async () => {
-          setIsPreparing(true);
+          if (isCurrentPreparation()) setIsPreparing(true);
           try {
             const prepared = await createLiveExecutionPlan(
               args,
               identity,
               scopeRef.current as LiveMarketScope,
               publicClient,
+              async ({ lending, market, aprBps, block }) => {
+                const projectionClient = getProjectionClient("primary");
+                const head = await captureHeadSnapshot(projectionClient);
+                const latest = { number: block.number, hash: block.hash };
+                const outcome = await discoverMarketLiquidity({
+                  client: projectionClient,
+                  lending,
+                  market,
+                  fromBlock: factoryDeployment.blockNumber,
+                  snapshot: {
+                    finalized:
+                      head.finalized.number <= block.number
+                        ? head.finalized
+                        : latest,
+                    latest,
+                  },
+                  signal: preparationAbort.signal,
+                });
+                if (outcome.status !== "ready") {
+                  throw new Error(
+                    outcome.failures
+                      .map((failure) => failure.message)
+                      .join("; ") || "Fresh projected borrow route is unavailable",
+                  );
+                }
+                return {
+                  positions: outcome.data.positions.filter(
+                    (position) => position.aprBps === aprBps,
+                  ),
+                  aggregateDepth:
+                    outcome.data.aggregateByApr.get(aprBps) ?? 0n,
+                };
+              },
             );
+            if (!isCurrentPreparation()) {
+              handled = true;
+              return;
+            }
             if (prepared) {
               handled = true;
               if (prepared.status === "ready") {
                 const result = await executor.confirm(prepared.plan);
+                if (!isCurrentPreparation()) return;
                 if (result.status === "needs_review") {
                   pendingReviewRef.current = {
                     fingerprint,
@@ -348,17 +423,21 @@ export function useWriteFlow(
             }
           } catch (error) {
             handled = true;
+            if (!isCurrentPreparation()) return;
             executor.report({ status: "transport_failed", error });
             return;
           } finally {
-            setIsPreparing(false);
+            if (isCurrentPreparation()) setIsPreparing(false);
           }
         })();
         preparationRef.current = prepareAndExecute.finally(() => {
-          preparationRef.current = null;
+          if (preparationGenerationRef.current === generation) {
+            preparationRef.current = null;
+            preparationAbortRef.current = null;
+          }
         });
         await preparationRef.current;
-        if (handled) return;
+        if (handled || !isCurrentPreparation()) return;
       }
       const request = {
         ...args,

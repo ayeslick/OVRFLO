@@ -67,6 +67,16 @@ export const STALE_LIQUIDITY_REASONS = [
   "OVRFLOLending: slippage",
 ] as const;
 
+// Pre-submit rebuild outcomes: the executor re-derives the route at a pinned
+// block before signing, so a lost liquidity race can surface as one of these
+// instead of an on-chain revert string. Kept separate from
+// STALE_LIQUIDITY_REASONS because these are not revert strings and carry no
+// revertStringCopy entry — the stale-recovery caption is their user copy.
+export const REBUILD_STALE_REASONS = [
+  "routing-insufficient",
+  "Reviewed route is no longer available",
+] as const;
+
 export function userFacingError(error: unknown) {
   const reverted = findRevert(error);
   const errorName = reverted?.data?.errorName;

@@ -47,6 +47,7 @@ export function MarketsApp() {
       <MarketsTable
         markets={markets.markets}
         truncated={markets.tooLarge}
+        registryStatus={markets.status}
         symbols={symbols}
         user={connectedAddress}
         selected={selectedMarket}

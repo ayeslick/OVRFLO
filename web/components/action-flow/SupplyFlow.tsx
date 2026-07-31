@@ -41,7 +41,7 @@ export function SupplyFlow({
 }: Pick<ActionFlowProps, "market" | "symbols" | "accent" | "onClose">) {
   const connection = useConnection();
   const lending = useLending(market.lending);
-  const liquidity = useLendingLiquidity(market.lending);
+  const liquidity = useLendingLiquidity(market.lending, market.market);
   const [raw, setRaw] = useState("");
   const [approvedAmount, setApprovedAmount] = useState(0n);
   const [selectedAprRaw, setSelectedAprRaw] = useState<number | null>(null);
@@ -51,7 +51,11 @@ export function SupplyFlow({
 
   const amount = parseAmount(raw);
   const connectedAddress = connection.addresses?.[0];
-  const demandState = useBorrowDemand(market.market, connectedAddress);
+  const demandState = useBorrowDemand(
+    market.lending,
+    market.market,
+    connectedAddress,
+  );
   const underlyingSymbol = symbolFor(symbols, market.underlying);
 
   const matured = nowSeconds >= market.expiryCached;
@@ -131,7 +135,6 @@ export function SupplyFlow({
         }))}
         selectedAprBps={aprBps}
         onSelect={setSelectedAprRaw}
-        truncated={liquidity.tooLarge}
         emptyText="LOADING RATES"
       />
       <DemandAnnotation status={demandState.status} />

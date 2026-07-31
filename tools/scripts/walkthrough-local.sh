@@ -2,11 +2,18 @@
 # Ticket 10 gate: scripted two-wallet walkthrough on the local fork.
 set -euo pipefail
 RPC=http://127.0.0.1:8545
-FACTORY=0xfa61a6B6A502453DC708a33e3ceb769332120de2
-OVRFLO=0xb582747D46B5aAf1819B9D12aE072e0A119f6D54
-LENDING=0x635f985DF6Abd823eeD1E5B9582B337d2e8CE72f
-MARKET=0xcFD848b9f6fEf552204014ac67901223AD6bf679
-PT=0x9cE6478EF45bB1BAAC69EFd8A3eA0ed110a43042
+# Deployment addresses come from the live seed artifact: seed-local.sh
+# discovers Pendle markets live, so every reseed deploys at new addresses —
+# hardcoding them makes the walkthrough silently target a dead deployment.
+# This script also assumes a FRESH seed (it relies on liquidity ids 1-4 and
+# loan id 1): run it right after bootstrap:local, before anything else writes.
+DEPLOYMENT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/deployments/local.json
+FACTORY=$(jq -r .factory "$DEPLOYMENT")
+OVRFLO=$(jq -r .ovrflo "$DEPLOYMENT")
+LENDING=$(jq -r .lending "$DEPLOYMENT")
+MARKET=$(jq -r .primaryMarket "$DEPLOYMENT")
+PT=$(jq -r .primaryPt "$DEPLOYMENT")
+TOKEN=$(jq -r .token "$DEPLOYMENT")
 WSTETH=0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0
 SABLIER=0xAFb979d9afAd1aD27C5eFf4E27226E3AB9e5dCC9
 OWNER_PK=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
@@ -44,9 +51,10 @@ NET=$(cast call $LENDING 'quote(address,uint256,uint16,uint128)(uint256,uint128,
 MIN_ACCEPT=$(python3 -c "print(int('$NET')*9950//10000)")
 echo "quote@11%: net=$NET, minAcceptable (0.5% slippage)=$MIN_ACCEPT"
 
-step "4. LIQUIDITY RACE: gather ids at 11%, lender withdraws that position, stale submit reverts, re-quote succeeds"
-IDS=$(cast call $LENDING 'gatherLiquidity(address,uint16,uint128,uint256,address)(uint256[],bool)' $MARKET 1100 $TARGET 1 $DEV --rpc-url $RPC | sed -n 1p)
-echo "gathered ids: $IDS"
+step "4. LIQUIDITY RACE: hydrate projected id 2, lender withdraws it, stale submit reverts, re-quote succeeds"
+IDS='[2]'
+PROJECTED=$(cast call $LENDING 'liquidityPositions(uint256)(address,address,uint16,uint128)' 2 --rpc-url $RPC)
+echo "projected id 2 before race: $PROJECTED"
 send $DEV_PK $SABLIER 'approve(address,uint256)' $LENDING $STREAM
 send $LENDER_PK $LENDING 'withdrawLiquidity(uint256)' 2   # the race: position 2 drained between quote and submit
 if cast send --rpc-url $RPC --private-key $DEV_PK $LENDING 'createBorrowerLoanPool(uint256[],uint256,uint128,uint128)' '[2]' $STREAM $TARGET $MIN_ACCEPT >/dev/null 2>&1; then
@@ -72,9 +80,9 @@ echo "moved $IDLE to 12.00%: new position 4 = $(cast call $LENDING 'liquidityPos
 step "6. time-warp 10 days, then claims (lender pool share + borrower stream residual channel)"
 cast rpc evm_increaseTime 864000 --rpc-url $RPC >/dev/null
 cast rpc evm_mine --rpc-url $RPC >/dev/null
-BAL_BEFORE=$(cast call 0x5B9791A63E4AB12acf427eC4DB97e3B32aBc0d1e 'balanceOf(address)(uint256)' 0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC --rpc-url $RPC | awk '{print $1}')
+BAL_BEFORE=$(cast call $TOKEN 'balanceOf(address)(uint256)' 0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC --rpc-url $RPC | awk '{print $1}')
 send $LENDER_PK $LENDING 'claimLoanPoolShare(uint256,uint128)' 1 340282366920938463463374607431768211455
-BAL_AFTER=$(cast call 0x5B9791A63E4AB12acf427eC4DB97e3B32aBc0d1e 'balanceOf(address)(uint256)' 0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC --rpc-url $RPC | awk '{print $1}')
+BAL_AFTER=$(cast call $TOKEN 'balanceOf(address)(uint256)' 0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC --rpc-url $RPC | awk '{print $1}')
 echo "lender pool-share claim paid: $(python3 -c "print(int('$BAL_AFTER')-int('$BAL_BEFORE'))") ovrfloToken (deficit harvested from the loan stream)"
 
 echo

@@ -27,7 +27,7 @@ import {
 } from "@/lib/borrow";
 import { applySlippageDown, isSeriesMatchedStream } from "@/lib/modal-logic";
 import { aprChoices, formatBpsPct, upfrontBps } from "@/lib/lending-math";
-import { buildLadder } from "@/lib/router";
+import { buildLadder, selectHydratedRoute } from "@/lib/router";
 import { RateLadder } from "../RateLadder";
 import type { ActionFlowProps } from "./ActionFlowShell";
 import {
@@ -76,6 +76,47 @@ export function BorrowOutcomeNotice({ outcome }: { outcome: BorrowOutcome }) {
   );
 }
 
+function resolveBorrowOutcome({
+  staleRoute,
+  unavailable,
+  preparing,
+  routeStatus,
+  partial,
+  target,
+  hasLiquidTicks,
+  hasOwnLiquidity,
+}: {
+  staleRoute: boolean;
+  unavailable: boolean;
+  preparing: boolean;
+  routeStatus:
+    | "ready"
+    | "insufficient"
+    | "fragmented"
+    | "conservation-failed"
+    | undefined;
+  partial: boolean;
+  target: bigint;
+  hasLiquidTicks: boolean;
+  hasOwnLiquidity: boolean;
+}): BorrowOutcome | null {
+  if (staleRoute) return "stale-route";
+  if (unavailable) return "unavailable";
+  if (preparing) return "preparing";
+  if (routeStatus === "fragmented") return "fragmented";
+  if (
+    routeStatus === "insufficient" ||
+    routeStatus === "conservation-failed"
+  ) {
+    return "insufficient";
+  }
+  if (partial && target > 0n) return "partial";
+  if (target > 0n && !hasLiquidTicks) {
+    return hasOwnLiquidity ? "insufficient" : "true-zero";
+  }
+  return null;
+}
+
 // --- Borrow form ---
 
 export function BorrowFlow({
@@ -89,7 +130,7 @@ export function BorrowFlow({
   const connection = useConnection();
   const queryClient = useQueryClient();
   const lending = useLending(market.lending);
-  const liquidity = useLendingLiquidity(market.lending);
+  const liquidity = useLendingLiquidity(market.lending, market.market);
   const streams = useHeldStreams(user);
   const eligibleStreams = streams.streams.filter((stream) => isSeriesMatchedStream(stream, market));
 
@@ -109,14 +150,25 @@ export function BorrowFlow({
   const underlyingSymbol = symbolFor(symbols, market.underlying);
   const ovrfloSymbol = symbolFor(symbols, market.ovrfloToken);
   const feeBps = lending.params.feeBps;
-  const demandState = useBorrowDemand(market.market, connectedAddress);
+  const demandState = useBorrowDemand(
+    market.lending,
+    market.market,
+    connectedAddress,
+  );
 
   // Maturity gate: past maturity neither the ladder nor the router ever runs
-  // (gatherLiquidity reverts on expired series anyway).
+  // Contract quote and action validation also reject expired series.
   const matured = nowSeconds >= market.expiryCached;
   const ttmSeconds = matured ? 0n : market.expiryCached - nowSeconds;
 
-  const ticks = aprChoices(lending.params.aprMinBps, lending.params.aprMaxBps);
+  const ticks = [
+    ...new Set([
+      ...aprChoices(lending.params.aprMinBps, lending.params.aprMaxBps),
+      ...liquidity.liquidity
+        .filter((position) => position.market.toLowerCase() === market.market.toLowerCase())
+        .map((position) => position.aprBps),
+    ]),
+  ].sort((left, right) => left - right);
   const ladder = buildLadder(liquidity.liquidity, market.market, ticks, connectedAddress);
   const liquidTicks = ladder.filter((tick) => tick.total > 0n);
   const selectedApr = resolveSelectedTick(ladder, selectedAprRaw);
@@ -171,17 +223,6 @@ export function BorrowFlow({
     query: { enabled: fillEnabled },
   });
 
-  const gather = useReadContract({
-    address: market.lending ?? undefined,
-    abi: ovrfloLendingAbi,
-    functionName: "gatherLiquidity",
-    args:
-      fillEnabled && connectedAddress
-        ? [market.market, selectedApr!, fill, 1n, connectedAddress]
-        : undefined,
-    query: { enabled: Boolean(fillEnabled && connectedAddress) },
-  });
-
   const approved = useReadContract({
     address: SABLIER_LOCKUP_ADDRESS,
     abi: sablierLockupAbi,
@@ -232,8 +273,33 @@ export function BorrowFlow({
   }
 
   const quoteData = fillQuote.data as [bigint, bigint, bigint, bigint, bigint] | undefined;
-  const gatherData = gather.data as [bigint[], boolean] | undefined;
-  const gatherIds = gatherData?.[0] ?? [];
+  const projectedTick =
+    selectedApr === null
+      ? []
+      : liquidity.liquidity.filter(
+          (position) =>
+            position.market.toLowerCase() === market.market.toLowerCase() &&
+            position.aprBps === selectedApr,
+        );
+  const aggregateDepth =
+    selectedApr !== null && liquidity.outcome.status === "ready"
+      ? (liquidity.outcome.data.aggregateByApr.get(selectedApr) ?? 0n)
+      : null;
+  const freshRoute =
+    fill > 0n &&
+    aggregateDepth !== null &&
+    connectedAddress &&
+    lending.params.maxRouteIds > 0
+      ? selectHydratedRoute({
+          positions: projectedTick,
+          borrower: connectedAddress,
+          target: fill,
+          aggregateDepth,
+          maxRouteIds: lending.params.maxRouteIds,
+        })
+      : null;
+  const routeIds =
+    freshRoute?.status === "ready" ? freshRoute.selectedIds : [];
 
   const slippageBps = parseSlippageBps(slippageRaw);
   const minAcceptable =
@@ -248,18 +314,17 @@ export function BorrowFlow({
     approvedForAll.data === true;
 
   const needsApproval = !streamApproved && selectedStreamId !== null;
-  // Pre-submit terminal condition: quote()/gatherLiquidity reject genuinely
-  // ineligible streams before the user ever signs.
-  const readError = fullQuote.error ?? fillQuote.error ?? gather.error;
-  const sourceError = lending.error ?? liquidity.error ?? (streams.stale ? null : streams.error);
+  // Quotes validate collateral economics; projection + direct hydration
+  // validates the route without the legacy on-chain gather helper.
+  const readError = fullQuote.error ?? fillQuote.error;
+  const sourceError = lending.error ?? liquidity.error ?? streams.error;
   const routeErrorKind = readError ? classifyBorrowError(readError) : null;
   const routePreparing =
     fullQuote.isLoading ||
     fullQuote.isFetching ||
     fillQuote.isLoading ||
     fillQuote.isFetching ||
-    gather.isLoading ||
-    gather.isFetching;
+    (fill > 0n && freshRoute === null);
   const disabled =
     !market.lending ||
     !selectedStreamId ||
@@ -269,7 +334,7 @@ export function BorrowFlow({
     busy ||
     !quoteData ||
     minAcceptable === null ||
-    gatherIds.length === 0 ||
+    routeIds.length === 0 ||
     actionTx.isConfirmed;
 
   const receiptSummary =
@@ -283,26 +348,23 @@ export function BorrowFlow({
   const receivedDiffers =
     receiptSummary !== null && submitted !== null && receiptSummary.net !== submitted.quotedNet;
 
-  // Presentation consumes a small, stable vocabulary. The scanner and action
-  // definitions remain outside this component; U9 can map their explicit
-  // depth/routing/hydration outcomes into the same notice without moving RPC
-  // policy into the modal.
-  const borrowOutcome: BorrowOutcome | null =
-    staleRecovery
-      ? "stale-route"
-      : routeErrorKind === "stale"
-        ? "stale-route"
-        : streams.unavailable || sourceError || routeErrorKind === "retryable"
-          ? "unavailable"
-          : streams.isLoading || lending.isLoading || liquidity.isLoading || routePreparing
-            ? "preparing"
-            : plan?.partial && target > 0n
-              ? "partial"
-              : target > 0n && liquidTicks.length === 0
-                ? hasOwnLiquidity
-                  ? "insufficient"
-                  : "true-zero"
-                : null;
+  const borrowOutcome = resolveBorrowOutcome({
+    staleRoute: staleRecovery || routeErrorKind === "stale",
+    unavailable:
+      streams.unavailable ||
+      Boolean(sourceError) ||
+      routeErrorKind === "retryable",
+    preparing:
+      streams.isLoading ||
+      lending.isLoading ||
+      liquidity.isLoading ||
+      routePreparing,
+    routeStatus: freshRoute?.status,
+    partial: Boolean(plan?.partial),
+    target,
+    hasLiquidTicks: liquidTicks.length > 0,
+    hasOwnLiquidity,
+  });
 
   const steps = ["APPROVE STREAM", "SIGN", "CONFIRMED"];
   const activeIndex = actionTx.isConfirmed || actionTx.isConfirming ? 2 : streamApproved ? 1 : 0;
@@ -347,8 +409,7 @@ export function BorrowFlow({
           setSelectedAprRaw(aprBps);
           setShowAlternative(false);
         }}
-        truncated={liquidity.tooLarge}
-        emptyText="NO LIQUIDITY POSTED AT ANY RATE"
+         emptyText="NO LIQUIDITY POSTED AT ANY RATE"
         footnote={hasOwnLiquidity ? "YOUR OWN SUPPLY IS EXCLUDED — YOU CANNOT BORROW AGAINST IT" : null}
       />
       {borrowOutcome && borrowOutcome !== "partial" && borrowOutcome !== "stale-route" ? (
@@ -487,7 +548,7 @@ export function BorrowFlow({
           disabled={disabled || terminal}
           type="button"
           onClick={() => {
-            if (!market.lending || !selectedStreamId || !quoteData || minAcceptable === null || gatherIds.length === 0)
+            if (!market.lending || !selectedStreamId || !quoteData || minAcceptable === null || routeIds.length === 0)
               return;
             setStaleRecovery(false);
             setSubmitted({ target: fill, quotedNet: quoteData[3] });
@@ -495,7 +556,7 @@ export function BorrowFlow({
               address: market.lending,
               abi: ovrfloLendingAbi,
               functionName: "createBorrowerLoanPool",
-              args: [gatherIds, selectedStreamId, fill, minAcceptable],
+              args: [routeIds, selectedStreamId, fill, minAcceptable],
             });
           }}
         >

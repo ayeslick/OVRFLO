@@ -5,6 +5,7 @@ import { useReadContract, useReadContracts } from "wagmi";
 import type { Address } from "viem";
 import { ovrfloFactoryAbi } from "@/lib/abis";
 import { factoryAddress, isConfiguredAddress, ZERO_ADDRESS } from "@/lib/config";
+import { MAX_VAULT_REGISTRY_ENTRIES } from "@/lib/discovery/limits";
 import type { VaultInfo } from "@/lib/types";
 
 export function useOvrflos(factory: Address = factoryAddress) {
@@ -73,22 +74,33 @@ export function useOvrflos(factory: Address = factoryAddress) {
       };
     });
   }, [infoReads.data, vaultAddresses]);
+  const incomplete =
+    count <= MAX_VAULT_ENUMERATION &&
+    ((indexes.length > 0 &&
+      (vaultReads.data?.length !== indexes.length ||
+        vaultReads.data.some((result) => result.status !== "success"))) ||
+      (vaultAddresses.length > 0 &&
+        (infoReads.data?.length !== vaultAddresses.length * 2 ||
+          infoReads.data.some((result) => result.status !== "success"))));
 
   return {
-    vaults,
-    // L-2: the 100-cap was silent, unlike the 500-cap which at least warned.
+    vaults: incomplete ? [] : vaults,
     tooLarge: count > MAX_VAULT_ENUMERATION,
     isLoading: countRead.isLoading || vaultReads.isLoading || infoReads.isLoading,
-    error: countRead.error ?? vaultReads.error ?? infoReads.error,
+    error:
+      countRead.error ??
+      vaultReads.error ??
+      infoReads.error ??
+      (incomplete ? new Error("Vault registry hydration is incomplete") : null),
   };
 }
 
-// Caps both the vault enumeration and each vault's market enumeration — every
-// caller of bigintToSafeLength truncates at the same bound, so anything
-// reporting truncation compares against this.
-export const MAX_VAULT_ENUMERATION = 100n;
+// A valid-history budget, not a truncation cap. Counts beyond this fail closed
+// with no partial registry; 2,048 successful deployments exceed the R39
+// attacker-cost floor while leaving the 24-vault performance fixture ample room.
+export const MAX_VAULT_ENUMERATION = BigInt(MAX_VAULT_REGISTRY_ENTRIES);
 
 export function bigintToSafeLength(value: bigint) {
-  if (value > MAX_VAULT_ENUMERATION) return Number(MAX_VAULT_ENUMERATION);
+  if (value > MAX_VAULT_ENUMERATION) return 0;
   return Number(value);
 }

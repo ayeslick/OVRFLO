@@ -33,10 +33,10 @@ vi.mock("wagmi", () => ({
 }));
 
 describe("bigintToSafeLength", () => {
-  it("clamps huge counts to a safe array length instead of allocating unboundedly", () => {
+  it("fails a count beyond the validity budget instead of returning a partial prefix", () => {
     expect(bigintToSafeLength(3n)).toBe(3);
     expect(bigintToSafeLength(0n)).toBe(0);
-    expect(bigintToSafeLength(1_000_000n)).toBe(100);
+    expect(bigintToSafeLength(1_000_000n)).toBe(0);
   });
 });
 

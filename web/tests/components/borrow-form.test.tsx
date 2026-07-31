@@ -15,9 +15,7 @@ type ReadCall = { functionName?: string; args?: unknown[]; enabled?: boolean };
 const readState = {
   grossPrice: 1_000n * WAD,
   fillQuote: [1_000n * WAD, 40n * WAD, 1n * WAD, 29n * WAD, 60n * WAD] as unknown,
-  gather: [[1n], true] as unknown,
   quoteError: null as Error | null,
-  gatherError: null as Error | null,
   quoteLoading: false,
   quoteFetching: false,
   calls: [] as ReadCall[],
@@ -51,8 +49,6 @@ vi.mock("wagmi", () => ({
           isLoading: readState.quoteLoading,
           isFetching: readState.quoteFetching,
         };
-      case "gatherLiquidity":
-        return { data: readState.gather, error: readState.gatherError, isLoading: false, isFetching: false };
       case "getRecipient":
         return { data: walletState.address, error: null };
       case "isApprovedForAll":
@@ -104,11 +100,32 @@ const hookData = {
   streams: [] as unknown[],
   streamsError: null as Error | null,
   streamsStale: false,
+  lendingParams: {
+    aprMinBps: 1000,
+    aprMaxBps: 1200,
+    feeBps: 40,
+    nextLiquidityId: 5n,
+    nextLoanId: 1n,
+    nextSaleListingId: 1n,
+    maxRouteIds: 128,
+  },
 };
 
 vi.mock("@/hooks/useLendingLiquidity", () => ({
   useLendingLiquidity: () => ({
     liquidity: hookData.liquidity,
+    outcome: {
+      status: "ready",
+      data: {
+        aggregateByApr: hookData.liquidity.reduce((depth, position) => {
+          depth.set(
+            position.aprBps,
+            (depth.get(position.aprBps) ?? 0n) + position.availableLiquidity,
+          );
+          return depth;
+        }, new Map<number, bigint>()),
+      },
+    },
     tooLarge: hookData.tooLarge,
     isLoading: false,
     error: hookData.liquidityError,
@@ -125,7 +142,7 @@ vi.mock("@/hooks/useHeldStreams", () => ({
 }));
 vi.mock("@/hooks/useLending", () => ({
   useLending: () => ({
-    params: { aprMinBps: 1000, aprMaxBps: 1200, feeBps: 40, nextLiquidityId: 5n, nextLoanId: 1n, nextSaleListingId: 1n },
+    params: hookData.lendingParams,
     isLoading: false,
     error: hookData.lendingError,
   }),
@@ -208,9 +225,7 @@ beforeEach(() => {
   hookData.liquidity = [position(1, 1000, 30n), position(2, 1100, 100n)];
   hookData.tooLarge = false;
   readState.grossPrice = 1_000n * WAD;
-  readState.gather = [[1n], true];
   readState.quoteError = null;
-  readState.gatherError = null;
   readState.quoteLoading = false;
   readState.quoteFetching = false;
   readState.calls = [];
@@ -225,6 +240,15 @@ beforeEach(() => {
   hookData.lendingError = null;
   hookData.streamsError = null;
   hookData.streamsStale = false;
+  hookData.lendingParams = {
+    aprMinBps: 1000,
+    aprMaxBps: 1200,
+    feeBps: 40,
+    nextLiquidityId: 5n,
+    nextLoanId: 1n,
+    nextSaleListingId: 1n,
+    maxRouteIds: 128,
+  };
 });
 
 describe("BorrowForm ladder", () => {
@@ -239,6 +263,28 @@ describe("BorrowForm ladder", () => {
     expect(rows[1]).toHaveAttribute("aria-checked", "false");
   });
 
+  it("keeps projected liquidity at an old tick routable after posting bounds move", () => {
+    hookData.lendingParams = {
+      ...hookData.lendingParams,
+      aprMinBps: 1100,
+      aprMaxBps: 1200,
+    };
+    hookData.liquidity = [position(1, 1000, 30n)];
+    renderBorrow();
+
+    const oldTick = screen.getByRole("radio", { name: /10\.00%/ });
+    expect(oldTick).toHaveAttribute("aria-checked", "true");
+    enterAmount("10");
+    expect(
+      readState.calls.some(
+        (call) =>
+          call.functionName === "quote" &&
+          call.args?.[2] === 1000 &&
+          call.args?.[3] === 10n * WAD,
+      ),
+    ).toBe(true);
+  });
+
   it("shows the own-supply footnote when the user has liquidity here", () => {
     hookData.liquidity = [...hookData.liquidity, position(3, 1200, 5n, walletState.address)];
     renderBorrow();
@@ -247,11 +293,10 @@ describe("BorrowForm ladder", () => {
     expect(screen.getAllByRole("radio")).toHaveLength(2);
   });
 
-  it("surfaces the truncated-liquidity warning inside the ladder", () => {
+  it("does not render the retired capped-enumeration warning", () => {
     hookData.tooLarge = true;
     renderBorrow();
-    // Now the shared notice rather than ladder-specific copy (R25).
-    expect(screen.getByText(/SHOWING FIRST 500 IDS — TOTALS MAY BE UNDERSTATED/)).toBeInTheDocument();
+    expect(screen.queryByText(/SHOWING FIRST 500/)).not.toBeInTheDocument();
   });
 
   it("shows an empty state when no tick has liquidity", () => {
@@ -355,7 +400,7 @@ describe("BorrowForm maturity gate", () => {
     expect(screen.getByText("MARKET MATURED — BORROWING CLOSED")).toBeInTheDocument();
     expect(screen.queryByRole("radiogroup")).not.toBeInTheDocument();
     const enabledOnChain = readState.calls.filter(
-      (call) => (call.functionName === "quote" || call.functionName === "gatherLiquidity") && call.enabled,
+      (call) => call.functionName === "quote" && call.enabled,
     );
     expect(enabledOnChain).toHaveLength(0);
   });

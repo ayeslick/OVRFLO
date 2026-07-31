@@ -29,6 +29,11 @@ type PerLending = {
 };
 
 const perLending: Record<string, PerLending> = {};
+const personalHookCalls = {
+  liquidity: 0,
+  loans: 0,
+  streams: 0,
+};
 
 function entry(lending: Address): PerLending {
   const key = lending.toLowerCase();
@@ -37,29 +42,46 @@ function entry(lending: Address): PerLending {
 }
 
 vi.mock("@/hooks/useLendingLiquidity", () => ({
-  useLendingLiquidity: (lending: Address) => ({
-    liquidity: entry(lending).liquidity,
-    tooLarge: false,
-    isLoading: entry(lending).isLoading,
-    error: entry(lending).error,
-  }),
+  useLendingLiquidity: (lending: Address) => {
+    personalHookCalls.liquidity += 1;
+    return {
+      liquidity: entry(lending).liquidity,
+      tooLarge: false,
+      isLoading: entry(lending).isLoading,
+      error: entry(lending).error,
+    };
+  },
 }));
 vi.mock("@/hooks/useLoanBook", () => ({
-  useLoanBook: (lending: Address) => ({
-    pools: entry(lending).pools,
-    loans: entry(lending).loans,
-    tooLarge: false,
-    isLoading: entry(lending).isLoading,
-    error: entry(lending).error,
-  }),
+  useLoanBook: (lending: Address) => {
+    personalHookCalls.loans += 1;
+    return {
+      pools: entry(lending).pools,
+      loans: entry(lending).loans,
+      tooLarge: false,
+      isLoading: entry(lending).isLoading,
+      error: entry(lending).error,
+    };
+  },
 }));
 
 const heldStreams = { streams: [] as unknown[] };
 vi.mock("@/hooks/useHeldStreams", () => ({
-  useHeldStreams: () => ({ streams: heldStreams.streams, isLoading: false, error: null }),
+  useHeldStreams: () => {
+    personalHookCalls.streams += 1;
+    return { streams: heldStreams.streams, isLoading: false, error: null };
+  },
 }));
 vi.mock("@/hooks/useClaimAllExecution", () => ({
   useClaimAllExecution: () => undefined,
+}));
+vi.mock("@/hooks/useClaimAllPreflight", () => ({
+  useClaimAllPreflight: () => ({
+    evaluation: undefined,
+    isLoading: true,
+    error: null,
+    retry: vi.fn(),
+  }),
 }));
 
 const queueState = {
@@ -124,6 +146,9 @@ beforeEach(() => {
   heldStreams.streams = [];
   queueState.startedPlans = [];
   queueState.rows = [];
+  personalHookCalls.liquidity = 0;
+  personalHookCalls.loans = 0;
+  personalHookCalls.streams = 0;
 });
 
 function liquidityPosition(lending: Address, market: Address, amount: bigint) {
@@ -132,10 +157,26 @@ function liquidityPosition(lending: Address, market: Address, amount: bigint) {
   ];
 }
 
+function renderLoaded(markets: MarketInfo[]) {
+  const result = render(
+    <PositionSummary markets={markets} user={userA} symbols={symbols} />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "LOAD POSITIONS" }));
+  return result;
+}
+
 describe("summary strip (R1/R2/R4)", () => {
-  it("renders nothing when there are no positions", () => {
+  it("renders an explicit unloaded entry without starting personal scans", () => {
     render(<PositionSummary markets={[marketA]} user={userA} symbols={symbols} />);
-    expect(screen.queryByText("YOUR POSITIONS")).not.toBeInTheDocument();
+    expect(screen.getByText("YOUR POSITIONS")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "LOAD POSITIONS" }),
+    ).toBeEnabled();
+    expect(personalHookCalls).toEqual({
+      liquidity: 0,
+      loans: 0,
+      streams: 0,
+    });
   });
 
   it("renders nothing when disconnected even with markets", () => {
@@ -146,7 +187,7 @@ describe("summary strip (R1/R2/R4)", () => {
   it("groups amounts per symbol and never sums across tokens", () => {
     liquidityPosition(lendingA, marketA.market, 5n * 10n ** 18n);
     liquidityPosition(lendingB, marketB.market, 7n * 10n ** 18n);
-    render(<PositionSummary markets={[marketA, marketB]} user={userA} symbols={symbols} />);
+    renderLoaded([marketA, marketB]);
     expect(screen.getByText(/5\.00 TESTA/)).toBeInTheDocument();
     expect(screen.getByText(/7\.00 TESTB/)).toBeInTheDocument();
     expect(screen.queryByText(/12\.00/)).not.toBeInTheDocument();
@@ -165,14 +206,14 @@ describe("summary strip (R1/R2/R4)", () => {
         withdrawable: 0n,
       },
     ];
-    render(<PositionSummary markets={[marketA]} user={userA} symbols={symbols} />);
+    renderLoaded([marketA]);
     // (50 + 99) / 200 = 74%
     expect(screen.getByText("2 REPAYING · 74%")).toBeInTheDocument();
   });
 
   it("disables CLAIM ALL with a caption when positions exist but nothing is claimable", () => {
     liquidityPosition(lendingA, marketA.market, 5n * 10n ** 18n);
-    render(<PositionSummary markets={[marketA]} user={userA} symbols={symbols} />);
+    renderLoaded([marketA]);
     expect(screen.getByRole("button", { name: "CLAIM ALL" })).toBeDisabled();
     expect(screen.getByText("NOTHING CLAIMABLE YET")).toBeInTheDocument();
   });
@@ -181,7 +222,7 @@ describe("summary strip (R1/R2/R4)", () => {
     liquidityPosition(lendingA, marketA.market, 5n * 10n ** 18n);
     entry(lendingB).error = new Error("rpc down");
     // marketB has an error; give marketA a real value
-    render(<PositionSummary markets={[marketA, marketB]} user={userA} symbols={symbols} />);
+    renderLoaded([marketA, marketB]);
     expect(screen.getByText(/5\.00 TESTA/)).toBeInTheDocument();
     const supplied = screen.getByText("SUPPLIED").parentElement!;
     expect(supplied.textContent).toContain("—");
@@ -201,7 +242,7 @@ describe("claim-all modal (R3)", () => {
         claimable: 10n,
       },
     ];
-    render(<PositionSummary markets={[marketA]} user={userA} symbols={symbols} />);
+    renderLoaded([marketA]);
     fireEvent.click(screen.getByRole("button", { name: "CLAIM ALL" }));
     expect(screen.getByRole("dialog", { name: "Claim all" })).toBeInTheDocument();
     expect(

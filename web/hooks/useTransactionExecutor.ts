@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import {
   executionIdentity,
   retryCriticalRefresh,
@@ -134,6 +134,22 @@ export function useTransactionExecutor(runtime: ActionExecutionRuntime) {
     setStatus(next.status);
   }, []);
 
+  // An `invalid` result carries `errors`, not `error`; without surfacing it
+  // here no consumer (userFacingError, useStaleRecovery's classifier) ever
+  // sees it and a failed pre-submit rebuild dead-ends silently. Memoized so
+  // the Error identity is stable per result — useStaleRecovery's effect
+  // depends on it.
+  const error = useMemo(() => {
+    if (!result) return null;
+    if ("error" in result) return result.error;
+    if ("errors" in result && result.errors.length > 0) {
+      return new Error(
+        result.errors.map((entry) => `${entry.code}: ${entry.message}`).join("; "),
+      );
+    }
+    return null;
+  }, [result]);
+
   return {
     confirm,
     report,
@@ -149,10 +165,7 @@ export function useTransactionExecutor(runtime: ActionExecutionRuntime) {
       result && "receipt" in result
         ? result.receipt
         : undefined,
-    error:
-      result && "error" in result
-        ? result.error
-        : null,
+    error,
     isSigning: status === "signing" || status === "approving",
     isConfirming: status === "confirming",
     isRefreshing: status === "refreshing",

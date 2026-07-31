@@ -47,7 +47,7 @@ export function AdjustRateFlow({
   const connection = useConnection();
   const queryClient = useQueryClient();
   const lending = useLending(market.lending);
-  const liquidity = useLendingLiquidity(market.lending);
+  const liquidity = useLendingLiquidity(market.lending, market.market);
   const positionId = action.positionId ?? null;
 
   const [selectedAprRaw, setSelectedAprRaw] = useState<number | null>(null);
@@ -191,7 +191,6 @@ export function AdjustRateFlow({
         }))}
         selectedAprBps={newAprBps}
         onSelect={setSelectedAprRaw}
-        truncated={liquidity.tooLarge}
         emptyText="LOADING RATES"
       />
       {sameRate ? <div className="label mono">SELECT A DIFFERENT RATE</div> : null}

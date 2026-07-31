@@ -19,8 +19,20 @@ export function useAllMarkets() {
     })),
     query: { enabled: ovrflos.vaults.length > 0 },
   });
+  const marketCountsComplete =
+    ovrflos.vaults.length === 0 ||
+    (marketCountReads.data?.length === ovrflos.vaults.length &&
+      marketCountReads.data.every((result) => result.status === "success"));
+  const totalMarketCount = marketCountsComplete
+    ? (marketCountReads.data ?? []).reduce(
+        (total, result) => total + asBigInt(result.result),
+        0n,
+      )
+    : 0n;
+  const marketBudgetExceeded = totalMarketCount > MAX_VAULT_ENUMERATION;
 
   const marketAddressContracts = useMemo(() => {
+    if (!marketCountsComplete || marketBudgetExceeded) return [];
     return ovrflos.vaults.flatMap((vault, vaultIndex) => {
       const countResult = marketCountReads.data?.[vaultIndex];
       const count = countResult?.status === "success" ? asBigInt(countResult.result) : 0n;
@@ -31,14 +43,26 @@ export function useAllMarkets() {
         args: [vault.vault, BigInt(index)] as const,
       }));
     });
-  }, [marketCountReads.data, ovrflos.vaults]);
+  }, [
+    marketBudgetExceeded,
+    marketCountReads.data,
+    marketCountsComplete,
+    ovrflos.vaults,
+  ]);
 
   const marketAddressReads = useReadContracts({
     contracts: marketAddressContracts,
     query: { enabled: marketAddressContracts.length > 0 },
   });
+  const marketAddressesComplete =
+    marketCountsComplete &&
+    !marketBudgetExceeded &&
+    (marketAddressContracts.length === 0 ||
+      (marketAddressReads.data?.length === marketAddressContracts.length &&
+        marketAddressReads.data.every((result) => result.status === "success")));
 
   const marketSeriesContracts = useMemo(() => {
+    if (!marketAddressesComplete) return [];
     let readIndex = 0;
     return ovrflos.vaults.flatMap((vault, vaultIndex) => {
       const countResult = marketCountReads.data?.[vaultIndex];
@@ -54,12 +78,22 @@ export function useAllMarkets() {
         };
       });
     });
-  }, [marketAddressReads.data, marketCountReads.data, ovrflos.vaults]);
+  }, [
+    marketAddressReads.data,
+    marketAddressesComplete,
+    marketCountReads.data,
+    ovrflos.vaults,
+  ]);
 
   const seriesReads = useReadContracts({
     contracts: marketSeriesContracts,
     query: { enabled: marketSeriesContracts.length > 0 },
   });
+  const seriesComplete =
+    marketAddressesComplete &&
+    (marketSeriesContracts.length === 0 ||
+      (seriesReads.data?.length === marketSeriesContracts.length &&
+        seriesReads.data.every((result) => result.status === "success")));
 
   const markets = useMemo<MarketInfo[]>(() => {
     const rows: MarketInfo[] = [];
@@ -91,19 +125,36 @@ export function useAllMarkets() {
     return rows;
   }, [marketAddressReads.data, marketCountReads.data, ovrflos.vaults, seriesReads.data]);
 
-  // L-2: vaults cap at 100 and per-vault markets cap at 100 each, so the vault
-  // count alone does not say whether the list is complete — a single vault with
-  // 101 approved markets truncates while `ovrflos.tooLarge` stays false. Ask
-  // both, or the notice misses the exact case the cap exists for.
-  const marketsTruncated = (marketCountReads.data ?? []).some(
-    (result) => result.status === "success" && asBigInt(result.result) > MAX_VAULT_ENUMERATION,
-  );
+  const registrySettled =
+    !ovrflos.isLoading &&
+    !marketCountReads.isLoading &&
+    !marketAddressReads.isLoading &&
+    !seriesReads.isLoading;
+  const incomplete =
+    registrySettled &&
+    !marketBudgetExceeded &&
+    (!marketCountsComplete || !marketAddressesComplete || !seriesComplete);
+  const isLoading =
+    ovrflos.isLoading ||
+    marketCountReads.isLoading ||
+    marketAddressReads.isLoading ||
+    seriesReads.isLoading;
+  const error =
+    ovrflos.error ??
+    marketCountReads.error ??
+    marketAddressReads.error ??
+    seriesReads.error ??
+    (incomplete ? new Error("Market registry hydration is incomplete") : null);
 
   return {
-    markets,
-    tooLarge: ovrflos.tooLarge || marketsTruncated,
-    isLoading: ovrflos.isLoading || marketCountReads.isLoading || marketAddressReads.isLoading || seriesReads.isLoading,
-    error: ovrflos.error ?? marketCountReads.error ?? marketAddressReads.error ?? seriesReads.error,
+    markets:
+      marketBudgetExceeded || !marketCountsComplete || !seriesComplete
+        ? []
+        : markets,
+    tooLarge: ovrflos.tooLarge || marketBudgetExceeded,
+    status: isLoading ? "loading" as const : error ? "unavailable" as const : "ready" as const,
+    isLoading,
+    error,
   };
 }
 

@@ -355,6 +355,74 @@ describe("useWriteFlow executor adapter", () => {
     expect(walletClient.writeContract).toHaveBeenCalledTimes(1);
   });
 
+  it("cancels late market preparation when its modal unmounts", async () => {
+    publicClient.readContract.mockImplementation(
+      async (request: { functionName: string }) => {
+        switch (request.functionName) {
+          case "balanceOf":
+          case "allowance":
+            return 100n;
+          case "aprMinBps":
+            return 100;
+          case "aprMaxBps":
+            return 5_000;
+          default:
+            return 0n;
+        }
+      },
+    );
+    let release!: () => void;
+    publicClient.getBlock
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            release = () =>
+              resolve({
+                number: 101n,
+                hash: blockHash,
+                timestamp: 50n,
+              });
+          }),
+      )
+      .mockResolvedValue({
+        number: 101n,
+        hash: blockHash,
+        timestamp: 50n,
+      });
+    const marketScope = {
+      vault,
+      lending,
+      market: token,
+      underlying: token,
+      ovrfloToken,
+      ptToken,
+      expiryCached: 1_000n,
+    };
+    const { wrapper } = createWrapper(token);
+    const hook = renderHook(() => useWriteFlow(user, marketScope), {
+      wrapper,
+    });
+    let pending!: Promise<void>;
+
+    act(() => {
+      pending = hook.result.current.writeContract({
+        address: lending,
+        abi: [],
+        functionName: "supplyLiquidity",
+        args: [token, 1_000, 10n],
+      } as never) as unknown as Promise<void>;
+    });
+    await vi.waitFor(() => expect(release).toBeTypeOf("function"));
+    hook.unmount();
+    await act(async () => {
+      release();
+      await pending;
+    });
+
+    expect(publicClient.simulateContract).not.toHaveBeenCalled();
+    expect(walletClient.writeContract).not.toHaveBeenCalled();
+  });
+
   it("does not prompt for approval after identity changes during approval simulation", async () => {
     publicClient.readContract.mockImplementation(async (request: { functionName: string }) => {
       switch (request.functionName) {

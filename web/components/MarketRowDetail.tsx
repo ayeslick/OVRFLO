@@ -67,7 +67,7 @@ export function MarketRowDetail({ market, user, symbols, onMode }: Props) {
   // Same ladder/teaser path PositionList prices its stream cards from, so the
   // market-row gate and the per-stream placeholder always agree on "empty".
   const lending = useLending(market.lending);
-  const liquidity = useLendingLiquidity(market.lending);
+  const liquidity = useLendingLiquidity(market.lending, market.market);
   const liquiditySettled = !lending.isLoading && !liquidity.isLoading;
   const borrowTeaserBps = marketBorrowTeaserBps({
     liquidity: liquidity.liquidity,

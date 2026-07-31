@@ -93,7 +93,9 @@ function selectorMatches(key: ProjectionKey, selector: ProjectionSelector): bool
     (selector.lending == null || lending === lower(selector.lending)) &&
     (selector.kind === undefined || kind === selector.kind) &&
     (selector.market == null || market === lower(selector.market)) &&
-    (selector.aprBps == null || aprBps === selector.aprBps) &&
+    // A key with a null aprBps is a whole-market projection; it contains every
+    // tick, so any tick-scoped selector staleness applies to it as well.
+    (selector.aprBps == null || aprBps == null || aprBps === selector.aprBps) &&
     (selector.account == null || account === lower(selector.account))
   );
 }
