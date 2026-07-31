@@ -150,6 +150,12 @@ The web app's explicit operating mode: `local` for developer/fork convenience, o
 
 A user-confirmed write proposal that still must be rebuilt and identity-checked before every wallet prompt and submission. "Reviewed" is a latch, not a capability: chain state and the connected account can move between review and broadcast, so the executor rebuilds the exact calldata and rechecks the latched account/chain before approve or submit. Material drift (including borrow route changes) returns the user to review rather than silently resubmitting. Reviewed numeric bounds (for example a deposit min-to-wallet) are honored across mid-flow block advances while they remain as protective as the fresh floor; outside that window the rebuild forces re-review instead of recomputing silently on every block.
 
+### Clearing Ledger
+
+The approved visual world for the Markets app: security-paper white canvas, navy/graphite structural rules, muted gold for Supply facts and muted cyan for Borrow facts, humanist grotesk + tabular mono, and the nested-wave mark reading as OVRFLO’s first O.
+
+Clearing Ledger is a visual metaphor only. Product identity remains self-repaying loans; the UI must not claim OVRFLO is a securities clearing house or clearing-ledger product. Architectural Dark (obsidian, Inter, tiled grid) is the incumbent anti-reference this world replaces.
+
 ### Claim-all
 
 The batch exit flow where a connected lender reviews and sequentially confirms all pending pool share claims and withdrawable Sablier stream balances from the position summary strip.

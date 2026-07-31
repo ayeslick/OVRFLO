@@ -1,0 +1,11 @@
+#!/bin/sh
+# Strip AI/agent attribution trailers Cursor (and others) inject into commit messages.
+MSG_FILE="$1"
+[ -f "$MSG_FILE" ] || exit 0
+tmp=$(mktemp)
+# Drop Co-authored-by / Made-with / Made with Cursor lines (any agent identity).
+grep -viE '^(Co-authored-by:|Co-Authored-By:|Made-with:|Made with Cursor)' "$MSG_FILE" > "$tmp" || true
+# Collapse trailing blank lines left behind
+awk 'NF{p=1} p' "$tmp" | awk 'BEGIN{n=0} {lines[++n]=$0} END{while(n>0 && lines[n]~/^[[:space:]]*$/) n--; for(i=1;i<=n;i++) print lines[i]}' > "$MSG_FILE"
+rm -f "$tmp"
+exit 0
