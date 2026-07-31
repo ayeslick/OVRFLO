@@ -1,5 +1,41 @@
 # Test accountability
 
+## 2026-07-31 — U11 `gatherLiquidity` removal (ticket 10)
+
+Owner: Claude ticket-10 implementation
+
+- `test/OVRFLOLending.t.sol`: removed the "COVERAGE: GATHER FUNCTIONS" block
+  (8 tests) and `test/fizz/handlers/OVRFLOLendingHandler.sol` removed
+  `oVRFLOLending_gatherLiquidity` — the function under test was removed from
+  `OVRFLOLending`. The behaviors those tests guarded remain covered at their
+  owners: `_validateLiquidity`/`createBorrowerLoanPool` tests (market/APR
+  match, inactive exclusion, self-match) and `lib/router.ts` unit tests
+  (bounded, sorted selection with coverage).
+- `web/tests-live/parity-freeze.test.ts`: rewrote the route test from
+  "selected IDs agree with legacy `gatherLiquidity`" to "route is bounded by
+  `MAX_ROUTE_IDS`, strictly increasing, hydrated at the frozen block, and
+  covers the target." The legacy comparison target no longer exists;
+  agreement was recorded green on 2026-07-31 against the pre-removal ABI as
+  ticket 09 resolution evidence.
+- `web/tests/lib/discovery/live-cutover.test.ts`: dropped the assertion that
+  parity instrumentation still contains a `"gatherLiquidity"` reference — the
+  gather branch is gone; the Ponder-branch assertions remain until ticket 11.
+
+## 2026-07-31 — U9 live cutover (ticket 09)
+
+Owner: Claude ticket-09 completion
+
+- `web/tests/e2e/claim-all.feature`: rewrote "a contract revert fails the
+  queue mid-flight" as "an externally claimed stream is skipped, never
+  submitted." The shared executor re-derives claimables at confirm
+  (freeze-what-you-show-recompute-what-you-submit), so the externally claimed
+  stream is dropped before signing and the mid-flight revert premise is
+  unreachable by design. The scenario now asserts the skip outcome.
+- `web/tests/e2e/claim-all.feature`: both scenarios gained explicit
+  `LOAD POSITIONS` / `REVIEW CLAIMS` steps for the R53 deferred-personal-scan
+  gate and the preflight review stage — new required interactions, not
+  relaxed assertions.
+
 ## 2026-07-31 — U8 shared flow shell and modal split
 
 Owner: Codex U8 implementation

@@ -9,15 +9,16 @@ import {
   discoverMarketLiquidity,
   type MarketLiquidityProjection,
 } from "@/lib/discovery/live-projection";
-import { readLegacyGatherCandidates } from "@/lib/discovery/parity-instrumentation";
 import { selectHydratedRoute } from "@/lib/router";
 import type { ReadOutcome } from "@/lib/read-outcome";
 
-// U9 frozen-block parity: at one pinned block, prove
-//   aggregate storage == uncapped per-position storage truth == event
-//   projection, and selected route IDs == legacy gatherLiquidity,
-// against the live seeded local fork (which the 501-position stress fixture
-// has loaded well past the retired 500-ID frontend cap).
+// U9 frozen-block parity: at one pinned block, prove aggregate storage ==
+// uncapped per-position storage truth == event projection against the live
+// seeded local fork (which the 501-position stress fixture loads well past
+// the retired 500-ID frontend cap). The route-selection check ran against
+// legacy gatherLiquidity until ticket 10 removed that view (agreement was
+// recorded 2026-07-31 at the U9 cutover); it now asserts the bounded-route
+// contract against the final ABI.
 
 type Deployment = {
   lending: Address;
@@ -49,7 +50,7 @@ type StoragePosition = {
   availableLiquidity: bigint;
 };
 
-let storagePositions: StoragePosition[] = [];
+const storagePositions: StoragePosition[] = [];
 
 beforeAll(async () => {
   outcome = await discoverMarketLiquidity({
@@ -149,7 +150,7 @@ describe("U9 frozen-block parity (live seeded fork)", () => {
     expect(projection.aggregateDepth).toBe(grand);
   });
 
-  it("hydrated route selection agrees with legacy gatherLiquidity at the frozen block", async () => {
+  it("hydrated route selection stays bounded and covered at the frozen block", async () => {
     const maxRouteIds = (await publicClient.readContract({
       address: deployment.lending,
       abi: ovrfloLendingAbi,
@@ -177,15 +178,17 @@ describe("U9 frozen-block parity (live seeded fork)", () => {
     expect(route.status).toBe("ready");
     if (route.status !== "ready") return;
 
-    const legacy = await readLegacyGatherCandidates(publicClient, {
-      lending: deployment.lending,
-      market: deployment.primaryMarket,
-      aprBps,
-      target,
-      borrower,
-      blockNumber: frozenBlock,
-    });
-    expect(legacy.sufficient).toBe(true);
-    expect(route.selectedIds.map(String)).toEqual(legacy.candidateIds.map(String));
+    expect(route.selectedIds.length).toBeLessThanOrEqual(Number(maxRouteIds));
+    const byId = new Map(tickPositions.map((p) => [p.id, p]));
+    let covered = 0n;
+    let previous = -1n;
+    for (const id of route.selectedIds) {
+      expect(id > previous, "route ids strictly increasing").toBe(true);
+      previous = id;
+      const position = byId.get(id);
+      expect(position, `selected id ${id} hydrated at frozen block`).toBeDefined();
+      covered += position!.availableLiquidity;
+    }
+    expect(covered >= target, "selected route covers the target").toBe(true);
   });
 });

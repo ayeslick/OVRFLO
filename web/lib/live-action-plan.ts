@@ -449,16 +449,18 @@ async function loadSnapshot(
               toWallet: preview[0],
               toStream: preview[1],
               fee: preview[2],
-              // Honor the bound the user reviewed, but only while it is at
-              // least as protective as the freshly-computed floor and still
-              // satisfiable. Recomputing unconditionally makes every mid-flow
+              // Honor the bound the user reviewed while it is satisfiable and
+              // within one extra slippage band of the fresh floor (the quote
+              // it was derived from may have drifted a block or two in either
+              // direction). Recomputing unconditionally makes every mid-flow
               // block advance change the rebuilt args and re-trip the review
               // gate; honoring unconditionally would wave a degenerate (e.g.
               // zero) bound through with no slippage protection. Outside the
               // window the recomputed bound routes to needs_review with the
               // updated number.
               minToWallet:
-                reviewedMin >= applySlippageDown(preview[0]) && reviewedMin <= preview[0]
+                reviewedMin >= applySlippageDown(applySlippageDown(preview[0])) &&
+                reviewedMin <= preview[0]
                   ? reviewedMin
                   : applySlippageDown(preview[0]),
             },

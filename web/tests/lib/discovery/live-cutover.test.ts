@@ -52,6 +52,5 @@ describe("U9 live discovery cutover", () => {
     const parity = source("lib/discovery/parity-instrumentation.ts");
     expect(parity).toContain("fetchBorrowDemand");
     expect(parity).toContain("fetchHeldStreamIds");
-    expect(parity).toContain('"gatherLiquidity"');
   });
 });

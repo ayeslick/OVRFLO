@@ -1243,22 +1243,6 @@ export const ovrfloLendingAbi = [
   },
   {
     type: 'function',
-    inputs: [
-      { name: 'market', internalType: 'address', type: 'address' },
-      { name: 'aprBps', internalType: 'uint16', type: 'uint16' },
-      { name: 'targetAmount', internalType: 'uint128', type: 'uint128' },
-      { name: 'startId', internalType: 'uint256', type: 'uint256' },
-      { name: 'borrower', internalType: 'address', type: 'address' },
-    ],
-    name: 'gatherLiquidity',
-    outputs: [
-      { name: 'ids', internalType: 'uint256[]', type: 'uint256[]' },
-      { name: 'sufficient', internalType: 'bool', type: 'bool' },
-    ],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
     inputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
     name: 'liquidityPositions',
     outputs: [

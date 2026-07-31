@@ -514,39 +514,6 @@ abstract contract OVRFLOLendingHandler is Properties {
         property_cancel_post_maturity();
     }
 
-    function oVRFLOLending_gatherLiquidity(uint256 liquiditySeed, uint128 targetAmount) public {
-        uint256 maxLiquidity = lending.nextLiquidityId();
-        // Sometimes pass startId >= nextLiquidityId to cover the early-return path
-        if (liquiditySeed % 3 == 0) {
-            try lending.gatherLiquidity(market, 1000, targetAmount, maxLiquidity + 1, actor) returns (
-                uint256[] memory ids, bool sufficient
-            ) {
-                assert(ids.length == 0 && !sufficient);
-            } catch {}
-            return;
-        }
-        if (maxLiquidity <= 1) return;
-        uint256 startId = clampBetween(liquiditySeed, 1, maxLiquidity - 1);
-        // Find a valid liquidity to get market and aprBps
-        for (uint256 i = startId; i < maxLiquidity; i++) {
-            (, address liquidityMarket, uint16 liquidityApr, uint128 cap) = lending.liquidityPositions(i);
-            if (cap == 0) continue;
-            (uint256[] memory ids, bool sufficient) =
-                lending.gatherLiquidity(liquidityMarket, liquidityApr, targetAmount, 1, actor);
-            // Verify returned IDs are active with matching market and aprBps
-            uint128 sum;
-            for (uint256 j = 0; j < ids.length; j++) {
-                (, address m, uint16 apr, uint128 liqCap) = lending.liquidityPositions(ids[j]);
-                assert(liqCap > 0 && m == liquidityMarket && apr == liquidityApr);
-                sum += liqCap;
-            }
-            if (sufficient) {
-                assert(sum >= targetAmount);
-            }
-            return;
-        }
-    }
-
     // ――――――――――――――――――― Admin (via factory) ―――――――――――――――――――
 
     function _oVRFLOLending_setAprBounds(uint16 aprMinBps_, uint16 aprMaxBps_) internal asAdmin {

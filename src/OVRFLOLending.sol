@@ -717,60 +717,6 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
     }
 
     /*//////////////////////////////////////////////////////////////
-                          GATHER FUNCTIONS
-    //////////////////////////////////////////////////////////////*/
-
-    /// @notice Scans liquidity positions for matching available liquidity.
-    /// @dev Gated by `marketActive` (reverts on expired series). Returns IDs of active
-    ///      liquidity positions matching `market` and `aprBps` with remaining liquidity,
-    ///      excluding positions owned by `borrower` (self-match guard in
-    ///      `createBorrowerLoanPool`). Stops once accumulated liquidity meets `targetAmount`.
-    ///      Use `startId` to paginate if the scan is large and `sufficient` is false.
-    ///      Pass `address(0)` as `borrower` to disable exclusion.
-    /// @param market Pendle market to match.
-    /// @param aprBps Rate to match.
-    /// @param targetAmount Minimum total liquidity desired.
-    /// @param startId First liquidity ID to scan (inclusive).
-    /// @param borrower Address to exclude (pass msg.sender for on-chain calls).
-    /// @return ids Matching liquidity IDs.
-    /// @return sufficient True if accumulated liquidity >= `targetAmount`.
-    function gatherLiquidity(address market, uint16 aprBps, uint128 targetAmount, uint256 startId, address borrower)
-        external
-        view
-        returns (uint256[] memory ids, bool sufficient)
-    {
-        _requireMarketActive(market);
-        if (startId >= nextLiquidityId) {
-            return (new uint256[](0), false);
-        }
-
-        uint256 maxCount = nextLiquidityId - startId;
-        ids = new uint256[](maxCount);
-
-        uint256 count;
-        uint256 gathered;
-        for (uint256 i = startId; i < nextLiquidityId; i++) {
-            LiquidityPosition storage liquidity = liquidityPositions[i];
-            if (
-                liquidity.availableLiquidity > 0 && liquidity.market == market && liquidity.aprBps == aprBps
-                    && liquidity.lender != borrower
-            ) {
-                ids[count++] = i;
-                gathered += liquidity.availableLiquidity;
-                if (gathered >= targetAmount) break;
-            }
-        }
-
-        sufficient = gathered >= targetAmount;
-
-        uint256[] memory result = new uint256[](count);
-        for (uint256 i; i < count; i++) {
-            result[i] = ids[i];
-        }
-        ids = result;
-    }
-
-    /*//////////////////////////////////////////////////////////////
                                 INTERNALS
     //////////////////////////////////////////////////////////////*/
 
