@@ -96,8 +96,8 @@ The Owner is pulled in for exactly these five, and nothing else:
 5. Secrets, or an irreversible deploy or config change
 
 **A stack change is not a standing escalation trigger.** Stack fitness is scored
-separately, in a `STACK_FITNESS.md` scorecard (not yet written), and reviewed when
-the Owner schedules it.
+separately in [`STACK_FITNESS.md`](STACK_FITNESS.md), and reviewed when the Owner
+schedules it.
 
 Routine passes never escalate. If a change is merely large, or merely unfamiliar,
 that is not a trigger — run the review.
