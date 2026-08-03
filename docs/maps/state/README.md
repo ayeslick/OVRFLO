@@ -68,11 +68,12 @@ machine-readable core.
 Full rules in `../SCHEMAS.md` §2. The load-bearing part:
 
 - `on-chain` is authoritative. **Anything gating an action must be this.**
-- `projection` is a candidate set — it narrows *which ids to ask about* and decides
-  nothing.
+- `projection` is a candidate set — it narrows *which ids to ask about* and may never
+  decide what is *allowed*. It may still deny: a projection that fails closed and
+  blocks an action is required, not a violation.
 - `pure-client` never stands in for chain truth.
 
-Moving a fact between domains, or letting a `projection` value feed a gate, is a
+Promoting a fact from `projection` to `on-chain`, or letting a `projection` value feed a gate, is a
 trust-domain change: summary ADR required, and it escalates to the Owner
 (`../REVIEW.md`).
 

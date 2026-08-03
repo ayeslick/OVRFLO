@@ -139,8 +139,9 @@ back to why 4 is out of reach here.
 - **A key names meaning, not identity** (`state/keys/README.md`). `action.amount-raw`
   lists five writers, but those are five independent per-flow `useState` values
   sharing one name, not five writers to one cell. An agent reading "5 writers"
-  and inferring shared mutable state would be wrong. The catalog says so; the
-  index's tabular shape does not.
+  and inferring shared mutable state would be wrong. Neither the catalog nor the
+  index says so today — the `action.amount-raw` notes cover string-vs-`bigint`
+  representation, not writer independence — which is itself a gap worth closing.
 - **`chain.wagmi-reads` is a coarse node.** Six writers spanning four hooks plus
   `invalidate.ts` and `query-resource-registry.ts`, describing a cache surface rather
   than a value. It is the one entry where "who writes this?" does not narrow much.

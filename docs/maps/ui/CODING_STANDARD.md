@@ -23,7 +23,8 @@ Sources: `header.md` · `positions.md` · `markets-table.md` · `settlement.md` 
   their own rendering. None substitutes for another.
   *`chrome.md` "The five degraded states"; `../SCHEMAS.md` §1.*
 - **CS-S2** — A failed read never renders as `0`, and never as a `—` that reads as "none".
-  *`UI-MARKETS-TABLE-TVL` · `UI-MARKETS-TABLE-BODY-STATE` · `UI-SETTLEMENT-BALANCES`.*
+  *`UI-MARKETS-TABLE-TVL` · `UI-MARKETS-TABLE-BODY-STATE` · `UI-SETTLEMENT-BALANCES` ·
+  `UI-POSITIONS-STREAMS`.*
 - **CS-S3** — Not-yet-asked is not empty. An unrequested scan says why the data is absent.
   *`UI-POSITIONS-LOAD` · `UI-CHROME-ROUTE-LOADING`.*
 - **CS-S4** — An error replaces the list. Never an empty group, never a partial list that

@@ -43,7 +43,7 @@ There are six, and only six, at pass 1:
 
 | # | Region | Incumbent code |
 |---|---|---|
-| 1 | Header | `web/components/MarketsApp.tsx` |
+| 1 | Header | `web/components/MarketsApp.tsx` · `web/components/CopyValue.tsx` |
 | 2 | Your positions | `web/components/PositionSummary.tsx` · `web/components/PositionList.tsx` |
 | 3 | Self-repaying markets table | `web/components/MarketsTable.tsx` |
 | 4 | Expanded settlement | `web/components/MarketRowDetail.tsx` |
@@ -106,7 +106,9 @@ contents inline. It means a later unit owns it.
 4. If ownership, trust domain, or a key technical decision moved: write the summary
    ADR (rules in `docs/adr/README.md`) and the scratch YAML (schema in `SCHEMAS.md`
    §4 — that is the normative source; `.scratch/` is untracked and may be absent).
-5. Run agent review — `ce-code-review` for code, `ce-doc-review` for documents
+5. Run the mechanical gate — `npm --prefix web run lint:maps` (`REVIEW.md`,
+   Mechanical gates). It runs before review.
+6. Run agent review — `ce-code-review` for code, `ce-doc-review` for documents
    (`REVIEW.md`). Merge on a clean verdict.
 
 If a brief or state key you need does not exist yet, that is a gap to report — not a

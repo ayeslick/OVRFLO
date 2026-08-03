@@ -121,7 +121,8 @@ and documented:
 
   That runs the presence gate against the diff, then
   `node tools/scripts/generate-state-function-index.mjs --check` for index drift.
-  Three rules, all presence-only:
+  Three rules — rules 1 and 2 presence-only, rule 3 a heading check inside a
+  changed ADR:
 
   1. A change under `web/components/` or `web/hooks/` must also change at least one
      of `docs/maps/ui/**`, `docs/maps/state/keys/**`, or a numbered
@@ -133,17 +134,20 @@ and documented:
      `## Decision`, and `## Consequences`. The `Scratch:` pointer stays optional;
      git cannot see `.scratch/`, so the gate never requires it.
 
-  Exemptions live in `tools/scripts/maps-presence-exemptions.txt`, are
+  Exemptions apply to rule 1 only — rules 2 and 3 cannot be exempted. They live
+  in `tools/scripts/maps-presence-exemptions.txt`, are
   **exact-path only**, and require a written reason — an exemption with no reason
   fails the gate rather than passing silently. Prefer writing the companion
   artifact over adding an entry.
 
-  The gate reads paths, not meaning: no model call, no network, no source
+  The gate decides from changed paths and, for a changed ADR, from required
+  headings — never from meaning: no model call, no network, no source
   inspection. It is not a substitute for the review skills above, and there is no
   LLM semantic review in CI in this system.
 
-Because the gate can only observe **tracked** files, the summary ADR — not the local
-scratch YAML — is the artifact a gate can see. Scratch is referenced from the ADR.
+Because the gate can only observe files git will list — tracked or newly added and
+untracked, but never **gitignored** ones — the summary ADR, not the local scratch
+YAML, is the artifact a gate can see. Scratch is referenced from the ADR.
 
 ## Test changes
 
