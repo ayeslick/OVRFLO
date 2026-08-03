@@ -45,14 +45,19 @@ There are six, and only six, at pass 1:
 |---|---|---|
 | 1 | Header | `web/components/MarketsApp.tsx` |
 | 2 | Your positions | `web/components/PositionSummary.tsx` · `web/components/PositionList.tsx` |
-| 3 | Self-repaying markets table | `web/components/MarketsTable.tsx` · `web/components/RateLadder.tsx` |
-| 4 | Expanded settlement | `web/components/MarketRowDetail.tsx` · `web/components/MarketDetail.tsx` |
-| 5 | Action modal / overlay | `web/components/ActionModal.tsx` · `web/components/ClaimAllModal.tsx` · `web/components/action-flow/` |
+| 3 | Self-repaying markets table | `web/components/MarketsTable.tsx` |
+| 4 | Expanded settlement | `web/components/MarketRowDetail.tsx` |
+| 5 | Action modal / overlay | `web/components/ActionModal.tsx` · `web/components/MarketDetail.tsx` · `web/components/ClaimAllModal.tsx` · `web/components/RateLadder.tsx` · `web/components/action-flow/` |
 | 6 | System chrome | `web/components/Providers.tsx` · `web/components/WalletRuntime.tsx` · `web/components/ModalErrorBoundary.tsx` · `web/components/TruncationNotice.tsx` |
 
 Each region documents its controls against the seven mandatory fields in
 `SCHEMAS.md`. Regions are region-level documents with **nested controls** — not one
 file per control.
+
+The `Incumbent code` column above says where a region's behaviour lives today, and it
+follows the code: `RateLadder` and `MarketDetail` sit under *Action* because that is
+what renders them, not under the table and settlement rows a first reading would
+suggest. `ui/README.md` carries the same mapping in more detail.
 
 ## Client state
 
@@ -82,11 +87,12 @@ Current state of the fill:
 | `README.md`, `SCHEMAS.md`, `REVIEW.md` | published |
 | `docs/adr/README.md` | published |
 | `.scratch/decisions/` process | published — local only, see `SCHEMAS.md` §4 |
-| `docs/maps/ui/` region briefs | index only — bodies not yet written |
-| `docs/maps/state/` keys + generated index | stub only — no keys yet |
-| `CODING_STANDARD.md` | not yet extracted |
-| `STACK_FITNESS.md` | not yet written |
-| Presence gate | not yet wired |
+| `docs/maps/ui/` region briefs | filled — six regions, 53 controls |
+| `docs/maps/state/` keys + generated index | filled — 50 keys, index generated |
+| `web/reviews/testing.md` + accountability | current as of 2026-08-03 |
+| `ui/CODING_STANDARD.md` | extracted — 40 rules, all brief-cited |
+| Presence gate | wired — `npm --prefix web run lint:maps` |
+| `STACK_FITNESS.md` | published — scored 2026-08-03; re-run is Owner-scheduled |
 
 An artifact marked *stub* or *not yet* is **not** an invitation to invent its
 contents inline. It means a later unit owns it.
@@ -128,8 +134,9 @@ rather than adding prose here.
 
 - **Clearing Ledger visual redesign implementation** — deferred consumer of these
   maps (`docs/plans/2026-07-31-002-feat-clearing-ledger-markets-visual-redesign-plan.md`)
-- **Stack migration** — Next.js + React stands for this fill; `STACK_FITNESS.md`
-  scores fitness for a later Owner-directed review and does not perform a switch
+- **Stack migration** — Next.js + React stands for this fill;
+  [`STACK_FITNESS.md`](STACK_FITNESS.md) scores fitness for a later Owner-directed
+  review and does not perform a switch
 - **Replacing Solidity `x-ray/`** — on-chain state authority stays where it is
 - **Mandatory human review of routine changes** — the point of the system is that
   agent review can accept or reject a change without the Owner
@@ -142,7 +149,9 @@ rather than adding prose here.
 | `SCHEMAS.md` | normative control fields, trust domains, scratch YAML keys |
 | `REVIEW.md` | which review skill runs when, review criteria, Owner escalation |
 | `ui/README.md` | region brief index |
+| `ui/CODING_STANDARD.md` | extracted UI checklist — the brief rules a review cites by id |
 | `state/README.md` | client state catalog index |
+| `STACK_FITNESS.md` | stack-fitness rubric and its 2026-08-03 run — scored, never decided |
 | `../adr/README.md` | when a summary ADR is required |
 
 `.scratch/` is untracked in its entirety, so scratch decision records — and their
