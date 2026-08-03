@@ -23,24 +23,27 @@ else
   SEARCH_CMD="grep"
 fi
 
-# Pattern → rationale (one-liner used in the failure message).
+# Pattern ":::" rationale (one-liner used in the failure message). The
+# separator is deliberately not "|": regex alternation is common here, and a
+# single-pipe split silently truncated the money-cast entry into an
+# uncompilable regex that reported "clean" for as long as it existed.
+SEPARATOR=':::'
 PATTERNS=(
   # Historical scans belong only in lib/discovery (plus U1 deployment-anchor verification).
-  'FACTORY_FROM_BLOCK|Ad hoc log-scan anchors are banned; use the verified deployment artifact and centralized discovery scanner.'
-  'useApprovedMarkets|Replaced by useAllMarkets; do not reintroduce an approved-only filter.'
-  'parseStreamError|Superseded by classifyUserError / StreamScanError; remove stragglers.'
-  'watchContractEvent.*Deposited|Ad hoc event scans are banned; use lib/discovery.'
-  'getLogs.*Deposited|Ad hoc event scans are banned; use lib/discovery.'
-  'nativeUsd|Renamed/removed; use the price API surface in lib/prices.'
-  'Number\\([^)]*(amount|balance|liquidity|obligation|drawn|repaid|proceeds|price|outstanding|contribution)|Do not cast token amounts through Number; keep money values as bigint.'
+  'FACTORY_FROM_BLOCK:::Ad hoc log-scan anchors are banned; use the verified deployment artifact and centralized discovery scanner.'
+  'useApprovedMarkets:::Replaced by useAllMarkets; do not reintroduce an approved-only filter.'
+  'parseStreamError:::Superseded by classifyUserError / StreamScanError; remove stragglers.'
+  'watchContractEvent.*Deposited:::Ad hoc event scans are banned; use lib/discovery.'
+  'getLogs.*Deposited:::Ad hoc event scans are banned; use lib/discovery.'
+  'nativeUsd:::Renamed/removed; use the price API surface in lib/prices.'
+  'Number\([^)]*(amount|balance|liquidity|obligation|drawn|repaid|proceeds|price|outstanding|contribution):::Do not cast token amounts through Number; keep money values as bigint.'
   # Product framing OVRFLO does not implement. Every region brief in docs/maps/ui/
   # bans it (CODING_STANDARD.md CS-P1); these identifier and copy forms are the
-  # slice a grep can decide. One entry per term: the array splits on the first
-  # "|", so a pattern may not use regex alternation.
-  'healthFactor|OVRFLO has no health factor (docs/maps/ui/CODING_STANDARD.md CS-P1).'
-  'HEALTH FACTOR|OVRFLO has no health factor (docs/maps/ui/CODING_STANDARD.md CS-P1).'
-  'liquidationPrice|OVRFLO has no liquidation (docs/maps/ui/CODING_STANDARD.md CS-P1).'
-  'collateralRatio|OVRFLO has no collateral ratio (docs/maps/ui/CODING_STANDARD.md CS-P1).'
+  # slice a grep can decide.
+  'healthFactor:::OVRFLO has no health factor (docs/maps/ui/CODING_STANDARD.md CS-P1).'
+  'HEALTH FACTOR:::OVRFLO has no health factor (docs/maps/ui/CODING_STANDARD.md CS-P1).'
+  'liquidationPrice:::OVRFLO has no liquidation (docs/maps/ui/CODING_STANDARD.md CS-P1).'
+  'collateralRatio:::OVRFLO has no collateral ratio (docs/maps/ui/CODING_STANDARD.md CS-P1).'
 )
 
 SEARCH_ROOTS=(
@@ -72,10 +75,60 @@ filter_historical_owners() {
   return "$found"
 }
 
+# Runs the configured searcher for one pattern.  Emits matching lines on
+# stdout; returns 0 for "matched", 1 for "no match", 2 for "the searcher
+# failed".  Searcher stderr is deliberately not discarded: a pattern that
+# does not compile must be loud, not silently clean.
+run_search() {
+  local pattern="$1"
+  local status=0
+  if [[ "$SEARCH_CMD" == "rg" ]]; then
+    rg --line-number --with-filename --no-heading --color=never \
+      --glob '!*.test.*' --glob '!*.spec.*' \
+      -e "$pattern" "${EXISTING_ROOTS[@]}" || status=$?
+  else
+    # POSIX grep fallback: recursive, extended regex, exclude tests.
+    grep -rnE --exclude='*.test.*' --exclude='*.spec.*' \
+      -e "$pattern" "${EXISTING_ROOTS[@]}" || status=$?
+  fi
+  if (( status > 1 )); then
+    return 2
+  fi
+  return "$status"
+}
+
+# Reports every match for one pattern, minus the reviewed historical-log
+# owners when the pattern is one they are allowed to use.  Returns 0 when a
+# violation was reported.
+report_violations() {
+  local pattern="$1" label="$2" apply_owner_filter="$3"
+  local raw="" filtered status=0
+
+  raw=$(run_search "$pattern") || status=$?
+  if (( status == 2 )); then
+    echo "check-banned-patterns: search failed for pattern: $pattern" >&2
+    exit 1
+  fi
+  if (( status != 0 )); then
+    return 1
+  fi
+
+  if (( apply_owner_filter )); then
+    # Filter only the precise approved paths.  Do not use --exclude-dir:
+    # that would wrongly exempt any directory named "discovery".
+    filtered=$(printf '%s\n' "$raw" | filter_historical_owners) || return 1
+    raw="$filtered"
+  fi
+
+  echo "check-banned-patterns: $label" >&2
+  echo "$raw" >&2
+  return 0
+}
+
 violations=0
 for entry in "${PATTERNS[@]}"; do
-  pattern="${entry%%|*}"
-  rationale="${entry#*|}"
+  pattern="${entry%%"$SEPARATOR"*}"
+  rationale="${entry#*"$SEPARATOR"}"
   # The discovery scanner and deployment-anchor verifier are the only
   # reviewed owners of historical-log access.  All other guard patterns,
   # including those that happen to be used by discovery projections, apply
@@ -86,62 +139,16 @@ for entry in "${PATTERNS[@]}"; do
       historical_owner_exception=1
       ;;
   esac
-  if [[ "$SEARCH_CMD" == "rg" ]]; then
-    # Exit 1 from rg means "no matches", which is success here.
-    rg_args=(--line-number --with-filename --no-heading --color=never
-      --glob '!*.test.*' --glob '!*.spec.*')
-    if (( historical_owner_exception )); then
-      if output=$(rg "${rg_args[@]}" "$pattern" "${EXISTING_ROOTS[@]}" 2>/dev/null \
-        | filter_historical_owners); then
-        echo "check-banned-patterns: $pattern ($rationale)" >&2
-        echo "$output" >&2
-        violations=$((violations + 1))
-      fi
-    elif output=$(rg "${rg_args[@]}" "$pattern" "${EXISTING_ROOTS[@]}" 2>/dev/null); then
-      echo "check-banned-patterns: $pattern ($rationale)" >&2
-      echo "$output" >&2
-      violations=$((violations + 1))
-    fi
-  else
-    # POSIX grep fallback: recursive, extended regex, exclude tests.
-    grep_args=(-rnE --exclude='*.test.*' --exclude='*.spec.*')
-    if (( historical_owner_exception )); then
-      # Filter only the precise approved paths.  Do not use --exclude-dir:
-      # that would wrongly exempt any directory named "discovery".
-      if output=$(grep "${grep_args[@]}" "$pattern" "${EXISTING_ROOTS[@]}" 2>/dev/null \
-        | filter_historical_owners); then
-        echo "check-banned-patterns: $pattern ($rationale)" >&2
-        echo "$output" >&2
-        violations=$((violations + 1))
-      fi
-    elif output=$(grep "${grep_args[@]}" "$pattern" "${EXISTING_ROOTS[@]}" 2>/dev/null); then
-      echo "check-banned-patterns: $pattern ($rationale)" >&2
-      echo "$output" >&2
-      violations=$((violations + 1))
-    fi
+  if report_violations "$pattern" "$pattern ($rationale)" "$historical_owner_exception"; then
+    violations=$((violations + 1))
   fi
 done
 
 # Any new historical-log caller outside the two reviewed owners is a violation,
 # even when it does not mention Deposited on the same line.
-if [[ "$SEARCH_CMD" == "rg" ]]; then
-  if output=$(rg --line-number --with-filename --no-heading --color=never \
-    --glob '!*.test.*' --glob '!*.spec.*' \
-    'getLogs|eth_getLogs|watchContractEvent|watchEvent' "${EXISTING_ROOTS[@]}" 2>/dev/null \
-    | filter_historical_owners); then
-    echo "check-banned-patterns: ad hoc historical scan (Use web/lib/discovery; deployment.ts is the anchor-verification exception.)" >&2
-    echo "$output" >&2
-    violations=$((violations + 1))
-  fi
-else
-  if output=$(grep -rnE \
-    --exclude='*.test.*' --exclude='*.spec.*' \
-    'getLogs|eth_getLogs|watchContractEvent|watchEvent' "${EXISTING_ROOTS[@]}" 2>/dev/null \
-    | filter_historical_owners); then
-    echo "check-banned-patterns: ad hoc historical scan (Use web/lib/discovery; deployment.ts is the anchor-verification exception.)" >&2
-    echo "$output" >&2
-    violations=$((violations + 1))
-  fi
+if report_violations 'getLogs|eth_getLogs|watchContractEvent|watchEvent' \
+  'ad hoc historical scan (Use web/lib/discovery; deployment.ts is the anchor-verification exception.)' 1; then
+  violations=$((violations + 1))
 fi
 
 if (( violations > 0 )); then
