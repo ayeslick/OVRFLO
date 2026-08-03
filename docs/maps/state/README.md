@@ -43,7 +43,8 @@ node tools/scripts/generate-state-function-index.mjs           # write the index
 node tools/scripts/generate-state-function-index.mjs --check   # verify only; non-zero on drift
 ```
 
-`--check` is the form a CI or presence gate should call. The generator also
+`--check` is what the presence gate already runs — `npm --prefix web run lint:maps`
+invokes it as `lint:state-index`. The generator also
 validates the catalog as it reads it: an unknown `trust_domain`, an empty
 `writers`/`readers` list, a duplicate key, or an unrecognised field fails the run
 rather than being silently dropped.
@@ -88,15 +89,23 @@ module's role. `functions/INDEX.md` carries the same list in a single table, plu
 the inverse: what one module touches, and how much `projection` state it is exposed
 to.
 
-**"What is safe to change?"** — a `pure-client` key with readers in one file is
-local. A key read across regions, or any `projection` key, is not: check the
-fail-closed notes before changing what a non-`ready` status renders.
+**"What is safe to change?"** — a `pure-client` key whose `writers` **and** `readers`
+all sit in one file is local. Readers alone are not the test: `markets.active-mode`
+has a single reader but three writers across three components, and treating it as
+local is how the action overlay gets broken from a surface that looked unrelated.
+
+A key touched by more than one component file, or by any hook or `web/lib/` module,
+is not local — hooks and `lib/` belong to no single region, so any key they touch
+crosses regions by default. Nor is any `projection` key: check the fail-closed notes
+before changing what a non-`ready` status renders.
 
 **Before editing Markets UI** — list the keys you will read or write and their
 dependent modules, per the charter's step 2 (`../README.md`).
 
 ## Sources the catalog is built from
 
+- `web/components/` — the region components that own selection, overlay, and
+  disclosure state (every `view-state.md` key is written here)
 - `web/hooks/` — the hooks that read and write client state
 - `web/lib/query-keys.ts` — query key surface
 - `web/lib/discovery/` — projection boundary, and where `projection` stops
