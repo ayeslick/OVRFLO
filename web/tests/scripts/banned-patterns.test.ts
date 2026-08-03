@@ -54,6 +54,26 @@ describe("banned-pattern guard exception scope", () => {
     expect(result.stderr).toContain("useApprovedMarkets");
   });
 
+  it("bans product framing OVRFLO does not implement", async () => {
+    const root = await fixture({
+      "components/RiskBadge.tsx": "export const healthFactor = 1;\n",
+    });
+
+    const result = runGuard(root);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("healthFactor");
+  });
+
+  it("bans the same framing in copy, in the grep fallback too", async () => {
+    const root = await fixture({
+      "components/LoanCard.tsx": 'export const label = "HEALTH FACTOR";\n',
+    });
+
+    const result = runGuard(root, true);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("HEALTH FACTOR");
+  });
+
   it("uses the same exact exception scope in the grep fallback", async () => {
     const root = await fixture({
       "hooks/nested/lib/discovery/scanner.ts": "const marker = FACTORY_FROM_BLOCK;\n",

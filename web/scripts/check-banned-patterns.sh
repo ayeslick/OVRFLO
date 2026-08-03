@@ -33,6 +33,14 @@ PATTERNS=(
   'getLogs.*Deposited|Ad hoc event scans are banned; use lib/discovery.'
   'nativeUsd|Renamed/removed; use the price API surface in lib/prices.'
   'Number\\([^)]*(amount|balance|liquidity|obligation|drawn|repaid|proceeds|price|outstanding|contribution)|Do not cast token amounts through Number; keep money values as bigint.'
+  # Product framing OVRFLO does not implement. Every region brief in docs/maps/ui/
+  # bans it (CODING_STANDARD.md CS-P1); these identifier and copy forms are the
+  # slice a grep can decide. One entry per term: the array splits on the first
+  # "|", so a pattern may not use regex alternation.
+  'healthFactor|OVRFLO has no health factor (docs/maps/ui/CODING_STANDARD.md CS-P1).'
+  'HEALTH FACTOR|OVRFLO has no health factor (docs/maps/ui/CODING_STANDARD.md CS-P1).'
+  'liquidationPrice|OVRFLO has no liquidation (docs/maps/ui/CODING_STANDARD.md CS-P1).'
+  'collateralRatio|OVRFLO has no collateral ratio (docs/maps/ui/CODING_STANDARD.md CS-P1).'
 )
 
 SEARCH_ROOTS=(
