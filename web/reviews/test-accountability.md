@@ -1,5 +1,71 @@
 # Test accountability
 
+The log of **why** test coverage changed. Coverage that disappears silently is the
+failure this file exists to prevent: a rewrite drops a behavior, the suite stays
+green, and nobody can later tell whether the behavior was retired on purpose or lost.
+
+Catalog of what exists: `web/reviews/testing.md`. Who reviews a change:
+`docs/maps/REVIEW.md`.
+
+## When an entry is required
+
+Write an entry when a test is **deleted**, **rewritten**, **weakened**, or
+**skipped** — where *weakened* means the assertion now permits behavior it previously
+rejected.
+
+No entry is needed for: adding tests; tightening an assertion; renaming a test or file
+with its assertions intact; fixture, mock, or formatting churn that changes no
+assertion.
+
+Unsure? Ask whether a future agent reading the diff could mistake this for lost
+coverage. If yes, write the entry — it costs four lines.
+
+## Review, and who does it
+
+**An agent review approves an accountability entry.** Review runs through the skills
+in `docs/maps/REVIEW.md` — `ce-code-review` for a diff that includes test changes.
+There is no human sign-off step for routine test changes, and none may be added here:
+the Owner's review surface is exactly the five escalation triggers in `REVIEW.md`.
+
+Record the review as a reference, not as an approval signature — which skill ran, its
+verdict, and the date. An entry written before review says `Review: pending`; the
+reviewing pass fills it in.
+
+An entry that is **itself** an escalation trigger — for instance, removing the last
+test guarding a mapped invariant, or one whose replacement moves a trust domain —
+says so in `Escalation:` and names the trigger. Everything else routes to review and
+merges on a clean verdict.
+
+## Entry template
+
+Copy this. Every field is required; `Escalation:` may be `none`.
+
+```markdown
+## YYYY-MM-DD — <short title> (<unit / ticket / PR>)
+
+**Author:** <implementing agent or person>
+**Review:** <skill> → <verdict>, YYYY-MM-DD   (or: pending)
+**Escalation:** none   (or: trigger <n> — <why>)
+
+- `path/to/the.test.ts`: <deleted | rewritten | weakened | skipped>.
+  **Reason:** <why the change was necessary — what in the system moved>
+  **Covered now by:** <path(s) and the behavior each holds — or "nothing, because
+  the behavior no longer exists", with the evidence for that claim>
+```
+
+`Reason` must name the change in the system, not the change in the test. "The module
+under test was deleted" is a reason; "the test was failing" is not.
+
+`Covered now by` must point at a behavior, not a filename alone. If coverage was
+recorded green against a since-removed interface before deletion, say so and date it —
+that is the evidence that nothing was lost.
+
+> **Note on older entries below.** Entries before 2026-08-03 use `Owner:` for the
+> implementing agent. That is the **author** field, not the human Owner, and not a
+> sign-off. New entries use `Author:` to keep the two apart.
+
+---
+
 ## 2026-07-31 — U12 Ponder/Envio deletion (ticket 11)
 
 Owner: Claude ticket-11 implementation
