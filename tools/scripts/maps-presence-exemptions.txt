@@ -1,0 +1,14 @@
+# Exemptions for tools/scripts/check-maps-presence.sh
+#
+# One EXACT repo-relative path per line, then `#` and a reason. Exact string
+# equality only — never a prefix, never a directory, never a glob. A nested
+# lookalike path does not inherit an exemption.
+#
+#   docs/solutions/security-issues/discovery-security-guard-exemptions-must-be-exact-path-only.md
+#
+# An exemption without a reason is a hard error, not a silent pass.
+#
+# Format:
+#   web/components/Example.tsx # why this file may change without a companion
+#
+# There are no exemptions today. Prefer writing the companion artifact.

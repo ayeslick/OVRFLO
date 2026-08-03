@@ -1,0 +1,5 @@
+# Negative fixture — U7 maps presence gate.
+# Markets UI code changed, no region brief, no state key, no summary ADR.
+# Expected: check-maps-presence.sh exits 1.
+web/components/MarketsApp.tsx
+web/components/MarketsTable.tsx

@@ -112,10 +112,35 @@ and documented:
   parallel catalog. Exemptions are **exact-path only**; a prefix match re-creates the
   risk the ban exists to stop
   (`docs/solutions/security-issues/discovery-security-guard-exemptions-must-be-exact-path-only.md`).
-- **Artifact presence gate** — a check that a UI/state-touching change carries its
-  companion map, brief, or decision artifact. Not yet wired; its rules will be
-  documented here when it lands. It checks presence, never meaning: there is no LLM
-  semantic review in CI in this system.
+- **Artifact presence gate** — `tools/scripts/check-maps-presence.sh`, wrapped by
+  `web/tests/scripts/maps-presence.test.ts`. Run it before review:
+
+  ```sh
+  npm --prefix web run lint:maps
+  ```
+
+  That runs the presence gate against the diff, then
+  `node tools/scripts/generate-state-function-index.mjs --check` for index drift.
+  Three rules, all presence-only:
+
+  1. A change under `web/components/` or `web/hooks/` must also change at least one
+     of `docs/maps/ui/**`, `docs/maps/state/keys/**`, or a numbered
+     `docs/adr/NNNN-*.md`. `docs/adr/README.md` is the process doc and does not
+     count as a companion.
+  2. A change under `docs/maps/state/keys/**` must also change
+     `docs/maps/state/functions/INDEX.md` — regenerated, never hand-edited.
+  3. A changed numbered ADR must carry `Date:`, `Status:`, `## Context`,
+     `## Decision`, and `## Consequences`. The `Scratch:` pointer stays optional;
+     git cannot see `.scratch/`, so the gate never requires it.
+
+  Exemptions live in `tools/scripts/maps-presence-exemptions.txt`, are
+  **exact-path only**, and require a written reason — an exemption with no reason
+  fails the gate rather than passing silently. Prefer writing the companion
+  artifact over adding an entry.
+
+  The gate reads paths, not meaning: no model call, no network, no source
+  inspection. It is not a substitute for the review skills above, and there is no
+  LLM semantic review in CI in this system.
 
 Because the gate can only observe **tracked** files, the summary ADR — not the local
 scratch YAML — is the artifact a gate can see. Scratch is referenced from the ADR.

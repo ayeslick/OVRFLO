@@ -1,0 +1,5 @@
+# Positive fixture — U7 maps presence gate.
+# Charter/docs-only edit with no UI code and no state keys.
+# Expected: check-maps-presence.sh exits 0 without any scratch artifact.
+docs/maps/README.md
+docs/maps/REVIEW.md
