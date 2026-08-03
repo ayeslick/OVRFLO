@@ -84,3 +84,64 @@ describe("banned-pattern guard exception scope", () => {
     expect(result.stderr).toContain("FACTORY_FROM_BLOCK");
   });
 });
+
+// The money-cast entry sat inert for its whole life: the array separator was
+// "|", which truncated the pattern mid-alternation into an uncompilable regex,
+// and a regex that fails to compile was counted as "no matches".  These cover
+// both halves so neither can regress silently.
+describe("banned-pattern guard alternation entries", () => {
+  it("bans casting a token amount through Number", async () => {
+    const root = await fixture({
+      "lib/format.ts": "export const shown = Number(position.amount);\n",
+    });
+
+    const result = runGuard(root);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("keep money values as bigint");
+  });
+
+  it("bans the camelCase form the codebase actually writes", async () => {
+    const root = await fixture({
+      "components/PositionRow.tsx": "const shown = Number(marketAmount);\n",
+    });
+
+    const result = runGuard(root);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("keep money values as bigint");
+  });
+
+  it("bans it in the grep fallback too", async () => {
+    const root = await fixture({
+      "hooks/useLoan.ts": "const shown = Number(totalObligation);\n",
+    });
+
+    const result = runGuard(root, true);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("keep money values as bigint");
+  });
+
+  it("leaves non-money Number casts alone", async () => {
+    const root = await fixture({
+      "lib/time.ts": "const seconds = Number(stream.endTime);\n",
+    });
+
+    expect(runGuard(root).status).toBe(0);
+  });
+
+  it("fails loudly when a pattern does not compile", async () => {
+    const root = await fixture({});
+    const script = join(root, "scripts", "check-banned-patterns.sh");
+    writeFileSync(
+      script,
+      readFileSync(script, "utf8").replace(
+        "'nativeUsd:::",
+        "'unclosed\\([group:::",
+      ),
+    );
+    mkdirSync(join(root, "lib"), { recursive: true });
+
+    const result = runGuard(root);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("search failed for pattern");
+  });
+});

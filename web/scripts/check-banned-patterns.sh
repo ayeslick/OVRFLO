@@ -36,7 +36,11 @@ PATTERNS=(
   'watchContractEvent.*Deposited:::Ad hoc event scans are banned; use lib/discovery.'
   'getLogs.*Deposited:::Ad hoc event scans are banned; use lib/discovery.'
   'nativeUsd:::Renamed/removed; use the price API surface in lib/prices.'
-  'Number\([^)]*(amount|balance|liquidity|obligation|drawn|repaid|proceeds|price|outstanding|contribution):::Do not cast token amounts through Number; keep money values as bigint.'
+  # Leading [Aa]-style classes, not (?i): the grep fallback is POSIX ERE and
+  # has no inline case-insensitive flag.  camelCase suffixes (marketAmount,
+  # totalBalance) are the common real form, so matching only lowercase would
+  # miss almost every violation.
+  'Number\([^)]*([Aa]mount|[Bb]alance|[Ll]iquidity|[Oo]bligation|[Dd]rawn|[Rr]epaid|[Pp]roceeds|[Pp]rice|[Oo]utstanding|[Cc]ontribution):::Do not cast token amounts through Number; keep money values as bigint.'
   # Product framing OVRFLO does not implement. Every region brief in docs/maps/ui/
   # bans it (CODING_STANDARD.md CS-P1); these identifier and copy forms are the
   # slice a grep can decide.

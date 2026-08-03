@@ -172,12 +172,14 @@ a review paragraph.
 | No fiat helper surface (`nativeUsd`) — CS-P5's mechanical slice | same script |
 | No health-factor / liquidation-price / collateral-ratio identifier or copy — CS-P1's mechanical slice | same script |
 | Superseded APIs (`useApprovedMarkets`, `parseStreamError`, `FACTORY_FROM_BLOCK`) | same script |
+| No `Number(...)` cast of a token amount — money values stay `bigint` | same script |
 
 Both are wired into `npm --prefix web run test` (via `pretest`) and
 `npm --prefix web run lint:security`. Guard behaviour is itself tested in
 `web/tests/scripts/banned-patterns.test.ts`.
 
-**Known gap.** The `Number(...)` money-cast entry in that script does not currently fire:
-its rationale separator collides with the regex alternation, so the pattern is truncated
-and rejected by the matcher. Until it is fixed, "token amounts stay `bigint`" is enforced
-by review, not by the tool — treat it as a checklist item.
+**Adding an entry.** Pattern and rationale are joined by `:::`, not `|`, so a pattern may
+use regex alternation. Keep patterns POSIX-ERE-compatible — the script falls back to
+`grep -E` where ripgrep is absent, which has no inline `(?i)` flag; write `[Aa]mount`
+rather than `(?i)amount`. A pattern that fails to compile now aborts the run instead of
+being reported as clean, so a malformed entry is caught the first time CI runs it.
