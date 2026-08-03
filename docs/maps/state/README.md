@@ -89,6 +89,13 @@ module's role. `functions/INDEX.md` carries the same list in a single table, plu
 the inverse: what one module touches, and how much `projection` state it is exposed
 to.
 
+**These lists are hand-written, and nothing verifies them against `web/`.** The
+generator validates entry *shape* — trust domains, required fields, duplicates — and
+never opens a source file, so a missing reader is invisible to `--check` and to the
+presence gate. Grep the repo before treating a `readers` list as exhaustive, and add
+what you find. A key whose list is wrong is worse than no key, because it answers the
+blast-radius question confidently.
+
 **"What is safe to change?"** — a `pure-client` key whose `writers` **and** `readers`
 all sit in one file is local. Readers alone are not the test: `markets.active-mode`
 has a single reader but three writers across three components, and treating it as
@@ -98,6 +105,13 @@ A key touched by more than one component file, or by any hook or `web/lib/` modu
 is not local — hooks and `lib/` belong to no single region, so any key they touch
 crosses regions by default. Nor is any `projection` key: check the fail-closed notes
 before changing what a non-`ready` status renders.
+
+**A key names a meaning, not one React cell.** Several writers can be independent
+per-flow instances of the same meaning rather than writers to a shared cell —
+`action.amount-raw` is four separate `useState` values in `SupplyFlow`, `BorrowFlow`,
+`RepayFlow`, and `ConvertFlow`, plus a clearing hook. Read the writer roles before
+assuming shared mutable state; a refactor that hoists them into one context because
+the table said "5 writers" would be changing behaviour, not tidying it.
 
 **Before editing Markets UI** — list the keys you will read or write and their
 dependent modules, per the charter's step 2 (`../README.md`).

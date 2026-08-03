@@ -247,6 +247,7 @@ a `projection` count is a module where a fail-closed mistake can happen.
 | reads | `chain.connection` | `on-chain` | derives the connected address; clears `markets.selected-market` and `markets.active-mode` when it changes |
 | reads | `chain.market-symbols` | `on-chain` | resolves once and threads the map down as a prop |
 | reads | `chain.markets` | `on-chain` | passes the market list to the table and the positions strip |
+| reads | `markets.active-mode` | `pure-client` | gates whether the overlay mounts at all; a null value renders no overlay |
 
 ### `web/components/MarketsTable.tsx`
 
@@ -563,7 +564,7 @@ full entry, including fail-closed guidance on `projection` keys.
 | `executor.registry` | `pure-client` | `web/hooks/useTransactionExecutor.ts` | `web/hooks/useTransactionExecutor.ts` | `docs/maps/state/keys/execution-state.md` |
 | `executor.result` | `pure-client` | `web/hooks/useTransactionExecutor.ts` | `web/hooks/useTransactionExecutor.ts`<br>`web/hooks/useWriteFlow.ts`<br>`web/hooks/useStaleRecovery.ts` | `docs/maps/state/keys/execution-state.md` |
 | `executor.status` | `pure-client` | `web/hooks/useTransactionExecutor.ts` | `web/hooks/useWriteFlow.ts`<br>`web/components/action-flow/ActionFlowShell.tsx`<br>`web/hooks/useApprovalWriteFlows.ts` | `docs/maps/state/keys/execution-state.md` |
-| `markets.active-mode` | `pure-client` | `web/components/MarketsApp.tsx`<br>`web/components/MarketsTable.tsx`<br>`web/components/MarketRowDetail.tsx` | `web/components/MarketDetail.tsx` | `docs/maps/state/keys/view-state.md` |
+| `markets.active-mode` | `pure-client` | `web/components/MarketsApp.tsx`<br>`web/components/MarketsTable.tsx`<br>`web/components/MarketRowDetail.tsx` | `web/components/MarketsApp.tsx`<br>`web/components/MarketDetail.tsx` | `docs/maps/state/keys/view-state.md` |
 | `markets.row-detail.advanced-open` | `pure-client` | `web/components/MarketRowDetail.tsx` | `web/components/MarketRowDetail.tsx` | `docs/maps/state/keys/view-state.md` |
 | `markets.selected-market` | `pure-client` | `web/components/MarketsApp.tsx`<br>`web/components/MarketsTable.tsx` | `web/components/MarketsTable.tsx`<br>`web/components/MarketRowDetail.tsx` | `docs/maps/state/keys/view-state.md` |
 | `positions.advanced-open` | `pure-client` | `web/components/PositionList.tsx` | `web/components/PositionList.tsx` | `docs/maps/state/keys/view-state.md` |

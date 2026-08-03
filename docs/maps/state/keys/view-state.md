@@ -33,6 +33,7 @@ The `{ market, action }` pair backing the action overlay. `null` means no overla
   - `web/components/MarketsTable.tsx` — forwards `onMode(selected, action)` from the expanded detail
   - `web/components/MarketRowDetail.tsx` — raises `onMode` from the per-action controls
 - **readers:**
+  - `web/components/MarketsApp.tsx` — gates whether the overlay mounts at all; a null value renders no overlay
   - `web/components/MarketDetail.tsx` — renders the overlay for `activeMode.market` and `activeMode.action`
 - **notes:** Closing the overlay clears this key only — the row stays expanded. The
   overlay scrim blocks the table while open, so this key and
