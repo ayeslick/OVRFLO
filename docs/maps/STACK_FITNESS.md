@@ -121,8 +121,10 @@ the `GENERATED FILE — DO NOT EDIT` banner, and `--check` is a real drift gate 
 It does not reach 3, and the reason is precise. `--check` verifies the index against
 the keys; **nothing verifies the keys against `web/`.** The presence gate
 (`tools/scripts/check-maps-presence.sh`) fails a change under `web/components/` or
-`web/hooks/` that carries *no* companion under `docs/maps/ui/` or
-`docs/maps/state/keys/` — which is a real and useful floor, and closes the "changed
+`web/hooks/` that carries *no* companion under `docs/maps/ui/`,
+`docs/maps/state/keys/`, or a numbered `docs/adr/NNNN-*.md`, and that is not
+exact-path exempted in `tools/scripts/maps-presence-exemptions.txt` — which is a real
+and useful floor, and closes the "changed
 the UI, updated nothing" case. It is presence, not fidelity: a change that edits a
 region brief satisfies the gate while adding an uncatalogued `useState` in
 `BorrowFlow.tsx`. Anchor 3 asks for the second thing. Closing the gap needs a check
@@ -218,8 +220,10 @@ collapsing into one rendering?
 
 Confirm the domain counts from `INDEX.md`'s `Coverage` table. Confirm every
 `projection` key still carries fail-closed guidance naming which consumer
-distinguishes empty from unavailable. Score 3 only when ignoring unavailability stops
-compiling on display or gate paths.
+distinguishes empty from unavailable. Score 3 only when ignoring unavailability
+becomes an error — via the type system **or** a mechanical check, as anchor 3 allows —
+on **every** consumer named in a `projection` key's `readers` list. Partial coverage
+scores 2.
 
 ---
 
@@ -279,7 +283,9 @@ browser and without a chain — and how much of that survives a stack change?
 
 Re-run the inventory commands in *Refreshing this catalog* in `web/reviews/testing.md`
 rather than trusting these numbers. Score 3 only on a green suite **and** a mechanical
-control-ID→scenario link.
+link from every mapped control to at least one covering test — a tagged Gherkin
+scenario or a tagged unit test both count; anchor 3 says "covering test", not
+"scenario". No test file references a `UI-` id today, so neither route is started.
 
 ---
 
@@ -312,10 +318,10 @@ reconciliation — and is that layer confined to a seam?
   `chain.block-timestamp`, `chain.wagmi-reads`, `query.streams.held`, and
   `query.demand.market` are all written only from `web/hooks/` or `web/lib/`. No
   feature component writes a chain read.
-- Corroboration (`web/package.json`): 9 runtime dependencies, of which 5 are the
+- Corroboration (`web/package.json`): 9 runtime dependencies, of which 6 are the
   EVM/wallet layer — `wagmi` 3.7.3, `viem` 2.55.5, `@reown/appkit` and
-  `@reown/appkit-adapter-wagmi` 1.8.23, `@tanstack/react-query` 5.90.12 (required by
-  wagmi). All exact-pinned; no ranges.
+  `@reown/appkit-adapter-wagmi` 1.8.23, `@tanstack/react-query` and
+  `@tanstack/query-core` 5.90.12 (required by wagmi). All exact-pinned; no ranges.
 
 ### Score: 4 / 4 — with a recorded judgment call
 
@@ -342,6 +348,13 @@ argument for staying — it is the price tag on going, stated plainly.
   (`projection.claim-verifier`). Any stack inherits this; it is a deployment
   constraint, not a framework property.
 
+### Re-run checklist
+
+Recount the `on-chain` key writers from `INDEX.md`. Score 4 only if every writer
+outside the provider shell sits under `web/hooks/` or `web/lib/` — and record the
+provider-shell judgment call either way, because the score depends on it. Re-derive
+the dependency split from `web/package.json` rather than trusting the count above.
+
 ---
 
 ## D5 — Operational cost
@@ -357,7 +370,7 @@ to ship and to verify?
 | 1 | One always-on backend service — indexer, API, or session tier — is required. |
 | 2 | Client is static, but a privileged tier (secret-bearing build, server middleware, or hosted gate) still has to be operated. |
 | 3 | No server participates in UI state; external runtime dependency is limited to RPC providers. |
-| 4 | As 3, plus per-user read load is bounded and the default test loop needs no bespoke local chain. |
+| 4 | As 3, plus per-user read load is bounded and the end-to-end loop needs no bespoke local chain. |
 
 ### Evidence
 
@@ -368,6 +381,13 @@ to ship and to verify?
 - Indexers are gone and their absence is a **guarded invariant**, not an accident: the
   discovery and projection area's 96 cases include holding that "the deleted indexer
   stack stays deleted across every source tree" (`web/reviews/testing.md`).
+- **One vendor-operated service sits on the connection path.** Wallet connection
+  depends on Reown/WalletConnect's hosted infrastructure (`reownProjectId` in
+  `web/lib/wagmi.ts`, passed to both `WagmiAdapter` and `createAppKit`; the file's own
+  comment notes construction "performs Reown/WalletConnect setup at module scope").
+  Anchor 3's "limited to RPC providers" is read as excluding vendor-operated services
+  this project does not run — which is why this scores 3 rather than 2. A re-runner
+  who reads the anchor as covering any third-party runtime dependency scores 2.
 - No hosted CI tier is operated today — the repository has no `.github/` directory.
   Gates are the mechanical checks in `REVIEW.md` plus the review skills, run locally:
   `check-banned-patterns.sh`, `check-maps-presence.sh`, and the state-index
@@ -396,6 +416,14 @@ to ship and to verify?
   standing argument and a later review should weigh it explicitly — as a cost of
   moving, not as a verdict against moving.
 
+### Re-run checklist
+
+Confirm no module in `INDEX.md` sits outside `web/components/`, `web/hooks/`, or
+`web/lib/`. Confirm `web/next.config.ts` still sets `output: "export"` and that no
+`.github/` directory exists. Score 4 only when per-user RPC read load is bounded and
+the **end-to-end** loop needs no bespoke local chain — the default vitest loop needs
+no chain today, so read the anchor against e2e, which is what actually costs.
+
 ---
 
 ## Summary — incumbent Next/React client, scored 2026-08-03
@@ -405,9 +433,18 @@ to ship and to verify?
 | D1 | AI reasonability of the state graph | 2 / 4 | Keys are source of truth and the index is generated and drift-checked; nothing checks the catalog against `web/`. |
 | D2 | Trust-domain honesty | 2 / 4 | Domains, four-status outcomes, and fail-closed rules are thorough — and held by tests and review, not by the compiler. |
 | D3 | Testability | 2 / 4 | 714 cases, 57% stack-portable; but one known failure, and no control-ID→scenario link. |
-| D4 | Wallet / EVM ecosystem fit | 4 / 4 | Reads, caching, and invalidation are one layer behind a seam 8 of 9 `on-chain` keys respect. |
-| D5 | Operational cost | 3 / 4 | Static artifact, no server in the state graph, no indexer; RPC load is per-user and e2e needs a local fork. |
+| D4 | Wallet / EVM ecosystem fit | 4 / 4 \* | Reads, caching, and invalidation are one layer behind a seam 8 of 9 `on-chain` keys respect. |
+| D5 | Operational cost | 3 / 4 † | Static artifact, no server in the state graph, no indexer; RPC load is per-user and e2e needs a local fork. |
 | | **Total** | **13 / 20** | |
+
+\* **D4 carries a recorded judgment call.** The 4 depends on treating the provider
+shell (`Providers.tsx`, `WalletRuntime.tsx`) as part of the seam rather than as
+feature components. A re-runner who treats them as ordinary components scores 3. See
+D4; do not read the 4 without it.
+
+† **D5 depends on how anchor 3 reads "external runtime dependency."** Wallet
+connection uses Reown/WalletConnect's hosted service. Counting a vendor-operated
+service scores 2; counting only tiers this project operates scores 3. See D5.
 
 **The total is a summary, not a verdict.** The dimensions are not equally weighted and
 this scorecard deliberately does not weight them — weighting is the Owner's judgment
@@ -427,8 +464,13 @@ to decide.
 - It does **not** raise an Owner escalation. Per `REVIEW.md`, a stack change is not a
   standing trigger.
 - **D3 would move on work already identified and owned elsewhere** — the known-red
-  `markets-table` test and the control-ID tags. Fixing both scores it 3 with no other
-  change. **Re-run this before arguing from it**; scoring a stack against numbers that
+  `markets-table` test and the control-ID tags. Fixing both is necessary but may not
+  be sufficient: anchor 3 asks that *every* mapped control be traceable, and 31
+  flow-level scenarios against 53 controls will leave chrome and header controls
+  (`UI-HEADER-BRAND`, `UI-CHROME-ROUTE-ERROR`) with no plausible scenario to tag —
+  plan D6 fixes Gherkin as flow-level, not one scenario per control. Re-score after
+  the tags land rather than assuming the move. **Re-run this before arguing from
+  it**; scoring a stack against numbers that
   a scheduled piece of work is about to change is how a review reaches a confident
   wrong answer.
 
