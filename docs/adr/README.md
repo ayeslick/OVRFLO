@@ -61,16 +61,16 @@ What was decided, stated plainly.
 What this makes easy, what it makes hard, and what later work inherits.
 ```
 
-The `Scratch` line is the tracked pointer to the local scratch YAML. `.scratch/` is
-untracked, so the ADR is what a reviewer or presence gate can actually read — the ADR
-must stand on its own without the scratch file being present.
+The `Scratch` line is the pointer to the scratch YAML. `.scratch/` is tracked as of
+2026-08-06 (it was previously gitignored), but the contract is unchanged: the ADR
+must stand on its own without the scratch file being read.
 
 ## Relationship to other records
 
 | Record | Tracked | Holds |
 |---|---|---|
 | `docs/adr/` | yes | the decision and its consequences — short |
-| `.scratch/decisions/` | no — `.scratch/` is untracked entirely | blast radius, rejected alternatives, invariants, risks |
+| `.scratch/decisions/` | yes, since 2026-08-06 | blast radius, rejected alternatives, invariants, risks |
 | `docs/solutions/` | yes | writeups of solved problems, after the fact |
 | `CONCEPTS.md` | yes | shared domain vocabulary |
 

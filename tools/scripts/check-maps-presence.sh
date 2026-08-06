@@ -11,10 +11,10 @@
 # network. Semantic judgment belongs to the review skills in
 # `docs/maps/REVIEW.md`, not here.
 #
-# It also only sees TRACKED files. `.scratch/` is gitignored in its entirety,
-# so a scratch decision YAML is invisible to any gate. The observable artifact
-# is the tracked summary ADR under `docs/adr/`, which carries the `Scratch:`
-# pointer (`docs/adr/README.md`).
+# `.scratch/` is tracked as of 2026-08-06 (previously gitignored), so scratch
+# decision YAMLs are now visible to git. The gate's contract is unchanged: the
+# required artifact is the summary ADR under `docs/adr/`, which carries the
+# `Scratch:` pointer (`docs/adr/README.md`); scratch files are never required.
 #
 # Usage:
 #   tools/scripts/check-maps-presence.sh                     # diff vs default base

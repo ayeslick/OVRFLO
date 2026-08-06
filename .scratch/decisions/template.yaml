@@ -1,0 +1,45 @@
+# Scratch decision record — schema: docs/maps/SCHEMAS.md §4
+# Copy to .scratch/decisions/YYYY-MM-DD-short-kebab-slug.yaml
+# All nine keys are required. Use an empty list, never a missing key.
+
+# Tracked record this expands on: docs/adr/NNNN-*.md, or a PR reference.
+summary_ref: ""
+
+# What this change is for, in one or two sentences.
+goal: ""
+
+# State keys read or written (docs/maps/state/keys/).
+state_keys_touched: []
+#  - marketsTable.selectedRowId
+
+# Modules that write or read those keys — the blast radius.
+writers_readers: []
+#  - writes: web/hooks/useX.ts
+#  - reads: web/components/MarketsTable.tsx
+
+# Trust domain per touched fact, and any domain that moved.
+# on-chain | projection | pure-client
+trust_domains: []
+#  - fact: stream owner
+#    domain: on-chain
+#    moved_from: null
+
+# Approaches considered and why they lost.
+rejected_alternatives: []
+#  - option: ""
+#    why_not: ""
+
+# Invariants this change preserves, and how.
+invariants_held: []
+#  - invariant: ""
+#    how: ""
+
+# What could still go wrong, and the residual exposure.
+risks: []
+#  - risk: ""
+#    residual: ""
+
+# Where a reviewer should look first.
+diff_hints: []
+#  - path: ""
+#    why: ""

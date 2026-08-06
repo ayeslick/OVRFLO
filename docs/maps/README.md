@@ -105,7 +105,7 @@ contents inline. It means a later unit owns it.
 3. Implement.
 4. If ownership, trust domain, or a key technical decision moved: write the summary
    ADR (rules in `docs/adr/README.md`) and the scratch YAML (schema in `SCHEMAS.md`
-   §4 — that is the normative source; `.scratch/` is untracked and may be absent).
+   §4 — that is the normative source).
 5. Run the mechanical gate — `npm --prefix web run lint:maps` (`REVIEW.md`,
    Mechanical gates). It runs before review.
 6. Run agent review — `ce-code-review` for code, `ce-doc-review` for documents
@@ -156,6 +156,6 @@ rather than adding prose here.
 | `STACK_FITNESS.md` | stack-fitness rubric and its 2026-08-03 run — scored, never decided |
 | `../adr/README.md` | when a summary ADR is required |
 
-`.scratch/` is untracked in its entirety, so scratch decision records — and their
-local README and template — are **not in a fresh clone**. The normative scratch
-schema is `SCHEMAS.md` §4, which is tracked. Write from that.
+`.scratch/` is tracked as of 2026-08-06 (it was previously gitignored), so scratch
+decision records travel with the repo. The normative scratch schema remains
+`SCHEMAS.md` §4; where a local template disagrees, §4 wins.

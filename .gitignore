@@ -45,6 +45,7 @@ mnemonic.txt
 # Local tool/agent config, including anything mirroring ~/.config here.
 .config/
 .github/*
+.githooks/*
 .DS_Store
 .vscode
 .agents/*
@@ -67,15 +68,9 @@ node_modules/
 # Agents
 .claude/
 .factory/
-VAULT_SECURITY.md
-GUIDELINES.md
-BASE_SECURITY.md
-CLAUDE.md 
-AGENTS.md
 .cursor/
 .codex/*
 .bootstrap.*
-.scratch
 
 # deepsec workspace install / scan artifacts 
 .deepsec/*
