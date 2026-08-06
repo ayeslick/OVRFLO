@@ -114,6 +114,34 @@ The composition of PT deposit, lending sale, and unwrap or swap that lets the PT
 
 An atomic loan of deposited PT from the OVRFLO vault, repaid via safeTransferFrom within the same transaction. The borrower implements an EIP-4531 callback that receives PT, executes logic (typically the OVRFLO cycle), and returns PT plus an oracle-adjusted fee in underlying. The fee routes to the treasury, which wraps it to fund the wrap reserve. Capped by marketTotalDeposited, gated pre-maturity, and globally pausable by the multisig. No nonReentrant modifier is applied because the borrower must deposit during the callback to run the cycle.
 
+## OVRFLOLending v1-lite (planned redesign)
+
+Vocabulary for the claim-range order-book redesign specified in `docs/plans/2026-08-05-001-feat-lending-v1-lite-plan.md`. The entries above in "OVRFLOLending" describe the current contract; these describe its planned replacement.
+
+### Tick
+
+A fixed APR price level in a lending market's order book, at a per-market spacing set at series approval (default 25 bps). Lenders rest capital at a tick; every fill at a tick executes at the tick's deterministic price (`1/factor(aprBps, ttm)`), so bidders at one tick get identical terms and ordering carries no adverse selection.
+
+### Tape
+
+A tick's append-only cumulative-quantity space. Every supplied position occupies the next contiguous interval; a monotone `filled` counter records consumption sweeping left to right, which makes FIFO a property of the geometry rather than queue machinery. Available depth is the identity `root − filled`, never stored state.
+
+### Blind fill
+
+A borrow that consumes tick liquidity by advancing the tape's `filled` counter without reading, naming, or enumerating any lender position. "Blind" refers to lender identities, not the collateral — the borrower's own pledged stream is fully specified. Blind fills make fill gas flat in the number of positions crossed and delete client-side ID selection (and with it, the duplicate-ID collision problem).
+
+### Frozen history
+
+The safety property that no cancellation can ever alter any tape coordinate below `filled`: cancellations remove only unfilled spans, which always lie at-or-above the counter, so loan intervals — which live entirely below it — are immutable forever. This is what makes lazily computed interval-overlap attribution exact at any later time. Lender contributions to a loan are derived as the overlap of the position's interval with the loan's frozen interval, never stored at fill time.
+
+### Epoch (lending)
+
+One generation of a tick's bookkeeping — one segment tree, one `filled` counter, one coordinate space. Not a time period. When a tick's tree reaches its height cap, the tick rolls to a new epoch for new posts while fills drain older epochs first via a cursor; old epochs are never migrated, only settled. Sized to be a backstop, expected never to fire organically.
+
+### UNIT
+
+The book's quantization granule (1e12 wei ≈ one-millionth of an 18-decimal token). All supply, fill, and depth quantities are exact UNIT multiples, enforced at the boundary, which makes book arithmetic exact (no rounding exists inside the book) and lets tree nodes be 64-bit values packed four per storage slot. Series onboarding must verify the underlying's total supply is far below `2^64 × UNIT`.
+
 ## Testing infrastructure
 
 ### Live market discovery
