@@ -53,6 +53,32 @@ Against `docs/maps/state/` and `SCHEMAS.md` §2–§3:
 - Did a trust domain move? If so, is there a summary ADR?
 - Is the generated function index still generated — not hand-edited?
 
+### Cross-layer consistency
+
+Seven invariants no single module can guarantee alone (adapted from
+ponytail-fullstack-web3, `docs/cross-layer-invariants.md`). Apply them to any
+change that crosses the UI↔chain boundary — form input, transaction build,
+submission, receipt handling, or display of chain facts:
+
+- **Intent** — the executed operation matches what the user reviewed in the
+  confirm step: same market, same action, same amounts, same stream.
+- **Identity** — preparation, signing, submission, and attribution all use the
+  same intended account; an account switch mid-flow invalidates prepared state.
+- **Chain/environment** — config, reads, addresses, submissions, explorer links,
+  and projections all point at the same chain and deployment.
+- **Amount** — parsed, displayed, simulated, signed, submitted, emitted, and
+  reconciled amounts use compatible units and rounding. The money-cast ban in
+  `web/scripts/check-banned-patterns.sh` exists because this failed once; the
+  ban catches one syntactic form, this lens covers the rest of the pipeline.
+- **Version** — the frontend's ABI and address book are compatible with the
+  deployment it talks to.
+- **Outcome** — the UI claims only what the defined success condition supports;
+  weaker data never overwrites stronger knowledge (freshness precedence,
+  `SCHEMAS.md` §2).
+- **Recoverability** — reloads, reconnects, replaced transactions, and delayed
+  reads can be reconstructed from persisted or on-chain state; no flow strands
+  the user in a state only component memory could resolve.
+
 ### Product and brief
 
 Against `PRODUCT.md`, `docs/maps/ui/`, and the covering Gherkin:
@@ -67,6 +93,26 @@ Against `PRODUCT.md`, `docs/maps/ui/`, and the covering Gherkin:
 - Is authority order respected — comps win on pixels, briefs win on meaning?
 - Do new controls have IDs in the `SCHEMAS.md` format, and are flow-level Gherkin
   tags updated?
+
+### Solidity changes
+
+For contract diffs, state these in the invoking prompt alongside
+`docs/solutions/patterns/solidity-implementation-discipline.md` (adapted from
+ponytail-fullstack-web3's `solidity-review`):
+
+- **Safety strictly before minimality.** Pass 1 checks authorization,
+  accounting, rounding, reentrancy, token edge cases, and invariant coverage
+  across *all* affected entry points — only then does pass 2 hunt removable
+  surface.
+- Minimality findings carry a tag naming the cut — `delete:` / `reuse:` /
+  `native:` / `standard:` / `dependency:` / `storage:` / `call:` / `role:` /
+  `yagni:` / `shrink:` — and **a minimality finding is invalid if it weakens a
+  safety property.**
+- `// deliberate-ceiling:` markers in the diff are validated, not read: the
+  ceiling must be enforced in code and the trigger measurable (discipline doc,
+  "Deliberate ceilings").
+- Do not inflate severity, and qualify any cited audit finding ID with its
+  audit (AGENTS.md — finding IDs collide across audits).
 
 ## Verdict and re-review
 
@@ -131,8 +177,8 @@ and documented:
   2. A change under `docs/maps/state/keys/**` must also change
      `docs/maps/state/functions/INDEX.md` — regenerated, never hand-edited.
   3. A changed numbered ADR must carry `Date:`, `Status:`, `## Context`,
-     `## Decision`, and `## Consequences`. The `Scratch:` pointer stays optional;
-     git cannot see `.scratch/`, so the gate never requires it.
+     `## Decision`, and `## Consequences`. The `Scratch:` pointer stays optional —
+     the ADR must stand on its own — so the gate never requires it.
 
   Exemptions apply to rule 1 only — rules 2 and 3 cannot be exempted. They live
   in `tools/scripts/maps-presence-exemptions.txt`, are
@@ -145,9 +191,9 @@ and documented:
   inspection. It is not a substitute for the review skills above, and there is no
   LLM semantic review in CI in this system.
 
-Because the gate can only observe files git will list — tracked or newly added and
-untracked, but never **gitignored** ones — the summary ADR, not the local scratch
-YAML, is the artifact a gate can see. Scratch is referenced from the ADR.
+`.scratch/` is tracked as of 2026-08-06, so the gate *can* now see scratch files —
+but the contract is unchanged: the summary ADR is the durable, self-standing record,
+scratch carries the depth behind it, and the gate requires only the ADR.
 
 ## Test changes
 

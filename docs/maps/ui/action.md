@@ -449,3 +449,10 @@ for wrap/unwrap — a side marker, never a severity marker.
    uncorroborated candidate set disables the batch instead of permitting it. Any change that
    lets a projection value reach an `if (…) allow` is a trust-domain change requiring a
    summary ADR and Owner escalation (`../SCHEMAS.md` §2).
+7. **What was simulated is what is submitted.** The calldata the user reviewed — quote,
+   arguments, route — is the calldata the wallet receives. Anything that drifts between
+   review and submission (a re-quote, a rebuilt plan, a changed idle amount, changed
+   liquidity) routes through visible re-confirmation (`re-confirm`, `needs-review`), never
+   through silent re-submission with new values. The claim-all queue's pre-submit rebuild
+   and the adjust flow's pre-submit re-read both exist to enforce this. (Adapted from
+   ponytail-fullstack-web3's `web3-signing`.)

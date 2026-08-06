@@ -83,6 +83,27 @@ criteria):
   feed a gate — is a trust-domain change.** It requires a summary ADR and escalates
   to the Owner.
 
+### Freshness precedence
+
+When two copies of the same chain fact disagree, the stronger and fresher source
+wins (adapted from ponytail-fullstack-web3's reconciliation ladder; the indexer
+rung is removed because OVRFLO has no indexer):
+
+1. A persisted pending operation records **local intent** — it never claims chain
+   success.
+2. A confirmed receipt proves the transaction's outcome at its block.
+3. An RPC read at an equal-or-newer block may replace optimistic or derived local
+   effects; a read at an older block may not.
+4. `projection` values never overwrite any of the above — they only narrow what
+   to ask about (rules above).
+5. Irreversible product claims ("settled", "closed", "repaid") follow the finality
+   policy, not the first receipt.
+6. Reverts, replacements, reorgs, account switches, and chain switches clear or
+   migrate optimistic overlays **deliberately** — never silently.
+
+The headline rule: an older or weaker source never overwrites stronger confirmed
+knowledge.
+
 ---
 
 ## 3. State entry — minimum shape
@@ -121,12 +142,17 @@ omitting a key.
 | `risks` | list | What could still go wrong, and the residual exposure |
 | `diff_hints` | list | Where a reviewer should look first |
 
-**This section is the normative source.** `.scratch/` is untracked in its entirety,
-so a fresh clone has no template and no local README — write the file from the table
-above. `.scratch/decisions/template.yaml` and `.scratch/decisions/README.md` are
-local conveniences that may or may not be present; if they disagree with this
-section, this section wins.
+**This section is the normative source.** `.scratch/` is tracked as of 2026-08-06
+(it was previously gitignored), so `.scratch/decisions/template.yaml` and
+`.scratch/decisions/README.md` travel with the repo — but they remain conveniences:
+if they disagree with this section, this section wins.
 
 Scratch is **AI-first**. It is structured context for a review agent, not a human
 essay — terse fields beat prose. The durable, tracked record is the summary ADR;
 scratch carries the depth behind it.
+
+**Provenance.** A scratch decision file is an intent capsule: authored *before or
+during* the change it describes. Reconstructing one afterward is allowed only
+when labeled as such (`goal: "(reconstructed) …"`) — never presented as
+pre-authored intent. Missing intent stays missing; do not invent it. (Adapted
+from ponytail-fullstack-web3's `intent-capsule` provenance rule.)

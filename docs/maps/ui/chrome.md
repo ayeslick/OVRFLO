@@ -198,3 +198,11 @@ Two further states earn a name because they are routinely collapsed into the row
 6. **Comps do not define chrome behaviour.** A comp's skeleton screens, status pills, or
    risk banners are pixels; whether a state exists, and what it is allowed to claim, is
    settled here (`../README.md`, authority order).
+7. **The wallet session is volatile external state.** The account, chain, and connection
+   can change during reads, simulation, signing, and while operations are pending. An
+   operation belongs to the identity captured when it started: a switch mid-run pauses the
+   queue (the `account` / `chain` pause reasons), a switch mid-form re-asks
+   (`UI-ACTION-WALLET-CHANGED`), and nothing is ever silently re-attributed to — or
+   silently signed by — the newly active session. A disconnect or reload does not erase
+   the record of a transaction already broadcast. (Adapted from ponytail-fullstack-web3's
+   `web3-wallet`.)

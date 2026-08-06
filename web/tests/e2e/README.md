@@ -126,3 +126,22 @@ named-but-unused parameter.
 
 `bddgen` (run automatically by `test:e2e`/`test:e2e:ui`) generates `.features-gen/` from the `.feature` files;
 that directory is gitignored per `playwright-bdd`'s own convention and should never be edited by hand.
+
+## Scenario coverage checklist
+
+Adapted from ponytail-fullstack-web3's `web3-qa` matrix. When adding a journey or reviewing suite coverage,
+sweep each dimension — the gaps live in the combinations, not the happy paths:
+
+- **Identity churn** — account switch and chain switch at each operation stage: form open, reviewing,
+  approving, signing, queued mid-run (`UI-ACTION-WALLET-CHANGED`; the queue's `account`/`chain` pauses).
+- **Approval states** — approval needed, already covered, reverted, and the zero-first double approval
+  (`UI-ACTION-APPROVE`).
+- **Transaction outcomes** — wallet rejection, on-chain revert, confirmed-but-refresh-failed, and the
+  recoverable races (`re-confirm`, `needs-review`): distinct events with distinct renderings
+  (`docs/maps/ui/action.md` rule 3).
+- **Interruption** — reload mid-flow, closing the overlay after broadcast, resume after a failed or paused
+  queue row.
+- **Contract clamps** — partial fill against the slippage floor, matured-market refusals, `nothing-left`
+  after external claims.
+- **Degraded reads** — unavailable registry, truncated discovery, projection unavailable: the five-state
+  honesty rules (`CS-S1`…`CS-S12`) verified under E2E conditions, not only in unit tests.

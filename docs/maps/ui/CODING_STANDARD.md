@@ -147,6 +147,14 @@ Sources: `header.md` · `positions.md` · `markets-table.md` · `settlement.md` 
   keeps a recovery path.
   *`UI-MARKETS-TABLE-ROW-TOGGLE` · `UI-ACTION-RATE-LADDER` · `UI-ACTION-AMOUNT` ·
   `UI-HEADER-ADDRESS-COPY`.*
+- **CS-M8** — What was simulated is what is submitted: the reviewed calldata is the
+  submitted calldata, and any drift between review and submission routes through visible
+  re-confirmation, never silent re-submission with new values.
+  *`action.md` rule 7 · `UI-ACTION-CONFIRM` (`re-confirm`) · `UI-ACTION-CLAIM-ALL-CONFIRM`.*
+- **CS-M9** — The wallet session is volatile external state: an in-flight operation stays
+  attributed to the identity captured at its start, and an account, chain, or connection
+  change during it pauses or re-asks — it never silently adopts the new session.
+  *`chrome.md` rule 7 · `UI-ACTION-WALLET-CHANGED` · `UI-ACTION-CLAIM-ALL-QUEUE` (`paused`).*
 
 ## 6. Scope and amendment
 

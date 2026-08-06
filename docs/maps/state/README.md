@@ -78,9 +78,65 @@ Promoting a fact from `projection` to `on-chain`, or letting a `projection` valu
 trust-domain change: summary ADR required, and it escalates to the Owner
 (`../REVIEW.md`).
 
+When two copies of the same chain fact disagree — an optimistic overlay against a
+receipt, a cached read against a fresh one — the freshness precedence ladder in
+`../SCHEMAS.md` §2 decides which wins.
+
 Every `projection` entry carries fail-closed guidance, because *empty* and *could
 not ask* lead to opposite user actions and must never share a representation
 (`docs/solutions/security-issues/indexer-is-a-discovery-hint-not-an-authority.md`).
+
+## Authoring new state
+
+Two rules for adding state, adapted from ponytail-fullstack-web3
+(`frontend-state`, `frontend-flow`):
+
+**Where does the value belong?** Walk this ladder before reaching for
+`useState`; stop at the first home that fits:
+
+1. the URL;
+2. browser/platform state (focus, media queries, native form controls);
+3. server or chain state — read it, don't copy it;
+4. the query cache (wagmi/TanStack already dedupe by query key);
+5. derived render state — compute it, don't store it;
+6. a persisted operation (the execution registry, the queue);
+7. genuinely client-owned application state — only now a new key.
+
+A new key in `keys/` is the *last* rung, and it arrives with its trust domain,
+writers, and readers declared.
+
+## The operation lifecycle
+
+The canonical write-operation lifecycle (adapted from ponytail-fullstack-web3's
+`web3-transaction` model). The executor phases and queue statuses cataloged in
+`keys/execution-state.md` are projections of it, and a rebuilt executor is
+written *against* it rather than rediscovering it:
+
+```text
+prepared → simulated → awaiting wallet → rejected | signed → submitted
+→ pending | replaced | dropped → reverted | confirmed → refreshed / reconciled
+```
+
+Two rules ride with it:
+
+- **Identity.** An operation is bound at start to intent, account, chain, and
+  deployment — and once signed, to nonce, calldata, and hash. A later account or
+  chain switch never re-attributes it (`queue.pause-reason`,
+  `UI-ACTION-WALLET-CHANGED`).
+- **Re-simulation.** Any change to what the transaction depends on — state,
+  account, chain, deadline, allowance, or quote — invalidates the prepared plan
+  and routes through re-simulation and visible re-confirmation, never silent
+  resubmission. The incumbents already enforce this (`writeflow.is-preparing`
+  generation counting, the queue's pre-submit rebuild, the `re-confirm` and
+  `needs-review` states).
+
+**An operation is a state machine, not a collection of booleans.** When a flow
+has a real lifecycle, model it as one named state with explicit transitions
+(`executor.status`, the `queue.rows` statuses) — never as independent
+`isLoading` / `isSuccess` / `error` flags per component, which can contradict
+each other. Every transition names the source that authoritatively advances it
+(a receipt, a re-read, a user action) — the same discipline as the freshness
+precedence above.
 
 ## How to use it
 
