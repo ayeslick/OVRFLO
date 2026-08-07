@@ -147,6 +147,7 @@ flowchart TB
 ### Dependencies and Assumptions
 
 - Sablier V2 LL v1.1 at the pinned address: withdraw ACL as documented in `docs/audit/sablier-interface-contract.md`.
+- Stream discovery (out of this plan's scope, retained unchanged) is the two-step pattern in `CONCEPTS.md` "Stream discovery": *candidates* come from standard-RPC `eth_getLogs` (ERC-721 `Transfer` on Sablier + vault deposit events — needed only because Sablier's NFT has no owner-indexed enumeration), then *truth* comes from direct Sablier `eth_call`s (`ownerOf` drops non-owned candidates; every displayed or acted-on value is a contract read). No Sablier subgraph/API and no provider-proprietary NFT endpoints — any standard RPC works. Discovery is three-valued (found / none / unavailable) and unavailable never renders as empty.
 - `StreamPricing` carries over unchanged as the pricing core; its directional rounding and `obligation ≤ remaining` proof are relied upon, not re-derived.
 - Core vault (`OVRFLO`, `OVRFLOFactory`, `OVRFLOToken`) is untouched except the factory gaining the set-once lending tick-spacing forwarder.
 - A stream whose post-loan residual falls below `MIN_STREAM_AMOUNT` cannot be re-pledged; its holder exits via vault claim at maturity. Accepted, not a bug.
@@ -247,6 +248,8 @@ claimable(loan, p):  contributionOf × recovered / (loan.fillEnd − loan.fillSt
 Nothing in this section is deferred to implementation. Where implementation discovers a conflict, it stops and surfaces it rather than deciding.
 
 **Constants.** `UNIT = 1e12` wei. `MIN_LIQUIDITY_AMOUNT = 1e15` wei (0.001 token; UNIT-granular) — the single atom for supply minimum AND borrow-fill minimum. `CURSOR_CAP = 32`. Tree heights: start 4, cap 7; capacity(h) = 8^h leaves; height 4→5→6→7 means exactly three growth events plus one at-cap boundary.
+
+**Single-source constants.** Every constant has exactly one defining site, is declared `public` (so integrators and the frontend read it on-chain instead of duplicating it in config), and is referenced — never re-declared — everywhere else: `WAD`/`YEAR`/`BASIS_POINTS` stay in `StreamPricing` (unchanged, already shared by vault and lending); `UNIT`, `MIN_LIQUIDITY_AMOUNT`, `CURSOR_CAP` live in `OVRFLOLending` (book-specific — the vault has no use for them); height/capacity bounds live in `TickTree`. Deliberately NOT unified: `MIN_PT_AMOUNT` (vault deposit floor) and `MIN_STREAM_AMOUNT` (pledge-eligibility floor) remain distinct constants because they gate different things — merging same-shaped values with different meanings couples knobs that must be tunable independently.
 
 **Types and units.** Tree node sums and tape coordinates are `uint64` in UNITs. Loan `fillStart`/`fillEnd` and position sizes are stored in UNITs (`uint64`); token amounts at every external boundary are wei (`uint128`). Conversion happens in exactly two helpers — `_toUnits` (floors; used on borrow targets) and `_toWei` — and every narrowing cast anywhere routes through OZ `SafeCast`. The Loan struct stores `seq` (`uint64`), its index in the tick-epoch loan list.
 
