@@ -102,7 +102,9 @@ contract OVRFLOFactoryTest is Test {
 
     event DeploymentConfigured(address indexed treasury, address indexed underlying);
     event DeploymentCancelled();
-    event OvrfloDeployed(address indexed ovrflo, address indexed ovrfloToken, address treasury, address indexed underlying);
+    event OvrfloDeployed(
+        address indexed ovrflo, address indexed ovrfloToken, address treasury, address indexed underlying
+    );
     event LendingDeployed(address indexed ovrflo, address indexed lending);
     event LendingAprBoundsSet(address indexed lending, uint16 aprMinBps, uint16 aprMaxBps);
     event LendingFeeSet(address indexed lending, uint16 feeBps);
