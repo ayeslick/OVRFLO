@@ -109,9 +109,11 @@ contract OVRFLOFactoryTest is Test {
     event LendingAprBoundsSet(address indexed lending, uint16 aprMinBps, uint16 aprMaxBps);
     event LendingFeeSet(address indexed lending, uint16 feeBps);
     event LendingTreasurySet(address indexed lending, address indexed treasury);
+    event LendingTickSpacingSet(address indexed lending, address indexed market, uint16 spacing);
     event LendingAprBoundsSet(uint16 aprMinBps, uint16 aprMaxBps);
     event LendingFeeSet(uint16 feeBps);
     event LendingTreasurySet(address indexed treasury);
+    event TickSpacingSet(address indexed market, uint16 spacing);
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
     event OwnershipTransferStarted(address indexed previousOwner, address indexed newOwner);
     event SeriesApproved(
@@ -772,6 +774,10 @@ contract OVRFLOFactoryTest is Test {
         vm.prank(STRANGER);
         vm.expectRevert("Ownable: caller is not the owner");
         factory.setLendingTreasury(lending, NEW_OWNER);
+
+        vm.prank(STRANGER);
+        vm.expectRevert("Ownable: caller is not the owner");
+        factory.setLendingTickSpacing(lending, address(0xCA11), 25);
     }
 
     function test_LendingAdmin_RevertsForUnknownLending() public {
@@ -786,6 +792,10 @@ contract OVRFLOFactoryTest is Test {
         vm.prank(OWNER);
         vm.expectRevert("OVRFLOFactory: unknown lending");
         factory.setLendingTreasury(address(0xDEAD), NEW_OWNER);
+
+        vm.prank(OWNER);
+        vm.expectRevert("OVRFLOFactory: unknown lending");
+        factory.setLendingTickSpacing(address(0xDEAD), address(0xCA11), 25);
     }
 
     function test_LendingAdmin_ForwardsToLendingAndEmitsEvents() public {
@@ -828,6 +838,26 @@ contract OVRFLOFactoryTest is Test {
         factory.setLendingTreasury(lending, NEW_OWNER);
 
         assertEq(b.treasury(), NEW_OWNER);
+
+        // setTickSpacing — immutable-once-set on the lending, re-emitted by the factory
+        address market = address(0xCA11);
+        vm.expectEmit(true, false, false, true, address(lending));
+        emit TickSpacingSet(market, 25);
+        vm.expectEmit(true, true, false, true, address(factory));
+        emit LendingTickSpacingSet(lending, market, 25);
+
+        vm.prank(OWNER);
+        factory.setLendingTickSpacing(lending, market, 25);
+
+        assertEq(b.tickSpacing(market), 25);
+
+        vm.prank(OWNER);
+        vm.expectRevert(OVRFLOLending.SpacingAlreadySet.selector);
+        factory.setLendingTickSpacing(lending, market, 50);
+
+        vm.prank(OWNER);
+        vm.expectRevert(OVRFLOLending.ZeroSpacing.selector);
+        factory.setLendingTickSpacing(lending, address(0xCA12), 0);
     }
 
     function test_LendingAdmin_LendingOnlyOwnerRevertsForNonFactory() public {

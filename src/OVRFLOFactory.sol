@@ -78,6 +78,7 @@ contract OVRFLOFactory is Ownable2Step {
     event LendingAprBoundsSet(address indexed lending, uint16 aprMinBps, uint16 aprMaxBps);
     event LendingFeeSet(address indexed lending, uint16 feeBps);
     event LendingTreasurySet(address indexed lending, address indexed treasury);
+    event LendingTickSpacingSet(address indexed lending, address indexed market, uint16 spacing);
 
     /*//////////////////////////////////////////////////////////////
                               CONSTRUCTOR
@@ -301,6 +302,19 @@ contract OVRFLOFactory is Ownable2Step {
         _requireKnownLending(lending);
         OVRFLOLending(lending).setTreasury(treasury_);
         emit LendingTreasurySet(lending, treasury_);
+    }
+
+    /// @notice Set a market's immutable APR tick spacing on an OVRFLOLending.
+    /// @dev The multisig must verify during series onboarding that the underlying's
+    ///      total supply is at most `2^54 * OVRFLOLending.UNIT()`. That operational
+    ///      check intentionally remains offchain and is not duplicated here.
+    /// @param lending The OVRFLOLending address.
+    /// @param market The Pendle market whose APR ladder is configured.
+    /// @param spacing Tick spacing in basis points; zero is invalid and a market is set once.
+    function setLendingTickSpacing(address lending, address market, uint16 spacing) external onlyOwner {
+        _requireKnownLending(lending);
+        OVRFLOLending(lending).setTickSpacing(market, spacing);
+        emit LendingTickSpacingSet(lending, market, spacing);
     }
 
     /*//////////////////////////////////////////////////////////////

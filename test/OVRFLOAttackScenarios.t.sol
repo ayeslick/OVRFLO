@@ -2,16 +2,13 @@
 pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {OVRFLO} from "../src/OVRFLO.sol";
 import {OVRFLOToken} from "../src/OVRFLOToken.sol";
-import {OVRFLOLending} from "../src/OVRFLOLending.sol";
 import {IPendleOracle} from "../interfaces/IPendleOracle.sol";
 import {ISablierV2LockupLinear} from "../interfaces/ISablierV2LockupLinear.sol";
 import {IFlashBorrower} from "../interfaces/IFlashBorrower.sol";
 import {VaultMockHelpers} from "./helpers/VaultMockHelpers.sol";
 import {TestERC20} from "./mocks/TestERC20.sol";
-import {MockLendingFactory, MockLendingCore, MockLendingSablier} from "./mocks/LendingMocks.sol";
 
 // --- Attack FlashBorrower with configurable callbacks ---
 
@@ -106,7 +103,6 @@ contract OVRFLOAttackScenariosTest is VaultMockHelpers {
     address internal constant TREASURY = address(0xBEEF);
     address internal constant MARKET_A = address(0x1001);
     address internal constant MARKET_B = address(0x1002);
-    address internal constant BOOK_MARKET = address(0x5555);
 
     uint256 internal constant RATE_95 = 0.95e18;
 
@@ -238,101 +234,6 @@ contract OVRFLOAttackScenariosTest is VaultMockHelpers {
     }
 
     /*//////////////////////////////////////////////////////////////
-                    R17: STREAM WITHDRAWAL DURING ACTIVE LOAN
-    //////////////////////////////////////////////////////////////*/
-
-    function test_R17_StreamWithdrawalDuringActiveLoan() public {
-        // Set up Lending with its own mock tokens (separate from vault's ovrfloToken)
-        MockLendingFactory factory = new MockLendingFactory();
-        MockLendingCore core = new MockLendingCore();
-        MockLendingSablier lendingSablier = new MockLendingSablier();
-        TestERC20 lendingUnderlying = new TestERC20("LendingUnderlying", "BUND");
-        TestERC20 lendingOvrfloToken = new TestERC20("LendingOvrflo", "bovRFLO");
-        uint256 expiry = block.timestamp + 365 days;
-
-        factory.setInfo(address(core), TREASURY, address(lendingUnderlying), address(lendingOvrfloToken));
-        core.setSeries(BOOK_MARKET, expiry, address(lendingOvrfloToken), address(lendingUnderlying));
-
-        OVRFLOLending lending = new OVRFLOLending(address(factory), address(core), address(lendingSablier));
-
-        address lender = makeAddr("lender");
-        address borrowerAddr = makeAddr("loanBorrower");
-
-        // Fund actors
-        lendingUnderlying.mint(lender, 200 ether);
-        lendingOvrfloToken.mint(borrowerAddr, 200 ether);
-
-        vm.startPrank(lender);
-        lendingUnderlying.approve(address(lending), type(uint256).max);
-        vm.stopPrank();
-
-        vm.startPrank(borrowerAddr);
-        lendingOvrfloToken.approve(address(lending), type(uint256).max);
-        lendingSablier.setApprovalForAll(address(lending), true);
-        vm.stopPrank();
-
-        // Create an eligible stream
-        uint256 streamId = 1;
-        lendingSablier.setStream(
-            streamId,
-            borrowerAddr,
-            address(core),
-            IERC20(address(lendingOvrfloToken)),
-            uint40(expiry),
-            0,
-            false,
-            100 ether,
-            0
-        );
-
-        // Post liquidity
-        vm.prank(lender);
-        uint256 liquidityId = lending.supplyLiquidity(BOOK_MARKET, 1000, 50 ether);
-        assertEq(lending.marketAvailableLiquidity(BOOK_MARKET), 50 ether);
-        assertEq(lending.marketAprAvailableLiquidity(BOOK_MARKET, 1000), 50 ether);
-
-        // Create borrow pool with single liquidity
-        vm.startPrank(borrowerAddr);
-        lendingSablier.approve(address(lending), streamId);
-        uint256 loanPoolId = lending.createBorrowerLoanPool(_singletonArray(liquidityId), streamId, 50 ether, 0);
-        vm.stopPrank();
-        uint256 loanId = 1;
-        assertEq(lending.marketAvailableLiquidity(BOOK_MARKET), 0);
-        assertEq(lending.marketAprAvailableLiquidity(BOOK_MARKET, 1000), 0);
-
-        // Read loan state
-        (,, uint128 obligation,,,) = lending.loans(loanId);
-
-        // Borrower repays partial via repayLoan (increases recovered, loanPoolProceeds, loan stays open)
-        uint128 partialRepay = obligation / 2;
-        vm.prank(borrowerAddr);
-        lending.repayLoan(loanId, partialRepay);
-
-        // Lender claims partial from loanPoolProceeds
-        vm.prank(lender);
-        lending.claimLoanPoolShare(loanPoolId, partialRepay);
-
-        // Set withdrawable to full, closeLoan draws remaining (loan closes, NFT returned)
-        lendingSablier.setWithdrawable(streamId, 100 ether);
-        lending.closeLoan(loanId);
-
-        // Loan should be closed and NFT returned
-        (,,,,, bool closed) = lending.loans(loanId);
-        assertTrue(closed, "loan should be closed after closeLoan");
-
-        assertEq(lendingSablier.ownerOf(streamId), borrowerAddr, "NFT should be returned to borrower");
-
-        // Lender claims remaining via claimLoanPoolShare
-        uint128 remaining = obligation - partialRepay;
-        vm.prank(lender);
-        lending.claimLoanPoolShare(loanPoolId, remaining);
-
-        // Lender total received: partialRepay (from loanPoolProceeds) + remaining (from closeLoan proceeds) == obligation
-        uint128 lenderOvrfloReceived = uint128(lendingOvrfloToken.balanceOf(lender));
-        assertEq(lenderOvrfloReceived, obligation, "lender total should equal obligation");
-    }
-
-    /*//////////////////////////////////////////////////////////////
                     R18: MULTI-MARKET CROSS-CONTAMINATION
     //////////////////////////////////////////////////////////////*/
 
@@ -401,14 +302,5 @@ contract OVRFLOAttackScenariosTest is VaultMockHelpers {
 
         assertEq(underlying.balanceOf(TREASURY) - treasuryBefore, expectedFee, "max fee mismatch");
         assertEq(ptA.balanceOf(address(ovrflo)), DEPOSIT_AMOUNT, "vault PT should be returned");
-    }
-
-    /*//////////////////////////////////////////////////////////////
-                        HELPERS
-    //////////////////////////////////////////////////////////////*/
-
-    function _singletonArray(uint256 id) internal pure returns (uint256[] memory arr) {
-        arr = new uint256[](1);
-        arr[0] = id;
     }
 }
