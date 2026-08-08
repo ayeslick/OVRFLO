@@ -4,7 +4,7 @@
 
 **Blocked by:** 02
 
-**Status:** open
+**Status:** claimed
 **Labels:** ready-for-agent
 
 ## Session prompt (paste into a new chat)
@@ -37,15 +37,15 @@ After local verification, mark ticket checkboxes done and set Status: resolved.
 
 ## Acceptance criteria
 
-- [ ] Covers AE1. Two same-block borrowers targeting 12 each against 16 available: first gets 12, second gets 4 or a clean `BelowMinAcceptable` revert — no "inactive position" failure mode exists
-- [ ] Covers AE7. A borrower's own resting liquidity is consumable like any other; no self-match guard anywhere
-- [ ] Max borrow = sale: full-borrow obligation equals the stream's entire remaining (R11)
-- [ ] Fill mechanics: target floored to UNIT; fill ≥ `MIN_LIQUIDITY_AMOUNT` else `BelowMinimum`; single epoch only; consumption is exactly one `filled` SSTORE with `loanCount` packed in the same slot
-- [ ] Loan record stores `{borrower, streamId, market, aprBps, epoch, seq, fillStart, fillEnd, obligation}`; `loanAt[...][seq] = loanId` appended; borrower per-user index appended
-- [ ] Eligibility: `requireEligible` + `MIN_STREAM_AMOUNT` floor carried over; a stream backing an open loan reverts `StreamAlreadyPledged`; re-pledge of a returned stream is exercised once 04 lands (note the seam)
-- [ ] Errors: `ZeroTarget`, `EmptyTick` (incl. never-supplied tick — no low-level tree failure surfaces), `SpacingUnset`, `BelowMinAcceptable`, `BelowMinimum`
-- [ ] `Borrowed` event matches the pinned schema field-for-field; NFT owner after borrow is the lending contract; borrow at maturity block reverts, one block before succeeds
-- [ ] `forge build` then `forge test` green; `forge fmt --check` clean
+- [x] Covers AE1. Two same-block borrowers targeting 12 each against 16 available: first gets 12, second gets 4 or a clean `BelowMinAcceptable` revert — no "inactive position" failure mode exists
+- [x] Covers AE7. A borrower's own resting liquidity is consumable like any other; no self-match guard anywhere
+- [x] Max borrow = sale: full-borrow obligation equals the stream's entire remaining (R11)
+- [x] Fill mechanics: target floored to UNIT; fill ≥ `MIN_LIQUIDITY_AMOUNT` else `BelowMinimum`; single epoch only; consumption is exactly one `filled` SSTORE with `loanCount` packed in the same slot
+- [x] Loan record stores `{borrower, streamId, market, aprBps, epoch, seq, fillStart, fillEnd, obligation}`; `loanAt[...][seq] = loanId` appended; borrower per-user index appended
+- [x] Eligibility: `requireEligible` + `MIN_STREAM_AMOUNT` floor carried over; pledging a stream that already backs an open loan reverts naturally via ERC-721's owner check (lending owns the escrowed NFT) — asserted in a test, no bespoke error per user decision 2026-08-08; re-pledge of a returned stream is exercised once 04 lands (note the seam)
+- [x] Errors: `ZeroTarget`, `EmptyTick` (incl. never-supplied tick — no low-level tree failure surfaces), `SpacingUnset`, `BelowMinAcceptable`, `BelowMinimum`
+- [x] `Borrowed` event matches the pinned schema field-for-field; NFT owner after borrow is the lending contract; borrow at maturity block reverts, one block before succeeds
+- [x] `forge build` then `forge test` green; `forge fmt --check` clean
 
 ## Plan unit
 

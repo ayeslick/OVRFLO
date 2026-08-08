@@ -38,7 +38,7 @@ After local verification, mark ticket checkboxes done and set Status: resolved.
 
 - [ ] Fuzz suite ported: randomized UNIT-granular supply/withdraw/borrow interleavings; withdraw-front-running-borrow is benign (borrower bounded by `minAcceptable`); sale-path fuzz deleted; vault-side fuzz untouched
 - [ ] Attack scenarios ported: tape-spam economics bounded by `MIN_LIQUIDITY_AMOUNT`; reentrancy attempts via `ReentrantLendingUnderlying` on borrow-pay and claim-harvest paths; self-fill griefing yields nothing beyond fee loss
-- [ ] Fork custody assertions ported to the new API, not rewritten: stranger cannot withdraw an escrowed stream; NFT owner transitions user → lending (borrow) → borrower (close/full repay); suite self-skips cleanly without `MAINNET_RPC_URL`
+- [ ] ~~Fork custody assertions ported to the new API~~ **Deferred by user directive 2026-08-08: no fork-test work in this buildout.** The custody properties (stranger cannot withdraw an escrowed stream; NFT owner transitions user → lending → borrower) must still be asserted against the local Sablier mock in the attack-scenario suite; the mainnet-fork port happens in a later pass
 - [ ] `OVRFLOLendingGas` (name matches the snapshot gate's `--match-contract OVRFLOLending` filter): 1-position vs 50-position borrow gas delta ≤ constant loan-record cost — the measurable blind-fill guarantee
 - [ ] `OVRFLOLendingGas` also pins the Multicall supply+withdraw cycle cost (risk #4's gas-bounded griefing evidence)
 - [ ] `forge snapshot --match-contract OVRFLOLending` produces the pair in `.gas-snapshot`; `forge build` then `forge test` green; `forge fmt --check` clean

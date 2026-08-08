@@ -261,12 +261,14 @@ Nothing in this section is deferred to implementation. Where implementation disc
 |---|---|
 | `ZeroAmount`, `NotUnitAligned`, `BelowMinimum` | `supply` (amount checks); `borrow` (fill floor) |
 | `SpacingUnset`, `SpacingAlreadySet`, `ZeroSpacing`, `InvalidTick` | `supply`/`borrow` gating; `setLendingTickSpacing`; non-spacing-multiple or out-of-bounds tick |
-| `ZeroTarget`, `EmptyTick`, `BelowMinAcceptable`, `StreamAlreadyPledged` | `borrow` |
+| `ZeroTarget`, `EmptyTick`, `BelowMinAcceptable` | `borrow` |
 | `NotLender` | `withdraw`, `claim` |
 | `NothingToWithdraw`, `NothingToClaim`, `NoOverlap`, `EpochMismatch` | `withdraw`; `claim` |
 | `LoanClosed`, `LoanMissing`, `RepayExceedsOutstanding` | `repay`, `close`, `claim` |
 | `EpochBacklog`, `ZeroSteps` | `borrow` (cap exceeded — error text directs to `advanceEpochCursor`); `advanceEpochCursor` |
 | `AtCapacity`, `NodeOverflow`, `LeafMissing` | `TickTree` (defense-in-depth; `AtCapacity` is pre-checked away by the contract) |
+
+*Removed by user decision (2026-08-08): `StreamAlreadyPledged`. Double-pledge is structurally impossible — an escrowed stream's NFT is owned by the lending contract, so a second `transferFrom(msg.sender, …)` fails ERC-721's owner check inside Sablier itself; an explicit guard would duplicate that on-chain. The property keeps a test (second pledge of an escrowed stream reverts, asserting the ERC-721 revert); the friendly pre-check via `ownerOf` belongs to the frontend, which already reads it in stream discovery.*
 
 **Event schema** (absolute-checkpoint pattern; indexed fields marked):
 
