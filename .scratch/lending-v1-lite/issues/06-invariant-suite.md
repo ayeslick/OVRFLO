@@ -46,7 +46,7 @@ After local verification, mark ticket checkboxes done and set Status: resolved.
 - [ ] Frozen history: no coordinate below `filled` ever changes across any operation (ghost snapshots)
 - [ ] Escrow solvency: Σ per-tick `(root − filled) × UNIT` equals underlying held for unfilled positions (pattern #6 all-party balances extended to the tape)
 - [ ] Tree integrity: stored node = sum of children, across growth and rollover
-- [ ] Claim caps: Σ received per (loan, position) ≤ pro-rata entitlement; Σ received per loan ≤ recovered; obligation ≤ remaining (carried from today's suite)
+- [ ] Claim caps: Σ received per (loan, position) ≤ pro-rata entitlement (per-pair `received ≤ contribution × obligation / intervalLength`); Σ received per loan ≤ recovered; obligation ≤ remaining (carried from today's suite); handlers MUST reach over-vested open loans (`withdrawable > outstanding` — the U4-review mutation-proven theft boundary)
 - [ ] Non-UNIT-aligned `grossPrice` concrete case (U3 review, 2026-08-08): a max borrow whose `grossPrice` is not a UNIT multiple yields `obligation < remaining` strictly (safe direction) — pinning the floor/ceil boundary the 73-day/1.02 fixture never exercises
 - [ ] Epoch isolation: no claim pays across mismatched `(market, aprBps, epoch)` — adversarial handler pairs numerically identical intervals across epochs
 - [ ] Dust bound: closed-loan total claimant shortfall ≤ contributor count in wei; cursor soundness: cursor ≤ `currentEpoch`, every epoch below it has available < `MIN_LIQUIDITY_AMOUNT`

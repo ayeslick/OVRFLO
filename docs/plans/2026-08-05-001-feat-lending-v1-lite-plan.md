@@ -257,16 +257,18 @@ Nothing in this section is deferred to implementation. Where implementation disc
 
 *Recorded 2026-08-08 (U4):* (1) `repay` is **permissionless** — third-party repay is a strict donation: funds come from the caller, the stream always returns to `loan.borrower`, lenders receive face. Deliberate deviation from the pre-rewrite borrower-only gate, forced by the closed error catalog and consistent with permissionless `close` (coordinator-accepted). (2) **User decision, same day:** `close` before `withdrawable` covers `outstanding` reverts the dedicated `NotCovered` — the selector-sharing precedent was a semantic stretch here (no minimum is involved; the condition is temporal). (3) **Closure emits uniformly:** full repay emits `Repaid(…, outstanding = 0)` **and** `Closed(loanId, drawn)` — one terminal signal on both closure paths, and `drawn` gets its absolute log checkpoint regardless of path (coordinator recommendation on the user's question).
 
+*Recorded 2026-08-08 (U4 review):* (1) The `min(withdrawable, outstanding)` clamp in `recovered` is a **named security invariant**, not arithmetic detail — it is what stops a claimer on an over-vested open loan (`withdrawable > outstanding`, routine once a partially-borrowed stream vests past its obligation) from draining co-lenders' pot shares. U6 asserts per-pair `received ≤ contribution × obligation / intervalLength` and its handlers must reach over-vested states. (2) `contributionOf` **reverts** (`NoOverlap`/`EpochMismatch`) rather than returning zero; U5's `loansOf` filters over many loans and therefore uses a non-reverting internal overlap helper. (3) KTD8's `positionState`/`loanState`/`tickState` views are **assigned to U5** (previously unowned). (4) `outstanding == 0 && !closed` is a legal, reachable state (obligation fully harvested via claims while the loan stays open); `close` then returns the stream drawing nothing.
+
 **Error catalog** (custom errors; no require-strings anywhere in new code):
 
 | Error | Thrown by |
 |---|---|
-| `ZeroAmount`, `NotUnitAligned`, `BelowMinimum` | `supply` (amount checks); `borrow` (fill floor; also the stream-face `MIN_STREAM_AMOUNT` floor — deliberately one selector, recorded 2026-08-08: the closed catalog barred a new error and the frontend distinguishes the cases from off-chain stream reads) |
+| `ZeroAmount`, `NotUnitAligned`, `BelowMinimum` | `supply` (amount checks); `repay` (zero amount — catalog corrected 2026-08-08); `borrow` (fill floor; also the stream-face `MIN_STREAM_AMOUNT` floor — deliberately one selector, recorded 2026-08-08: the closed catalog barred a new error and the frontend distinguishes the cases from off-chain stream reads) |
 | `SpacingUnset`, `SpacingAlreadySet`, `ZeroSpacing`, `InvalidTick` | `supply`/`borrow` gating; `setLendingTickSpacing`; non-spacing-multiple or out-of-bounds tick |
 | `ZeroTarget`, `EmptyTick`, `BelowMinAcceptable` | `borrow` |
-| `NotLender` | `withdraw`, `claim` |
+| `NotLender` | `withdraw`, `claim` (also the response to a nonexistent `positionId` — an empty position's lender is `address(0)`, never `msg.sender`) |
 | `NothingToWithdraw`, `NothingToClaim`, `NoOverlap`, `EpochMismatch` | `withdraw`; `claim` |
-| `LoanClosed`, `LoanMissing`, `RepayExceedsOutstanding`, `NotCovered` | `repay`, `close`, `claim`; `NotCovered` = `close` before `withdrawable` covers `outstanding` (added 2026-08-08 by user decision) |
+| `LoanClosed`, `LoanMissing`, `RepayExceedsOutstanding`, `NotCovered` | `repay`, `close`, `claim`, and `LoanMissing` also from the `contributionOf` view; `NotCovered` = `close` before `withdrawable` covers `outstanding` (added 2026-08-08 by user decision) |
 | `EpochBacklog`, `ZeroSteps` | `borrow` (cap exceeded — error text directs to `advanceEpochCursor`); `advanceEpochCursor` |
 | `AtCapacity`, `NodeOverflow`, `LeafMissing` | `TickTree` (defense-in-depth; `AtCapacity` is pre-checked away by the contract) |
 

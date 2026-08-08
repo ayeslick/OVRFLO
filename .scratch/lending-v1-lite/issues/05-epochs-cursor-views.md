@@ -42,7 +42,8 @@ After local verification, mark ticket checkboxes done and set Status: resolved.
 - [ ] Cursor never passes an epoch with available ≥ `MIN_LIQUIDITY_AMOUNT` and never exceeds `currentEpoch`
 - [ ] Old-epoch behavior after rollover: withdraw from a drained-epoch position, and claims against old-epoch loans, work unchanged
 - [ ] `tickDepths(market)` returns every spacing-multiple tick within current bounds with depth summed across live epochs — exercised as one multicall in a view test
-- [ ] `loansOf`: binary-search entry, exact pagination continuation across a `maxN` boundary (`nextSeq` contract per pinned semantics), entries match `contributionOf`/claimable ground truth
+- [ ] `loansOf`: binary-search entry, exact pagination continuation across a `maxN` boundary (`nextSeq` contract per pinned semantics), entries match `contributionOf`/claimable ground truth — via a NON-reverting internal overlap helper (U4 review, 2026-08-08: `contributionOf` reverts on no-overlap/epoch-mismatch; filtering must skip, not revert)
+- [ ] KTD8 state views (`positionState`/`loanState`/`tickState`) implemented per plan (assigned to this unit 2026-08-08 — previously unowned)
 - [ ] `EpochOpened`/`EpochCursorAdvanced` events per schema; `forge build` then `forge test` green; `forge fmt --check` clean
 
 ## Plan unit
