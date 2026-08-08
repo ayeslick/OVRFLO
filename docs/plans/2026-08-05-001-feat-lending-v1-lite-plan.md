@@ -255,6 +255,8 @@ Nothing in this section is deferred to implementation. Where implementation disc
 
 **Behavioral pins.** `repay` with `amount > outstanding` reverts (as today). `claim` caps `amount` at claimable internally; callers pass `type(uint128).max` to claim everything. `supply` requires exact UNIT multiples; `borrow` targets floor to UNIT. `tickDepths(market)` iterates spacing-multiples within `[aprMin, aprMax]` as read at call time, summing `root − filled` across live epochs per tick. `loansOf(positionId, startSeq, maxN) → (entries[], nextSeq)` where each entry is `(loanId, contribution, claimable)`; `maxN > 0`; `nextSeq = 0` means exhausted. `advanceEpochCursor(market, aprBps, maxSteps)` requires `maxSteps > 0`, is a no-op success when nothing qualifies, and advances while the epoch's available depth is `< MIN_LIQUIDITY_AMOUNT` and the cursor is below `currentEpoch`.
 
+*Recorded 2026-08-08 (U4, coordinator-accepted, user may veto):* (1) `repay` is **permissionless** — third-party repay is a strict donation: funds come from the caller, the stream always returns to `loan.borrower`, lenders receive face. Deliberate deviation from the pre-rewrite borrower-only gate, forced by the closed error catalog and consistent with permissionless `close`. (2) Full repay closes the loan emitting only `Repaid(…, outstanding = 0)` — closure is signaled by the absolute checkpoint, no duplicate `Closed` (pre-rewrite semantics). (3) `close` with `withdrawable < outstanding` reverts `BelowMinimum` — the selector-sharing precedent again; the frontend pre-checks coverage from stream reads.
+
 **Error catalog** (custom errors; no require-strings anywhere in new code):
 
 | Error | Thrown by |
