@@ -35,16 +35,16 @@ After local verification, mark ticket checkboxes done and set Status: resolved.
 
 ## Acceptance criteria
 
-- [ ] Covers AE6. At tree capacity, the next `supply` succeeds — height grows below the cap, epoch opens at the cap — and every prior position's coordinates, loan intervals, and claimables are byte-identical before/after
-- [ ] Covers AE8, both branches: an above-minimum oldest-epoch residual partially fills then the cursor advances; a sub-minimum dust epoch is skipped in the same borrow transaction, its remainder withdraw-only
-- [ ] Rollover uses the `atCapacity` pre-check — no try/catch on the internal library anywhere
-- [ ] Recovery: a backlog deeper than `CURSOR_CAP` reverts `EpochBacklog`, then repeated `advanceEpochCursor(…, maxSteps)` calls durably restore borrowability (test with backlog > cap); `ZeroSteps` reverts; no-op call succeeds returning the unchanged cursor
-- [ ] Cursor never passes an epoch with available ≥ `MIN_LIQUIDITY_AMOUNT` and never exceeds `currentEpoch`
-- [ ] Old-epoch behavior after rollover: withdraw from a drained-epoch position, and claims against old-epoch loans, work unchanged
-- [ ] `tickDepths(market)` returns every spacing-multiple tick within current bounds with depth summed across live epochs — exercised as one multicall in a view test
-- [ ] `loansOf`: binary-search entry, exact pagination continuation across a `maxN` boundary (`nextSeq` contract per pinned semantics), entries match `contributionOf`/claimable ground truth — via a NON-reverting internal overlap helper (U4 review, 2026-08-08: `contributionOf` reverts on no-overlap/epoch-mismatch; filtering must skip, not revert)
-- [ ] KTD8 state views (`positionState`/`loanState`/`tickState`) implemented per plan (assigned to this unit 2026-08-08 — previously unowned)
-- [ ] `EpochOpened`/`EpochCursorAdvanced` events per schema; `forge build` then `forge test` green; `forge fmt --check` clean
+- [x] Covers AE6. At tree capacity, the next `supply` succeeds — height grows below the cap, epoch opens at the cap — and every prior position's coordinates, loan intervals, and claimables are byte-identical before/after
+- [x] Covers AE8, both branches: an above-minimum oldest-epoch residual partially fills then the cursor advances; a sub-minimum dust epoch is skipped in the same borrow transaction, its remainder withdraw-only
+- [x] Rollover uses the `atCapacity` pre-check — no try/catch on the internal library anywhere
+- [x] Recovery: a backlog deeper than `CURSOR_CAP` reverts `EpochBacklog`, then repeated `advanceEpochCursor(…, maxSteps)` calls durably restore borrowability (test with backlog > cap); `ZeroSteps` reverts; no-op call succeeds returning the unchanged cursor
+- [x] Cursor never passes an epoch with available ≥ `MIN_LIQUIDITY_AMOUNT` and never exceeds `currentEpoch`
+- [x] Old-epoch behavior after rollover: withdraw from a drained-epoch position, and claims against old-epoch loans, work unchanged
+- [x] `tickDepths(market)` returns every spacing-multiple tick within current bounds with depth summed across live epochs — exercised as one multicall in a view test
+- [x] `loansOf`: binary-search entry, exact pagination continuation across a `maxN` boundary (`nextSeq` contract per pinned semantics), entries match `contributionOf`/claimable ground truth — via a NON-reverting internal overlap helper (U4 review, 2026-08-08: `contributionOf` reverts on no-overlap/epoch-mismatch; filtering must skip, not revert)
+- [x] KTD8 state views (`positionState`/`loanState`/`tickState`) implemented per plan (assigned to this unit 2026-08-08 — previously unowned)
+- [x] `EpochOpened`/`EpochCursorAdvanced` events per schema; `forge build` then `forge test` green; `forge fmt --check` clean
 
 ## Plan unit
 

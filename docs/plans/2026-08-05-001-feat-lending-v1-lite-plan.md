@@ -259,6 +259,8 @@ Nothing in this section is deferred to implementation. Where implementation disc
 
 *Recorded 2026-08-08 (U4 review):* (1) The `min(withdrawable, outstanding)` clamp in `recovered` is a **named security invariant**, not arithmetic detail — it is what stops a claimer on an over-vested open loan (`withdrawable > outstanding`, routine once a partially-borrowed stream vests past its obligation) from draining co-lenders' pot shares. U6 asserts per-pair `received ≤ contribution × obligation / intervalLength` and its handlers must reach over-vested states. (2) `contributionOf` **reverts** (`NoOverlap`/`EpochMismatch`) rather than returning zero; U5's `loansOf` filters over many loans and therefore uses a non-reverting internal overlap helper. (3) KTD8's `positionState`/`loanState`/`tickState` views are **assigned to U5** (previously unowned). (4) `outstanding == 0 && !closed` is a legal, reachable state (obligation fully harvested via claims while the loan stays open); `close` then returns the stream drawing nothing.
 
+*Recorded 2026-08-08 (U5, coordinator-implemented):* (1) `PositionMissing` minted for the position-side named views (`positionState`, `loansOf`) — mirrors `LoanMissing`; the closed catalog carried no position-view error. (2) `loansOf` with `maxN == 0` reverts `ZeroAmount` (nearest catalog fit; a count of entries is an amount). (3) `tickDepths`/`tickState` on a market with unset spacing revert `SpacingUnset` (the tick ladder cannot exist before onboarding). (4) A `borrow` that advances the cursor does so silently — `Borrowed.epoch` is the checkpoint; `EpochCursorAdvanced` is reserved for the recovery valve. (5) The rollover predicate is terminal-capacity only: `height == MAX_HEIGHT && atCapacity()` — `atCapacity` alone is true at every height boundary, where the tree must grow, not roll.
+
 **Error catalog** (custom errors; no require-strings anywhere in new code):
 
 | Error | Thrown by |
@@ -270,6 +272,7 @@ Nothing in this section is deferred to implementation. Where implementation disc
 | `NothingToWithdraw`, `NothingToClaim`, `NoOverlap`, `EpochMismatch` | `withdraw`; `claim` |
 | `LoanClosed`, `LoanMissing`, `RepayExceedsOutstanding`, `NotCovered` | `repay`, `close`, `claim`, and `LoanMissing` also from the `contributionOf` view; `NotCovered` = `close` before `withdrawable` covers `outstanding` (added 2026-08-08 by user decision) |
 | `EpochBacklog`, `ZeroSteps` | `borrow` (cap exceeded — error text directs to `advanceEpochCursor`); `advanceEpochCursor` |
+| `PositionMissing` | `positionState`, `loansOf` (minted 2026-08-08 — mirrors `LoanMissing` for the position-side views) |
 | `AtCapacity`, `NodeOverflow`, `LeafMissing` | `TickTree` (defense-in-depth; `AtCapacity` is pre-checked away by the contract) |
 
 *Removed by user decision (2026-08-08): `StreamAlreadyPledged`. Double-pledge is structurally impossible — an escrowed stream's NFT is owned by the lending contract, so a second `transferFrom(msg.sender, …)` fails ERC-721's owner check inside Sablier itself; an explicit guard would duplicate that on-chain. The property keeps a test (second pledge of an escrowed stream reverts, asserting the ERC-721 revert); the friendly pre-check via `ownerOf` belongs to the frontend, which already reads it in stream discovery.*

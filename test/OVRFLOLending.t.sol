@@ -34,12 +34,26 @@ contract LendingInternalHarness is OVRFLOLending {
         return ticks[market][aprBps].epochs[epoch].loanCount;
     }
 
-    /// @dev Epoch rollover is inert until U5, so this hook is the only way to reach a
-    ///      second epoch and prove the cross-epoch claim guard (plan risk #3).
+    /// @dev Fabricates cursor/current gaps directly (backlog tests) and remains the
+    ///      cheap way to stage the cross-epoch claim guard proof (plan risk #3).
     function exposed_setEpochs(address market, uint16 aprBps, uint32 oldestLiveEpoch, uint32 currentEpoch) external {
         Tick storage tick = ticks[market][aprBps];
         tick.oldestLiveEpoch = oldestLiveEpoch;
         tick.currentEpoch = currentEpoch;
+    }
+
+    /// @dev Simulated terminal-capacity threshold in leaves; zero defers to the
+    ///      production predicate. Lets rollover fire at a handful of leaves instead
+    ///      of 8^7 appends.
+    uint32 internal capacityOverride;
+
+    function exposed_setCapacityOverride(uint32 leavesThreshold) external {
+        capacityOverride = leavesThreshold;
+    }
+
+    function _epochAtCapacity(TickTree.Tree storage tree) internal view override returns (bool) {
+        if (capacityOverride != 0) return tree.leaves >= capacityOverride;
+        return super._epochAtCapacity(tree);
     }
 }
 
@@ -90,6 +104,8 @@ contract OVRFLOLendingTest is Test {
     event Repaid(uint256 indexed loanId, uint128 amount, uint128 outstanding);
     event Closed(uint256 indexed loanId, uint128 drawn);
     event Claimed(uint256 indexed loanId, uint256 indexed positionId, uint128 amount, uint128 receivedTotal);
+    event EpochOpened(address indexed market, uint16 aprBps, uint32 epoch);
+    event EpochCursorAdvanced(address indexed market, uint16 aprBps, uint32 fromEpoch, uint32 toEpoch);
 
     MockLendingFactory internal factory;
     MockLendingCore internal core;
@@ -1403,6 +1419,351 @@ contract OVRFLOLendingTest is Test {
         assertEq(ovrfloToken.balanceOf(address(lending)), 0);
         assertEq(underlying.balanceOf(LENDER), 994 ether);
         assertEq(underlying.balanceOf(SECOND_LENDER), 996 ether);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                    EPOCHS, CURSOR, AND DISCOVERY (U5)
+    //////////////////////////////////////////////////////////////*/
+
+    /// Covers AE6 (rollover half). At terminal capacity the next supply opens a new
+    /// epoch, and every epoch-0 coordinate, contribution, and claimable is
+    /// byte-identical afterward.
+    function test_Supply_RollsEpochAtTerminalCapacityKeepingHistoryByteIdentical() public {
+        lending.setTickSpacing(MARKET, SPACING);
+        uint256 posA = _supply(LENDER, 10 ether, APR); // leaf 0: [0, 10e6)
+        uint256 posB = _supply(SECOND_LENDER, 6 ether, APR); // leaf 1: [10e6, 16e6)
+        _createStream(STREAM_ONE, BORROWER, 15.3 ether);
+        uint256 loanId = _borrow(BORROWER, 12 ether, STREAM_ONE, 0); // [0, 12e6), obligation 12.24
+        // Mid-loan accrual so claimable is nonzero on both sides of the rollover:
+        // recovered = min(5.1, 12.24) = 5.1; A: 10/12 x 5.1 = 4.25; B: 2/12 x 5.1 = 0.85.
+        sablier.setWithdrawable(STREAM_ONE, 5.1 ether);
+
+        assertEq(lending.contributionOf(loanId, posA), 10 ether);
+        assertEq(lending.contributionOf(loanId, posB), 2 ether);
+        (, uint64 preStart, uint64 preEnd,) = lending.positionState(posA);
+        (OVRFLOLending.LoanShare[] memory preShares,) = lending.loansOf(posA, 0, 10);
+        assertEq(preShares[0].claimable, 4.25 ether);
+
+        lending.exposed_setCapacityOverride(2); // two leaves == simulated terminal capacity
+        vm.expectEmit(true, false, false, true, address(lending));
+        emit EpochOpened(MARKET, APR, 1);
+        uint256 posC = _supply(LENDER, 5 ether, APR);
+
+        (,,, uint32 epochC, uint32 leafC) = lending.positions(posC);
+        assertEq(epochC, 1);
+        assertEq(leafC, 0);
+
+        // Epoch-0 history is untouched by the rollover.
+        assertEq(lending.contributionOf(loanId, posA), 10 ether);
+        assertEq(lending.contributionOf(loanId, posB), 2 ether);
+        (, uint64 postStart, uint64 postEnd,) = lending.positionState(posA);
+        assertEq(postStart, preStart);
+        assertEq(postEnd, preEnd);
+        (OVRFLOLending.LoanShare[] memory postSharesA,) = lending.loansOf(posA, 0, 10);
+        assertEq(postSharesA[0].claimable, 4.25 ether);
+        (OVRFLOLending.LoanShare[] memory postSharesB,) = lending.loansOf(posB, 0, 10);
+        assertEq(postSharesB[0].claimable, 0.85 ether);
+
+        // Ladder totals span both live epochs: (16 - 12) + 5 = 9 ether of depth.
+        (uint32 oldest, uint32 current, uint128 availableUnits) = lending.tickState(MARKET, APR);
+        assertEq(oldest, 0);
+        assertEq(current, 1);
+        assertEq(availableUnits, 9_000_000);
+    }
+
+    /// Covers AE6 (growth half). Filling height-4 capacity and appending once more
+    /// grows the tree inside the library — no epoch opens — and every prior
+    /// coordinate and contribution is unchanged.
+    function test_Supply_TreeGrowthBelowCapKeepsCoordinatesAndOpensNoEpoch() public {
+        lending.setTickSpacing(MARKET, SPACING);
+        vm.startPrank(LENDER);
+        for (uint256 i = 0; i < 4096; ++i) {
+            lending.supply(MARKET, APR, 1e15);
+        }
+        vm.stopPrank();
+
+        _createStream(STREAM_ONE, BORROWER, 15.3 ether);
+        // Blind fill spanning the first 2000 minimum-sized leaves.
+        uint256 loanId = _borrow(BORROWER, 2 ether, STREAM_ONE, 0);
+        assertEq(lending.contributionOf(loanId, 1), 1e15); // leaf 0 sits fully inside [0, 2e6)
+        (, uint64 preStart, uint64 preEnd,) = lending.positionState(4096);
+        assertEq(preStart, 4_095_000);
+        assertEq(preEnd, 4_096_000);
+
+        // Leaf 4097 grows the tree to height 5 inside append.
+        _supply(LENDER, 1e15, APR);
+
+        (uint64 root,, uint32 leaves,, uint32 currentEpoch) = lending.exposed_epochState(MARKET, APR, 0);
+        assertEq(root, 4_097_000);
+        assertEq(leaves, 4097);
+        assertEq(currentEpoch, 0); // grew; did not roll over
+
+        (, uint64 postStart, uint64 postEnd,) = lending.positionState(4096);
+        assertEq(postStart, 4_095_000);
+        assertEq(postEnd, 4_096_000);
+        (, uint64 newStart, uint64 newEnd,) = lending.positionState(4097);
+        assertEq(newStart, 4_096_000);
+        assertEq(newEnd, 4_097_000);
+        assertEq(lending.contributionOf(loanId, 1), 1e15);
+    }
+
+    /// Covers AE8 (residual branch). A borrow returns only the oldest epoch's
+    /// above-minimum residual; the next borrow advances the cursor past the
+    /// drained epoch and fills from the newer one.
+    function test_Borrow_AE8_FillsOldEpochResidualThenAdvancesCursor() public {
+        lending.setTickSpacing(MARKET, SPACING);
+        _supply(LENDER, 2e15, APR); // epoch 0 holds 2x the minimum
+        lending.exposed_setCapacityOverride(1);
+        _supply(SECOND_LENDER, 50 ether, APR); // rolls to epoch 1
+        lending.exposed_setCapacityOverride(0);
+
+        _createStream(STREAM_ONE, BORROWER, 15.3 ether);
+        uint256 first = _borrow(BORROWER, 10 ether, STREAM_ONE, 0);
+        // Single-epoch rule: only the 0.002 ether residual fills, not 10.
+        assertEq(_loan(first).epoch, 0);
+        assertEq(underlying.balanceOf(BORROWER), 2e15);
+
+        _createStream(STREAM_TWO, SECOND_BORROWER, 15.3 ether);
+        uint256 second = _borrow(SECOND_BORROWER, 10 ether, STREAM_TWO, 0);
+        assertEq(_loan(second).epoch, 1);
+        assertEq(underlying.balanceOf(SECOND_BORROWER), 10 ether);
+        (uint32 oldest,,) = lending.tickState(MARKET, APR);
+        assertEq(oldest, 1); // advancement persisted
+    }
+
+    /// Covers AE8 (dust branch). A sub-minimum residual is skipped inside the same
+    /// borrow transaction and stays withdraw-only for its lender.
+    function test_Borrow_AE8_SkipsDustEpochInOneTransaction() public {
+        lending.setTickSpacing(MARKET, SPACING);
+        uint256 dustPos = _supply(LENDER, 2e15, APR);
+        _createStream(STREAM_ONE, BORROWER, 15.3 ether);
+        _borrow(BORROWER, 1.5e15, STREAM_ONE, 0); // residual 0.5e15 < the 1e15 minimum
+
+        lending.exposed_setCapacityOverride(1);
+        _supply(SECOND_LENDER, 50 ether, APR); // epoch 1
+        lending.exposed_setCapacityOverride(0);
+
+        _createStream(STREAM_TWO, SECOND_BORROWER, 15.3 ether);
+        uint256 loanId = _borrow(SECOND_BORROWER, 10 ether, STREAM_TWO, 0);
+        // Dust skipped in one transaction: cursor 0 -> 1, full 10 ether fill.
+        assertEq(_loan(loanId).epoch, 1);
+        assertEq(underlying.balanceOf(SECOND_BORROWER), 10 ether);
+        (uint32 oldest,,) = lending.tickState(MARKET, APR);
+        assertEq(oldest, 1);
+
+        // 1000 - 2e15 supplied + 0.5e15 dust refund = 1000 ether - 1.5e15.
+        vm.prank(LENDER);
+        lending.withdraw(dustPos);
+        assertEq(underlying.balanceOf(LENDER), 1_000 ether - 1.5e15);
+    }
+
+    /// A borrow facing every epoch drained reverts the interpretable EmptyTick,
+    /// never a low-level tree failure.
+    function test_Borrow_AllEpochsDrainedRevertsEmptyTick() public {
+        lending.setTickSpacing(MARKET, SPACING);
+        _supply(LENDER, 2e15, APR);
+        _createStream(STREAM_ONE, BORROWER, 15.3 ether);
+        _borrow(BORROWER, 2e15, STREAM_ONE, 0); // drains epoch 0
+
+        lending.exposed_setCapacityOverride(1);
+        _supply(SECOND_LENDER, 1e15, APR); // epoch 1
+        lending.exposed_setCapacityOverride(0);
+        _createStream(STREAM_TWO, SECOND_BORROWER, 15.3 ether);
+        _borrow(SECOND_BORROWER, 1e15, STREAM_TWO, 0); // cursor -> 1, drains epoch 1
+
+        _createStream(STREAM_THREE, BORROWER, 15.3 ether);
+        vm.prank(BORROWER);
+        vm.expectRevert(OVRFLOLending.EmptyTick.selector);
+        lending.borrow(MARKET, APR, 1 ether, STREAM_THREE, 0);
+    }
+
+    /// A backlog deeper than CURSOR_CAP blocks borrows until the permissionless,
+    /// progress-persisting cursor walk durably restores borrowability.
+    function test_AdvanceEpochCursor_RecoversBacklogDeeperThanCap() public {
+        lending.setTickSpacing(MARKET, SPACING);
+        // 40 dead epochs below the live one; real liquidity lands in epoch 40.
+        lending.exposed_setEpochs(MARKET, APR, 0, 40);
+        _supply(LENDER, 10 ether, APR);
+
+        _createStream(STREAM_ONE, BORROWER, 15.3 ether);
+        vm.prank(BORROWER);
+        vm.expectRevert(OVRFLOLending.EpochBacklog.selector);
+        lending.borrow(MARKET, APR, 10 ether, STREAM_ONE, 0);
+
+        vm.expectRevert(OVRFLOLending.ZeroSteps.selector);
+        lending.advanceEpochCursor(MARKET, APR, 0);
+
+        vm.expectEmit(true, false, false, true, address(lending));
+        emit EpochCursorAdvanced(MARKET, APR, 0, 25);
+        assertEq(lending.advanceEpochCursor(MARKET, APR, 25), 25);
+
+        // Progress persisted; the walk finishes and stops exactly at currentEpoch.
+        vm.expectEmit(true, false, false, true, address(lending));
+        emit EpochCursorAdvanced(MARKET, APR, 25, 40);
+        assertEq(lending.advanceEpochCursor(MARKET, APR, 25), 40);
+
+        // No-op success returns the unchanged cursor.
+        assertEq(lending.advanceEpochCursor(MARKET, APR, 25), 40);
+
+        uint256 loanId = _borrow(BORROWER, 10 ether, STREAM_ONE, 0);
+        assertEq(_loan(loanId).epoch, 40);
+        assertEq(underlying.balanceOf(BORROWER), 10 ether);
+    }
+
+    /// The cursor never passes an epoch holding at least one minimum fill.
+    function test_AdvanceEpochCursor_NeverPassesLiveEpoch() public {
+        lending.setTickSpacing(MARKET, SPACING);
+        _supply(LENDER, 5 ether, APR); // epoch 0 stays live
+        lending.exposed_setEpochs(MARKET, APR, 0, 40);
+
+        assertEq(lending.advanceEpochCursor(MARKET, APR, 100), 0);
+        (uint32 oldest,,) = lending.tickState(MARKET, APR);
+        assertEq(oldest, 0);
+    }
+
+    /// Covers R17: the whole ladder in one view call, depth summed across live
+    /// epochs, zero rungs included, bundleable via multicall.
+    function test_TickDepths_ReturnsWholeLadderInOneCall() public {
+        lending.setTickSpacing(MARKET, SPACING);
+        lending.setAprBounds(950, 1050);
+
+        _supply(LENDER, 10 ether, APR); // tick 1000, epoch 0
+        lending.exposed_setCapacityOverride(1);
+        _supply(SECOND_LENDER, 5 ether, APR); // tick 1000, epoch 1
+        lending.exposed_setCapacityOverride(0);
+        _createStream(STREAM_ONE, BORROWER, 15.3 ether);
+        _borrow(BORROWER, 4 ether, STREAM_ONE, 0); // epoch 0 drops to 6 ether
+        _supply(LENDER, 3 ether, 1025);
+
+        OVRFLOLending.TickDepth[] memory depths = lending.tickDepths(MARKET);
+        assertEq(depths.length, 5); // 950, 975, 1000, 1025, 1050
+        assertEq(depths[0].aprBps, 950);
+        assertEq(depths[0].availableUnits, 0);
+        assertEq(depths[1].aprBps, 975);
+        assertEq(depths[1].availableUnits, 0);
+        assertEq(depths[2].aprBps, 1000);
+        assertEq(depths[2].availableUnits, 11_000_000); // 6 + 5 ether across two epochs
+        assertEq(depths[3].aprBps, 1025);
+        assertEq(depths[3].availableUnits, 3_000_000);
+        assertEq(depths[4].aprBps, 1050);
+        assertEq(depths[4].availableUnits, 0);
+
+        bytes[] memory calls = new bytes[](2);
+        calls[0] = abi.encodeCall(lending.tickDepths, (MARKET));
+        calls[1] = abi.encodeCall(lending.tickState, (MARKET, APR));
+        bytes[] memory results = lending.multicall(calls);
+        OVRFLOLending.TickDepth[] memory bundled = abi.decode(results[0], (OVRFLOLending.TickDepth[]));
+        assertEq(bundled[2].availableUnits, 11_000_000);
+
+        vm.expectRevert(OVRFLOLending.SpacingUnset.selector);
+        lending.tickDepths(BARE_MARKET);
+    }
+
+    /// Covers R18: binary-search entry, exact pagination continuation, sorted
+    /// early stop, and claimable as executable ground truth.
+    function test_LoansOf_BinarySearchPaginationAndClaimGroundTruth() public {
+        lending.setTickSpacing(MARKET, SPACING);
+        uint256 posOne = _supply(LENDER, 10 ether, APR); // [0, 10e6)
+        uint256 posTwo = _supply(SECOND_LENDER, 20 ether, APR); // [10e6, 30e6)
+
+        _createStream(STREAM_ONE, BORROWER, 15.3 ether);
+        _createStream(STREAM_TWO, BORROWER, 15.3 ether);
+        _createStream(STREAM_THREE, BORROWER, 15.3 ether);
+        uint256 loanOne = _borrow(BORROWER, 10 ether, STREAM_ONE, 0); // [0, 10e6)
+        uint256 loanTwo = _borrow(BORROWER, 8 ether, STREAM_TWO, 0); // [10e6, 18e6)
+        uint256 loanThree = _borrow(BORROWER, 12 ether, STREAM_THREE, 0); // [18e6, 30e6)
+
+        // posTwo overlaps loans two and three; the binary search skips loan one.
+        (OVRFLOLending.LoanShare[] memory entries, uint64 nextSeq) = lending.loansOf(posTwo, 0, 10);
+        assertEq(entries.length, 2);
+        assertEq(entries[0].loanId, loanTwo);
+        assertEq(entries[0].contribution, 8 ether);
+        assertEq(entries[1].loanId, loanThree);
+        assertEq(entries[1].contribution, 12 ether);
+        assertEq(nextSeq, 0);
+        assertEq(lending.contributionOf(loanTwo, posTwo), 8 ether);
+        assertEq(lending.contributionOf(loanThree, posTwo), 12 ether);
+
+        // Exact continuation across the maxN boundary.
+        (entries, nextSeq) = lending.loansOf(posTwo, 0, 1);
+        assertEq(entries.length, 1);
+        assertEq(entries[0].loanId, loanTwo);
+        assertEq(nextSeq, 2);
+        (entries, nextSeq) = lending.loansOf(posTwo, nextSeq, 1);
+        assertEq(entries.length, 1);
+        assertEq(entries[0].loanId, loanThree);
+        assertEq(nextSeq, 0);
+
+        // posOne stops at the sorted boundary: exactly one overlapping loan.
+        (entries, nextSeq) = lending.loansOf(posOne, 0, 10);
+        assertEq(entries.length, 1);
+        assertEq(entries[0].loanId, loanOne);
+        assertEq(entries[0].contribution, 10 ether);
+        assertEq(nextSeq, 0);
+
+        // Claimable is executable ground truth: loan two's obligation is 8.16
+        // (8 x 1.02); with 4.08 vested, posTwo carries the whole interval, so the
+        // view must equal exactly what a max-claim then pays.
+        sablier.setWithdrawable(STREAM_TWO, 4.08 ether);
+        (entries,) = lending.loansOf(posTwo, 0, 10);
+        assertEq(entries[0].claimable, 4.08 ether);
+        uint256 balanceBefore = ovrfloToken.balanceOf(SECOND_LENDER);
+        _claim(SECOND_LENDER, loanTwo, posTwo);
+        assertEq(ovrfloToken.balanceOf(SECOND_LENDER) - balanceBefore, 4.08 ether);
+        (entries,) = lending.loansOf(posTwo, 0, 10);
+        assertEq(entries[0].claimable, 0);
+
+        vm.expectRevert(OVRFLOLending.ZeroAmount.selector);
+        lending.loansOf(posTwo, 0, 0);
+        vm.expectRevert(OVRFLOLending.PositionMissing.selector);
+        lending.loansOf(999, 0, 1);
+    }
+
+    /// Covers KTD8: named state views derive interval/outstanding data and revert
+    /// on nonexistent entities.
+    function test_StateViews_DeriveFieldsAndRevertOnMissing() public {
+        lending.setTickSpacing(MARKET, SPACING);
+        uint256 positionId = _supply(LENDER, 6 ether, APR);
+        _createStream(STREAM_ONE, BORROWER, 15.3 ether);
+        uint256 loanId = _borrow(BORROWER, 2 ether, STREAM_ONE, 0);
+
+        (OVRFLOLending.Position memory position, uint64 intervalStart, uint64 intervalEnd, uint128 unfilled) =
+            lending.positionState(positionId);
+        assertEq(position.lender, LENDER);
+        assertEq(intervalStart, 0);
+        assertEq(intervalEnd, 6_000_000);
+        assertEq(unfilled, 4 ether); // 6 supplied, 2 consumed by the fill
+
+        (OVRFLOLending.Loan memory loan, uint128 outstanding) = lending.loanState(loanId);
+        assertEq(loan.borrower, BORROWER);
+        assertEq(outstanding, 2.04 ether); // 2 x 1.02, nothing drawn or repaid
+
+        vm.expectRevert(OVRFLOLending.PositionMissing.selector);
+        lending.positionState(999);
+        vm.expectRevert(OVRFLOLending.LoanMissing.selector);
+        lending.loanState(999);
+        vm.expectRevert(OVRFLOLending.SpacingUnset.selector);
+        lending.tickState(BARE_MARKET, APR);
+    }
+
+    /// Old-epoch positions and loans service unchanged after a rollover.
+    function test_OldEpochServicingUnchangedAfterRollover() public {
+        lending.setTickSpacing(MARKET, SPACING);
+        uint256 positionId = _supply(LENDER, 10 ether, APR);
+        _createStream(STREAM_ONE, BORROWER, 15.3 ether);
+        uint256 loanId = _borrow(BORROWER, 6 ether, STREAM_ONE, 0); // epoch 0, obligation 6.12
+
+        lending.exposed_setCapacityOverride(1);
+        _supply(SECOND_LENDER, 5 ether, APR); // epoch 1 opens
+        lending.exposed_setCapacityOverride(0);
+
+        vm.prank(LENDER);
+        lending.withdraw(positionId);
+        assertEq(underlying.balanceOf(LENDER), 994 ether); // 1000 - 10 + 4 unfilled
+
+        sablier.setWithdrawable(STREAM_ONE, 6.12 ether);
+        _claim(LENDER, loanId, positionId);
+        assertEq(ovrfloToken.balanceOf(LENDER), 6.12 ether);
     }
 
     /*//////////////////////////////////////////////////////////////

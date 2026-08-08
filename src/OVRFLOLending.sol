@@ -36,6 +36,9 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
     uint128 public constant UNIT = 1e12;
     /// @notice Minimum supply and borrow-fill amount in wei.
     uint128 public constant MIN_LIQUIDITY_AMOUNT = 1e15;
+    /// @dev `MIN_LIQUIDITY_AMOUNT` expressed in UNITs — a derivation, not a second
+    ///      source: the cursor predicate compares tree quantities, which are UNITs.
+    uint64 internal constant MIN_LIQUIDITY_UNITS = uint64(MIN_LIQUIDITY_AMOUNT / UNIT);
     /// @notice Maximum epoch-cursor steps one borrow may perform.
     uint8 public constant CURSOR_CAP = 32;
     /// @notice Minimum remaining stream face accepted by the borrower side.
@@ -83,6 +86,12 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
     error RepayExceedsOutstanding();
     /// @dev The stream's withdrawable accrual does not yet cover the loan's outstanding.
     error NotCovered();
+    /// @dev More than CURSOR_CAP dead epochs precede the live one; call `advanceEpochCursor`.
+    error EpochBacklog();
+    /// @dev The cursor advance was asked to take zero steps.
+    error ZeroSteps();
+    /// @dev The position id was never created.
+    error PositionMissing();
 
     /*//////////////////////////////////////////////////////////////
                                 IMMUTABLES
@@ -277,6 +286,12 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
     /// @notice Emitted when a contributing position is paid its pro-rata share.
     /// @dev `receivedTotal` is the absolute cumulative payout for the pair.
     event Claimed(uint256 indexed loanId, uint256 indexed positionId, uint128 amount, uint128 receivedTotal);
+    /// @notice Emitted when a tick opens a fresh epoch because its tree hit capacity.
+    event EpochOpened(address indexed market, uint16 aprBps, uint32 epoch);
+    /// @notice Emitted when the borrowable cursor advances past dead epochs.
+    /// @dev Emitted by `advanceEpochCursor` only; a `borrow` that advances the cursor
+    ///      checkpoints the landing epoch in its own `Borrowed.epoch` field instead.
+    event EpochCursorAdvanced(address indexed market, uint16 aprBps, uint32 fromEpoch, uint32 toEpoch);
 
     /*//////////////////////////////////////////////////////////////
                               CONSTRUCTOR
@@ -366,6 +381,14 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
 
         Tick storage tick = ticks[market][aprBps];
         uint32 epoch = tick.currentEpoch;
+        // Rollover is a pre-check: internal library reverts cannot be try/caught,
+        // so the at-cap epoch is detected *before* appending and a fresh epoch
+        // opens. The library's own AtCapacity error remains defense-in-depth.
+        if (_epochAtCapacity(tick.epochs[epoch].tree)) {
+            epoch += 1;
+            tick.currentEpoch = epoch;
+            emit EpochOpened(market, aprBps, epoch);
+        }
         uint32 leafIndex = tick.epochs[epoch].tree.append(_toUnits(amount));
 
         positionId = nextPositionId++;
@@ -484,6 +507,48 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
             outcome.obligation,
             streamId
         );
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                            EPOCH MAINTENANCE
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Advances a tick's borrowable cursor past drained or dust epochs.
+    /// @dev Permissionless recovery valve for `borrow`'s `CURSOR_CAP` bound
+    ///      (risk #4): advances at most `maxSteps` epochs under the same predicate
+    ///      `borrow` uses (available depth `< MIN_LIQUIDITY_AMOUNT`), keeps
+    ///      whatever progress it makes, succeeds as a no-op when nothing
+    ///      qualifies, and never passes a live epoch or `currentEpoch`.
+    /// @param market Pendle market identifying the collateral series.
+    /// @param aprBps APR tick in basis points.
+    /// @param maxSteps Maximum epochs to advance; must be nonzero.
+    /// @return cursor The tick's oldest live epoch after this call.
+    function advanceEpochCursor(address market, uint16 aprBps, uint32 maxSteps)
+        external
+        nonReentrant
+        returns (uint32 cursor)
+    {
+        if (maxSteps == 0) revert ZeroSteps();
+
+        Tick storage tick = ticks[market][aprBps];
+        cursor = tick.oldestLiveEpoch;
+        uint32 fromEpoch = cursor;
+        uint32 currentEpoch = tick.currentEpoch;
+        uint32 stepsLeft = maxSteps;
+
+        while (stepsLeft > 0 && cursor < currentEpoch) {
+            Epoch storage epochState = tick.epochs[cursor];
+            if (epochState.tree.root() - epochState.filled >= MIN_LIQUIDITY_UNITS) break;
+            unchecked {
+                ++cursor;
+                --stepsLeft;
+            }
+        }
+
+        if (cursor != fromEpoch) {
+            tick.oldestLiveEpoch = cursor;
+            emit EpochCursorAdvanced(market, aprBps, fromEpoch, cursor);
+        }
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -645,6 +710,155 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
         contribution = _toWei(_overlapUnits(loan, positions[positionId]));
     }
 
+    /// @notice One rung of the tick ladder.
+    /// @param aprBps The tick, in basis points.
+    /// @param availableUnits Borrowable depth summed across live epochs, in UNITs.
+    struct TickDepth {
+        uint16 aprBps;
+        uint128 availableUnits;
+    }
+
+    /// @notice One overlapping loan from a position's claim-discovery scan.
+    /// @param loanId The overlapping loan.
+    /// @param contribution The position's overlap with the loan's fill, in wei.
+    /// @param claimable The pair's currently unpaid pro-rata entitlement, in wei.
+    struct LoanShare {
+        uint256 loanId;
+        uint128 contribution;
+        uint128 claimable;
+    }
+
+    /// @notice Returns the whole tick ladder for a market in one view call (R17).
+    /// @dev Iterates every spacing multiple inside the APR bounds as read at call
+    ///      time; each tick's depth is `root − filled` summed across its live
+    ///      epochs. Reverts `SpacingUnset` for an unconfigured market.
+    /// @param market Pendle market identifying the collateral series.
+    /// @return depths One entry per tick, ascending by APR.
+    function tickDepths(address market) external view returns (TickDepth[] memory depths) {
+        uint16 spacing = tickSpacing[market];
+        if (spacing == 0) revert SpacingUnset();
+
+        uint16 minBps = aprMinBps;
+        uint16 maxBps = aprMaxBps;
+        uint256 first = ((uint256(minBps) + spacing - 1) / spacing) * spacing;
+        if (first > maxBps) return depths;
+
+        uint256 count = (maxBps - first) / spacing + 1;
+        depths = new TickDepth[](count);
+        for (uint256 i = 0; i < count; ++i) {
+            uint16 aprBps = uint16(first + i * spacing);
+            depths[i] = TickDepth({aprBps: aprBps, availableUnits: _liveDepthUnits(market, aprBps)});
+        }
+    }
+
+    /// @notice Named tick view: cursor, current epoch, and live borrowable depth.
+    /// @dev Reverts `SpacingUnset` for an unconfigured market (KTD8 convention:
+    ///      named views revert on nonexistent entities).
+    function tickState(address market, uint16 aprBps)
+        external
+        view
+        returns (uint32 oldestLiveEpoch, uint32 currentEpoch, uint128 availableUnits)
+    {
+        if (tickSpacing[market] == 0) revert SpacingUnset();
+        Tick storage tick = ticks[market][aprBps];
+        return (tick.oldestLiveEpoch, tick.currentEpoch, _liveDepthUnits(market, aprBps));
+    }
+
+    /// @notice Named position view: stored fields plus the derived tape interval.
+    /// @dev Reverts `PositionMissing` on a never-created id (KTD8). The interval is
+    ///      the live prefix-query result — the same coordinates claim math uses —
+    ///      and `unfilled` mirrors `withdraw`'s refund computation.
+    function positionState(uint256 positionId)
+        external
+        view
+        returns (Position memory position, uint64 intervalStart, uint64 intervalEnd, uint128 unfilled)
+    {
+        Position storage stored = positions[positionId];
+        if (stored.lender == address(0)) revert PositionMissing();
+        position = stored;
+
+        Epoch storage epochState = ticks[stored.market][stored.aprBps].epochs[stored.epoch];
+        intervalStart = epochState.tree.prefix(stored.leafIndex);
+        uint64 leafValue = epochState.tree.leaf(stored.leafIndex);
+        intervalEnd = intervalStart + leafValue;
+
+        uint64 filledHistory;
+        if (epochState.filled > intervalStart) {
+            uint64 consumed = epochState.filled - intervalStart;
+            filledHistory = consumed < leafValue ? consumed : leafValue;
+        }
+        unfilled = _toWei(leafValue - filledHistory);
+    }
+
+    /// @notice Named loan view: stored fields plus the derived outstanding.
+    /// @dev Reverts `LoanMissing` on a never-originated id (KTD8).
+    function loanState(uint256 loanId) external view returns (Loan memory loan, uint128 outstanding) {
+        Loan storage stored = loans[loanId];
+        if (stored.borrower == address(0)) revert LoanMissing();
+        loan = stored;
+        outstanding = _outstanding(stored);
+    }
+
+    /// @notice Returns a position's overlapping loans with contribution and claimable (R18).
+    /// @dev Claim discovery in one view call, no log scanning. The tick-epoch loan
+    ///      list is interval-sorted by construction (loan fills partition the tape),
+    ///      so entry is a binary search for the first loan ending past the
+    ///      position's start — O(log n) — and the scan stops at the first loan
+    ///      starting at or past the position's end. Loans on the position's own
+    ///      tape cannot epoch-mismatch, so overlap uses the non-reverting core:
+    ///      filtering skips, it never reverts (`contributionOf` is the reverting
+    ///      single-pair form). `startSeq = 0` means "start from the binary-search
+    ///      entry"; a nonzero `startSeq` resumes an earlier scan. `nextSeq = 0`
+    ///      means exhausted. `maxN == 0` reverts `ZeroAmount`.
+    /// @param positionId The lender position to scan for.
+    /// @param startSeq Resume point from a prior call's `nextSeq`, or 0 to start.
+    /// @param maxN Maximum entries to return; must be nonzero.
+    /// @return entries Overlapping loans, in fill order.
+    /// @return nextSeq Sequence number to resume from, or 0 when exhausted.
+    function loansOf(uint256 positionId, uint64 startSeq, uint256 maxN)
+        external
+        view
+        returns (LoanShare[] memory entries, uint64 nextSeq)
+    {
+        if (maxN == 0) revert ZeroAmount();
+        Position storage position = positions[positionId];
+        if (position.lender == address(0)) revert PositionMissing();
+
+        uint64 intervalStart;
+        uint64 intervalEnd;
+        uint64 count;
+        {
+            Epoch storage epochState = ticks[position.market][position.aprBps].epochs[position.epoch];
+            intervalStart = epochState.tree.prefix(position.leafIndex);
+            intervalEnd = intervalStart + epochState.tree.leaf(position.leafIndex);
+            count = epochState.loanCount;
+        }
+        if (count == 0 || intervalStart == intervalEnd) return (new LoanShare[](0), 0);
+
+        uint64 seq = startSeq == 0 ? _firstOverlappingSeq(position, count, intervalStart) : startSeq;
+
+        LoanShare[] memory buffer = new LoanShare[](maxN);
+        uint256 found;
+        while (seq < count && found < maxN) {
+            (LoanShare memory share, bool past) =
+                _shareOf(_loanIdAt(position, seq), positionId, intervalStart, intervalEnd);
+            if (past) {
+                // Sorted list: every later loan starts even further right.
+                return (_shrink(buffer, found), 0);
+            }
+            if (share.loanId != 0) {
+                buffer[found] = share;
+                ++found;
+            }
+            ++seq;
+        }
+
+        if (seq < count && loans[_loanIdAt(position, seq)].fillStart < intervalEnd) {
+            nextSeq = seq;
+        }
+        entries = _shrink(buffer, found);
+    }
+
     /*//////////////////////////////////////////////////////////////
                                 INTERNALS
     //////////////////////////////////////////////////////////////*/
@@ -673,11 +887,139 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
         uint64 positionStart = epochState.tree.prefix(position.leafIndex);
         uint64 positionEnd = positionStart + epochState.tree.leaf(position.leafIndex);
 
-        uint64 overlapStart = positionStart > loan.fillStart ? positionStart : loan.fillStart;
-        uint64 overlapEnd = positionEnd < loan.fillEnd ? positionEnd : loan.fillEnd;
-        if (overlapEnd <= overlapStart) revert NoOverlap();
+        uint64 overlap = _intervalOverlap(positionStart, positionEnd, loan.fillStart, loan.fillEnd);
+        if (overlap == 0) revert NoOverlap();
+        return overlap;
+    }
 
-        return overlapEnd - overlapStart;
+    /// @dev Non-reverting overlap core shared by the reverting single-pair path
+    ///      (`_overlapUnits`) and the filtering scan (`loansOf`), which must skip
+    ///      non-overlapping loans rather than revert. Callers own the tape-equality
+    ///      check where one is needed; pure interval math happens here.
+    function _intervalOverlap(uint64 aStart, uint64 aEnd, uint64 bStart, uint64 bEnd) internal pure returns (uint64) {
+        uint64 overlapStart = aStart > bStart ? aStart : bStart;
+        uint64 overlapEnd = aEnd < bEnd ? aEnd : bEnd;
+        return overlapEnd > overlapStart ? overlapEnd - overlapStart : 0;
+    }
+
+    /// @dev Selects the epoch a borrow fills from: starts at the cursor and skips
+    ///      epochs that can no longer host a minimum fill — one predicate covers
+    ///      both fully-drained epochs and dust residuals, which become
+    ///      withdraw-only. Advancement persists on success. The cap bounds a
+    ///      single borrow's scan so inflated epoch counts can never gas-starve a
+    ///      legitimate borrow (risk #4); `advanceEpochCursor` is the permissionless
+    ///      recovery valve past the cap. Never passes `currentEpoch`.
+    function _selectEpoch(Tick storage tick) internal returns (uint32 epoch, uint64 availableUnits) {
+        epoch = tick.oldestLiveEpoch;
+        Epoch storage epochState = tick.epochs[epoch];
+        availableUnits = epochState.tree.root() - epochState.filled;
+
+        uint32 currentEpoch = tick.currentEpoch;
+        uint256 steps;
+        while (availableUnits < MIN_LIQUIDITY_UNITS && epoch < currentEpoch) {
+            if (steps == CURSOR_CAP) revert EpochBacklog();
+            unchecked {
+                ++steps;
+                ++epoch;
+            }
+            epochState = tick.epochs[epoch];
+            availableUnits = epochState.tree.root() - epochState.filled;
+        }
+        if (epoch != tick.oldestLiveEpoch) tick.oldestLiveEpoch = epoch;
+    }
+
+    /// @dev The tick-epoch loan list entry for the position's own tape.
+    function _loanIdAt(Position storage position, uint64 seq) internal view returns (uint256) {
+        return loanAt[position.market][position.aprBps][position.epoch][seq];
+    }
+
+    /// @dev One scan probe for `loansOf`: builds the pair's entry, or signals that
+    ///      the loan (and, by sort order, every later one) lies past the position.
+    ///      A zero `share.loanId` means "no overlap, keep scanning" — loan ids
+    ///      start at 1, so zero is never a real entry.
+    function _shareOf(uint256 loanId, uint256 positionId, uint64 intervalStart, uint64 intervalEnd)
+        internal
+        view
+        returns (LoanShare memory share, bool past)
+    {
+        Loan storage loan = loans[loanId];
+        if (loan.fillStart >= intervalEnd) return (share, true);
+        uint64 overlap = _intervalOverlap(intervalStart, intervalEnd, loan.fillStart, loan.fillEnd);
+        if (overlap != 0) {
+            share = LoanShare({
+                loanId: loanId,
+                contribution: _toWei(overlap),
+                claimable: _claimableOf(loanId, loan, positionId, overlap)
+            });
+        }
+    }
+
+    /// @dev Binary search for the first loan whose interval ends past the
+    ///      position's start — the leftmost possible overlap. Sound because the
+    ///      tick-epoch loan list is interval-sorted by construction: fills
+    ///      partition `[0, filled)` in seq order, so `fillEnd` is strictly
+    ///      increasing. O(log n): 21 probes at the 2M-leaf epoch bound.
+    function _firstOverlappingSeq(Position storage position, uint64 count, uint64 intervalStart)
+        internal
+        view
+        returns (uint64 lo)
+    {
+        uint64 hi = count;
+        while (lo < hi) {
+            uint64 mid = (lo + hi) / 2;
+            if (loans[_loanIdAt(position, mid)].fillEnd <= intervalStart) {
+                lo = mid + 1;
+            } else {
+                hi = mid;
+            }
+        }
+    }
+
+    /// @dev View mirror of `claim`'s entitlement math: pro-rata share of recovered
+    ///      (pattern #12 — `drawn + repaid`, plus `min(withdrawable, outstanding)`
+    ///      while open) minus everything the pair already received. Kept
+    ///      arithmetic-identical to `claim`; the test suite pins the two together
+    ///      by asserting a subsequent max-claim pays exactly this value.
+    function _claimableOf(uint256 loanId, Loan storage loan, uint256 positionId, uint64 overlap)
+        internal
+        view
+        returns (uint128)
+    {
+        uint256 recovered = uint256(loan.drawn) + loan.repaid;
+        if (!loan.closed) {
+            recovered += Math.min(sablier.withdrawableAmountOf(loan.streamId), _outstanding(loan));
+        }
+        uint256 entitlement = Math.mulDiv(overlap, recovered, loan.fillEnd - loan.fillStart);
+        uint256 paid = received[loanId][positionId];
+        return entitlement > paid ? SafeCast.toUint128(entitlement - paid) : 0;
+    }
+
+    /// @dev Borrowable depth summed across a tick's live epochs, in UNITs.
+    function _liveDepthUnits(address market, uint16 aprBps) internal view returns (uint128 depth) {
+        Tick storage tick = ticks[market][aprBps];
+        uint32 currentEpoch = tick.currentEpoch;
+        for (uint32 epoch = tick.oldestLiveEpoch; epoch <= currentEpoch; ++epoch) {
+            Epoch storage epochState = tick.epochs[epoch];
+            depth += epochState.tree.root() - epochState.filled;
+        }
+    }
+
+    /// @dev Copies the filled prefix of an over-allocated scan buffer.
+    function _shrink(LoanShare[] memory buffer, uint256 found) internal pure returns (LoanShare[] memory out) {
+        out = new LoanShare[](found);
+        for (uint256 i = 0; i < found; ++i) {
+            out[i] = buffer[i];
+        }
+    }
+
+    /// @dev Rollover predicate for `supply`: TERMINAL capacity only. Below
+    ///      `MAX_HEIGHT`, a full tree grows inside `TickTree.append` (U1) and no
+    ///      epoch opens — `atCapacity` alone is true at every height's boundary,
+    ///      so the height check is what separates "grow" from "roll over".
+    ///      Virtual so the test harness can force terminal capacity without 8^7
+    ///      appends.
+    function _epochAtCapacity(TickTree.Tree storage tree) internal view virtual returns (bool) {
+        return tree.height == TickTree.MAX_HEIGHT && tree.atCapacity();
     }
 
     /// @dev Priced, consumed result of one blind fill against a tick epoch.
@@ -713,11 +1055,11 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
             _priceStream(market, streamId, aprBps);
 
         Tick storage tick = ticks[market][aprBps];
-        outcome.epoch = tick.oldestLiveEpoch;
+        uint64 availableUnits;
+        (outcome.epoch, availableUnits) = _selectEpoch(tick);
         Epoch storage epochState = tick.epochs[outcome.epoch];
 
         outcome.fillStart = epochState.filled;
-        uint64 availableUnits = epochState.tree.root() - outcome.fillStart;
         if (availableUnits == 0) revert EmptyTick();
 
         uint256 targetUnits = uint256(targetBorrow) / UNIT;
