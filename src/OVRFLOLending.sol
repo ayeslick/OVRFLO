@@ -81,6 +81,8 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
     error LoanMissing();
     /// @dev The repayment exceeds the loan's outstanding obligation.
     error RepayExceedsOutstanding();
+    /// @dev The stream's withdrawable accrual does not yet cover the loan's outstanding.
+    error NotCovered();
 
     /*//////////////////////////////////////////////////////////////
                                 IMMUTABLES
@@ -267,8 +269,10 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
     /// @dev `outstanding` is the absolute post-repay remainder; zero means the loan
     ///      closed in this call and the stream went back to the borrower.
     event Repaid(uint256 indexed loanId, uint128 amount, uint128 outstanding);
-    /// @notice Emitted when a loan is settled from its stream and the NFT returned.
-    /// @dev `drawn` is the absolute lifetime draw, not this call's delta.
+    /// @notice Emitted when a loan is settled and its stream NFT returned.
+    /// @dev `drawn` is the absolute lifetime draw, not this call's delta. Fires exactly
+    ///      once per loan, on BOTH closure paths: the permissionless `close` draw and a
+    ///      full `repay` (which emits `Repaid(…, 0)` first and leaves `drawn` untouched).
     event Closed(uint256 indexed loanId, uint128 drawn);
     /// @notice Emitted when a contributing position is paid its pro-rata share.
     /// @dev `receivedTotal` is the absolute cumulative payout for the pair.
@@ -497,6 +501,8 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
     ///      cannot brick: `outstanding` is always an exact integer wei and
     ///      ovrfloToken has 18-decimal granularity (see
     ///      `docs/solutions/security-issues/repayloan-equality-rounding-no-brick-OVRFLOBook-20260624.md`).
+    ///      A full repayment emits `Repaid(…, 0)` and then `Closed(loanId, drawn)`, so
+    ///      one terminal signal covers both closure paths.
     /// @param loanId The loan to repay.
     /// @param amount ovrfloToken to repay; must not exceed the outstanding.
     function repay(uint256 loanId, uint128 amount) external nonReentrant {
@@ -515,12 +521,15 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
         if (remaining == 0) sablier.transferFrom(address(this), loan.borrower, loan.streamId);
 
         emit Repaid(loanId, amount, remaining);
+        // `Closed` fires exactly once per loan, on whichever path ends it. Repay does
+        // not draw, so the absolute lifetime `drawn` checkpoint is unchanged here.
+        if (remaining == 0) emit Closed(loanId, loan.drawn);
     }
 
     /// @notice Settles a covered loan from its stream and returns the stream NFT.
     /// @dev Permissionless and never market-gated (KTD7): once the stream's
     ///      withdrawable covers the outstanding, anyone may make the lenders whole.
-    ///      Reverts `BelowMinimum` while the accrual is short of the outstanding, and
+    ///      Reverts `NotCovered` while the accrual is short of the outstanding, and
     ///      `LoanClosed` on a second call. Also reclaims an already-satisfied stream
     ///      (`outstanding == 0`), which draws nothing. The NFT moves with plain
     ///      `transferFrom` — never `safeTransferFrom` — leaving no
@@ -531,7 +540,7 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
 
         uint128 outstanding = _outstanding(loan);
         uint256 streamId = loan.streamId;
-        if (sablier.withdrawableAmountOf(streamId) < outstanding) revert BelowMinimum();
+        if (sablier.withdrawableAmountOf(streamId) < outstanding) revert NotCovered();
 
         loan.closed = true;
         uint128 drawn = loan.drawn;
@@ -558,6 +567,9 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
     ///      makes claiming order-independent: every contributor can always reach its
     ///      full pro-rata share regardless of who claims first. Floor division leaves
     ///      lender-unfavorable dust, which strands in `proceeds` by design.
+    ///      Ordering rule (FREI-PI, mirroring `close`): every storage write — `received`,
+    ///      `proceeds`, `loan.drawn` — lands before the first external call, so the
+    ///      harvest withdraw and the payout transfer both observe consistent state.
     /// @param loanId The loan to claim against.
     /// @param positionId The claiming lender's position; must overlap the loan's fill.
     /// @param amount Requested payout in wei; `type(uint128).max` claims everything.
@@ -570,36 +582,41 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
 
         uint128 pot = proceeds[loanId];
         uint128 requestAmount;
+        uint128 harvestAmount;
         {
-            uint128 withdrawable;
-            uint128 outstanding;
+            // `harvestCap` is the live accrual this loan may still draw:
+            // `min(withdrawable, outstanding)` while open, and zero once closed. The
+            // clamp is a security invariant, not arithmetic detail — on an over-vested
+            // stream (`withdrawable > outstanding`) bare `withdrawable` would let the
+            // first claimer drain value belonging to co-lenders.
+            uint128 harvestCap;
             uint256 recovered = uint256(loan.drawn) + uint256(loan.repaid);
             if (!loan.closed) {
-                outstanding = _outstanding(loan);
-                withdrawable = sablier.withdrawableAmountOf(loan.streamId);
-                recovered += Math.min(withdrawable, outstanding);
+                harvestCap =
+                    SafeCast.toUint128(Math.min(sablier.withdrawableAmountOf(loan.streamId), _outstanding(loan)));
+                recovered += harvestCap;
             }
 
             uint256 entitlement = Math.mulDiv(_overlapUnits(loan, position), recovered, loan.fillEnd - loan.fillStart);
             requestAmount = SafeCast.toUint128(Math.min(amount, entitlement - received[loanId][positionId]));
 
-            if (!loan.closed && pot < requestAmount) {
-                uint128 harvestAmount =
-                    SafeCast.toUint128(Math.min(requestAmount - pot, Math.min(withdrawable, outstanding)));
-                if (harvestAmount > 0) {
-                    loan.drawn += harvestAmount;
-                    pot += harvestAmount;
-                    sablier.withdraw(loan.streamId, address(this), harvestAmount);
-                }
+            if (pot < requestAmount) {
+                harvestAmount = SafeCast.toUint128(Math.min(requestAmount - pot, harvestCap));
             }
         }
 
+        // The harvest is settled into the pot arithmetically first; the stream draw
+        // that backs it is an interaction and happens below, after every write.
+        pot += harvestAmount;
         uint128 payAmount = pot < requestAmount ? pot : requestAmount;
         if (payAmount == 0) revert NothingToClaim();
 
         uint128 receivedTotal = received[loanId][positionId] + payAmount;
         received[loanId][positionId] = receivedTotal;
         proceeds[loanId] = pot - payAmount;
+        if (harvestAmount > 0) loan.drawn += harvestAmount;
+
+        if (harvestAmount > 0) sablier.withdraw(loan.streamId, address(this), harvestAmount);
         IERC20(ovrfloToken).safeTransfer(msg.sender, payAmount);
 
         emit Claimed(loanId, positionId, payAmount, receivedTotal);

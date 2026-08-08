@@ -803,10 +803,121 @@ contract OVRFLOLendingTest is Test {
         lending.claim(loanId, positionA, type(uint128).max);
     }
 
-    /// Harvest polarity regression (pattern #13, plan risk #7): the deficit harvest
-    /// fires if and only if the loan is open. The closed-loan phase leaves live
-    /// withdrawable value sitting in the stream, so an inverted guard would draw it
-    /// and move `getWithdrawnAmount` — the assertion that pins the polarity.
+    /// Covers AE4 with the contributors claiming in the opposite order. Same fixture as
+    /// `test_Claim_MidTermPaysShareAndHarvestsDeficit` (positions 6/4, borrow 10,
+    /// obligation 10.2, mid-term withdrawable 5.1) but the 4/10 lender goes first.
+    /// Every literal is derived here independently, so matching totals across the two
+    /// orders is evidence of order independence on a LIVE loan — where each claim
+    /// mutates `drawn` and the stream's remaining withdrawable, and the cap therefore
+    /// has to hold across a moving `recovered`.
+    function test_Claim_OpenLoanOrderIndependentWhenSmallerShareClaimsFirst() public {
+        lending.setTickSpacing(MARKET, SPACING);
+        uint256 positionA = _supply(LENDER, 6 ether, APR);
+        uint256 positionB = _supply(SECOND_LENDER, 4 ether, APR);
+        _createStream(STREAM_ONE, BORROWER, 10.2 ether);
+
+        uint256 loanId = _borrow(BORROWER, 10 ether, STREAM_ONE, 10 ether);
+        assertEq(_loan(loanId).obligation, 10.2 ether);
+
+        sablier.setWithdrawable(STREAM_ONE, 5.1 ether);
+
+        // B first. recovered = 0 + 0 + min(5.1, 10.2) = 5.1;
+        // B's share = 4e18/10e18 * 5.1e18 = 2.04e18.
+        vm.expectEmit(true, true, false, true, address(lending));
+        emit Claimed(loanId, positionB, 2.04 ether, 2.04 ether);
+        vm.prank(SECOND_LENDER);
+        lending.claim(loanId, positionB, type(uint128).max);
+
+        assertEq(ovrfloToken.balanceOf(SECOND_LENDER), 2.04 ether);
+        assertEq(_loan(loanId).drawn, 2.04 ether);
+        assertEq(sablier.getWithdrawnAmount(STREAM_ONE), 2.04 ether);
+
+        // A second. recovered = 2.04 + 0 + min(5.1 - 2.04, 10.2 - 2.04)
+        //                     = 2.04 + min(3.06, 8.16) = 5.1;
+        // A's share = 6e18/10e18 * 5.1e18 = 3.06e18.
+        vm.expectEmit(true, true, false, true, address(lending));
+        emit Claimed(loanId, positionA, 3.06 ether, 3.06 ether);
+        vm.prank(LENDER);
+        lending.claim(loanId, positionA, type(uint128).max);
+
+        assertEq(ovrfloToken.balanceOf(LENDER), 3.06 ether);
+        assertEq(_loan(loanId).drawn, 5.1 ether);
+
+        // Identical totals to the ascending-order run: 2.04 + 3.06 = 5.1 drawn, nothing
+        // left over, and neither order leaves the other lender short.
+        assertEq(sablier.getWithdrawnAmount(STREAM_ONE), 5.1 ether);
+        assertEq(ovrfloToken.balanceOf(LENDER) + ovrfloToken.balanceOf(SECOND_LENDER), 5.1 ether);
+        assertEq(lending.proceeds(loanId), 0);
+        assertEq(ovrfloToken.balanceOf(address(lending)), 0);
+    }
+
+    /// The `min(withdrawable, outstanding)` clamp inside `recovered` is a named security
+    /// invariant, not arithmetic detail. An over-vested open loan is routine — a
+    /// partially borrowed stream keeps vesting past the obligation it backs — and here
+    /// the stream is worth 20.4 while only 10.2 is owed.
+    ///
+    /// MUTATION TARGET: replacing the clamp with a bare `withdrawable` makes
+    /// `recovered` 20.4, so the first claimer's entitlement becomes 6/10 * 20.4 = 12.24
+    /// and it harvests far past its 6.12 share — the co-lender's 4.08 is drained out of
+    /// the stream before it ever claims. The exact-literal assertions below fail under
+    /// that mutant and pass only with the clamp in place.
+    ///
+    /// The warp past expiry also supplies KTD7's otherwise-missing coverage that a
+    /// claim is never market-gated: both claims here run on a MATURED series.
+    function test_Claim_OverVestedStreamClampsRecoveredToOutstanding() public {
+        lending.setTickSpacing(MARKET, SPACING);
+        uint256 positionA = _supply(LENDER, 6 ether, APR);
+        uint256 positionB = _supply(SECOND_LENDER, 4 ether, APR);
+        // Deposited 20.4 prices to a gross of 20.4 / 1.02 = 20 ether at the fixture's
+        // APR 1000 over 73 days (YEAR / 5), so the 10 ether target fills below the
+        // price cap and owes 10 * 1.02 = 10.2 ether.
+        _createStream(STREAM_ONE, BORROWER, 20.4 ether);
+
+        uint256 loanId = _borrow(BORROWER, 10 ether, STREAM_ONE, 10 ether);
+        assertEq(_loan(loanId).obligation, 10.2 ether);
+
+        // Fully vested at expiry: withdrawable 20.4 is double the 10.2 outstanding.
+        vm.warp(expiry + 1);
+        sablier.setWithdrawable(STREAM_ONE, 20.4 ether);
+        assertEq(sablier.withdrawableAmountOf(STREAM_ONE), 20.4 ether);
+
+        // recovered = 0 + 0 + min(20.4, 10.2) = 10.2;
+        // A's share = 6e18/10e18 * 10.2e18 = 6.12e18 (NOT 6/10 of 20.4 = 12.24).
+        vm.prank(LENDER);
+        lending.claim(loanId, positionA, type(uint128).max);
+        assertEq(ovrfloToken.balanceOf(LENDER), 6.12 ether);
+
+        // recovered = 6.12 + min(20.4 - 6.12, 10.2 - 6.12) = 6.12 + min(14.28, 4.08) = 10.2;
+        // B's share = 4e18/10e18 * 10.2e18 = 4.08e18, still fully available.
+        vm.prank(SECOND_LENDER);
+        lending.claim(loanId, positionB, type(uint128).max);
+        assertEq(ovrfloToken.balanceOf(SECOND_LENDER), 4.08 ether);
+
+        // The harvest never exceeded the obligation: 6.12 + 4.08 = 10.2 drawn out of a
+        // 20.4 stream, leaving 10.2 of over-vested value untouched for the borrower.
+        assertEq(sablier.getWithdrawnAmount(STREAM_ONE), 10.2 ether);
+        assertEq(_loan(loanId).drawn, 10.2 ether);
+        assertEq(sablier.withdrawableAmountOf(STREAM_ONE), 10.2 ether);
+        assertEq(ovrfloToken.balanceOf(LENDER) + ovrfloToken.balanceOf(SECOND_LENDER), 10.2 ether);
+        assertEq(lending.proceeds(loanId), 0);
+        assertEq(ovrfloToken.balanceOf(address(lending)), 0);
+    }
+
+    /// Harvest polarity (pattern #13, plan risk #7): the deficit harvest fires if and
+    /// only if the loan is open.
+    ///
+    /// What each phase actually proves — the closed phase is NOT the guard's
+    /// mutation-kill. Deleting the `!loan.closed` guard cannot be discriminated here,
+    /// because `close` drains `outstanding` to zero by construction, so the harvest cap
+    /// `min(withdrawable, outstanding)` is zero on a closed loan whether or not the
+    /// guard is read. The guard's real kill is the open-phase behavior, shared with
+    /// `test_Claim_MidTermPaysShareAndHarvestsDeficit`.
+    ///
+    /// The closed-phase assertions below prove the property that matters downstream:
+    /// a closed loan's claim pays from the frozen pot and never touches the stream,
+    /// even with 5.1 of live withdrawable value sitting in it and now owned by the
+    /// borrower. That is guaranteed jointly by the guard and by `close`'s own
+    /// zero-outstanding invariant, and it is what keeps a returned stream safe.
     function test_Claim_HarvestFiresOnlyWhileLoanIsOpen() public {
         lending.setTickSpacing(MARKET, SPACING);
         uint256 positionA = _supply(LENDER, 6 ether, APR);
@@ -1030,8 +1141,13 @@ contract OVRFLOLendingTest is Test {
         assertEq(lending.proceeds(loanId), 1 ether);
         assertEq(sablier.ownerOf(STREAM_ONE), address(lending));
 
+        // Both terminal events fire, in order: `Repaid(…, outstanding = 0)` then
+        // `Closed(loanId, drawn)`. `Closed` fires exactly once per loan on whichever
+        // path ends it, and repay draws nothing, so the absolute `drawn` is still 0.
         vm.expectEmit(true, false, false, true, address(lending));
         emit Repaid(loanId, 3.08 ether, 0);
+        vm.expectEmit(true, false, false, true, address(lending));
+        emit Closed(loanId, 0);
         vm.prank(BORROWER);
         lending.repay(loanId, 3.08 ether);
 
@@ -1097,8 +1213,8 @@ contract OVRFLOLendingTest is Test {
         lending.repay(loanId, 0);
     }
 
-    /// `close` is permissionless once the stream's withdrawable covers the
-    /// outstanding, reverts below coverage, and reverts `LoanClosed` on a second call.
+    /// `close` is permissionless once the stream's withdrawable covers the outstanding,
+    /// reverts `NotCovered` below coverage, and `LoanClosed` on a second call.
     function test_Close_PermissionlessOnceCoveredAndRevertsOnSecondCall() public {
         lending.setTickSpacing(MARKET, SPACING);
         _supply(LENDER, 10 ether, APR);
@@ -1106,9 +1222,11 @@ contract OVRFLOLendingTest is Test {
         uint256 loanId = _borrow(BORROWER, 5 ether, STREAM_ONE, 5 ether);
         assertEq(_loan(loanId).obligation, 5.1 ether);
 
+        // Short of coverage is a temporal condition, not a size floor: it carries its
+        // own `NotCovered` selector rather than sharing `BelowMinimum`.
         sablier.setWithdrawable(STREAM_ONE, 5.1 ether - 1);
         vm.prank(STRANGER);
-        vm.expectRevert(OVRFLOLending.BelowMinimum.selector);
+        vm.expectRevert(OVRFLOLending.NotCovered.selector);
         lending.close(loanId);
 
         sablier.setWithdrawable(STREAM_ONE, 5.1 ether);
@@ -1130,6 +1248,58 @@ contract OVRFLOLendingTest is Test {
 
         vm.expectRevert(OVRFLOLending.LoanMissing.selector);
         lending.close(loanId + 1);
+    }
+
+    /// `outstanding == 0 && !closed` is a legal, reachable state: claims can harvest the
+    /// entire obligation while the loan stays open, because nothing in the claim path
+    /// closes a loan. `close` is then the only way to release the stream, and it must
+    /// draw nothing at all.
+    function test_Close_AfterClaimsFullyHarvestObligationDrawsNothing() public {
+        lending.setTickSpacing(MARKET, SPACING);
+        uint256 positionId = _supply(LENDER, 10 ether, APR);
+        // Deposited 10.2 prices to a gross of exactly 10 ether, so a 10 ether target
+        // takes the full-borrow path and owes the stream's entire remaining 10.2.
+        _createStream(STREAM_ONE, BORROWER, 10.2 ether);
+
+        uint256 loanId = _borrow(BORROWER, 10 ether, STREAM_ONE, 10 ether);
+        assertEq(_loan(loanId).obligation, 10.2 ether);
+
+        // Fully vested; the sole contributor's entitlement is the whole 10.2.
+        vm.warp(expiry + 1);
+        sablier.setWithdrawable(STREAM_ONE, 10.2 ether);
+        vm.prank(LENDER);
+        lending.claim(loanId, positionId, type(uint128).max);
+
+        assertEq(ovrfloToken.balanceOf(LENDER), 10.2 ether);
+        assertEq(_loan(loanId).drawn, 10.2 ether);
+        assertEq(sablier.getWithdrawnAmount(STREAM_ONE), 10.2 ether);
+
+        // The pinned state: obligation - drawn - repaid == 0, yet the loan is open and
+        // still holds the stream.
+        LoanView memory harvested = _loan(loanId);
+        assertEq(harvested.obligation - harvested.drawn - harvested.repaid, 0);
+        assertFalse(harvested.closed);
+        assertEq(sablier.ownerOf(STREAM_ONE), address(lending));
+
+        // Repay is reachable only in this state (after `close` it would be
+        // `LoanClosed`), and any positive amount exceeds a zero outstanding.
+        vm.prank(BORROWER);
+        vm.expectRevert(OVRFLOLending.RepayExceedsOutstanding.selector);
+        lending.repay(loanId, 1);
+
+        // Permissionless close draws NOTHING and returns the NFT.
+        assertEq(sablier.withdrawableAmountOf(STREAM_ONE), 0);
+        vm.expectEmit(true, false, false, true, address(lending));
+        emit Closed(loanId, 10.2 ether);
+        vm.prank(STRANGER);
+        lending.close(loanId);
+
+        assertTrue(_loan(loanId).closed);
+        assertEq(_loan(loanId).drawn, 10.2 ether);
+        assertEq(sablier.getWithdrawnAmount(STREAM_ONE), 10.2 ether);
+        assertEq(sablier.ownerOf(STREAM_ONE), BORROWER);
+        assertEq(lending.proceeds(loanId), 0);
+        assertEq(ovrfloToken.balanceOf(address(lending)), 0);
     }
 
     /// KTD7: closing works after the series matures.
