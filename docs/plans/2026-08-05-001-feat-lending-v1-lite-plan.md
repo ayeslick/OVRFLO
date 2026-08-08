@@ -276,13 +276,15 @@ Nothing in this section is deferred to implementation. Where implementation disc
 |---|---|
 | `Supplied` | `positionId` idx, `lender` idx, `market` idx, `aprBps`, `epoch`, `leafIndex`, `amount` |
 | `Withdrawn` | `positionId` idx, `lender` idx, `refund`, `remainingLeaf` (absolute) |
-| `Borrowed` | `loanId` idx, `borrower` idx, `market` idx, `aprBps`, `epoch`, `seq`, `fillStart`, `fillEnd`, `actualBorrow`, `obligation`, `streamId` |
+| `Borrowed` | `loanId` idx, `borrower` idx, `market` idx, `aprBps`, `epoch`, `seq`, `fillStart`, `fillEnd`, `actualBorrow`, `feeAmount`, `obligation`, `streamId` |
 | `Repaid` | `loanId` idx, `amount`, `outstanding` (absolute, post-repay) |
 | `Closed` | `loanId` idx, `drawn` (absolute, total) |
 | `Claimed` | `loanId` idx, `positionId` idx, `amount`, `received` (absolute per-pair total) |
 | `EpochOpened` | `market` idx, `aprBps`, `epoch` |
 | `EpochCursorAdvanced` | `market` idx, `aprBps`, `fromEpoch`, `toEpoch` |
 | `TickSpacingSet` | `market` idx, `spacing` (plus the factory-level re-emit per forwarder convention) |
+
+*Amended by user decision (2026-08-08): `Borrowed` gains `feeAmount` (positioned after `actualBorrow`) so net proceeds are reconstructible from logs alone — `feeBps` is owner-mutable with no per-loan snapshot, and without the field an indexer replaying history needs an archive read per borrow.*
 
 ### Sequencing
 

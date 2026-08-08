@@ -1,6 +1,6 @@
 # 06 — Invariant suite rewrite
 
-**What to build:** Replace `test/OVRFLOLendingInvariant.t.sol` with a handler + ghost suite for the new design, following the existing single-handler/bounded-actors/try-catch-skip pattern. Ghosts include per-tick posted/cancelled/filled mirrors, per-loan interval records, GL-70 close-time stream-withdrawn snapshots, and received-per-pair sums. Handlers must structurally exercise: multi-position fills crossing tree-node boundaries, forced growth and forced epoch rollover (via the harness capacity override), self-fills, time advancement, withdrawals interleaved with fills, and stream re-pledging — with a coverage assertion that every handler path executed.
+**What to build:** X-ray first (user directive, 2026-08-08): execute the x-ray skill at `/Users/jay/.agents/skills/x-ray/SKILL.md` — follow its SKILL.md inline against the repo root — to regenerate `x-ray/` (x-ray.md, entry-points.md, invariants.md, architecture) over the rebuilt contracts, and update the docs that track it (`AUDIT.md` pointer notes referencing x-ray sections). Its `invariants.md` catalog (G/I/X/E blocks) then serves as the discovery checklist for the suite below — the plan stays the decision authority; the catalog is an input, and any catalog invariant not encoded must be recorded with a reason. Then replace `test/OVRFLOLendingInvariant.t.sol` with a handler + ghost suite for the new design, following the existing single-handler/bounded-actors/try-catch-skip pattern. Ghosts include per-tick posted/cancelled/filled mirrors, per-loan interval records, GL-70 close-time stream-withdrawn snapshots, and received-per-pair sums. Handlers must structurally exercise: multi-position fills crossing tree-node boundaries, forced growth and forced epoch rollover (via the harness capacity override), self-fills, time advancement, withdrawals interleaved with fills, and stream re-pledging — with a coverage assertion that every handler path executed.
 
 **Blocked by:** 05 (parallel with 07)
 
@@ -21,11 +21,15 @@ Before any code, read Required reading below and the plan sections: Goal Capsule
 Success Criteria (invariants), Planning Contract (Risks table; Pinned Conventions),
 and ### U6. Invariants assert state identities against ghosts — never the
 implementation's own arithmetic mirrored back at itself.
+Step zero: execute the x-ray skill (/Users/jay/.agents/skills/x-ray/SKILL.md,
+followed inline) to regenerate x-ray/ over the rebuilt contracts; update AUDIT.md's
+x-ray pointer notes; use x-ray/invariants.md as the suite's discovery checklist.
 After local verification, mark ticket checkboxes done and set Status: resolved.
 ```
 
 **Required reading:**
 
+- `/Users/jay/.agents/skills/x-ray/SKILL.md` (execute, not just read — see step zero)
 - `BASE_SECURITY.md`
 - `docs/solutions/patterns/solidity-implementation-discipline.md`
 - https://ethskills.com/SKILL.md
@@ -48,6 +52,7 @@ After local verification, mark ticket checkboxes done and set Status: resolved.
 - [ ] Dust bound: closed-loan total claimant shortfall ≤ contributor count in wei; cursor soundness: cursor ≤ `currentEpoch`, every epoch below it has available < `MIN_LIQUIDITY_AMOUNT`
 - [ ] GL-70: close-time stream-withdrawn ghost snapshots keep re-pledged-stream properties exact
 - [ ] Handler coverage assertion proves multi-node fills, growth, rollover, self-fills, and re-pledge all executed in a run
+- [ ] x-ray regenerated over the rebuilt contracts; `AUDIT.md` x-ray pointer notes updated; every G/I/X invariant in the fresh `x-ray/invariants.md` is either encoded in the suite, covered by an existing test (cite it), or recorded as out-of-scope with reason
 - [ ] `FOUNDRY_PROFILE=invariant forge test --match-contract OVRFLOLendingInvariant -vvv` green at runs=500 / depth=40
 
 ## Plan unit

@@ -35,7 +35,7 @@ After local verification, mark ticket checkboxes done and set Status: resolved.
 ## Acceptance criteria
 
 - [ ] README OVRFLOLending section, function table, and user flows match the shipped ABI (supply/withdraw/borrow/repay/close/claim + advanceEpochCursor + views)
-- [ ] `x-ray/entry-points.md` and `x-ray/invariants.md` updated; frozen-history lemma stated formally (Success Criteria's FV-handoff bar), with the U6 invariant named as its executable form
+- [ ] `x-ray/` freshness verified (ticket 06 regenerates it via the x-ray skill; do not re-run it here — only fix drift introduced after 06); frozen-history lemma stated formally (Success Criteria's FV-handoff bar), with the U6 invariant named as its executable form; `AUDIT.md` (06) and `PROPERTIES.md` (07) pointer notes verified current
 - [ ] `CONCEPTS.md`: v1-lite section promoted to current; superseded entries marked with pointers, not deleted
 - [ ] `ovrflo-critical-patterns.md`: #4/#10/#16 annotated superseded-by-design with the plan's recorded justifications; PRB-Math dependency mention corrected in root docs
 - [ ] `script/OVRFLO.s.sol` and `script/seed-local.sh`: tick-spacing onboarding step added; `forge create`/`cast send` pattern preserved; seed smoke passes on an Anvil mainnet fork (or environment gate recorded)
