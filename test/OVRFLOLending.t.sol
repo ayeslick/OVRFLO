@@ -463,6 +463,19 @@ contract OVRFLOLendingTest is Test {
         assertEq(sablier.ownerOf(STREAM_ONE), address(lending));
     }
 
+    /// The minAcceptable floor is net of fee: gross 10 ether clears 9.95 but net
+    /// 9.9 does not — a gross-side comparison would let this call succeed.
+    function test_Borrow_MinAcceptableComparesNetOfFee() public {
+        lending.setTickSpacing(MARKET, SPACING);
+        lending.setFee(100);
+        _supply(LENDER, 10 ether, APR);
+        _createStream(STREAM_ONE, BORROWER, 10.2 ether);
+
+        vm.prank(BORROWER);
+        vm.expectRevert(OVRFLOLending.BelowMinAcceptable.selector);
+        lending.borrow(MARKET, APR, 10 ether, STREAM_ONE, 9.95 ether);
+    }
+
     /// Max borrow = sale (R11): a target above the stream's discounted value fills
     /// exactly the gross price and owes the stream's entire remaining face.
     function test_Borrow_MaxBorrowObligationEqualsEntireRemaining() public {
@@ -488,7 +501,7 @@ contract OVRFLOLendingTest is Test {
         _supply(LENDER, 20 ether, APR);
         _createStream(STREAM_ONE, BORROWER, 15.3 ether);
 
-        _borrow(BORROWER, 5 ether + 999, STREAM_ONE, 0);
+        _borrow(BORROWER, 5 ether + (1e12 - 1), STREAM_ONE, 0);
 
         assertEq(underlying.balanceOf(BORROWER), 5 ether);
         (, uint64 filled,,,) = lending.exposed_epochState(MARKET, APR, 0);

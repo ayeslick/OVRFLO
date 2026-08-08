@@ -40,6 +40,7 @@ After local verification, mark ticket checkboxes done and set Status: resolved.
 - [ ] `ovrflo-critical-patterns.md`: #4/#10/#16 annotated superseded-by-design with the plan's recorded justifications; PRB-Math dependency mention corrected in root docs
 - [ ] `script/OVRFLO.s.sol` and `script/seed-local.sh`: tick-spacing onboarding step added; `forge create`/`cast send` pattern preserved; seed smoke passes on an Anvil mainnet fork (or environment gate recorded)
 - [ ] Grep for `createBorrowerLoanPool|claimLoanPoolShare|postSaleListing|LiquidityPosition` returns hits only in historical docs (`docs/plans/`, `docs/audit/`, `docs/solutions/`, `docs/research/`)
+- [ ] Carried-over require-strings in `src/OVRFLOLending.sol` (eleven sites flagged in the 2026-08-08 U3 review) converted to catalog custom errors, or each recorded as intentionally retained with rationale (KTD3 reconciliation)
 - [ ] Definition of Done sweep: no dead code in `src/`; every AE1–AE9 has an enforcing test carrying its `Covers AE<N>.` prefix; Product Contract preservation note still accurate
 
 ## Plan unit
