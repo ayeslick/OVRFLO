@@ -6,6 +6,7 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/security/ReentrancyGuard.
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Multicall} from "@openzeppelin/contracts/utils/Multicall.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {ISablierV2LockupLinear} from "../interfaces/ISablierV2LockupLinear.sol";
 import {IOVRFLOFactoryRegistry, StreamPricing} from "./StreamPricing.sol";
@@ -68,6 +69,18 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
     error EmptyTick();
     /// @dev The net proceeds fall below the borrower's acceptable floor.
     error BelowMinAcceptable();
+    /// @dev The pair has no unpaid pro-rata entitlement to pay out.
+    error NothingToClaim();
+    /// @dev The position's interval does not intersect the loan's frozen fill interval.
+    error NoOverlap();
+    /// @dev The position and the loan sit on different `(market, aprBps, epoch)` tapes.
+    error EpochMismatch();
+    /// @dev The loan has already been settled and its stream returned.
+    error LoanClosed();
+    /// @dev The loan id was never originated.
+    error LoanMissing();
+    /// @dev The repayment exceeds the loan's outstanding obligation.
+    error RepayExceedsOutstanding();
 
     /*//////////////////////////////////////////////////////////////
                                 IMMUTABLES
@@ -142,25 +155,34 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
     /// @dev Every field is immutable once stored; the interval `[fillStart, fillEnd)`
     ///      lies entirely below the epoch's `filled` counter forever (frozen history),
     ///      which is what makes lazy interval-overlap attribution exact at claim time.
+    ///      Servicing state (`closed`, `drawn`, `repaid`) is the only mutable part:
+    ///      `closed` rides the free bytes of the borrower slot and the two recovery
+    ///      counters share one slot, so settlement never allocates a fresh word.
     /// @param borrower Loan owner; receives the stream back once settled.
     /// @param aprBps Fixed APR tick the loan filled from.
     /// @param epoch Tick generation containing the fill.
+    /// @param closed True once the obligation is fully satisfied and the stream returned.
     /// @param market Pendle market identifying the collateral series.
     /// @param seq Zero-based index in the tick epoch's append-only loan list.
     /// @param streamId Pledged Sablier collateral stream.
     /// @param fillStart Inclusive tape coordinate where the fill begins, in UNITs.
     /// @param fillEnd Exclusive tape coordinate where the fill ends, in UNITs.
     /// @param obligation ovrfloToken owed at maturity for the advanced principal.
+    /// @param drawn ovrfloToken drawn from the pledged stream so far.
+    /// @param repaid ovrfloToken repaid at face so far.
     struct Loan {
         address borrower;
         uint16 aprBps;
         uint32 epoch;
+        bool closed;
         address market;
         uint64 seq;
         uint256 streamId;
         uint64 fillStart;
         uint64 fillEnd;
         uint128 obligation;
+        uint128 drawn;
+        uint128 repaid;
     }
 
     /// @notice Market => APR tick => book state.
@@ -184,6 +206,16 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
     mapping(address borrower => uint256 count) public borrowerLoanCount;
     /// @notice Borrower => zero-based index => loan id.
     mapping(address borrower => mapping(uint256 index => uint256 loanId)) public borrowerLoanAt;
+    /// @notice Loan id => recovered ovrfloToken held for that loan's contributors.
+    /// @dev Credited by `repay`, by `close`, and by `claim`'s just-in-time harvest;
+    ///      debited by every payout. Rounding dust is lender-unfavorable and strands
+    ///      here by design (plan risk #5).
+    mapping(uint256 loanId => uint128 amount) public proceeds;
+    /// @notice Loan id => position id => cumulative ovrfloToken paid to that pair.
+    /// @dev Keyed by position rather than by lender address: positions are the
+    ///      attribution unit, so the pro-rata cap is independent of address reuse
+    ///      across positions (KTD9).
+    mapping(uint256 loanId => mapping(uint256 positionId => uint128 amount)) public received;
 
     /*//////////////////////////////////////////////////////////////
                                   EVENTS
@@ -213,7 +245,10 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
     /// @notice Emitted when a blind fill originates a loan against a pledged stream.
     /// @dev `fillStart`/`fillEnd` are absolute tape coordinates in UNITs; `fillEnd`
     ///      is the epoch's post-fill `filled` value (absolute-checkpoint pattern).
-    ///      `actualBorrow` and `obligation` are wei-denominated token amounts.
+    ///      `actualBorrow`, `feeAmount`, and `obligation` are wei-denominated token
+    ///      amounts. `feeAmount` is carried because `feeBps` is owner-mutable and no
+    ///      per-loan snapshot exists, so net proceeds (`actualBorrow - feeAmount`)
+    ///      would otherwise not be reconstructible from logs alone.
     event Borrowed(
         uint256 indexed loanId,
         address indexed borrower,
@@ -224,9 +259,20 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
         uint64 fillStart,
         uint64 fillEnd,
         uint128 actualBorrow,
+        uint128 feeAmount,
         uint128 obligation,
         uint256 streamId
     );
+    /// @notice Emitted when ovrfloToken is repaid at face against a loan.
+    /// @dev `outstanding` is the absolute post-repay remainder; zero means the loan
+    ///      closed in this call and the stream went back to the borrower.
+    event Repaid(uint256 indexed loanId, uint128 amount, uint128 outstanding);
+    /// @notice Emitted when a loan is settled from its stream and the NFT returned.
+    /// @dev `drawn` is the absolute lifetime draw, not this call's delta.
+    event Closed(uint256 indexed loanId, uint128 drawn);
+    /// @notice Emitted when a contributing position is paid its pro-rata share.
+    /// @dev `receivedTotal` is the absolute cumulative payout for the pair.
+    event Claimed(uint256 indexed loanId, uint256 indexed positionId, uint128 amount, uint128 receivedTotal);
 
     /*//////////////////////////////////////////////////////////////
                               CONSTRUCTOR
@@ -394,28 +440,30 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
         _validateTick(market, aprBps);
 
         FillOutcome memory outcome = _fillTick(market, aprBps, targetBorrow, streamId);
-        if (uint256(outcome.actualBorrow) - outcome.feeAmount < minAcceptable) revert BelowMinAcceptable();
+        if (outcome.actualBorrow - outcome.feeAmount < minAcceptable) revert BelowMinAcceptable();
 
         loanId = nextLoanId++;
         loans[loanId] = Loan({
             borrower: msg.sender,
             aprBps: aprBps,
             epoch: outcome.epoch,
+            closed: false,
             market: market,
             seq: outcome.seq,
             streamId: streamId,
             fillStart: outcome.fillStart,
             fillEnd: outcome.fillEnd,
-            obligation: outcome.obligation
+            obligation: outcome.obligation,
+            drawn: 0,
+            repaid: 0
         });
         loanAt[market][aprBps][outcome.epoch][outcome.seq] = loanId;
 
-        uint256 borrowerIndex = borrowerLoanCount[msg.sender];
-        borrowerLoanAt[msg.sender][borrowerIndex] = loanId;
-        borrowerLoanCount[msg.sender] = borrowerIndex + 1;
+        borrowerLoanAt[msg.sender][borrowerLoanCount[msg.sender]] = loanId;
+        borrowerLoanCount[msg.sender] += 1;
 
         sablier.transferFrom(msg.sender, address(this), streamId);
-        _payUnderlying(msg.sender, uint256(outcome.actualBorrow) - outcome.feeAmount);
+        _payUnderlying(msg.sender, outcome.actualBorrow - outcome.feeAmount);
         _payUnderlying(treasury, outcome.feeAmount);
 
         emit Borrowed(
@@ -428,19 +476,198 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
             outcome.fillStart,
             outcome.fillEnd,
             outcome.actualBorrow,
+            outcome.feeAmount,
             outcome.obligation,
             streamId
         );
     }
 
     /*//////////////////////////////////////////////////////////////
+                             LOAN SERVICING
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Repays ovrfloToken at face value against a loan's outstanding.
+    /// @dev Never market-gated: a matured series winds down through this path (KTD7).
+    ///      Repayment is at face by design — an early repayment hands lenders their
+    ///      promised fixed amount sooner, never a discounted one. Anyone may repay:
+    ///      the funds come from `msg.sender` while the released stream always returns
+    ///      to `loan.borrower`, so a third-party repayment is a donation with no
+    ///      lender-side or borrower-side downside, and the error catalog carries no
+    ///      caller check for this path. The `amount == outstanding` closure test
+    ///      cannot brick: `outstanding` is always an exact integer wei and
+    ///      ovrfloToken has 18-decimal granularity (see
+    ///      `docs/solutions/security-issues/repayloan-equality-rounding-no-brick-OVRFLOBook-20260624.md`).
+    /// @param loanId The loan to repay.
+    /// @param amount ovrfloToken to repay; must not exceed the outstanding.
+    function repay(uint256 loanId, uint128 amount) external nonReentrant {
+        Loan storage loan = _liveLoan(loanId);
+        if (amount == 0) revert ZeroAmount();
+
+        uint128 outstanding = _outstanding(loan);
+        if (amount > outstanding) revert RepayExceedsOutstanding();
+
+        uint128 remaining = outstanding - amount;
+        loan.repaid += amount;
+        if (remaining == 0) loan.closed = true;
+        proceeds[loanId] += amount;
+
+        _pullExact(IERC20(ovrfloToken), msg.sender, address(this), amount);
+        if (remaining == 0) sablier.transferFrom(address(this), loan.borrower, loan.streamId);
+
+        emit Repaid(loanId, amount, remaining);
+    }
+
+    /// @notice Settles a covered loan from its stream and returns the stream NFT.
+    /// @dev Permissionless and never market-gated (KTD7): once the stream's
+    ///      withdrawable covers the outstanding, anyone may make the lenders whole.
+    ///      Reverts `BelowMinimum` while the accrual is short of the outstanding, and
+    ///      `LoanClosed` on a second call. Also reclaims an already-satisfied stream
+    ///      (`outstanding == 0`), which draws nothing. The NFT moves with plain
+    ///      `transferFrom` — never `safeTransferFrom` — leaving no
+    ///      `onERC721Received` callback surface (plan risk #6).
+    /// @param loanId The loan to close.
+    function close(uint256 loanId) external nonReentrant {
+        Loan storage loan = _liveLoan(loanId);
+
+        uint128 outstanding = _outstanding(loan);
+        uint256 streamId = loan.streamId;
+        if (sablier.withdrawableAmountOf(streamId) < outstanding) revert BelowMinimum();
+
+        loan.closed = true;
+        uint128 drawn = loan.drawn;
+        if (outstanding > 0) {
+            drawn += outstanding;
+            loan.drawn = drawn;
+            proceeds[loanId] += outstanding;
+            sablier.withdraw(streamId, address(this), outstanding);
+        }
+        sablier.transferFrom(address(this), loan.borrower, streamId);
+
+        emit Closed(loanId, drawn);
+    }
+
+    /// @notice Pays a contributing position its share of the loan's recovered value.
+    /// @dev Lender-only and never market-gated (KTD7). The payout cap is pattern #12's
+    ///      cumulative-recovered formula: `contribution * recovered / intervalLength`
+    ///      minus everything the pair already received, where `recovered` is
+    ///      `drawn + repaid` plus, while the loan is open, the stream's not-yet-drawn
+    ///      accrual `min(withdrawable, outstanding)`. Because the entitlement counts
+    ///      that live accrual, the deficit is harvested from the stream just in time —
+    ///      the harvest fires if and only if the loan is open (pattern #13; a closed
+    ///      loan has returned its stream and recovers `drawn + repaid` only). The cap
+    ///      makes claiming order-independent: every contributor can always reach its
+    ///      full pro-rata share regardless of who claims first. Floor division leaves
+    ///      lender-unfavorable dust, which strands in `proceeds` by design.
+    /// @param loanId The loan to claim against.
+    /// @param positionId The claiming lender's position; must overlap the loan's fill.
+    /// @param amount Requested payout in wei; `type(uint128).max` claims everything.
+    function claim(uint256 loanId, uint256 positionId, uint128 amount) external nonReentrant {
+        Loan storage loan = loans[loanId];
+        if (loan.borrower == address(0)) revert LoanMissing();
+
+        Position storage position = positions[positionId];
+        if (position.lender != msg.sender) revert NotLender();
+
+        uint128 pot = proceeds[loanId];
+        uint128 requestAmount;
+        {
+            uint128 withdrawable;
+            uint128 outstanding;
+            uint256 recovered = uint256(loan.drawn) + uint256(loan.repaid);
+            if (!loan.closed) {
+                outstanding = _outstanding(loan);
+                withdrawable = sablier.withdrawableAmountOf(loan.streamId);
+                recovered += Math.min(withdrawable, outstanding);
+            }
+
+            uint256 entitlement = Math.mulDiv(_overlapUnits(loan, position), recovered, loan.fillEnd - loan.fillStart);
+            requestAmount = SafeCast.toUint128(Math.min(amount, entitlement - received[loanId][positionId]));
+
+            if (!loan.closed && pot < requestAmount) {
+                uint128 harvestAmount =
+                    SafeCast.toUint128(Math.min(requestAmount - pot, Math.min(withdrawable, outstanding)));
+                if (harvestAmount > 0) {
+                    loan.drawn += harvestAmount;
+                    pot += harvestAmount;
+                    sablier.withdraw(loan.streamId, address(this), harvestAmount);
+                }
+            }
+        }
+
+        uint128 payAmount = pot < requestAmount ? pot : requestAmount;
+        if (payAmount == 0) revert NothingToClaim();
+
+        uint128 receivedTotal = received[loanId][positionId] + payAmount;
+        received[loanId][positionId] = receivedTotal;
+        proceeds[loanId] = pot - payAmount;
+        IERC20(ovrfloToken).safeTransfer(msg.sender, payAmount);
+
+        emit Claimed(loanId, positionId, payAmount, receivedTotal);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                              VIEW FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Returns how much of a loan's fill came from one lender position.
+    /// @dev Nothing is stored at fill time: the contribution is the overlap of the
+    ///      position's *current* tape interval with the loan's frozen
+    ///      `[fillStart, fillEnd)`. The two are comparable forever because unfilled
+    ///      suffixes are the only thing a withdraw can remove, so a position slides
+    ///      left only above the epoch's `filled` counter and never below it (frozen
+    ///      history). Leaf numbering restarts per epoch, so intervals from different
+    ///      epochs can collide numerically — the `(market, aprBps, epoch)` equality
+    ///      check, not the interval arithmetic, is what blocks a cross-epoch claim
+    ///      (plan risk #3).
+    /// @param loanId The loan whose frozen interval is measured.
+    /// @param positionId The lender position to measure against it.
+    /// @return contribution Overlapping quantity in wei.
+    function contributionOf(uint256 loanId, uint256 positionId) external view returns (uint128 contribution) {
+        Loan storage loan = loans[loanId];
+        if (loan.borrower == address(0)) revert LoanMissing();
+        contribution = _toWei(_overlapUnits(loan, positions[positionId]));
+    }
+
+    /*//////////////////////////////////////////////////////////////
                                 INTERNALS
     //////////////////////////////////////////////////////////////*/
+
+    /// @dev Loads a loan that exists and is still open, or reverts.
+    function _liveLoan(uint256 loanId) internal view returns (Loan storage loan) {
+        loan = loans[loanId];
+        if (loan.borrower == address(0)) revert LoanMissing();
+        if (loan.closed) revert LoanClosed();
+    }
+
+    /// @dev Remaining ovrfloToken owed: `obligation - (drawn + repaid)`.
+    function _outstanding(Loan storage loan) internal view returns (uint128) {
+        return loan.obligation - loan.drawn - loan.repaid;
+    }
+
+    /// @dev Overlap of the position's current interval with the loan's frozen one,
+    ///      in UNITs. Same-tape equality is checked first so a numerically identical
+    ///      interval from another epoch can never be mistaken for a contribution.
+    function _overlapUnits(Loan storage loan, Position storage position) internal view returns (uint64) {
+        if (position.market != loan.market || position.aprBps != loan.aprBps || position.epoch != loan.epoch) {
+            revert EpochMismatch();
+        }
+
+        Epoch storage epochState = ticks[loan.market][loan.aprBps].epochs[loan.epoch];
+        uint64 positionStart = epochState.tree.prefix(position.leafIndex);
+        uint64 positionEnd = positionStart + epochState.tree.leaf(position.leafIndex);
+
+        uint64 overlapStart = positionStart > loan.fillStart ? positionStart : loan.fillStart;
+        uint64 overlapEnd = positionEnd < loan.fillEnd ? positionEnd : loan.fillEnd;
+        if (overlapEnd <= overlapStart) revert NoOverlap();
+
+        return overlapEnd - overlapStart;
+    }
 
     /// @dev Priced, consumed result of one blind fill against a tick epoch.
     /// @param actualBorrow Principal advanced, in wei (an exact UNIT multiple).
     /// @param obligation ovrfloToken owed at maturity for `actualBorrow`.
-    /// @param feeAmount Protocol fee on `actualBorrow`, in wei.
+    /// @param feeAmount Protocol fee on `actualBorrow`, in wei; bounded by
+    ///        `actualBorrow` (fee bps are capped at 100%), so the narrowing is exact.
     /// @param epoch Tick epoch the fill consumed from.
     /// @param seq The loan's index in the tick epoch's loan list.
     /// @param fillStart Inclusive fill interval start, in UNITs.
@@ -448,7 +675,7 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
     struct FillOutcome {
         uint128 actualBorrow;
         uint128 obligation;
-        uint256 feeAmount;
+        uint128 feeAmount;
         uint32 epoch;
         uint64 seq;
         uint64 fillStart;
@@ -488,7 +715,7 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
         outcome.obligation = StreamPricing.obligationForFill(
             outcome.actualBorrow, grossPrice, eligibility.remaining, aprBps, timeToMaturity
         );
-        outcome.feeAmount = StreamPricing.fee(outcome.actualBorrow, feeBps);
+        outcome.feeAmount = SafeCast.toUint128(StreamPricing.fee(outcome.actualBorrow, feeBps));
 
         outcome.fillEnd = outcome.fillStart + fillUnits;
         outcome.seq = epochState.loanCount;

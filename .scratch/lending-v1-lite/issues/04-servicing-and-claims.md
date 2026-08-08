@@ -38,15 +38,15 @@ After local verification, mark ticket checkboxes done and set Status: resolved.
 
 ## Acceptance criteria
 
-- [ ] Covers AE3. Positions A(10)/B(6)/C(4), loan 1 consumes 12, B withdraws unfilled 4, loan 2 consumes 4: contributions compute A=10/B=2 to loan 1, C=4 to loan 2 — nothing stored at fill time
-- [ ] Covers AE4. Mid-term claim pays up to share × (drawn + repaid + withdrawable), harvesting the deficit from the stream in the same transaction
-- [ ] Covers AE5. Repay of full outstanding at face closes the loan and returns the stream; `RepayExceedsOutstanding` on overpayment; repay works before and after maturity
-- [ ] Covers AE9. Zero-overlap claim reverts `NoOverlap`; cross-`(market, aprBps, epoch)` claim reverts `EpochMismatch` — adversarial test pairs two epochs with numerically identical intervals and proves the epoch check (not coincidence) blocks it (risk #3)
-- [ ] Harvest polarity regression (pattern #13, risk #7): the deficit harvest fires if and only if the loan is open; claim after close uses `drawn + repaid` only
-- [ ] Order-independence: any claim order across contributors yields identical totals; Σ payouts per closed loan = recovered minus dust; dust is lender-unfavorable, strands in the contract, bounded by contributor count (risk #5)
-- [ ] GL-70 seam at unit level: a returned stream re-pledged to a new loan keeps the two loans' draw accounting isolated
-- [ ] `close` is permissionless, requires coverage, reverts on second call (`LoanClosed`); stream returns via plain `transferFrom` (risk #6); fee touched only the borrow leg — recovered/claims are fee-free
-- [ ] Events `Repaid`/`Closed`/`Claimed` match the pinned schema (absolute values); `forge build` then `forge test` green; `forge fmt --check` clean
+- [x] Covers AE3. Positions A(10)/B(6)/C(4), loan 1 consumes 12, B withdraws unfilled 4, loan 2 consumes 4: contributions compute A=10/B=2 to loan 1, C=4 to loan 2 — nothing stored at fill time
+- [x] Covers AE4. Mid-term claim pays up to share × (drawn + repaid + withdrawable), harvesting the deficit from the stream in the same transaction
+- [x] Covers AE5. Repay of full outstanding at face closes the loan and returns the stream; `RepayExceedsOutstanding` on overpayment; repay works before and after maturity
+- [x] Covers AE9. Zero-overlap claim reverts `NoOverlap`; cross-`(market, aprBps, epoch)` claim reverts `EpochMismatch` — adversarial test pairs two epochs with numerically identical intervals and proves the epoch check (not coincidence) blocks it (risk #3)
+- [x] Harvest polarity regression (pattern #13, risk #7): the deficit harvest fires if and only if the loan is open; claim after close uses `drawn + repaid` only
+- [x] Order-independence: any claim order across contributors yields identical totals; Σ payouts per closed loan = recovered minus dust; dust is lender-unfavorable, strands in the contract, bounded by contributor count (risk #5)
+- [x] GL-70 seam at unit level: a returned stream re-pledged to a new loan keeps the two loans' draw accounting isolated
+- [x] `close` is permissionless, requires coverage, reverts on second call (`LoanClosed`); stream returns via plain `transferFrom` (risk #6); fee touched only the borrow leg — recovered/claims are fee-free
+- [x] Events `Repaid`/`Closed`/`Claimed` match the pinned schema (absolute values); `forge build` then `forge test` green; `forge fmt --check` clean
 
 ## Plan unit
 
