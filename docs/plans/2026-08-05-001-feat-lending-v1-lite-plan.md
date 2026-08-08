@@ -255,7 +255,7 @@ Nothing in this section is deferred to implementation. Where implementation disc
 
 **Behavioral pins.** `repay` with `amount > outstanding` reverts (as today). `claim` caps `amount` at claimable internally; callers pass `type(uint128).max` to claim everything. `supply` requires exact UNIT multiples; `borrow` targets floor to UNIT. `tickDepths(market)` iterates spacing-multiples within `[aprMin, aprMax]` as read at call time, summing `root − filled` across live epochs per tick. `loansOf(positionId, startSeq, maxN) → (entries[], nextSeq)` where each entry is `(loanId, contribution, claimable)`; `maxN > 0`; `nextSeq = 0` means exhausted. `advanceEpochCursor(market, aprBps, maxSteps)` requires `maxSteps > 0`, is a no-op success when nothing qualifies, and advances while the epoch's available depth is `< MIN_LIQUIDITY_AMOUNT` and the cursor is below `currentEpoch`.
 
-*Recorded 2026-08-08 (U4, coordinator-accepted, user may veto):* (1) `repay` is **permissionless** — third-party repay is a strict donation: funds come from the caller, the stream always returns to `loan.borrower`, lenders receive face. Deliberate deviation from the pre-rewrite borrower-only gate, forced by the closed error catalog and consistent with permissionless `close`. (2) Full repay closes the loan emitting only `Repaid(…, outstanding = 0)` — closure is signaled by the absolute checkpoint, no duplicate `Closed` (pre-rewrite semantics). (3) `close` with `withdrawable < outstanding` reverts `BelowMinimum` — the selector-sharing precedent again; the frontend pre-checks coverage from stream reads.
+*Recorded 2026-08-08 (U4):* (1) `repay` is **permissionless** — third-party repay is a strict donation: funds come from the caller, the stream always returns to `loan.borrower`, lenders receive face. Deliberate deviation from the pre-rewrite borrower-only gate, forced by the closed error catalog and consistent with permissionless `close` (coordinator-accepted). (2) **User decision, same day:** `close` before `withdrawable` covers `outstanding` reverts the dedicated `NotCovered` — the selector-sharing precedent was a semantic stretch here (no minimum is involved; the condition is temporal). (3) **Closure emits uniformly:** full repay emits `Repaid(…, outstanding = 0)` **and** `Closed(loanId, drawn)` — one terminal signal on both closure paths, and `drawn` gets its absolute log checkpoint regardless of path (coordinator recommendation on the user's question).
 
 **Error catalog** (custom errors; no require-strings anywhere in new code):
 
@@ -266,7 +266,7 @@ Nothing in this section is deferred to implementation. Where implementation disc
 | `ZeroTarget`, `EmptyTick`, `BelowMinAcceptable` | `borrow` |
 | `NotLender` | `withdraw`, `claim` |
 | `NothingToWithdraw`, `NothingToClaim`, `NoOverlap`, `EpochMismatch` | `withdraw`; `claim` |
-| `LoanClosed`, `LoanMissing`, `RepayExceedsOutstanding` | `repay`, `close`, `claim` |
+| `LoanClosed`, `LoanMissing`, `RepayExceedsOutstanding`, `NotCovered` | `repay`, `close`, `claim`; `NotCovered` = `close` before `withdrawable` covers `outstanding` (added 2026-08-08 by user decision) |
 | `EpochBacklog`, `ZeroSteps` | `borrow` (cap exceeded — error text directs to `advanceEpochCursor`); `advanceEpochCursor` |
 | `AtCapacity`, `NodeOverflow`, `LeafMissing` | `TickTree` (defense-in-depth; `AtCapacity` is pre-checked away by the contract) |
 
@@ -280,7 +280,7 @@ Nothing in this section is deferred to implementation. Where implementation disc
 | `Withdrawn` | `positionId` idx, `lender` idx, `refund`, `remainingLeaf` (absolute) |
 | `Borrowed` | `loanId` idx, `borrower` idx, `market` idx, `aprBps`, `epoch`, `seq`, `fillStart`, `fillEnd`, `actualBorrow`, `feeAmount`, `obligation`, `streamId` |
 | `Repaid` | `loanId` idx, `amount`, `outstanding` (absolute, post-repay) |
-| `Closed` | `loanId` idx, `drawn` (absolute, total) |
+| `Closed` | `loanId` idx, `drawn` (absolute, total) — emitted on BOTH closure paths: permissionless `close` and full repay (2026-08-08) |
 | `Claimed` | `loanId` idx, `positionId` idx, `amount`, `received` (absolute per-pair total) |
 | `EpochOpened` | `market` idx, `aprBps`, `epoch` |
 | `EpochCursorAdvanced` | `market` idx, `aprBps`, `fromEpoch`, `toEpoch` |

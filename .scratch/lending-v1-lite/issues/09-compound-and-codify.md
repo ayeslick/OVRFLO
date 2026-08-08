@@ -28,6 +28,7 @@ Both documents get wired into `AGENTS.md` required reading so every future sessi
 - [ ] `ovrflo-coding-standard.md` exists; every rule cites its source (internal writeup/finding or external standard); no rule restates `ovrflo-critical-patterns.md` (references only)
 - [ ] `ovrflo-style-guide.md` exists; naming/layout/NatSpec/test conventions each carry one concrete example from the shipped code
 - [ ] Every critical pattern in `ovrflo-critical-patterns.md` audited to exactly one state — enforced (code line + guarding test cited), superseded (successor rule + retiring decision cited), or stale-now-refreshed; none left unplaced; aspirational rules get an enforcing test or are demoted with rationale
+- [ ] NEW patterns from this buildout promoted into `ovrflo-critical-patterns.md` as numbered continuations, each with a detection grep and citation — candidates banked so far: closed-catalog error governance (errors amended only by dated user decision, never invented locally); uncheatable-test requirements (plan-derived literals, discriminating boundaries, mutation kills); the frozen-history/monotone-counter safety-argument style; shared-checkout commit discipline for agents (scoped `git add` only, never `-A` — the U4 collision); log-completeness for owner-mutable parameters (the feeAmount rule)
 - [ ] `AGENTS.md` reading list references both documents
 - [ ] `MEMORY.md`/memory updated where a lesson is user-preference rather than repo fact
 - [ ] User has reviewed both documents (this ticket's definition of done includes user sign-off)
