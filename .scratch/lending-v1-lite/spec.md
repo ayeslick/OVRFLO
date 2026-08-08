@@ -4,7 +4,7 @@
 
 **Objective:** Replace OVRFLOLending with the loan-only fixed-rate tick order book: blind fills against a cumulative counter, lazy interval-overlap attribution, the TickTree library, epochs, and full on-chain discovery. Contracts and tests only; vault untouched except the factory tick-spacing forwarder.
 
-**Tickets:** `.scratch/lending-v1-lite/issues/` (01–08). Work the frontier: any ticket whose blockers are done. Strictly linear except 06 and 07, which run in parallel after 05.
+**Tickets:** `.scratch/lending-v1-lite/issues/` (01–09). Work the frontier: any ticket whose blockers are done. Strictly linear except 06 and 07, which run in parallel after 05. Ticket 09 (compound + codify) is coordinator-executed, not a fresh-chat ticket — see its Executor note.
 
 ---
 

@@ -42,6 +42,13 @@ After local verification, mark ticket checkboxes done and set Status: resolved.
 - [ ] Grep for `createBorrowerLoanPool|claimLoanPoolShare|postSaleListing|LiquidityPosition` returns hits only in historical docs (`docs/plans/`, `docs/audit/`, `docs/solutions/`, `docs/research/`)
 - [ ] Carried-over require-strings in `src/OVRFLOLending.sol` (eleven sites flagged in the 2026-08-08 U3 review) converted to catalog custom errors, or each recorded as intentionally retained with rationale (KTD3 reconciliation)
 - [ ] Definition of Done sweep: no dead code in `src/`; every AE1–AE9 has an enforcing test carrying its `Covers AE<N>.` prefix; Product Contract preservation note still accurate
+- [ ] `AGENTS.md`/`CLAUDE.md` architecture and security-features sections rewritten to v1-lite reality (no `createBorrowerLoanPool`/`claimLoanPoolShare`/`gatherLiquidity`/sale listings; superseded patterns #4/#10 removed from the features list) — this file onboards every future agent session; staleness compounds
+- [ ] SPDX sweep: MIT across `src/` and `test/` per the workspace standard (new files included — the U3 test file went in `UNLICENSED`)
+- [ ] Full Verification Contract chain run end-to-end in order (build → test → invariant profile → snapshot → fmt → coverage) with recorded results; coverage ≥90% for core lending components, number stated in the report
+- [ ] `script/seed-local.sh` seeds a lender position AND a live loan on the fork — full-flow demo state, not just the tick-spacing step
+- [ ] `.claude/agents/*.md` refreshed: `OVRFLO` naming (never `OVFL`), current v1-lite flows in the agent descriptions
+- [ ] NatSpec completeness on the external surface of `src/OVRFLOLending.sol` and `src/TickTree.sol` (auditors and the x-ray invariant synthesis both consume it)
+- [ ] `docs/frontend-decision-map.md` gains a superseded banner ("v1-lite shipped; web rebuild is a separate plan") — web itself stays untouched
 
 ## Plan unit
 
