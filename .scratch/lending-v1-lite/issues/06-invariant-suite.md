@@ -42,19 +42,19 @@ After local verification, mark ticket checkboxes done and set Status: resolved.
 
 ## Acceptance criteria
 
-- [ ] Interval partition: per tick-epoch, loan intervals are disjoint, contiguous, and exactly tile `[0, filled)` (verified via stored `seq`: `loanAt[k].fillEnd == loanAt[k+1].fillStart`)
-- [ ] Frozen history: no coordinate below `filled` ever changes across any operation (ghost snapshots)
-- [ ] Escrow solvency: Σ per-tick `(root − filled) × UNIT` equals underlying held for unfilled positions (pattern #6 all-party balances extended to the tape)
-- [ ] Tree integrity: stored node = sum of children, across growth and rollover
-- [ ] Claim caps: Σ received per (loan, position) ≤ pro-rata entitlement (per-pair `received ≤ contribution × obligation / intervalLength`); Σ received per loan ≤ recovered; obligation ≤ remaining (carried from today's suite); handlers MUST reach over-vested open loans (`withdrawable > outstanding` — the U4-review mutation-proven theft boundary)
-- [ ] Non-UNIT-aligned `grossPrice` concrete case (U3 review, 2026-08-08): a max borrow whose `grossPrice` is not a UNIT multiple yields `obligation < remaining` strictly (safe direction) — pinning the floor/ceil boundary the 73-day/1.02 fixture never exercises
-- [ ] View-truth invariant (U5 review, 2026-08-08): for every (loan, position) pair the handler touches, `loansOf`'s reported `claimable` equals exactly what a subsequent max `claim` pays — the view mirror and the money path may never diverge
-- [ ] Epoch isolation: no claim pays across mismatched `(market, aprBps, epoch)` — adversarial handler pairs numerically identical intervals across epochs
-- [ ] Dust bound: closed-loan total claimant shortfall ≤ contributor count in wei; cursor soundness: cursor ≤ `currentEpoch`, every epoch below it has available < `MIN_LIQUIDITY_AMOUNT`
-- [ ] GL-70: close-time stream-withdrawn ghost snapshots keep re-pledged-stream properties exact
-- [ ] Handler coverage assertion proves multi-node fills, growth, rollover, self-fills, and re-pledge all executed in a run
-- [ ] x-ray regenerated over the rebuilt contracts; `AUDIT.md` x-ray pointer notes updated; every G/I/X invariant in the fresh `x-ray/invariants.md` is either encoded in the suite, covered by an existing test (cite it), or recorded as out-of-scope with reason
-- [ ] `FOUNDRY_PROFILE=invariant forge test --match-contract OVRFLOLendingInvariant -vvv` green at runs=500 / depth=40
+- [x] Interval partition: per tick-epoch, loan intervals are disjoint, contiguous, and exactly tile `[0, filled)` (verified via stored `seq`: `loanAt[k].fillEnd == loanAt[k+1].fillStart`)
+- [x] Frozen history: no coordinate below `filled` ever changes across any operation (ghost snapshots)
+- [x] Escrow solvency: Σ per-tick `(root − filled) × UNIT` equals underlying held for unfilled positions (pattern #6 all-party balances extended to the tape)
+- [x] Tree integrity: stored node = sum of children, across growth and rollover
+- [x] Claim caps: Σ received per (loan, position) ≤ pro-rata entitlement (per-pair `received ≤ contribution × obligation / intervalLength`); Σ received per loan ≤ recovered; obligation ≤ remaining (carried from today's suite); handlers MUST reach over-vested open loans (`withdrawable > outstanding` — the U4-review mutation-proven theft boundary)
+- [x] Non-UNIT-aligned `grossPrice` concrete case (U3 review, 2026-08-08): a max borrow whose `grossPrice` is not a UNIT multiple yields `obligation < remaining` strictly (safe direction) — pinning the floor/ceil boundary the 73-day/1.02 fixture never exercises
+- [x] View-truth invariant (U5 review, 2026-08-08): for every (loan, position) pair the handler touches, `loansOf`'s reported `claimable` equals exactly what a subsequent max `claim` pays — the view mirror and the money path may never diverge
+- [x] Epoch isolation: no claim pays across mismatched `(market, aprBps, epoch)` — adversarial handler pairs numerically identical intervals across epochs
+- [x] Dust bound: closed-loan total claimant shortfall ≤ contributor count in wei; cursor soundness: cursor ≤ `currentEpoch`, every epoch below it has available < `MIN_LIQUIDITY_AMOUNT`
+- [x] GL-70: close-time stream-withdrawn ghost snapshots keep re-pledged-stream properties exact
+- [x] Handler coverage assertion proves multi-node fills, growth, rollover, self-fills, and re-pledge all executed in a run
+- [x] x-ray regenerated over the rebuilt contracts; `AUDIT.md` x-ray pointer notes updated; every G/I/X invariant in the fresh `x-ray/invariants.md` is either encoded in the suite, covered by an existing test (cite it), or recorded as out-of-scope with reason
+- [x] `FOUNDRY_PROFILE=invariant forge test --match-contract OVRFLOLendingInvariant -vvv` green at runs=500 / depth=40
 
 ## Plan unit
 
