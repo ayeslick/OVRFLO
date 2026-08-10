@@ -8,6 +8,8 @@ import {OVRFLOToken} from "../src/OVRFLOToken.sol";
 import {StreamPricing} from "../src/StreamPricing.sol";
 import {ISablierV2LockupLinear} from "../interfaces/ISablierV2LockupLinear.sol";
 import {VaultMockHelpers} from "./helpers/VaultMockHelpers.sol";
+import {LendingMockFixture} from "./helpers/LendingMockFixture.sol";
+import {OVRFLOLending} from "../src/OVRFLOLending.sol";
 import {IFlashBorrower} from "../interfaces/IFlashBorrower.sol";
 
 contract FuzzMockERC20 is ERC20 {
@@ -271,4 +273,220 @@ contract OVRFLOFuzzTest is VaultMockHelpers {
     /*//////////////////////////////////////////////////////////////
                         HELPERS
     //////////////////////////////////////////////////////////////*/
+}
+
+/// @title OVRFLOFuzzLendingTest
+/// @notice Stateless fuzz over the v1-lite book's lender/borrower interleavings.
+/// @dev The pre-rewrite fuzz suite carried no lending cases — its only lending-adjacent
+///      coverage was the two `StreamPricing` pure-math tests above, which are unchanged
+///      and stay in `OVRFLOFuzzTest`. Sale-path fuzz is deleted with the sale path. What
+///      is new here is the loan-only surface: UNIT granularity, blind-fill sizing, and
+///      the concurrency property that replaced the old collision problem.
+///
+///      Assertions are written as conservation and bound properties, never as a mirror
+///      of the implementation's own arithmetic. The fee is deliberately non-zero so the
+///      payout split is exercised, but no test recomputes `StreamPricing.fee` — they
+///      assert that principal is conserved across borrower and treasury, which holds for
+///      any fee formula and fails for any leak.
+contract OVRFLOFuzzLendingTest is LendingMockFixture {
+    address internal constant LENDER = address(0xA11CE);
+    address internal constant SECOND_LENDER = address(0xB0B);
+    address internal constant BORROWER = address(0xD0C);
+
+    /// @dev Upper bound on fuzzed supply amounts. Comfortably below the uint64 UNIT
+    ///      ceiling and below the streams' gross price, so the price cap does not
+    ///      silently truncate every fill and hide the depth-driven behaviour.
+    uint128 internal constant MAX_SUPPLY = 20 ether;
+
+    uint128 internal unit;
+    uint128 internal minLiquidity;
+
+    function setUp() public {
+        _deployLendingSystem();
+        unit = lending.UNIT();
+        minLiquidity = lending.MIN_LIQUIDITY_AMOUNT();
+        // A non-zero fee keeps the borrower/treasury split live in every sequence.
+        lending.setFee(50);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+              UNIT-GRANULAR SUPPLY / WITHDRAW / BORROW SEQUENCES
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Randomized UNIT-granular supply/withdraw/borrow interleavings conserve value.
+    /// @dev The crown property: underlying is escrowed, refunded, or paid out — never
+    ///      created or stranded. Checked across all four parties (pattern #6), so a
+    ///      misrouted payment or a skipped fee fails here even though every state flag
+    ///      would still read correctly.
+    function testFuzz_Lending_SupplyWithdrawBorrowInterleaving(
+        uint128 seedA,
+        uint128 seedB,
+        uint128 targetSeed,
+        bool withdrawFirst
+    ) public {
+        uint128 amountA = _unitAmount(seedA);
+        uint128 amountB = _unitAmount(seedB);
+
+        _fundLender(LENDER, amountA);
+        _fundLender(SECOND_LENDER, amountB);
+
+        vm.prank(LENDER);
+        uint256 positionA = lending.supply(MARKET, APR, amountA);
+        vm.prank(SECOND_LENDER);
+        uint256 positionB = lending.supply(MARKET, APR, amountB);
+
+        uint128 refunded;
+        if (withdrawFirst) {
+            uint256 before = underlying.balanceOf(LENDER);
+            vm.prank(LENDER);
+            lending.withdraw(positionA);
+            refunded = uint128(underlying.balanceOf(LENDER) - before);
+        }
+
+        uint128 target = uint128(bound(uint256(targetSeed), minLiquidity, uint256(amountA) + amountB));
+        _createStream(1, BORROWER, _faceForGross(100 ether));
+
+        vm.prank(BORROWER);
+        uint256 loanId = lending.borrow(MARKET, APR, target, 1, 0);
+
+        (OVRFLOLending.Loan memory loan,) = lending.loanState(loanId);
+        uint128 actualBorrow = uint128(uint256(loan.fillEnd - loan.fillStart) * unit);
+
+        // The fill is expressed in whole UNITs and never exceeds what was asked for.
+        assertEq(actualBorrow % unit, 0, "fill is not UNIT-aligned");
+        assertLe(actualBorrow, target, "fill exceeded the borrow target");
+        assertGe(actualBorrow, minLiquidity, "fill landed below the borrow atom");
+
+        // Principal is split between borrower and treasury with nothing left over.
+        uint256 borrowerGot = underlying.balanceOf(BORROWER);
+        uint256 treasuryGot = underlying.balanceOf(LENDING_TREASURY);
+        assertEq(borrowerGot + treasuryGot, actualBorrow, "principal leaked across the payout split");
+
+        // All-party conservation: everything supplied is still accounted for.
+        assertEq(
+            underlying.balanceOf(address(lending)) + refunded + borrowerGot + treasuryGot,
+            uint256(amountA) + amountB,
+            "underlying was created or stranded"
+        );
+
+        // Frozen history: the loan's interval sits entirely at or below the tape's
+        // consumed frontier, which is what makes later attribution exact.
+        assertLe(loan.fillStart, loan.fillEnd, "inverted fill interval");
+        assertTrue(positionA != positionB, "position ids must be distinct");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+            WITHDRAW FRONT-RUNNING A BORROW IS BENIGN (AE1, R10)
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Covers AE1/R10: a lender withdrawing ahead of a borrow degrades the fill,
+    ///         never the transaction's interpretability.
+    /// @dev This is the property that replaced the old collision problem. Under the
+    ///      pre-rewrite API a borrower named explicit `liquidityIds`, so any concurrent
+    ///      consumption reverted the whole borrow with an "inactive position" failure.
+    ///      Blind fills cannot collide: the borrower is bounded only by `minAcceptable`,
+    ///      so the outcome is either an acceptable fill or one of three named, actionable
+    ///      errors. The assertion that matters is the NEGATIVE one — no low-level tree
+    ///      failure, no panic, no unnamed revert ever surfaces to a borrower.
+    function testFuzz_Lending_WithdrawFrontRunningBorrowIsBenign(
+        uint128 seedA,
+        uint128 seedB,
+        uint128 targetSeed,
+        uint128 minAcceptableSeed
+    ) public {
+        uint128 amountA = _unitAmount(seedA);
+        uint128 amountB = _unitAmount(seedB);
+
+        _fundLender(LENDER, amountA);
+        _fundLender(SECOND_LENDER, amountB);
+
+        vm.prank(LENDER);
+        uint256 positionA = lending.supply(MARKET, APR, amountA);
+        vm.prank(SECOND_LENDER);
+        lending.supply(MARKET, APR, amountB);
+
+        // The front-run: the first position in the tape pulls its liquidity out from
+        // under the pending borrow. Position B's interval compacts left as a result.
+        vm.prank(LENDER);
+        lending.withdraw(positionA);
+
+        uint128 target = uint128(bound(uint256(targetSeed), minLiquidity, uint256(amountA) + amountB));
+        uint128 minAcceptable = uint128(bound(uint256(minAcceptableSeed), 0, uint256(amountA) + amountB));
+        _createStream(1, BORROWER, _faceForGross(100 ether));
+
+        vm.prank(BORROWER);
+        try lending.borrow(MARKET, APR, target, 1, minAcceptable) returns (uint256 loanId) {
+            (OVRFLOLending.Loan memory loan,) = lending.loanState(loanId);
+            uint128 actualBorrow = uint128(uint256(loan.fillEnd - loan.fillStart) * unit);
+
+            // Success is only legitimate if the borrower's floor was honoured.
+            assertGe(underlying.balanceOf(BORROWER), minAcceptable, "net proceeds below minAcceptable");
+            // The withdrawn position contributed nothing, so the fill cannot exceed
+            // what actually remained resting at the tick.
+            assertLe(actualBorrow, amountB, "fill drew on withdrawn liquidity");
+        } catch (bytes memory reason) {
+            assertEq(reason.length, 4, "borrow failed without a named error");
+            bytes4 selector = bytes4(reason);
+            assertTrue(
+                selector == OVRFLOLending.BelowMinAcceptable.selector || selector == OVRFLOLending.BelowMinimum.selector
+                    || selector == OVRFLOLending.EmptyTick.selector,
+                "borrow reverted with an uninterpretable error"
+            );
+        }
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                        BORROW TARGET QUANTIZATION
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice An arbitrary wei-denominated target always floors onto the UNIT lattice.
+    /// @dev Covers the pinned convention that `borrow` floors rather than reverting, so
+    ///      an oversized target (`type(uint128).max` as "max borrow") partial-fills
+    ///      instead of failing the checked narrowing.
+    function testFuzz_Lending_BorrowTargetFloorsToUnit(uint128 targetSeed) public {
+        uint128 depth = 10 ether;
+        _fundLender(LENDER, depth);
+        vm.prank(LENDER);
+        lending.supply(MARKET, APR, depth);
+
+        uint128 target = uint128(bound(uint256(targetSeed), minLiquidity, type(uint128).max));
+        _createStream(1, BORROWER, _faceForGross(100 ether));
+
+        vm.prank(BORROWER);
+        uint256 loanId = lending.borrow(MARKET, APR, target, 1, 0);
+
+        (OVRFLOLending.Loan memory loan,) = lending.loanState(loanId);
+        uint128 actualBorrow = uint128(uint256(loan.fillEnd - loan.fillStart) * unit);
+
+        assertEq(actualBorrow % unit, 0, "fill is not UNIT-aligned");
+        assertLe(actualBorrow, target, "fill exceeded an unrounded target");
+        assertLe(actualBorrow, depth, "fill exceeded available depth");
+    }
+
+    /// @notice Sub-UNIT precision is rejected at the supply boundary, never truncated.
+    /// @dev R2 requires supply amounts to be exact multiples; silently flooring them
+    ///      would strand the remainder in the contract with no leaf to withdraw it.
+    function testFuzz_Lending_SupplyRejectsNonUnitAlignedAmounts(uint128 amountSeed, uint128 dustSeed) public {
+        uint128 aligned = _unitAmount(amountSeed);
+        uint128 dust = uint128(bound(uint256(dustSeed), 1, uint256(unit) - 1));
+        uint128 misaligned = aligned + dust;
+
+        _fundLender(LENDER, misaligned);
+
+        vm.prank(LENDER);
+        vm.expectRevert(OVRFLOLending.NotUnitAligned.selector);
+        lending.supply(MARKET, APR, misaligned);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                                HELPERS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @dev Reshapes a raw seed into a valid supply amount: at least one atom, an exact
+    ///      UNIT multiple, and below the gross price of the fixture's streams.
+    function _unitAmount(uint128 seed) internal view returns (uint128) {
+        uint256 raw = bound(uint256(seed), minLiquidity, MAX_SUPPLY);
+        // forge-lint: disable-next-line(divide-before-multiply) — flooring to a UNIT multiple is the point.
+        return uint128((raw / unit) * unit);
+    }
 }

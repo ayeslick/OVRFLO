@@ -4,7 +4,7 @@
 
 **Blocked by:** 05 (parallel with 06)
 
-**Status:** claimed
+**Status:** resolved
 **Labels:** ready-for-agent
 
 ## Session prompt (paste into a new chat)
@@ -37,13 +37,13 @@ After local verification, mark ticket checkboxes done and set Status: resolved.
 
 ## Acceptance criteria
 
-- [ ] Fuzz suite ported: randomized UNIT-granular supply/withdraw/borrow interleavings; withdraw-front-running-borrow is benign (borrower bounded by `minAcceptable`); sale-path fuzz deleted; vault-side fuzz untouched
-- [ ] Attack scenarios ported: tape-spam economics bounded by `MIN_LIQUIDITY_AMOUNT`; reentrancy attempts via `ReentrantLendingUnderlying` on borrow-pay and claim-harvest paths; self-fill griefing yields nothing beyond fee loss
-- [ ] Fork custody assertions ported to the new API, not rewritten: stranger cannot withdraw an escrowed stream; NFT owner transitions user → lending (borrow) → borrower (close/full repay); suite self-skips cleanly without `MAINNET_RPC_URL`
-- [ ] `OVRFLOLendingGas` (name matches the snapshot gate's `--match-contract OVRFLOLending` filter): 1-position vs 50-position borrow gas delta ≤ constant loan-record cost — the measurable blind-fill guarantee — including a pair measured across a tree-height growth (U3 review, 2026-08-08: same-height pairs don't pin flatness through growth)
-- [ ] `OVRFLOLendingGas` also pins the Multicall supply+withdraw cycle cost (risk #4's gas-bounded griefing evidence)
-- [ ] Fizz harness regenerated for the new API via the fizz skill: `test/fizz/` + `fizz_data/` + `PROPERTIES.md` (Spec IDs re-established, including a GL-70 successor for close-time stream-withdrawn); Medusa campaign completes with violations triaged by Guarantee tag (SHOULD-HOLD violation = confirmed bug; EXPLORATORY = human-review lead)
-- [ ] `forge snapshot --match-contract OVRFLOLending` produces the pair in `.gas-snapshot`; `forge build` then `forge test` green; `forge fmt --check` clean
+- [x] Fuzz suite ported: randomized UNIT-granular supply/withdraw/borrow interleavings; withdraw-front-running-borrow is benign (borrower bounded by `minAcceptable`); sale-path fuzz deleted; vault-side fuzz untouched
+- [x] Attack scenarios ported: tape-spam economics bounded by `MIN_LIQUIDITY_AMOUNT`; reentrancy attempts via `ReentrantLendingUnderlying` on borrow-pay and claim-harvest paths; self-fill griefing yields nothing beyond fee loss
+- [x] Fork custody assertions ported to the new API, not rewritten: stranger cannot withdraw an escrowed stream; NFT owner transitions user → lending (borrow) → borrower (close/full repay); suite self-skips cleanly without `MAINNET_RPC_URL`
+- [x] `OVRFLOLendingGas` (name matches the snapshot gate's `--match-contract OVRFLOLending` filter): 1-position vs 50-position borrow gas delta ≤ constant loan-record cost — the measurable blind-fill guarantee — including a pair measured across a tree-height growth (U3 review, 2026-08-08: same-height pairs don't pin flatness through growth)
+- [x] `OVRFLOLendingGas` also pins the Multicall supply+withdraw cycle cost (risk #4's gas-bounded griefing evidence)
+- [x] Fizz harness regenerated for the new API via the fizz skill: `test/fizz/` + `fizz_data/` + `PROPERTIES.md` (Spec IDs re-established, including a GL-70 successor for close-time stream-withdrawn); Medusa campaign completes with violations triaged by Guarantee tag (SHOULD-HOLD violation = confirmed bug; EXPLORATORY = human-review lead)
+- [x] `forge snapshot --match-contract OVRFLOLending` produces the pair in `.gas-snapshot`; `forge build` then `forge test` green; `forge fmt --check` clean
 
 ## Plan unit
 
