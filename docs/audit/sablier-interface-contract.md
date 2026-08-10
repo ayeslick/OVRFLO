@@ -1,5 +1,7 @@
 # Sablier V2 Interface Contract for OVRFLO
 
+> **Stale IDs.** Invariant/guard IDs in this document predate the 2026-08-10 `x-ray/` regeneration at `f0661ab`; resolve them by statement via the ID map in `AUDIT.md`, not by number.
+
 > Dependency assumptions OVRFLO relies on from Sablier V2 Lockup Linear, scoped to the calls OVRFLO actually makes. This is a contract to falsify, not a Sablier tutorial. Pinned to the deployed address `0xAFb979d9afAd1aD27C5eFf4E27226E3AB9e5dCC9` (tag `v1.1`). The v1.1 version distinction is load-bearing — see the ACL table below.
 
 OVRFLO uses Sablier only for linear vesting streams created on PT deposit and then traded/pledged through `OVRFLOLending`. It never cancels a stream programmatically and relies on non-cancelability for the self-repaying-loan design.

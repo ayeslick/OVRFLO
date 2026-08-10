@@ -172,6 +172,49 @@ contract OVRFLOLendingTest is Test {
         lending.setTickSpacing(MARKET, 0);
     }
 
+    /// Encodes I-11 (`aprMinBps <= aprMaxBps <= APR_MAX_CEILING`). The bound is admin-only, so no fuzz
+    /// sequence reaches it and the invariant suite dispositions it as covered here.
+    /// @dev The admin setters still carry require-strings; KTD3's custom-error reconciliation for them is
+    ///      ticket 08's job, so these expect the strings exactly as shipped.
+    function test_SetAprBounds_RejectsInvertedRangeAndAboveCeiling() public {
+        // Read the ceiling first: an external call inside the argument list would be the "next call" the
+        // pending `expectRevert` judges, and it does not revert.
+        uint16 ceiling = lending.APR_MAX_CEILING();
+
+        vm.expectRevert("OVRFLOLending: bad apr bounds");
+        lending.setAprBounds(1500, 1000);
+
+        vm.expectRevert("OVRFLOLending: apr too high");
+        lending.setAprBounds(1000, ceiling + 1);
+
+        // The boundary itself is accepted, so the guard is `>` and not `>=`.
+        lending.setAprBounds(1000, ceiling);
+        assertEq(lending.aprMaxBps(), ceiling);
+    }
+
+    /// Encodes I-12 (`feeBps <= MAX_FEE_BPS`), which is what makes `actualBorrow - feeAmount` safe.
+    /// @dev Require-string until ticket 08's KTD3 reconciliation; see the note above.
+    function test_SetFee_RejectsAboveMaxFeeBps() public {
+        uint16 maxFee = lending.MAX_FEE_BPS();
+
+        vm.expectRevert("OVRFLOLending: fee too high");
+        lending.setFee(maxFee + 1);
+
+        lending.setFee(maxFee);
+        assertEq(lending.feeBps(), maxFee);
+    }
+
+    /// Encodes the enforceable half of X-4: the fee sink is mutable, but it can never be set to the burn
+    /// address. The "stays a live sink" half is an off-chain multisig assumption.
+    /// @dev Require-string until ticket 08's KTD3 reconciliation; see the note above.
+    function test_SetTreasury_RejectsZeroAddress() public {
+        vm.expectRevert("OVRFLOLending: treasury zero");
+        lending.setTreasury(address(0));
+
+        lending.setTreasury(STRANGER);
+        assertEq(lending.treasury(), STRANGER);
+    }
+
     function test_Supply_RevertsBeforeSpacingIsSet() public {
         vm.prank(LENDER);
         vm.expectRevert(OVRFLOLending.SpacingUnset.selector);
@@ -409,6 +452,27 @@ contract OVRFLOLendingTest is Test {
         assertEq(root, 20_000_000);
         assertEq(filled, 5_000_000);
         assertEq(lending.exposed_loanCount(MARKET, APR, 0), 1);
+    }
+
+    /// A second hand-derived obligation, at a different tick. Every other pinned obligation in this suite
+    /// sits at APR 1000, where the 73-day fixture makes the accrual factor exactly 1.02e18 — a pricing path
+    /// that ignored the tick's rate entirely would reproduce all of them. At APR 1025 the factor is
+    /// 1 + 0.1025 * (73/365) = 1.0205e18, so a 5-ether fill owes 5.1025 ether: the same borrow at the
+    /// neighbouring tick, and a value the 1000-rate arithmetic cannot produce.
+    function test_Borrow_ObligationTracksTheTickRate() public {
+        lending.setTickSpacing(MARKET, SPACING);
+        lending.setAprBounds(APR, 1025);
+        _supply(LENDER, 20 ether, 1025);
+        _createStream(STREAM_ONE, BORROWER, 10.2 ether);
+
+        vm.prank(BORROWER);
+        uint256 loanId = lending.borrow(MARKET, 1025, 5 ether, STREAM_ONE, 5 ether);
+
+        LoanView memory loan = _loan(loanId);
+        assertEq(loan.aprBps, 1025);
+        assertEq(loan.fillEnd - loan.fillStart, 5_000_000);
+        assertEq(loan.obligation, 5.1025 ether, "obligation must price at the loan's own tick");
+        assertTrue(loan.obligation != 5.1 ether, "obligation collapsed onto the APR 1000 value");
     }
 
     /// Covers AE1. Two same-block borrowers targeting 12 each against 16 available:

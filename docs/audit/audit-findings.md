@@ -1,5 +1,7 @@
 # OVRFLO `src/*.sol` Audit Findings
 
+> **Stale IDs.** Invariant/guard IDs in this document predate the 2026-08-10 `x-ray/` regeneration at `f0661ab`; resolve them by statement via the ID map in `AUDIT.md`, not by number.
+
 ## Scope
 
 - Source reviewed: `src/OVRFLO.sol`, `src/OVRFLOFactory.sol`, `src/OVRFLOBook.sol`, `src/OVRFLOToken.sol`, `src/StreamPricing.sol`

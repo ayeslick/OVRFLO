@@ -21,7 +21,50 @@ Background (not in the reading order): `README.md` (protocol spec), `CONCEPTS.md
 
 The package reuses the stable IDs in `x-ray/` — guard codes `G-1..G-68`, invariants `I-1..I-24`, cross-contract invariants `X-1..X-5`, economic invariants `E-1..E-5` (all in `x-ray/invariants.md`), and entry-point names (in `x-ray/entry-points.md`). Findings and questions should cite these IDs.
 
-> **ID renumbering, 2026-08-10.** `x-ray/` was regenerated at `f0661ab` over the OVRFLOLending v1-lite rewrite. The old catalog described sale listings and loan pools, which no longer exist, so **every G/I/X/E ID was renumbered — old and new IDs are not comparable.** Qualify any citation from an earlier document with its commit (e.g. `X-2@01cad7b`). Two carried-forward mappings worth knowing: the pre-rewrite `X-2` (lending cached immutables, then On-chain=No) is now **`X-3`, On-chain=Yes** — `OVRFLOFactory.ovrfloInfo` is write-once, which upgrades the assumption — with the residual mutable-treasury concern split out as **`X-4`** (On-chain=No); the pre-rewrite `I-7` (obligation ≤ remaining) is now **`I-20`**.
+> **ID renumbering, 2026-08-10.** `x-ray/` was regenerated at `f0661ab` over the OVRFLOLending v1-lite rewrite. The old catalog described sale listings and loan pools, which no longer exist, so **every G/I/X/E ID was renumbered — old and new IDs are not comparable.** Qualify any citation from an earlier document with its commit (e.g. `X-2@01cad7b`). The full map is below; where each new invariant is *enforced* is the "Suite disposition" table at the top of `x-ray/invariants.md`.
+
+### ID map (pre-rewrite → v1-lite)
+
+Two pre-rewrite generations matter, because the package docs were written across both: **A** = `x-ray/invariants.md@17fd4f9` (the catalog live at `f0661ab`, 26 guards / I-1..I-9 / X-1..X-4 / E-1..E-2) and **B** = `@024753b` (35 guards / I-1..I-24 / X-1..X-5 / E-1..E-4, the generation most of `docs/audit/` cites). **Resolve an old ID by its statement, never by its number** — the two generations disagree with each other as well as with the current one. `—` means the property has no counterpart in that generation (it is new to the tape design, or it was folded into a neighbouring block).
+
+| New | Statement | A `@17fd4f9` | B `@024753b` |
+|---|---|---|---|
+| I-1 | Loan intervals tile `[0, filled)` | — | — |
+| I-2 | Frozen history below `filled` | — | — |
+| I-3 | Lending escrow solvency | — | — |
+| I-4 | Pot conservation per loan | I-5 | I-19 |
+| I-5 | ovrfloToken custody == Σ proceeds | I-5 (same block) | I-19 (same block) |
+| I-6 | Per-pair pro-rata claim cap | E-2 | I-20 |
+| I-7 | `drawn + repaid ≤ obligation` | I-8 | I-16 |
+| I-8 | Borrow atom (`fill ≥ MIN_LIQUIDITY_AMOUNT`) | — | — |
+| I-9 | Supply atom — contradicted by design | — | — |
+| I-10 | UNIT alignment of tape quantities | — | — |
+| I-11 | `aprMin ≤ aprMax ≤ APR_MAX_CEILING` | I-9 (shared block) | I-11 |
+| I-12 | `feeBps ≤ MAX_FEE_BPS` | I-9 (shared block) | I-12 |
+| I-13 | TickTree node sums fit uint64 | — | — |
+| I-14 | `loan.closed` one-way latch | I-7 | I-17 |
+| I-15 | `tickSpacing` one-shot latch | — | — |
+| I-16 | `oldestLiveEpoch ≤ currentEpoch`, monotone | — | — |
+| I-17 | Epochs below the cursor are exhausted | — | — |
+| I-18 | Tree height monotone | — | — |
+| I-19 | `loansOf` claimable == claim payout | — | — |
+| I-20 | `obligation ≤ remaining` | I-1 | I-21 / E-2 |
+| I-21 | Closed-loan dust bound | E-2 (dust clause) | E-3 (dust clause) |
+| I-22 | Maturity gates scoped per function | — | I-7 / I-23 |
+| I-23 | `timeToMaturity` cannot underflow | — | — |
+| I-24 | Vault dual-backing solvency | I-2 (with I-3, I-4) | E-1 (with I-1) |
+| X-1 | Series config immutable, as lending assumes | X-4 | X-1 |
+| X-2 | `tree.root() ≥ filled` | — | — |
+| X-3 | Lending's cached vault wiring matches the factory | — | X-2 |
+| X-4 | Lending treasury is mutable (On-chain=No) | — | X-2 (split out) |
+| X-5 | Vault is sole minter/burner of its token | — | X-4 |
+| E-1 | Lazy attribution is exact forever | I-6 (eager form) | I-18 (eager form) |
+| E-2 | Pro-rata fairness under any claim ordering | E-2 | E-3 |
+| E-3 | Every lender can always exit | E-1 (vault analogue) | — |
+| E-4 | Collateral always covers debt | I-1 | E-2 |
+| E-5 | Griefing is gas-bounded, not capital-bounded | — | — |
+
+Retired with the sale/pool design (no successor block): A's `X-1`/`X-2`/`X-3` (unguarded `setSeriesApproved` writes — now guard-level facts, `G-21`/`G-22`); B's `I-13`/`I-14`/`I-15`/`I-24` and `E-4` (ID monotonicity, liquidity/listing state machines, sale price conservation — the mechanisms they described are deleted).
 
 | Package doc | Backing evidence |
 |-------------|---------------------------|
@@ -36,7 +79,7 @@ The package reuses the stable IDs in `x-ray/` — guard codes `G-1..G-68`, invar
 
 `x-ray/` retains its unique analysis as linked backing evidence: the entry-point map (`x-ray/entry-points.md`), invariant derivations (`x-ray/invariants.md`), git forensics and test analysis (`x-ray/x-ray.md`), and the audit severity summary / agent-coverage list (`x-ray/multi-agent-audit-report.md`).
 
-> **Note on `multi-agent-audit-report.md` and `flash-loan-invariant-check.md`:** Both predate the 2026-08-10 `x-ray/` regeneration and carry old-numbering invariant IDs; `multi-agent-audit-report.md` additionally analyses the deleted sale/pool lending design. Trust `x-ray/invariants.md`, `x-ray/entry-points.md`, and `x-ray/x-ray.md` when they conflict. Their vault-side and Sablier-ACL content remains valid — the vault was untouched by the rewrite.
+> **Stale-ID notice — seven documents.** Every ID in the bodies of `x-ray/multi-agent-audit-report.md`, `x-ray/flash-loan-invariant-check.md`, `docs/audit/internal-model.md`, `docs/audit/trust-assumption-ledger.md`, `docs/audit/audit-findings.md`, `docs/audit/sablier-interface-contract.md`, and `docs/audit/pendle-interface-contract.md` predates the 2026-08-10 regeneration, and the seven were written against **different** pre-rewrite generations (see the ID map above — resolve by statement, not by number). Each of those files now carries a one-line banner saying so. `multi-agent-audit-report.md` additionally analyses the deleted sale/pool lending design. Trust `x-ray/invariants.md`, `x-ray/entry-points.md`, and `x-ray/x-ray.md` when they conflict. Their vault-side and Sablier-ACL content remains valid — the vault was untouched by the rewrite.
 
 ## Scope-exclusion log
 

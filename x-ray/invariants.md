@@ -4,7 +4,62 @@
 
 Regenerated 2026-08-10 over the v1-lite lending rewrite at `f0661ab` (`codex/lending-v1-lite`). Guard and
 invariant IDs are **renumbered from the pre-rewrite catalog** — the sale-path and loan-pool machinery they
-described no longer exists. Cite IDs as `x-ray/invariants.md@f0661ab` when they matter.
+described no longer exists. Cite IDs as `x-ray/invariants.md@f0661ab` when they matter. The old→new ID map
+lives in `AUDIT.md` ("ID map").
+
+---
+
+## 0. Suite disposition
+
+Where each inferred invariant is *enforced*. This table is authoritative; `test/OVRFLOLendingInvariant.t.sol`
+carries a mirror of it in its header comment. Guards `G-1..G-68` are per-call preconditions, not falsifiable
+global properties — they are covered by the unit suites' error-path tests, and appear here only through the
+`I-N` whose lifted form they become.
+
+`ENCODED` = asserted by the stateful invariant suite. `COVERED` = pinned by a cited unit test (typically an
+admin-only bound no fuzz sequence can reach). `PARTIAL` = one half enforced, the other named. `OUT-OF-SCOPE` =
+belongs to another contract or another suite, with the owner cited.
+
+| ID | Disposition | Where |
+|---|---|---|
+| I-1 | ENCODED | `invariant_IntervalPartition` — tiling of `[0, filled)` walked through each loan's stored `seq`, plus `filled` against the handler's fill ghost |
+| I-2 | ENCODED | `invariant_FrozenHistory` — per-position frozen sub-interval ghosts snapshotted before every action |
+| I-3 | ENCODED | `invariant_EscrowSolvency` |
+| I-4 | ENCODED | `invariant_PotConservation` — the payout term is the handler's balance-delta ghost, not the contract's `received` |
+| I-5 | ENCODED | `invariant_TokenCustody` |
+| I-6 | ENCODED | `invariant_ClaimCaps` (per-pair cap) + `invariant_ClaimEntitlementCeiling` (ghost-side ceiling recomputed per claim) + handlers reach over-vested open loans |
+| I-7 | ENCODED | `invariant_ClaimCaps` (`drawn + repaid <= obligation`) |
+| I-8 | ENCODED | `invariant_LoanIntervalAtom` |
+| I-9 | OUT-OF-SCOPE | Deliberately-contradicted lift; its correct consequence is I-2, which is encoded |
+| I-10 | ENCODED | `invariant_UnitAlignment` |
+| I-11 | COVERED | `test_SetAprBounds_RejectsInvertedRangeAndAboveCeiling` (`test/OVRFLOLending.t.sol`) |
+| I-12 | COVERED | `test_SetFee_RejectsAboveMaxFeeBps` (`test/OVRFLOLending.t.sol`) |
+| I-13 | ENCODED | `invariant_TreeIntegrity`'s per-level Σchildren == parent walk, plus `test/TickTree.t.sol` NodeOverflow tests and its reference-model differential fuzz |
+| I-14 | ENCODED | `invariant_ClosedIsTerminal` |
+| I-15 | COVERED | `test_SetTickSpacing_SetsOnceAndEmits` (`test/OVRFLOLending.t.sol`); spacing is set once in the suite's `setUp` and no handler action mutates it |
+| I-16 | ENCODED | `invariant_CursorSoundness` — ordering **and** both monotonicity halves, against pre-action ghosts |
+| I-17 | ENCODED | `invariant_CursorSoundness` (every epoch below the cursor is under the atom) |
+| I-18 | ENCODED | `invariant_TreeIntegrity` — per-epoch height monotone against a pre-action ghost, plus `covGrowth` (a real 4→5 growth event every run) |
+| I-19 | ENCODED | `invariant_ViewTruth` — reported claimable equals the payout, and a reported-nonzero claimable never reverts |
+| I-20 | ENCODED | `invariant_ClaimCaps`, `invariant_ObligationPricing` (obligation recomputed independently per tick), `test_GrossPriceNotUnitAligned_ObligationStrictlyBelowRemaining`, `test_Borrow_ObligationTracksTheTickRate` |
+| I-21 | ENCODED | `afterInvariant`'s dust bound — a closed, fully drained loan's residual `proceeds` is at most one wei per contributing position |
+| I-22 | OUT-OF-SCOPE | Per-function routing fact, not a state identity. Covered by `test_Supply_RevertsAtAndAfterMaturity`, `test_Withdraw_RemainsAvailableAfterMaturity`, `test_Repay_WorksAfterMaturity`, `test_Close_WorksAfterMaturity`. The wind-down half is additionally exercised by the suite's `_maturityExcursion` (`covMaturityReached`) |
+| I-23 | OUT-OF-SCOPE | Ordering inside one call; unreachable as a cross-call identity. Covered by `test_Borrow_SucceedsOneSecondBeforeMaturityRevertsAtMaturity` |
+| I-24 | OUT-OF-SCOPE | Vault solvency. Covered by `test/OVRFLOInvariant.t.sol` and `test/OVRFLOWrapUnwrap.invariant.t.sol`; the lending suite deploys no vault |
+| X-1 | OUT-OF-SCOPE | Series-config immutability lives in `OVRFLO.setSeriesApproved`. Covered by `test_SetSeriesApproved_RevertsForDuplicateMarketConfiguration` and `test_SetSeriesApproved_RevertsForDuplicatePtRegistration` (`test/OVRFLO.t.sol`) |
+| X-2 | ENCODED | `invariant_EscrowSolvency` + `invariant_TreeIntegrity` read `root() − filled` on every epoch every call; an underflow reverts the invariant, which is the failure |
+| X-3 | OUT-OF-SCOPE | Constructor wiring against a write-once factory mapping; no runtime transition to fuzz. Covered by `test_Constructor_WiresRegistryAndInitialAdminState` |
+| X-4 | COVERED | `test_SetTreasury_RejectsZeroAddress` (`test/OVRFLOLending.t.sol`) pins the enforceable half; "stays a live sink" is an off-chain multisig assumption |
+| X-5 | OUT-OF-SCOPE | Vault/token ownership. Covered by `test/OVRFLOToken.t.sol` |
+| E-1 | ENCODED | `afterInvariant`'s lazy-attribution coverage — Σ overlap over the epoch's positions equals the loan's interval length, forever |
+| E-2 | ENCODED | `invariant_ClaimCaps` + `invariant_ClaimEntitlementCeiling` + `invariant_PotConservation` |
+| E-3 | ENCODED | `invariant_EscrowSolvency` + `invariant_TokenCustody` (both exit paths funded) |
+| E-4 | ENCODED | `invariant_ClaimCaps` (obligation ≤ remaining at origination) |
+| E-5 | PARTIAL | Structural half encoded (`invariant_LoanIntervalAtom`, `invariant_CursorSoundness`, `covGrowth`/`covRollover` prove growth and rollover are survivable non-events). The **economic** half — griefing costs gas proportional to the damage — is a cost claim, not a state identity: it is owned by U7's Multicall supply+withdraw gas measurement and the borrow gas-flatness pair |
+
+Beyond the catalog, the suite also encodes: GL-70 re-pledge draw accounting; epoch isolation with the revert
+selector decoded (`EpochMismatch`, not coincidental non-overlap); money recipients (borrower net, treasury
+fee, withdraw refund); open-loan stream custody; and a per-run structural + liveness coverage gate.
 
 ---
 

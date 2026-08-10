@@ -4,7 +4,7 @@
 
 **Blocked by:** 05 (parallel with 07)
 
-**Status:** claimed
+**Status:** resolved
 **Labels:** ready-for-agent
 
 ## Session prompt (paste into a new chat)
@@ -55,6 +55,38 @@ After local verification, mark ticket checkboxes done and set Status: resolved.
 - [x] Handler coverage assertion proves multi-node fills, growth, rollover, self-fills, and re-pledge all executed in a run
 - [x] x-ray regenerated over the rebuilt contracts; `AUDIT.md` x-ray pointer notes updated; every G/I/X invariant in the fresh `x-ray/invariants.md` is either encoded in the suite, covered by an existing test (cite it), or recorded as out-of-scope with reason
 - [x] `FOUNDRY_PROFILE=invariant forge test --match-contract OVRFLOLendingInvariant -vvv` green at runs=500 / depth=40
+
+## Review batch (2026-08-10, applied)
+
+Two reviews (plan-conformance; adversarial, with a 13-mutant kill-test campaign at the real gate profile)
+examined `3ed77cf`. The campaign killed 6 and let 7 through: the suite was strong on conserved quantities and
+blind on **who receives money** and on **liveness** — entire 500×40 campaigns completed with zero claims, and
+the coverage gate was satisfied by the deterministic baseline alone. The consolidated batch landed here:
+
+- [x] Recipients pinned (M3, M10): borrower net == `actualBorrow − fee`, treasury deltas == Σ fees, withdraw
+      refund lands in the lender's own balance — `invariant_MoneyRecipients`.
+- [x] Obligation recomputed handler-side per tick from `(actualBorrow, remaining, aprBps, ttm)` (M4), plus a
+      second hand-derived literal at APR 1025 (`test_Borrow_ObligationTracksTheTickRate`).
+- [x] Independent entitlement ceiling recomputed before every claim (M2) — `invariant_ClaimEntitlementCeiling`.
+- [x] Liveness gates: claim, repay, close and post-fill withdraw are now mandatory per run (M9, M12), driven by
+      the `_drainAllClaims` / `_withdrawFromFilledPosition` / `_partialRepay` scenarios.
+- [x] Dust bound replaced (it followed from `Σ contribution == length` asserted the line above and read no
+      contract state): a drained closed loan's residual `proceeds` ≤ contributing positions, in wei.
+- [x] `*FromFuzz` counters gate the post-baseline path (M8); a cadence hook guarantees a structural pass every
+      five calls so the gate is reachable at both profiles.
+- [x] Maturity reachability: `_maturityExcursion` warps past expiry every run, exercises post-maturity
+      repay/close/claim, then restores the clock.
+- [x] Reported-but-reverted counter (M11) and the cross-epoch revert **selector** decoded (`EpochMismatch` only).
+- [x] Selector rebalance: `structural` 5 weights → 1 (35.8% → 7.0% of calls), the four money paths ~7% → ~14%
+      each; fuzzed seed threaded through the baseline; frozen-history snapshot moved above the baseline block.
+- [x] Ghost hygiene: `ghostReceived`/`ghostReceivedLoan`/`ghostFilled` wired into assertions, open-loan stream
+      custody invariant added, tautological `positionState` pair deleted, per-level Σchildren == parent walk
+      added, `loansOf` paginated, `warpAndVest` vesting made monotone.
+- [x] Disposition corrections: I-11/I-12/X-4 were FALSE (the cited tests did not exist) — the three guard tests
+      are written and cited; I-22/I-23/X-1 citations corrected; I-16/I-18 monotonicity halves encoded with
+      prior-value ghosts rather than downgraded; E-5 → PARTIAL with the U7 pointer.
+- [x] `AUDIT.md` resynced: staleness banner across all seven old-numbering docs, one-line banner atop each of
+      the five `docs/audit/` package docs, and the complete old→new ID map for all 34 I/X/E blocks.
 
 ## Plan unit
 
