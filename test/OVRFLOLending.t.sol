@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.20;
 
-import {Test} from "forge-std/Test.sol";
+import {Test, Vm} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {OVRFLOLending} from "../src/OVRFLOLending.sol";
 import {StreamPricing} from "../src/StreamPricing.sol";
@@ -73,6 +73,7 @@ contract OVRFLOLendingTest is Test {
     uint256 internal constant STREAM_ONE = 401;
     uint256 internal constant STREAM_TWO = 402;
     uint256 internal constant STREAM_THREE = 403;
+    uint256 internal constant STREAM_FOUR = 404;
     /// @dev Storage slot of the `ticks` mapping (`forge inspect OVRFLOLending storage-layout`).
     uint256 internal constant TICKS_SLOT = 6;
 
@@ -1713,7 +1714,7 @@ contract OVRFLOLendingTest is Test {
         (entries,) = lending.loansOf(posTwo, 0, 10);
         assertEq(entries[0].claimable, 0);
 
-        vm.expectRevert(OVRFLOLending.ZeroAmount.selector);
+        vm.expectRevert(OVRFLOLending.ZeroSteps.selector);
         lending.loansOf(posTwo, 0, 0);
         vm.expectRevert(OVRFLOLending.PositionMissing.selector);
         lending.loansOf(999, 0, 1);
@@ -1764,6 +1765,120 @@ contract OVRFLOLendingTest is Test {
         sablier.setWithdrawable(STREAM_ONE, 6.12 ether);
         _claim(LENDER, loanId, positionId);
         assertEq(ovrfloToken.balanceOf(LENDER), 6.12 ether);
+    }
+
+    /// Pins CURSOR_CAP at exactly 32: a backlog of precisely the cap succeeds.
+    /// (U5 review: the 40-epoch test alone proves only "some cap below 40".)
+    function test_Borrow_CursorCapBoundary_ExactCapSucceeds() public {
+        lending.setTickSpacing(MARKET, SPACING);
+        lending.exposed_setEpochs(MARKET, APR, 0, 32); // exactly 32 dead epochs
+        _supply(LENDER, 10 ether, APR); // lands in epoch 32
+
+        _createStream(STREAM_ONE, BORROWER, 15.3 ether);
+        uint256 loanId = _borrow(BORROWER, 10 ether, STREAM_ONE, 0);
+        assertEq(_loan(loanId).epoch, 32);
+        assertEq(underlying.balanceOf(BORROWER), 10 ether);
+    }
+
+    /// Pins CURSOR_CAP at exactly 32: one epoch past the cap reverts.
+    function test_Borrow_CursorCapBoundary_CapPlusOneReverts() public {
+        lending.setTickSpacing(MARKET, SPACING);
+        lending.exposed_setEpochs(MARKET, APR, 0, 33); // 33 dead epochs
+        _supply(LENDER, 10 ether, APR);
+
+        _createStream(STREAM_ONE, BORROWER, 15.3 ether);
+        vm.prank(BORROWER);
+        vm.expectRevert(OVRFLOLending.EpochBacklog.selector);
+        lending.borrow(MARKET, APR, 10 ether, STREAM_ONE, 0);
+    }
+
+    /// The recovery valve's own copy of the dust predicate skips a genuine dust
+    /// residual (U5 review: previously only borrow's copy was exercised on dust).
+    function test_AdvanceEpochCursor_SkipsGenuineDustEpoch() public {
+        lending.setTickSpacing(MARKET, SPACING);
+        _supply(LENDER, 2e15, APR);
+        _createStream(STREAM_ONE, BORROWER, 15.3 ether);
+        _borrow(BORROWER, 1.5e15, STREAM_ONE, 0); // leaves 500 units of dust in epoch 0
+
+        lending.exposed_setCapacityOverride(1);
+        _supply(SECOND_LENDER, 5 ether, APR); // epoch 1 opens
+        lending.exposed_setCapacityOverride(0);
+
+        // A skip-only-fully-drained mutant would refuse to pass the 500-unit dust.
+        vm.expectEmit(true, false, false, true, address(lending));
+        emit EpochCursorAdvanced(MARKET, APR, 0, 1);
+        assertEq(lending.advanceEpochCursor(MARKET, APR, 10), 1);
+    }
+
+    /// The cursor stops exactly at currentEpoch even when currentEpoch itself is
+    /// empty (U5 review: the bound previously never fired independently of the
+    /// liquidity break).
+    function test_AdvanceEpochCursor_StopsAtEmptyCurrentEpoch() public {
+        lending.setTickSpacing(MARKET, SPACING);
+        lending.exposed_setEpochs(MARKET, APR, 0, 5); // every epoch empty, incl. 5
+
+        vm.expectEmit(true, false, false, true, address(lending));
+        emit EpochCursorAdvanced(MARKET, APR, 0, 5);
+        assertEq(lending.advanceEpochCursor(MARKET, APR, 50), 5);
+        (uint32 oldest,,) = lending.tickState(MARKET, APR);
+        assertEq(oldest, 5);
+    }
+
+    /// EpochCursorAdvanced belongs to the recovery valve alone: a borrow that
+    /// advances the cursor emits no cursor event (Borrowed.epoch is the
+    /// checkpoint), and a no-op valve call emits nothing at all.
+    function test_CursorEventEmittedOnlyByRecoveryValveMoves() public {
+        lending.setTickSpacing(MARKET, SPACING);
+        _supply(LENDER, 2e15, APR);
+        _createStream(STREAM_ONE, BORROWER, 15.3 ether);
+        _borrow(BORROWER, 2e15, STREAM_ONE, 0); // drains epoch 0
+        lending.exposed_setCapacityOverride(1);
+        _supply(SECOND_LENDER, 5 ether, APR); // epoch 1
+        lending.exposed_setCapacityOverride(0);
+
+        // This borrow advances the cursor 0 -> 1 silently.
+        _createStream(STREAM_TWO, SECOND_BORROWER, 15.3 ether);
+        vm.recordLogs();
+        _borrow(SECOND_BORROWER, 1 ether, STREAM_TWO, 0);
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        bytes32 cursorTopic = keccak256("EpochCursorAdvanced(address,uint16,uint32,uint32)");
+        for (uint256 i = 0; i < logs.length; ++i) {
+            assertTrue(logs[i].topics[0] != cursorTopic, "borrow must not emit the cursor event");
+        }
+
+        // A no-op valve call (cursor already at a live epoch) emits nothing.
+        vm.recordLogs();
+        assertEq(lending.advanceEpochCursor(MARKET, APR, 10), 1);
+        assertEq(vm.getRecordedLogs().length, 0);
+    }
+
+    /// The trailing nextSeq guard returns 0 when the next un-scanned loan starts
+    /// past the position's interval (U5 review: previously indistinguishable from
+    /// a bare seq < count check).
+    function test_LoansOf_NextSeqZeroWhenRemainingLoansAreAllPastInterval() public {
+        lending.setTickSpacing(MARKET, SPACING);
+        uint256 posTwo;
+        {
+            _supply(LENDER, 10 ether, APR); // [0, 10e6)
+            posTwo = _supply(SECOND_LENDER, 20 ether, APR); // [10e6, 30e6)
+            _supply(LENDER, 5 ether, APR); // [30e6, 35e6)
+        }
+        _createStream(STREAM_ONE, BORROWER, 15.3 ether);
+        _createStream(STREAM_TWO, BORROWER, 15.3 ether);
+        _createStream(STREAM_THREE, BORROWER, 15.3 ether);
+        _createStream(STREAM_FOUR, BORROWER, 15.3 ether);
+        _borrow(BORROWER, 10 ether, STREAM_ONE, 0); // seq 0: [0, 10e6)
+        uint256 loanTwo = _borrow(BORROWER, 8 ether, STREAM_TWO, 0); // seq 1: [10e6, 18e6)
+        uint256 loanThree = _borrow(BORROWER, 12 ether, STREAM_THREE, 0); // seq 2: [18e6, 30e6)
+        _borrow(BORROWER, 5 ether, STREAM_FOUR, 0); // seq 3: [30e6, 35e6) — past posTwo
+
+        // maxN cuts off exactly at posTwo's last overlapping loan; the remaining
+        // seq 3 exists but starts at 30e6 == intervalEnd, so nextSeq must be 0.
+        (OVRFLOLending.LoanShare[] memory entries, uint64 nextSeq) = lending.loansOf(posTwo, 0, 2);
+        assertEq(entries.length, 2);
+        assertEq(entries[0].loanId, loanTwo);
+        assertEq(entries[1].loanId, loanThree);
+        assertEq(nextSeq, 0);
     }
 
     /*//////////////////////////////////////////////////////////////

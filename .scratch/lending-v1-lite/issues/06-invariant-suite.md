@@ -4,7 +4,7 @@
 
 **Blocked by:** 05 (parallel with 07)
 
-**Status:** open
+**Status:** claimed
 **Labels:** ready-for-agent
 
 ## Session prompt (paste into a new chat)
@@ -48,6 +48,7 @@ After local verification, mark ticket checkboxes done and set Status: resolved.
 - [ ] Tree integrity: stored node = sum of children, across growth and rollover
 - [ ] Claim caps: Σ received per (loan, position) ≤ pro-rata entitlement (per-pair `received ≤ contribution × obligation / intervalLength`); Σ received per loan ≤ recovered; obligation ≤ remaining (carried from today's suite); handlers MUST reach over-vested open loans (`withdrawable > outstanding` — the U4-review mutation-proven theft boundary)
 - [ ] Non-UNIT-aligned `grossPrice` concrete case (U3 review, 2026-08-08): a max borrow whose `grossPrice` is not a UNIT multiple yields `obligation < remaining` strictly (safe direction) — pinning the floor/ceil boundary the 73-day/1.02 fixture never exercises
+- [ ] View-truth invariant (U5 review, 2026-08-08): for every (loan, position) pair the handler touches, `loansOf`'s reported `claimable` equals exactly what a subsequent max `claim` pays — the view mirror and the money path may never diverge
 - [ ] Epoch isolation: no claim pays across mismatched `(market, aprBps, epoch)` — adversarial handler pairs numerically identical intervals across epochs
 - [ ] Dust bound: closed-loan total claimant shortfall ≤ contributor count in wei; cursor soundness: cursor ≤ `currentEpoch`, every epoch below it has available < `MIN_LIQUIDITY_AMOUNT`
 - [ ] GL-70: close-time stream-withdrawn ghost snapshots keep re-pledged-stream properties exact

@@ -88,7 +88,7 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
     error NotCovered();
     /// @dev More than CURSOR_CAP dead epochs precede the live one; call `advanceEpochCursor`.
     error EpochBacklog();
-    /// @dev The cursor advance was asked to take zero steps.
+    /// @dev A bounded scan was asked for zero iterations (`maxSteps` or `maxN`).
     error ZeroSteps();
     /// @dev The position id was never created.
     error PositionMissing();
@@ -740,13 +740,16 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
 
         uint16 minBps = aprMinBps;
         uint16 maxBps = aprMaxBps;
-        uint256 first = ((uint256(minBps) + spacing - 1) / spacing) * spacing;
+        // Ceiling to the next spacing multiple via the remainder, so the ladder
+        // starts at the first valid tick at or above the lower bound.
+        uint256 remainder = uint256(minBps) % spacing;
+        uint256 first = remainder == 0 ? minBps : uint256(minBps) + (spacing - remainder);
         if (first > maxBps) return depths;
 
         uint256 count = (maxBps - first) / spacing + 1;
         depths = new TickDepth[](count);
         for (uint256 i = 0; i < count; ++i) {
-            uint16 aprBps = uint16(first + i * spacing);
+            uint16 aprBps = SafeCast.toUint16(first + i * spacing);
             depths[i] = TickDepth({aprBps: aprBps, availableUnits: _liveDepthUnits(market, aprBps)});
         }
     }
@@ -808,8 +811,10 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
     ///      tape cannot epoch-mismatch, so overlap uses the non-reverting core:
     ///      filtering skips, it never reverts (`contributionOf` is the reverting
     ///      single-pair form). `startSeq = 0` means "start from the binary-search
-    ///      entry"; a nonzero `startSeq` resumes an earlier scan. `nextSeq = 0`
-    ///      means exhausted. `maxN == 0` reverts `ZeroAmount`.
+    ///      entry"; a nonzero `startSeq` resumes an earlier scan and MUST be a
+    ///      `nextSeq` returned for the SAME position — arbitrary values silently
+    ///      truncate the result set (discovery-only; `claim` re-derives all math).
+    ///      `nextSeq = 0` means exhausted. `maxN == 0` reverts `ZeroSteps`.
     /// @param positionId The lender position to scan for.
     /// @param startSeq Resume point from a prior call's `nextSeq`, or 0 to start.
     /// @param maxN Maximum entries to return; must be nonzero.
@@ -820,7 +825,7 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
         view
         returns (LoanShare[] memory entries, uint64 nextSeq)
     {
-        if (maxN == 0) revert ZeroAmount();
+        if (maxN == 0) revert ZeroSteps();
         Position storage position = positions[positionId];
         if (position.lender == address(0)) revert PositionMissing();
 
