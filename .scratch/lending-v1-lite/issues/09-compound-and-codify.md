@@ -42,3 +42,37 @@ Both documents get wired into `AGENTS.md` required reading so every future sessi
 ## Plan unit
 
 None — post-plan compounding pass over the whole buildout.
+
+## Harvest record (2026-08-10, coordinator)
+
+Dated-decision-note dispositions (criterion 1). Writeup keys: [EEG]=error-event-catalog-governance-20260808, [CNP]=checked-narrowing-vs-partial-fill-sentinel-20260808, [E7G]=erc721-ownership-as-guard-20260808, [FHM]=frozen-history-monotone-counter-safety-argument-20260810, [UTD]=uncheatable-test-discipline-20260810, [PSV]=packed-slot-vm-load-verification-20260808, [PGL]=plan-gap-ledger-v1-lite-20260810, [ORCH]=the three developer-experience orchestration writeups, [EFG]=environment-fidelity-mainnet-rules-gates-20260810, [MEB]=medusa-etch-over-existing-code-20260810.
+
+| Dated note | Disposition |
+|---|---|
+| 2026-08-05 doc-review preservation note (R7/R9/R2/R18/AE3/AE8) | Not generalizable per item; the process lesson (doc review pre-code) → [PGL] |
+| 2026-08-05 try/catch-on-internal-library unimplementable | [PGL] rule 1 |
+| 2026-08-08 single-source-constants carve-out | Not generalizable (protocol constant convention); recorded in coding standard S2 |
+| 2026-08-08 types/units inline-floor exception | [CNP] |
+| 2026-08-08 permissionless repay | Not generalizable as a rule; the "state why permissionless is safe" form → standard X5 |
+| 2026-08-08 NotCovered selector split | [EEG] rule 1 |
+| 2026-08-08 uniform closure events | [EEG] rule 4 |
+| 2026-08-08 min(withdrawable,outstanding) named security invariant | [UTD] rule 5 example; style guide §3 (named invariants) |
+| 2026-08-08 reverting-vs-filtering helper split | Not generalizable beyond the pair; noted in standard V1 context |
+| 2026-08-08 KTD8 views reassignment | Not generalizable (ticket bookkeeping) |
+| 2026-08-08 outstanding==0 && !closed legal state | Standard S3 |
+| 2026-08-08 PositionMissing mint / ZeroSteps reversal | [EEG] rule 3 |
+| 2026-08-08 tickState validates spacing only | Not generalizable (deliberate under-validation, documented in code) |
+| 2026-08-08 rollover predicate forced form | [PGL] rule 3; [FHM] transitions rule |
+| 2026-08-08 ladder-view spacing sanity | Standard V2 |
+| 2026-08-08 BelowMinimum deliberate sharing | [EEG] rule 1 (semantic-class test) |
+| 2026-08-08 Borrowed.feeAmount log-completeness | [EEG] rule 4; CP#25 |
+| 2026-08-08 StreamAlreadyPledged deletion | [E7G]; CP reference in standard X2 |
+| 2026-08-08 U3 same-height gas pairs insufficient | [FHM]; [PGL] rule 8 |
+| 2026-08-10 non-aligned grossPrice strict-inequality fixture | [UTD] rule 1 |
+| 2026-08-10 invariant-profile claim correction | Not generalizable beyond "sync docs to foundry.toml"; [PGL] class table |
+
+Review-findings traceability (criterion 2): U3 batch → [UTD] rules 1, [CNP], [PSV]; U4 batch → [EEG], standard S3/X5, [UTD] rule 5; U5 batch → [EEG] rule 3, standard V2, [PGL] rules 3; U6 batch → [UTD] rules 2–5, [PGL] rules 4–5; U7 → [MEB], [PGL] rule 6 (SP-26); U8 → [EFG], [ORCH] (trust boundaries), [PGL] rules 7 and 2. Tickets 01/02: no review findings existed (attested in [PGL]).
+
+External research (criterion 3): all four required categories + two audit firms, dispositions in the coding standard's rule citations and its Considered-and-rejected / Pending-user-decisions registers.
+
+Critical-patterns audit (criterion 7): all 25 patterns placed — none unplaceable; refreshes applied 2026-08-10 to #3, #5, #6, #7, #11, #17, #18/#19 grep scope; #4/#10/#16 superseded annotations verified; new #21–25 promoted with greps (criterion 8).

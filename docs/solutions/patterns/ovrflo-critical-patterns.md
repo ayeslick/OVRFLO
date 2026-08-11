@@ -406,7 +406,7 @@ complementary safety net, not a replacement. Do **not** pull in
   componentDidCatch(error: Error, info: ErrorInfo): void { void error; void info; }
   ```
 
-- Unit test contract — see `web/tests/components/ModalErrorBoundary.test.tsx` (T-WEB-ERRBOUND-1..3): renders children when no throw, renders fallback on throw, recovers on reset with `vi.spyOn(console, "error").mockImplementation(() => {})` to silence React's own boundary log.
+- Unit test contract — see `web/tests/components/modal-error-boundary.test.tsx` (2 tests, no ID scheme): renders children untouched when nothing throws; swaps a throwing body for the fallback and recovers via onReset remount, with `vi.spyOn(console, "error").mockImplementation(() => {})` to silence React's own boundary log. (Citation refreshed 2026-08-10: file is kebab-case, the old `T-WEB-ERRBOUND-1..3` IDs never existed in it.)
 
 **Documented in:** [`docs/solutions/runtime-errors/modal-render-error-crashes-dashboard-WebUI-20260421.md`](../runtime-errors/modal-render-error-crashes-dashboard-WebUI-20260421.md)
 
@@ -515,7 +515,7 @@ rg "_validateTwapBounds" src/OVRFLOFactory.sol
 # expected: 1 definition + 2 call sites (prepareOracle and addMarket)
 ```
 
-**Fuzz enforcement:** The `_oVRFLO_prepareOracle` handler in `test/fizz/` exercises both valid and invalid TWAP durations against `prepareOracle`, hitting both bound checks in coverage.
+**Fuzz enforcement:** none since the ticket-07 fizz regeneration — the regenerated harness calls `factory.prepareOracle` exactly once in `test/fizz/Base.sol` setup with a fixed `TWAP_DURATION` and never fuzzes invalid durations. Coverage is the two unit tests only: `test_PrepareOracle_RevertsWhenTwapTooLong` and `test_AddMarket_RevertsWhenTwapTooLong` (`test/OVRFLOFactory.t.sol`). (Refreshed 2026-08-10; the previously cited `_oVRFLO_prepareOracle` handler no longer exists.)
 
 ---
 
@@ -574,14 +574,18 @@ and `sablier.ownerOf` for the lender and borrower.
 # for treasury or the lending contract. Note: use --files-without-match, not
 # `-L` (which is --follow, not files-without-match, in ripgrep) — an `-L`
 # version of this check silently inverts and never flags real gaps.
-rg -l "sellStreamToLiquidity|buyListing|createBorrowerLoanPool|claimLoanPoolShare|closeLoan|repayLoan" \
+rg -l "supply|withdraw|borrow|repay|close|claim" \
   test/OVRFLOLending.t.sol | \
   while read -r f; do rg --files-without-match "balanceOf\(TREASURY\)|balanceOf\(address\(lending\)\)" "$f" && echo "REVIEW: $f"; done
 ```
 
+(Identifiers refreshed 2026-08-10 to the v1-lite money-movement surface —
+`supply`/`withdraw`/`borrow`/`repay`/`close`/`claim` in `src/OVRFLOLending.sol`;
+the previous grep named only deleted sale/pool functions and matched nothing.)
+
 **Documented in:** [`docs/solutions/best-practices/verify-token-balance-movement-not-just-ownership.md`](../best-practices/verify-token-balance-movement-not-just-ownership.md). See also [Test Quality Antipatterns](../best-practices/solidity-foundry-test-quality-antipatterns.md) for the general "green is lying" catalog this rule is a specific case of.
 
-**Fuzz enforcement:** `property_no_free_profit` (GL-57) in `test/fizz/Properties.sol` extends this discipline to the stateful fuzz suite by checking that total actor value (underlying + PT + ovrfloToken across all actors) never exceeds the total start value, catching misrouted payments across the full actor set. GL-57 fired a second false positive during the 91.8% to 98.7% coverage campaign when a scenario handler minted tokens via `underlying.deal()` without updating `ghost_actorStartValue` — fix: mirror any test-only mint in the ghost tracker. SP-100 (borrow disbursement conservation) also extends this discipline, verifying the borrower's underlying increase equals `actualBorrow - fee`; it required gating on `lending.treasury() != actor` when an admin handler can set the treasury to an actor address.
+**Fuzz enforcement:** `property_underlying_flow_ghosts` (GL-04) in the regenerated `test/fizz/Properties.sol` carries this discipline in the stateful fuzz suite — it conserves `underlying.balanceOf(lending) + refunded + borrowedOut == supplied + donated` from realized actor/treasury balance deltas tracked in handler-side ghosts, catching misrouted payments independently of the contract's own counters. (Refreshed 2026-08-10: the previously cited GL-57/SP-100 belong to the pre-rewrite property set and no longer exist; their historical false-positive lessons — mirror test-only mints in the ghost tracker, gate on treasury-reassigned-to-actor — carried forward into the regenerated harness's `_accountUnderlyingFlow` classification.)
 
 ---
 
@@ -610,45 +614,46 @@ assertEq(aprBps, 0);
 assertEq(availableLiquidity, 0);
 ```
 
-**Why:** `OVRFLOLending` exposes its state structs via the Solidity
-compiler's auto-getters on the public mappings — `liquidityPositions`,
-`saleListings`, `loans`, `loanPools`. An auto-getter for a
-`mapping(uint256 => Struct)` returns a default-initialized (zero-valued)
-struct for any ID that was never written; it does not revert. This is the
-operative contract after U3 of the 2026-07 simplification refactor deleted
-the hand-rolled `*State` wrappers (`liquidityState`, `saleListingState`,
-`loanState`) that previously reverted on unknown IDs via a `lender !=
-address(0)` sentinel. Tests that still call `vm.expectRevert` against the
-auto-getter views are stale and silently wrong — the revert never fires, so
-the assertion proves nothing and masks regressions. The correct shape is to
+**Why:** `OVRFLOLending` exposes its raw state structs via the Solidity
+compiler's auto-getters on the public mappings — in v1-lite these are
+`positions` and `loans` (identifiers refreshed 2026-08-10; the previously
+listed `liquidityPositions`/`saleListings`/`loanPools` were deleted by the
+rewrite). An auto-getter for a `mapping(uint256 => Struct)` returns a
+default-initialized (zero-valued) struct for any ID that was never written;
+it does not revert. Tests that call `vm.expectRevert` against the raw
+auto-getters are stale and silently wrong — the revert never fires, so the
+assertion proves nothing and masks regressions. The correct shape is to
 destructure the returned struct and `assertEq` each field against its zero
-value (`address(0)` for address fields, `0` for uints).
+value.
 
-This reversal is intentional and documented. Do not re-introduce hand-rolled
-`*State` wrappers with sentinel reverts — the auto-getter contract is the
-post-refactor design. The old "hand-rolled views must revert on unknown IDs"
-principle is preserved in the **Considered and rejected** section (R-07)
-for any future hand-rolled view that is *not* an auto-getter.
+**v1-lite coexistence note (2026-08-10):** three hand-rolled named views —
+`tickState`, `positionState`, `loanState` — now exist alongside the raw
+auto-getters and DO revert on missing entities
+(`SpacingUnset`/`PositionMissing`/`LoanMissing`), per the plan's KTD8
+convention. This is exactly R-07's carve-out: the revert principle applies to
+hand-rolled wrappers, the zero-return contract applies to raw auto-getters,
+and the two deliberately coexist. Neither is a violation of the other.
+The current suite's existence checks go through the reverting named views
+(`test_StateViews_DeriveFieldsAndRevertOnMissing`); the raw auto-getters
+retain the zero-return contract for any caller that wants it.
 
-**Placement/Context:** Every test in `test/**` that resolves a lending
-state struct by ID via `liquidityPositions`, `saleListings`, `loans`, or
-`loanPools` to assert "this ID does not exist / was never created". Also
-applies to any future public mapping exposed only via its auto-getter. If
-a hand-rolled wrapper is ever re-introduced, the revert principle from
-R-07 applies to *that* wrapper, not to the auto-getter.
+**Placement/Context:** Every test in `test/**` that resolves a lending state
+struct by ID via the raw auto-getters `positions` or `loans` to assert "this
+ID does not exist". The named views `tickState`/`positionState`/`loanState`
+follow R-07 (revert), not this pattern.
 
 **How to detect violation:**
 
 ```bash
-# Find stale tests that expect a revert from an auto-getter view that
+# Find stale tests that expect a revert from a raw auto-getter that
 # actually returns zeros:
 rg "vm.expectRevert.*unknown|vm.expectRevert.*nonexistent" test/
-# expected: 0 matches against liquidityPositions / saleListings / loans / loanPools
+# expected: 0 matches against the raw `positions` / `loans` auto-getters
 
-# The old grep against hand-rolled *State wrappers now returns nothing,
-# which is expected (the wrappers were deleted in U3):
-rg -A5 "function .*State\(.*\) external view" src/OVRFLOLending.sol
-# expected: 0 matches — auto-getters have no explicit function body
+# Count the hand-rolled reverting wrappers R-07 explicitly permits
+# (multi-line signatures, so use -U):
+rg -U "function (tickState|positionState|loanState)\(" src/OVRFLOLending.sol
+# expected: exactly 3 — these are R-07 wrappers, NOT pattern-7 violations
 ```
 
 **Documented in:** [`docs/solutions/architecture-patterns/view-functions-revert-on-nonexistent-ids.md`](../architecture-patterns/view-functions-revert-on-nonexistent-ids.md) (historical principle for hand-rolled views), [`docs/solutions/architecture-patterns/behavior-preserving-simplification-refactor.md`](../architecture-patterns/behavior-preserving-simplification-refactor.md) §9 (U3 deletion of `*State` wrappers).
@@ -1032,13 +1037,15 @@ accepts a fuzzed token address. `sweepExcessUnderlying` is safe by construction
 **How to detect violation:**
 
 ```bash
-rg "unknown PT" src/OVRFLO.sol
-# expected: 1 match in sweepExcessPt
+rg -n "\"OVRFLO: unknown PT\"" src/OVRFLO.sol
+# expected: 4 matches — sweepExcessPt, claim, flashLoan, claimablePt all reuse
+# this string for the analogous market-lookup check; sweepExcessPt is one of
+# four call sites, not the sole one. (Count refreshed 2026-08-10.)
 ```
 
 **Documented in:** Fuzz campaign 2026-07-01 (GL-02 violation), `fizz_data/report.md`
 
-**Fuzz enforcement:** `property_sweepExcessPt_reverts_non_pt` (SP-77) in `test/fizz/Properties.sol` calls `sweepExcessPt` with the underlying token address and asserts it reverts, continuously validating the guard in the stateful fuzz campaign.
+**Fuzz enforcement:** none since the ticket-07 fizz regeneration — the previously cited `property_sweepExcessPt_reverts_non_pt` (SP-77) belongs to the pre-rewrite property set, and the regenerated `OVRFLOFactoryHandler` always sweeps the real `ptToken`. Current coverage is unit-test only: `test/OVRFLO.t.sol` (rejects the underlying address; rejects a fake PT). A fuzz re-add is a candidate for the next harness iteration.
 
 ---
 
@@ -1226,31 +1233,34 @@ rg "toBorrow == 0" src/OVRFLOLending.sol
 
 **Why:** When a state struct is exposed via the Solidity compiler's
 auto-getter (i.e. the public mapping has no hand-rolled wrapper function),
-uninitialized slots return a zero-valued struct, not a revert. This is the
-post-U3 operative contract for `OVRFLOLending`'s `liquidityPositions`,
-`saleListings`, `loans`, and `loanPools` (see pattern #7). Tests must
-assert zero values (e.g. `assertEq(lender, address(0))`), not
-`vm.expectRevert`. Do NOT re-add hand-rolled wrapper functions with
-sentinel checks — the auto-getter contract is intentional; re-adding the
-wrappers would resurrect the deleted `*State` surface and the stale test
-shape that goes with it (see R-07).
+uninitialized slots return a zero-valued struct, not a revert. In v1-lite the
+raw auto-getters are `positions` and `loans` (identifiers refreshed
+2026-08-10; `liquidityPositions`/`saleListings`/`loanPools` were deleted by
+the rewrite — see pattern #7). Tests must assert zero values (e.g.
+`assertEq(lender, address(0))`), not `vm.expectRevert`.
+
+**v1-lite coexistence note (2026-08-10):** the named views `tickState`,
+`positionState`, and `loanState` are hand-rolled wrappers that DO revert on
+missing entities — that is R-07's carve-out operating as designed, not a
+violation of this pattern. The zero-return contract governs the raw
+auto-getters only.
 
 **Placement/Context:** Any public mapping on `OVRFLOLending` (and any
 future contract) that is exposed only via its compiler-generated
-auto-getter, with no hand-rolled `*State` wrapper. If a hand-rolled
-wrapper is later introduced for a different reason, the revert-on-unknown
-principle from R-07 applies to *that* wrapper — not to the auto-getter.
+auto-getter. The revert-on-unknown principle from R-07 applies to the
+hand-rolled `*State` wrappers — not to the auto-getters.
 
 **How to detect violation:**
 
 ```bash
-# Stale tests expecting a revert from an auto-getter that returns zeros:
+# Stale tests expecting a revert from a raw auto-getter that returns zeros:
 rg "vm.expectRevert.*unknown|vm.expectRevert.*nonexistent" test/
-# expected: 0 matches against liquidityPositions / saleListings / loans / loanPools
+# expected: 0 matches against the raw `positions` / `loans` auto-getters
 
-# Re-introduction of hand-rolled *State wrappers (should stay deleted):
-rg -n "function .*State\(.*\) external view" src/OVRFLOLending.sol
-# expected: 0 matches
+# The three R-07 wrappers (multi-line signatures — use -U); their presence
+# is by design, not a re-introduction violation:
+rg -U "function (tickState|positionState|loanState)\(" src/OVRFLOLending.sol
+# expected: exactly 3
 ```
 
 **Documented in:** [`docs/solutions/architecture-patterns/behavior-preserving-simplification-refactor.md`](../architecture-patterns/behavior-preserving-simplification-refactor.md) §9 (U3 deletion of `*State` wrappers), [`docs/solutions/architecture-patterns/view-functions-revert-on-nonexistent-ids.md`](../architecture-patterns/view-functions-revert-on-nonexistent-ids.md) (historical principle for hand-rolled views).
@@ -1311,8 +1321,13 @@ indexer that decodes return data.
 ```bash
 # Mock structs that redeclare an interface struct under a different name
 # (silently drifting from the interface shape):
-rg "struct.*View\b" test/
-# expected: 0 matches after migration — mock struct divergence is a bug
+rg "struct.*View\b" test/mocks/
+# expected (scope refreshed 2026-08-10 to test/mocks/ — own-contract
+# destructuring helpers like LoanView in test/OVRFLOLending.t.sol are out of
+# scope): 2 known matches, the ACCEPTED-EXCEPTION AmountsView/StreamView in
+# MockLendingSablier (duck-typed to serve two setStream call shapes from one
+# shared mock; the fizz MockSablier implements the interface properly).
+# Any NEW match beyond those two is a violation. after migration — mock struct divergence is a bug
 
 # Mocks that import the interface struct directly are fine; redeclarations
 # with a *View suffix are the smell. Also grep for cast-call probes as
@@ -1378,8 +1393,9 @@ not redeclare interface structs under `*View` or `*Mock` aliases.
 
 ```bash
 # Mock structs that redeclare an interface struct under a different name:
-rg "struct.*View\b" test/
-# expected: 0 matches
+rg "struct.*View\b" test/mocks/
+# expected: 2 known accepted-exception matches (MockLendingSablier) —
+# see pattern #18's refreshed note; any NEW match is a violation.
 
 # Mocks should import the interface they implement, not redefine it:
 rg -l "import.*interfaces/" test/mocks/
@@ -1459,3 +1475,133 @@ rg -l "useState.*null.*useEffect|setTimeout|setInterval" web/components/*.tsx
 **Documented in:** [`docs/solutions/best-practices/prefer-battle-tested-libraries-over-hand-rolled-code.md`](../best-practices/prefer-battle-tested-libraries-over-hand-rolled-code.md), [`docs/solutions/architecture-patterns/shared-hook-safety-depends-on-render-tree-position.md`](../architecture-patterns/shared-hook-safety-depends-on-render-tree-position.md) (2026-07-27 `useNowSeconds` de-duplication), [`docs/solutions/architecture-patterns/wagmi-query-key-dedup-makes-cross-component-hook-duplication-free.md`](../architecture-patterns/wagmi-query-key-dedup-makes-cross-component-hook-duplication-free.md) (2026-07-27 `RatesCell`/`PositionList` review).
 
 ---
+
+## 21. Errors and events come from the closed catalog — selectors carry semantics (ALWAYS REQUIRED)
+
+**Why:** The v1-lite plan governs errors/events as a closed catalog: amended
+only by dated user decision, never invented locally. One selector maps to one
+semantic class — a size floor (`BelowMinimum`) is never shared with a temporal
+condition (`NotCovered` was minted for exactly this reason, 2026-08-08), and
+the governance binds reviewers/coordinators identically to builders (the
+`ZeroSteps` reversal). Events are log-complete for owner-mutable parameters:
+any payout-affecting quantity derived from one (e.g. `feeAmount` from
+`feeBps`) is emitted explicitly, and terminal signals are uniform across every
+exit path (`Closed` fires on both closure routes).
+
+**Placement/Context:** Every new `error`/`event` declaration in `src/`; every
+review of one.
+
+**How to detect violation:**
+
+```bash
+# Errors present in code but absent from the plan's pinned catalog:
+rg -n "^\s*error [A-Z]" src/OVRFLOLending.sol src/TickTree.sol src/StreamPricing.sol
+# expected: every name listed in the plan's error catalog (docs/plans/
+# 2026-08-05-001-feat-lending-v1-lite-plan.md); a name missing there needs a
+# dated user decision, not a local mint.
+```
+
+**Documented in:** [`docs/solutions/design-patterns/error-event-catalog-governance-20260808.md`](../design-patterns/error-event-catalog-governance-20260808.md)
+
+---
+
+## 22. Uncheatable-test requirements — plan-derived literals, discriminating boundaries, mutation kills (ALWAYS REQUIRED)
+
+**Why:** A test that would pass against a subtly wrong implementation is a
+defect. Assertions use plan-derived or hand-derived literals (never the
+implementation's own arithmetic mirrored back), boundary tests sit at the
+discriminating distance (`UNIT-1`, net-of-fee, concrete non-aligned rounding
+fixtures), invariant campaigns carry liveness gates (a campaign that never
+executes claim/repay/close proves nothing about them), and test-only suites
+are reviewed by mutation campaigns, not by reading. Citations to tests are
+claims — verify by opening the cited test.
+
+**Placement/Context:** Every test PR; every invariant-suite change; every
+"covered by" claim in a disposition table.
+
+**How to detect violation:**
+
+```bash
+# Invariant handlers whose ghosts are never read by an assertion (decoration):
+rg -o "ghost_[A-Za-z0-9_]+" test/OVRFLOLendingInvariant.t.sol test/fizz/ -h | sort -u | \
+  while read -r g; do n=$(rg -c "$g" test/ -g '*.sol' | awk -F: '{s+=$2} END{print s}'); \
+  [ "$n" -le 1 ] && echo "UNREAD GHOST: $g"; done
+# expected: no output — every ghost is read at least once beyond its declaration
+```
+
+**Documented in:** [`docs/solutions/best-practices/uncheatable-test-discipline-20260810.md`](../best-practices/uncheatable-test-discipline-20260810.md)
+
+---
+
+## 23. Frozen-history / monotone-counter safety arguments — test across structural transitions (ALWAYS REQUIRED)
+
+**Why:** v1-lite's safety case decomposes into monotonicity + frozen history +
+tiling; big behavioral claims (no double-attribution, claim-order
+independence) follow by construction. When a design carries such a guarantee,
+its tests are EVIDENCE the premises hold, and they must span the structure's
+own transitions — a gas-flatness or attribution claim verified only in steady
+state (same tree height, same epoch) does not pin the guarantee through
+growth or rollover.
+
+**Placement/Context:** Any change to `TickTree`, epoch machinery, or the fill
+path; any new claim of the form "X is constant/frozen/monotone".
+
+**How to detect violation:**
+
+```bash
+rg -n "AcrossTreeHeightGrowth|across.*growth|rollover" test/OVRFLOLendingGas.t.sol test/OVRFLOLendingInvariant.t.sol
+# expected: at least the OVRFLOLendingGas across-growth pair remains; a
+# refactor that deletes it un-pins the blind-fill design guarantee.
+```
+
+**Documented in:** [`docs/solutions/architecture-patterns/frozen-history-monotone-counter-safety-argument-20260810.md`](../architecture-patterns/frozen-history-monotone-counter-safety-argument-20260810.md)
+
+---
+
+## 24. Agents in a shared checkout commit by explicit path only (ALWAYS REQUIRED)
+
+**Why:** The U4 commit collision: `git add -A` in a shared checkout scooped a
+concurrent agent's in-progress files into an unrelated commit. Commits name
+their paths; `-A`/`-u` are reserved for a coordinator that has just verified
+`git status` against its own change inventory.
+
+**Placement/Context:** Every agent brief that includes commit rights; every
+coordinator commit in a session with live background agents.
+
+**How to detect violation:**
+
+```bash
+# In agent briefs and skill docs that grant commit rights:
+rg -n "git add -A|git add \." .scratch/ docs/agents/ 2>/dev/null
+# expected: no instruction tells an agent to use unscoped adds
+```
+
+**Documented in:** [`docs/solutions/developer-experience/shared-checkout-and-trust-boundaries-20260810.md`](../developer-experience/shared-checkout-and-trust-boundaries-20260810.md)
+
+---
+
+## 25. Log-completeness for owner-mutable parameters (ALWAYS REQUIRED)
+
+**Why:** If a payout depends on an owner-mutable parameter with no per-entity
+snapshot, the applied value must be in the event, or history becomes
+unreconstructable from logs the moment the parameter changes. `Borrowed`
+carries `feeAmount` (not just `actualBorrow`) for exactly this reason —
+`feeBps` can change under the loan's feet and logs are the only durable record
+of what was actually charged.
+
+**Placement/Context:** Every event on a path whose amounts depend on
+`setFee`/`setAprBounds`/`setTreasury`-class parameters; review of any new
+owner setter.
+
+**How to detect violation:**
+
+```bash
+# Owner-mutable params feeding money paths:
+rg -n "onlyOwner" src/OVRFLOLending.sol | rg "set"
+# for each setter's parameter, confirm the event on the affected money path
+# emits the APPLIED value (e.g. Borrowed includes feeAmount):
+rg -n "event Borrowed" src/OVRFLOLending.sol
+# expected: feeAmount present in the event signature
+```
+
+**Documented in:** [`docs/solutions/design-patterns/error-event-catalog-governance-20260808.md`](../design-patterns/error-event-catalog-governance-20260808.md) (rule 4)

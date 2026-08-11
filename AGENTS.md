@@ -1,5 +1,6 @@
 Read https://ethskills.com/SKILL.md and follow it before writing Solidity or shipping anything onchain.
 Read `docs/solutions/patterns/solidity-implementation-discipline.md` before writing or modifying Solidity — it carries the minimality ladder, the FREI-PI gate, the root-cause-fix procedure, and the precedence rule (plan > critical patterns > ladder).
+Read `docs/solutions/patterns/ovrflo-coding-standard.md` (enforceable rules, each citing its source and remediation tier) and `docs/solutions/patterns/ovrflo-style-guide.md` (naming, layout, NatSpec voice, comment discipline, fixture conventions) before writing OVRFLO Solidity or tests — they exist to eliminate micro-decisions; deviations need a recorded reason.
 Use BASE_SECURITY.md for security guidelines.
 Use VAULT_SECURITY.md for Vault security guidelines.
 
