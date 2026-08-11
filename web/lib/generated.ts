@@ -645,38 +645,16 @@ export const ovrfloFactoryAbi = [
   },
   {
     type: 'function',
-    inputs: [],
-    name: 'cancelDeployment',
+    inputs: [{ name: 'lending', internalType: 'address', type: 'address' }],
+    name: 'registerLending',
     outputs: [],
-    stateMutability: 'nonpayable',
-  },
-  {
-    type: 'function',
-    inputs: [
-      { name: 'treasury', internalType: 'address', type: 'address' },
-      { name: 'underlying', internalType: 'address', type: 'address' },
-      { name: 'nameSuffix', internalType: 'string', type: 'string' },
-      { name: 'symbolSuffix', internalType: 'string', type: 'string' },
-    ],
-    name: 'configureDeployment',
-    outputs: [],
-    stateMutability: 'nonpayable',
-  },
-  {
-    type: 'function',
-    inputs: [],
-    name: 'deploy',
-    outputs: [
-      { name: 'ovrflo', internalType: 'address', type: 'address' },
-      { name: 'ovrfloToken', internalType: 'address', type: 'address' },
-    ],
     stateMutability: 'nonpayable',
   },
   {
     type: 'function',
     inputs: [{ name: 'ovrflo', internalType: 'address', type: 'address' }],
-    name: 'deployLending',
-    outputs: [{ name: 'lending', internalType: 'address', type: 'address' }],
+    name: 'registerOvrflo',
+    outputs: [],
     stateMutability: 'nonpayable',
   },
   {
@@ -754,19 +732,6 @@ export const ovrfloFactoryAbi = [
     inputs: [],
     name: 'owner',
     outputs: [{ name: '', internalType: 'address', type: 'address' }],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [],
-    name: 'pendingDeployment',
-    outputs: [
-      { name: 'treasury', internalType: 'address', type: 'address' },
-      { name: 'pending', internalType: 'bool', type: 'bool' },
-      { name: 'underlying', internalType: 'address', type: 'address' },
-      { name: 'nameSuffix', internalType: 'string', type: 'string' },
-      { name: 'symbolSuffix', internalType: 'string', type: 'string' },
-    ],
     stateMutability: 'view',
   },
   {
@@ -890,26 +855,6 @@ export const ovrfloFactoryAbi = [
     outputs: [{ name: '', internalType: 'address', type: 'address' }],
     stateMutability: 'view',
   },
-  { type: 'event', anonymous: false, inputs: [], name: 'DeploymentCancelled' },
-  {
-    type: 'event',
-    anonymous: false,
-    inputs: [
-      {
-        name: 'treasury',
-        internalType: 'address',
-        type: 'address',
-        indexed: true,
-      },
-      {
-        name: 'underlying',
-        internalType: 'address',
-        type: 'address',
-        indexed: true,
-      },
-    ],
-    name: 'DeploymentConfigured',
-  },
   {
     type: 'event',
     anonymous: false,
@@ -952,7 +897,7 @@ export const ovrfloFactoryAbi = [
         indexed: true,
       },
     ],
-    name: 'LendingDeployed',
+    name: 'LendingRegistered',
   },
   {
     type: 'event',
@@ -1021,7 +966,7 @@ export const ovrfloFactoryAbi = [
         indexed: true,
       },
     ],
-    name: 'OvrfloDeployed',
+    name: 'OvrfloRegistered',
   },
   {
     type: 'event',

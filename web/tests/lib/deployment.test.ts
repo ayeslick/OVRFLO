@@ -76,10 +76,10 @@ describe("deployment artifacts", () => {
     ).rejects.toThrow(/lending.*no code/i);
     await expect(
       verifyDeploymentArtifact(fakeClient({ eventLending: FACTORY }), artifact),
-    ).rejects.toThrow(/LendingDeployed/i);
+    ).rejects.toThrow(/LendingRegistered/i);
   });
 
-  it("derives and verifies lending identity from the factory LendingDeployed event", async () => {
+  it("derives and verifies lending identity from the factory LendingRegistered event", async () => {
     const client = fakeClient();
     await expect(verifyDeploymentArtifact(client, artifact)).resolves.toEqual({
       factoryBlockHash: FACTORY_HASH,
@@ -93,6 +93,19 @@ describe("deployment artifacts", () => {
       }),
     );
   });
+
+  // Under the register-don't-construct factory, the lending's code-deployment transaction
+  // (forge create) and the LendingRegistered registration (cast send) are separate
+  // transactions in separate blocks. The artifact anchors to the registration event
+  // (block 105); the lending's code having existed since an earlier block (102) — rather
+  // than appearing exactly at the anchor — must still pass (eventBlock >= codeBlock).
+  it("passes when the lending's code predates the registration anchor", async () => {
+    const client = fakeClient({ lendingCodeFirstBlock: 102n });
+    await expect(verifyDeploymentArtifact(client, artifact)).resolves.toEqual({
+      factoryBlockHash: FACTORY_HASH,
+      lendingBlockHash: LENDING_HASH,
+    });
+  });
 });
 
 function fakeClient(
@@ -102,6 +115,7 @@ function fakeClient(
     lendingHash?: Hash;
     emptyCodeAt?: Address;
     eventLending?: Address;
+    lendingCodeFirstBlock?: bigint;
   } = {},
 ) {
   return {
@@ -114,9 +128,17 @@ function fakeClient(
             : (overrides.lendingHash ?? LENDING_HASH),
       }),
     ),
-    getCode: vi.fn(({ address }: { address: Address }) =>
-      Promise.resolve<`0x${string}`>(address === overrides.emptyCodeAt ? "0x" : "0x6000"),
-    ),
+    getCode: vi.fn(({ address, blockNumber }: { address: Address; blockNumber: bigint }) => {
+      if (address === overrides.emptyCodeAt) return Promise.resolve<`0x${string}`>("0x");
+      if (
+        address === LENDING &&
+        overrides.lendingCodeFirstBlock !== undefined &&
+        blockNumber < overrides.lendingCodeFirstBlock
+      ) {
+        return Promise.resolve<`0x${string}`>("0x");
+      }
+      return Promise.resolve<`0x${string}`>("0x6000");
+    }),
     getLogs: vi.fn().mockResolvedValue([
       {
         args: { ovrflo: OVRFLO, lending: overrides.eventLending ?? LENDING },

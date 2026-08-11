@@ -3,8 +3,10 @@ import { readFileSync, renameSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
-const LENDING_DEPLOYED_TOPIC =
-  "0x56aab5483cc40d7e4e6b3ce2831f55ce79d54c537d1c695c2d86656ce7a84307";
+// keccak256("LendingRegistered(address,address)"); recomputed via `cast keccak
+// "LendingRegistered(address,address)"` after the factory rename from LendingDeployed.
+const LENDING_REGISTERED_TOPIC =
+  "0x4fe43074b419acbe41e8428df134258612acf6435f32c53db0f6a4ba665b4e41";
 const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
 
 export async function verifyDeploymentArtifactInput({
@@ -33,38 +35,30 @@ export async function verifyDeploymentArtifactInput({
     latest,
     request: rpcRequest,
   });
-  let lendingCodeBlock =
-    ovrflo && lending
-      ? await findDeploymentBlock({
-          address: lending,
-          latest,
-          request: rpcRequest,
-        })
-      : undefined;
+  // The lending contract's code-deployment transaction (forge create) and the
+  // factory's registerLending call (cast send) are separate transactions in
+  // separate blocks, so the registration event can land anywhere at or after
+  // the factory's own deployment block. Search the full range rather than a
+  // single block; the anchor is the event's block, not the code's block.
   const eventLogs = await request(rpcUrl, "eth_getLogs", [
     {
       address: factory,
-      fromBlock: toQuantity(lendingCodeBlock ?? factoryDeploymentBlock),
-      toBlock: toQuantity(lendingCodeBlock ?? latest),
+      fromBlock: toQuantity(factoryDeploymentBlock),
+      toBlock: toQuantity(latest),
       topics:
         ovrflo && lending
-          ? [LENDING_DEPLOYED_TOPIC, topicAddress(ovrflo), topicAddress(lending)]
-          : [LENDING_DEPLOYED_TOPIC],
+          ? [LENDING_REGISTERED_TOPIC, topicAddress(ovrflo), topicAddress(lending)]
+          : [LENDING_REGISTERED_TOPIC],
     },
   ]);
   if (!ovrflo || !lending) {
     if (eventLogs.length !== 1) {
       throw new Error(
-        `deployment artifact requires one unambiguous LendingDeployed event; found ${eventLogs.length}`,
+        `deployment artifact requires one unambiguous LendingRegistered event; found ${eventLogs.length}`,
       );
     }
-    ovrflo = topicToAddress(eventLogs[0]?.topics?.[1], "LendingDeployed.ovrflo");
-    lending = topicToAddress(eventLogs[0]?.topics?.[2], "LendingDeployed.lending");
-    lendingCodeBlock = await findDeploymentBlock({
-      address: lending,
-      latest,
-      request: rpcRequest,
-    });
+    ovrflo = topicToAddress(eventLogs[0]?.topics?.[1], "LendingRegistered.ovrflo");
+    lending = topicToAddress(eventLogs[0]?.topics?.[2], "LendingRegistered.lending");
   }
   const event = eventLogs.find(
     (log) =>
@@ -73,12 +67,22 @@ export async function verifyDeploymentArtifactInput({
       sameHex(log.topics?.[2], topicAddress(lending)),
   );
   if (!event?.blockNumber || !event.blockHash) {
-    throw new Error("lending is not derived from a verified factory LendingDeployed event");
+    throw new Error("lending is not derived from a verified factory LendingRegistered event");
   }
   const lendingDeploymentBlock = BigInt(event.blockNumber);
-  if (lendingCodeBlock !== lendingDeploymentBlock) {
-    throw new Error("lending code deployment block does not match LendingDeployed");
+
+  // Anchor semantics: lendingDeploymentBlock is the LendingRegistered event's
+  // block, not the lending contract's code-deployment block. Code must exist
+  // no later than the anchor (eventBlock >= codeBlock), not in the same block.
+  const lendingCodeBlock = await findDeploymentBlock({
+    address: lending,
+    latest,
+    request: rpcRequest,
+  });
+  if (lendingCodeBlock > lendingDeploymentBlock) {
+    throw new Error("lending has no code at the LendingRegistered anchor block");
   }
+
   const factoryBlock = await request(rpcUrl, "eth_getBlockByNumber", [
     toQuantity(factoryDeploymentBlock),
     false,
@@ -95,7 +99,7 @@ export async function verifyDeploymentArtifactInput({
     !sameHex(event.blockHash, lendingBlock.hash) ||
     BigInt(event.blockNumber) !== lendingDeploymentBlock
   ) {
-    throw new Error("lending is not derived from a verified factory LendingDeployed event");
+    throw new Error("lending is not derived from a verified factory LendingRegistered event");
   }
 
   const verified = {
