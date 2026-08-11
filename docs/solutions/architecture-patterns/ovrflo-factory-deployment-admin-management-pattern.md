@@ -22,6 +22,19 @@ tags:
   - solidity
 ---
 
+> **Successor note (2026-08-11):** The *deployment* half of this pattern is superseded by the
+> register-don't-construct model — the factory no longer deploys `OVRFLO`/`OVRFLOToken`/`OVRFLOLending`
+> via `configureDeployment`/`deploy`/`deployLending`; children are deployed externally (any EOA/script) and
+> registered via `registerOvrflo`/`registerLending` after on-chain verification of every constructor-arg
+> binding, so the factory embeds no child creation code (EIP-170). See
+> `docs/plans/2026-08-11-001-fix-factory-mainnet-code-size-registry-plan.md` for the full design and
+> rationale. The *admin-forwarding* half below (single admin entry point, admin calls routed through
+> factory forwarders, `OVRFLOFactory.deployLending` must not transfer ownership away from the factory) remains
+> accurate — it now reads as "OVRFLOLending's constructor sets the factory as owner from birth, and
+> `registerLending` verifies it," not "`deployLending` retains ownership after `new`." See
+> `docs/solutions/patterns/ovrflo-critical-patterns.md` patterns #8 and #9 for the current enforcement
+> mechanisms and detection greps.
+
 # OVRFLOFactory deployment and admin management pattern
 
 ## Context

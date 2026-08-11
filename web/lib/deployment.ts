@@ -9,8 +9,8 @@ export const DEPLOYMENT_FORMAT_VERSION = 1;
 export const PROJECTION_SCHEMA_VERSION = 1;
 export const ABI_VERSION = 1;
 
-const lendingDeployedEvent = parseAbiItem(
-  "event LendingDeployed(address indexed ovrflo, address indexed lending)",
+const lendingRegisteredEvent = parseAbiItem(
+  "event LendingRegistered(address indexed ovrflo, address indexed lending)",
 );
 
 export type DeploymentArtifact = {
@@ -34,7 +34,7 @@ type VerificationClient = {
   getCode(args: { address: Address; blockNumber: bigint }): Promise<`0x${string}` | undefined>;
   getLogs(args: {
     address: Address;
-    event: typeof lendingDeployedEvent;
+    event: typeof lendingRegisteredEvent;
     fromBlock: bigint;
     toBlock: bigint;
   }): Promise<
@@ -98,6 +98,11 @@ export async function verifyDeploymentArtifact(
     throw new Error("factory has no code at its deployment anchor");
   }
 
+  // artifact.lendingDeploymentBlock anchors to the LendingRegistered event's block, not
+  // the lending contract's code-deployment block — code deployment (forge create) and
+  // registration (registerLending) are separate transactions under the register-don't-
+  // construct factory. The equality check against the event's blockNumber below still
+  // holds because the artifact block IS the registration-event block.
   const lendingBlock = await client.getBlock({ blockNumber: artifact.lendingDeploymentBlock });
   if (!sameHex(lendingBlock.hash, artifact.lendingDeploymentBlockHash)) {
     throw new Error("lending deployment block hash does not match the configured anchor");
@@ -112,7 +117,7 @@ export async function verifyDeploymentArtifact(
 
   const logs = await client.getLogs({
     address: artifact.factory,
-    event: lendingDeployedEvent,
+    event: lendingRegisteredEvent,
     fromBlock: artifact.lendingDeploymentBlock,
     toBlock: artifact.lendingDeploymentBlock,
   });
@@ -124,7 +129,7 @@ export async function verifyDeploymentArtifact(
       sameHex(log.blockHash, artifact.lendingDeploymentBlockHash),
   );
   if (!matching) {
-    throw new Error("lending identity is not derived from a verified factory LendingDeployed event");
+    throw new Error("lending identity is not derived from a verified factory LendingRegistered event");
   }
 
   return {

@@ -36,8 +36,10 @@ abstract contract LendingMockFixture is Test {
     uint256 internal expiry;
 
     /// @notice Deploys the book against mock registry/Sablier and sets tick spacing.
-    /// @dev The deployer (the test contract) is the book's owner, so suites can call
-    ///      `setAprBounds` / `setFee` directly instead of routing through a factory.
+    /// @dev The constructor transfers ownership to the `factory_` argument (the mock
+    ///      registry), not the deploying test contract, so suites must call
+    ///      `setAprBounds` / `setFee` / `setTickSpacing` / `setTreasury` as
+    ///      `vm.prank(address(factory))`.
     function _deployLendingSystem() internal {
         factory = new MockLendingFactory();
         core = new MockLendingCore();
@@ -50,6 +52,7 @@ abstract contract LendingMockFixture is Test {
         core.setSeries(MARKET, expiry, address(ovrfloToken), address(underlying));
 
         lending = new OVRFLOLending(address(factory), address(core), address(sablier));
+        vm.prank(address(factory));
         lending.setTickSpacing(MARKET, SPACING);
     }
 

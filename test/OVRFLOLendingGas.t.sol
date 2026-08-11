@@ -55,6 +55,8 @@ contract OVRFLOLendingGas is LendingMockFixture {
     function setUp() public {
         _deployLendingSystem();
         // Widen the bounds so all four measurement ticks are valid spacing multiples.
+        // The lending is factory-owned from construction, so owner calls are pranked.
+        vm.prank(address(factory));
         lending.setAprBounds(1000, 1100);
     }
 

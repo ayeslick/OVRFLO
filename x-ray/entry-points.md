@@ -1,6 +1,6 @@
 # Entry Point Map
 
-> OVRFLO | 40 entry points | 10 permissionless | 2 role-gated | 28 admin-only
+> OVRFLO | 38 entry points | 10 permissionless | 2 role-gated | 26 admin-only
 
 Regenerated 2026-08-10 at `f0661ab` (`codex/lending-v1-lite`) over the v1-lite lending rewrite. Counts exclude
 inherited OZ surfaces enumerated at the end (ERC20 transfer family, `Ownable2Step`, `Multicall`).
@@ -11,7 +11,7 @@ inherited OZ surfaces enumerated at the end (ERC20 transfer family, `Ownable2Ste
 
 ### Setup (Multisig → Factory)
 
-`configureDeployment()` → `deploy()` → `deployLending()` → `prepareOracle()` → `addMarket()` → `setLendingTickSpacing()`
+`new OVRFLO(...)` → `registerOvrflo()` → `new OVRFLOLending(...)` → `registerLending()` → `prepareOracle()` → `addMarket()` → `setLendingTickSpacing()`
                                                                                                      └─→ `setLendingAprBounds()` / `setLendingFee()` / `setLendingTreasury()`
 
 ### Vault user flow (depositor)
@@ -205,10 +205,8 @@ vault functions). No operational timelock exists on the contracts themselves —
 
 | Contract | Function | Parameters | State Modified |
 |----------|----------|------------|----------------|
-| OVRFLOFactory | `configureDeployment()` | treasury, underlying, nameSuffix, symbolSuffix | `pendingDeployment` |
-| OVRFLOFactory | `cancelDeployment()` | — | `pendingDeployment` |
-| OVRFLOFactory | `deploy()` | — | `ovrflos`, `ovrfloCount`, `ovrfloInfo`, `underlyingToOvrflo`; deploys OVRFLO + OVRFLOToken |
-| OVRFLOFactory | `deployLending()` | ovrflo | `ovrfloToLending`, `lendingToOvrflo`, `lendings`, `lendingCount`; deploys OVRFLOLending |
+| OVRFLOFactory | `registerOvrflo()` | ovrflo (externally deployed) | `ovrflos`, `ovrfloCount`, `ovrfloInfo`, `underlyingToOvrflo`; verifies `factory()`/`oracle()` bindings and duplicate-underlying before registering |
+| OVRFLOFactory | `registerLending()` | lending (externally deployed) | `ovrfloToLending`, `lendingToOvrflo`, `lendings`, `lendingCount`; verifies `factory()`/`owner()`/`sablier()` bindings and 1:1 vault mapping before registering |
 | OVRFLOFactory | `addMarket()` | ovrflo, market, twapDuration, feeBps | `isMarketApproved`, `approvedMarketAt`, `approvedMarketCount`; forwards to `OVRFLO.setSeriesApproved` |
 | OVRFLOFactory | `setMarketDepositLimit()` | ovrflo, market, limit | forwards to vault |
 | OVRFLOFactory | `sweepExcessPt()` | ovrflo, ptToken, to | forwards to vault |

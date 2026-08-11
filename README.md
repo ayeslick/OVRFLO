@@ -63,13 +63,13 @@ OVRFLO operates in two layers:
 │   └───┬───────────┘                                                      │
 │       │ owns                                                             │
 │       ▼                                                                  │
-│   ┌───────────────┐     deploys + admin      ┌──────────────┐            │
+│   ┌───────────────┐     registers + admin    ┌──────────────┐            │
 │   │ OVRFLOFactory │────────────────────────▶ │   OVRFLO     │            │
 │   │               │                          │  (core vault)│            │
-│   │ - configure   │                          │ - deposit()  │            │
-│   │   Deployment  │                          │ - claim()    │            │
-│   │ - deploy()    │                          │ - wrap()     │            │
-│   │ - addMarket() │                          │ - unwrap()   │            │
+│   │ - register    │                          │ - deposit()  │            │
+│   │   Ovrflo()    │                          │ - claim()    │            │
+│   │ - register    │                          │ - wrap()     │            │
+│   │   Lending()   │                          │ - unwrap()   │            │
 │   │ - prepare     │                          │ - series()   │            │
 │   │   Oracle      │                          └──────┬───────┘            │
 │   └───────┬───────┘                                 │ mints/burns        │
@@ -80,7 +80,7 @@ OVRFLO operates in two layers:
 │           │                            └──────────────────────┘          │
 │           │                                                              │
 │           │         ┌──────────────┐    ┌───────────────────┐            │
-│           │ deploys │  OVRFLOLending───▶│  StreamPricing    │            │
+│           │registers│  OVRFLOLending───▶│  StreamPricing    │            │
 │           └────────▶│  (lending)   │    │  (pricing library)│            │
 │                     │ - supply     │    │ - factor          │            │
 │                     │ - withdraw   │    │ - grossPrice      │            │
@@ -150,15 +150,13 @@ Also defines `IOVRFLOFactoryRegistry` (vault lookup + market approval) and `IOVR
 
 ### OVRFLOFactory.sol
 
-Factory and admin hub for deploying and managing OVRFLO vaults. Owned by a timelocked multisig. The Pendle TWAP oracle address is set as an immutable at construction (singleton, same on all chains).
+Registry and admin hub for externally deployed OVRFLO vaults and OVRFLOLending markets. Owned by a timelocked multisig. Deploys nothing itself — children are deployed by any EOA/script, and the factory verifies every constructor-arg binding on-chain before registering a candidate, so the factory embeds no child creation code (EIP-170). The Pendle TWAP oracle address is set as an immutable at construction (singleton, same on all chains).
 
 | Function | Description |
 |----------|-------------|
 | `constructor(owner, oracle)` | Deploy factory with multisig owner and Pendle oracle (both immutable) |
-| `configureDeployment(treasury, underlying, nameSuffix, symbolSuffix)` | Stage deployment parameters; factory prepends `OVRFLO ` to name and `ovrflo` to symbol |
-| `deploy()` | Deploy OVRFLO + OVRFLOToken from stored config; returns both addresses |
-| `deployLending(ovrflo)` | Deploy an OVRFLOLending for an existing vault (1:1, one lending market per vault); reads Sablier from the vault and retains factory ownership |
-| `cancelDeployment()` | Cancel a pending deployment |
+| `registerOvrflo(ovrflo)` | Register an externally deployed OVRFLO vault: verifies `factory()`/`oracle()` immutables match this factory and that its `underlying` has no existing registered vault, then records it |
+| `registerLending(lending)` | Register an externally deployed OVRFLOLending: verifies its core vault is registered, `factory()`/`owner()` match this factory, and its Sablier binding matches the vault's, then records it (1:1 per vault) |
 | `addMarket(ovrflo, market, twapDuration, feeBps)` | Add a PT maturity; reads PT address and expiry from Pendle market; requires ready oracle and exact underlying match |
 | `prepareOracle(market, twapDuration)` | Increase oracle cardinality before `addMarket`; duration must be 15-30 min (separate transaction) |
 | `setMarketDepositLimit(ovrflo, market, limit)` | Set deposit cap for a market |
@@ -175,7 +173,7 @@ The core vault that creates collateral from Pendle PT deposits. Depositors recei
 
 | Function | Description |
 |----------|-------------|
-| `constructor(admin, treasury, underlying, ovrfloToken, oracle)` | Initialize vault with factory as admin, treasury, underlying, token, and Pendle oracle |
+| `constructor(admin, treasury, underlying, name_, symbol_, oracle)` | Initialize vault with factory as admin, treasury, underlying, and Pendle oracle; constructs and permanently owns its own `OVRFLOToken` from `name_`/`symbol_` |
 | `deposit(market, ptAmount, minToUser)` | Deposit PT to receive ovrfloTokens + Sablier stream |
 | `claim(ptToken, amount)` | Burn ovrfloTokens to claim PT after maturity (1:1) |
 | `wrap(amount)` | Wrap underlying 1:1 into ovrfloToken (permissionless, no fees) |
@@ -192,7 +190,7 @@ The core vault that creates collateral from Pendle PT deposits. Depositors recei
 
 ### OVRFLOToken.sol
 
-ERC20 wrapper token deployed per OVRFLO/underlying asset. Owned by the OVRFLO contract, with name/symbol provided by the multisig at `configureDeployment` (factory enforces the `OVRFLO ` / `ovrflo` prefixes) and fixed 18-decimal deploy-time semantics. Mint and burn are restricted to the owner (the OVRFLO vault).
+ERC20 wrapper token constructed by its OVRFLO vault inside the vault's own constructor, one per underlying asset. Name/symbol are passed straight through to the token's constructor (multisig-reviewed off-chain before registration, following the `OVRFLO ` / `ovrflo` naming convention). Ownership is `immutable`, fixed to the constructing vault for the token's lifetime — no `transferOwnership` exists. Mint and burn are restricted to the owner (the OVRFLO vault).
 
 ## User Flows
 
@@ -361,44 +359,57 @@ All admin operations are initiated by the timelocked multisig.
 
 ### Deploying the Core System
 
+The factory deploys nothing — children are deployed externally, then registered after on-chain verification. This keeps the factory's own bytecode under the EIP-170 runtime cap (it embeds no child creation code).
+
 ```solidity
 // 1. Deploy factory (one-time, multisig is owner, oracle is singleton)
 OVRFLOFactory factory = new OVRFLOFactory(multisig, PENDLE_ORACLE);
 
-// 2. Multisig stages deployment config (factory builds "OVRFLO Wrapped Ether" / "ovrfloWETH")
-factory.configureDeployment(treasury, WETH, "Wrapped Ether", "WETH");
+// 2. Deployer EOA/script deploys the vault directly. The vault constructs and
+//    permanently owns its own OVRFLOToken internally — there is no separate
+//    token-deployment or ownership-transfer step.
+OVRFLO ovrflo = new OVRFLO(
+    address(factory), treasury, WETH, "OVRFLO Wrapped Ether", "ovrfloWETH", PENDLE_ORACLE
+);
 
-// 3. Multisig executes deployment
-(address ovrflo, address ovrfloToken) = factory.deploy();
+// 3. Multisig registers the vault, after off-chain verification that the
+//    deployment transaction's creation code + constructor args match the
+//    audited compiler artifact.
+vm.prank(multisig);
+factory.registerOvrflo(address(ovrflo));
+address ovrfloToken = ovrflo.ovrfloToken();
 ```
 
-The factory:
-- Deploys OVRFLO with factory as admin, treasury, underlying, ovrfloToken, and oracle (all as vault immutables)
-- Deploys OVRFLOToken (name/symbol from configured suffixes with `OVRFLO `/`ovrflo` prefixes, fixed 18-decimal deploy-time semantics)
-- Transfers OVRFLOToken ownership to OVRFLO
-- Registers the OVRFLO in its registry
+`registerOvrflo` verifies, on-chain, every constructor-arg binding construction used to fix: the candidate's `factory()` and `oracle()` immutables must match this factory, and its `underlying` must have no existing registered vault (one vault per underlying). Token ownership needs no on-chain check — the vault constructs its own `OVRFLOToken`, so `token.owner() == vault` holds by construction for canonical bytecode. Child deployment is permissionless; only registration is `onlyOwner`.
 
 ### Deploying the Lending Market
 
 ```solidity
-// Factory deploys and remains the owner of the lending market.
+// 1. Deployer EOA/script deploys the lending market directly. Its constructor
+//    pulls treasury/underlying/ovrfloToken from the factory registry and
+//    reverts UnknownCore unless the vault was registered in step 2 above;
+//    the factory is the lending market's owner from construction.
+OVRFLOLending lendingMarket = new OVRFLOLending(address(factory), address(ovrflo), sablier);
+
+// 2. Multisig registers the lending market, after the same off-chain
+//    bytecode-verification checklist item.
 vm.prank(multisig);
-address lendingMarket = factory.deployLending(ovrflo);
+factory.registerLending(address(lendingMarket));
 
 // Multisig configures the market through factory forwarders.
-factory.setLendingFee(lendingMarket, feeBps);
-factory.setLendingAprBounds(lendingMarket, aprMin, aprMax);
-factory.setLendingTreasury(lendingMarket, treasury);
+factory.setLendingFee(address(lendingMarket), feeBps);
+factory.setLendingAprBounds(address(lendingMarket), aprMin, aprMax);
+factory.setLendingTreasury(address(lendingMarket), treasury);
 
 // Tick spacing is per-Pendle-market and set-once: supply/borrow revert for a
 // market until this is called, and a second call reverts. The multisig must
 // sanity-check spacing during onboarding: the tick ladder view is O(rungs),
 // where rungs = (aprMax - aprMin) / spacing, so a pathological small spacing
 // permanently blows up ladder reads (keep rungs <= ~400).
-factory.setLendingTickSpacing(lendingMarket, market, spacing);
+factory.setLendingTickSpacing(address(lendingMarket), market, spacing);
 ```
 
-The factory reads the Sablier address from the vault's `sablierLL` immutable, enforces 1:1 (one lending market per vault), registers it in `ovrfloToLending` and `lendingToOvrflo`, and remains its owner. The lending market pulls treasury, underlying, and ovrfloToken from the factory registry at construction. APR bounds initialize to the launch APR (10%), which is also the only valid tick until the multisig widens the bounds. Factory deployment is the only supported production path.
+`registerLending` verifies the candidate's `factory()`/`owner()` immutables match this factory and its Sablier binding matches the vault's `sablierLL`, enforces 1:1 (one lending market per vault), and registers it in `ovrfloToLending`/`lendingToOvrflo`. APR bounds initialize to the launch APR (10%), which is also the only valid tick until the multisig widens the bounds. See `docs/plans/2026-08-11-001-fix-factory-mainnet-code-size-registry-plan.md` for the full design and security analysis of the register-don't-construct model.
 
 ### Onboarding a New Market
 

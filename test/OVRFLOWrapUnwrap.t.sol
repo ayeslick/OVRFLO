@@ -67,10 +67,11 @@ contract OVRFLOWrapUnwrapTest is Test {
         recipient = makeAddr("recipient");
 
         underlying = new TestERC20("Underlying", "UND");
-        ovrfloToken = new OVRFLOToken("OVRFLO Underlying", "ovrfloUND");
-        admin = new MockOvrfloAdmin(TREASURY, address(underlying), address(ovrfloToken));
-        ovrflo = new OVRFLO(address(admin), TREASURY, address(underlying), address(ovrfloToken), DUMMY_ORACLE);
-        ovrfloToken.transferOwnership(address(ovrflo));
+        admin = new MockOvrfloAdmin(TREASURY, address(underlying), address(0));
+        ovrflo =
+            new OVRFLO(address(admin), TREASURY, address(underlying), "OVRFLO Underlying", "ovrfloUND", DUMMY_ORACLE);
+        ovrfloToken = OVRFLOToken(ovrflo.ovrfloToken());
+        admin.setInfo(TREASURY, address(underlying), address(ovrfloToken));
     }
 
     function test_Wrap_MintsOneToOnePullsUnderlyingIncrementsReserveAndEmitsEvent() public {
@@ -94,10 +95,9 @@ contract OVRFLOWrapUnwrapTest is Test {
 
     function test_Wrap_RevertsWhenUnderlyingTransfersLessThanRequestedAmount() public {
         ShortTransferUnderlying shortUnderlying = new ShortTransferUnderlying();
-        OVRFLOToken shortToken = new OVRFLOToken("OVRFLO Short", "ovrfloSUND");
         OVRFLO shortOvrflo =
-            new OVRFLO(address(admin), TREASURY, address(shortUnderlying), address(shortToken), DUMMY_ORACLE);
-        shortToken.transferOwnership(address(shortOvrflo));
+            new OVRFLO(address(admin), TREASURY, address(shortUnderlying), "OVRFLO Short", "ovrfloSUND", DUMMY_ORACLE);
+        OVRFLOToken shortToken = OVRFLOToken(shortOvrflo.ovrfloToken());
 
         uint256 amount = 10 ether;
         shortUnderlying.mint(user, amount);
@@ -213,10 +213,10 @@ contract OVRFLOWrapUnwrapTest is Test {
 
     function test_ReentrantUnderlyingCannotDoubleSpendReserveDuringUnwrap() public {
         ReentrantUnderlying reentrantUnderlying = new ReentrantUnderlying();
-        OVRFLOToken reentrantToken = new OVRFLOToken("OVRFLO Reentrant", "ovrfloRUND");
-        OVRFLO reentrantOvrflo =
-            new OVRFLO(address(admin), TREASURY, address(reentrantUnderlying), address(reentrantToken), DUMMY_ORACLE);
-        reentrantToken.transferOwnership(address(reentrantOvrflo));
+        OVRFLO reentrantOvrflo = new OVRFLO(
+            address(admin), TREASURY, address(reentrantUnderlying), "OVRFLO Reentrant", "ovrfloRUND", DUMMY_ORACLE
+        );
+        OVRFLOToken reentrantToken = OVRFLOToken(reentrantOvrflo.ovrfloToken());
 
         uint256 amount = 10 ether;
         reentrantUnderlying.mint(user, amount);
@@ -296,13 +296,13 @@ contract OVRFLOWrapUnwrapTest is Test {
 
     function test_FactorySweepExcessUnderlying_ForwardsOwnerSweepEndToEnd() public {
         OVRFLOFactory factory = new OVRFLOFactory(OWNER, DUMMY_ORACLE);
-        vm.startPrank(OWNER);
-        factory.configureDeployment(TREASURY, address(underlying), "Underlying", "UND");
-        (address deployedOvrflo, address deployedToken) = factory.deploy();
-        vm.stopPrank();
+        OVRFLO deployed =
+            new OVRFLO(address(factory), TREASURY, address(underlying), "OVRFLO Underlying", "ovrfloUND", DUMMY_ORACLE);
+        vm.prank(OWNER);
+        factory.registerOvrflo(address(deployed));
 
-        OVRFLO deployed = OVRFLO(deployedOvrflo);
-        OVRFLOToken token = OVRFLOToken(deployedToken);
+        address deployedOvrflo = address(deployed);
+        OVRFLOToken token = OVRFLOToken(deployed.ovrfloToken());
         uint256 amount = 5 ether;
         underlying.mint(user, amount);
 

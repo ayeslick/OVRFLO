@@ -125,8 +125,8 @@ Retired with the sale/pool design (no successor block): A's `X-1`/`X-2`/`X-3` (u
 
 | Entry point | Invariant IDs | ◆ |
 |-------------|---------------|---|
-| `OVRFLOFactory.configureDeployment()` / `cancelDeployment()` / `deploy()` | X-3, X-5 | |
-| `OVRFLOFactory.deployLending()` | X-3 | |
+| `OVRFLOFactory.registerOvrflo()` | X-3, X-5 | |
+| `OVRFLOFactory.registerLending()` | X-3 | |
 | `OVRFLOFactory.addMarket()` | G-11/21/22, I-24, X-1 | |
 | `OVRFLOFactory.setMarketDepositLimit()` | G-8 | |
 | `OVRFLOFactory.prepareOracle()` | G-11 | |
@@ -139,7 +139,7 @@ Retired with the sale/pool design (no successor block): A's `X-1`/`X-2`/`X-3` (u
 | `OVRFLO.setMarketDepositLimit()` | G-8 | |
 | `OVRFLO.sweepExcessPt()` / `sweepExcessUnderlying()` | G-18/19/20, I-24 | |
 | `OVRFLO.setFlashFeeBps()` / `setFlashLoanPaused()` | G-15/23 | |
-| `OVRFLOToken.transferOwnership()` / `mint()` / `burn()` | X-5 | |
+| `OVRFLOToken.mint()` / `burn()` | X-5 | |
 | `OVRFLOLending.setAprBounds()` | G-48/49, I-11 | |
 | `OVRFLOLending.setTickSpacing()` | G-50/51, I-15 | |
 | `OVRFLOLending.setFee()` | G-52, I-12 | |

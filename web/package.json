@@ -22,7 +22,7 @@
     "test:e2e": "npm run pretest && bddgen && playwright test",
     "test:e2e:ui": "npm run pretest && bddgen && playwright test --ui",
     "a11y": "bash scripts/a11y-sweep.sh",
-    "anvil:fork": "anvil --fork-url \"$MAINNET_RPC_URL\" --chain-id 1 --disable-code-size-limit",
+    "anvil:fork": "anvil --fork-url \"$MAINNET_RPC_URL\" --chain-id 1",
     "deploy:seed:local": "cd .. && ./script/seed-local.sh",
     "deploy:seed:devnet": "cd .. && forge script script/SeedDevnet.s.sol:SeedDevnet --rpc-url \"$TENDERLY_RPC_URL\" --broadcast --slow && DEPLOYMENT_RPC_URL=\"$TENDERLY_RPC_URL\" node tools/scripts/write-deployment-artifact.mjs deployments/devnet.json",
     "env:write:local": "cd .. && ./tools/scripts/write-env.sh local",

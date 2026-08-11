@@ -21,6 +21,22 @@ Full disproofs: `docs/audit/rejected-findings-record.md`. Sablier ACL table: `do
 
 <!--
   Refresh log:
+  - 2026-08-11: Refreshed patterns #8 and #9 for the factory-size fix
+    (register, don't construct — docs/plans/2026-08-11-001-fix-factory-
+    mainnet-code-size-registry-plan.md). OVRFLOFactory no longer embeds child
+    creation code; OVRFLO and OVRFLOLending are deployed externally and
+    registered via registerOvrflo()/registerLending() after on-chain
+    verification. Pattern #8's detection grep is shape-changed from
+    "deployLending must not call transferOwnership" to asserting
+    OVRFLOLending's constructor calls `_transferOwnership(factory_)`
+    (src/OVRFLOLending.sol:337) and registerLending checks `owner() ==
+    address(this)` (src/OVRFLOFactory.sol:176, OwnerMismatch). Pattern #9's
+    guard moved from configureDeployment (deleted) to registerOvrflo
+    (src/OVRFLOFactory.sol:148, UnderlyingAlreadyDeployed); rewrote the
+    "mapping is set at deploy() time" timing paragraph — deployment is now
+    external and permissionless, so competing unregistered candidates for one
+    underlying can coexist, and the registry still admits exactly one. Both
+    patterns now cite their guarding tests in test/OVRFLOFactory.t.sol.
   - 2026-07-27: Fixed pattern #3's detection script — it scoped to a
     `*Modal*.tsx` filename glob, which silently missed `MarketDetail.tsx`
     (the component actually rendered by MarketsApp; `ActionModal`'s own
@@ -809,24 +825,44 @@ intentional.
 
 ## 8. The factory owns every deployed lending — lending admin is forwarded, not direct (ALWAYS REQUIRED)
 
-### ❌ WRONG (multisig calls the lending directly, bypassing the factory)
+**Refreshed 2026-08-11** (factory-size fix, `docs/plans/2026-08-11-001-fix-factory-mainnet-code-size-registry-plan.md`): `OVRFLOLending` is now deployed externally (any EOA/script) and *registered* by the factory, not constructed by it. The enforcement mechanism moved from "`deployLending` must not call `transferOwnership`" to two load-bearing pieces: the lending's own constructor sets the factory as owner from birth, and `registerLending` refuses to admit a candidate whose owner isn't the factory.
+
+### ❌ WRONG (owner set to the deploying EOA; registration doesn't check it)
 
 ```solidity
-// deployLending transfers ownership to the multisig
-b.transferOwnership(owner());
+// OVRFLOLending constructor omits _transferOwnership(factory_) — OZ Ownable's
+// default leaves owner() == msg.sender, i.e. whichever EOA deployed it.
+constructor(address factory_, address core_, address sablier_) {
+    // ...factory/core/sablier wiring...
+    // no _transferOwnership(factory_) call
+}
 
-// multisig calls OVRFLOLending.setAprBounds directly
-OVRFLOLending(lending).setAprBounds(500, 2000);
-// Now a factory ownership transfer does NOT move lending governance.
-// Lending markets stay owned by the old multisig address.
+// registerLending admits it anyway (no owner check)
+function registerLending(address lending) external onlyOwner {
+    // ...no `if (lendingMarket.owner() != address(this)) revert ...` check...
+    ovrfloToLending[ovrflo] = lending;
+}
+// The deployer EOA — not the factory — now owns a registered lending market.
+// A factory ownership transfer does NOT move its governance, and the EOA can
+// call setAprBounds/setFee/setTreasury directly, bypassing every forwarder.
 ```
 
-### ✅ CORRECT (factory stays the owner; admin flows through forwarders)
+### ✅ CORRECT (factory is the owner from construction; registration verifies it; admin flows through forwarders)
 
 ```solidity
-// deployLending — no transferOwnership call; factory is the lending's owner
-OVRFLOLending b = new OVRFLOLending(address(this), ovrflo, sablierAddr);
-// factory remains owner
+// OVRFLOLending's constructor sets the factory as owner from birth
+constructor(address factory_, address core_, address sablier_) {
+    // ...factory/core/sablier wiring...
+    _transferOwnership(factory_); // src/OVRFLOLending.sol:337
+}
+
+// registerLending refuses any candidate whose owner isn't this factory
+function registerLending(address lending) external onlyOwner {
+    // ...core/factory/sablier checks...
+    if (lendingMarket.owner() != address(this)) revert OwnerMismatch(); // src/OVRFLOFactory.sol:176
+    ovrfloToLending[ovrflo] = lending;
+    // ...
+}
 
 // factory exposes forwarding functions
 function setLendingAprBounds(address lending, uint16 aprMinBps_, uint16 aprMaxBps_)
@@ -843,57 +879,70 @@ every lending, a single factory ownership transfer moves governance for all
 dependents atomically. If lending markets are owned directly by the multisig, a factory
 ownership rotation silently abandons lending governance — the lending markets stay owned by
 the old multisig address while the factory moves to the new one. This is an
-operational incident in a timelocked-multisig context, not a refactor.
+operational incident in a timelocked-multisig context, not a refactor. Under
+external deployment the risk shifts one step earlier: without the constructor
+setting the owner and registration checking it, a deployer EOA could hold
+control of a market between deployment and registration (or forever, if
+registration didn't check).
 
-**Placement/Context:** `OVRFLOFactory.deployLending` (must not transfer
-ownership away from the factory) and every admin action on `OVRFLOLending`
-(`setAprBounds`, `setFee`, `setTreasury` — must be forwarded through a
-factory function, not called directly on the lending).
+**Placement/Context:** `OVRFLOLending`'s constructor (must call
+`_transferOwnership(factory_)`), `OVRFLOFactory.registerLending` (must check
+`owner() == address(this)` before admitting a candidate), and every admin
+action on `OVRFLOLending` (`setAprBounds`, `setFee`, `setTreasury` — must be
+forwarded through a factory function, not called directly on the lending).
 
 **How to detect violation:**
 
 ```bash
-# deployLending must NOT call transferOwnership
-rg "transferOwnership" src/OVRFLOFactory.sol | rg -v "token.transferOwnership(ovrflo)"
-# expected: no matches (the only transferOwnership is for OVRFLOToken -> vault)
+# OVRFLOLending's constructor must set the factory as owner from birth
+rg -c '_transferOwnership\(factory_\)' src/OVRFLOLending.sol
+# expected: 1
+
+# registerLending must verify the candidate's owner is this factory
+rg -c 'revert OwnerMismatch' src/OVRFLOFactory.sol
+# expected: 1 (the check inside registerLending; the error declaration itself is separate)
 
 # Lending admin functions must not be called directly by the multisig
 rg "setAprBounds|setFee|setTreasury" src/OVRFLOFactory.sol
 # expected: 3 forwarding functions (setLendingAprBounds, setLendingFee, setLendingTreasury)
 ```
 
+**Guarding tests** (`test/OVRFLOFactory.t.sol`): `test_RegisterLending_RevertsForOwnerMismatch` (mock lookalike
+whose `owner()` isn't the factory) and `test_RegisterLending_SucceedsFromEoaDeployedLending` (end-to-end happy
+path with the lending deployed by a plain EOA, no pranks-as-factory — the shape that exposes ownership-model
+regressions that owner-pranked fixtures mask).
+
 **Documented in:** [`docs/solutions/architecture-patterns/ovrflo-factory-deployment-admin-management-pattern.md`](../architecture-patterns/ovrflo-factory-deployment-admin-management-pattern.md)
 
 ---
 
-## 9. One vault per underlying — `configureDeployment` must reject duplicates (ALWAYS REQUIRED)
+## 9. One vault per underlying — `registerOvrflo` must reject duplicates (ALWAYS REQUIRED)
+
+**Refreshed 2026-08-11** (factory-size fix, `docs/plans/2026-08-11-001-fix-factory-mainnet-code-size-registry-plan.md`): `OVRFLO` vaults are now deployed externally and *registered* by the factory, not constructed by it. The guard moved from `configureDeployment` to `registerOvrflo`.
 
 ### ❌ WRONG (no guard, silently creates a non-fungible second token)
 
 ```solidity
-function configureDeployment(...) external onlyOwner {
-    // no check — a second vault for the same underlying is allowed
-    pendingDeployment = DeploymentConfig({ underlying: underlying, ... });
+function registerOvrflo(address ovrflo) external onlyOwner {
+    // no duplicate-underlying check — a second vault for an underlying that
+    // already has a registered vault is admitted
+    ovrfloInfo[ovrflo] = OvrfloInfo({treasury: treasury, underlying: underlying, ovrfloToken: ovrfloToken});
 }
-// deploy() creates a second OVRFLOToken for the same underlying.
+// A second, distinct OVRFLOToken for the same underlying is now registered.
 // The two tokens are NOT fungible with each other, breaking the
 // "cross-market ovrfloToken fungibility under one underlying" invariant.
 ```
 
-### ✅ CORRECT (reject at configure time, before any deployment)
+### ✅ CORRECT (reject at registration, before any binding is recorded)
 
 ```solidity
-function configureDeployment(...) external onlyOwner {
-    require(
-        underlyingToOvrflo[underlying] == address(0),
-        "OVRFLOFactory: underlying already deployed"
-    );
-    pendingDeployment = DeploymentConfig({ underlying: underlying, ... });
-}
+function registerOvrflo(address ovrflo) external onlyOwner {
+    // ...zero-address, already-registered, factory, and oracle checks...
+    address underlying = vault.underlying();
+    if (underlyingToOvrflo[underlying] != address(0)) revert UnderlyingAlreadyDeployed(); // src/OVRFLOFactory.sol:148
 
-function deploy() external onlyOwner returns (address ovrflo) {
-    // ...deploy vault...
-    underlyingToOvrflo[config.underlying] = ovrflo; // lock after deploy
+    // ...
+    underlyingToOvrflo[underlying] = ovrflo; // locked at registration
 }
 ```
 
@@ -903,25 +952,32 @@ same underlying mint two distinct `OVRFLOToken` contracts that are not
 fungible with each other. A user who deposits into the second vault expecting
 parity with the first gets a different token. The guard turns a silent
 invariant violation into a loud revert at the earliest possible point
-(configure, not deploy).
+(registration, before the candidate is admitted).
 
-The mapping is set at `deploy()` time, not `configureDeployment()` time, so
-reconfiguring a pending (never-deployed) config is still allowed — the guard
-only fires when a vault already exists for that underlying.
+**Pattern #9 timing.** Because child deployment is now permissionless and happens outside the factory
+entirely (any EOA/script can `new OVRFLO(...)` for the same underlying), multiple unregistered *candidate*
+vaults for one underlying can coexist — deployment itself creates no state the factory tracks. The registry
+still admits exactly one: the guard fires at `registerOvrflo` time against the first candidate the multisig
+registers, and every later candidate for that underlying reverts `UnderlyingAlreadyDeployed`, permanently
+protocol-disconnected (see the plan's Security analysis). This is the same end state the old
+configure-time guard produced — only the point in time where competing candidates can exist has moved earlier,
+from "pending, unconfigured" to "deployed, unregistered."
 
-**Placement/Context:** `OVRFLOFactory.configureDeployment` (the guard) and
-`OVRFLOFactory.deploy` (the mapping write). The `underlyingToOvrflo` mapping
-is the single source of truth for which underlyings have live vaults.
+**Placement/Context:** `OVRFLOFactory.registerOvrflo` (the guard, check 5) and its effects (the
+`underlyingToOvrflo` write). The mapping is the single source of truth for which underlyings have registered
+vaults.
 
 **How to detect violation:**
 
 ```bash
-rg "underlying already deployed" src/OVRFLOFactory.sol
-# expected: 1 match in configureDeployment
+rg -c 'revert UnderlyingAlreadyDeployed' src/OVRFLOFactory.sol
+# expected: 1 (the check inside registerOvrflo; the error declaration itself is separate)
 
-rg "underlyingToOvrflo\[config.underlying\]" src/OVRFLOFactory.sol
-# expected: 1 match in deploy()
+rg -c 'underlyingToOvrflo\[underlying\] = ovrflo' src/OVRFLOFactory.sol
+# expected: 1 (the write, inside registerOvrflo)
 ```
+
+**Guarding test:** `test_RegisterOvrflo_RevertsForDuplicateUnderlying` — `test/OVRFLOFactory.t.sol`.
 
 **Documented in:** [`docs/solutions/architecture-patterns/ovrflo-factory-deployment-admin-management-pattern.md`](../architecture-patterns/ovrflo-factory-deployment-admin-management-pattern.md)
 

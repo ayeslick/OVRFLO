@@ -105,8 +105,11 @@
 
 - **Local seeding follows the `forge create` + `cast send` driver pattern** —
   never `forge script --broadcast` against local Anvil (CP#2). The Anvil
-  invocation for local work carries `--disable-code-size-limit` until the
-  factory-size fix lands (documented in `script/seed-local.sh`'s header).
+  invocation for local work no longer needs `--disable-code-size-limit`
+  (retired 2026-08-11 by the factory-size fix — the register-don't-construct
+  model, `docs/plans/2026-08-11-001-fix-factory-mainnet-code-size-registry-plan.md`
+  — brought the factory under the EIP-170 runtime cap, so local seeding now
+  proves real mainnet deployability instead of masking it).
 - **Well-known Anvil dev keys are pasted whole and verified** —
   `cast wallet address --private-key` must derive the expected account before
   a script ships (the truncated-key lesson, ticket 08).

@@ -333,6 +333,8 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
         ovrfloToken = ovrfloToken_;
         aprMinBps = LAUNCH_APR_BPS;
         aprMaxBps = LAUNCH_APR_BPS;
+
+        _transferOwnership(factory_);
     }
 
     /*//////////////////////////////////////////////////////////////

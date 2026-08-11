@@ -155,10 +155,9 @@ contract OVRFLOWrapUnwrapInvariantTest is Test {
     function setUp() public {
         underlying = new TestERC20("Underlying", "UND");
         pt = new TestERC20("PT", "PT");
-        ovrfloToken = new OVRFLOToken("OVRFLO Underlying", "ovrfloUND");
         admin = new MockOvrfloAdmin(address(0), address(0), address(0));
-        ovrflo = new OVRFLO(address(admin), TREASURY, address(underlying), address(ovrfloToken), ORACLE);
-        ovrfloToken.transferOwnership(address(ovrflo));
+        ovrflo = new OVRFLO(address(admin), TREASURY, address(underlying), "OVRFLO Underlying", "ovrfloUND", ORACLE);
+        ovrfloToken = OVRFLOToken(ovrflo.ovrfloToken());
 
         admin.setInfo(TREASURY, address(underlying), address(ovrfloToken));
         admin.approveSeries(ovrflo, MARKET, address(pt), TWAP_DURATION, EXPIRY);

@@ -262,22 +262,32 @@ contract OVRFLO is ReentrancyGuard {
                               CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Initializes the OVRFLO contract
+    /// @notice Initializes the OVRFLO contract and constructs its ovrfloToken
+    /// @dev The vault creates and permanently owns its token, so token ownership and
+    ///      mint/burn wiring cannot be misconfigured by an external deployer. Name and
+    ///      symbol are full ERC20 strings, reviewed by the multisig before registration.
     /// @param admin The factory address (immutable admin for the vault's lifetime)
     /// @param treasury The treasury address for fee collection
     /// @param _underlying The underlying asset address (constant per vault)
-    /// @param _ovrfloToken The ovrflo token address (constant per vault)
-    constructor(address admin, address treasury, address _underlying, address _ovrfloToken, address _oracle) {
+    /// @param name_ Full ERC20 name for the vault's ovrfloToken
+    /// @param symbol_ Full ERC20 symbol for the vault's ovrfloToken
+    constructor(
+        address admin,
+        address treasury,
+        address _underlying,
+        string memory name_,
+        string memory symbol_,
+        address _oracle
+    ) {
         if (admin == address(0)) revert ZeroAddress();
         if (treasury == address(0)) revert ZeroAddress();
         if (_underlying == address(0)) revert ZeroAddress();
-        if (_ovrfloToken == address(0)) revert ZeroAddress();
         if (_oracle == address(0)) revert ZeroAddress();
 
         factory = admin;
         TREASURY_ADDR = treasury;
         underlying = _underlying;
-        ovrfloToken = _ovrfloToken;
+        ovrfloToken = address(new OVRFLOToken(name_, symbol_));
         oracle = _oracle;
 
         IERC20(ovrfloToken).approve(address(sablierLL), type(uint256).max);

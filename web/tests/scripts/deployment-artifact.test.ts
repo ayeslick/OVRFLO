@@ -13,6 +13,10 @@ const OVRFLO = "0x2234567890abcdef1234567890abcdef12345678";
 const LENDING = "0x3234567890abcdef1234567890abcdef12345678";
 const FACTORY_HASH = `0x${"ab".repeat(32)}`;
 const LENDING_HASH = `0x${"cd".repeat(32)}`;
+// keccak256("LendingRegistered(address,address)") — mirrors the constant recomputed in
+// tools/scripts/write-deployment-artifact.mjs after the factory rename from LendingDeployed.
+const LENDING_REGISTERED_TOPIC =
+  "0x4fe43074b419acbe41e8428df134258612acf6435f32c53db0f6a4ba665b4e41";
 const temporaryDirectories: string[] = [];
 
 afterEach(async () => {
@@ -21,7 +25,11 @@ afterEach(async () => {
 });
 
 describe("deployment artifact generator", () => {
-  it("discovers code anchors and verifies LendingDeployed before writing versions", async () => {
+  // The lending contract's code-deployment transaction (forge create, block 7) and the
+  // factory's registerLending call (cast send, block 9) are separate transactions under
+  // the register-don't-construct factory. The artifact anchors to the registration event
+  // (block 9); code existing strictly earlier (eventBlock >= codeBlock) must still pass.
+  it("discovers code anchors and verifies LendingRegistered before writing versions, tolerating an earlier lending code block", async () => {
     const root = await mkdtemp(join(tmpdir(), "ovrflo-deployment-"));
     temporaryDirectories.push(root);
     const artifactPath = join(root, "local.json");
@@ -42,7 +50,7 @@ describe("deployment artifact generator", () => {
       if (method === "eth_blockNumber") return "0x10";
       if (method === "eth_getCode") {
         const [address, block] = params as [string, string];
-        const firstBlock = address.toLowerCase() === FACTORY.toLowerCase() ? 5n : 9n;
+        const firstBlock = address.toLowerCase() === FACTORY.toLowerCase() ? 5n : 7n;
         return BigInt(block) >= firstBlock ? "0x6000" : "0x";
       }
       if (method === "eth_getBlockByNumber") {
@@ -55,7 +63,7 @@ describe("deployment artifact generator", () => {
             blockNumber: "0x9",
             blockHash: LENDING_HASH,
             topics: [
-              "0x56aab5483cc40d7e4e6b3ce2831f55ce79d54c537d1c695c2d86656ce7a84307",
+              LENDING_REGISTERED_TOPIC,
               `0x${OVRFLO.slice(2).padStart(64, "0")}`,
               `0x${LENDING.slice(2).padStart(64, "0")}`,
             ],
@@ -80,9 +88,51 @@ describe("deployment artifact generator", () => {
       lending: LENDING,
       factoryDeploymentBlock: "5",
       factoryDeploymentBlockHash: FACTORY_HASH,
+      // lendingDeploymentBlock anchors to the registration event (block 9), not the
+      // lending's own code-deployment block (7) — the two-transaction case this
+      // scenario pins.
       lendingDeploymentBlock: "9",
       lendingDeploymentBlockHash: LENDING_HASH,
     });
+  });
+
+  it("rejects when the expected LendingRegistered event is missing at the anchored block", async () => {
+    const root = await mkdtemp(join(tmpdir(), "ovrflo-deployment-"));
+    temporaryDirectories.push(root);
+    const artifactPath = join(root, "local.json");
+    writeFileSync(
+      artifactPath,
+      JSON.stringify({
+        formatVersion: 1,
+        projectionSchemaVersion: 1,
+        abiVersion: 1,
+        freshGeneration: true,
+        chainId: 1,
+        factory: FACTORY,
+        ovrflo: OVRFLO,
+        lending: LENDING,
+      }),
+    );
+
+    const request = vi.fn(async (_url: string, method: string, params: unknown[]) => {
+      if (method === "eth_chainId") return "0x1";
+      if (method === "eth_blockNumber") return "0x10";
+      if (method === "eth_getCode") {
+        const [address, block] = params as [string, string];
+        const firstBlock = address.toLowerCase() === FACTORY.toLowerCase() ? 5n : 7n;
+        return BigInt(block) >= firstBlock ? "0x6000" : "0x";
+      }
+      if (method === "eth_getLogs") return [];
+      throw new Error(`unexpected ${method}`);
+    });
+
+    await expect(
+      verifyAndWriteDeploymentArtifact({
+        artifactPath,
+        rpcUrl: "https://redacted.example",
+        request,
+      }),
+    ).rejects.toThrow(/LendingRegistered/i);
   });
 
   it("does not put a credential-bearing URL in RPC failure messages", async () => {

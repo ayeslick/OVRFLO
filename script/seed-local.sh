@@ -10,14 +10,16 @@
 # paths are not regressed.
 #
 # Usage (from repo root):
-#   anvil --fork-url "$MAINNET_RPC_URL" --chain-id 1 --disable-code-size-limit
+#   anvil --fork-url "$MAINNET_RPC_URL" --chain-id 1
 #   ./script/seed-local.sh
 #
-# --disable-code-size-limit is REQUIRED: OVRFLOFactory embeds the creation code
-# of OVRFLO + OVRFLOToken + OVRFLOLending, putting its initcode (50,609 B) over
-# the EIP-3860 cap (49,152 B) and its runtime (50,122 B) over EIP-170 (24,576 B).
-# That makes the factory undeployable under mainnet rules — a known open finding
-# (2026-08-10, ticket 08 seed smoke), not something this script can fix.
+# This seed runs under real mainnet code-size rules by design: OVRFLOFactory
+# no longer embeds any child creation code (children are deployed externally
+# via `forge create` and registered with `registerOvrflo`/`registerLending`
+# below), so its runtime fits EIP-170 (7,413 B) with no flag needed. This is
+# the acceptance gate of
+# docs/plans/2026-08-11-001-fix-factory-mainnet-code-size-registry-plan.md
+# (the 2026-08-10 ticket-08 seed-smoke finding that flag used to work around).
 #
 # Which two Pendle wstETH markets get seeded is discovered live on every run
 # (see lib/discover-pendle-market.sh), not hardcoded — this script forks the
@@ -57,8 +59,8 @@ WSTETH=0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0
 ORACLE=0x9a9Fa8338dd5E5B2188006f1Cd2Ef26d921650C2
 SABLIER=0xAFb979d9afAd1aD27C5eFf4E27226E3AB9e5dCC9
 TWAP=900
-NAME_SUFFIX="Wrapped Staked Ether"
-SYMBOL_SUFFIX="WSTETH"
+VAULT_NAME="OVRFLO Wrapped Staked Ether"
+VAULT_SYMBOL="ovrfloWSTETH"
 PT_SEED_AMOUNT=1000000000000000000000   # 1000 * 1e18
 STETH_SEED_ETH=200ether
 WSTETH_SEED_AMOUNT=60000000000000000000 # 60 * 1e18 per seeded wallet
@@ -133,15 +135,28 @@ if [ -z "$FACTORY_TX" ] || [ "$FACTORY_TX" = "null" ]; then
 fi
 echo "      factory = $FACTORY"
 
-echo "[2/9] configure + deploy OVRFLO + OVRFLOToken"
-send "$FACTORY" \
-  'configureDeployment(address,address,string,string)' \
-  "$TREASURY" "$WSTETH" "$NAME_SUFFIX" "$SYMBOL_SUFFIX"
-send "$FACTORY" 'deploy()'
-OVRFLO=$(cast call --rpc-url "$RPC" "$FACTORY" 'ovrflos(uint256)(address)' 0)
-TOKEN=$(cast call --rpc-url "$RPC" "$FACTORY" \
+echo "[2/9] deploy OVRFLO vault + register with factory"
+OVRFLO_JSON=$(
+  forge create \
+    --rpc-url "$RPC" --private-key "$OWNER_PK" --broadcast --legacy --json \
+    src/OVRFLO.sol:OVRFLO \
+    --constructor-args "$FACTORY" "$TREASURY" "$WSTETH" "$VAULT_NAME" "$VAULT_SYMBOL" "$ORACLE"
+)
+OVRFLO=$(echo "$OVRFLO_JSON" | jq -r '.deployedTo')
+send "$FACTORY" 'registerOvrflo(address)' "$OVRFLO"
+TOKEN=$(cast call --rpc-url "$RPC" "$OVRFLO" 'ovrfloToken()(address)')
+
+# Post-registration verification: confirm the factory's registry agrees with
+# what registerOvrflo just wrote (kept from the old deploy()-era reads).
+REGISTERED_OVRFLO=$(cast call --rpc-url "$RPC" "$FACTORY" 'ovrflos(uint256)(address)' 0)
+REGISTERED_TOKEN=$(cast call --rpc-url "$RPC" "$FACTORY" \
   'ovrfloInfo(address)(address,address,address)' "$OVRFLO" \
   | sed -n '3p')
+if [ "$(echo "$REGISTERED_OVRFLO" | tr '[:upper:]' '[:lower:]')" != "$(echo "$OVRFLO" | tr '[:upper:]' '[:lower:]')" ] \
+  || [ "$(echo "$REGISTERED_TOKEN" | tr '[:upper:]' '[:lower:]')" != "$(echo "$TOKEN" | tr '[:upper:]' '[:lower:]')" ]; then
+  echo "seed-local: factory registry disagrees with the deployed vault/token after registerOvrflo" >&2
+  exit 1
+fi
 echo "      ovrflo  = $OVRFLO"
 echo "      token   = $TOKEN"
 
@@ -157,10 +172,24 @@ send "$FACTORY" 'addMarket(address,address,uint32,uint16)' \
 send "$FACTORY" 'addMarket(address,address,uint32,uint16)' \
   "$OVRFLO" "$SECONDARY_MARKET" "$TWAP" 10
 
-echo "[5/9] deploy OVRFLOLending"
+echo "[5/9] deploy OVRFLOLending + register with factory"
+LENDING_SABLIER=$(cast call --rpc-url "$RPC" "$OVRFLO" 'sablierLL()(address)')
+LENDING_JSON=$(
+  forge create \
+    --rpc-url "$RPC" --private-key "$OWNER_PK" --broadcast --legacy --json \
+    src/OVRFLOLending.sol:OVRFLOLending \
+    --constructor-args "$FACTORY" "$OVRFLO" "$LENDING_SABLIER"
+)
+LENDING=$(echo "$LENDING_JSON" | jq -r '.deployedTo')
 LENDING_RECEIPT=$(cast send --rpc-url "$RPC" --private-key "$OWNER_PK" --legacy --json \
-  "$FACTORY" 'deployLending(address)' "$OVRFLO")
-LENDING=$(cast call --rpc-url "$RPC" "$FACTORY" 'ovrfloToLending(address)(address)' "$OVRFLO")
+  "$FACTORY" 'registerLending(address)' "$LENDING")
+
+# Post-registration verification: the registry must point back at what we registered.
+REGISTERED_LENDING=$(cast call --rpc-url "$RPC" "$FACTORY" 'ovrfloToLending(address)(address)' "$OVRFLO")
+if [ "$(echo "$REGISTERED_LENDING" | tr '[:upper:]' '[:lower:]')" != "$(echo "$LENDING" | tr '[:upper:]' '[:lower:]')" ]; then
+  echo "seed-local: factory.ovrfloToLending does not match the deployed lending market after registerLending" >&2
+  exit 1
+fi
 echo "      lending = $LENDING"
 
 # Onboarding-checklist spacing sanity (U5 security review, plan risk table): the

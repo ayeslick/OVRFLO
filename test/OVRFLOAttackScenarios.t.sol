@@ -126,9 +126,8 @@ contract OVRFLOAttackScenariosTest is VaultMockHelpers {
         ptA = new TestERC20("PT-A", "PTA");
         ptB = new TestERC20("PT-B", "PTB");
 
-        ovrfloToken = new OVRFLOToken("OVRFLO UND", "ovrfloUND");
-        ovrflo = new OVRFLO(ADMIN, TREASURY, address(underlying), address(ovrfloToken), PENDLE_ORACLE);
-        ovrfloToken.transferOwnership(address(ovrflo));
+        ovrflo = new OVRFLO(ADMIN, TREASURY, address(underlying), "OVRFLO UND", "ovrfloUND", PENDLE_ORACLE);
+        ovrfloToken = OVRFLOToken(ovrflo.ovrfloToken());
 
         // Approve market A
         vm.prank(ADMIN);
@@ -432,6 +431,7 @@ contract OVRFLOAttackScenariosLendingTest is LendingMockFixture {
     ///      down exactly the protocol fee, holding a debt and an escrowed stream. There
     ///      is no free profit and no state the actor could not have reached honestly.
     function test_Attack_SelfFillYieldsNothingBeyondFeeLoss() public {
+        vm.prank(address(factory));
         lending.setFee(100); // 1%
 
         uint128 stake = 10 ether;
@@ -579,6 +579,7 @@ contract OVRFLOAttackScenariosLendingTest is LendingMockFixture {
         bookCore.setSeries(MARKET, expiry, address(bookOvrflo), underlying_);
 
         book = new OVRFLOLending(address(bookFactory), address(bookCore), address(bookSablier));
+        vm.prank(address(bookFactory));
         book.setTickSpacing(MARKET, SPACING);
     }
 }

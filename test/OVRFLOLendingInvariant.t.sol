@@ -1354,9 +1354,11 @@ contract OVRFLOLendingInvariantTest is Test {
         core.setSeries(MARKET, expiry, address(ovrfloToken), address(underlying));
 
         lending = new LendingInvariantHarness(address(factory), address(core), address(sablier));
+        vm.startPrank(address(factory));
         lending.setTickSpacing(MARKET, SPACING);
         lending.setAprBounds(APR_LOW, APR_HIGH);
         lending.setFee(50);
+        vm.stopPrank();
 
         handler = new LendingInvariantHandler(
             lending, sablier, underlying, ovrfloToken, MARKET, TREASURY, expiry, APR_LOW, APR_HIGH
