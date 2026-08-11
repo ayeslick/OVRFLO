@@ -10,10 +10,12 @@ import {IPendleOracle} from "../interfaces/IPendleOracle.sol";
 import {IStandardizedYield} from "../interfaces/IStandardizedYield.sol";
 
 /// @title OVRFLOFactory
-/// @notice Factory and admin hub for deploying and managing OVRFLO systems
-/// @dev Owned by a timelocked multisig. Deploys OVRFLO + OVRFLOToken and serves as
-///      the immutable `factory` (admin) for every OVRFLO it creates. Ownership uses the OZ
-///      two-step pattern (`transferOwnership` -> `acceptOwnership`).
+/// @notice Registry and admin hub for externally deployed OVRFLO systems
+/// @dev Owned by a timelocked multisig. Children are deployed externally and registered
+///      after on-chain verification of every constructor-arg binding; the factory embeds
+///      no child creation code (EIP-170) and serves as the immutable `factory` (admin)
+///      for every OVRFLO it registers. Ownership uses the OZ two-step pattern
+///      (`transferOwnership` -> `acceptOwnership`).
 contract OVRFLOFactory is Ownable2Step {
     /*//////////////////////////////////////////////////////////////
                                 STORAGE
@@ -29,15 +31,19 @@ contract OVRFLOFactory is Ownable2Step {
 
     /// @dev A required constructor or admin-call address argument was the zero address.
     error ZeroAddress();
-    /// @dev `configureDeployment` was called for an underlying that already has a deployed vault.
+    /// @dev `registerOvrflo` was called for an underlying that already has a registered vault.
     error UnderlyingAlreadyDeployed();
-    /// @dev `nameSuffix` is empty or exceeds 64 bytes.
-    error InvalidName();
-    /// @dev `symbolSuffix` is empty or exceeds 32 bytes.
-    error InvalidSymbol();
-    /// @dev No deployment configuration is currently staged.
-    error NothingPending();
-    /// @dev `deployLending` was called for a vault that already has a lending market.
+    /// @dev `registerOvrflo` was called for a vault that is already registered.
+    error AlreadyRegistered();
+    /// @dev The candidate's `factory` immutable is not this factory.
+    error FactoryMismatch();
+    /// @dev The candidate vault's `oracle` immutable is not this factory's oracle.
+    error OracleMismatch();
+    /// @dev The candidate lending's owner is not this factory.
+    error OwnerMismatch();
+    /// @dev The candidate lending's Sablier binding does not match its vault's.
+    error SablierMismatch();
+    /// @dev `registerLending` was called for a vault that already has a lending market.
     error LendingExists();
     /// @dev `feeBps` exceeds `FEE_MAX_BPS`.
     error FeeTooHigh();
@@ -58,21 +64,11 @@ contract OVRFLOFactory is Ownable2Step {
     /// @dev `twapDuration` exceeds `MAX_TWAP_DURATION`.
     error TwapTooLong();
 
-    struct DeploymentConfig {
-        address treasury;
-        bool pending;
-        address underlying;
-        string nameSuffix;
-        string symbolSuffix;
-    }
-
     struct OvrfloInfo {
         address treasury;
         address underlying;
         address ovrfloToken;
     }
-
-    DeploymentConfig public pendingDeployment;
 
     uint256 public ovrfloCount;
     mapping(uint256 => address) public ovrflos;
@@ -104,12 +100,10 @@ contract OVRFLOFactory is Ownable2Step {
                                 EVENTS
     //////////////////////////////////////////////////////////////*/
 
-    event DeploymentConfigured(address indexed treasury, address indexed underlying);
-    event DeploymentCancelled();
-    event OvrfloDeployed(
+    event OvrfloRegistered(
         address indexed ovrflo, address indexed ovrfloToken, address treasury, address indexed underlying
     );
-    event LendingDeployed(address indexed ovrflo, address indexed lending);
+    event LendingRegistered(address indexed ovrflo, address indexed lending);
     event LendingAprBoundsSet(address indexed lending, uint16 aprMinBps, uint16 aprMaxBps);
     event LendingFeeSet(address indexed lending, uint16 feeBps);
     event LendingTreasurySet(address indexed lending, address indexed treasury);
@@ -127,94 +121,67 @@ contract OVRFLOFactory is Ownable2Step {
     }
 
     /*//////////////////////////////////////////////////////////////
-                          DEPLOYMENT (TWO-STEP)
+                              REGISTRATION
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Stage deployment parameters (called by multisig)
-    /// @param treasury The treasury address for fee collection
-    /// @param underlying The underlying asset address (e.g., WETH)
-    /// @param nameSuffix Asset-specific portion of the token name (factory prepends "OVRFLO ")
-    /// @param symbolSuffix Asset-specific portion of the token symbol (factory prepends "ovrflo")
-    function configureDeployment(
-        address treasury,
-        address underlying,
-        string calldata nameSuffix,
-        string calldata symbolSuffix
-    ) external onlyOwner {
-        if (treasury == address(0)) revert ZeroAddress();
-        if (underlying == address(0)) revert ZeroAddress();
+    /// @notice Register an externally deployed OVRFLO vault (and its token) with this factory
+    /// @dev Verifies on-chain every constructor-arg binding the old in-factory deployment
+    ///      fixed by construction; code identity is established off-chain. Multisig checklist
+    ///      before calling (not duplicated on-chain, per the house stance):
+    ///      (1) the vault's deployment transaction (creation code + constructor args) matches
+    ///          the audited compiler artifact — runtime-only comparison masks immutable slots
+    ///          and misses the vault-created token;
+    ///      (2) token name/symbol carry the "OVRFLO "/"ovrflo" prefixes and fit 64/32 bytes;
+    ///      (3) treasury and underlying are the intended values.
+    ///      Token ownership needs no check: the vault constructs its token, so
+    ///      `token.owner() == vault` holds by construction for canonical bytecode.
+    /// @param ovrflo The externally deployed OVRFLO vault address
+    function registerOvrflo(address ovrflo) external onlyOwner {
+        if (ovrflo == address(0)) revert ZeroAddress();
+        if (ovrfloInfo[ovrflo].treasury != address(0)) revert AlreadyRegistered();
+
+        OVRFLO vault = OVRFLO(ovrflo);
+        if (vault.factory() != address(this)) revert FactoryMismatch();
+        if (vault.oracle() != oracle) revert OracleMismatch();
+
+        address underlying = vault.underlying();
         if (underlyingToOvrflo[underlying] != address(0)) revert UnderlyingAlreadyDeployed();
-        if (bytes(nameSuffix).length == 0 || bytes(nameSuffix).length > 64) revert InvalidName();
-        if (bytes(symbolSuffix).length == 0 || bytes(symbolSuffix).length > 32) revert InvalidSymbol();
 
-        pendingDeployment = DeploymentConfig({
-            treasury: treasury,
-            pending: true,
-            underlying: underlying,
-            nameSuffix: nameSuffix,
-            symbolSuffix: symbolSuffix
-        });
-
-        emit DeploymentConfigured(treasury, underlying);
-    }
-
-    /// @notice Cancel a pending deployment
-    function cancelDeployment() external onlyOwner {
-        if (!pendingDeployment.pending) revert NothingPending();
-        delete pendingDeployment;
-        emit DeploymentCancelled();
-    }
-
-    /// @notice Execute deployment from stored config
-    /// @return ovrflo The deployed OVRFLO contract address
-    /// @return ovrfloToken The deployed OVRFLOToken address
-    function deploy() external onlyOwner returns (address ovrflo, address ovrfloToken) {
-        if (!pendingDeployment.pending) revert NothingPending();
-
-        DeploymentConfig memory config = pendingDeployment;
-
-        delete pendingDeployment;
-
-        OVRFLOToken token = new OVRFLOToken(
-            string(abi.encodePacked("OVRFLO ", config.nameSuffix)),
-            string(abi.encodePacked("ovrflo", config.symbolSuffix))
-        );
-        ovrfloToken = address(token);
-
-        OVRFLO v = new OVRFLO(address(this), config.treasury, config.underlying, ovrfloToken, oracle);
-        ovrflo = address(v);
-
-        token.transferOwnership(ovrflo);
+        address ovrfloToken = vault.ovrfloToken();
+        address treasury = vault.TREASURY_ADDR();
 
         ovrflos[ovrfloCount] = ovrflo;
         ovrfloCount += 1;
-        ovrfloInfo[ovrflo] =
-            OvrfloInfo({treasury: config.treasury, underlying: config.underlying, ovrfloToken: ovrfloToken});
-        underlyingToOvrflo[config.underlying] = ovrflo;
+        ovrfloInfo[ovrflo] = OvrfloInfo({treasury: treasury, underlying: underlying, ovrfloToken: ovrfloToken});
+        underlyingToOvrflo[underlying] = ovrflo;
 
-        emit OvrfloDeployed(ovrflo, ovrfloToken, config.treasury, config.underlying);
+        emit OvrfloRegistered(ovrflo, ovrfloToken, treasury, underlying);
     }
 
-    /// @notice Deploy an OVRFLOLending for an existing vault (1:1, one lending market per vault)
-    /// @dev Reads the Sablier address from the vault's sablierLL immutable.
-    ///      The factory remains the lending market's owner so all lending admin calls flow through
-    ///      the factory (consistent with the vault admin model).
-    /// @param ovrflo The OVRFLO core vault address
-    /// @return lending The deployed OVRFLOLending address
-    function deployLending(address ovrflo) external onlyOwner returns (address lending) {
+    /// @notice Register an externally deployed OVRFLOLending with this factory (1:1 per vault)
+    /// @dev Same off-chain creation-code-verification checklist item as `registerOvrflo`.
+    ///      The lending's constructor already binds `underlying`/`ovrfloToken` from this
+    ///      factory's registry (it reverts unless its core is registered here), so only the
+    ///      factory, owner, and Sablier bindings need verification. The factory must be the
+    ///      lending's owner so all admin calls flow through the factory forwarders.
+    /// @param lending The externally deployed OVRFLOLending address
+    function registerLending(address lending) external onlyOwner {
+        if (lending == address(0)) revert ZeroAddress();
+
+        OVRFLOLending lendingMarket = OVRFLOLending(lending);
+        address ovrflo = lendingMarket.core();
         _requireKnownOvrflo(ovrflo);
         if (ovrfloToLending[ovrflo] != address(0)) revert LendingExists();
-
-        address sablierAddr = address(OVRFLO(ovrflo).sablierLL());
-        OVRFLOLending lendingMarket = new OVRFLOLending(address(this), ovrflo, sablierAddr);
-        lending = address(lendingMarket);
+        if (address(lendingMarket.factory()) != address(this)) revert FactoryMismatch();
+        if (lendingMarket.owner() != address(this)) revert OwnerMismatch();
+        if (address(lendingMarket.sablier()) != address(OVRFLO(ovrflo).sablierLL())) revert SablierMismatch();
 
         ovrfloToLending[ovrflo] = lending;
         lendingToOvrflo[lending] = ovrflo;
         lendings[lendingCount] = lending;
         lendingCount += 1;
 
-        emit LendingDeployed(ovrflo, lending);
+        emit LendingRegistered(ovrflo, lending);
     }
 
     /*//////////////////////////////////////////////////////////////
