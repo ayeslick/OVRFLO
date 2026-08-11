@@ -122,9 +122,12 @@
   `MAINNET_RPC_URL`). Tier 3. [ETHSKILLS testing; no-op ADOPT]
 - **TS3. Deployability is part of verification.** At least one gate runs under
   real network rules; contract-size review (`forge build --sizes`) accompanies
-  any change to a deployed artifact's code size. Tier 3 — the concrete CI gate
-  lands with the factory-size fix plan.
-  [environment-fidelity-mainnet-rules-gates-20260810]
+  any change to a deployed artifact's code size. Tier 3 — enforced by
+  `test/DeploySize.t.sol` (EIP-170/EIP-3860 caps for all four deployables plus
+  the OVRFLOLending 24,064 B headroom canary, landed 2026-08-11 with the
+  factory-size fix) and by the seed smoke, which runs under unmodified mainnet
+  rules. [environment-fidelity-mainnet-rules-gates-20260810;
+  probe-first-sizing-creation-only-new-stays-out-of-runtime-bytecode]
 
 ## Considered and rejected (do not re-raise without new context)
 
