@@ -141,22 +141,24 @@
   internal ones and views trail state-changers. [Solidity style guide;
   REJECT-in-part]
 
-## Pending user decisions (surfaced, not decided — 2026-08-10)
+## Decided (user decisions, 2026-08-10)
 
-1. **Section order vs the official style guide.** OVRFLO's established layout
-   (CONSTANTS → ERRORS → IMMUTABLES → STORAGE → EVENTS) differs from the
-   Solidity guide's (state vars → events → errors). Keeping the house order is
-   defensible; switching is churn. Decide once, record here.
-2. **Require-strings in factory/vault vs custom errors in lending/libraries.**
-   `OVRFLOFactory`/`OVRFLO`/`OVRFLOToken` are 100% require-string (55 sites);
-   `OVRFLOLending`/`TickTree`/`StreamPricing` are 100% custom-error. A
-   migration is a deliberate, separately-planned change — not a style edit.
-3. **`ticks` → `_ticks`** (the one internal storage var missing the `_`
-   prefix): opportunistic rename, low blast radius, waiting on (2)'s outcome
-   to batch with.
-4. **CI static analysis**: confirm whether Slither (or equivalent) runs in CI;
-   `forge lint` markers exist but CI coverage was not verified during the
-   ticket-09 research pass. [Trail of Bits; ADOPT pending confirmation]
+1. **Section order: house order is canonical.** CONSTANTS → ERRORS →
+   IMMUTABLES → STORAGE → EVENTS → functions. The official style guide's
+   ordering is REJECTED for this repo; match the house order in every new
+   contract. Tier 4.
+2. **Custom errors repo-wide.** The factory/vault/token require-string split
+   is retired: `OVRFLOFactory`/`OVRFLO`/`OVRFLOToken` migrate to custom errors
+   (dated user decision 2026-08-10 — this is the catalog-governance amendment
+   event for their error sets). New code never uses require-strings. Tier 2
+   once migrated (mixed styles are grep-visible: `rg 'require\(' src/` →
+   expected 0).
+3. **`ticks` → `_ticks`** rename lands with the migration (internal storage
+   naming convention, style guide §1).
+4. **No Slither in CI.** Static analysis stays out of the pipeline; the gate
+   set remains build/test/invariant/snapshot/fmt (+ the deployability gate per
+   TS3). `forge lint` markers in source stay. [Trail of Bits ADOPT reversed by
+   user decision.]
 
 ## Sources
 

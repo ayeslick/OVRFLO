@@ -141,11 +141,11 @@ Foundry-based Solidity project implementing OVRFLO, a Pendle-based vault system 
 - Pendle PT tokens always have 18 decimals; code assumes and enforces this invariant (e.g. `MIN_PT_AMOUNT`).
 - Admin flows are multisig -> factory -> vault or lending; no dependent contract is administered directly.
 - Per-series Pendle oracle address is stored in `SeriesInfo` via `setSeriesApproved` — there is no hardcoded `PENDLE_ORACLE` in the factory; pass the oracle per market.
-- `MIN_TWAP_DURATION` and `MAX_TWAP_DURATION` (30 minutes) are both enforced in the factory.
+- `MIN_TWAP_DURATION` (15 minutes) and `MAX_TWAP_DURATION` (30 minutes) are both enforced in the factory.
 - `setSeriesApproved` is intended to be called once per market and never overwritten; claims depend on `ptToken`/`ovrfloToken`/expiry staying immutable for the life of outstanding deposits.
 - Sablier streams are per-deposit, per-customer — not per-market; fees are taken in underlying via a separate zap contract path.
 - Loans are self-repaying (lender draws from the pledged stream until obligation is met, then residual returns to borrower). A returned stream can be re-pledged to a new loan.
-- OVRFLO has a PT flash loan facility: atomic loan of deposited PT via EIP-4531 callback (`IFlashBorrower`), repaid in the same tx with an oracle-adjusted fee in underlying. Capped by `marketTotalDeposited`, gated pre-maturity, globally pausable by the multisig. No `nonReentrant` modifier (borrower must deposit during the callback).
+- OVRFLO has a PT flash loan facility: atomic loan of deposited PT via EIP-4531 callback (`IFlashBorrower`), repaid in the same tx with an oracle-adjusted fee in underlying. Capped by `marketTotalDeposited`, gated pre-maturity, globally pausable by the multisig. `flashLoan` itself is `nonReentrant` (nested flash loans revert — `test_NestedFlashLoan_RevertsDueToNonReentrant`); deposit-during-callback still works because `deposit` carries no guard.
 - The OVRFLO cycle: deposit PT -> receive ovrfloToken + Sablier stream -> borrow the stream's full discounted value on OVRFLOLending (economically a sale; the loan-only market has no separate sale mechanism) -> exit ovrfloToken via unwrap or swap. Captures the fixed PT discount as extractable yield. See `README.md` and `CONCEPTS.md` "OVRFLO cycle" entry.
 - Permissionless wrap/unwrap path: underlying <-> ovrfloToken 1:1, bounded by a separately tracked wrap reserve (not the raw token balance). Direct transfers to the vault do not increase wrap reserve.
 - UI reference / brand source: https://overflow.finance (stream-management-focused app UI, 2026 aesthetic); built via the `/frontend-design` skill. Frontend is Next.js + wagmi + viem in `web/`.
