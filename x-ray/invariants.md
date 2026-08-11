@@ -70,76 +70,76 @@ Per-call preconditions. Heading IDs below (`G-N`) are anchor targets from x-ray.
 ### OVRFLO (vault)
 
 #### G-1
-`require(msg.sender == factory, "OVRFLO: not admin")` · `OVRFLO.sol:208` · Collapses the vault's entire admin surface onto one address so authorization is the factory's problem, not a per-function role matrix (pattern #8).
+`if (msg.sender != factory) revert NotAdmin()` · `OVRFLO.sol:257` · Collapses the vault's entire admin surface onto one address so authorization is the factory's problem, not a per-function role matrix (pattern #8).
 
 #### G-2
-`require(amount > 0, "OVRFLO: amount is zero")` · `OVRFLO.sol:313` · Keeps a no-op wrap from emitting a `Wrapped` event that indexers would treat as real flow.
+`if (amount == 0) revert ZeroAmount()` · `OVRFLO.sol:362` · Keeps a no-op wrap from emitting a `Wrapped` event that indexers would treat as real flow.
 
 #### G-3
-`require(balanceAfter - balanceBefore == amount, "OVRFLO: transfer amount mismatch")` · `OVRFLO.sol:320` · Rejects fee-on-transfer underlying, whose short delivery would credit `wrappedUnderlying` above the reserve actually held.
+`if (balanceAfter - balanceBefore != amount) revert TransferMismatch()` · `OVRFLO.sol:369` · Rejects fee-on-transfer underlying, whose short delivery would credit `wrappedUnderlying` above the reserve actually held.
 
 #### G-4
-`require(reserve >= amount, "OVRFLO: insufficient reserve")` · `OVRFLO.sol:333` · Confines unwrap to the separately tracked wrap reserve so it cannot reach PT-backed deposits.
+`if (reserve < amount) revert InsufficientReserve()` · `OVRFLO.sol:382` · Confines unwrap to the separately tracked wrap reserve so it cannot reach PT-backed deposits.
 
 #### G-5
-`require(info.ptToken != address(0), "OVRFLO: market not approved")` · `OVRFLO.sol:575` · Single approval gate for every priced path; an unapproved market has no oracle or expiry to read.
+`if (info.ptToken == address(0)) revert MarketNotApproved()` · `OVRFLO.sol:624` · Single approval gate for every priced path; an unapproved market has no oracle or expiry to read.
 
 #### G-6
-`require(ptAmount >= MIN_PT_AMOUNT, "OVRFLO: amount < min PT")` · `OVRFLO.sol:376` · Floors deposits so the rate-split rounding cannot produce a zero-value stream.
+`if (ptAmount < MIN_PT_AMOUNT) revert BelowMinPT()` · `OVRFLO.sol:425` · Floors deposits so the rate-split rounding cannot produce a zero-value stream.
 
 #### G-7
-`require(block.timestamp < info.expiryCached, "OVRFLO: matured")` · `OVRFLO.sol:377` · Deposits must create a stream with nonzero duration; at maturity there is nothing left to stream.
+`if (block.timestamp >= info.expiryCached) revert Matured()` · `OVRFLO.sol:426` · Deposits must create a stream with nonzero duration; at maturity there is nothing left to stream.
 
 #### G-8
-`require(currentDeposited + ptAmount <= limit, "OVRFLO: deposit limit exceeded")` · `OVRFLO.sol:384` · Per-market exposure cap; `0` is the unlimited sentinel by design.
+`if (currentDeposited + ptAmount > limit) revert DepositLimitExceeded()` · `OVRFLO.sol:433` · Per-market exposure cap; `0` is the unlimited sentinel by design.
 
 #### G-9
-`require(toUser >= minToUser, "OVRFLO: slippage")` · `OVRFLO.sol:393` · Caller-supplied floor against an adverse TWAP move between simulation and execution.
+`if (toUser < minToUser) revert SlippageExceeded()` · `OVRFLO.sol:442` · Caller-supplied floor against an adverse TWAP move between simulation and execution.
 
 #### G-10
-`require(toStream > 0, "OVRFLO: nothing to stream")` · `OVRFLO.sol:355` · Sablier rejects zero-amount streams; failing here gives an interpretable error instead of a foreign revert.
+`if (toStream == 0) revert NothingToStream()` · `OVRFLO.sol:404` · Sablier rejects zero-amount streams; failing here gives an interpretable error instead of a foreign revert.
 
 #### G-11
-`require(oldestObservationSatisfied, "OVRFLO: oracle not ready")` · `OVRFLO.sol:346` · Runtime TWAP-freshness check; onboarding-time validation alone would let an oracle go stale post-approval.
+`if (!oldestObservationSatisfied) revert OracleNotReady()` · `OVRFLO.sol:395` · Runtime TWAP-freshness check; onboarding-time validation alone would let an oracle go stale post-approval.
 
 #### G-12
-`require(market != address(0), "OVRFLO: unknown PT")` · `OVRFLO.sol:431` · Reverse-lookup gate on `claim`; an unmapped PT has no series and no accounting to debit.
+`if (market == address(0)) revert UnknownPT()` · `OVRFLO.sol:480` · Reverse-lookup gate on `claim`; an unmapped PT has no series and no accounting to debit.
 
 #### G-13
-`require(block.timestamp >= info.expiryCached, "OVRFLO: not matured")` · `OVRFLO.sol:434` · PT is only redeemable at maturity; claiming earlier would hand out collateral still backing live streams.
+`if (block.timestamp < info.expiryCached) revert NotMatured()` · `OVRFLO.sol:483` · PT is only redeemable at maturity; claiming earlier would hand out collateral still backing live streams.
 
 #### G-14
-`require(currentDeposited >= amount, "OVRFLO: deposit accounting")` · `OVRFLO.sol:438` · Stops a claim from driving `marketTotalDeposited` below zero, which would corrupt the flash-loan cap.
+`if (currentDeposited < amount) revert InsufficientDeposited()` · `OVRFLO.sol:487` · Stops a claim from driving `marketTotalDeposited` below zero, which would corrupt the flash-loan cap.
 
 #### G-15
-`require(!flashLoanPaused, "OVRFLO: flash paused")` · `OVRFLO.sol:464` · Multisig circuit breaker for the one entry point that hands out PT before it is repaid.
+`if (flashLoanPaused) revert FlashPaused()` · `OVRFLO.sol:513` · Multisig circuit breaker for the one entry point that hands out PT before it is repaid.
 
 #### G-16
-`require(amount <= marketTotalDeposited[market], "OVRFLO: exceeds deposited")` · `OVRFLO.sol:467` · Caps the loan at real deposited PT so a flash loan cannot reach the wrap reserve.
+`if (amount > marketTotalDeposited[market]) revert ExceedsDeposited()` · `OVRFLO.sol:516` · Caps the loan at real deposited PT so a flash loan cannot reach the wrap reserve.
 
 #### G-17
-`require(ret == FLASH_CALLBACK_SUCCESS, "OVRFLO: callback failed")` · `OVRFLO.sol:475` · Proves the callee is a deliberate `IFlashBorrower`, not an arbitrary address handed free PT.
+`if (ret != FLASH_CALLBACK_SUCCESS) revert FlashCallbackFailed()` · `OVRFLO.sol:524` · Proves the callee is a deliberate `IFlashBorrower`, not an arbitrary address handed free PT.
 
 #### G-18
-`require(market != address(0), "OVRFLO: unknown PT")` · `OVRFLO.sol:281` · Input validation on `sweepExcessPt`: passing the underlying address here would sweep the wrap reserve (learned-fact, distinct from the rejected `to == 0` finding R-02).
+`if (market == address(0)) revert UnknownPT()` · `OVRFLO.sol:330` · Input validation on `sweepExcessPt`: passing the underlying address here would sweep the wrap reserve (learned-fact, distinct from the rejected `to == 0` finding R-02).
 
 #### G-19
-`require(excess > 0, "OVRFLO: no excess")` · `OVRFLO.sol:286` · Sweep is strictly the surplus above tracked deposits; never principal.
+`if (excess == 0) revert NoExcess()` · `OVRFLO.sol:335` · Sweep is strictly the surplus above tracked deposits; never principal.
 
 #### G-20
-`require(excess > 0, "OVRFLO: no excess")` · `OVRFLO.sol:301` · Same for underlying — `wrappedUnderlying` is reserved and unsweepable.
+`if (excess == 0) revert NoExcess()` · `OVRFLO.sol:350` · Same for underlying — `wrappedUnderlying` is reserved and unsweepable.
 
 #### G-21
-`require(info.ptToken == address(0), "OVRFLO: series already configured")` · `OVRFLO.sol:252` · Series config is write-once; claims depend on `ptToken`/expiry staying fixed for the life of outstanding deposits.
+`if (info.ptToken != address(0)) revert SeriesAlreadyConfigured()` · `OVRFLO.sol:301` · Series config is write-once; claims depend on `ptToken`/expiry staying fixed for the life of outstanding deposits.
 
 #### G-22
-`require(ptToMarket[pt] == address(0), "OVRFLO: PT already mapped")` · `OVRFLO.sol:253` · Prevents two markets sharing one PT, which would double-count `marketTotalDeposited`.
+`if (ptToMarket[pt] != address(0)) revert PtAlreadyMapped()` · `OVRFLO.sol:302` · Prevents two markets sharing one PT, which would double-count `marketTotalDeposited`.
 
 #### G-23
-`require(feeBps <= FLASH_FEE_MAX_BPS, "OVRFLO: flash fee too high")` · `OVRFLO.sol:489` · Hard ceiling the multisig cannot exceed even by mistake.
+`if (feeBps > FLASH_FEE_MAX_BPS) revert FeeTooHigh()` · `OVRFLO.sol:538` · Hard ceiling the multisig cannot exceed even by mistake.
 
 #### G-24
-`require(ptToMarket[ptToken] != address(0), "OVRFLO: unknown PT")` · `OVRFLO.sol:529` · View-side approval gate (pattern #7: named views revert on nonexistent entities).
+`if (ptToMarket[ptToken] == address(0)) revert UnknownPT()` · `OVRFLO.sol:578` · View-side approval gate (pattern #7: named views revert on nonexistent entities).
 
 ### OVRFLOLending (v1-lite book)
 
@@ -675,9 +675,9 @@ interpretable `SeriesMatured`.
 
 > Vault dual-backing solvency: `ovrfloToken.totalSupply() ≤ underlying.balanceOf(vault) + ptToken.balanceOf(vault)`.
 
-**Derivation** — Δ-pair across the four mint/burn sites: `wrap` (`OVRFLO.sol:315` `wrappedUnderlying += amount`
-↔ `:322` mint), `unwrap` (`:335` ↔ `:336` burn), `deposit` (`:386` `marketTotalDeposited` ↔ `:403-404` mint of
-`toUser + toStream == ptAmount`), `claim` (`:439` ↔ `:441` burn). The *combined* form is the correct one — the
+**Derivation** — Δ-pair across the four mint/burn sites: `wrap` (`OVRFLO.sol:364` `wrappedUnderlying += amount`
+↔ `:371` mint), `unwrap` (`:384` ↔ `:385` burn), `deposit` (`:435` `marketTotalDeposited` ↔ `:452-453` mint of
+`toUser + toStream == ptAmount`), `claim` (`:488` ↔ `:490` burn). The *combined* form is the correct one — the
 individual legs are too strict post-maturity, where cross-exits are a design feature (established during the
 2026-07-01 fuzz campaign).
 
@@ -712,8 +712,8 @@ On-chain: **Yes**
 **Caller side** — `OVRFLOLending.sol:1137` (`_requireMarketActive` → `StreamPricing.marketActive`) and `:1148`
 (`_requireEligible` → `StreamPricing.requireEligible`), both reading `IOVRFLOSeriesRegistry(core).series(market)`.
 
-**Callee side** — `OVRFLO.sol:251-258` is the only writer of `_series[market]`, and `:252`
-(`require(info.ptToken == address(0))`) makes it write-once. No update path exists.
+**Callee side** — `OVRFLO.sol:300-307` is the only writer of `_series[market]`, and `:301`
+(`if (info.ptToken != address(0)) revert SeriesAlreadyConfigured()`) makes it write-once. No update path exists.
 
 **If violated** — A re-pointed series would let the book price a stream against one maturity and settle it
 against another.
@@ -749,7 +749,7 @@ On-chain: **Yes**
 **Caller side** — `OVRFLOLending.sol:317-333` reads `factory.ovrfloInfo(core_)` once in the constructor and
 stores the results as immutables; every fund flow (`:423`, `:454`, `:606`, `:706`) uses them without re-validation.
 
-**Callee side** — `OVRFLOFactory.sol:156-157` (`ovrfloInfo[ovrflo] = OvrfloInfo{...}`) is the only writer of that
+**Callee side** — `OVRFLOFactory.sol:191-192` (`ovrfloInfo[ovrflo] = OvrfloInfo{...}`) is the only writer of that
 mapping, executed once inside `deploy()`. No setter exists, so the read cannot go stale.
 
 **If violated** — Lending would escrow one token and pay out another. Note this is the **strengthened** successor
@@ -782,10 +782,10 @@ On-chain: **Yes**
 
 > `OVRFLO` assumes exclusive mint/burn authority over its `OVRFLOToken`.
 
-**Caller side** — `OVRFLO.sol:322`, `:336`, `:403-404`, `:441` call `mint`/`burn` unconditionally.
+**Caller side** — `OVRFLO.sol:371`, `:385`, `:452-453`, `:490` call `mint`/`burn` unconditionally.
 
-**Callee side** — `OVRFLOToken.sol:29`/`:33` gate both on `onlyOwner`; `:23` `transferOwnership` is itself
-`onlyOwner`, and `OVRFLOFactory.sol:152` hands ownership to the vault at deploy time. `renounceOwnership` is
+**Callee side** — `OVRFLOToken.sol:38`/`:42` gate both on `onlyOwner`; `:32` `transferOwnership` is itself
+`onlyOwner`, and `OVRFLOFactory.sol:187` hands ownership to the vault at deploy time. `renounceOwnership` is
 deliberately absent (`OVRFLOToken.sol:6-8`), so authority cannot be dropped.
 
 **If violated** — ovrfloToken supply could be inflated outside the vault's accounting, breaking I-24.

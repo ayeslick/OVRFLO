@@ -104,7 +104,7 @@ contract OVRFLOWrapUnwrapTest is Test {
 
         vm.startPrank(user);
         shortUnderlying.approve(address(shortOvrflo), amount);
-        vm.expectRevert("OVRFLO: transfer amount mismatch");
+        vm.expectRevert(OVRFLO.TransferMismatch.selector);
         shortOvrflo.wrap(amount);
         vm.stopPrank();
 
@@ -153,7 +153,7 @@ contract OVRFLOWrapUnwrapTest is Test {
         ovrfloToken.mint(user, 1 ether);
 
         vm.prank(user);
-        vm.expectRevert("OVRFLO: insufficient reserve");
+        vm.expectRevert(OVRFLO.InsufficientReserve.selector);
         ovrflo.unwrap(6 ether);
 
         assertEq(ovrflo.wrappedUnderlying(), 5 ether);
@@ -175,11 +175,11 @@ contract OVRFLOWrapUnwrapTest is Test {
 
     function test_WrapAndUnwrap_RevertForZeroAmount() public {
         vm.prank(user);
-        vm.expectRevert("OVRFLO: amount is zero");
+        vm.expectRevert(OVRFLO.ZeroAmount.selector);
         ovrflo.wrap(0);
 
         vm.prank(user);
-        vm.expectRevert("OVRFLO: amount is zero");
+        vm.expectRevert(OVRFLO.ZeroAmount.selector);
         ovrflo.unwrap(0);
     }
 
@@ -204,7 +204,7 @@ contract OVRFLOWrapUnwrapTest is Test {
         ovrfloToken.mint(user, 1 ether);
 
         vm.prank(user);
-        vm.expectRevert("OVRFLO: insufficient reserve");
+        vm.expectRevert(OVRFLO.InsufficientReserve.selector);
         ovrflo.unwrap(6 ether);
 
         assertEq(underlying.balanceOf(address(ovrflo)), 10 ether);
@@ -251,13 +251,13 @@ contract OVRFLOWrapUnwrapTest is Test {
 
     function test_SweepExcessUnderlying_RevertsForNonAdminOrNoExcess() public {
         vm.prank(user);
-        vm.expectRevert("OVRFLO: not admin");
+        vm.expectRevert(OVRFLO.NotAdmin.selector);
         ovrflo.sweepExcessUnderlying(recipient);
 
         _wrap(user, 5 ether);
 
         vm.prank(address(admin));
-        vm.expectRevert("OVRFLO: no excess");
+        vm.expectRevert(OVRFLO.NoExcess.selector);
         ovrflo.sweepExcessUnderlying(recipient);
     }
 
@@ -290,7 +290,7 @@ contract OVRFLOWrapUnwrapTest is Test {
         factory.sweepExcessUnderlying(address(ovrflo), recipient);
 
         vm.prank(OWNER);
-        vm.expectRevert("OVRFLOFactory: unknown ovrflo");
+        vm.expectRevert(OVRFLOFactory.UnknownOvrflo.selector);
         factory.sweepExcessUnderlying(address(ovrflo), recipient);
     }
 
@@ -312,7 +312,7 @@ contract OVRFLOWrapUnwrapTest is Test {
         vm.stopPrank();
 
         vm.prank(OWNER);
-        vm.expectRevert("OVRFLO: no excess");
+        vm.expectRevert(OVRFLO.NoExcess.selector);
         factory.sweepExcessUnderlying(deployedOvrflo, recipient);
 
         underlying.mint(address(deployed), 2 ether);

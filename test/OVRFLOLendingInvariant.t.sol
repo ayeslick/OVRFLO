@@ -118,11 +118,11 @@ contract LendingInvariantHarness is LendingInternalHarness {
     ///      root, and every existing position interval are bit-identical before and after the seed —
     ///      it removes only the 4,096-append cost of reaching the boundary, never a behaviour.
     function exposed_seedLeafCount(address market, uint16 aprBps, uint32 epoch, uint32 leaves) external {
-        ticks[market][aprBps].epochs[epoch].tree.leaves = leaves;
+        _ticks[market][aprBps].epochs[epoch].tree.leaves = leaves;
     }
 
     function exposed_treeHeight(address market, uint16 aprBps, uint32 epoch) external view returns (uint8) {
-        return ticks[market][aprBps].epochs[epoch].tree.height;
+        return _ticks[market][aprBps].epochs[epoch].tree.height;
     }
 
     function exposed_prefixAndLeaf(address market, uint16 aprBps, uint32 epoch, uint32 leafIndex)
@@ -130,7 +130,7 @@ contract LendingInvariantHarness is LendingInternalHarness {
         view
         returns (uint64 prefixValue, uint64 leafValue)
     {
-        TickTree.Tree storage tree = ticks[market][aprBps].epochs[epoch].tree;
+        TickTree.Tree storage tree = _ticks[market][aprBps].epochs[epoch].tree;
         return (tree.prefix(leafIndex), tree.leaf(leafIndex));
     }
 
@@ -150,7 +150,7 @@ contract LendingInvariantHarness is LendingInternalHarness {
         view
         returns (uint256 breaks)
     {
-        TickTree.Tree storage tree = ticks[market][aprBps].epochs[epoch].tree;
+        TickTree.Tree storage tree = _ticks[market][aprBps].epochs[epoch].tree;
         uint32 leaves = tree.leaves;
         uint8 height = tree.height;
         if (leaves == 0 || height == 0) return 0;

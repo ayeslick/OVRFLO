@@ -209,7 +209,7 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
     }
 
     /// @notice Market => APR tick => book state.
-    mapping(address market => mapping(uint16 aprBps => Tick tick)) internal ticks;
+    mapping(address market => mapping(uint16 aprBps => Tick tick)) internal _ticks;
     /// @notice Market => immutable-once-set APR tick spacing in basis points.
     mapping(address market => uint16 spacing) public tickSpacing;
     /// @notice Position id => lender position.
@@ -400,7 +400,7 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
         _validateTick(market, aprBps);
         _requireMarketActive(market);
 
-        Tick storage tick = ticks[market][aprBps];
+        Tick storage tick = _ticks[market][aprBps];
         uint32 epoch = tick.currentEpoch;
         // Rollover is a pre-check: internal library reverts cannot be try/caught,
         // so the at-cap epoch is detected *before* appending and a fresh epoch
@@ -434,7 +434,7 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
         Position storage position = positions[positionId];
         if (position.lender != msg.sender) revert NotLender();
 
-        Epoch storage epochState = ticks[position.market][position.aprBps].epochs[position.epoch];
+        Epoch storage epochState = _ticks[position.market][position.aprBps].epochs[position.epoch];
         uint64 leafStart = epochState.tree.prefix(position.leafIndex);
         uint64 currentLeaf = epochState.tree.leaf(position.leafIndex);
         uint64 filledHistory;
@@ -551,7 +551,7 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
     {
         if (maxSteps == 0) revert ZeroSteps();
 
-        Tick storage tick = ticks[market][aprBps];
+        Tick storage tick = _ticks[market][aprBps];
         cursor = tick.oldestLiveEpoch;
         uint32 fromEpoch = cursor;
         uint32 currentEpoch = tick.currentEpoch;
@@ -791,7 +791,7 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
         returns (uint32 oldestLiveEpoch, uint32 currentEpoch, uint128 availableUnits)
     {
         if (tickSpacing[market] == 0) revert SpacingUnset();
-        Tick storage tick = ticks[market][aprBps];
+        Tick storage tick = _ticks[market][aprBps];
         return (tick.oldestLiveEpoch, tick.currentEpoch, _liveDepthUnits(market, aprBps));
     }
 
@@ -813,7 +813,7 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
         if (stored.lender == address(0)) revert PositionMissing();
         position = stored;
 
-        Epoch storage epochState = ticks[stored.market][stored.aprBps].epochs[stored.epoch];
+        Epoch storage epochState = _ticks[stored.market][stored.aprBps].epochs[stored.epoch];
         intervalStart = epochState.tree.prefix(stored.leafIndex);
         uint64 leafValue = epochState.tree.leaf(stored.leafIndex);
         intervalEnd = intervalStart + leafValue;
@@ -869,7 +869,7 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
         uint64 intervalEnd;
         uint64 count;
         {
-            Epoch storage epochState = ticks[position.market][position.aprBps].epochs[position.epoch];
+            Epoch storage epochState = _ticks[position.market][position.aprBps].epochs[position.epoch];
             intervalStart = epochState.tree.prefix(position.leafIndex);
             intervalEnd = intervalStart + epochState.tree.leaf(position.leafIndex);
             count = epochState.loanCount;
@@ -924,7 +924,7 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
             revert EpochMismatch();
         }
 
-        Epoch storage epochState = ticks[loan.market][loan.aprBps].epochs[loan.epoch];
+        Epoch storage epochState = _ticks[loan.market][loan.aprBps].epochs[loan.epoch];
         uint64 positionStart = epochState.tree.prefix(position.leafIndex);
         uint64 positionEnd = positionStart + epochState.tree.leaf(position.leafIndex);
 
@@ -1037,7 +1037,7 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
 
     /// @dev Borrowable depth summed across a tick's live epochs, in UNITs.
     function _liveDepthUnits(address market, uint16 aprBps) internal view returns (uint128 depth) {
-        Tick storage tick = ticks[market][aprBps];
+        Tick storage tick = _ticks[market][aprBps];
         uint32 currentEpoch = tick.currentEpoch;
         for (uint32 epoch = tick.oldestLiveEpoch; epoch <= currentEpoch; ++epoch) {
             Epoch storage epochState = tick.epochs[epoch];
@@ -1095,7 +1095,7 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
         (StreamPricing.Eligibility memory eligibility, uint256 grossPrice, uint256 timeToMaturity) =
             _priceStream(market, streamId, aprBps);
 
-        Tick storage tick = ticks[market][aprBps];
+        Tick storage tick = _ticks[market][aprBps];
         uint64 availableUnits;
         (outcome.epoch, availableUnits) = _selectEpoch(tick);
         Epoch storage epochState = tick.epochs[outcome.epoch];

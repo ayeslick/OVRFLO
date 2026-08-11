@@ -1006,11 +1006,11 @@ function sweepExcessPt(address ptToken, address to) external onlyAdmin {
 
 ```solidity
 function sweepExcessPt(address ptToken, address to) external onlyAdmin {
-    require(ptToMarket[ptToken] != address(0), "OVRFLO: unknown PT");
+    if (ptToMarket[ptToken] == address(0)) revert UnknownPT();
     uint256 balance = IERC20(ptToken).balanceOf(address(this));
     uint256 deposited = marketTotalDeposited[ptToMarket[ptToken]];
     uint256 excess = balance > deposited ? balance - deposited : 0;
-    require(excess > 0, "OVRFLO: no excess");
+    if (excess == 0) revert NoExcess();
     IERC20(ptToken).safeTransfer(to, excess);
 }
 ```
@@ -1037,10 +1037,12 @@ accepts a fuzzed token address. `sweepExcessUnderlying` is safe by construction
 **How to detect violation:**
 
 ```bash
-rg -n "\"OVRFLO: unknown PT\"" src/OVRFLO.sol
+rg -n "revert UnknownPT\(\)" src/OVRFLO.sol
 # expected: 4 matches — sweepExcessPt, claim, flashLoan, claimablePt all reuse
-# this string for the analogous market-lookup check; sweepExcessPt is one of
-# four call sites, not the sole one. (Count refreshed 2026-08-10.)
+# this error for the analogous market-lookup check; sweepExcessPt is one of
+# four call sites, not the sole one. (Migrated from the "OVRFLO: unknown PT"
+# require-string form to the UnknownPT() custom error, dated user decision
+# 2026-08-10; call-site count unchanged.)
 ```
 
 **Documented in:** Fuzz campaign 2026-07-01 (GL-02 violation), `fizz_data/report.md`

@@ -223,13 +223,13 @@ contract OVRFLOFuzzTest is VaultMockHelpers {
 
     function test_OracleEdge_RateAtPar_Reverts() public {
         _mockRate(MARKET, 1e18);
-        vm.expectRevert("OVRFLO: nothing to stream");
+        vm.expectRevert(OVRFLO.NothingToStream.selector);
         ovrflo.previewDeposit(MARKET, 10 ether);
     }
 
     function test_OracleEdge_RateAbovePar_Reverts() public {
         _mockRate(MARKET, 1.1e18);
-        vm.expectRevert("OVRFLO: nothing to stream");
+        vm.expectRevert(OVRFLO.NothingToStream.selector);
         ovrflo.previewDeposit(MARKET, 10 ether);
     }
 
@@ -266,7 +266,7 @@ contract OVRFLOFuzzTest is VaultMockHelpers {
 
     function test_Fuzz_FlashLoanExceedsDeposited_Reverts(uint256 amountSeed) public {
         uint256 amount = bound(amountSeed, DEPOSIT_AMOUNT + 1, DEPOSIT_AMOUNT + 100 ether);
-        vm.expectRevert("OVRFLO: exceeds deposited");
+        vm.expectRevert(OVRFLO.ExceedsDeposited.selector);
         borrower.executeFlashLoan(address(pt), amount, "");
     }
 

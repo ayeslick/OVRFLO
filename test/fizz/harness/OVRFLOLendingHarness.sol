@@ -38,7 +38,7 @@ contract OVRFLOLendingHarness is OVRFLOLending {
         view
         returns (uint64 root, uint64 filled, uint64 loanCount, uint32 leaves, uint8 height, bool atCap)
     {
-        Epoch storage epochState = ticks[market][aprBps].epochs[epoch];
+        Epoch storage epochState = _ticks[market][aprBps].epochs[epoch];
         return (
             epochState.tree.root(),
             epochState.filled,
@@ -55,7 +55,7 @@ contract OVRFLOLendingHarness is OVRFLOLending {
         view
         returns (uint32 oldestLiveEpoch, uint32 currentEpoch)
     {
-        Tick storage tick = ticks[market][aprBps];
+        Tick storage tick = _ticks[market][aprBps];
         return (tick.oldestLiveEpoch, tick.currentEpoch);
     }
 

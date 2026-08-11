@@ -7,12 +7,21 @@ import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 ///         the OVRFLO vault always retains mint/burn control and cannot permanently
 ///         disable them. Not replaced with OZ `Ownable`, which exposes renunciation.
 contract OVRFLOToken is ERC20 {
+    /*//////////////////////////////////////////////////////////////
+                                ERRORS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @dev Caller is not the token's owner.
+    error NotOwner();
+    /// @dev `newOwner` was the zero address.
+    error ZeroAddress();
+
     address public owner;
 
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
 
     modifier onlyOwner() {
-        require(msg.sender == owner, "ovrflo: not owner");
+        if (msg.sender != owner) revert NotOwner();
         _;
     }
 
@@ -21,7 +30,7 @@ contract OVRFLOToken is ERC20 {
     }
 
     function transferOwnership(address newOwner) external onlyOwner {
-        require(newOwner != address(0), "ovrflo: new owner is zero address");
+        if (newOwner == address(0)) revert ZeroAddress();
         emit OwnershipTransferred(owner, newOwner);
         owner = newOwner;
     }

@@ -114,7 +114,7 @@ contract OVRFLOWrapUnwrapHandler is Test {
         uint256 underlyingBefore = underlying.balanceOf(address(ovrflo));
 
         vm.prank(actor);
-        vm.expectRevert("OVRFLO: insufficient reserve");
+        vm.expectRevert(OVRFLO.InsufficientReserve.selector);
         ovrflo.unwrap(amount);
 
         assertEq(ovrflo.wrappedUnderlying(), reserve);

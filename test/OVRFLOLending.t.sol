@@ -16,7 +16,7 @@ contract LendingInternalHarness is OVRFLOLending {
     constructor(address factory, address core, address sablier) OVRFLOLending(factory, core, sablier) {}
 
     function exposed_setFilled(address market, uint16 aprBps, uint32 epoch, uint64 filled) external {
-        ticks[market][aprBps].epochs[epoch].filled = filled;
+        _ticks[market][aprBps].epochs[epoch].filled = filled;
     }
 
     function exposed_epochState(address market, uint16 aprBps, uint32 epoch)
@@ -24,20 +24,20 @@ contract LendingInternalHarness is OVRFLOLending {
         view
         returns (uint64 root, uint64 filled, uint32 leaves, uint32 oldestLiveEpoch, uint32 currentEpoch)
     {
-        Tick storage tick = ticks[market][aprBps];
+        Tick storage tick = _ticks[market][aprBps];
         Epoch storage epochState = tick.epochs[epoch];
         return
             (epochState.tree.root(), epochState.filled, epochState.tree.leaves, tick.oldestLiveEpoch, tick.currentEpoch);
     }
 
     function exposed_loanCount(address market, uint16 aprBps, uint32 epoch) external view returns (uint64) {
-        return ticks[market][aprBps].epochs[epoch].loanCount;
+        return _ticks[market][aprBps].epochs[epoch].loanCount;
     }
 
     /// @dev Fabricates cursor/current gaps directly (backlog tests) and remains the
     ///      cheap way to stage the cross-epoch claim guard proof (plan risk #3).
     function exposed_setEpochs(address market, uint16 aprBps, uint32 oldestLiveEpoch, uint32 currentEpoch) external {
-        Tick storage tick = ticks[market][aprBps];
+        Tick storage tick = _ticks[market][aprBps];
         tick.oldestLiveEpoch = oldestLiveEpoch;
         tick.currentEpoch = currentEpoch;
     }
@@ -74,7 +74,7 @@ contract OVRFLOLendingTest is Test {
     uint256 internal constant STREAM_TWO = 402;
     uint256 internal constant STREAM_THREE = 403;
     uint256 internal constant STREAM_FOUR = 404;
-    /// @dev Storage slot of the `ticks` mapping (`forge inspect OVRFLOLending storage-layout`).
+    /// @dev Storage slot of the `_ticks` mapping (`forge inspect OVRFLOLending storage-layout`).
     uint256 internal constant TICKS_SLOT = 6;
 
     event Supplied(
