@@ -6,9 +6,9 @@ Shared domain vocabulary for this project — entities, named processes, and sta
 
 ### Factory
 
-The admin hub that deploys OVRFLO vaults, OVRFLOTokens, and OVRFLOLendings, and serves as the single governance entry point for every contract it creates.
+The registry and admin hub that verifies and registers externally deployed OVRFLO vaults and OVRFLOLendings, and serves as the single governance entry point for every contract it registers.
 
-The factory is owned by a timelocked multisig and is the permanent admin on every deployed vault and the owner of every deployed lending. All admin actions flow multisig -> factory -> vault or lending; no dependent contract is administered directly. A factory ownership transfer moves governance for all vaults and lending markets atomically. One vault per underlying is enforced; duplicate deployment for the same underlying is rejected before any vault is created.
+The factory is owned by a timelocked multisig and is the permanent admin on every registered vault and the owner of every registered lending. All admin actions flow multisig -> factory -> vault or lending; no dependent contract is administered directly. A factory ownership transfer moves governance for all vaults and lending markets atomically. The factory contains no child deployment code — children are constructed externally and admitted through Registration — and one vault per underlying is enforced at registration.
 
 ### OVRFLO vault
 
@@ -39,6 +39,12 @@ The base asset associated with an OVRFLO vault and its receipt token.
 Underlying assets back the wrap/unwrap path directly and are also used for fee payment in deposit flows. Underlying held as wrap reserve is not interchangeable with Principal Tokens in accounting, even when both are economically one-to-one at maturity.
 
 ## OVRFLO processes
+
+### Registration
+
+The owner-only act by which an externally deployed vault or lending is verified and admitted into the Factory's registry, becoming the system's trusted instance for its underlying.
+
+Registration verifies on-chain every binding the candidate's constructor fixed — admin wiring, oracle, ownership, Sablier binding, one vault per underlying — but not code identity, which the multisig verifies off-chain against the audited build's creation code before registering. An unregistered candidate is inert with respect to the protocol: the admin actions that would activate it (series approval, tick spacing) flow only through the Factory's forwarders, which refuse unknown contracts. A vault must be registered before its lending can be constructed at all.
 
 ### PT deposit
 
