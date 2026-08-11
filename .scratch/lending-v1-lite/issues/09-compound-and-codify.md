@@ -20,7 +20,7 @@ Both documents get wired into `AGENTS.md` required reading so every future sessi
 
 **Blocked by:** 08
 
-**Status:** open
+**Status:** claimed
 **Labels:** ready-for-human
 
 ## Acceptance criteria
