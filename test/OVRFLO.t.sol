@@ -78,26 +78,22 @@ contract OVRFLOProtocolTest is VaultMockHelpers {
         ptOne = new MockERC20Metadata("PT One", "PT1", 18);
         ptTwo = new MockERC20Metadata("PT Two", "PT2", 18);
 
-        ovrfloToken = new OVRFLOToken("OVRFLO Underlying", "ovrUND");
-        ovrflo = new OVRFLO(ADMIN, TREASURY, address(underlying), address(ovrfloToken), PENDLE_ORACLE);
-        ovrfloToken.transferOwnership(address(ovrflo));
+        ovrflo = new OVRFLO(ADMIN, TREASURY, address(underlying), "OVRFLO Underlying", "ovrUND", PENDLE_ORACLE);
+        ovrfloToken = OVRFLOToken(ovrflo.ovrfloToken());
     }
 
     function test_Constructor_RevertsForZeroAddresses() public {
         vm.expectRevert(OVRFLO.ZeroAddress.selector);
-        new OVRFLO(address(0), TREASURY, address(underlying), address(ovrfloToken), PENDLE_ORACLE);
+        new OVRFLO(address(0), TREASURY, address(underlying), "OVRFLO Underlying", "ovrUND", PENDLE_ORACLE);
 
         vm.expectRevert(OVRFLO.ZeroAddress.selector);
-        new OVRFLO(ADMIN, address(0), address(underlying), address(ovrfloToken), PENDLE_ORACLE);
+        new OVRFLO(ADMIN, address(0), address(underlying), "OVRFLO Underlying", "ovrUND", PENDLE_ORACLE);
 
         vm.expectRevert(OVRFLO.ZeroAddress.selector);
-        new OVRFLO(ADMIN, TREASURY, address(0), address(ovrfloToken), PENDLE_ORACLE);
+        new OVRFLO(ADMIN, TREASURY, address(0), "OVRFLO Underlying", "ovrUND", PENDLE_ORACLE);
 
         vm.expectRevert(OVRFLO.ZeroAddress.selector);
-        new OVRFLO(ADMIN, TREASURY, address(underlying), address(0), PENDLE_ORACLE);
-
-        vm.expectRevert(OVRFLO.ZeroAddress.selector);
-        new OVRFLO(ADMIN, TREASURY, address(underlying), address(ovrfloToken), address(0));
+        new OVRFLO(ADMIN, TREASURY, address(underlying), "OVRFLO Underlying", "ovrUND", address(0));
     }
 
     function test_SetSeriesApproved_SetsStateApprovesSablierAndEmitsEvent() public {

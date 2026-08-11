@@ -6,10 +6,7 @@ import {OVRFLOToken} from "../src/OVRFLOToken.sol";
 
 contract OVRFLOTokenTest is Test {
     address internal constant OWNER = address(0x123);
-    address internal constant NEW_OWNER = address(0x456);
     address internal constant USER = address(0x789);
-
-    event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
 
     OVRFLOToken internal token;
 
@@ -23,38 +20,6 @@ contract OVRFLOTokenTest is Test {
         assertEq(token.symbol(), "ovrfloWETH");
         assertEq(token.decimals(), 18);
         assertEq(token.owner(), OWNER);
-    }
-
-    function test_TransferOwnership_RevertsForUnauthorizedOrZeroAddress() public {
-        vm.prank(USER);
-        vm.expectRevert(OVRFLOToken.NotOwner.selector);
-        token.transferOwnership(NEW_OWNER);
-
-        vm.prank(OWNER);
-        vm.expectRevert(OVRFLOToken.ZeroAddress.selector);
-        token.transferOwnership(address(0));
-    }
-
-    function test_TransferOwnership_UpdatesOwnerAndHandsOffAuthority() public {
-        vm.expectEmit(true, true, false, false, address(token));
-        emit OwnershipTransferred(OWNER, NEW_OWNER);
-
-        vm.prank(OWNER);
-        token.transferOwnership(NEW_OWNER);
-
-        assertEq(token.owner(), NEW_OWNER);
-
-        vm.prank(OWNER);
-        vm.expectRevert(OVRFLOToken.NotOwner.selector);
-        token.mint(USER, 1e6);
-
-        vm.prank(NEW_OWNER);
-        token.mint(USER, 2e6);
-        assertEq(token.balanceOf(USER), 2e6);
-
-        vm.prank(NEW_OWNER);
-        token.burn(USER, 5e5);
-        assertEq(token.balanceOf(USER), 15e5);
     }
 
     function test_Mint_RevertsForUnauthorizedCaller() public {

@@ -15,10 +15,11 @@ import {TickTree} from "../../../src/TickTree.sol";
 ///
 ///      This harness adds getters only — no setter, no overridden behaviour, no extra
 ///      storage. `Base.setup()` deploys it directly AS the market, with the same
-///      constructor arguments `deployLending` would use (so every immutable resolves to
-///      the same value), hands ownership to the factory, and replays `deployLending`'s
-///      registry writes via `vm.store` — the etch-overlay alternative is banned because
-///      Medusa's geth EVM pairs etched-over code with the old code's jump analysis.
+///      constructor arguments `registerLending` would check (so every immutable resolves
+///      to the same value); its constructor already transfers ownership to `factory_`,
+///      and `Base.setup()` registers it with a real `factory.registerLending` call — the
+///      etch-overlay alternative is banned because Medusa's geth EVM pairs etched-over
+///      code with the old code's jump analysis.
 contract OVRFLOLendingHarness is OVRFLOLending {
     using TickTree for TickTree.Tree;
 

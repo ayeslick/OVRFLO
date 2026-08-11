@@ -156,9 +156,8 @@ contract OVRFLOFlashLoanTest is VaultMockHelpers {
         underlying = new MockERC20("Underlying", "UND");
         pt = new MockERC20("PT Token", "PT");
 
-        ovrfloToken = new OVRFLOToken("OVRFLO UND", "ovrfloUND");
-        ovrflo = new OVRFLO(ADMIN, TREASURY, address(underlying), address(ovrfloToken), PENDLE_ORACLE);
-        ovrfloToken.transferOwnership(address(ovrflo));
+        ovrflo = new OVRFLO(ADMIN, TREASURY, address(underlying), "OVRFLO UND", "ovrfloUND", PENDLE_ORACLE);
+        ovrfloToken = OVRFLOToken(ovrflo.ovrfloToken());
 
         user = makeAddr("user");
 
@@ -439,9 +438,8 @@ contract OVRFLOFlashLoanTest is VaultMockHelpers {
     function test_Defaults() public {
         // Fresh vault
         MockERC20 freshUnderlying = new MockERC20("Fresh", "FR");
-        OVRFLOToken freshToken = new OVRFLOToken("OVRFLO Fresh", "ovrfloFR");
-        OVRFLO freshOvrflo = new OVRFLO(ADMIN, TREASURY, address(freshUnderlying), address(freshToken), PENDLE_ORACLE);
-        freshToken.transferOwnership(address(freshOvrflo));
+        OVRFLO freshOvrflo =
+            new OVRFLO(ADMIN, TREASURY, address(freshUnderlying), "OVRFLO Fresh", "ovrfloFR", PENDLE_ORACLE);
 
         assertEq(freshOvrflo.flashFeeBps(), 0, "Default fee should be 0");
         assertFalse(freshOvrflo.flashLoanPaused(), "Default pause should be false");
@@ -760,18 +758,16 @@ contract OVRFLOFlashLoanTest is VaultMockHelpers {
                         HELPERS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Deploys a vault through a factory for forwarding tests.
+    /// @notice Deploys a vault externally and registers it with a factory for forwarding tests.
     /// @return factory The factory contract (owned by FACTORY_OWNER)
-    /// @return vault The OVRFLO vault deployed by the factory
+    /// @return vault The OVRFLO vault registered with the factory
     function _deployViaFactory() internal returns (OVRFLOFactory factory, OVRFLO vault) {
         factory = new OVRFLOFactory(FACTORY_OWNER, PENDLE_ORACLE);
 
-        vm.startPrank(FACTORY_OWNER);
-        factory.configureDeployment(TREASURY, address(underlying), "UND", "und");
-        (address vaultAddr,) = factory.deploy();
-        vm.stopPrank();
+        vault = new OVRFLO(address(factory), TREASURY, address(underlying), "OVRFLO UND", "ovrfloUND", PENDLE_ORACLE);
 
-        vault = OVRFLO(vaultAddr);
+        vm.prank(FACTORY_OWNER);
+        factory.registerOvrflo(address(vault));
     }
 
     function _mockSablier(address recipient, uint128 amount, uint256 duration, uint256 streamId) internal {

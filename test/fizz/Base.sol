@@ -222,15 +222,17 @@ abstract contract Base is StringUtils, Clamp, Deployer, Math {
         // 4. Deploy factory (admin = address(this))
         factory = new OVRFLOFactory(address(this), address(mockOracle));
 
-        // 5. Configure and deploy vault
+        // 5. Deploy the vault externally (it constructs its own token) and register it.
         treasury = address(this);
         vm.label(treasury, "Treasury");
-        factory.configureDeployment(treasury, address(underlying), "TEST", "TST");
-        (address vaultAddr, address tokenAddr) = factory.deploy();
-        vault = OVRFLO(vaultAddr);
-        ovrfloToken = OVRFLOToken(tokenAddr);
+        vault = new OVRFLO(
+            address(factory), treasury, address(underlying), "OVRFLO TEST", "ovrfloTST", address(mockOracle)
+        );
+        factory.registerOvrflo(address(vault));
+        address vaultAddr = address(vault);
+        ovrfloToken = OVRFLOToken(vault.ovrfloToken());
         vm.label(vaultAddr, "OVRFLO Vault");
-        vm.label(tokenAddr, "ovrfloToken");
+        vm.label(address(ovrfloToken), "ovrfloToken");
 
         // 6. Add market (15 min TWAP, 0.1% deposit fee)
         factory.prepareOracle(market, TWAP_DURATION);
@@ -242,27 +244,12 @@ abstract contract Base is StringUtils, Clamp, Deployer, Math {
         //    call into the overlay dies on an invalid opcode mid-pushdata (Foundry's
         //    revm re-analyzes and hides the problem; etching onto an EMPTY address,
         //    like SABLIER_ADDR above, is fine). The harness is constructed with the
-        //    SAME arguments `deployLending` would use (every immutable resolves
-        //    identically), ownership is handed to the factory, and `deployLending`'s
-        //    registry writes are replayed via vm.store so `_requireKnownLending` and
-        //    the registry views behave exactly as if the factory had deployed it.
+        //    SAME arguments `registerLending` would check (every immutable resolves
+        //    identically); its constructor already transfers ownership to `factory`
+        //    (Decision 7(b)), so registration is a real call, not state grafting.
         OVRFLOLendingHarness harnessMarket = new OVRFLOLendingHarness(address(factory), vaultAddr, SABLIER_ADDR);
         address lendingAddr = address(harnessMarket);
-        harnessMarket.transferOwnership(address(factory));
-        vm.prank(address(factory));
-        harnessMarket.acceptOwnership();
-        // Registry slots from `forge inspect OVRFLOFactory storageLayout`:
-        // ovrfloToLending (12), lendingToOvrflo (13), lendingCount (14), lendings (15).
-        vm.store(
-            address(factory), keccak256(abi.encode(vaultAddr, uint256(12))), bytes32(uint256(uint160(lendingAddr)))
-        );
-        vm.store(
-            address(factory), keccak256(abi.encode(lendingAddr, uint256(13))), bytes32(uint256(uint160(vaultAddr)))
-        );
-        vm.store(address(factory), bytes32(uint256(14)), bytes32(uint256(1)));
-        vm.store(
-            address(factory), keccak256(abi.encode(uint256(0), uint256(15))), bytes32(uint256(uint160(lendingAddr)))
-        );
+        factory.registerLending(lendingAddr);
         lending = harnessMarket;
         vm.label(lendingAddr, "OVRFLOLending");
 

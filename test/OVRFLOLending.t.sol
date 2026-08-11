@@ -159,16 +159,19 @@ contract OVRFLOLendingTest is Test {
     function test_SetTickSpacing_SetsOnceAndEmits() public {
         vm.expectEmit(true, false, false, true, address(lending));
         emit TickSpacingSet(MARKET, SPACING);
+        vm.prank(address(factory));
         lending.setTickSpacing(MARKET, SPACING);
 
         assertEq(lending.tickSpacing(MARKET), SPACING);
 
         vm.expectRevert(OVRFLOLending.SpacingAlreadySet.selector);
+        vm.prank(address(factory));
         lending.setTickSpacing(MARKET, SPACING);
     }
 
     function test_SetTickSpacing_ZeroReverts() public {
         vm.expectRevert(OVRFLOLending.ZeroSpacing.selector);
+        vm.prank(address(factory));
         lending.setTickSpacing(MARKET, 0);
     }
 
@@ -180,12 +183,15 @@ contract OVRFLOLendingTest is Test {
         uint16 ceiling = lending.APR_MAX_CEILING();
 
         vm.expectRevert(OVRFLOLending.BadAprBounds.selector);
+        vm.prank(address(factory));
         lending.setAprBounds(1500, 1000);
 
         vm.expectRevert(OVRFLOLending.AprTooHigh.selector);
+        vm.prank(address(factory));
         lending.setAprBounds(1000, ceiling + 1);
 
         // The boundary itself is accepted, so the guard is `>` and not `>=`.
+        vm.prank(address(factory));
         lending.setAprBounds(1000, ceiling);
         assertEq(lending.aprMaxBps(), ceiling);
     }
@@ -195,8 +201,10 @@ contract OVRFLOLendingTest is Test {
         uint16 maxFee = lending.MAX_FEE_BPS();
 
         vm.expectRevert(OVRFLOLending.FeeTooHigh.selector);
+        vm.prank(address(factory));
         lending.setFee(maxFee + 1);
 
+        vm.prank(address(factory));
         lending.setFee(maxFee);
         assertEq(lending.feeBps(), maxFee);
     }
@@ -205,8 +213,10 @@ contract OVRFLOLendingTest is Test {
     /// address. The "stays a live sink" half is an off-chain multisig assumption.
     function test_SetTreasury_RejectsZeroAddress() public {
         vm.expectRevert(OVRFLOLending.ZeroAddress.selector);
+        vm.prank(address(factory));
         lending.setTreasury(address(0));
 
+        vm.prank(address(factory));
         lending.setTreasury(STRANGER);
         assertEq(lending.treasury(), STRANGER);
     }
@@ -218,6 +228,7 @@ contract OVRFLOLendingTest is Test {
     }
 
     function test_Supply_EscrowsAppendsIndexesAndEmits() public {
+        vm.prank(address(factory));
         lending.setTickSpacing(MARKET, SPACING);
         uint128 amount = lending.MIN_LIQUIDITY_AMOUNT();
 
@@ -251,6 +262,7 @@ contract OVRFLOLendingTest is Test {
     }
 
     function test_Supply_PerUserIndexesEnumerateExactlyCreatedPositions() public {
+        vm.prank(address(factory));
         lending.setTickSpacing(MARKET, SPACING);
 
         uint256 first = _supply(LENDER, 1 ether, APR);
@@ -265,12 +277,15 @@ contract OVRFLOLendingTest is Test {
     }
 
     function test_Supply_AcceptsBoundsAndReadsUpdatedBoundsAtCallTime() public {
+        vm.prank(address(factory));
         lending.setTickSpacing(MARKET, SPACING);
+        vm.prank(address(factory));
         lending.setAprBounds(500, 1500);
 
         _supply(LENDER, 1 ether, 500);
         _supply(LENDER, 1 ether, 1500);
 
+        vm.prank(address(factory));
         lending.setAprBounds(750, 1250);
 
         vm.prank(LENDER);
@@ -282,7 +297,9 @@ contract OVRFLOLendingTest is Test {
     }
 
     function test_Supply_RejectsInvalidTicks() public {
+        vm.prank(address(factory));
         lending.setTickSpacing(MARKET, SPACING);
+        vm.prank(address(factory));
         lending.setAprBounds(500, 1500);
 
         vm.startPrank(LENDER);
@@ -298,6 +315,7 @@ contract OVRFLOLendingTest is Test {
     }
 
     function test_Supply_RejectsInvalidAmounts() public {
+        vm.prank(address(factory));
         lending.setTickSpacing(MARKET, SPACING);
         uint128 minimum = lending.MIN_LIQUIDITY_AMOUNT();
         uint128 unit = lending.UNIT();
@@ -315,6 +333,7 @@ contract OVRFLOLendingTest is Test {
     }
 
     function test_Supply_CheckedUnitNarrowingRejectsOversizedAmount() public {
+        vm.prank(address(factory));
         lending.setTickSpacing(MARKET, SPACING);
         uint128 amount = uint128((uint256(type(uint64).max) + 1) * lending.UNIT());
         underlying.mint(LENDER, amount);
@@ -325,6 +344,7 @@ contract OVRFLOLendingTest is Test {
     }
 
     function test_Supply_RevertsAtAndAfterMaturity() public {
+        vm.prank(address(factory));
         lending.setTickSpacing(MARKET, SPACING);
 
         vm.warp(expiry);
@@ -339,6 +359,7 @@ contract OVRFLOLendingTest is Test {
     }
 
     function test_Withdraw_RefundsEntireUnfilledPositionAndEmitsAbsoluteLeaf() public {
+        vm.prank(address(factory));
         lending.setTickSpacing(MARKET, SPACING);
         uint256 positionId = _supply(LENDER, 6 ether, APR);
 
@@ -360,6 +381,7 @@ contract OVRFLOLendingTest is Test {
 
     /// Covers AE2 (first half): only the suffix above `filled` is refundable.
     function test_Withdraw_AfterPartialFillRefundsOnlyUnfilledAndPreservesHistory() public {
+        vm.prank(address(factory));
         lending.setTickSpacing(MARKET, SPACING);
         _supply(SECOND_LENDER, 10 ether, APR);
         uint256 positionId = _supply(LENDER, 6 ether, APR);
@@ -384,6 +406,7 @@ contract OVRFLOLendingTest is Test {
     }
 
     function test_Withdraw_RevertsForNonLender() public {
+        vm.prank(address(factory));
         lending.setTickSpacing(MARKET, SPACING);
         uint256 positionId = _supply(LENDER, 1 ether, APR);
 
@@ -393,6 +416,7 @@ contract OVRFLOLendingTest is Test {
     }
 
     function test_Withdraw_RemainsAvailableAfterMaturity() public {
+        vm.prank(address(factory));
         lending.setTickSpacing(MARKET, SPACING);
         uint256 positionId = _supply(LENDER, 1 ether, APR);
 
@@ -408,6 +432,7 @@ contract OVRFLOLendingTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     function test_Borrow_PartialFillStoresLoanPaysAndEscrows() public {
+        vm.prank(address(factory));
         lending.setTickSpacing(MARKET, SPACING);
         _supply(LENDER, 20 ether, APR);
         _createStream(STREAM_ONE, BORROWER, 10.2 ether);
@@ -456,7 +481,9 @@ contract OVRFLOLendingTest is Test {
     /// 1 + 0.1025 * (73/365) = 1.0205e18, so a 5-ether fill owes 5.1025 ether: the same borrow at the
     /// neighbouring tick, and a value the 1000-rate arithmetic cannot produce.
     function test_Borrow_ObligationTracksTheTickRate() public {
+        vm.prank(address(factory));
         lending.setTickSpacing(MARKET, SPACING);
+        vm.prank(address(factory));
         lending.setAprBounds(APR, 1025);
         _supply(LENDER, 20 ether, 1025);
         _createStream(STREAM_ONE, BORROWER, 10.2 ether);
@@ -475,6 +502,7 @@ contract OVRFLOLendingTest is Test {
     /// the first receives 12, the second receives the 4 residue — no "inactive
     /// position" failure mode exists anywhere.
     function test_Borrow_ConcurrentTargets_SecondFillsResidue() public {
+        vm.prank(address(factory));
         lending.setTickSpacing(MARKET, SPACING);
         _supply(LENDER, 10 ether, APR);
         _supply(SECOND_LENDER, 6 ether, APR);
@@ -513,6 +541,7 @@ contract OVRFLOLendingTest is Test {
     /// Covers AE1. The losing borrower's floor turns the residue fill into a clean
     /// slippage revert instead of any position-level failure.
     function test_Borrow_ConcurrentTargets_SecondRevertsBelowMinAcceptable() public {
+        vm.prank(address(factory));
         lending.setTickSpacing(MARKET, SPACING);
         _supply(LENDER, 10 ether, APR);
         _supply(SECOND_LENDER, 6 ether, APR);
@@ -529,7 +558,9 @@ contract OVRFLOLendingTest is Test {
     /// Covers AE7. A borrower's own resting liquidity is consumable like any other
     /// (self-neutral minus the protocol fee); no self-match guard exists.
     function test_Borrow_SelfFillConsumesOwnLiquidityMinusFee() public {
+        vm.prank(address(factory));
         lending.setTickSpacing(MARKET, SPACING);
+        vm.prank(address(factory));
         lending.setFee(100);
         _supply(LENDER, 10 ether, APR);
         _createStream(STREAM_ONE, LENDER, 10.2 ether);
@@ -557,7 +588,9 @@ contract OVRFLOLendingTest is Test {
     /// The minAcceptable floor is net of fee: gross 10 ether clears 9.95 but net
     /// 9.9 does not — a gross-side comparison would let this call succeed.
     function test_Borrow_MinAcceptableComparesNetOfFee() public {
+        vm.prank(address(factory));
         lending.setTickSpacing(MARKET, SPACING);
+        vm.prank(address(factory));
         lending.setFee(100);
         _supply(LENDER, 10 ether, APR);
         _createStream(STREAM_ONE, BORROWER, 10.2 ether);
@@ -570,6 +603,7 @@ contract OVRFLOLendingTest is Test {
     /// Max borrow = sale (R11): a target above the stream's discounted value fills
     /// exactly the gross price and owes the stream's entire remaining face.
     function test_Borrow_MaxBorrowObligationEqualsEntireRemaining() public {
+        vm.prank(address(factory));
         lending.setTickSpacing(MARKET, SPACING);
         _supply(LENDER, 20 ether, APR);
         _createStream(STREAM_ONE, BORROWER, 10.2 ether);
@@ -588,6 +622,7 @@ contract OVRFLOLendingTest is Test {
     }
 
     function test_Borrow_TargetFlooredToUnit() public {
+        vm.prank(address(factory));
         lending.setTickSpacing(MARKET, SPACING);
         _supply(LENDER, 20 ether, APR);
         _createStream(STREAM_ONE, BORROWER, 15.3 ether);
@@ -600,6 +635,7 @@ contract OVRFLOLendingTest is Test {
     }
 
     function test_Borrow_ConsumesExactlyLastUnitThenEmptyTick() public {
+        vm.prank(address(factory));
         lending.setTickSpacing(MARKET, SPACING);
         _supply(LENDER, 1 ether, APR);
         _createStream(STREAM_ONE, BORROWER, 15.3 ether);
@@ -618,6 +654,7 @@ contract OVRFLOLendingTest is Test {
     /// The fill consumption is one storage slot: `filled` and `loanCount` are
     /// packed side by side in the epoch struct, proven by decoding the raw word.
     function test_Borrow_FilledAndLoanCountSharePackedSlot() public {
+        vm.prank(address(factory));
         lending.setTickSpacing(MARKET, SPACING);
         _supply(LENDER, 20 ether, APR);
         _createStream(STREAM_ONE, BORROWER, 10.2 ether);
@@ -642,6 +679,7 @@ contract OVRFLOLendingTest is Test {
     }
 
     function test_Borrow_SucceedsOneSecondBeforeMaturityRevertsAtMaturity() public {
+        vm.prank(address(factory));
         lending.setTickSpacing(MARKET, SPACING);
         _supply(LENDER, 20 ether, APR);
         _createStream(STREAM_ONE, BORROWER, 15.3 ether);
@@ -658,6 +696,7 @@ contract OVRFLOLendingTest is Test {
     }
 
     function test_Borrow_ZeroTargetReverts() public {
+        vm.prank(address(factory));
         lending.setTickSpacing(MARKET, SPACING);
 
         vm.prank(BORROWER);
@@ -672,6 +711,7 @@ contract OVRFLOLendingTest is Test {
     }
 
     function test_Borrow_InvalidTickReverts() public {
+        vm.prank(address(factory));
         lending.setTickSpacing(MARKET, SPACING);
 
         vm.prank(BORROWER);
@@ -680,6 +720,7 @@ contract OVRFLOLendingTest is Test {
     }
 
     function test_Borrow_NeverSuppliedTickRevertsEmptyTick() public {
+        vm.prank(address(factory));
         lending.setTickSpacing(MARKET, SPACING);
         _createStream(STREAM_ONE, BORROWER, 15.3 ether);
 
@@ -689,6 +730,7 @@ contract OVRFLOLendingTest is Test {
     }
 
     function test_Borrow_TargetBelowFillFloorReverts() public {
+        vm.prank(address(factory));
         lending.setTickSpacing(MARKET, SPACING);
         _supply(LENDER, 2 ether, APR);
         _createStream(STREAM_ONE, BORROWER, 15.3 ether);
@@ -699,6 +741,7 @@ contract OVRFLOLendingTest is Test {
     }
 
     function test_Borrow_ResidueBelowFillFloorReverts() public {
+        vm.prank(address(factory));
         lending.setTickSpacing(MARKET, SPACING);
         _supply(LENDER, 1.5e15, APR);
         _createStream(STREAM_ONE, BORROWER, 15.3 ether);
@@ -712,6 +755,7 @@ contract OVRFLOLendingTest is Test {
     }
 
     function test_Borrow_IneligibleStreamReverts() public {
+        vm.prank(address(factory));
         lending.setTickSpacing(MARKET, SPACING);
         _supply(LENDER, 2 ether, APR);
         sablier.setStream(
@@ -723,8 +767,28 @@ contract OVRFLOLendingTest is Test {
         lending.borrow(MARKET, APR, 1 ether, STREAM_ONE, 0);
     }
 
+    /// A stream minted by a rogue vault (any sender other than this lending's core)
+    /// fails eligibility — the disconnection mechanism that keeps unregistered
+    /// lookalike vaults from contaminating the real market.
+    function test_Lending_RogueVaultStreamIsIneligible() public {
+        vm.prank(address(factory));
+        lending.setTickSpacing(MARKET, SPACING);
+        _supply(LENDER, 2 ether, APR);
+        address rogueVault = address(0xBAD0);
+        sablier.setStream(
+            STREAM_ONE, BORROWER, rogueVault, IERC20(address(ovrfloToken)), uint40(expiry), 0, false, 15.3 ether, 0
+        );
+        vm.prank(BORROWER);
+        sablier.approve(address(lending), STREAM_ONE);
+
+        vm.prank(BORROWER);
+        vm.expectRevert(StreamPricing.WrongSender.selector);
+        lending.borrow(MARKET, APR, 1 ether, STREAM_ONE, 0);
+    }
+
     /// The MIN_STREAM_AMOUNT wrapper rejects dust streams before any fill math runs.
     function test_Borrow_StreamBelowMinimumRemainingReverts() public {
+        vm.prank(address(factory));
         lending.setTickSpacing(MARKET, SPACING);
         _supply(LENDER, 2 ether, APR);
         _createStream(STREAM_ONE, BORROWER, uint128(lending.MIN_STREAM_AMOUNT()) - 1);
@@ -738,6 +802,7 @@ contract OVRFLOLendingTest is Test {
     /// pledge fails ERC-721's owner check inside Sablier itself — no bespoke
     /// lending-side guard exists (user decision 2026-08-08).
     function test_Borrow_AlreadyPledgedStreamRevertsViaErc721OwnerCheck() public {
+        vm.prank(address(factory));
         lending.setTickSpacing(MARKET, SPACING);
         _supply(LENDER, 20 ether, APR);
         _createStream(STREAM_ONE, BORROWER, 15.3 ether);
@@ -754,7 +819,9 @@ contract OVRFLOLendingTest is Test {
     /// position costs the same as a fill spanning twelve, because consumption never
     /// reads or writes any position.
     function test_Borrow_GasFlatAcrossPositionsSpanned() public {
+        vm.prank(address(factory));
         lending.setTickSpacing(MARKET, SPACING);
+        vm.prank(address(factory));
         lending.setAprBounds(500, 1500);
 
         // Warm-up borrow so shared slots (loan counter, guard, balances) are warm
@@ -793,6 +860,7 @@ contract OVRFLOLendingTest is Test {
     /// answer survives its own later withdraw because the withdraw could only remove
     /// coordinates above `filled`.
     function test_ContributionOf_DerivedAcrossCancellation() public {
+        vm.prank(address(factory));
         lending.setTickSpacing(MARKET, SPACING);
         uint256 positionA = _supply(LENDER, 10 ether, APR);
         uint256 positionB = _supply(SECOND_LENDER, 6 ether, APR);
@@ -826,6 +894,7 @@ contract OVRFLOLendingTest is Test {
     }
 
     function test_ContributionOf_RevertsForMissingLoan() public {
+        vm.prank(address(factory));
         lending.setTickSpacing(MARKET, SPACING);
         uint256 positionId = _supply(LENDER, 1 ether, APR);
 
@@ -841,6 +910,7 @@ contract OVRFLOLendingTest is Test {
     /// entitlement is its share of the stream's live accrual, and the deficit is
     /// harvested from the stream inside the same claim transaction.
     function test_Claim_MidTermPaysShareAndHarvestsDeficit() public {
+        vm.prank(address(factory));
         lending.setTickSpacing(MARKET, SPACING);
         uint256 positionA = _supply(LENDER, 6 ether, APR);
         uint256 positionB = _supply(SECOND_LENDER, 4 ether, APR);
@@ -888,6 +958,7 @@ contract OVRFLOLendingTest is Test {
     /// mutates `drawn` and the stream's remaining withdrawable, and the cap therefore
     /// has to hold across a moving `recovered`.
     function test_Claim_OpenLoanOrderIndependentWhenSmallerShareClaimsFirst() public {
+        vm.prank(address(factory));
         lending.setTickSpacing(MARKET, SPACING);
         uint256 positionA = _supply(LENDER, 6 ether, APR);
         uint256 positionB = _supply(SECOND_LENDER, 4 ether, APR);
@@ -942,6 +1013,7 @@ contract OVRFLOLendingTest is Test {
     /// The warp past expiry also supplies KTD7's otherwise-missing coverage that a
     /// claim is never market-gated: both claims here run on a MATURED series.
     function test_Claim_OverVestedStreamClampsRecoveredToOutstanding() public {
+        vm.prank(address(factory));
         lending.setTickSpacing(MARKET, SPACING);
         uint256 positionA = _supply(LENDER, 6 ether, APR);
         uint256 positionB = _supply(SECOND_LENDER, 4 ether, APR);
@@ -996,6 +1068,7 @@ contract OVRFLOLendingTest is Test {
     /// borrower. That is guaranteed jointly by the guard and by `close`'s own
     /// zero-outstanding invariant, and it is what keeps a returned stream safe.
     function test_Claim_HarvestFiresOnlyWhileLoanIsOpen() public {
+        vm.prank(address(factory));
         lending.setTickSpacing(MARKET, SPACING);
         uint256 positionA = _supply(LENDER, 6 ether, APR);
         uint256 positionB = _supply(SECOND_LENDER, 4 ether, APR);
@@ -1046,6 +1119,7 @@ contract OVRFLOLendingTest is Test {
     /// policy (plan risk #5): lender-unfavorable, one wei per loan (≤ the number of
     /// contributing positions), stranded in the contract.
     function test_Claim_OrderIndependentWithBoundedLenderUnfavorableDust() public {
+        vm.prank(address(factory));
         lending.setTickSpacing(MARKET, SPACING);
         uint256 positionA = _supply(LENDER, 3 ether, APR);
         uint256 positionB = _supply(SECOND_LENDER, 3 ether, APR);
@@ -1107,6 +1181,7 @@ contract OVRFLOLendingTest is Test {
     /// `(market, aprBps, epoch)` equality check — proven by the control claim, which
     /// succeeds on the same position against its own epoch's loan.
     function test_Claim_EpochCheckBlocksNumericallyIdenticalIntervals() public {
+        vm.prank(address(factory));
         lending.setTickSpacing(MARKET, SPACING);
         uint256 epochZeroPosition = _supply(LENDER, 10 ether, APR);
         _createStream(STREAM_ONE, BORROWER, 15.3 ether);
@@ -1144,6 +1219,7 @@ contract OVRFLOLendingTest is Test {
     /// Covers AE9. A position posted entirely after the fill window has zero overlap,
     /// and only the position's own lender may claim at all.
     function test_Claim_ZeroOverlapAndAuthorizationReverts() public {
+        vm.prank(address(factory));
         lending.setTickSpacing(MARKET, SPACING);
         uint256 filledPosition = _supply(LENDER, 10 ether, APR);
         _createStream(STREAM_ONE, BORROWER, 15.3 ether);
@@ -1170,7 +1246,9 @@ contract OVRFLOLendingTest is Test {
     /// The protocol fee touches the borrow leg only: recovered value flows to
     /// contributors in full and the treasury never receives ovrfloToken.
     function test_Claim_RecoveredValueIsFeeFree() public {
+        vm.prank(address(factory));
         lending.setTickSpacing(MARKET, SPACING);
+        vm.prank(address(factory));
         lending.setFee(100);
         uint256 positionId = _supply(LENDER, 10 ether, APR);
         _createStream(STREAM_ONE, BORROWER, 10.2 ether);
@@ -1197,6 +1275,7 @@ contract OVRFLOLendingTest is Test {
     /// originated and settled in the same block still costs the full 4.08 obligation
     /// on a 4 ether principal. Full repayment closes and returns the stream.
     function test_Repay_AtFaceClosesAndReturnsStream() public {
+        vm.prank(address(factory));
         lending.setTickSpacing(MARKET, SPACING);
         _supply(LENDER, 10 ether, APR);
         _createStream(STREAM_ONE, BORROWER, 10.2 ether);
@@ -1243,6 +1322,7 @@ contract OVRFLOLendingTest is Test {
 
     /// Covers AE5 (maturity half) and KTD7: servicing is never market-gated.
     function test_Repay_WorksAfterMaturity() public {
+        vm.prank(address(factory));
         lending.setTickSpacing(MARKET, SPACING);
         _supply(LENDER, 10 ether, APR);
         _createStream(STREAM_ONE, BORROWER, 10.2 ether);
@@ -1260,6 +1340,7 @@ contract OVRFLOLendingTest is Test {
     /// Repayment carries no caller check: a third party may settle the debt, and the
     /// released stream still goes to the borrower, never to the payer.
     function test_Repay_ByThirdPartyReturnsStreamToBorrower() public {
+        vm.prank(address(factory));
         lending.setTickSpacing(MARKET, SPACING);
         _supply(LENDER, 10 ether, APR);
         _createStream(STREAM_ONE, BORROWER, 10.2 ether);
@@ -1276,6 +1357,7 @@ contract OVRFLOLendingTest is Test {
     }
 
     function test_Repay_RejectsMissingLoanAndZeroAmount() public {
+        vm.prank(address(factory));
         lending.setTickSpacing(MARKET, SPACING);
         _supply(LENDER, 10 ether, APR);
         _createStream(STREAM_ONE, BORROWER, 10.2 ether);
@@ -1293,6 +1375,7 @@ contract OVRFLOLendingTest is Test {
     /// `close` is permissionless once the stream's withdrawable covers the outstanding,
     /// reverts `NotCovered` below coverage, and `LoanClosed` on a second call.
     function test_Close_PermissionlessOnceCoveredAndRevertsOnSecondCall() public {
+        vm.prank(address(factory));
         lending.setTickSpacing(MARKET, SPACING);
         _supply(LENDER, 10 ether, APR);
         _createStream(STREAM_ONE, BORROWER, 15.3 ether);
@@ -1332,6 +1415,7 @@ contract OVRFLOLendingTest is Test {
     /// closes a loan. `close` is then the only way to release the stream, and it must
     /// draw nothing at all.
     function test_Close_AfterClaimsFullyHarvestObligationDrawsNothing() public {
+        vm.prank(address(factory));
         lending.setTickSpacing(MARKET, SPACING);
         uint256 positionId = _supply(LENDER, 10 ether, APR);
         // Deposited 10.2 prices to a gross of exactly 10 ether, so a 10 ether target
@@ -1381,6 +1465,7 @@ contract OVRFLOLendingTest is Test {
 
     /// KTD7: closing works after the series matures.
     function test_Close_WorksAfterMaturity() public {
+        vm.prank(address(factory));
         lending.setTickSpacing(MARKET, SPACING);
         _supply(LENDER, 10 ether, APR);
         _createStream(STREAM_ONE, BORROWER, 15.3 ether);
@@ -1403,6 +1488,7 @@ contract OVRFLOLendingTest is Test {
     /// second loan's draws never inflate the first loan's recovered value, because
     /// `drawn` is per-loan and never read back from the stream's global `withdrawn`.
     function test_Claim_RePledgedStreamKeepsDrawAccountingIsolated() public {
+        vm.prank(address(factory));
         lending.setTickSpacing(MARKET, SPACING);
         uint256 positionId = _supply(LENDER, 20 ether, APR);
         _createStream(STREAM_ONE, BORROWER, 15.3 ether);
@@ -1449,6 +1535,7 @@ contract OVRFLOLendingTest is Test {
     /// Full lifecycle: supply, borrow, mid-term partial claim, close, final claims,
     /// stream returned, every party's balance accounted for.
     function test_Lifecycle_SupplyBorrowClaimCloseFinalClaims() public {
+        vm.prank(address(factory));
         lending.setTickSpacing(MARKET, SPACING);
         uint256 positionA = _supply(LENDER, 6 ether, APR);
         uint256 positionB = _supply(SECOND_LENDER, 4 ether, APR);
@@ -1490,6 +1577,7 @@ contract OVRFLOLendingTest is Test {
     /// epoch, and every epoch-0 coordinate, contribution, and claimable is
     /// byte-identical afterward.
     function test_Supply_RollsEpochAtTerminalCapacityKeepingHistoryByteIdentical() public {
+        vm.prank(address(factory));
         lending.setTickSpacing(MARKET, SPACING);
         uint256 posA = _supply(LENDER, 10 ether, APR); // leaf 0: [0, 10e6)
         uint256 posB = _supply(SECOND_LENDER, 6 ether, APR); // leaf 1: [10e6, 16e6)
@@ -1536,6 +1624,7 @@ contract OVRFLOLendingTest is Test {
     /// grows the tree inside the library — no epoch opens — and every prior
     /// coordinate and contribution is unchanged.
     function test_Supply_TreeGrowthBelowCapKeepsCoordinatesAndOpensNoEpoch() public {
+        vm.prank(address(factory));
         lending.setTickSpacing(MARKET, SPACING);
         vm.startPrank(LENDER);
         for (uint256 i = 0; i < 4096; ++i) {
@@ -1572,6 +1661,7 @@ contract OVRFLOLendingTest is Test {
     /// above-minimum residual; the next borrow advances the cursor past the
     /// drained epoch and fills from the newer one.
     function test_Borrow_AE8_FillsOldEpochResidualThenAdvancesCursor() public {
+        vm.prank(address(factory));
         lending.setTickSpacing(MARKET, SPACING);
         _supply(LENDER, 2e15, APR); // epoch 0 holds 2x the minimum
         lending.exposed_setCapacityOverride(1);
@@ -1595,6 +1685,7 @@ contract OVRFLOLendingTest is Test {
     /// Covers AE8 (dust branch). A sub-minimum residual is skipped inside the same
     /// borrow transaction and stays withdraw-only for its lender.
     function test_Borrow_AE8_SkipsDustEpochInOneTransaction() public {
+        vm.prank(address(factory));
         lending.setTickSpacing(MARKET, SPACING);
         uint256 dustPos = _supply(LENDER, 2e15, APR);
         _createStream(STREAM_ONE, BORROWER, 15.3 ether);
@@ -1621,6 +1712,7 @@ contract OVRFLOLendingTest is Test {
     /// A borrow facing every epoch drained reverts the interpretable EmptyTick,
     /// never a low-level tree failure.
     function test_Borrow_AllEpochsDrainedRevertsEmptyTick() public {
+        vm.prank(address(factory));
         lending.setTickSpacing(MARKET, SPACING);
         _supply(LENDER, 2e15, APR);
         _createStream(STREAM_ONE, BORROWER, 15.3 ether);
@@ -1641,6 +1733,7 @@ contract OVRFLOLendingTest is Test {
     /// A backlog deeper than CURSOR_CAP blocks borrows until the permissionless,
     /// progress-persisting cursor walk durably restores borrowability.
     function test_AdvanceEpochCursor_RecoversBacklogDeeperThanCap() public {
+        vm.prank(address(factory));
         lending.setTickSpacing(MARKET, SPACING);
         // 40 dead epochs below the live one; real liquidity lands in epoch 40.
         lending.exposed_setEpochs(MARKET, APR, 0, 40);
@@ -1673,6 +1766,7 @@ contract OVRFLOLendingTest is Test {
 
     /// The cursor never passes an epoch holding at least one minimum fill.
     function test_AdvanceEpochCursor_NeverPassesLiveEpoch() public {
+        vm.prank(address(factory));
         lending.setTickSpacing(MARKET, SPACING);
         _supply(LENDER, 5 ether, APR); // epoch 0 stays live
         lending.exposed_setEpochs(MARKET, APR, 0, 40);
@@ -1685,7 +1779,9 @@ contract OVRFLOLendingTest is Test {
     /// Covers R17: the whole ladder in one view call, depth summed across live
     /// epochs, zero rungs included, bundleable via multicall.
     function test_TickDepths_ReturnsWholeLadderInOneCall() public {
+        vm.prank(address(factory));
         lending.setTickSpacing(MARKET, SPACING);
+        vm.prank(address(factory));
         lending.setAprBounds(950, 1050);
 
         _supply(LENDER, 10 ether, APR); // tick 1000, epoch 0
@@ -1723,6 +1819,7 @@ contract OVRFLOLendingTest is Test {
     /// Covers R18: binary-search entry, exact pagination continuation, sorted
     /// early stop, and claimable as executable ground truth.
     function test_LoansOf_BinarySearchPaginationAndClaimGroundTruth() public {
+        vm.prank(address(factory));
         lending.setTickSpacing(MARKET, SPACING);
         uint256 posOne = _supply(LENDER, 10 ether, APR); // [0, 10e6)
         uint256 posTwo = _supply(SECOND_LENDER, 20 ether, APR); // [10e6, 30e6)
@@ -1783,6 +1880,7 @@ contract OVRFLOLendingTest is Test {
     /// Covers KTD8: named state views derive interval/outstanding data and revert
     /// on nonexistent entities.
     function test_StateViews_DeriveFieldsAndRevertOnMissing() public {
+        vm.prank(address(factory));
         lending.setTickSpacing(MARKET, SPACING);
         uint256 positionId = _supply(LENDER, 6 ether, APR);
         _createStream(STREAM_ONE, BORROWER, 15.3 ether);
@@ -1809,6 +1907,7 @@ contract OVRFLOLendingTest is Test {
 
     /// Old-epoch positions and loans service unchanged after a rollover.
     function test_OldEpochServicingUnchangedAfterRollover() public {
+        vm.prank(address(factory));
         lending.setTickSpacing(MARKET, SPACING);
         uint256 positionId = _supply(LENDER, 10 ether, APR);
         _createStream(STREAM_ONE, BORROWER, 15.3 ether);
@@ -1830,6 +1929,7 @@ contract OVRFLOLendingTest is Test {
     /// Pins CURSOR_CAP at exactly 32: a backlog of precisely the cap succeeds.
     /// (U5 review: the 40-epoch test alone proves only "some cap below 40".)
     function test_Borrow_CursorCapBoundary_ExactCapSucceeds() public {
+        vm.prank(address(factory));
         lending.setTickSpacing(MARKET, SPACING);
         lending.exposed_setEpochs(MARKET, APR, 0, 32); // exactly 32 dead epochs
         _supply(LENDER, 10 ether, APR); // lands in epoch 32
@@ -1842,6 +1942,7 @@ contract OVRFLOLendingTest is Test {
 
     /// Pins CURSOR_CAP at exactly 32: one epoch past the cap reverts.
     function test_Borrow_CursorCapBoundary_CapPlusOneReverts() public {
+        vm.prank(address(factory));
         lending.setTickSpacing(MARKET, SPACING);
         lending.exposed_setEpochs(MARKET, APR, 0, 33); // 33 dead epochs
         _supply(LENDER, 10 ether, APR);
@@ -1855,6 +1956,7 @@ contract OVRFLOLendingTest is Test {
     /// The recovery valve's own copy of the dust predicate skips a genuine dust
     /// residual (U5 review: previously only borrow's copy was exercised on dust).
     function test_AdvanceEpochCursor_SkipsGenuineDustEpoch() public {
+        vm.prank(address(factory));
         lending.setTickSpacing(MARKET, SPACING);
         _supply(LENDER, 2e15, APR);
         _createStream(STREAM_ONE, BORROWER, 15.3 ether);
@@ -1874,6 +1976,7 @@ contract OVRFLOLendingTest is Test {
     /// empty (U5 review: the bound previously never fired independently of the
     /// liquidity break).
     function test_AdvanceEpochCursor_StopsAtEmptyCurrentEpoch() public {
+        vm.prank(address(factory));
         lending.setTickSpacing(MARKET, SPACING);
         lending.exposed_setEpochs(MARKET, APR, 0, 5); // every epoch empty, incl. 5
 
@@ -1888,6 +1991,7 @@ contract OVRFLOLendingTest is Test {
     /// advances the cursor emits no cursor event (Borrowed.epoch is the
     /// checkpoint), and a no-op valve call emits nothing at all.
     function test_CursorEventEmittedOnlyByRecoveryValveMoves() public {
+        vm.prank(address(factory));
         lending.setTickSpacing(MARKET, SPACING);
         _supply(LENDER, 2e15, APR);
         _createStream(STREAM_ONE, BORROWER, 15.3 ether);
@@ -1916,6 +2020,7 @@ contract OVRFLOLendingTest is Test {
     /// past the position's interval (U5 review: previously indistinguishable from
     /// a bare seq < count check).
     function test_LoansOf_NextSeqZeroWhenRemainingLoansAreAllPastInterval() public {
+        vm.prank(address(factory));
         lending.setTickSpacing(MARKET, SPACING);
         uint256 posTwo;
         {

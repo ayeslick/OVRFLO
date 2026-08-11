@@ -59,9 +59,8 @@ contract OVRFLOFuzzTest is VaultMockHelpers {
         underlying = new FuzzMockERC20("Underlying", "UND");
         pt = new FuzzMockERC20("PT", "PT");
 
-        ovrfloToken = new OVRFLOToken("OVRFLO UND", "ovrfloUND");
-        ovrflo = new OVRFLO(ADMIN, TREASURY, address(underlying), address(ovrfloToken), PENDLE_ORACLE);
-        ovrfloToken.transferOwnership(address(ovrflo));
+        ovrflo = new OVRFLO(ADMIN, TREASURY, address(underlying), "OVRFLO UND", "ovrfloUND", PENDLE_ORACLE);
+        ovrfloToken = OVRFLOToken(ovrflo.ovrfloToken());
 
         vm.prank(ADMIN);
         ovrflo.setSeriesApproved(MARKET, address(pt), TWAP_DURATION, expiry, 0);
@@ -306,6 +305,8 @@ contract OVRFLOFuzzLendingTest is LendingMockFixture {
         unit = lending.UNIT();
         minLiquidity = lending.MIN_LIQUIDITY_AMOUNT();
         // A non-zero fee keeps the borrower/treasury split live in every sequence.
+        // The lending is factory-owned from construction, so owner calls are pranked.
+        vm.prank(address(factory));
         lending.setFee(50);
     }
 

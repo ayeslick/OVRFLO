@@ -34,9 +34,10 @@ Base (is StringUtils, Clamp, Deployer, Math)
 
 `Base.setup()` reuses the repo's real deployment flow rather than inventing one: mock
 tokens and Pendle/Sablier infrastructure, `vm.etch` of the mock Sablier onto the hardcoded
-address the vault expects, then `OVRFLOFactory` → `configureDeployment`/`deploy` →
-`prepareOracle`/`addMarket` → `deployLending`, with limits, APR bounds, fee, and tick
-spacing set through the factory forwarders.
+address the vault expects, then the vault is deployed externally and registered
+(`new OVRFLO` → `factory.registerOvrflo`), `prepareOracle`/`addMarket`, the lending market
+is deployed externally and registered (`new OVRFLOLending` → `factory.registerLending`),
+with limits, APR bounds, fee, and tick spacing set through the factory forwarders.
 
 **`setLendingTickSpacing` is load-bearing.** Zero is the unset sentinel that gates both
 `supply` and `borrow`, so without that call every fill reverts `SpacingUnset` and the whole

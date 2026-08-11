@@ -91,6 +91,41 @@ contract MockPendleMarket is IPendleMarket {
     }
 }
 
+/// @notice Hostile stub registry: reports every core as registered so genuine
+///         `OVRFLOLending` bytecode can be constructed against it — the realistic
+///         adversarial candidate `registerLending`'s `FactoryMismatch` check guards.
+contract MockRegistryStub {
+    address internal immutable TREASURY_VAL;
+    address internal immutable UNDERLYING_VAL;
+    address internal immutable TOKEN_VAL;
+
+    constructor(address treasury_, address underlying_, address token_) {
+        TREASURY_VAL = treasury_;
+        UNDERLYING_VAL = underlying_;
+        TOKEN_VAL = token_;
+    }
+
+    function ovrfloInfo(address) external view returns (address, address, address) {
+        return (TREASURY_VAL, UNDERLYING_VAL, TOKEN_VAL);
+    }
+}
+
+/// @notice Minimal lookalike exposing the getters `registerLending` interrogates,
+///         for the check rows unreachable through honestly constructed bytecode.
+contract MockLendingLookalike {
+    address public core;
+    address public factory;
+    address public owner;
+    address public sablier;
+
+    constructor(address core_, address factory_, address owner_, address sablier_) {
+        core = core_;
+        factory = factory_;
+        owner = owner_;
+        sablier = sablier_;
+    }
+}
+
 contract OVRFLOFactoryTest is Test {
     address internal constant OWNER = address(0x123);
     address internal constant TREASURY = address(0x456);
@@ -100,12 +135,10 @@ contract OVRFLOFactoryTest is Test {
     address internal constant PENDLE_ORACLE = 0x9a9Fa8338dd5E5B2188006f1Cd2Ef26d921650C2;
     uint32 internal constant MIN_TWAP_DURATION = 15 minutes;
 
-    event DeploymentConfigured(address indexed treasury, address indexed underlying);
-    event DeploymentCancelled();
-    event OvrfloDeployed(
+    event OvrfloRegistered(
         address indexed ovrflo, address indexed ovrfloToken, address treasury, address indexed underlying
     );
-    event LendingDeployed(address indexed ovrflo, address indexed lending);
+    event LendingRegistered(address indexed ovrflo, address indexed lending);
     event LendingAprBoundsSet(address indexed lending, uint16 aprMinBps, uint16 aprMaxBps);
     event LendingFeeSet(address indexed lending, uint16 feeBps);
     event LendingTreasurySet(address indexed lending, address indexed treasury);
@@ -137,6 +170,8 @@ contract OVRFLOFactoryTest is Test {
         underlying = new MockERC20Metadata("Wrapped Ether", "WETH", 18);
     }
 
+    /* ---------- Constructor ---------- */
+
     function test_Constructor_SetsOwner() public view {
         assertEq(factory.owner(), OWNER);
         assertEq(factory.oracle(), PENDLE_ORACLE);
@@ -152,128 +187,256 @@ contract OVRFLOFactoryTest is Test {
         new OVRFLOFactory(OWNER, address(0));
     }
 
-    function test_ConfigureDeployment_RevertsForUnauthorizedOrZeroInputs() public {
-        vm.prank(STRANGER);
-        vm.expectRevert("Ownable: caller is not the owner");
-        factory.configureDeployment(TREASURY, address(underlying), "Wrapped Ether", "WETH");
+    /* ---------- Vault construction (Decision 7(a)) ---------- */
 
-        vm.prank(OWNER);
-        vm.expectRevert(OVRFLOFactory.ZeroAddress.selector);
-        factory.configureDeployment(address(0), address(underlying), "Wrapped Ether", "WETH");
+    function test_VaultConstruction_CreatesAndOwnsToken() public {
+        OVRFLO ovrflo = _newVault(TREASURY, address(underlying));
+        OVRFLOToken token = OVRFLOToken(ovrflo.ovrfloToken());
 
-        vm.prank(OWNER);
-        vm.expectRevert(OVRFLOFactory.ZeroAddress.selector);
-        factory.configureDeployment(TREASURY, address(0), "Wrapped Ether", "WETH");
-    }
-
-    function test_ConfigureDeployment_RevertsForInvalidNameOrSymbol() public {
-        vm.prank(OWNER);
-        vm.expectRevert(OVRFLOFactory.InvalidName.selector);
-        factory.configureDeployment(TREASURY, address(underlying), "", "WETH");
-
-        vm.prank(OWNER);
-        vm.expectRevert(OVRFLOFactory.InvalidSymbol.selector);
-        factory.configureDeployment(TREASURY, address(underlying), "Wrapped Ether", "");
-
-        string memory tooLongName = "This name is intentionally way too long for the factory to accept it OK";
-        assertGt(bytes(tooLongName).length, 64);
-        vm.prank(OWNER);
-        vm.expectRevert(OVRFLOFactory.InvalidName.selector);
-        factory.configureDeployment(TREASURY, address(underlying), tooLongName, "WETH");
-
-        string memory tooLongSymbol = "THIS_SYMBOL_IS_DEFINITELY_TOO_LONG";
-        assertGt(bytes(tooLongSymbol).length, 32);
-        vm.prank(OWNER);
-        vm.expectRevert(OVRFLOFactory.InvalidSymbol.selector);
-        factory.configureDeployment(TREASURY, address(underlying), "Wrapped Ether", tooLongSymbol);
-    }
-
-    function test_ConfigureDeployment_StoresPendingConfigAndEmitsEvent() public {
-        vm.expectEmit(true, true, false, false, address(factory));
-        emit DeploymentConfigured(TREASURY, address(underlying));
-
-        vm.prank(OWNER);
-        factory.configureDeployment(TREASURY, address(underlying), "Wrapped Ether", "WETH");
-
-        (
-            address pendingTreasury,
-            bool pending,
-            address pendingUnderlying,
-            string memory nameSuffix,
-            string memory symbolSuffix
-        ) = factory.pendingDeployment();
-        assertEq(pendingTreasury, TREASURY);
-        assertTrue(pending);
-        assertEq(pendingUnderlying, address(underlying));
-        assertEq(nameSuffix, "Wrapped Ether");
-        assertEq(symbolSuffix, "WETH");
-    }
-
-    function test_CancelDeployment_RevertsWithoutPendingAndClearsPendingWhenConfigured() public {
-        vm.prank(OWNER);
-        vm.expectRevert(OVRFLOFactory.NothingPending.selector);
-        factory.cancelDeployment();
-
-        vm.prank(OWNER);
-        factory.configureDeployment(TREASURY, address(underlying), "Wrapped Ether", "WETH");
-
-        vm.expectEmit(false, false, false, false, address(factory));
-        emit DeploymentCancelled();
-
-        vm.prank(OWNER);
-        factory.cancelDeployment();
-
-        (
-            address pendingTreasury,
-            bool pending,
-            address pendingUnderlying,
-            string memory nameSuffix,
-            string memory symbolSuffix
-        ) = factory.pendingDeployment();
-        assertEq(pendingTreasury, address(0));
-        assertFalse(pending);
-        assertEq(pendingUnderlying, address(0));
-        assertEq(nameSuffix, "");
-        assertEq(symbolSuffix, "");
-    }
-
-    function test_Deploy_RevertsWithoutPendingDeployment() public {
-        vm.prank(OWNER);
-        vm.expectRevert(OVRFLOFactory.NothingPending.selector);
-        factory.deploy();
-    }
-
-    function test_Deploy_DeploysSystemStoresAccountingAndTransfersTokenOwnership() public {
-        vm.prank(OWNER);
-        factory.configureDeployment(TREASURY, address(underlying), "Wrapped Ether", "WETH");
-
-        vm.expectEmit(false, false, false, true, address(factory));
-        emit OvrfloDeployed(address(0), address(0), TREASURY, address(underlying));
-
-        vm.prank(OWNER);
-        (address ovrfloAddr, address tokenAddr) = factory.deploy();
-
-        OVRFLO ovrflo = OVRFLO(ovrfloAddr);
-        OVRFLOToken token = OVRFLOToken(tokenAddr);
-
-        assertEq(factory.ovrfloCount(), 1);
-        assertEq(factory.ovrflos(0), ovrfloAddr);
-        assertEq(ovrflo.factory(), address(factory));
-        assertEq(ovrflo.TREASURY_ADDR(), TREASURY);
-        assertEq(token.owner(), ovrfloAddr);
+        assertTrue(address(token).code.length > 0);
+        assertEq(token.owner(), address(ovrflo));
         assertEq(token.name(), "OVRFLO Wrapped Ether");
         assertEq(token.symbol(), "ovrfloWETH");
         assertEq(token.decimals(), 18);
+    }
+
+    /* ---------- registerOvrflo ---------- */
+
+    function test_RegisterOvrflo_RevertsForUnauthorizedCaller() public {
+        OVRFLO ovrflo = _newVault(TREASURY, address(underlying));
+
+        vm.prank(STRANGER);
+        vm.expectRevert("Ownable: caller is not the owner");
+        factory.registerOvrflo(address(ovrflo));
+    }
+
+    function test_RegisterOvrflo_RevertsForZeroAddress() public {
+        vm.prank(OWNER);
+        vm.expectRevert(OVRFLOFactory.ZeroAddress.selector);
+        factory.registerOvrflo(address(0));
+    }
+
+    function test_RegisterOvrflo_RevertsWhenAlreadyRegistered() public {
+        (OVRFLO ovrflo,) = _deployConfiguredSystem();
+
+        vm.prank(OWNER);
+        vm.expectRevert(OVRFLOFactory.AlreadyRegistered.selector);
+        factory.registerOvrflo(address(ovrflo));
+    }
+
+    function test_RegisterOvrflo_RevertsForFactoryMismatch() public {
+        OVRFLO rogue =
+            new OVRFLO(STRANGER, TREASURY, address(underlying), "OVRFLO Wrapped Ether", "ovrfloWETH", PENDLE_ORACLE);
+
+        vm.prank(OWNER);
+        vm.expectRevert(OVRFLOFactory.FactoryMismatch.selector);
+        factory.registerOvrflo(address(rogue));
+    }
+
+    function test_RegisterOvrflo_RevertsForOracleMismatch() public {
+        OVRFLO wrongOracle = new OVRFLO(
+            address(factory), TREASURY, address(underlying), "OVRFLO Wrapped Ether", "ovrfloWETH", address(0xBAD)
+        );
+
+        vm.prank(OWNER);
+        vm.expectRevert(OVRFLOFactory.OracleMismatch.selector);
+        factory.registerOvrflo(address(wrongOracle));
+    }
+
+    function test_RegisterOvrflo_RevertsForDuplicateUnderlying() public {
+        _deployConfiguredSystem();
+
+        // A second, fully valid candidate on the same underlying — even with a
+        // different treasury — must be rejected at registration (pattern #9).
+        OVRFLO second = _newVault(NEW_OWNER, address(underlying));
+
+        vm.prank(OWNER);
+        vm.expectRevert(OVRFLOFactory.UnderlyingAlreadyDeployed.selector);
+        factory.registerOvrflo(address(second));
+    }
+
+    function test_RegisterOvrflo_StoresAccountingAndEmits() public {
+        OVRFLO ovrflo = _newVault(TREASURY, address(underlying));
+        address tokenAddr = ovrflo.ovrfloToken();
+
+        vm.expectEmit(true, true, true, true, address(factory));
+        emit OvrfloRegistered(address(ovrflo), tokenAddr, TREASURY, address(underlying));
+
+        vm.prank(OWNER);
+        factory.registerOvrflo(address(ovrflo));
+
+        assertEq(factory.ovrfloCount(), 1);
+        assertEq(factory.ovrflos(0), address(ovrflo));
+        assertEq(factory.underlyingToOvrflo(address(underlying)), address(ovrflo));
 
         OVRFLOFactory.OvrfloInfo memory info;
-        (info.treasury, info.underlying, info.ovrfloToken) = factory.ovrfloInfo(ovrfloAddr);
+        (info.treasury, info.underlying, info.ovrfloToken) = factory.ovrfloInfo(address(ovrflo));
         assertEq(info.treasury, TREASURY);
         assertEq(info.underlying, address(underlying));
         assertEq(info.ovrfloToken, tokenAddr);
-
-        (, bool pending,,,) = factory.pendingDeployment();
-        assertFalse(pending);
     }
+
+    function test_RegisterOvrflo_AllowsDifferentUnderlyings() public {
+        (OVRFLO ovrflo1,) = _deployConfiguredSystem();
+
+        MockERC20Metadata dai = new MockERC20Metadata("Dai", "DAI", 18);
+        OVRFLO ovrflo2 =
+            new OVRFLO(address(factory), TREASURY, address(dai), "OVRFLO Dai Stablecoin", "ovrfloDAI", PENDLE_ORACLE);
+
+        vm.prank(OWNER);
+        factory.registerOvrflo(address(ovrflo2));
+
+        assertEq(factory.underlyingToOvrflo(address(underlying)), address(ovrflo1));
+        assertEq(factory.underlyingToOvrflo(address(dai)), address(ovrflo2));
+        assertEq(factory.ovrfloCount(), 2);
+    }
+
+    /* ---------- registerLending ---------- */
+
+    function test_RegisterLending_RevertsForUnauthorizedCaller() public {
+        (OVRFLO ovrflo,) = _deployConfiguredSystem();
+        OVRFLOLending lending = _newLending(ovrflo);
+
+        vm.prank(STRANGER);
+        vm.expectRevert("Ownable: caller is not the owner");
+        factory.registerLending(address(lending));
+    }
+
+    function test_RegisterLending_RevertsForZeroAddress() public {
+        vm.prank(OWNER);
+        vm.expectRevert(OVRFLOFactory.ZeroAddress.selector);
+        factory.registerLending(address(0));
+    }
+
+    function test_RegisterLending_RevertsForUnknownCore() public {
+        // A candidate whose core was never registered here: only reachable via a
+        // lookalike, since real bytecode cannot even construct against an
+        // unregistered core (see test_RegisterLending_ConstructionRevertsForUnregisteredCore).
+        MockLendingLookalike lookalike =
+            new MockLendingLookalike(address(0xDEAD), address(factory), address(factory), address(0xCAFE));
+
+        vm.prank(OWNER);
+        vm.expectRevert(OVRFLOFactory.UnknownOvrflo.selector);
+        factory.registerLending(address(lookalike));
+    }
+
+    function test_RegisterLending_RevertsWhenLendingExists() public {
+        (OVRFLO ovrflo,) = _deployConfiguredSystem();
+        _deployRegisteredLending(ovrflo);
+
+        OVRFLOLending second = _newLending(ovrflo);
+        vm.prank(OWNER);
+        vm.expectRevert(OVRFLOFactory.LendingExists.selector);
+        factory.registerLending(address(second));
+    }
+
+    function test_RegisterLending_RevertsForFactoryMismatch() public {
+        // The realistic adversarial candidate: GENUINE OVRFLOLending bytecode
+        // constructed against a hostile stub registry that reports the real vault
+        // as registered. It passes the core check (the vault IS registered here);
+        // FactoryMismatch is the sole on-chain guard for this class.
+        (OVRFLO ovrflo, OVRFLOToken token) = _deployConfiguredSystem();
+        MockRegistryStub stub = new MockRegistryStub(TREASURY, address(underlying), address(token));
+        OVRFLOLending hostile = new OVRFLOLending(address(stub), address(ovrflo), address(ovrflo.sablierLL()));
+
+        vm.prank(OWNER);
+        vm.expectRevert(OVRFLOFactory.FactoryMismatch.selector);
+        factory.registerLending(address(hostile));
+    }
+
+    function test_RegisterLending_RevertsForOwnerMismatch() public {
+        (OVRFLO ovrflo,) = _deployConfiguredSystem();
+        MockLendingLookalike lookalike =
+            new MockLendingLookalike(address(ovrflo), address(factory), STRANGER, address(ovrflo.sablierLL()));
+
+        vm.prank(OWNER);
+        vm.expectRevert(OVRFLOFactory.OwnerMismatch.selector);
+        factory.registerLending(address(lookalike));
+    }
+
+    function test_RegisterLending_RevertsForSablierMismatch() public {
+        (OVRFLO ovrflo,) = _deployConfiguredSystem();
+        MockLendingLookalike lookalike =
+            new MockLendingLookalike(address(ovrflo), address(factory), address(factory), address(0xCAFE));
+
+        vm.prank(OWNER);
+        vm.expectRevert(OVRFLOFactory.SablierMismatch.selector);
+        factory.registerLending(address(lookalike));
+    }
+
+    function test_RegisterLending_StoresAccountingAndEmits() public {
+        (OVRFLO ovrflo,) = _deployConfiguredSystem();
+        OVRFLOLending lending = _newLending(ovrflo);
+
+        vm.expectEmit(true, true, true, true, address(factory));
+        emit LendingRegistered(address(ovrflo), address(lending));
+
+        vm.prank(OWNER);
+        factory.registerLending(address(lending));
+
+        assertEq(factory.ovrfloToLending(address(ovrflo)), address(lending));
+        assertEq(factory.lendingToOvrflo(address(lending)), address(ovrflo));
+        assertEq(factory.lendingCount(), 1);
+        assertEq(factory.lendings(0), address(lending));
+    }
+
+    function test_RegisterLending_SucceedsFromEoaDeployedLending() public {
+        // End-to-end happy path with the lending deployed by a plain EOA, no
+        // pranks-as-factory anywhere: the shape that exposes ownership-model
+        // regressions which owner-pranked fixtures mask.
+        (OVRFLO ovrflo,) = _deployConfiguredSystem();
+
+        vm.prank(STRANGER);
+        OVRFLOLending lending = new OVRFLOLending(address(factory), address(ovrflo), address(ovrflo.sablierLL()));
+
+        assertEq(lending.owner(), address(factory));
+        assertEq(lending.pendingOwner(), address(0));
+
+        vm.prank(OWNER);
+        factory.registerLending(address(lending));
+
+        assertEq(factory.ovrfloToLending(address(ovrflo)), address(lending));
+        assertEq(address(lending.factory()), address(factory));
+        assertEq(lending.core(), address(ovrflo));
+        assertEq(address(lending.sablier()), address(ovrflo.sablierLL()));
+    }
+
+    function test_RegisterLending_UnregisteredLendingStaysInert() public {
+        (OVRFLO ovrflo,) = _deployConfiguredSystem();
+        OVRFLOLending rogue = _newLending(ovrflo);
+
+        // Factory-owned from birth, but unregistered: no forwarder will touch it...
+        assertEq(rogue.owner(), address(factory));
+        vm.prank(OWNER);
+        vm.expectRevert(OVRFLOFactory.UnknownLending.selector);
+        factory.setLendingTickSpacing(address(rogue), address(0xCA11), 25);
+
+        // ...so its tick spacing is permanently unset and the book can never open.
+        vm.expectRevert(OVRFLOLending.SpacingUnset.selector);
+        rogue.supply(address(0xCA11), 1000, 1e15);
+    }
+
+    function test_RegisterLending_ConstructionRevertsForUnregisteredCore() public {
+        // Pins the runbook ordering: the lending cannot even be constructed until
+        // its core vault is registered with the factory it points at.
+        vm.expectRevert(OVRFLOLending.UnknownCore.selector);
+        new OVRFLOLending(address(factory), address(0xDEAD), address(0xCAFE));
+    }
+
+    function test_LendingConstruction_EmitsOwnershipHandoffToFactory() public {
+        (OVRFLO ovrflo,) = _deployConfiguredSystem();
+
+        // Construction emits two OwnershipTransferred events: OZ Ownable's
+        // zero->deployer, then the constructor's deployer->factory handoff.
+        vm.expectEmit(true, true, false, false);
+        emit OwnershipTransferred(address(0), address(this));
+        vm.expectEmit(true, true, false, false);
+        emit OwnershipTransferred(address(this), address(factory));
+
+        _newLending(ovrflo);
+    }
+
+    /* ---------- Owner gating and two-step ownership ---------- */
 
     function test_OwnerOnlyFunctions_RevertForUnauthorizedCallers() public {
         (OVRFLO ovrflo,) = _deployConfiguredSystem();
@@ -283,15 +446,11 @@ contract OVRFLOFactoryTest is Test {
 
         vm.prank(STRANGER);
         vm.expectRevert("Ownable: caller is not the owner");
-        factory.configureDeployment(TREASURY, address(underlying), "Wrapped Ether", "WETH");
+        factory.registerOvrflo(address(ovrflo));
 
         vm.prank(STRANGER);
         vm.expectRevert("Ownable: caller is not the owner");
-        factory.cancelDeployment();
-
-        vm.prank(STRANGER);
-        vm.expectRevert("Ownable: caller is not the owner");
-        factory.deploy();
+        factory.registerLending(address(0xB00B));
 
         vm.prank(STRANGER);
         vm.expectRevert("Ownable: caller is not the owner");
@@ -315,10 +474,6 @@ contract OVRFLOFactoryTest is Test {
 
         vm.prank(STRANGER);
         vm.expectRevert("Ownable: caller is not the owner");
-        factory.deployLending(address(ovrflo));
-
-        vm.prank(STRANGER);
-        vm.expectRevert("Ownable: caller is not the owner");
         factory.setLendingAprBounds(address(ovrflo), 500, 2000);
 
         vm.prank(STRANGER);
@@ -329,6 +484,60 @@ contract OVRFLOFactoryTest is Test {
         vm.expectRevert("Ownable: caller is not the owner");
         factory.setLendingTreasury(address(ovrflo), NEW_OWNER);
     }
+
+    function test_TransferOwnership_TwoStepHandoffUpdatesOwnerAndAllowsNewOwnerActions() public {
+        MockERC20Metadata dai = new MockERC20Metadata("Dai", "DAI", 18);
+        OVRFLO candidate =
+            new OVRFLO(address(factory), TREASURY, address(dai), "OVRFLO Dai Stablecoin", "ovrfloDAI", PENDLE_ORACLE);
+
+        vm.expectEmit(true, true, false, false, address(factory));
+        emit OwnershipTransferStarted(OWNER, NEW_OWNER);
+
+        vm.prank(OWNER);
+        factory.transferOwnership(NEW_OWNER);
+
+        assertEq(factory.owner(), OWNER);
+        assertEq(factory.pendingOwner(), NEW_OWNER);
+
+        vm.prank(NEW_OWNER);
+        vm.expectRevert("Ownable: caller is not the owner");
+        factory.registerOvrflo(address(candidate));
+
+        vm.expectEmit(true, true, false, false, address(factory));
+        emit OwnershipTransferred(OWNER, NEW_OWNER);
+
+        vm.prank(NEW_OWNER);
+        factory.acceptOwnership();
+
+        assertEq(factory.owner(), NEW_OWNER);
+        assertEq(factory.pendingOwner(), address(0));
+
+        vm.prank(OWNER);
+        vm.expectRevert("Ownable: caller is not the owner");
+        factory.registerOvrflo(address(candidate));
+
+        vm.prank(NEW_OWNER);
+        factory.registerOvrflo(address(candidate));
+        assertEq(factory.underlyingToOvrflo(address(dai)), address(candidate));
+    }
+
+    function test_AcceptOwnership_RevertsForNonPendingOwner() public {
+        vm.prank(OWNER);
+        factory.transferOwnership(NEW_OWNER);
+
+        vm.prank(STRANGER);
+        vm.expectRevert("Ownable2Step: caller is not the new owner");
+        factory.acceptOwnership();
+
+        vm.prank(OWNER);
+        vm.expectRevert("Ownable2Step: caller is not the new owner");
+        factory.acceptOwnership();
+
+        assertEq(factory.owner(), OWNER);
+        assertEq(factory.pendingOwner(), NEW_OWNER);
+    }
+
+    /* ---------- Oracle preparation and market onboarding ---------- */
 
     function test_PrepareOracle_RevertsForShortDurationAndIncreasesCardinalityWhenRequired() public {
         vm.prank(OWNER);
@@ -562,6 +771,8 @@ contract OVRFLOFactoryTest is Test {
         assertEq(factory.approvedMarketCount(address(ovrflo)), 0);
     }
 
+    /* ---------- Vault admin forwarding ---------- */
+
     function test_SetMarketDepositLimit_RevertsForUnknownOvrflo() public {
         vm.prank(OWNER);
         vm.expectRevert(OVRFLOFactory.UnknownOvrflo.selector);
@@ -615,169 +826,27 @@ contract OVRFLOFactoryTest is Test {
         assertEq(pt.balanceOf(address(ovrflo)), 0);
     }
 
-    function test_TransferOwnership_TwoStepHandoffUpdatesOwnerAndAllowsNewOwnerActions() public {
-        vm.expectEmit(true, true, false, false, address(factory));
-        emit OwnershipTransferStarted(OWNER, NEW_OWNER);
-
-        vm.prank(OWNER);
-        factory.transferOwnership(NEW_OWNER);
-
-        assertEq(factory.owner(), OWNER);
-        assertEq(factory.pendingOwner(), NEW_OWNER);
-
-        vm.prank(NEW_OWNER);
-        vm.expectRevert("Ownable: caller is not the owner");
-        factory.configureDeployment(TREASURY, address(underlying), "Wrapped Ether", "WETH");
-
-        vm.expectEmit(true, true, false, false, address(factory));
-        emit OwnershipTransferred(OWNER, NEW_OWNER);
-
-        vm.prank(NEW_OWNER);
-        factory.acceptOwnership();
-
-        assertEq(factory.owner(), NEW_OWNER);
-        assertEq(factory.pendingOwner(), address(0));
-
-        vm.prank(OWNER);
-        vm.expectRevert("Ownable: caller is not the owner");
-        factory.configureDeployment(TREASURY, address(underlying), "Wrapped Ether", "WETH");
-
-        vm.prank(NEW_OWNER);
-        factory.configureDeployment(TREASURY, address(underlying), "Wrapped Ether", "WETH");
-    }
-
-    function test_AcceptOwnership_RevertsForNonPendingOwner() public {
-        vm.prank(OWNER);
-        factory.transferOwnership(NEW_OWNER);
-
-        vm.prank(STRANGER);
-        vm.expectRevert("Ownable2Step: caller is not the new owner");
-        factory.acceptOwnership();
-
-        vm.prank(OWNER);
-        vm.expectRevert("Ownable2Step: caller is not the new owner");
-        factory.acceptOwnership();
-
-        assertEq(factory.owner(), OWNER);
-        assertEq(factory.pendingOwner(), NEW_OWNER);
-    }
-
-    function test_DeployLending_DeploysLendingRegistersAndKeepsFactoryAsOwner() public {
-        (OVRFLO ovrflo,) = _deployConfiguredSystem();
-
-        vm.expectEmit(true, false, false, false, address(factory));
-        emit LendingDeployed(address(ovrflo), address(0));
-
-        vm.prank(OWNER);
-        address lending = factory.deployLending(address(ovrflo));
-
-        assertTrue(lending != address(0));
-        assertEq(factory.ovrfloToLending(address(ovrflo)), lending);
-        assertEq(factory.lendingToOvrflo(lending), address(ovrflo));
-        assertEq(factory.lendingCount(), 1);
-        assertEq(factory.lendings(0), lending);
-
-        OVRFLOLending b = OVRFLOLending(lending);
-        assertEq(address(b.factory()), address(factory));
-        assertEq(address(b.core()), address(ovrflo));
-        assertEq(address(b.sablier()), address(OVRFLO(address(ovrflo)).sablierLL()));
-        assertEq(b.owner(), address(factory));
-        assertEq(b.pendingOwner(), address(0));
-    }
-
-    function test_DeployLending_RevertsForDuplicate() public {
-        (OVRFLO ovrflo,) = _deployConfiguredSystem();
-
-        vm.prank(OWNER);
-        factory.deployLending(address(ovrflo));
-
-        vm.prank(OWNER);
-        vm.expectRevert(OVRFLOFactory.LendingExists.selector);
-        factory.deployLending(address(ovrflo));
-    }
-
-    function test_DeployLending_RevertsForUnknownVault() public {
-        vm.prank(OWNER);
-        vm.expectRevert(OVRFLOFactory.UnknownOvrflo.selector);
-        factory.deployLending(address(0xDEAD));
-    }
-
-    function test_DirectLendingConstruction_RemainsUnregisteredAndDirectlyOwned() public {
-        (OVRFLO ovrflo,) = _deployConfiguredSystem();
-
-        OVRFLOLending lending =
-            new OVRFLOLending(address(factory), address(ovrflo), address(OVRFLO(address(ovrflo)).sablierLL()));
-
-        assertEq(lending.owner(), address(this));
-        assertEq(factory.ovrfloToLending(address(ovrflo)), address(0));
-        assertEq(factory.lendingToOvrflo(address(lending)), address(0));
-    }
-
-    /* ---------- Duplicate underlying prevention ---------- */
-
-    function test_ConfigureDeployment_RevertsForAlreadyDeployedUnderlying() public {
-        _deployConfiguredSystem();
-
-        // Same underlying — should revert even with a different treasury
-        vm.prank(OWNER);
-        vm.expectRevert(OVRFLOFactory.UnderlyingAlreadyDeployed.selector);
-        factory.configureDeployment(NEW_OWNER, address(underlying), "Wrapped Ether 2", "WETH2");
-    }
-
-    function test_ConfigureDeployment_AllowsReconfigureIfFirstWasNotDeployed() public {
-        vm.prank(OWNER);
-        factory.configureDeployment(TREASURY, address(underlying), "Wrapped Ether", "WETH");
-
-        // Not yet deployed — reconfiguring with a different treasury should succeed
-        vm.prank(OWNER);
-        factory.configureDeployment(NEW_OWNER, address(underlying), "Wrapped Ether", "WETH");
-
-        (address pendingTreasury,,,,) = factory.pendingDeployment();
-        assertEq(pendingTreasury, NEW_OWNER);
-    }
-
-    function test_Deploy_SetsUnderlyingToOvrfloMapping() public {
-        (OVRFLO ovrflo,) = _deployConfiguredSystem();
-        assertEq(factory.underlyingToOvrflo(address(underlying)), address(ovrflo));
-    }
-
-    function test_ConfigureDeployment_AllowsDifferentUnderlyings() public {
-        _deployConfiguredSystem();
-
-        MockERC20Metadata dai = new MockERC20Metadata("Dai", "DAI", 18);
-
-        vm.prank(OWNER);
-        factory.configureDeployment(TREASURY, address(dai), "Dai Stablecoin", "DAI");
-        // Should not revert
-        vm.prank(OWNER);
-        (address ovrflo2,) = factory.deploy();
-        assertEq(factory.underlyingToOvrflo(address(dai)), ovrflo2);
-        assertEq(factory.ovrfloCount(), 2);
-    }
-
     /* ---------- Lending admin forwarding ---------- */
 
     function test_LendingAdmin_RevertForUnauthorizedCallers() public {
         (OVRFLO ovrflo,) = _deployConfiguredSystem();
-
-        vm.prank(OWNER);
-        address lending = factory.deployLending(address(ovrflo));
+        OVRFLOLending lending = _deployRegisteredLending(ovrflo);
 
         vm.prank(STRANGER);
         vm.expectRevert("Ownable: caller is not the owner");
-        factory.setLendingAprBounds(lending, 500, 2000);
+        factory.setLendingAprBounds(address(lending), 500, 2000);
 
         vm.prank(STRANGER);
         vm.expectRevert("Ownable: caller is not the owner");
-        factory.setLendingFee(lending, 50);
+        factory.setLendingFee(address(lending), 50);
 
         vm.prank(STRANGER);
         vm.expectRevert("Ownable: caller is not the owner");
-        factory.setLendingTreasury(lending, NEW_OWNER);
+        factory.setLendingTreasury(address(lending), NEW_OWNER);
 
         vm.prank(STRANGER);
         vm.expectRevert("Ownable: caller is not the owner");
-        factory.setLendingTickSpacing(lending, address(0xCA11), 25);
+        factory.setLendingTickSpacing(address(lending), address(0xCA11), 25);
     }
 
     function test_LendingAdmin_RevertsForUnknownLending() public {
@@ -800,13 +869,11 @@ contract OVRFLOFactoryTest is Test {
 
     function test_LendingAdmin_ForwardsToLendingAndEmitsEvents() public {
         (OVRFLO ovrflo,) = _deployConfiguredSystem();
-
-        vm.prank(OWNER);
-        address lending = factory.deployLending(address(ovrflo));
-        OVRFLOLending b = OVRFLOLending(lending);
+        OVRFLOLending b = _deployRegisteredLending(ovrflo);
+        address lending = address(b);
 
         // setAprBounds — lending event fires first (inside the call), then factory event
-        vm.expectEmit(address(lending));
+        vm.expectEmit(lending);
         emit LendingAprBoundsSet(500, 2000);
         vm.expectEmit(true, false, false, false, address(factory));
         emit LendingAprBoundsSet(lending, 500, 2000);
@@ -818,7 +885,7 @@ contract OVRFLOFactoryTest is Test {
         assertEq(b.aprMaxBps(), 2000);
 
         // setFee
-        vm.expectEmit(address(lending));
+        vm.expectEmit(lending);
         emit LendingFeeSet(50);
         vm.expectEmit(true, false, false, false, address(factory));
         emit LendingFeeSet(lending, 50);
@@ -829,7 +896,7 @@ contract OVRFLOFactoryTest is Test {
         assertEq(b.feeBps(), 50);
 
         // setTreasury
-        vm.expectEmit(true, false, false, false, address(lending));
+        vm.expectEmit(true, false, false, false, lending);
         emit LendingTreasurySet(NEW_OWNER);
         vm.expectEmit(true, true, false, false, address(factory));
         emit LendingTreasurySet(lending, NEW_OWNER);
@@ -841,7 +908,7 @@ contract OVRFLOFactoryTest is Test {
 
         // setTickSpacing — immutable-once-set on the lending, re-emitted by the factory
         address market = address(0xCA11);
-        vm.expectEmit(true, false, false, true, address(lending));
+        vm.expectEmit(true, false, false, true, lending);
         emit TickSpacingSet(market, 25);
         vm.expectEmit(true, true, false, true, address(factory));
         emit LendingTickSpacingSet(lending, market, 25);
@@ -862,10 +929,7 @@ contract OVRFLOFactoryTest is Test {
 
     function test_LendingAdmin_LendingOnlyOwnerRevertsForNonFactory() public {
         (OVRFLO ovrflo,) = _deployConfiguredSystem();
-
-        vm.prank(OWNER);
-        address lending = factory.deployLending(address(ovrflo));
-        OVRFLOLending b = OVRFLOLending(lending);
+        OVRFLOLending b = _deployRegisteredLending(ovrflo);
 
         // The multisig (OWNER) is NOT the lending's owner — factory is
         vm.prank(OWNER);
@@ -875,37 +939,49 @@ contract OVRFLOFactoryTest is Test {
 
     /* ---------- Lending enumeration ---------- */
 
-    function test_DeployLending_EnumeratesMultipleLendings() public {
-        // Deploy two vaults with different underlyings
+    function test_RegisterLending_EnumeratesMultipleLendings() public {
         (OVRFLO ovrflo1,) = _deployConfiguredSystem();
 
         MockERC20Metadata dai = new MockERC20Metadata("Dai", "DAI", 18);
-        vm.startPrank(OWNER);
-        factory.configureDeployment(TREASURY, address(dai), "Dai Stablecoin", "DAI");
-        (address ovrflo2Addr,) = factory.deploy();
-        vm.stopPrank();
+        OVRFLO ovrflo2 =
+            new OVRFLO(address(factory), TREASURY, address(dai), "OVRFLO Dai Stablecoin", "ovrfloDAI", PENDLE_ORACLE);
+        vm.prank(OWNER);
+        factory.registerOvrflo(address(ovrflo2));
 
-        vm.startPrank(OWNER);
-        address lending1 = factory.deployLending(address(ovrflo1));
-        address lending2 = factory.deployLending(ovrflo2Addr);
-        vm.stopPrank();
+        OVRFLOLending lending1 = _deployRegisteredLending(ovrflo1);
+        OVRFLOLending lending2 = _deployRegisteredLending(ovrflo2);
 
         assertEq(factory.lendingCount(), 2);
-        assertEq(factory.lendings(0), lending1);
-        assertEq(factory.lendings(1), lending2);
-        assertEq(factory.lendingToOvrflo(lending1), address(ovrflo1));
-        assertEq(factory.lendingToOvrflo(lending2), ovrflo2Addr);
+        assertEq(factory.lendings(0), address(lending1));
+        assertEq(factory.lendings(1), address(lending2));
+        assertEq(factory.lendingToOvrflo(address(lending1)), address(ovrflo1));
+        assertEq(factory.lendingToOvrflo(address(lending2)), address(ovrflo2));
+    }
+
+    /* ---------- Helpers ---------- */
+
+    function _newVault(address treasuryAddr, address underlyingAddr) internal returns (OVRFLO) {
+        return
+            new OVRFLO(
+                address(factory), treasuryAddr, underlyingAddr, "OVRFLO Wrapped Ether", "ovrfloWETH", PENDLE_ORACLE
+            );
+    }
+
+    function _newLending(OVRFLO ovrflo) internal returns (OVRFLOLending) {
+        return new OVRFLOLending(address(factory), address(ovrflo), address(ovrflo.sablierLL()));
     }
 
     function _deployConfiguredSystem() internal returns (OVRFLO ovrflo, OVRFLOToken token) {
+        ovrflo = _newVault(TREASURY, address(underlying));
         vm.prank(OWNER);
-        factory.configureDeployment(TREASURY, address(underlying), "Wrapped Ether", "WETH");
+        factory.registerOvrflo(address(ovrflo));
+        token = OVRFLOToken(ovrflo.ovrfloToken());
+    }
 
+    function _deployRegisteredLending(OVRFLO ovrflo) internal returns (OVRFLOLending lending) {
+        lending = _newLending(ovrflo);
         vm.prank(OWNER);
-        (address ovrfloAddr, address tokenAddr) = factory.deploy();
-
-        ovrflo = OVRFLO(ovrfloAddr);
-        token = OVRFLOToken(tokenAddr);
+        factory.registerLending(address(lending));
     }
 
     function _mockOracleState(
