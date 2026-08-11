@@ -31,19 +31,20 @@ abstract contract OVRFLOTestFixtures {
 
     IPendleOracle internal constant ORACLE = IPendleOracle(0x9a9Fa8338dd5E5B2188006f1Cd2Ef26d921650C2);
 
-    /// @notice Deploy the factory + OVRFLO + token configured against wstETH.
-    ///         Caller must already hold the `owner` role on the calling
-    ///         context (`vm.startPrank(owner)` in tests, broadcast-as-owner
-    ///         in scripts) because `configureDeployment` is onlyOwner.
+    /// @notice Deploy the factory + OVRFLO (which constructs its own token) against
+    ///         wstETH, then register the vault. Caller must already hold the `owner`
+    ///         role on the calling context (`vm.startPrank(owner)` in tests,
+    ///         broadcast-as-owner in scripts) because `registerOvrflo` is onlyOwner.
     function _deployConfiguredSystemAs(address owner)
         internal
         returns (OVRFLOFactory factory, OVRFLO ovrflo, OVRFLOToken token)
     {
         factory = new OVRFLOFactory(owner, address(ORACLE));
-        factory.configureDeployment(TREASURY, WSTETH, "Wrapped Staked Ether", "WSTETH");
-        (address ovrfloAddr, address tokenAddr) = factory.deploy();
-        ovrflo = OVRFLO(ovrfloAddr);
-        token = OVRFLOToken(tokenAddr);
+        ovrflo = new OVRFLO(
+            address(factory), TREASURY, WSTETH, "OVRFLO Wrapped Staked Ether", "ovrfloWSTETH", address(ORACLE)
+        );
+        factory.registerOvrflo(address(ovrflo));
+        token = OVRFLOToken(ovrflo.ovrfloToken());
     }
 
     /// @notice Clear the oracle cardinality requirement for a Pendle market.

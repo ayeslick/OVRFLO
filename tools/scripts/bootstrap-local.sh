@@ -58,7 +58,6 @@ echo "[1/4] starting anvil fork at live mainnet head"
 anvil \
   --fork-url "$MAINNET_RPC_URL" \
   --chain-id 1 \
-  --disable-code-size-limit \
   --silent \
   >"$ANVIL_LOG" 2>&1 &
 ANVIL_PID=$!
