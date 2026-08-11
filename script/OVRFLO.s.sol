@@ -26,8 +26,12 @@ contract OVRFLOScript is Script {
 
         // This manifest is intentionally not deployable yet: the browser
         // requires factory/lending block hashes and a verified LendingDeployed
-        // identity. After the vault + lending transactions complete, add their
-        // addresses (or let the verifier derive the single pair) and run:
+        // identity. After the vault + lending transactions complete — which
+        // includes the multisig calling factory.setLendingTickSpacing(lending,
+        // market, spacing) per market before supply/borrow become callable
+        // (KTD5; spacing is set-once, so onboarding must set it correctly the
+        // first time) — add their addresses (or let the verifier derive the
+        // single pair) and run:
         // DEPLOYMENT_RPC_URL=... node tools/scripts/write-deployment-artifact.mjs \
         //   deployments/production.json
         // Runtime/build config rejects this partial file, so a factory address

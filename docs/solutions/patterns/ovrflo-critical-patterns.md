@@ -412,9 +412,18 @@ complementary safety net, not a replacement. Do **not** pull in
 
 ---
 
-## 4. Prevent self-matched loans in OVRFLOLending (ALWAYS REQUIRED)
+## 4. Prevent self-matched loans in OVRFLOLending (SUPERSEDED-BY-DESIGN)
 
-### ❌ WRONG (borrower == lender breaks `repayLoan`)
+> **Superseded 2026-08 by the v1-lite tick order book** (`docs/plans/2026-08-05-001-feat-lending-v1-lite-plan.md`,
+> Key Decisions: "Self-match prevention is dropped"). `borrow` is a blind fill against a cumulative tape counter —
+> it never enumerates or reads lender positions, so there is no `liquidity.lender` to compare `msg.sender`
+> against; the guard this rule describes is structurally unenforceable under the new fill mechanism. Per the
+> `docs/audit/rejected-findings-record.md` L-12 reasoning this pattern also cites: the guard was a correctness
+> nicety against an irrational self-loan state, not a security boundary — a self-fill is self-neutral minus the
+> protocol fee, and bypassing it with a second EOA gains nothing. Kept below for history; do not re-add this
+> guard to the v1-lite contract.
+
+### ❌ WRONG (borrower == lender breaks `repayLoan`) — pre-rewrite contract, historical
 
 ```solidity
 // createBorrowerLoanPool — no self-match guard on liquidity lenders.
@@ -913,9 +922,16 @@ rg "underlyingToOvrflo\[config.underlying\]" src/OVRFLOFactory.sol
 
 ---
 
-## 10. Require strictly-increasing IDs in batch functions that accept ID arrays (ALWAYS REQUIRED)
+## 10. Require strictly-increasing IDs in batch functions that accept ID arrays (SUPERSEDED-BY-DESIGN)
 
-### ❌ WRONG (duplicate IDs double-count capacity or create double loans)
+> **Superseded 2026-08 by the v1-lite tick order book** (`docs/plans/2026-08-05-001-feat-lending-v1-lite-plan.md`,
+> R9). `borrow` takes no `liquidityIds` array at all — it is a single blind fill against one tick's cumulative
+> `filled` counter, so the double-count vector this rule guards against (duplicate IDs inflating a validation-loop
+> total, then double-executing in a fill loop) no longer exists structurally: there is no array to duplicate IDs
+> in. Kept below for history; do not port this pattern into any new batch-shaped v1-lite entrypoint without first
+> checking whether the underlying array-of-IDs shape it guards against even applies.
+
+### ❌ WRONG (duplicate IDs double-count capacity or create double loans) — pre-rewrite contract, historical
 
 ```solidity
 // createBorrowerLoanPool — no ordering check
@@ -1072,16 +1088,19 @@ pro-rata share of *total* recovery minus what they've already received. This
 is order-independent — every lender can claim up to their pro-rata share
 regardless of when they claim. `loanPoolReceived` prevents over-claiming.
 
-**Placement/Context:** `claimLoanPoolShare` / `_claimFair` — the shared-pot
-claim channel for borrower loan pools.
+**Placement/Context (v1-lite):** `claim` in `src/OVRFLOLending.sol` — the same cumulative-recovered
+formula now attributes by tape interval overlap (`_overlapUnits`) instead of a stored per-lender
+`totalContributed`/`loanPoolContributions` pair, but the pro-rata-of-total-recovery shape is
+unchanged (KTD9). Historical identifiers below (`claimLoanPoolShare`, `_claimFair`,
+`loanPoolProceeds`, `totalContributed`) do not exist in the current contract.
 
 **How to detect violation:**
 
 ```bash
 rg "proRataShare" src/OVRFLOLending.sol
 # expected: 0 matches — old pro-rata cap removed
-rg "contribution.*recovered.*totalContributed" src/OVRFLOLending.sol
-# expected: 1 match in _claimFair
+rg "Math.mulDiv\(_overlapUnits" src/OVRFLOLending.sol
+# expected: 1 match in claim (the entitlement formula)
 ```
 
 **Documented in:** [`docs/solutions/architecture-patterns/cumulative-recovered-pro-rata-pool-claims.md`](../architecture-patterns/cumulative-recovered-pro-rata-pool-claims.md)
@@ -1100,16 +1119,17 @@ before paying the lender. This is the primary mechanism for claiming accrued
 stream value from open pool loans — not a defense-in-depth fallback. Without it,
 lenders could only claim after `closeLoan` or `repayLoan`, not from live accrual.
 
-**Placement/Context:** `_claimFair` in `src/OVRFLOLending.sol` — the harvest
-branch that draws from the stream when `loanPoolProceeds < requestAmount`.
+**Placement/Context (v1-lite):** `claim` in `src/OVRFLOLending.sol` — the harvest branch that draws
+`harvestAmount` from the stream when the shared `pot` (formerly `loanPoolProceeds`) falls short of
+`requestAmount`, gated by `!loan.closed` (`harvestCap` computed only inside that branch).
 
 **How to detect violation:**
 
 ```bash
-rg "loan.closed && loanPoolProceeds < requestAmount" src/OVRFLOLending.sol
+rg "loan.closed &&.*pot < requestAmount" src/OVRFLOLending.sol
 # expected: 0 matches (harvest guard uses !loan.closed, not loan.closed)
-rg "proceeds < requestAmount" src/OVRFLOLending.sol
-# expected: 1 match in _claimFair harvest branch
+rg "if \(pot < requestAmount\)" src/OVRFLOLending.sol
+# expected: 1 match in claim's harvest branch
 ```
 
 **Documented in:** OVRFLOLending pool claim fairness fix (2026-07-06), `_claimFair` harvest fix (2026-07-07)
@@ -1126,13 +1146,14 @@ require an explicit overflow check inside the function. The `uint128` parameter
 type moves the check to the ABI decoder, which is cheaper and catches invalid
 inputs earlier.
 
-**Placement/Context:** `createBorrowerLoanPool` in `src/OVRFLOLending.sol` — parameters
-`targetBorrow` and `minAcceptable`.
+**Placement/Context (v1-lite):** `borrow` in `src/OVRFLOLending.sol` — parameters `targetBorrow`
+and `minAcceptable` are still `uint128` (the identifiers carried over unchanged from the
+pre-rewrite `createBorrowerLoanPool`, which no longer exists).
 
 **How to detect violation:**
 
 ```bash
-rg "function createBorrowerLoanPool" src/OVRFLOLending.sol
+rg "function borrow" src/OVRFLOLending.sol
 # expected: 1 match — verify targetBorrow and minAcceptable are uint128, not uint256
 ```
 
@@ -1146,30 +1167,39 @@ rg "function createBorrowerLoanPool" src/OVRFLOLending.sol
 Storage structs use `uint128` for packed slots (fitting multiple fields in a
 single storage slot). Intermediate math uses `uint256` to avoid overflow on
 multiplication (e.g., `contribution * (drawn + repaid)` could overflow
-`uint128`). `_toUint128` is the overflow-checked narrowing gate that safely
-converts back to `uint128` after math completes, reverting on overflow. This
-pattern is inherent to the design — storage size and math safety have
-different optimal types.
+`uint128`). OZ `SafeCast.toUint128`/`SafeCast.toUint64` (v1-lite's checked
+narrowing gates — KTD10; the hand-rolled `_toUint128` helper this rule was
+originally written against no longer exists) safely convert back after math
+completes, reverting on overflow. This pattern is inherent to the design —
+storage size and math safety have different optimal types.
 
-**Placement/Context:** `src/OVRFLOLending.sol` — storage structs, intermediate
-math, and `_toUint128`.
+**Placement/Context (v1-lite):** `src/OVRFLOLending.sol` — storage structs, intermediate
+math, and `SafeCast.toUint128`/`SafeCast.toUint64` (plus the two local UNIT-conversion
+helpers `_toUnits`/`_toWei`, which route through the same `SafeCast` gates).
 
 **How to detect violation:**
 
 ```bash
-rg "_toUint128" src/OVRFLOLending.sol
-# expected: matches at every uint256 -> uint128 narrowing gate
-rg "uint128\(uint256" src/OVRFLOLending.sol
-# expected: 0 matches — raw casts should use _toUint128 instead
+rg "SafeCast.toUint128|SafeCast.toUint64" src/OVRFLOLending.sol
+# expected: matches at every uint256 -> uint128/uint64 narrowing gate
+rg "uint128\(uint256|uint64\(uint256" src/OVRFLOLending.sol
+# expected: 0 matches — raw casts should use SafeCast instead
 ```
 
 **Documented in:** [`docs/solutions/best-practices/avoid-unnecessary-type-widening-with-invariant-guarantees.md`](../best-practices/avoid-unnecessary-type-widening-with-invariant-guarantees.md), OVRFLOLending cleanup refactor (2026-07-07)
 
 ---
 
-## 16. _consumeLiquidity early-break behavior (ALWAYS REQUIRED)
+## 16. _consumeLiquidity early-break behavior (SUPERSEDED-BY-DESIGN)
 
-**Why:** The `_consumeLiquidity` loop breaks when `toBorrow == 0`, meaning
+> **Superseded 2026-08 by the v1-lite tick order book** (`docs/plans/2026-08-05-001-feat-lending-v1-lite-plan.md`,
+> R3). `_consumeLiquidity` and its per-position consumption loop are deleted; `_fillTick` advances one tick
+> epoch's monotone `filled` counter with a single SSTORE regardless of how many lender positions the fill's
+> interval eventually overlaps (attribution is computed lazily, later, by interval overlap — see "Blind fill" and
+> "Frozen history" in `CONCEPTS.md`). There is no loop to early-break out of, and no `availableLiquidity` per
+> position to leave untouched. Kept below for history.
+
+**Why (pre-rewrite contract, historical):** The `_consumeLiquidity` loop breaks when `toBorrow == 0`, meaning
 trailing liquidityPositions past the break point are never touched. This retains residual
 `availableLiquidity` for unconsumed liquidityPositions. The caller
 (`createBorrowerLoanPool`) may pass more liquidityPositions than needed to fill `targetBorrow`;

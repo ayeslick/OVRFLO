@@ -144,115 +144,115 @@ Per-call preconditions. Heading IDs below (`G-N`) are anchor targets from x-ray.
 ### OVRFLOLending (v1-lite book)
 
 #### G-25
-`if (amount == 0) revert ZeroAmount()` · `OVRFLOLending.sol:375` · Rejects the degenerate supply before it allocates a permanent tree leaf.
+`if (amount == 0) revert ZeroAmount()` · `OVRFLOLending.sol:396` · Rejects the degenerate supply before it allocates a permanent tree leaf.
 
 #### G-26
-`if (amount % UNIT != 0) revert NotUnitAligned()` · `OVRFLOLending.sol:376` · The tape stores UNITs; a non-multiple would silently truncate escrowed value into the contract.
+`if (amount % UNIT != 0) revert NotUnitAligned()` · `OVRFLOLending.sol:397` · The tape stores UNITs; a non-multiple would silently truncate escrowed value into the contract.
 
 #### G-27
-`if (amount < MIN_LIQUIDITY_AMOUNT) revert BelowMinimum()` · `OVRFLOLending.sol:377` · The single book atom — bounds tape-spam leaf allocation to a gas-cost problem, not a capital-free one (risk #4).
+`if (amount < MIN_LIQUIDITY_AMOUNT) revert BelowMinimum()` · `OVRFLOLending.sol:398` · The single book atom — bounds tape-spam leaf allocation to a gas-cost problem, not a capital-free one (risk #4).
 
 #### G-28
-`if (spacing == 0) revert SpacingUnset()` · `OVRFLOLending.sol:1095` · Zero is the unset sentinel; supply and borrow stay closed until the multisig configures the ladder.
+`if (spacing == 0) revert SpacingUnset()` · `OVRFLOLending.sol:1131` · Zero is the unset sentinel; supply and borrow stay closed until the multisig configures the ladder.
 
 #### G-29
-`if (aprBps < aprMinBps || aprBps > aprMaxBps || aprBps % spacing != 0) revert InvalidTick()` · `OVRFLOLending.sol:1096` · Confines liquidity to the owner-declared, spacing-aligned ladder so `tickDepths` enumerates every live tick.
+`if (aprBps < aprMinBps || aprBps > aprMaxBps || aprBps % spacing != 0) revert InvalidTick()` · `OVRFLOLending.sol:1132` · Confines liquidity to the owner-declared, spacing-aligned ladder so `tickDepths` enumerates every live tick.
 
 #### G-30
-`if (position.lender != msg.sender) revert NotLender()` · `OVRFLOLending.sol:414` · Withdraw authorization; also the response to a nonexistent id, whose lender is `address(0)`.
+`if (position.lender != msg.sender) revert NotLender()` · `OVRFLOLending.sol:435` · Withdraw authorization; also the response to a nonexistent id, whose lender is `address(0)`.
 
 #### G-31
-`if (unfilled == 0) revert NothingToWithdraw()` · `OVRFLOLending.sol:427` · Blocks the silent-no-op double withdraw (AE2) and keeps `Withdrawn` events meaningful.
+`if (unfilled == 0) revert NothingToWithdraw()` · `OVRFLOLending.sol:448` · Blocks the silent-no-op double withdraw (AE2) and keeps `Withdrawn` events meaningful.
 
 #### G-32
-`if (targetBorrow == 0) revert ZeroTarget()` · `OVRFLOLending.sol:466` · A zero target cannot produce a fill above the atom; failing early avoids pricing an unusable stream.
+`if (targetBorrow == 0) revert ZeroTarget()` · `OVRFLOLending.sol:487` · A zero target cannot produce a fill above the atom; failing early avoids pricing an unusable stream.
 
 #### G-33
-`if (availableUnits == 0) revert EmptyTick()` · `OVRFLOLending.sol:1068` · Distinguishes "nothing to borrow here" from a low-level tree failure (R10).
+`if (availableUnits == 0) revert EmptyTick()` · `OVRFLOLending.sol:1104` · Distinguishes "nothing to borrow here" from a low-level tree failure (R10).
 
 #### G-34
-`if (outcome.actualBorrow < MIN_LIQUIDITY_AMOUNT) revert BelowMinimum()` · `OVRFLOLending.sol:1077` · The borrow-side atom: bounds claim-list fragmentation to `size / 0.001` loans (risk #9).
+`if (outcome.actualBorrow < MIN_LIQUIDITY_AMOUNT) revert BelowMinimum()` · `OVRFLOLending.sol:1113` · The borrow-side atom: bounds claim-list fragmentation to `size / 0.001` loans (risk #9).
 
 #### G-35
-`if (outcome.actualBorrow - outcome.feeAmount < minAcceptable) revert BelowMinAcceptable()` · `OVRFLOLending.sol:470` · Net-proceeds floor — the borrower's only protection when a concurrent borrow takes the depth first (AE1).
+`if (outcome.actualBorrow - outcome.feeAmount < minAcceptable) revert BelowMinAcceptable()` · `OVRFLOLending.sol:491` · Net-proceeds floor — the borrower's only protection when a concurrent borrow takes the depth first (AE1).
 
 #### G-36
-`if (eligibility.remaining < MIN_STREAM_AMOUNT) revert BelowMinimum()` · `OVRFLOLending.sol:1113` · Keeps dust streams out of the book, where their obligations would round to nothing.
+`if (eligibility.remaining < MIN_STREAM_AMOUNT) revert BelowMinimum()` · `OVRFLOLending.sol:1149` · Keeps dust streams out of the book, where their obligations would round to nothing.
 
 #### G-37
-`if (steps == CURSOR_CAP) revert EpochBacklog()` · `OVRFLOLending.sol:925` · Bounds a single borrow's epoch scan so an inflated epoch count can never gas-starve a legitimate borrow (risk #4).
+`if (steps == CURSOR_CAP) revert EpochBacklog()` · `OVRFLOLending.sol:961` · Bounds a single borrow's epoch scan so an inflated epoch count can never gas-starve a legitimate borrow (risk #4).
 
 #### G-38
-`if (maxSteps == 0) revert ZeroSteps()` · `OVRFLOLending.sol:531` · A zero iteration bound on the recovery valve is caller error, not a silent no-op.
+`if (maxSteps == 0) revert ZeroSteps()` · `OVRFLOLending.sol:552` · A zero iteration bound on the recovery valve is caller error, not a silent no-op.
 
 #### G-39
-`if (amount == 0) revert ZeroAmount()` · `OVRFLOLending.sol:575` · Zero repay would emit a `Repaid` checkpoint with no state change.
+`if (amount == 0) revert ZeroAmount()` · `OVRFLOLending.sol:596` · Zero repay would emit a `Repaid` checkpoint with no state change.
 
 #### G-40
-`if (amount > outstanding) revert RepayExceedsOutstanding()` · `OVRFLOLending.sol:578` · Caps repayment at face; overpayment would credit `proceeds` beyond what contributors are owed.
+`if (amount > outstanding) revert RepayExceedsOutstanding()` · `OVRFLOLending.sol:599` · Caps repayment at face; overpayment would credit `proceeds` beyond what contributors are owed.
 
 #### G-41
-`if (loan.borrower == address(0)) revert LoanMissing()` · `OVRFLOLending.sol:874` · Existence gate shared by `repay`/`close`/`claim` — an empty loan struct must never read as a live one.
+`if (loan.borrower == address(0)) revert LoanMissing()` · `OVRFLOLending.sol:910` · Existence gate shared by `repay`/`close`/`claim` — an empty loan struct must never read as a live one.
 
 #### G-42
-`if (loan.closed) revert LoanClosed()` · `OVRFLOLending.sol:875` · One-way terminal state; the stream has already gone back to the borrower.
+`if (loan.closed) revert LoanClosed()` · `OVRFLOLending.sol:911` · One-way terminal state; the stream has already gone back to the borrower.
 
 #### G-43
-`if (sablier.withdrawableAmountOf(streamId) < outstanding) revert NotCovered()` · `OVRFLOLending.sol:608` · Permissionless close only once the collateral genuinely covers the debt; the condition is temporal, hence its own selector.
+`if (sablier.withdrawableAmountOf(streamId) < outstanding) revert NotCovered()` · `OVRFLOLending.sol:629` · Permissionless close only once the collateral genuinely covers the debt; the condition is temporal, hence its own selector.
 
 #### G-44
-`if (position.lender != msg.sender) revert NotLender()` · `OVRFLOLending.sol:646` · Claim authorization keyed to the position, not the address that happens to overlap.
+`if (position.lender != msg.sender) revert NotLender()` · `OVRFLOLending.sol:667` · Claim authorization keyed to the position, not the address that happens to overlap.
 
 #### G-45
-`if (position.market != loan.market || position.aprBps != loan.aprBps || position.epoch != loan.epoch) revert EpochMismatch()` · `OVRFLOLending.sol:887-889` · The named security boundary of risk #3: leaf numbering restarts per epoch, so interval arithmetic alone cannot tell two tapes apart.
+`if (position.market != loan.market || position.aprBps != loan.aprBps || position.epoch != loan.epoch) revert EpochMismatch()` · `OVRFLOLending.sol:923-925` · The named security boundary of risk #3: leaf numbering restarts per epoch, so interval arithmetic alone cannot tell two tapes apart.
 
 #### G-46
-`if (overlap == 0) revert NoOverlap()` · `OVRFLOLending.sol:896` · A position posted entirely after a loan's fill window contributed nothing (AE9).
+`if (overlap == 0) revert NoOverlap()` · `OVRFLOLending.sol:932` · A position posted entirely after a loan's fill window contributed nothing (AE9).
 
 #### G-47
-`if (payAmount == 0) revert NothingToClaim()` · `OVRFLOLending.sol:677` · Distinguishes "fully paid" from a successful zero-value transfer.
+`if (payAmount == 0) revert NothingToClaim()` · `OVRFLOLending.sol:698` · Distinguishes "fully paid" from a successful zero-value transfer.
 
 #### G-48
-`require(aprMaxBps_ >= aprMinBps_, "OVRFLOLending: bad apr bounds")` · `OVRFLOLending.sol:330` · Keeps the ladder non-empty and `tickDepths`' arithmetic well-formed.
+`if (aprMaxBps_ < aprMinBps_) revert BadAprBounds()` · `OVRFLOLending.sol:347` · Keeps the ladder non-empty and `tickDepths`' arithmetic well-formed. (Converted from a require-string in U8's KTD3 reconciliation; same condition, cheaper-equivalent revert.)
 
 #### G-49
-`require(aprMaxBps_ <= APR_MAX_CEILING, "OVRFLOLending: apr too high")` · `OVRFLOLending.sol:331` · 100% hard ceiling the multisig cannot exceed.
+`if (aprMaxBps_ > APR_MAX_CEILING) revert AprTooHigh()` · `OVRFLOLending.sol:348` · 100% hard ceiling the multisig cannot exceed. (Converted from a require-string in U8's KTD3 reconciliation.)
 
 #### G-50
-`if (tickSpacing[market] != 0) revert SpacingAlreadySet()` · `OVRFLOLending.sol:343` · Set-once: re-spacing a live market would invalidate every resting position's tick.
+`if (tickSpacing[market] != 0) revert SpacingAlreadySet()` · `OVRFLOLending.sol:362` · Set-once: re-spacing a live market would invalidate every resting position's tick.
 
 #### G-51
-`if (spacing == 0) revert ZeroSpacing()` · `OVRFLOLending.sol:342` · Zero is reserved as the unset sentinel, so it can never be a legitimate configured value.
+`if (spacing == 0) revert ZeroSpacing()` · `OVRFLOLending.sol:361` · Zero is reserved as the unset sentinel, so it can never be a legitimate configured value.
 
 #### G-52
-`require(feeBps_ <= MAX_FEE_BPS, "OVRFLOLending: fee too high")` · `OVRFLOLending.sol:351` · Bounds the only owner-mutable value that touches borrower proceeds.
+`if (feeBps_ > MAX_FEE_BPS) revert FeeTooHigh()` · `OVRFLOLending.sol:371` · Bounds the only owner-mutable value that touches borrower proceeds. (Converted from a require-string in U8's KTD3 reconciliation.)
 
 #### G-53
-`require(treasury_ != address(0), "OVRFLOLending: treasury zero")` · `OVRFLOLending.sol:358` · Fee transfers to the zero address would burn protocol revenue.
+`if (treasury_ == address(0)) revert ZeroAddress()` · `OVRFLOLending.sol:379` · Fee transfers to the zero address would burn protocol revenue. (Converted from a require-string in U8's KTD3 reconciliation; shares the `ZeroAddress` selector with the constructor's address checks.)
 
 #### G-54
-`require(balanceAfter - balanceBefore == amount, "OVRFLOLending: transfer mismatch")` · `OVRFLOLending.sol:1149` · Rejects fee-on-transfer tokens on both the supply and repay pulls, where short delivery would over-credit the tape or the pot.
+`if (balanceAfter - balanceBefore != amount) revert TransferMismatch()` · `OVRFLOLending.sol:1185` · Rejects fee-on-transfer tokens on both the supply and repay pulls, where short delivery would over-credit the tape or the pot. (Converted from a require-string in U8's KTD3 reconciliation.)
 
 #### G-55
-`if (maxN == 0) revert ZeroSteps()` · `OVRFLOLending.sol:828` · Same zero-iteration-bound semantics as the cursor valve (reversed from `ZeroAmount` by the U5 review).
+`if (maxN == 0) revert ZeroSteps()` · `OVRFLOLending.sol:864` · Same zero-iteration-bound semantics as the cursor valve (reversed from `ZeroAmount` by the U5 review).
 
 #### G-56
-`if (position.lender == address(0)) revert PositionMissing()` · `OVRFLOLending.sol:830` · Position-side existence gate for the named views (mirrors `LoanMissing`).
+`if (position.lender == address(0)) revert PositionMissing()` · `OVRFLOLending.sol:866` · Position-side existence gate for the named views (mirrors `LoanMissing`).
 
 #### G-57
-`if (stored.lender == address(0)) revert PositionMissing()` · `OVRFLOLending.sol:780` · Same for `positionState` (KTD8: named views revert, auto-getters return zero).
+`if (stored.lender == address(0)) revert PositionMissing()` · `OVRFLOLending.sol:813` · Same for `positionState` (KTD8: named views revert, auto-getters return zero).
 
 #### G-58
-`if (stored.borrower == address(0)) revert LoanMissing()` · `OVRFLOLending.sol:800` · Same for `loanState`.
+`if (stored.borrower == address(0)) revert LoanMissing()` · `OVRFLOLending.sol:836` · Same for `loanState`.
 
 #### G-59
-`if (spacing == 0) revert SpacingUnset()` · `OVRFLOLending.sol:739` · Ladder view on an unconfigured market is a caller error, not an empty array.
+`if (spacing == 0) revert SpacingUnset()` · `OVRFLOLending.sol:760` · Ladder view on an unconfigured market is a caller error, not an empty array.
 
 #### G-60
-`if (tickSpacing[market] == 0) revert SpacingUnset()` · `OVRFLOLending.sol:765` · `tickState` validates spacing **only** — deliberately not tick alignment or APR bounds, so positions outside the owner-mutable window stay readable.
+`if (tickSpacing[market] == 0) revert SpacingUnset()` · `OVRFLOLending.sol:793` · `tickState` validates spacing **only** — deliberately not tick alignment or APR bounds, so positions outside the owner-mutable window stay readable.
 
 #### G-61
-`if (loan.borrower == address(0)) revert LoanMissing()` · `OVRFLOLending.sol:709` · `contributionOf` reverts rather than returning zero; the filtering scan uses the non-reverting core instead.
+`if (loan.borrower == address(0)) revert LoanMissing()` · `OVRFLOLending.sol:730` · `contributionOf` reverts rather than returning zero; the filtering scan uses the non-reverting core instead.
 
 ### TickTree
 
@@ -302,10 +302,10 @@ Category definitions at the end of §2.
 > `loanAt[k].fillEnd == loanAt[k+1].fillStart` for every `k`, `loanAt[0].fillStart == 0`, and
 > `loanAt[loanCount-1].fillEnd == filled`.
 
-**Derivation** — Δ-pair: `OVRFLOLending.sol:1067` (`outcome.fillStart = epochState.filled`) ↔ `:1084`
-(`fillEnd = fillStart + fillUnits`) ↔ `:1088` (`epochState.filled = outcome.fillEnd`). `_fillTick` is the sole
+**Derivation** — Δ-pair: `OVRFLOLending.sol:1103` (`outcome.fillStart = epochState.filled`) ↔ `:1120`
+(`fillEnd = fillStart + fillUnits`) ↔ `:1124` (`epochState.filled = outcome.fillEnd`). `_fillTick` is the sole
 write site of `filled` — confirmed by grep across `src/`. Each fill therefore begins exactly where the previous
-one ended, and `loanCount` (`:1089`) indexes them in that order.
+one ended, and `loanCount` (`:1121`) indexes them in that order.
 
 **If violated** — Lazy attribution loses its foundation: contributions computed by interval overlap would
 double-count or drop lender capital, and the pro-rata claim cap would be measured against a fictitious denominator.
@@ -319,11 +319,11 @@ double-count or drop lender capital, and the pro-rata claim cap would be measure
 > Frozen history: no tape coordinate strictly below an epoch's `filled` counter ever changes value. A position's
 > interval may only shrink from its right edge, and only above `filled`.
 
-**Derivation** — Δ-pair: `OVRFLOLending.sol:421-423` computes `filledHistory = min(filled - leafStart, currentLeaf)`
-↔ `:429` writes `setLeaf(leafIndex, filledHistory)`. `TickTree.setLeaf` is called from exactly one site in `src/`
-(`withdraw:429`), and it can only lower a leaf to its already-consumed portion. NatSpec asserts the property
-directly at `OVRFLOLending.sol:696-702` — *"a position slides left only above the epoch's `filled` counter and
-never below it (frozen history)"*.
+**Derivation** — Δ-pair: `OVRFLOLending.sol:442-444` computes `filledHistory = min(filled - leafStart, currentLeaf)`
+↔ `:450` writes `setLeaf(leafIndex, filledHistory)`. `TickTree.setLeaf` is called from exactly one site in `src/`
+(`withdraw:450`), and it can only lower a leaf to its already-consumed portion. NatSpec asserts the property
+directly at `OVRFLOLending.sol:429-431` — *"The leaf is replaced with its filled history, so coordinates below
+`filled` remain immutable while later unfilled coordinates compact left"*.
 
 **If violated** — Every historical claim silently re-prices. A lender could shrink a leaf under a settled loan's
 interval and re-target another lender's contribution, or `root()` could fall below `filled` and revert every
@@ -387,10 +387,10 @@ even though `proceeds` says funds are available.
 > `received[loanId][positionId] ≤ contribution × recovered / (fillEnd − fillStart)`, where `recovered` is
 > `drawn + repaid` plus, while open, `min(withdrawable, outstanding)`.
 
-**Derivation** — guard-lift of `OVRFLOLending.sol:666`
-(`requestAmount = min(amount, entitlement − received[loanId][positionId])`) plus `:676`
-(`payAmount = pot < requestAmount ? pot : requestAmount`). Write sites of `received`: exactly one (`:680`), and it
-adds `payAmount ≤ requestAmount`. The `min(withdrawable, outstanding)` clamp at `:661` is load-bearing, not
+**Derivation** — guard-lift of `OVRFLOLending.sol:687`
+(`requestAmount = min(amount, entitlement − received[loanId][positionId])`) plus `:697`
+(`payAmount = pot < requestAmount ? pot : requestAmount`). Write sites of `received`: exactly one (`:701`), and it
+adds `payAmount ≤ requestAmount`. The `min(withdrawable, outstanding)` clamp at `:681-682` is load-bearing, not
 arithmetic detail — bare `withdrawable` on an over-vested open stream would inflate `entitlement` beyond the
 loan's real recovery.
 
@@ -405,12 +405,12 @@ loan's real recovery.
 
 > `loan.drawn + loan.repaid ≤ loan.obligation` at all times; equivalently `_outstanding` never underflows.
 
-**Derivation** — guard-lift of `OVRFLOLending.sol:578` (`if (amount > outstanding) revert`). Write sites of
-`drawn`: `close:614` (adds exactly `outstanding`, landing on equality) and `claim:682` (adds `harvestAmount`,
-clamped at `:669` to `harvestCap`, itself clamped at `:661` to `_outstanding`). Write sites of `repaid`:
-`repay:581` only, guarded. Every site is bounded by the current outstanding.
+**Derivation** — guard-lift of `OVRFLOLending.sol:599` (`if (amount > outstanding) revert`). Write sites of
+`drawn`: `close:634` (adds exactly `outstanding`, landing on equality) and `claim:703` (adds `harvestAmount`,
+clamped at `:690` to `harvestCap`, itself clamped at `:681-682` to `_outstanding`). Write sites of `repaid`:
+`repay:602` only, guarded. Every site is bounded by the current outstanding.
 
-**If violated** — `_outstanding` (`:880`) reverts on underflow, bricking `repay`, `close`, and every open-loan
+**If violated** — `_outstanding` (`:915`) reverts on underflow, bricking `repay`, `close`, and every open-loan
 `claim` for that loan.
 
 ---
@@ -421,9 +421,9 @@ clamped at `:669` to `harvestCap`, itself clamped at `:661` to `_outstanding`). 
 
 > Every loan's fill interval is at least the book atom: `fillEnd − fillStart ≥ MIN_LIQUIDITY_AMOUNT / UNIT`.
 
-**Derivation** — guard-lift of `OVRFLOLending.sol:1077`
+**Derivation** — guard-lift of `OVRFLOLending.sol:1113`
 (`if (outcome.actualBorrow < MIN_LIQUIDITY_AMOUNT) revert BelowMinimum()`). Write sites of `fillStart`/`fillEnd`:
-`_fillTick` only (`:1067`, `:1084`), consumed by the single `loans[loanId] = Loan{...}` assignment at `:473-486`.
+`_fillTick` only (`:1103`, `:1120`), consumed by the single `loans[loanId] = Loan{...}` assignment at `:494-507`.
 
 **If violated** — Dust borrows fragment a lender's filled capital across unboundedly many tiny loans, inflating
 claim-discovery and claim gas (risk #9).
@@ -436,9 +436,9 @@ claim-discovery and claim gas (risk #9).
 
 > Every position's leaf is either zero or at least `MIN_LIQUIDITY_AMOUNT / UNIT` — **contradicted by design**.
 
-**Derivation** — guard-lift of `OVRFLOLending.sol:377`
+**Derivation** — guard-lift of `OVRFLOLending.sol:398`
 (`if (amount < MIN_LIQUIDITY_AMOUNT) revert BelowMinimum()`). Write sites of leaf values: `append` via
-`supply:392` (guarded) and `setLeaf` via `withdraw:429` (**unguarded** — writes `filledHistory`, any value in
+`supply:413` (guarded) and `setLeaf` via `withdraw:450` (**unguarded** — writes `filledHistory`, any value in
 `[0, currentLeaf)`). The unguarded site is intentional: a partially consumed position must shrink to exactly its
 filled history, which is not atom-aligned.
 
@@ -454,11 +454,11 @@ state, so no invariant may assume leaves are atom-sized. Consumers must not trea
 > All tape quantities are exact UNIT multiples: leaves, prefix sums, `filled`, and both loan fill coordinates are
 > integral UNIT counts.
 
-**Derivation** — guard-lift of `OVRFLOLending.sol:376` (`if (amount % UNIT != 0) revert NotUnitAligned()`).
-Write sites: `append(_toUnits(amount))` (`:392`, exact because the guard forces divisibility);
-`setLeaf(filledHistory)` (`:429`, already a UNIT count); `filled = fillStart + fillUnits` (`:1088`, UNIT counts).
-Conversion is confined to `_toUnits` (`:1128`) and `_toWei` (`:1133`), with one recorded exception — the borrow
-target floor is inlined at `:1070` so an oversized target partial-fills instead of reverting.
+**Derivation** — guard-lift of `OVRFLOLending.sol:397` (`if (amount % UNIT != 0) revert NotUnitAligned()`).
+Write sites: `append(_toUnits(amount))` (`:413`, exact because the guard forces divisibility);
+`setLeaf(filledHistory)` (`:450`, already a UNIT count); `filled = fillStart + fillUnits` (`:1124`, UNIT counts).
+Conversion is confined to `_toUnits` (`:1164`) and `_toWei` (`:1169`), with one recorded exception — the borrow
+target floor is inlined at `:1106` so an oversized target partial-fills instead of reverting.
 
 **If violated** — Wei-level residue would accumulate in the tape, and `_toWei(_toUnits(x)) == x` would stop
 holding for escrowed amounts, breaking I-3.
@@ -471,10 +471,10 @@ holding for escrowed amounts, breaking I-3.
 
 > `aprMinBps ≤ aprMaxBps ≤ APR_MAX_CEILING (10_000)`.
 
-**Derivation** — guard-lift of `OVRFLOLending.sol:330-331`. Write sites of `aprMinBps`/`aprMaxBps`: the
-constructor (`:319-320`, both `LAUNCH_APR_BPS = 1000`) and `setAprBounds` (`:333-334`, guarded). No other writer.
+**Derivation** — guard-lift of `OVRFLOLending.sol:347-348`. Write sites of `aprMinBps`/`aprMaxBps`: the
+constructor (`:334-335`, both `LAUNCH_APR_BPS = 1000`) and `setAprBounds` (`:350-351`, guarded). No other writer.
 
-**If violated** — `tickDepths`' rung count arithmetic (`:749`) would underflow, and the ladder view would revert.
+**If violated** — `tickDepths`' rung count arithmetic (`:770`) would underflow, and the ladder view would revert.
 
 ---
 
@@ -484,9 +484,9 @@ constructor (`:319-320`, both `LAUNCH_APR_BPS = 1000`) and `setAprBounds` (`:333
 
 > `feeBps ≤ MAX_FEE_BPS (10_000)`, so `feeAmount ≤ actualBorrow` and the borrower's net proceeds never underflow.
 
-**Derivation** — guard-lift of `OVRFLOLending.sol:351`. Write sites of `feeBps`: `setFee:352` only (the
+**Derivation** — guard-lift of `OVRFLOLending.sol:371`. Write sites of `feeBps`: `setFee:372` only (the
 constructor leaves it at the zero default). The bound is what makes the `actualBorrow - feeAmount` subtraction at
-`:470` and `:493` safe.
+`:491` and `:514` safe.
 
 **If violated** — `borrow` reverts on underflow for every caller — a total book DoS.
 
@@ -514,8 +514,8 @@ sharing its storage word, silently falsifying every prefix query below it (risk 
 
 > `loan.closed` is a one-way latch: `false → true`, with no path back.
 
-**Derivation** — edge: `closed:false@OVRFLOLending.sol:477` → `true@:582` (full repay) and `true@:610`
-(permissionless close). `_liveLoan:875` rejects any subsequent servicing call. Grep confirms no site assigns
+**Derivation** — edge: `closed:false@OVRFLOLending.sol:498` → `true@:603` (full repay) and `true@:631`
+(permissionless close). `_liveLoan:911` rejects any subsequent servicing call. Grep confirms no site assigns
 `closed = false` after construction.
 
 **If violated** — A returned stream could be re-drawn against a loan that already released its collateral.
@@ -528,11 +528,11 @@ sharing its storage word, silently falsifying every prefix query below it (risk 
 
 > `tickSpacing[market]` is a one-shot latch: `0 → nonzero`, never mutated.
 
-**Derivation** — edge: `require(tickSpacing[market] == 0)` at `:343` → `tickSpacing[market] = spacing` at `:345`.
+**Derivation** — edge: `if (tickSpacing[market] != 0) revert SpacingAlreadySet()` at `:362` → `tickSpacing[market] = spacing` at `:364`.
 That assignment is the sole write site of the mapping across `src/`.
 
 **If violated** — Re-spacing a live market would strand every resting position at a tick that `_validateTick`
-(`:1096`) no longer accepts and `tickDepths` (`:751`) no longer enumerates.
+(`:1132`) no longer accepts and `tickDepths` (`:770`) no longer enumerates.
 
 ---
 
@@ -542,9 +542,9 @@ That assignment is the sole write site of the mapping across `src/`.
 
 > `tick.oldestLiveEpoch ≤ tick.currentEpoch`, and both are monotonically non-decreasing.
 
-**Derivation** — edge: `currentEpoch` advances only at `:388-389` (`epoch += 1`), `oldestLiveEpoch` only at
-`:933` (`_selectEpoch`) and `:549` (`advanceEpochCursor`). Both advance loops carry the explicit bound
-`epoch < currentEpoch` (`:924`) / `cursor < currentEpoch` (`:539`), so the cursor can never pass the writing epoch.
+**Derivation** — edge: `currentEpoch` advances only at `:409` (`epoch += 1`), `oldestLiveEpoch` only at
+`:969` (`_selectEpoch`) and `:570` (`advanceEpochCursor`). Both advance loops carry the explicit bound
+`epoch < currentEpoch` (`:960`) / `cursor < currentEpoch` (`:560`), so the cursor can never pass the writing epoch.
 
 **If violated** — The cursor would point past `currentEpoch` at an epoch with no tree, making every borrow read
 `root() == 0` and revert `EmptyTick` permanently.
@@ -559,12 +559,12 @@ That assignment is the sole write site of the mapping across `src/`.
 > `root() − filled < MIN_LIQUIDITY_AMOUNT / UNIT`.
 
 **Derivation** — edge: both advance loops break on `root() − filled >= MIN_LIQUIDITY_UNITS`
-(`advanceEpochCursor:541`, `_selectEpoch:924`), so an epoch is stepped over only while it fails that predicate.
+(`advanceEpochCursor:562`, `_selectEpoch:960`), so an epoch is stepped over only while it fails that predicate.
 Frozen history (I-2) means a skipped epoch's depth can never grow again — `supply` always appends to
-`currentEpoch` (`:383-392`), never to a passed one.
+`currentEpoch` (`:404-413`), never to a passed one.
 
 **If violated** — Borrowable liquidity would be silently skipped, and `tickDepths` (which sums from
-`oldestLiveEpoch`, `:1006`) would under-report the ladder.
+`oldestLiveEpoch`, `:1042`) would under-report the ladder.
 
 ---
 
@@ -593,9 +593,9 @@ prefix sum would change — the direct contradiction of AE6.
 > so the view mirror can never diverge from the money path.
 
 **Derivation** — Ratio: `entitlement = mulDiv(overlap, recovered, fillEnd − fillStart)` appears at
-`OVRFLOLending.sol:665` (money path) and identically at `:997` (`_claimableOf`, view path), each subtracting
-`received[loanId][positionId]` (`:666`, `:998`). Both snapshot `recovered` before any write in their frame.
-NatSpec pins the intent at `:985-987` — *"Kept arithmetic-identical to `claim`; the test suite pins the two
+`OVRFLOLending.sol:686` (money path) and identically at `:1033` (`_claimableOf`, view path), each subtracting
+`received[loanId][positionId]` (`:687`, `:1035`). Both snapshot `recovered` before any write in their frame.
+NatSpec pins the intent at `:1019-1023` — *"Kept arithmetic-identical to `claim`; the test suite pins the two
 together by asserting a subsequent max-claim pays exactly this value."*
 
 **If violated** — Claim discovery lies. A frontend would show claimable value that the money path refuses to pay,
@@ -611,7 +611,7 @@ or hide value a lender is owed.
 
 **Derivation** — Ratio: `grossPrice = mulDiv(remaining, WAD, factor)` floors (`StreamPricing.sol:111`) while
 `obligation = mulDiv(borrowAmount, factor, WAD, Rounding.Up)` ceils (`:126`). `_fillTick` caps the fill at the
-gross price (`OVRFLOLending.sol:1073-1076`), which is `obligationForFill`'s documented call-site precondition;
+gross price (`OVRFLOLending.sol:1109-1112`), which is `obligationForFill`'s documented call-site precondition;
 at exact equality the fast path returns `remaining` verbatim (`StreamPricing.sol:147-149`), sidestepping the
 floor/ceil boundary entirely.
 
@@ -627,8 +627,8 @@ permanently open and lenders permanently short.
 > Closed-loan dust bound: for a closed loan, the sum of all contributors' shortfalls versus exact pro-rata is at
 > most one wei per contributing position.
 
-**Derivation** — Ratio: `mulDiv` at `:665` floors, and floor division loses strictly less than one wei per
-evaluated pair. NatSpec states the destination at `:220-223` — *"Rounding dust is lender-unfavorable and strands
+**Derivation** — Ratio: `mulDiv` at `:686` floors, and floor division loses strictly less than one wei per
+evaluated pair. NatSpec states the destination at `:234-235` — *"Rounding dust is lender-unfavorable and strands
 here by design (plan risk #5)"*.
 
 **If violated** — Dust is accumulating faster than floor division explains, which means the entitlement
@@ -644,9 +644,9 @@ denominator or the `received` cap has drifted.
 > `claim` never are.
 
 **Derivation** — temporal: `if (block.timestamp >= expiryCached_) revert SeriesMatured()`
-(`StreamPricing.sol:180`), reached from `supply` via `_requireMarketActive` (`OVRFLOLending.sol:380`, `:1101`)
-and from `borrow` via `_requireEligible` → `requireEligible` → `marketActive` (`:1112`). Grep confirms the four
-wind-down functions call neither helper. The asymmetry is KTD7, not an omission.
+(`StreamPricing.sol:180`), reached from `supply` via `_requireMarketActive` (`OVRFLOLending.sol:401`, function
+defined at `:1136-1137`) and from `borrow` via `_requireEligible` → `requireEligible` → `marketActive` (`:1148`).
+Grep confirms the four wind-down functions call neither helper. The asymmetry is KTD7, not an omission.
 
 **If violated** — Either a matured series accepts new liquidity that can never be borrowed against, or a matured
 series traps existing lenders and borrowers who need to unwind.
@@ -659,9 +659,9 @@ series traps existing lenders and borrowers who need to unwind.
 
 > `timeToMaturity` is computed only after maturity has been checked, so its subtraction cannot underflow.
 
-**Derivation** — temporal: `_priceStream:1122` calls `_requireEligible` (which enforces
+**Derivation** — temporal: `_priceStream:1158` calls `_requireEligible` (which enforces
 `block.timestamp < expiryCached` at `StreamPricing.sol:180`) *before* computing
-`timeToMaturity = eligibility.seriesMaturity - block.timestamp` at `:1123`. Checked-then-computed ordering, not
+`timeToMaturity = eligibility.seriesMaturity - block.timestamp` at `:1159`. Checked-then-computed ordering, not
 computed-then-checked.
 
 **If violated** — Every borrow at or past maturity would revert with an arithmetic panic instead of the
@@ -709,7 +709,7 @@ On-chain: **Yes**
 > `OVRFLOLending` assumes a market's series configuration (`ptToken`, `expiryCached`, `ovrfloToken`) is immutable
 > once set, so a loan's obligation and a stream's eligibility mean the same thing at claim time as at borrow time.
 
-**Caller side** — `OVRFLOLending.sol:1101` (`_requireMarketActive` → `StreamPricing.marketActive`) and `:1112`
+**Caller side** — `OVRFLOLending.sol:1137` (`_requireMarketActive` → `StreamPricing.marketActive`) and `:1148`
 (`_requireEligible` → `StreamPricing.requireEligible`), both reading `IOVRFLOSeriesRegistry(core).series(market)`.
 
 **Callee side** — `OVRFLO.sol:251-258` is the only writer of `_series[market]`, and `:252`
@@ -727,11 +727,11 @@ On-chain: **Yes**
 > `OVRFLOLending` assumes `tree.root() ≥ filled` for every epoch, so available depth
 > (`root() − filled`) never underflows.
 
-**Caller side** — `OVRFLOLending.sol:920` (`_selectEpoch`), `:541` (`advanceEpochCursor`), `:1008`
+**Caller side** — `OVRFLOLending.sol:956` (`_selectEpoch`), `:562` (`advanceEpochCursor`), `:1044`
 (`_liveDepthUnits`) all subtract without a guard.
 
-**Callee side** — `TickTree` root only decreases through `setLeaf`, whose sole `src/` caller is `withdraw:429`,
-and that call passes `filledHistory` computed at `:421-423` as `min(filled − leafStart, currentLeaf)` — never
+**Callee side** — `TickTree` root only decreases through `setLeaf`, whose sole `src/` caller is `withdraw:450`,
+and that call passes `filledHistory` computed at `:442-444` as `min(filled − leafStart, currentLeaf)` — never
 below the position's consumed portion. `append:59` only increases the root.
 
 **If violated** — Every depth read for that tick reverts on underflow: a permanent, unrecoverable tick DoS
@@ -746,8 +746,8 @@ On-chain: **Yes**
 > `OVRFLOLending` assumes its cached `underlying` and `ovrfloToken` immutables match the vault the factory
 > registered.
 
-**Caller side** — `OVRFLOLending.sol:307-318` reads `factory.ovrfloInfo(core_)` once in the constructor and
-stores the results as immutables; every fund flow (`:402`, `:433`, `:585`, `:685`) uses them without re-validation.
+**Caller side** — `OVRFLOLending.sol:317-333` reads `factory.ovrfloInfo(core_)` once in the constructor and
+stores the results as immutables; every fund flow (`:423`, `:454`, `:606`, `:706`) uses them without re-validation.
 
 **Callee side** — `OVRFLOFactory.sol:156-157` (`ovrfloInfo[ovrflo] = OvrfloInfo{...}`) is the only writer of that
 mapping, executed once inside `deploy()`. No setter exists, so the read cannot go stale.
@@ -764,12 +764,12 @@ On-chain: **No**
 > `OVRFLOLending.treasury` is assumed to remain a live fee sink, but unlike `underlying`/`ovrfloToken` it is
 > mutable after construction.
 
-**Caller side** — `OVRFLOLending.sol:494` (`_payUnderlying(treasury, outcome.feeAmount)`) reads current storage
+**Caller side** — `OVRFLOLending.sol:515` (`_payUnderlying(treasury, outcome.feeAmount)`) reads current storage
 on every borrow.
 
-**Callee side** — `OVRFLOLending.sol:359` (`treasury = treasury_`), reachable through
-`OVRFLOFactory.setLendingTreasury:303`. Guarded against the zero address (`:358`) but nothing else; the
-constructor's factory-derived value (`:316`) is not re-checked afterward.
+**Callee side** — `OVRFLOLending.sol:380` (`treasury = treasury_`), reachable through
+`OVRFLOFactory.setLendingTreasury:303`. Guarded against the zero address (`:379`) but nothing else; the
+constructor's factory-derived value (`:331`) is not re-checked afterward.
 
 **If violated** — Fees route to a stale or wrong address. Bounded by the multisig trust model, which is why the
 guard stops at the zero-address check.

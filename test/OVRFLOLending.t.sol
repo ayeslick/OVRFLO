@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: UNLICENSED
+// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
 import {Test, Vm} from "forge-std/Test.sol";
@@ -174,17 +174,15 @@ contract OVRFLOLendingTest is Test {
 
     /// Encodes I-11 (`aprMinBps <= aprMaxBps <= APR_MAX_CEILING`). The bound is admin-only, so no fuzz
     /// sequence reaches it and the invariant suite dispositions it as covered here.
-    /// @dev The admin setters still carry require-strings; KTD3's custom-error reconciliation for them is
-    ///      ticket 08's job, so these expect the strings exactly as shipped.
     function test_SetAprBounds_RejectsInvertedRangeAndAboveCeiling() public {
         // Read the ceiling first: an external call inside the argument list would be the "next call" the
         // pending `expectRevert` judges, and it does not revert.
         uint16 ceiling = lending.APR_MAX_CEILING();
 
-        vm.expectRevert("OVRFLOLending: bad apr bounds");
+        vm.expectRevert(OVRFLOLending.BadAprBounds.selector);
         lending.setAprBounds(1500, 1000);
 
-        vm.expectRevert("OVRFLOLending: apr too high");
+        vm.expectRevert(OVRFLOLending.AprTooHigh.selector);
         lending.setAprBounds(1000, ceiling + 1);
 
         // The boundary itself is accepted, so the guard is `>` and not `>=`.
@@ -193,11 +191,10 @@ contract OVRFLOLendingTest is Test {
     }
 
     /// Encodes I-12 (`feeBps <= MAX_FEE_BPS`), which is what makes `actualBorrow - feeAmount` safe.
-    /// @dev Require-string until ticket 08's KTD3 reconciliation; see the note above.
     function test_SetFee_RejectsAboveMaxFeeBps() public {
         uint16 maxFee = lending.MAX_FEE_BPS();
 
-        vm.expectRevert("OVRFLOLending: fee too high");
+        vm.expectRevert(OVRFLOLending.FeeTooHigh.selector);
         lending.setFee(maxFee + 1);
 
         lending.setFee(maxFee);
@@ -206,9 +203,8 @@ contract OVRFLOLendingTest is Test {
 
     /// Encodes the enforceable half of X-4: the fee sink is mutable, but it can never be set to the burn
     /// address. The "stays a live sink" half is an off-chain multisig assumption.
-    /// @dev Require-string until ticket 08's KTD3 reconciliation; see the note above.
     function test_SetTreasury_RejectsZeroAddress() public {
-        vm.expectRevert("OVRFLOLending: treasury zero");
+        vm.expectRevert(OVRFLOLending.ZeroAddress.selector);
         lending.setTreasury(address(0));
 
         lending.setTreasury(STRANGER);

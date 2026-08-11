@@ -92,6 +92,18 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
     error ZeroSteps();
     /// @dev The position id was never created.
     error PositionMissing();
+    /// @dev A required constructor or admin-setter address argument was the zero address.
+    error ZeroAddress();
+    /// @dev The factory has no vault registered for the supplied `core` address.
+    error UnknownCore();
+    /// @dev `aprMaxBps_` is below `aprMinBps_`.
+    error BadAprBounds();
+    /// @dev `aprMaxBps_` exceeds `APR_MAX_CEILING`.
+    error AprTooHigh();
+    /// @dev `feeBps_` exceeds `MAX_FEE_BPS`.
+    error FeeTooHigh();
+    /// @dev The pulled token delivered less than `amount` (fee-on-transfer behavior).
+    error TransferMismatch();
 
     /*//////////////////////////////////////////////////////////////
                                 IMMUTABLES
@@ -299,16 +311,19 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
 
     /// @notice Deploys a lending market bound to one vault and Sablier instance.
     /// @dev Pulls treasury and token wiring from the factory registry.
+    /// @param factory_ OVRFLOFactory registry; also the initial owner via Ownable2Step.
+    /// @param core_ The OVRFLO vault this lending market is bound to.
+    /// @param sablier_ Sablier V2 LockupLinear deployment used for stream custody.
     constructor(address factory_, address core_, address sablier_) {
-        require(factory_ != address(0), "OVRFLOLending: factory zero");
-        require(core_ != address(0), "OVRFLOLending: core zero");
-        require(sablier_ != address(0), "OVRFLOLending: sablier zero");
+        if (factory_ == address(0)) revert ZeroAddress();
+        if (core_ == address(0)) revert ZeroAddress();
+        if (sablier_ == address(0)) revert ZeroAddress();
 
         (address treasury_, address underlying_, address ovrfloToken_) =
             IOVRFLOFactoryRegistry(factory_).ovrfloInfo(core_);
-        require(treasury_ != address(0), "OVRFLOLending: unknown core");
-        require(underlying_ != address(0), "OVRFLOLending: underlying zero");
-        require(ovrfloToken_ != address(0), "OVRFLOLending: token zero");
+        if (treasury_ == address(0)) revert UnknownCore();
+        if (underlying_ == address(0)) revert ZeroAddress();
+        if (ovrfloToken_ == address(0)) revert ZeroAddress();
 
         factory = IOVRFLOFactoryRegistry(factory_);
         core = core_;
@@ -326,9 +341,11 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
 
     /// @notice Sets the accepted APR range for new supplies and borrows.
     /// @dev Existing positions are unaffected; tick validation reads these bounds at call time.
+    /// @param aprMinBps_ New lower APR bound, in basis points.
+    /// @param aprMaxBps_ New upper APR bound, in basis points; capped at `APR_MAX_CEILING`.
     function setAprBounds(uint16 aprMinBps_, uint16 aprMaxBps_) external onlyOwner {
-        require(aprMaxBps_ >= aprMinBps_, "OVRFLOLending: bad apr bounds");
-        require(aprMaxBps_ <= APR_MAX_CEILING, "OVRFLOLending: apr too high");
+        if (aprMaxBps_ < aprMinBps_) revert BadAprBounds();
+        if (aprMaxBps_ > APR_MAX_CEILING) revert AprTooHigh();
 
         aprMinBps = aprMinBps_;
         aprMaxBps = aprMaxBps_;
@@ -338,6 +355,8 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
 
     /// @notice Sets a market's APR tick spacing exactly once.
     /// @dev Zero is the unset sentinel used by supply and borrow gating.
+    /// @param market Pendle market identifying the collateral series.
+    /// @param spacing APR tick spacing, in basis points; must be nonzero.
     function setTickSpacing(address market, uint16 spacing) external onlyOwner {
         if (spacing == 0) revert ZeroSpacing();
         if (tickSpacing[market] != 0) revert SpacingAlreadySet();
@@ -347,15 +366,17 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
     }
 
     /// @notice Sets the protocol fee applied by the borrower side.
+    /// @param feeBps_ New protocol fee, in basis points; capped at `MAX_FEE_BPS`.
     function setFee(uint16 feeBps_) external onlyOwner {
-        require(feeBps_ <= MAX_FEE_BPS, "OVRFLOLending: fee too high");
+        if (feeBps_ > MAX_FEE_BPS) revert FeeTooHigh();
         feeBps = feeBps_;
         emit LendingFeeSet(feeBps_);
     }
 
     /// @notice Sets the recipient of protocol fees.
+    /// @param treasury_ New fee recipient; must be nonzero.
     function setTreasury(address treasury_) external onlyOwner {
-        require(treasury_ != address(0), "OVRFLOLending: treasury zero");
+        if (treasury_ == address(0)) revert ZeroAddress();
         treasury = treasury_;
         emit LendingTreasurySet(treasury_);
     }
@@ -756,7 +777,14 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
 
     /// @notice Named tick view: cursor, current epoch, and live borrowable depth.
     /// @dev Reverts `SpacingUnset` for an unconfigured market (KTD8 convention:
-    ///      named views revert on nonexistent entities).
+    ///      named views revert on nonexistent entities). Validates spacing only —
+    ///      not tick alignment or APR bounds — so ticks outside the owner-mutable
+    ///      bounds stay readable through this view.
+    /// @param market Pendle market identifying the collateral series.
+    /// @param aprBps The tick, in basis points.
+    /// @return oldestLiveEpoch The tick's borrowable cursor.
+    /// @return currentEpoch The tick's newest epoch.
+    /// @return availableUnits Borrowable depth summed across live epochs, in UNITs.
     function tickState(address market, uint16 aprBps)
         external
         view
@@ -771,6 +799,11 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
     /// @dev Reverts `PositionMissing` on a never-created id (KTD8). The interval is
     ///      the live prefix-query result — the same coordinates claim math uses —
     ///      and `unfilled` mirrors `withdraw`'s refund computation.
+    /// @param positionId The lender position to read.
+    /// @return position Stored position fields (lender, market, aprBps, epoch, leafIndex).
+    /// @return intervalStart Live tape coordinate where the position's leaf begins, in UNITs.
+    /// @return intervalEnd Live tape coordinate where the position's leaf ends, in UNITs.
+    /// @return unfilled Refundable quantity if withdrawn now, in wei.
     function positionState(uint256 positionId)
         external
         view
@@ -795,6 +828,9 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
 
     /// @notice Named loan view: stored fields plus the derived outstanding.
     /// @dev Reverts `LoanMissing` on a never-originated id (KTD8).
+    /// @param loanId The loan to read.
+    /// @return loan Stored loan fields.
+    /// @return outstanding Remaining obligation not yet drawn or repaid, in wei.
     function loanState(uint256 loanId) external view returns (Loan memory loan, uint128 outstanding) {
         Loan storage stored = loans[loanId];
         if (stored.borrower == address(0)) revert LoanMissing();
@@ -1146,6 +1182,6 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
         uint256 balanceBefore = token.balanceOf(to);
         token.safeTransferFrom(from, to, amount);
         uint256 balanceAfter = token.balanceOf(to);
-        require(balanceAfter - balanceBefore == amount, "OVRFLOLending: transfer mismatch");
+        if (balanceAfter - balanceBefore != amount) revert TransferMismatch();
     }
 }
