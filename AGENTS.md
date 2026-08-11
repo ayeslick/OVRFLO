@@ -1,5 +1,6 @@
 Read https://ethskills.com/SKILL.md and follow it before writing Solidity or shipping anything onchain.
 Read `docs/solutions/patterns/solidity-implementation-discipline.md` before writing or modifying Solidity — it carries the minimality ladder, the FREI-PI gate, the root-cause-fix procedure, and the precedence rule (plan > critical patterns > ladder).
+Read `docs/solutions/patterns/ovrflo-coding-standard.md` (enforceable rules, each citing its source and remediation tier) and `docs/solutions/patterns/ovrflo-style-guide.md` (naming, layout, NatSpec voice, comment discipline, fixture conventions) before writing OVRFLO Solidity or tests — they exist to eliminate micro-decisions; deviations need a recorded reason.
 Use BASE_SECURITY.md for security guidelines.
 Use VAULT_SECURITY.md for Vault security guidelines.
 
@@ -40,7 +41,7 @@ Read `docs/agents/testing.md` before running the E2E suite — it covers require
 - `forge test` - Run all tests
 - `forge test --match-test test_FunctionName` - Run specific test
 - `forge test -vvv` - Run tests with verbose output (useful for debugging)
-- `forge test --match-contract OVRFLOLendingInvariant -vvv` - Run invariant tests (500 runs, depth 25)
+- `FOUNDRY_PROFILE=invariant forge test --match-contract OVRFLOLendingInvariant -vvv` - Run invariant tests (`[profile.invariant.invariant]`: 500 runs, depth 40 — the default `[invariant]` profile is 25 runs / depth 10, so the `FOUNDRY_PROFILE=invariant` prefix is required to get the real coverage)
 - `forge test --match-contract OVRFLOFuzz` - Run fuzz tests (1000 runs)
 - `forge test --match-path "test/fork/*" --fork-url $MAINNET_RPC_URL` - Run mainnet fork tests
 
@@ -61,15 +62,17 @@ Read `docs/agents/testing.md` before running the E2E suite — it covers require
 
 ## Architecture Overview
 
-Foundry-based Solidity project implementing OVRFLO, a Pendle-based vault system for yield tokenization, with a secondary market (OVRFLOLending) for trading and lending against Sablier streams.
+Foundry-based Solidity project implementing OVRFLO, a Pendle-based vault system for yield tokenization, with a lending market (OVRFLOLending) — a loan-only, fixed-rate tick order book — for borrowing against Sablier streams.
 
 ### Core Contracts (`src/`)
 
-**OVRFLOFactory** — Admin hub owned by a timelocked multisig (`Ownable2Step`). Two-step deployment: `configureDeployment()` then `deploy()`. Deploys OVRFLO vaults, OVRFLOToken instances, and OVRFLOLending instances. Serves as immutable `factory` (admin) for all deployed vaults and owner of all deployed lending markets. Forwards admin calls (series approval, deposit limits, oracle prep, lending admin) to vaults and lending markets. Prevents duplicate vault deployment per underlying (`underlyingToOvrflo` mapping).
+**OVRFLOFactory** — Admin hub owned by a timelocked multisig (`Ownable2Step`). Two-step deployment: `configureDeployment()` then `deploy()`. Deploys OVRFLO vaults, OVRFLOToken instances, and OVRFLOLending instances. Serves as immutable `factory` (admin) for all deployed vaults and owner of all deployed lending markets. Forwards admin calls (series approval, deposit limits, oracle prep, lending admin including `setLendingTickSpacing`) to vaults and lending markets. Prevents duplicate vault deployment per underlying (`underlyingToOvrflo` mapping).
 
 **OVRFLO** — Pendle basket vault that wraps PT deposits into ovrfloTokens. Handles PT (Principal Token) deposits with market-value fees. Integrates with Sablier V2 for streaming yield distribution. Permissionless wrap/unwrap path (underlying <-> ovrfloToken 1:1). PT flash loan facility (atomic loan of deposited PT via EIP-4531 callback). Admin functions gated by `onlyAdmin` modifier (factory is admin).
 
-**OVRFLOLending** — Secondary market (`Ownable2Step` + `ReentrancyGuard` + `Multicall`, owned by the factory). Two order types: unified liquidity positions (consumable as sale or loan) and sale listings. Loan origination: `createBorrowerLoanPool` (self-repaying loans backed by Sablier streams; loan pools are the only lending mechanism). Claim channel: `claimLoanPoolShare` (pro-rata from shared `loanPoolProceeds`, harvests deficit from open loan streams via `_claimFair`). View helpers: `gatherLiquidity` (scan lender liquidity for batch assembly). Loan servicing: `repayLoan`, `closeLoan` (permissionless stream-draw close).
+**OVRFLOLending** — Loan-only, fixed-rate tick order book (`Ownable2Step` + `ReentrancyGuard` + `Multicall`, owned by the factory). Lenders rest liquidity at an APR tick via `supply`/`withdraw`. Borrowers pledge a Sablier stream and draw against tick liquidity with a single blind fill (`borrow`) that advances a tick epoch's cumulative `filled` counter without reading or enumerating lender positions — no position IDs, no collisions, fill gas flat in positions crossed. Lender attribution is computed lazily by interval overlap against a `TickTree` packed prefix-sum tree, never stored per fill. Loan servicing: `repay` (permissionless, face value), `close` (permissionless stream-draw settlement), `claim` (pro-rata payout from a loan's recovered value). No sale listings or loan pools — a full borrow is economically a sale (obligation caps at the stream's remaining value).
+
+**TickTree** — Internal library (`src/TickTree.sol`) implementing the packed segment tree OVRFLOLending's tick epochs use for O(log n) prefix-sum queries: `append`, `setLeaf`, `prefix`, `leaf`, `root`. Dynamic height 4→7 (8^4 to 8^7 leaves), growing on demand; a tick rolls to a fresh epoch once its tree hits the height cap.
 
 **StreamPricing** — Pure library for Sablier stream valuation, gross price, obligation, and fee math. `marketActive` / `requireEligible` helpers used by both OVRFLO and OVRFLOLending. Defines `IOVRFLOFactoryRegistry` and `IOVRFLOSeriesRegistry` interfaces.
 
@@ -81,16 +84,15 @@ Foundry-based Solidity project implementing OVRFLO, a Pendle-based vault system 
 ### Key Integrations
 - **Pendle Protocol**: PT/YT markets for yield tokenization, SY for underlying validation
 - **Sablier V2**: Linear streaming for excess yield distribution and stream-backed loans
-- **OpenZeppelin**: Standard contracts (ERC20, Ownable2Step, ReentrancyGuard, Multicall)
-- **PRB-Math**: Mathematical utilities for precise calculations
+- **OpenZeppelin**: Standard contracts (ERC20, Ownable2Step, ReentrancyGuard, Multicall) plus `Math`/`SafeCast` for all narrowing casts — no PRB-Math anywhere in the codebase (the pricing core and TickTree are both OZ-based)
 
 ### Core Flows
 1. **Deposit**: PT deposits with market-value fees, creates Sablier streams
 2. **Claim**: Burn ovrfloTokens to claim PT after maturity
 3. **Wrap/Unwrap**: Permissionless 1:1 underlying <-> ovrfloToken via wrap reserve
 4. **PT Flash Loan**: Atomic PT loan with EIP-4531 callback, repaid in same tx
-5. **Secondary Market**: Sell or lend against Sablier streams via OVRFLOLending (liquidityPositions, listings, loans, pools)
-6. **Admin**: Multisig -> OVRFLOFactory -> OVRFLO / OVRFLOLending (series approval, deposit limits, oracle prep, lending config)
+5. **Lending market**: Borrow against a pledged Sablier stream via OVRFLOLending's tick order book (supply liquidity at an APR tick, blind-fill borrow, repay/close/claim)
+6. **Admin**: Multisig -> OVRFLOFactory -> OVRFLO / OVRFLOLending (series approval, deposit limits, oracle prep, lending config including tick spacing)
 
 ### Security Features
 - Timelocked multisig owns factory (all admin operations require consensus + delay)
@@ -99,16 +101,16 @@ Foundry-based Solidity project implementing OVRFLO, a Pendle-based vault system 
 - Reentrancy protection on critical functions
 - Per-market deposit limits (0 = unlimited)
 - Duplicate underlying prevention via `underlyingToOvrflo` mapping (pattern #9)
-- Self-match prevention in loan creation (pattern #4)
-- Strictly-increasing IDs in batch/pool functions (pattern #10)
-- Pro-rata cap on shared-pool claims (pattern #12)
+- Pro-rata cap on shared claims across positions overlapping a loan (pattern #12)
+- Frozen-history / lazy-attribution correctness: no tape coordinate below a tick epoch's `filled` counter ever changes, so interval-overlap attribution stays exact forever (see `x-ray/invariants.md` I-2)
+- Blind-fill borrow has no self-match guard by design — blind fills cannot enumerate lender positions, and per the `docs/audit/rejected-findings-record.md` L-12 reasoning a self-fill is self-neutral minus the protocol fee (critical pattern #4, superseded-by-design)
 
 ### Testing Strategy
 - Uses Foundry's testing framework with `forge-std`
-- Unit tests: `test/OVRFLOLending.t.sol`, `test/OVRFLO.t.sol`, `test/OVRFLOFactory.t.sol`, `test/StreamPricing.t.sol`
+- Unit tests: `test/OVRFLOLending.t.sol`, `test/TickTree.t.sol`, `test/OVRFLO.t.sol`, `test/OVRFLOFactory.t.sol`, `test/StreamPricing.t.sol`
 - Math tests: `test/StreamPricing.math.t.sol` (pure pricing math verification)
 - Fuzz tests: `test/OVRFLOFuzz.t.sol` (1000 runs)
-- Invariant tests: `test/OVRFLOLendingInvariant.t.sol`, `test/OVRFLOInvariant.t.sol`, `test/OVRFLOWrapUnwrap.invariant.t.sol` (500 runs, depth 25)
+- Invariant tests: `test/OVRFLOLendingInvariant.t.sol`, `test/OVRFLOInvariant.t.sol`, `test/OVRFLOWrapUnwrap.invariant.t.sol` (`FOUNDRY_PROFILE=invariant`: 500 runs, depth 40)
 - Attack scenario tests: `test/OVRFLOAttackScenarios.t.sol` (flash-loan griefing, wrap/claim/redeem loops)
 - Mainnet fork tests: `test/fork/` (real Pendle markets, Sablier streams; self-skip without `MAINNET_RPC_URL`)
 - Frontend tests: `web/tests/` (Vitest)
@@ -116,8 +118,7 @@ Foundry-based Solidity project implementing OVRFLO, a Pendle-based vault system 
 
 ### Dependencies
 - Foundry toolchain for compilation, testing, and deployment
-- OpenZeppelin contracts (via git submodules)
-- PRB-Math for mathematical operations
+- OpenZeppelin contracts (via git submodules) — `Math`/`SafeCast` cover all narrowing-cast and rounding needs; no PRB-Math dependency exists in this repo
 - Forge-std for testing utilities
 - Next.js + wagmi + viem for frontend (`web/`)
 
@@ -140,12 +141,12 @@ Foundry-based Solidity project implementing OVRFLO, a Pendle-based vault system 
 - Pendle PT tokens always have 18 decimals; code assumes and enforces this invariant (e.g. `MIN_PT_AMOUNT`).
 - Admin flows are multisig -> factory -> vault or lending; no dependent contract is administered directly.
 - Per-series Pendle oracle address is stored in `SeriesInfo` via `setSeriesApproved` — there is no hardcoded `PENDLE_ORACLE` in the factory; pass the oracle per market.
-- `MIN_TWAP_DURATION` and `MAX_TWAP_DURATION` (30 minutes) are both enforced in the factory.
+- `MIN_TWAP_DURATION` (15 minutes) and `MAX_TWAP_DURATION` (30 minutes) are both enforced in the factory.
 - `setSeriesApproved` is intended to be called once per market and never overwritten; claims depend on `ptToken`/`ovrfloToken`/expiry staying immutable for the life of outstanding deposits.
 - Sablier streams are per-deposit, per-customer — not per-market; fees are taken in underlying via a separate zap contract path.
 - Loans are self-repaying (lender draws from the pledged stream until obligation is met, then residual returns to borrower). A returned stream can be re-pledged to a new loan.
-- OVRFLO has a PT flash loan facility: atomic loan of deposited PT via EIP-4531 callback (`IFlashBorrower`), repaid in the same tx with an oracle-adjusted fee in underlying. Capped by `marketTotalDeposited`, gated pre-maturity, globally pausable by the multisig. No `nonReentrant` modifier (borrower must deposit during the callback).
-- The OVRFLO cycle: deposit PT -> receive ovrfloToken + Sablier stream -> sell/lend stream on OVRFLOLending -> exit ovrfloToken via unwrap or swap. Captures the fixed PT discount as extractable yield. See `README.md` and `CONCEPTS.md` "OVRFLO cycle" entry.
+- OVRFLO has a PT flash loan facility: atomic loan of deposited PT via EIP-4531 callback (`IFlashBorrower`), repaid in the same tx with an oracle-adjusted fee in underlying. Capped by `marketTotalDeposited`, gated pre-maturity, globally pausable by the multisig. `flashLoan` itself is `nonReentrant` (nested flash loans revert — `test_NestedFlashLoan_RevertsDueToNonReentrant`); deposit-during-callback still works because `deposit` carries no guard.
+- The OVRFLO cycle: deposit PT -> receive ovrfloToken + Sablier stream -> borrow the stream's full discounted value on OVRFLOLending (economically a sale; the loan-only market has no separate sale mechanism) -> exit ovrfloToken via unwrap or swap. Captures the fixed PT discount as extractable yield. See `README.md` and `CONCEPTS.md` "OVRFLO cycle" entry.
 - Permissionless wrap/unwrap path: underlying <-> ovrfloToken 1:1, bounded by a separately tracked wrap reserve (not the raw token balance). Direct transfers to the vault do not increase wrap reserve.
 - UI reference / brand source: https://overflow.finance (stream-management-focused app UI, 2026 aesthetic); built via the `/frontend-design` skill. Frontend is Next.js + wagmi + viem in `web/`.
 - Plans live in `docs/plans/`. Do not edit plan files while implementing them — treat them as read-only specs.

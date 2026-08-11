@@ -1,5 +1,7 @@
 # Pendle Interface Contract for OVRFLO
 
+> **Stale IDs.** Invariant/guard IDs in this document predate the 2026-08-10 `x-ray/` regeneration at `f0661ab`; resolve them by statement via the ID map in `AUDIT.md`, not by number.
+
 > Dependency assumptions OVRFLO relies on from Pendle, scoped to the calls OVRFLO actually makes. This is a contract to falsify, not a Pendle tutorial. Each row states the assumed property, where OVRFLO enforces it (or does not), and what breaks if the assumption fails. Pinned to the addresses in `scope-snapshot.md`.
 
 OVRFLO touches only the PT/SY/oracle surface of Pendle. It never trades YT or interacts with the Pendle AMM. Anything below not listed is out of scope by design.

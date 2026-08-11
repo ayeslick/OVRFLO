@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: UNLICENSED
+// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
 import {OVRFLO} from "../../src/OVRFLO.sol";
@@ -31,7 +31,7 @@ contract OVRFLOFactoryMainnetForkTest is OVRFLOForkBase {
         (OVRFLOFactory factory, OVRFLO ovrflo,) = _deployConfiguredSystem();
 
         vm.prank(OWNER);
-        vm.expectRevert("OVRFLOFactory: oracle cardinality");
+        vm.expectRevert(OVRFLOFactory.OracleCardinalityRequired.selector);
         factory.addMarket(address(ovrflo), PRIMARY_MARKET, MIN_TWAP_DURATION, 0);
     }
 

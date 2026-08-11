@@ -40,20 +40,22 @@ enums have been widened to reflect our stack; everything else matches the upstre
 ### Required reading (patterns)
 
 - [patterns/ovrflo-critical-patterns.md](patterns/ovrflo-critical-patterns.md)
-  — enforceable rules distilled from the writeups below. Currently covers:
-  1. ERC-721 current ownership comes from the token, not from derived protocol events.
-  2. Do not use `forge script --broadcast` against an Anvil mainnet fork (foundry#11714); use `forge create` + `cast send` via `script/seed-local.sh`.
-  3. Modal bodies — and only modal bodies — are wrapped in a class-component error boundary with an `onReset` contract (header/close button stay outside).
-  4. Prevent self-matched loans in OVRFLOLending (`createBorrowerLoanPool` / `createLenderPool`).
-  5. TWAP duration bounds must be consistent across `prepareOracle` and `addMarket`.
-  6. Standalone OVRFLOLending deployment must verify Sablier matches the vault's canonical immutable.
-  7. Assert all-party token balances in every money-movement test (not just state flags and NFT ownership).
-  8. View functions that resolve by ID must revert on non-existent IDs, not return zero defaults.
-  9. The factory owns every deployed lending — lending admin is forwarded, not direct.
-  10. One vault per underlying — `configureDeployment` must reject duplicates.
-  11. Require strictly-increasing IDs in batch functions that accept ID arrays.
-  12. Cap shared-pool claims at the lender's pro-rata share of current `loanPoolProceeds`.
-  - Also includes a "Considered and rejected" section documenting 4 findings from the 2026-06-28 full-contract review that were explicitly dismissed (18-decimal underlying check, sweep zero-address guard, unchecked downcasts in deposit, registeredToken equality check).
+  — enforceable rules distilled from the writeups below: 25 numbered patterns
+  (each marked ALWAYS REQUIRED or SUPERSEDED-BY-DESIGN) plus a "Considered and
+  rejected" section. The pattern list is deliberately NOT duplicated here — a
+  previous copy of it in this index rotted badly (it described pre-rewrite
+  function names as current and had drifted to 12 of 20 patterns by the time
+  the 2026-08-10 ticket-09 audit caught it). Open the file; its own headings
+  are the index. Every pattern was audited 2026-08-10 to exactly one state:
+  enforced (code + guarding test cited), superseded (successor + retiring
+  decision cited), or refreshed.
+- [patterns/ovrflo-coding-standard.md](patterns/ovrflo-coding-standard.md)
+  — the enforceable coding rules, each citing its internal writeup or external
+  standard and its remediation tier. Includes the pending-user-decisions and
+  considered-and-rejected registers.
+- [patterns/ovrflo-style-guide.md](patterns/ovrflo-style-guide.md)
+  — naming, layout, NatSpec voice, comment discipline, fixture conventions,
+  each with a concrete example from shipped code.
 
 ### Best practices
 
@@ -133,10 +135,11 @@ enums have been widened to reflect our stack; everything else matches the upstre
   vs. floor price) so the stream-draw close path via permissionless `closeLoan`
   always eventually succeeds. Documents the rounding invariants future
   `StreamPricing` edits must preserve. Includes a companion finding (fixed
-  2026-06-28): self-matched loans (`borrower == lender`) broke `repayLoan`
-  because `_pullExact`'s balance-delta check reverts on self-transfer; fixed by
-  rejecting self-matching at loan creation in `createBorrowerLoanPool` and
-  `createLenderPool`.
+  2026-06-28, HISTORICAL — the v1-lite rewrite later removed both the
+  self-match guard and the pool functions entirely; see critical pattern #4's
+  SUPERSEDED-BY-DESIGN banner): self-matched loans (`borrower == lender`)
+  broke `repayLoan` because `_pullExact`'s balance-delta check reverts on
+  self-transfer; fixed at the time by rejecting self-matching at loan creation.
 
 ### Architecture patterns
 

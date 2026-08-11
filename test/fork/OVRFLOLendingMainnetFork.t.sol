@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: UNLICENSED
+// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -6,176 +6,270 @@ import {OVRFLO} from "../../src/OVRFLO.sol";
 import {OVRFLOLending} from "../../src/OVRFLOLending.sol";
 import {OVRFLOFactory} from "../../src/OVRFLOFactory.sol";
 import {OVRFLOToken} from "../../src/OVRFLOToken.sol";
+import {StreamPricing} from "../../src/StreamPricing.sol";
 import {ISablierV2LockupLinear} from "../../interfaces/ISablierV2LockupLinear.sol";
 import {OVRFLOForkBase} from "./OVRFLOForkBase.t.sol";
 
+/// @notice Recipient contract that records whether Sablier invoked its withdraw hook.
+/// @dev Exists to make assumption row S5 in `docs/audit/sablier-interface-contract.md`
+///      falsifiable rather than asserted. v1.1 calls `onStreamWithdrawn` only when the
+///      recipient is a contract AND `msg.sender != recipient`; the book always withdraws
+///      from a stream it currently owns, so that predicate is false at every OVRFLO call
+///      site and the callback surface is empty. This probe checks both branches.
+contract StreamHookProbe {
+    bool public hookFired;
+
+    function onStreamWithdrawn(uint256, address, address, uint128) external {
+        hookFired = true;
+    }
+
+    function reset() external {
+        hookFired = false;
+    }
+
+    function withdrawToSelf(address sablier, uint256 streamId, uint128 amount) external {
+        ISablierV2LockupLinear(sablier).withdraw(streamId, address(this), amount);
+    }
+
+    /// @dev `ISablierV2LockupLinear` does not surface the ERC-721 `approve`, so the raw
+    ///      call is the only route — same reason the suite's `_approveStream` uses one.
+    function approveOperator(address sablier, address operator, uint256 streamId) external {
+        (bool ok,) = sablier.call(abi.encodeWithSignature("approve(address,uint256)", operator, streamId));
+        require(ok, "probe: approve failed");
+    }
+}
+
+/// @title OVRFLOLendingMainnetForkTest
+/// @notice Sablier V2 v1.1 custody assertions for the v1-lite book, against real mainnet
+///         Pendle markets and the pinned Sablier deployment.
+/// @dev PORTED, not rewritten (plan risk #8). The pre-rewrite suite encoded v1.1 ACL edge
+///      cases that a delete-and-rewrite would silently lose — in particular the
+///      version-discriminating "push a withdrawal TO the recipient" probe, which is the
+///      only one of the four negative cases that actually distinguishes v1.1 from the
+///      later permissionless-withdraw ACL described in newer Sablier docs. Those probes
+///      are carried over verbatim in substance; only the escrow entry point changed,
+///      because `postSaleListing` no longer exists and `borrow` is now the sole path that
+///      moves a stream NFT into the book.
+///
+///      Defines no `setUp()` — it inherits `OVRFLOForkBase`'s, which is where the
+///      `MAINNET_RPC_URL` skip gate lives. Overriding it without `super.setUp()` would
+///      silently drop that gate.
 contract OVRFLOLendingMainnetForkTest is OVRFLOForkBase {
     address internal constant USER = address(0xB0B);
-    address internal constant BUYER = address(0xA11CE);
     address internal constant LENDER = address(0xCAFE);
     uint32 internal constant PROTOCOL_TWAP_DURATION = 30 minutes;
     uint256 internal constant PT_AMOUNT = 10 ether;
 
-    function test_LendingSale_RealStreamTransfersToBuyer() public {
-        (OVRFLOFactory factory, OVRFLO ovrflo,) = _deployApprovedPrimarySeries(0);
-        OVRFLOLending lending = _deployLending(factory, ovrflo);
-        ISablierV2LockupLinear sablier = ISablierV2LockupLinear(address(ovrflo.sablierLL()));
-        (,, uint256 streamId) = _depositPrimary(ovrflo, PT_AMOUNT);
+    /// @dev 1000 bps is the book's launch APR and both default bounds; 25 divides it, so
+    ///      the tick is valid without widening the bounds.
+    uint16 internal constant APR = 1000;
+    uint16 internal constant SPACING = 25;
 
-        vm.prank(USER);
-        _approveStream(address(sablier), address(lending), streamId);
+    /*//////////////////////////////////////////////////////////////
+        SABLIER V2 v1.1 WITHDRAW ACL DURING BOOK ESCROW
+    //////////////////////////////////////////////////////////////*/
 
-        // Cache LAUNCH_APR_BPS before prank to avoid argument-evaluation consuming the prank
-        uint16 launchApr = lending.LAUNCH_APR_BPS();
-        vm.prank(USER);
-        uint256 listingId = lending.postSaleListing(PRIMARY_MARKET, streamId, launchApr);
+    /// @notice No third party can withdraw from a stream escrowed by the book.
+    /// @dev The four negative cases below are the ported core of this suite. The first
+    ///      three all pass `to == caller`, which reverts under v1.1 AND under the later
+    ///      ACL that made `to == recipient` permissionless — so on their own they cannot
+    ///      tell the two versions apart. The fourth pushes a withdrawal TO the recipient
+    ///      (the book), which is exactly what audit-2026-07-28 H-1 claims a third party
+    ///      can do: permitted post-v1.1, refused by the v1.1 bytecode deployed here. That
+    ///      case is the whole reason this test exists; do not drop it as redundant.
+    function test_LendingEscrow_StrangerCannotWithdrawFromEscrowedStream() public {
+        (OVRFLOLending lending, ISablierV2LockupLinear sablier, uint256 streamId,) = _escrowStreamViaBorrow();
 
-        (uint256 grossPrice,,,,) = lending.quote(PRIMARY_MARKET, streamId, launchApr, 0);
-        _seedWstEth(BUYER, grossPrice);
-        vm.startPrank(BUYER);
-        IERC20(WSTETH).approve(address(lending), grossPrice);
-        lending.buyListing(listingId, grossPrice);
-        vm.stopPrank();
-
-        assertEq(sablier.ownerOf(streamId), BUYER);
-    }
-
-    function test_LendingLoan_RealStreamClaimsAndCloses() public {
-        (OVRFLOFactory factory, OVRFLO ovrflo, OVRFLOToken token) = _deployApprovedPrimarySeries(0);
-        OVRFLOLending lending = _deployLending(factory, ovrflo);
-        ISablierV2LockupLinear sablier = ISablierV2LockupLinear(address(ovrflo.sablierLL()));
-        (,, uint256 streamId) = _depositPrimary(ovrflo, PT_AMOUNT);
-        (uint256 grossPrice,,,,) = lending.quote(PRIMARY_MARKET, streamId, lending.LAUNCH_APR_BPS(), 0);
-        uint128 borrowAmount = uint128(grossPrice / 2);
-
-        _seedWstEth(LENDER, borrowAmount);
-        vm.startPrank(LENDER);
-        IERC20(WSTETH).approve(address(lending), borrowAmount);
-        uint256 liquidityId = lending.supplyLiquidity(PRIMARY_MARKET, lending.LAUNCH_APR_BPS(), borrowAmount);
-        vm.stopPrank();
-        assertEq(lending.marketAvailableLiquidity(PRIMARY_MARKET), borrowAmount);
-        assertEq(lending.marketAprAvailableLiquidity(PRIMARY_MARKET, lending.LAUNCH_APR_BPS()), borrowAmount);
-
-        vm.prank(USER);
-        _approveStream(address(sablier), address(lending), streamId);
-        vm.prank(USER);
-        uint256 loanPoolId = lending.createBorrowerLoanPool(_singletonArray(liquidityId), streamId, borrowAmount, 0);
-        uint256 loanId = 1;
-        assertEq(lending.marketAvailableLiquidity(PRIMARY_MARKET), 0);
-        assertEq(lending.marketAprAvailableLiquidity(PRIMARY_MARKET, lending.LAUNCH_APR_BPS()), 0);
+        assertEq(sablier.ownerOf(streamId), address(lending), "book should hold the NFT");
 
         uint256 claimTimestamp = block.timestamp + (PRIMARY_EXPIRY - block.timestamp) / 4;
         vm.warp(claimTimestamp);
-        uint128 partialClaim = sablier.withdrawableAmountOf(streamId);
-        uint128 outstandingBeforeClaim = _loanOutstanding(lending, loanId);
-        assertGt(partialClaim, 0);
-        assertLt(partialClaim, outstandingBeforeClaim);
+        uint128 withdrawable = sablier.withdrawableAmountOf(streamId);
+        assertGt(withdrawable, 0, "stream should have accrual");
 
+        address stranger = makeAddr("stranger");
+
+        vm.prank(stranger);
+        (bool ok,) =
+            address(sablier).call(abi.encodeCall(ISablierV2LockupLinear.withdraw, (streamId, stranger, withdrawable)));
+        assertFalse(ok, "stranger should not be able to withdraw");
+
+        // The borrower no longer owns the NFT while the loan is open.
+        vm.prank(USER);
+        (ok,) = address(sablier).call(abi.encodeCall(ISablierV2LockupLinear.withdraw, (streamId, USER, withdrawable)));
+        assertFalse(ok, "borrower should not be able to withdraw during escrow");
+
+        // A lender is not the NFT owner either — lenders are paid through `claim`.
         vm.prank(LENDER);
-        lending.claimLoanPoolShare(loanPoolId, partialClaim);
-        assertEq(token.balanceOf(LENDER), partialClaim);
+        (ok,) = address(sablier).call(abi.encodeCall(ISablierV2LockupLinear.withdraw, (streamId, LENDER, withdrawable)));
+        assertFalse(ok, "lender should not be able to withdraw");
 
-        vm.warp(PRIMARY_EXPIRY);
-        lending.closeLoan(loanId);
+        // The version-discriminating case. See the doc comment above.
+        vm.prank(stranger);
+        (ok,) = address(sablier)
+            .call(abi.encodeCall(ISablierV2LockupLinear.withdraw, (streamId, address(lending), withdrawable)));
+        assertFalse(ok, "stranger must not push a withdrawal to the recipient (v1.1 ACL, disproves H-1)");
 
-        _assertLoanClosedAfterClaim(lending, token, sablier, loanId, streamId, loanPoolId);
+        assertEq(sablier.getWithdrawnAmount(streamId), 0, "no withdrawal should have succeeded");
     }
 
-    function test_LendingLoan_RealEarlyRepayViaWrapAndUnwrap() public {
-        (OVRFLOFactory factory, OVRFLO ovrflo, OVRFLOToken token) = _deployApprovedPrimarySeries(0);
-        OVRFLOLending lending = _deployLending(factory, ovrflo);
-        ISablierV2LockupLinear sablier = ISablierV2LockupLinear(address(ovrflo.sablierLL()));
-        (,, uint256 streamId) = _depositPrimary(ovrflo, PT_AMOUNT);
-        (uint256 grossPrice,,,,) = lending.quote(PRIMARY_MARKET, streamId, lending.LAUNCH_APR_BPS(), 0);
-        uint128 borrowAmount = uint128(grossPrice / 2);
+    /*//////////////////////////////////////////////////////////////
+                        NFT OWNER TRANSITIONS
+    //////////////////////////////////////////////////////////////*/
 
-        _seedWstEth(LENDER, borrowAmount);
-        vm.startPrank(LENDER);
-        IERC20(WSTETH).approve(address(lending), borrowAmount);
-        uint256 liquidityId = lending.supplyLiquidity(PRIMARY_MARKET, lending.LAUNCH_APR_BPS(), borrowAmount);
-        vm.stopPrank();
+    /// @notice NFT ownership walks user -> book -> borrower across the permissionless close.
+    /// @dev The custody half of the self-repaying-loan design: the book takes the stream
+    ///      at `borrow`, draws the outstanding from it once the accrual covers the debt,
+    ///      and hands it straight back. Balances are asserted alongside ownership
+    ///      (pattern #6) because ownership alone would pass even if the drawn value
+    ///      never reached the book.
+    function test_LendingLoan_NftOwnerTransitionsThroughClose() public {
+        (OVRFLOLending lending, ISablierV2LockupLinear sablier, uint256 streamId, uint256 loanId) =
+            _escrowStreamViaBorrow();
 
-        vm.prank(USER);
-        _approveStream(address(sablier), address(lending), streamId);
-        vm.prank(USER);
-        uint256 loanPoolId = lending.createBorrowerLoanPool(_singletonArray(liquidityId), streamId, borrowAmount, 0);
-        uint256 loanId = 1;
+        assertEq(sablier.ownerOf(streamId), address(lending), "book should hold the NFT during the loan");
+        (, uint128 outstandingBefore) = lending.loanState(loanId);
+        assertGt(outstandingBefore, 0, "loan should carry an obligation");
 
-        uint128 outstanding = _loanOutstanding(lending, loanId);
+        // At maturity the whole remaining face is withdrawable, so the loan is coverable.
+        vm.warp(PRIMARY_EXPIRY);
+        assertGe(sablier.withdrawableAmountOf(streamId), outstandingBefore, "stream should cover the outstanding");
+
+        uint256 bookTokenBefore = IERC20(lending.ovrfloToken()).balanceOf(address(lending));
+        lending.close(loanId);
+
+        (OVRFLOLending.Loan memory loan, uint128 outstandingAfter) = lending.loanState(loanId);
+        assertTrue(loan.closed, "loan should be closed");
+        assertEq(outstandingAfter, 0, "outstanding should be settled");
+        assertEq(loan.drawn, outstandingBefore, "drawn should equal what was owed");
+        assertEq(
+            IERC20(lending.ovrfloToken()).balanceOf(address(lending)) - bookTokenBefore,
+            outstandingBefore,
+            "drawn value did not reach the book"
+        );
+        assertEq(sablier.ownerOf(streamId), USER, "stream should return to the borrower");
+    }
+
+    /// @notice NFT ownership walks user -> book -> borrower across a full repayment.
+    /// @dev The other closure path. `Closed` fires on both, and the stream returns on
+    ///      both — the 2026-08-08 uniform-closure decision. Repayment is funded by
+    ///      wrapping wstETH into ovrfloToken, which is the route a real borrower takes.
+    function test_LendingLoan_NftOwnerTransitionsThroughFullRepay() public {
+        (OVRFLOLending lending, ISablierV2LockupLinear sablier, uint256 streamId, uint256 loanId) =
+            _escrowStreamViaBorrow();
+        OVRFLO ovrflo = OVRFLO(lending.core());
+        OVRFLOToken token = OVRFLOToken(lending.ovrfloToken());
+
+        assertEq(sablier.ownerOf(streamId), address(lending), "book should hold the NFT during the loan");
+        (, uint128 outstanding) = lending.loanState(loanId);
+
         _seedWstEth(USER, outstanding);
         vm.startPrank(USER);
         IERC20(WSTETH).approve(address(ovrflo), outstanding);
         ovrflo.wrap(outstanding);
         token.approve(address(lending), outstanding);
-        lending.repayLoan(loanId, outstanding);
+        lending.repay(loanId, outstanding);
         vm.stopPrank();
 
-        assertEq(sablier.ownerOf(streamId), USER);
-
-        // Lender withdraws repaid amount from pool proceeds
-        vm.prank(LENDER);
-        lending.claimLoanPoolShare(loanPoolId, outstanding);
-        assertEq(token.balanceOf(LENDER), outstanding);
-
-        uint256 lenderWstEthBefore = IERC20(WSTETH).balanceOf(LENDER);
-        vm.prank(LENDER);
-        ovrflo.unwrap(outstanding);
-        assertEq(IERC20(WSTETH).balanceOf(LENDER), lenderWstEthBefore + outstanding);
+        (OVRFLOLending.Loan memory loan, uint128 outstandingAfter) = lending.loanState(loanId);
+        assertTrue(loan.closed, "full repay should close the loan");
+        assertEq(outstandingAfter, 0, "outstanding should be zero after full repay");
+        assertEq(loan.drawn, 0, "repay must not draw from the stream");
+        assertEq(loan.repaid, outstanding, "repaid should equal the outstanding");
+        assertEq(sablier.ownerOf(streamId), USER, "stream should return to the borrower");
+        assertEq(sablier.getWithdrawnAmount(streamId), 0, "repay path must leave the stream untouched");
     }
 
-    function test_LendingEligibility_RejectsForeignCoreStream() public {
-        (OVRFLOFactory factory, OVRFLO ovrflo,) = _deployApprovedPrimarySeries(0);
-        OVRFLOLending lending = _deployLending(factory, ovrflo);
-        (, OVRFLO foreignOvrflo,) = _deployApprovedPrimarySeries(0);
-        ISablierV2LockupLinear foreignSablier = ISablierV2LockupLinear(address(foreignOvrflo.sablierLL()));
-        (,, uint256 foreignStreamId) = _depositPrimary(foreignOvrflo, PT_AMOUNT);
+    /*//////////////////////////////////////////////////////////////
+            S5 — WITHDRAW FIRES NO HOOK WHEN CALLER IS RECIPIENT
+    //////////////////////////////////////////////////////////////*/
 
-        vm.prank(USER);
-        _approveStream(address(foreignSablier), address(lending), foreignStreamId);
-
-        // Cache LAUNCH_APR_BPS before expectRevert to avoid argument-evaluation gotcha
-        uint16 launchApr = lending.LAUNCH_APR_BPS();
-        vm.prank(USER);
-        vm.expectRevert();
-        lending.postSaleListing(PRIMARY_MARKET, foreignStreamId, launchApr);
-    }
-
-    function test_LendingSellStreamToLiquidity_RealStream() public {
-        (OVRFLOFactory factory, OVRFLO ovrflo,) = _deployApprovedPrimarySeries(0);
-        OVRFLOLending lending = _deployLending(factory, ovrflo);
+    /// @notice Pins assumption row S5: v1.1 skips the recipient hook when caller == recipient.
+    /// @dev This is what makes the book's callback surface empty, and it is stated in the
+    ///      interface contract as a falsifiable claim rather than a guarantee. Both
+    ///      branches are exercised so the test cannot pass vacuously: an approved
+    ///      operator withdrawing on the probe's behalf MUST fire the hook (proving the
+    ///      probe's hook works at all), and the probe withdrawing for itself MUST NOT.
+    ///      Every OVRFLO `withdraw` call site is the second shape.
+    function test_SablierV1_1_WithdrawHookSkippedWhenCallerIsRecipient() public {
+        (, OVRFLO ovrflo,) = _deployApprovedPrimarySeries(0);
         ISablierV2LockupLinear sablier = ISablierV2LockupLinear(address(ovrflo.sablierLL()));
         (,, uint256 streamId) = _depositPrimary(ovrflo, PT_AMOUNT);
 
-        // Quote to determine required liquidity availableLiquidity
-        uint16 launchApr = lending.LAUNCH_APR_BPS();
-        (uint256 grossPrice,,,,) = lending.quote(PRIMARY_MARKET, streamId, launchApr, 0);
+        StreamHookProbe probe = new StreamHookProbe();
+        vm.prank(USER);
+        sablier.transferFrom(USER, address(probe), streamId);
+        assertEq(sablier.ownerOf(streamId), address(probe), "probe should hold the NFT");
 
-        // Buyer posts a sale liquidity with enough availableLiquidity
-        _seedWstEth(BUYER, grossPrice);
-        vm.startPrank(BUYER);
-        IERC20(WSTETH).approve(address(lending), grossPrice);
-        uint256 liquidityId = lending.supplyLiquidity(PRIMARY_MARKET, launchApr, uint128(grossPrice));
+        vm.warp(block.timestamp + (PRIMARY_EXPIRY - block.timestamp) / 4);
+        uint128 accrued = sablier.withdrawableAmountOf(streamId);
+        assertGt(accrued, 0, "stream should have accrual");
+        uint128 slice = accrued / 4;
+        assertGt(slice, 0, "slice must be non-zero for the probe to be meaningful");
+
+        // Positive control: caller != recipient, so the hook MUST fire. Without this the
+        // negative assertion below would pass even if the probe's hook were unreachable.
+        address operator = makeAddr("operator");
+        probe.approveOperator(address(sablier), operator, streamId);
+        vm.prank(operator);
+        sablier.withdraw(streamId, address(probe), slice);
+        assertTrue(probe.hookFired(), "v1.1 should call onStreamWithdrawn when caller != recipient");
+
+        // The OVRFLO shape: the recipient withdraws to itself, so the hook is skipped.
+        probe.reset();
+        probe.withdrawToSelf(address(sablier), streamId, slice);
+        assertFalse(probe.hookFired(), "v1.1 must not call onStreamWithdrawn when caller == recipient");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                                HELPERS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @dev Full path to an escrowed stream: approved series, configured book, resting
+    ///      lender liquidity, and a borrow that moves the NFT into the book.
+    function _escrowStreamViaBorrow()
+        internal
+        returns (OVRFLOLending lending, ISablierV2LockupLinear sablier, uint256 streamId, uint256 loanId)
+    {
+        (OVRFLOFactory factory, OVRFLO ovrflo,) = _deployApprovedPrimarySeries(0);
+        lending = _deployLending(factory, ovrflo);
+        sablier = ISablierV2LockupLinear(address(ovrflo.sablierLL()));
+        (,, streamId) = _depositPrimary(ovrflo, PT_AMOUNT);
+
+        // Size the fill off the stream's own discounted value so the borrow is never
+        // silently truncated by the price cap. Half the gross price keeps the loan a
+        // genuine partial fill, which is the interesting case for the close path.
+        uint128 target = _halfGrossPriceUnitAligned(sablier, streamId);
+
+        _seedWstEth(LENDER, target);
+        vm.startPrank(LENDER);
+        IERC20(WSTETH).approve(address(lending), target);
+        lending.supply(PRIMARY_MARKET, APR, target);
         vm.stopPrank();
-        assertEq(lending.marketAvailableLiquidity(PRIMARY_MARKET), grossPrice);
-        assertEq(lending.marketAprAvailableLiquidity(PRIMARY_MARKET, launchApr), grossPrice);
 
-        // User sells stream into the liquidity
         vm.prank(USER);
         _approveStream(address(sablier), address(lending), streamId);
         vm.prank(USER);
-        lending.sellStreamToLiquidity(liquidityId, streamId, 0);
+        loanId = lending.borrow(PRIMARY_MARKET, APR, target, streamId, 0);
+    }
 
-        // Stream transferred to buyer (liquidity lender)
-        assertEq(sablier.ownerOf(streamId), BUYER, "stream should transfer to liquidity lender");
+    /// @dev Half the stream's discounted gross price, floored onto the UNIT lattice and
+    ///      above the book's minimum. Uses the same `StreamPricing` the book uses, so the
+    ///      test never re-derives pricing math the plan forbids re-deriving.
+    function _halfGrossPriceUnitAligned(ISablierV2LockupLinear sablier, uint256 streamId)
+        internal
+        view
+        returns (uint128)
+    {
+        ISablierV2LockupLinear.Stream memory stream = sablier.getStream(streamId);
+        uint128 remaining = stream.amounts.deposited - stream.amounts.withdrawn;
+        uint256 gross = StreamPricing.grossPrice(remaining, APR, PRIMARY_EXPIRY - block.timestamp);
 
-        // User received wstETH (net of fee; feeBps=0 so net == gross)
-        assertEq(IERC20(WSTETH).balanceOf(USER), grossPrice, "seller should receive full gross price");
-
-        // LiquidityPosition availableLiquidity consumed
-        (,,, uint128 remainingCapacity) = lending.liquidityPositions(liquidityId);
-        assertEq(remainingCapacity, 0, "availableLiquidity should be 0 after full fill");
-        assertEq(lending.marketAvailableLiquidity(PRIMARY_MARKET), 0);
-        assertEq(lending.marketAprAvailableLiquidity(PRIMARY_MARKET, launchApr), 0);
+        uint256 unit = 1e12; // OVRFLOLending.UNIT
+        // forge-lint: disable-next-line(divide-before-multiply) — flooring to a UNIT multiple is the point.
+        uint128 target = uint128((gross / 2 / unit) * unit);
+        require(target >= 1e15, "fork fixture: stream too small to borrow against");
+        return target;
     }
 
     function _deployApprovedPrimarySeries(uint16 feeBps)
@@ -190,39 +284,11 @@ contract OVRFLOLendingMainnetForkTest is OVRFLOForkBase {
         vm.stopPrank();
     }
 
+    /// @dev The test contract deploys the book directly, so it is the book's owner and
+    ///      can set spacing without routing through the factory forwarder.
     function _deployLending(OVRFLOFactory factory, OVRFLO ovrflo) internal returns (OVRFLOLending lending) {
         lending = new OVRFLOLending(address(factory), address(ovrflo), address(ovrflo.sablierLL()));
-    }
-
-    function _loanOutstanding(OVRFLOLending lending_, uint256 loanId) internal view returns (uint128) {
-        (,, uint128 obligation, uint128 drawn, uint128 repaid,) = lending_.loans(loanId);
-        return obligation - drawn - repaid;
-    }
-
-    function _assertLoanClosedAfterClaim(
-        OVRFLOLending lending,
-        OVRFLOToken token,
-        ISablierV2LockupLinear sablier,
-        uint256 loanId,
-        uint256 streamId,
-        uint256 loanPoolId
-    ) internal {
-        (,, uint128 obligation, uint128 drawn, uint128 repaid, bool closed) = lending.loans(loanId);
-        uint128 outstanding = obligation - drawn - repaid;
-        assertEq(drawn, obligation);
-        assertEq(repaid, 0);
-        assertEq(outstanding, 0);
-        assertTrue(closed);
-
-        // Lender withdraws closeLoan proceeds from pool
-        uint128 lenderReceived = uint128(token.balanceOf(LENDER));
-        if (obligation > lenderReceived) {
-            vm.prank(LENDER);
-            lending.claimLoanPoolShare(loanPoolId, obligation - lenderReceived);
-        }
-
-        assertEq(token.balanceOf(LENDER), obligation);
-        assertEq(sablier.ownerOf(streamId), USER);
+        lending.setTickSpacing(PRIMARY_MARKET, SPACING);
     }
 
     function _depositPrimary(OVRFLO ovrflo, uint256 ptAmount)
@@ -238,73 +304,10 @@ contract OVRFLOLendingMainnetForkTest is OVRFLOForkBase {
         vm.stopPrank();
     }
 
+    /// @dev `ISablierV2LockupLinear` does not expose the ERC-721 `approve`, so this goes
+    ///      through a raw call rather than the typed interface.
     function _approveStream(address sablier, address spender, uint256 streamId) internal {
         (bool success,) = sablier.call(abi.encodeWithSignature("approve(address,uint256)", spender, streamId));
         assertTrue(success);
-    }
-
-    /*//////////////////////////////////////////////////////////////
-        SABLIER V2 v1.1 WITHDRAW ACL DURING BOOK ESCROW (P2 GAP)
-    //////////////////////////////////////////////////////////////*/
-
-    function test_LendingEscrow_StrangerCannotWithdrawFromEscrowedStream() public {
-        (OVRFLOFactory factory, OVRFLO ovrflo,) = _deployApprovedPrimarySeries(0);
-        OVRFLOLending lending = _deployLending(factory, ovrflo);
-        ISablierV2LockupLinear sablier = ISablierV2LockupLinear(address(ovrflo.sablierLL()));
-        (,, uint256 streamId) = _depositPrimary(ovrflo, PT_AMOUNT);
-
-        // Escrow the stream via a sale listing
-        uint16 launchApr = lending.LAUNCH_APR_BPS();
-
-        vm.prank(USER);
-        _approveStream(address(sablier), address(lending), streamId);
-        vm.prank(USER);
-        lending.postSaleListing(PRIMARY_MARKET, streamId, launchApr);
-
-        assertEq(sablier.ownerOf(streamId), address(lending), "lending should hold the NFT");
-
-        // Warp forward so the stream has withdrawable value
-        uint256 claimTimestamp = block.timestamp + (PRIMARY_EXPIRY - block.timestamp) / 4;
-        vm.warp(claimTimestamp);
-        uint128 withdrawable = sablier.withdrawableAmountOf(streamId);
-        assertGt(withdrawable, 0, "stream should have accrual");
-
-        address stranger = makeAddr("stranger");
-
-        // Stranger cannot withdraw
-        vm.prank(stranger);
-        (bool ok,) =
-            address(sablier).call(abi.encodeCall(ISablierV2LockupLinear.withdraw, (streamId, stranger, withdrawable)));
-        assertFalse(ok, "stranger should not be able to withdraw");
-
-        // Former borrower (USER) cannot withdraw — they no longer own the NFT
-        vm.prank(USER);
-        (ok,) = address(sablier).call(abi.encodeCall(ISablierV2LockupLinear.withdraw, (streamId, USER, withdrawable)));
-        assertFalse(ok, "former borrower should not be able to withdraw");
-
-        // Lender (not the NFT owner) cannot withdraw
-        vm.prank(LENDER);
-        (ok,) = address(sablier).call(abi.encodeCall(ISablierV2LockupLinear.withdraw, (streamId, LENDER, withdrawable)));
-        assertFalse(ok, "lender should not be able to withdraw");
-
-        // The version-discriminating case, and the only one that disproves
-        // audit-2026-07-28 H-1. The three cases above all pass `to` = caller,
-        // which reverts under v1.1 AND under the later ACL that made
-        // `to == recipient` permissionless — so they cannot tell the two apart.
-        // Pushing a withdrawal TO the recipient (the lending market) is exactly
-        // what H-1 claims a third party can do: permitted post-v1.1, refused by
-        // the v1.1 bytecode deployed here.
-        vm.prank(stranger);
-        (ok,) = address(sablier)
-            .call(abi.encodeCall(ISablierV2LockupLinear.withdraw, (streamId, address(lending), withdrawable)));
-        assertFalse(ok, "stranger must not push a withdrawal to the recipient (v1.1 ACL, disproves H-1)");
-
-        // Stream withdrawn amount unchanged
-        assertEq(sablier.getWithdrawnAmount(streamId), 0, "no withdrawal should have succeeded");
-    }
-
-    function _singletonArray(uint256 id) internal pure returns (uint256[] memory arr) {
-        arr = new uint256[](1);
-        arr[0] = id;
     }
 }

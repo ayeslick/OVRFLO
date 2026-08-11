@@ -3,1938 +3,1043 @@ pragma solidity >=0.6.2 <0.9.0;
 
 import {Snapshots} from "./Snapshots.sol";
 import {PropertiesAsserts} from "./utils/PropertiesAsserts.sol";
-import {StreamPricing} from "../../src/StreamPricing.sol";
-import {ISablierV2LockupLinear} from "../../interfaces/ISablierV2LockupLinear.sol";
+import {MockSablier} from "./mocks/MockSablier.sol";
 
 /// @notice Contains the functions that check the properties (invariants)
 abstract contract Properties is PropertiesAsserts, Snapshots {
-    /// @dev WAD scale (1e18), mirrors StreamPricing.WAD which is internal.
-    uint256 private constant WAD = 1e18;
-    /// @dev Basis points denominator (100% = 10_000), mirrors vault constant.
-    uint256 private constant BASIS_POINTS = 10_000;
-
     // ―――――――――――――――――――― Global properties ―――――――――――――――――――――
     // These properties must always hold after any function call.
     // They MUST BE PUBLIC so that fuzzers can find and call them.
+    //
+    // Reading discipline: everything below goes through the FLATTENED public getters
+    // (`lending.loans(...)`, `lending.positions(...)`, `lending.positionState(...)` with
+    // skipped tuple components) and the `fizz_*` harness getters, so this file needs no
+    // `OVRFLOLending` struct import. Monotone (high-water) ghosts are latched INSIDE the
+    // properties — sound at any sampling frequency — while order-sensitive ghosts are
+    // written by the `asActor` hooks in `Base.sol` in the same transaction as the event
+    // they record (see the hook comment there).
 
-    // ─────────────── Conservation & Solvency ───────────────
+    // ―― Conservation & solvency ――
 
-    /// @notice GL-01: totalSupply == marketTotalDeposited + wrappedUnderlying
-    function property_totalSupply_eq_mtd_plus_wrapped() public {
+    /// @notice GL-01: the market's ovrfloToken pot bookkeeping (`proceeds`) equals the
+    ///         recovery-minus-payout pot reconstructed WITHOUT reading `proceeds`: the
+    ///         ghost side rebuilds it from live `drawn + repaid` and the hook-inferred
+    ///         realized claim payouts.
+    function property_pot_conservation() public {
+        uint256 sumProceeds;
+        uint256 sumRecovered;
+        for (uint256 i; i < loanIds.length; ++i) {
+            uint256 loanId = loanIds[i];
+            sumProceeds += lending.proceeds(loanId);
+            (,,,,,,,,,, uint128 drawn, uint128 repaid) = lending.loans(loanId);
+            sumRecovered += uint256(drawn) + uint256(repaid);
+        }
         eq(
-            ovrfloToken.totalSupply(),
-            vault.marketTotalDeposited(market) + vault.wrappedUnderlying(),
-            "GL-01: totalSupply != MTD + wrappedUnderlying"
+            sumProceeds + ghosts.claimPaidOut,
+            sumRecovered,
+            "GL-01: proceeds bookkeeping diverged from the ghost-reconstructed pot"
+        );
+        eq(
+            ovrfloToken.balanceOf(address(lending)),
+            sumProceeds + ghosts.ovrfloDonated,
+            "GL-01: market ovrfloToken balance != sum of loan pots plus donations"
         );
     }
 
-    /// @notice GL-02: Combined solvency — totalSupply <= underlying + PT balance of vault
-    /// @dev Replaces the individual wrappedUnderlying <= balance check. ovrfloToken is
-    ///      fungible across deposit and wrap origins: a wrapper can claim PT post-maturity
-    ///      and a depositor can unwrap underlying. The correct invariant is that the vault's
-    ///      combined token holdings back the total ovrfloToken supply. Individual checks
-    ///      (wrappedUnderlying <= balance, MTD <= PT balance) are too strict post-maturity.
-    ///      Pre-maturity, claim is blocked so the individual checks hold, but the combined
-    ///      check is valid at all times and is the real solvency condition.
-    function property_wrapped_le_balance() public {
+    /// @notice GL-02: the market's underlying balance equals the sum, over EVERY position
+    ///         ever created (dead/cursor-skipped epochs included — they legitimately hold
+    ///         sub-atom dust), of that position's live `positionState().unfilled`, plus
+    ///         any bare donations.
+    function property_escrow_solvency_positionSide() public {
+        uint256 sumUnfilled;
+        for (uint256 i; i < positionIds.length; ++i) {
+            (,,, uint128 unfilled) = lending.positionState(positionIds[i]);
+            sumUnfilled += unfilled;
+        }
+        eq(
+            underlying.balanceOf(address(lending)),
+            sumUnfilled + ghosts.underlyingDonated,
+            "GL-02: market underlying balance != sum of unfilled positions plus donations"
+        );
+    }
+
+    /// @notice GL-03: tree-side cross-check of GL-02 — the sum over every tape ever
+    ///         supplied to of `(root − filled) × UNIT` never exceeds the market's
+    ///         underlying balance. Computed from the raw harness coordinates, not from
+    ///         `positionState`, so a GL-02/GL-03 divergence localizes a bug to the
+    ///         position-enumeration layer vs. the tree layer.
+    function property_escrow_solvency_treeSide() public {
+        uint256 unit = lending.UNIT();
+        uint256 sumDepth;
+        for (uint256 i; i < tapes.length; ++i) {
+            Tape storage tape = tapes[i];
+            (uint64 root, uint64 filled,,,,) = lending.fizz_epochState(tape.market, tape.aprBps, tape.epoch);
+            gte(root, filled, "GL-03: epoch filled exceeds its tree root");
+            sumDepth += uint256(root - filled) * unit;
+        }
+        lte(
+            sumDepth,
+            underlying.balanceOf(address(lending)),
+            "GL-03: tree-side unfilled depth exceeds the market's underlying balance"
+        );
+    }
+
+    /// @notice GL-04: backstop flow identity from realized actor/treasury balance deltas
+    ///         (hook-tracked), independent of GL-02/GL-03's view-based paths. Written in
+    ///         addition form so a violation asserts instead of underflowing.
+    function property_underlying_flow_ghosts() public {
+        eq(
+            underlying.balanceOf(address(lending)) + ghosts.underlyingRefunded + ghosts.underlyingBorrowedOut,
+            ghosts.underlyingSupplied + ghosts.underlyingDonated,
+            "GL-04: market underlying balance != supplied - refunded - borrowedOut + donated"
+        );
+    }
+
+    /// @notice GL-05: per-tape tiling agreement — the position-side filled history
+    ///         (withdraw's clamp math, via `positionState`) sums to exactly the loan-side
+    ///         interval lengths (`_fillTick`'s bookkeeping, via the `loanAt` list). Two
+    ///         independently written paths claiming the same `filled` coordinate.
+    function property_tiling_agreement() public {
+        uint256 unit = lending.UNIT();
+        for (uint256 i; i < positionIds.length; ++i) {
+            uint256 positionId = positionIds[i];
+            (, address m, uint16 apr, uint32 ep,) = lending.positions(positionId);
+            (, uint64 start, uint64 end, uint128 unfilled) = lending.positionState(positionId);
+            uint64 span = end - start;
+            uint64 unfilledUnits = uint64(unfilled / unit);
+            t(span >= unfilledUnits, "GL-05: a position's unfilled amount exceeds its own interval");
+            scratch_tapePosSum[tapeKeyOf(m, apr, ep)] += span - unfilledUnits;
+        }
+        for (uint256 i; i < tapes.length; ++i) {
+            Tape storage tape = tapes[i];
+            bytes32 key = tapeKeyOf(tape.market, tape.aprBps, tape.epoch);
+            (,, uint64 loanCount,,,) = lending.fizz_epochState(tape.market, tape.aprBps, tape.epoch);
+            uint256 loanSum;
+            for (uint64 seq; seq < loanCount; ++seq) {
+                uint256 loanId = lending.loanAt(tape.market, tape.aprBps, tape.epoch, seq);
+                (,,,,,,, uint64 fillStart, uint64 fillEnd,,,) = lending.loans(loanId);
+                loanSum += fillEnd - fillStart;
+            }
+            eq(scratch_tapePosSum[key], loanSum, "GL-05: position-side filled history != loan-side interval sum");
+            delete scratch_tapePosSum[key];
+        }
+    }
+
+    /// @notice GL-06: for the fixed-supply tokens (`underlying`, `ptToken`) the known
+    ///         holder set accounts for the entire totalSupply. `ovrfloToken` is
+    ///         deliberately excluded — the vault genuinely mints and burns it.
+    function property_erc20_supply_conservation() public {
+        address[8] memory holders = [
+            address(this),
+            address(vault),
+            address(lending),
+            address(factory),
+            SABLIER_ADDR,
+            mockFlashBorrowerAddr,
+            address(mockSY),
+            address(mockMarket)
+        ];
+        uint256 sumUnderlying = sumActorsERC20Balances(address(underlying));
+        uint256 sumPt = sumActorsERC20Balances(address(ptToken));
+        for (uint256 i; i < holders.length; ++i) {
+            sumUnderlying += underlying.balanceOf(holders[i]);
+            sumPt += ptToken.balanceOf(holders[i]);
+        }
+        eq(sumUnderlying, underlying.totalSupply(), "GL-06: underlying appeared or vanished outside the known holders");
+        eq(sumPt, ptToken.totalSupply(), "GL-06: ptToken appeared or vanished outside the known holders");
+    }
+
+    /// @notice GL-07: vault combined solvency — total ovrfloToken supply is backed by the
+    ///         vault's underlying plus PT, regardless of who holds the token. The
+    ///         documented combined form (2026-07-01 campaign); per-leg forms are too
+    ///         strict post-maturity.
+    function property_vault_combined_solvency() public {
         lte(
             ovrfloToken.totalSupply(),
             underlying.balanceOf(address(vault)) + ptToken.balanceOf(address(vault)),
-            "GL-02: totalSupply > underlying + PT balance of vault"
+            "GL-07: ovrfloToken supply exceeds vault underlying + PT backing"
         );
     }
 
-    /// @notice GL-03: marketTotalDeposited <= ptToken.balanceOf(vault) at rest
-    function property_mtd_le_pt_balance() public {
+    /// @notice GL-08: every open loan's pledged stream is owned by the lending market,
+    ///         and no two simultaneously open loans share a stream. The run-id marker
+    ///         keeps the duplicate scan O(n) without a clearing pass.
+    function property_openLoan_streamCustody() public {
+        ghosts.runId += 1;
+        uint256 runId = ghosts.runId;
+        for (uint256 i; i < openLoanIds.length; ++i) {
+            (,,,,,, uint256 streamId,,,,,) = lending.loans(openLoanIds[i]);
+            t(
+                MockSablier(SABLIER_ADDR).ownerOf(streamId) == address(lending),
+                "GL-08: an open loan's pledged stream is not owned by the market"
+            );
+            t(ghost_streamRunMark[streamId] != runId, "GL-08: two open loans share one pledged stream");
+            ghost_streamRunMark[streamId] = runId;
+        }
+    }
+
+    // ―― Liveness, donation resistance & access control ――
+
+    /// @notice GL-09: the wrap reserve never exceeds the vault's raw underlying balance —
+    ///         a donation can inflate the balance but never the reserve.
+    function property_wrapReserve_le_balance() public {
         lte(
-            vault.marketTotalDeposited(market),
-            ptToken.balanceOf(address(vault)),
-            "GL-03: MTD > ptToken.balanceOf(vault)"
+            vault.wrappedUnderlying(),
+            underlying.balanceOf(address(vault)),
+            "GL-09: wrap reserve exceeds the vault's underlying balance"
         );
     }
 
-    /// @notice GL-04: sum(loanPoolProceeds) <= ovrfloToken.balanceOf(lending)
-    function property_pool_proceeds_le_token_bal() public {
-        uint256 nextPool = lending.nextLoanId();
-        uint256 sum;
-        for (uint256 i = 1; i < nextPool; i++) {
-            sum += lending.loanPoolProceeds(i);
-        }
-        lte(sum, ovrfloToken.balanceOf(address(lending)), "GL-04: sum loanPoolProceeds > lending ovrfloToken balance");
-    }
-
-    /// @notice GL-05: sum(liquidity.availableLiquidity) <= underlying.balanceOf(lending)
-    function property_liquidity_capacity_le_underlying_bal() public {
-        uint256 nextLiquidity = lending.nextLiquidityId();
-        uint256 sum;
-        for (uint256 i = 1; i < nextLiquidity; i++) {
-            (,,, uint128 availableLiquidity) = lending.liquidityPositions(i);
-            sum += availableLiquidity;
-        }
-        lte(
-            sum,
-            underlying.balanceOf(address(lending)),
-            "GL-05: sum liquidity availableLiquidity > lending underlying balance"
-        );
-    }
-
-    /// @notice GL-08: drawn + repaid <= obligation for every loan
-    function property_drawn_repaid_le_obligation() public {
-        uint256 nextLoan = lending.nextLoanId();
-        for (uint256 i = 1; i < nextLoan; i++) {
-            (,, uint128 obligation, uint128 drawn, uint128 repaid,) = lending.loans(i);
-            lte(uint256(drawn) + uint256(repaid), uint256(obligation), "GL-08: drawn + repaid > obligation");
-        }
-    }
-
-    /// @notice GL-09: loanPoolProceeds <= obligation for every pool
-    function property_pool_proceeds_le_obligation() public {
-        uint256 nextLoan = lending.nextLoanId();
-        for (uint256 i = 1; i < nextLoan; i++) {
-            uint128 proceeds = lending.loanPoolProceeds(i);
-            (,, uint128 obligation,,,) = lending.loans(i);
-            lte(proceeds, obligation, "GL-09: loanPoolProceeds > obligation");
-        }
-    }
-
-    /// @notice GL-60: totalSupply == sum of all known holder balances
-    function property_total_supply_eq_holder_sum() public {
-        uint256 sum = sumActorsERC20Balances(address(ovrfloToken));
-        sum += ovrfloToken.balanceOf(address(vault));
-        sum += ovrfloToken.balanceOf(address(lending));
-        sum += ovrfloToken.balanceOf(treasury);
-        sum += ovrfloToken.balanceOf(SABLIER_ADDR);
-        if (mockFlashBorrowerAddr != address(0)) {
-            sum += ovrfloToken.balanceOf(mockFlashBorrowerAddr);
-        }
-        eq(ovrfloToken.totalSupply(), sum, "GL-60: totalSupply != sum of holder balances");
-    }
-
-    // ─────────────── Liveness & Solvency ───────────────
-
-    /// @notice GL-55: Subsumed by GL-02 (combined solvency)
-    /// @dev The original property checked that pure wrappers' balances <= wrappedUnderlying.
-    ///      This is too strict given ovrfloToken fungibility — pure wrappers can also claim
-    ///      PT post-maturity, swap on a DEX, or use any other exit path. The fungibility is
-    ///      a design feature that increases exit optionality, not a bug. The combined
-    ///      solvency invariant (GL-02) is the correct check.
-    function property_pure_wrapper_can_unwrap() public {
-        // No-op: subsumed by GL-02 (combined solvency)
-    }
-
-    /// @notice GL-56: Subsumed by GL-02 (combined solvency)
-    /// @dev The original property checked that depositors' balances <= marketTotalDeposited.
-    ///      This is too strict given ovrfloToken fungibility — depositors can also unwrap
-    ///      underlying, swap on a DEX, or use any other exit path. The combined solvency
-    ///      invariant (GL-02) is the correct check.
-    function property_depositor_can_claim() public {
-        // No-op: subsumed by GL-02 (combined solvency)
-    }
-
-    /// @notice GL-59: No orphaned wrap reserve (every wrapped unit has a corresponding token)
-    function property_no_orphaned_wrap_reserve() public {
-        lte(vault.wrappedUnderlying(), ovrfloToken.totalSupply(), "GL-59: orphaned wrap reserve");
-    }
-
-    /// @notice GL-63: Sum outstanding <= sum remaining face values across all loans
-    function property_sum_outstanding_le_remaining() public {
-        uint256 nextLoan = lending.nextLoanId();
-        uint256 sumOutstanding;
-        uint256 sumRemaining;
-        for (uint256 i = 1; i < nextLoan; i++) {
-            (, uint256 streamId, uint128 obligation, uint128 drawn, uint128 repaid,) = lending.loans(i);
-            uint128 outstanding = obligation - drawn - repaid;
-            sumOutstanding += outstanding;
-            try ISablierV2LockupLinear(SABLIER_ADDR).getDepositedAmount(streamId) returns (uint128 deposited) {
-                uint128 withdrawn = ISablierV2LockupLinear(SABLIER_ADDR).getWithdrawnAmount(streamId);
-                if (deposited > withdrawn) {
-                    sumRemaining += deposited - withdrawn;
-                }
-            } catch {}
-        }
-        lte(sumOutstanding, sumRemaining, "GL-63: sum outstanding > sum remaining");
-    }
-
-    // ─────────────── Zero-State ───────────────
-
-    /// @notice GL-58: After all withdraw: totalSupply==0, MTD==0, wrappedUnderlying==0
-    function property_zero_state_after_withdraw() public {
-        if (ovrfloToken.totalSupply() == 0) {
-            eq(vault.marketTotalDeposited(market), 0, "GL-58: MTD != 0 when totalSupply == 0");
-            eq(vault.wrappedUnderlying(), 0, "GL-58: wrappedUnderlying != 0 when totalSupply == 0");
-        }
-    }
-
-    // ─────────────── State Transitions (one-way flags) ───────────────
-
-    /// @notice GL-12: saleListing.active never goes false -> true
-    function property_listing_active_no_revival() public {
-        uint256 nextListing = lending.nextSaleListingId();
-        for (uint256 i = 1; i < nextListing; i++) {
-            (,,,,, bool active) = lending.saleListings(i);
-            if (ghost_listingSeen[i]) {
-                t(!(ghost_listingActiveSnapshot[i] == false && active), "GL-12: listing active false->true");
+    /// @notice GL-10: no tracked position's `unfilled` ever grows after creation — fills
+    ///         and withdrawals only shrink it, and a donation must not touch it at all
+    ///         (`positionState` derives from tree state, never from balanceOf).
+    function property_donation_no_position_inflation() public {
+        for (uint256 i; i < positionIds.length; ++i) {
+            uint256 positionId = positionIds[i];
+            (,,, uint128 unfilled) = lending.positionState(positionId);
+            if (ghost_unfilledSeen[positionId]) {
+                lte(unfilled, ghost_lastUnfilled[positionId], "GL-10: a position's unfilled amount grew after creation");
             }
-            ghost_listingSeen[i] = true;
-            ghost_listingActiveSnapshot[i] = active;
+            ghost_lastUnfilled[positionId] = unfilled;
+            ghost_unfilledSeen[positionId] = true;
         }
     }
 
-    /// @notice GL-13: loan.closed never goes true -> false
-    function property_loan_closed_no_revival() public {
-        uint256 nextLoan = lending.nextLoanId();
-        for (uint256 i = 1; i < nextLoan; i++) {
-            (,,,,, bool closed) = lending.loans(i);
-            if (ghost_loanSeen[i]) {
-                t(!(ghost_loanClosedSnapshot[i] && !closed), "GL-13: loan closed true->false");
-            }
-            ghost_loanSeen[i] = true;
-            ghost_loanClosedSnapshot[i] = closed;
+    /// @notice GL-11: a donation cannot inflate any loan's `proceeds` pot: the pot never
+    ///         exceeds the loan's recovered total, and the difference `(drawn + repaid) −
+    ///         proceeds` — exactly the loan's cumulative claim payout — is monotone. A
+    ///         balance-blind credit into `proceeds` would make that payout total fall.
+    function property_donation_no_proceeds_inflation() public {
+        for (uint256 i; i < loanIds.length; ++i) {
+            uint256 loanId = loanIds[i];
+            (,,,,,,,,,, uint128 drawn, uint128 repaid) = lending.loans(loanId);
+            uint256 recovered = uint256(drawn) + uint256(repaid);
+            uint256 pot = lending.proceeds(loanId);
+            lte(pot, recovered, "GL-11: loan pot exceeds its recovered total (credited from thin air)");
+            uint256 paid = recovered - pot;
+            gte(paid, ghost_maxLoanPaid[loanId], "GL-11: per-loan payout total decreased (proceeds inflated)");
+            ghost_maxLoanPaid[loanId] = paid;
         }
     }
 
-    // ─────────────── ID Counter Monotonicity ───────────────
-
-    /// @notice GL-15: All 3 ID counters monotonically non-decreasing
-    function property_id_counters_monotonic() public {
-        uint256 currentLiquidity = lending.nextLiquidityId();
-        uint256 currentListing = lending.nextSaleListingId();
-        uint256 currentLoan = lending.nextLoanId();
-        gte(currentLiquidity, ghosts.ghost_lastNextLiquidityId, "GL-15: nextLiquidityId decreased");
-        gte(currentListing, ghosts.ghost_lastNextSaleListingId, "GL-15: nextSaleListingId decreased");
-        gte(currentLoan, ghosts.ghost_lastNextLoanId, "GL-15: nextLoanId decreased");
-        ghosts.ghost_lastNextLiquidityId = currentLiquidity;
-        ghosts.ghost_lastNextSaleListingId = currentListing;
-        ghosts.ghost_lastNextLoanId = currentLoan;
-    }
-
-    /// @notice GL-19: factory.ovrfloCount never decreases
-    function property_ovrflo_count_monotonic() public {
-        uint256 current = factory.ovrfloCount();
-        gte(current, ghost_lastOvrfloCount, "GL-19: ovrfloCount decreased");
-        ghost_lastOvrfloCount = current;
-    }
-
-    /// @notice GL-20: factory.lendingCount never decreases
-    function property_lending_count_monotonic() public {
-        uint256 current = factory.lendingCount();
-        gte(current, ghost_lastLendingCount, "GL-20: lendingCount decreased");
-        ghost_lastLendingCount = current;
-    }
-
-    /// @notice GL-21: factory.approvedMarketCount never decreases
-    function property_approved_market_count_monotonic() public {
-        uint256 current = factory.approvedMarketCount(address(vault));
-        gte(current, ghost_lastApprovedMarketCount, "GL-21: approvedMarketCount decreased");
-        ghost_lastApprovedMarketCount = current;
-    }
-
-    // ─────────────── Accumulator Monotonicity ───────────────
-
-    /// @notice GL-16: loan.drawn never decreases for any loan
-    function property_drawn_monotonic() public {
-        uint256 nextLoan = lending.nextLoanId();
-        for (uint256 i = 1; i < nextLoan; i++) {
-            (,,, uint128 drawn,,) = lending.loans(i);
-            gte(drawn, ghost_loanDrawnSnapshot[i], "GL-16: drawn decreased");
-            ghost_loanDrawnSnapshot[i] = drawn;
-        }
-    }
-
-    /// @notice GL-17: loan.repaid never decreases for any loan
-    function property_repaid_monotonic() public {
-        uint256 nextLoan = lending.nextLoanId();
-        for (uint256 i = 1; i < nextLoan; i++) {
-            (,,,, uint128 repaid,) = lending.loans(i);
-            gte(repaid, ghost_loanRepaidSnapshot[i], "GL-17: repaid decreased");
-            ghost_loanRepaidSnapshot[i] = repaid;
-        }
-    }
-
-    /// @notice GL-18: loanPoolReceived[loanPoolId][contributor] never decreases
-    function property_pool_received_monotonic() public {
-        uint256 nextPool = lending.nextLoanId();
-        for (uint256 p = 1; p < nextPool; p++) {
-            for (uint256 a = 0; a < actors.length; a++) {
-                if (lending.loanPoolContributions(p, actors[a]) > 0) {
-                    uint128 received = lending.loanPoolReceived(p, actors[a]);
-                    gte(received, ghost_poolReceivedSnapshot[p][actors[a]], "GL-18: loanPoolReceived decreased");
-                    ghost_poolReceivedSnapshot[p][actors[a]] = received;
-                }
+    /// @notice GL-12: the cursor never strands a live epoch — every tape strictly below
+    ///         its tick's `oldestLiveEpoch` fails the dead-epoch predicate (available
+    ///         depth below MIN_LIQUIDITY). Sound as a standing state check because dead
+    ///         epochs stay dead: supply only appends to `currentEpoch` and withdraw only
+    ///         shrinks depth.
+    function property_cursor_predicate() public {
+        uint64 minUnits = uint64(lending.MIN_LIQUIDITY_AMOUNT() / lending.UNIT());
+        for (uint256 i; i < tapes.length; ++i) {
+            Tape storage tape = tapes[i];
+            (uint32 oldest,) = lending.fizz_tickCursors(tape.market, tape.aprBps);
+            if (tape.epoch < oldest) {
+                (uint64 root, uint64 filled,,,,) = lending.fizz_epochState(tape.market, tape.aprBps, tape.epoch);
+                t(
+                    root >= filled && root - filled < minUnits,
+                    "GL-12: the epoch cursor skipped past a live epoch's liquidity"
+                );
             }
         }
     }
 
-    // ─────────────── Slot Existence Invariants ───────────────
+    /// @notice GL-13: no lending admin surface yields to a non-owner. This tester
+    ///         contract is the FACTORY admin but not the lending owner (the factory
+    ///         contract is), so a direct call from here must revert with storage
+    ///         untouched.
+    function property_lending_admin_onlyOwner() public {
+        uint16 feeBefore = lending.feeBps();
+        uint16 minBefore = lending.aprMinBps();
+        uint16 maxBefore = lending.aprMaxBps();
+        address treasuryBefore = lending.treasury();
 
-    /// @notice GL-25: liquidity slot populated iff id < nextLiquidityId
-    function property_liquidity_slot_iff_id() public {
-        uint256 nextLiquidity = lending.nextLiquidityId();
-        for (uint256 i = 1; i < nextLiquidity; i++) {
-            (address lender,,,) = lending.liquidityPositions(i);
-            t(lender != address(0), "GL-25: liquidity slot not populated for id < nextLiquidityId");
-        }
-    }
-
-    /// @notice GL-26: loan slot populated iff id < nextLoanId
-    function property_loan_slot_iff_id() public {
-        uint256 nextLoan = lending.nextLoanId();
-        for (uint256 i = 1; i < nextLoan; i++) {
-            (address borrower,,,,,) = lending.loans(i);
-            t(borrower != address(0), "GL-26: loan slot not populated");
-        }
-    }
-
-    /// @notice GL-27: pool slot populated iff id < nextLoanId
-    function property_pool_slot_iff_id() public {
-        uint256 nextPool = lending.nextLoanId();
-        for (uint256 i = 1; i < nextPool; i++) {
-            (address borrower,,,) = lending.loanPools(i);
-            t(borrower != address(0), "GL-27: pool slot not populated");
-        }
-    }
-
-    /// @notice GL-28: listing slot populated iff id < nextSaleListingId
-    function property_listing_slot_iff_id() public {
-        uint256 nextListing = lending.nextSaleListingId();
-        for (uint256 i = 1; i < nextListing; i++) {
-            (address lender,,,,,) = lending.saleListings(i);
-            t(lender != address(0), "GL-28: listing slot not populated");
-        }
-    }
-
-    /// @notice GL-29: underlyingToOvrflo one-shot (never overwritten)
-    function property_underlying_to_ovrflo_oneshot() public {
-        t(
-            factory.underlyingToOvrflo(address(underlying)) == address(vault),
-            "GL-29: underlyingToOvrflo not set correctly"
-        );
-    }
-
-    /// @notice GL-30: ovrfloToLending iff lendingToOvrflo
-    function property_ovrflo_to_lending_iff() public {
-        t(factory.ovrfloToLending(address(vault)) == address(lending), "GL-30: ovrfloToLending mismatch");
-        t(factory.lendingToOvrflo(address(lending)) == address(vault), "GL-30: lendingToOvrflo mismatch");
-    }
-
-    // ─────────────── Closed-State & Active-State Invariants ───────────────
-
-    /// @notice GL-31: loan.closed implies drawn+repaid==obligation
-    function property_closed_implies_satisfied() public {
-        uint256 nextLoan = lending.nextLoanId();
-        for (uint256 i = 1; i < nextLoan; i++) {
-            (,, uint128 obligation, uint128 drawn, uint128 repaid, bool closed) = lending.loans(i);
-            if (closed) {
-                eq(uint256(drawn) + uint256(repaid), uint256(obligation), "GL-31: closed loan not satisfied");
-            }
-        }
-    }
-
-    // ─────────────── Immutability ───────────────
-
-    /// @notice GL-33: loan.obligation immutable after creation
-    function property_loan_obligation_immutable() public {
-        uint256 nextLoan = lending.nextLoanId();
-        for (uint256 i = 1; i < nextLoan; i++) {
-            (,, uint128 obligation,,,) = lending.loans(i);
-            if (ghost_loanObligationInit[i] == 0) {
-                ghost_loanObligationInit[i] = obligation;
-            } else {
-                eq(obligation, ghost_loanObligationInit[i], "GL-33: loan obligation changed");
-            }
-        }
-    }
-
-    /// @notice GL-34: loan.streamId immutable
-    function property_loan_stream_id_immutable() public {
-        uint256 nextLoan = lending.nextLoanId();
-        for (uint256 i = 1; i < nextLoan; i++) {
-            (, uint256 streamId,,,,) = lending.loans(i);
-            if (ghost_loanStreamIdInit[i] == 0) {
-                ghost_loanStreamIdInit[i] = streamId;
-            } else {
-                eq(streamId, ghost_loanStreamIdInit[i], "GL-34: loan streamId changed");
-            }
-        }
-    }
-
-    /// @notice GL-35: loan.borrower immutable
-    function property_loan_parties_immutable() public {
-        uint256 nextLoan = lending.nextLoanId();
-        for (uint256 i = 1; i < nextLoan; i++) {
-            (address borrower,,,,,) = lending.loans(i);
-            if (ghost_loanBorrowerInit[i] == address(0)) {
-                ghost_loanBorrowerInit[i] = borrower;
-            } else {
-                t(borrower == ghost_loanBorrowerInit[i], "GL-35: loan borrower changed");
-            }
-        }
-    }
-
-    /// @notice GL-36: liquidity.lender/aprBps immutable
-    function property_liquidity_maker_apr_immutable() public {
-        uint256 nextLiquidity = lending.nextLiquidityId();
-        for (uint256 i = 1; i < nextLiquidity; i++) {
-            (address lender,, uint16 aprBps,) = lending.liquidityPositions(i);
-            if (ghost_liquidityMakerInit[i] == address(0)) {
-                ghost_liquidityMakerInit[i] = lender;
-                ghost_liquidityAprBpsInit[i] = aprBps;
-            } else {
-                t(lender == ghost_liquidityMakerInit[i], "GL-36: liquidity lender changed");
-                t(aprBps == ghost_liquidityAprBpsInit[i], "GL-36: liquidity aprBps changed");
-            }
-        }
-    }
-
-    /// @notice GL-37: listing.feeBps immutable (snapshot at post time)
-    function property_listing_fee_immutable() public {
-        uint256 nextListing = lending.nextSaleListingId();
-        for (uint256 i = 1; i < nextListing; i++) {
-            (,,,, uint16 feeBps,) = lending.saleListings(i);
-            if (!ghost_listingFeeRecorded[i]) {
-                ghost_listingFeeBpsInit[i] = feeBps;
-                ghost_listingFeeRecorded[i] = true;
-            } else {
-                eq(uint256(feeBps), uint256(ghost_listingFeeBpsInit[i]), "GL-37: listing feeBps changed");
-            }
-        }
-    }
-
-    /// @notice GL-38: pool.totalContributed immutable
-    function property_pool_total_contributed_immutable() public {
-        uint256 nextPool = lending.nextLoanId();
-        for (uint256 i = 1; i < nextPool; i++) {
-            (,,, uint128 totalContributed) = lending.loanPools(i);
-            if (ghost_poolTotalContributedInit[i] == 0) {
-                ghost_poolTotalContributedInit[i] = totalContributed;
-            } else {
-                eq(totalContributed, ghost_poolTotalContributedInit[i], "GL-38: pool totalContributed changed");
-            }
-        }
-    }
-
-    /// @notice GL-40: loanPoolContributions immutable after creation
-    function property_pool_contributions_immutable() public {
-        uint256 nextPool = lending.nextLoanId();
-        for (uint256 p = 1; p < nextPool; p++) {
-            for (uint256 a = 0; a < actors.length; a++) {
-                uint128 contribution = lending.loanPoolContributions(p, actors[a]);
-                if (contribution > 0) {
-                    if (ghost_poolContributionsInit[p][actors[a]] == 0) {
-                        ghost_poolContributionsInit[p][actors[a]] = contribution;
-                    } else {
-                        eq(
-                            contribution,
-                            ghost_poolContributionsInit[p][actors[a]],
-                            "GL-40: loanPoolContributions changed"
-                        );
-                    }
-                }
-            }
-        }
-    }
-
-    /// @notice GL-41: series ptToken/expiryCached/feeBps immutable
-    function property_series_immutable() public {
-        (, uint16 feeBps, uint256 expiryCached, address ptToken_,,,) = vault.series(market);
-        if (ghost_seriesPtTokenInit[market] == address(0)) {
-            ghost_seriesPtTokenInit[market] = ptToken_;
-            ghost_seriesExpiryInit[market] = expiryCached;
-            ghost_seriesFeeBpsInit[market] = feeBps;
-        } else {
-            t(ptToken_ == ghost_seriesPtTokenInit[market], "GL-41: series ptToken changed");
-            eq(expiryCached, ghost_seriesExpiryInit[market], "GL-41: series expiryCached changed");
-            eq(uint256(feeBps), uint256(ghost_seriesFeeBpsInit[market]), "GL-41: series feeBps changed");
-        }
-    }
-
-    /// @notice GL-42: ptToMarket immutable
-    function property_pt_to_market_immutable() public {
-        address m = vault.ptToMarket(address(ptToken));
-        if (ghost_ptToMarketInit[address(ptToken)] == address(0)) {
-            ghost_ptToMarketInit[address(ptToken)] = m;
-        } else {
-            t(m == ghost_ptToMarketInit[address(ptToken)], "GL-42: ptToMarket changed");
-        }
-    }
-
-    // ─────────────── Rounding Direction ───────────────
-
-    /// @notice GL-43: grossPrice always floors (buyer pays less or equal)
-    function property_gross_price_floors() public {
-        uint128 remaining = 1_000_000 ether;
-        uint16 apr = 1000; // 10%
-        uint256 ttm = 180 days;
-        uint256 price = StreamPricing.grossPrice(remaining, apr, ttm);
-        uint256 f = StreamPricing.factor(apr, ttm);
-        // price = floor(remaining * WAD / f), so price * f <= remaining * WAD
-        lte(price * f, uint256(remaining) * WAD, "GL-43: grossPrice not floored");
-    }
-
-    /// @notice GL-44: obligation always ceils (lender owed more or equal)
-    function property_obligation_ceils() public {
-        uint256 borrowAmount = 1_000_000 ether;
-        uint16 apr = 1000; // 10%
-        uint256 ttm = 180 days;
-        uint128 oblig = StreamPricing.obligation(borrowAmount, apr, ttm);
-        uint256 f = StreamPricing.factor(apr, ttm);
-        // obligation = ceil(borrowAmount * f / WAD), so oblig * WAD >= borrowAmount * f
-        gte(uint256(oblig) * WAD, borrowAmount * f, "GL-44: obligation not ceiled");
-    }
-
-    /// @notice GL-45: factor >= WAD always (non-negative accrual)
-    function property_factor_ge_wad() public {
-        gte(StreamPricing.factor(0, 0), WAD, "GL-45: factor < WAD for zero inputs");
-        gte(StreamPricing.factor(10_000, 365 days), WAD, "GL-45: factor < WAD for max inputs");
-    }
-
-    // ─────────────── Zero-Input Reverts ───────────────
-
-    /// @notice GL-46: wrap(0) reverts
-    function property_wrap_zero_reverts() public {
-        try vault.wrap(0) {
-            t(false, "GL-46: wrap(0) did not revert");
+        try lending.setFee(feeBefore) {
+            t(false, "GL-13: non-owner setFee succeeded");
         } catch {}
-    }
-
-    /// @notice GL-47: unwrap(0) reverts
-    function property_unwrap_zero_reverts() public {
-        try vault.unwrap(0) {
-            t(false, "GL-47: unwrap(0) did not revert");
+        try lending.setAprBounds(minBefore, maxBefore) {
+            t(false, "GL-13: non-owner setAprBounds succeeded");
         } catch {}
-    }
-
-    /// @notice GL-48: deposit below MIN_PT_AMOUNT reverts
-    function property_deposit_min_reverts() public {
-        try vault.deposit(market, vault.MIN_PT_AMOUNT() - 1, 0) {
-            t(false, "GL-48: deposit below MIN_PT_AMOUNT did not revert");
+        try lending.setTreasury(treasuryBefore) {
+            t(false, "GL-13: non-owner setTreasury succeeded");
         } catch {}
-    }
-
-    /// @notice GL-49: claim(0) reverts
-    function property_claim_zero_reverts() public {
-        try vault.claim(address(ptToken), 0) {
-            t(false, "GL-49: claim(0) did not revert");
+        try lending.setTickSpacing(address(0xBEEF), 1) {
+            t(false, "GL-13: non-owner setTickSpacing succeeded");
         } catch {}
+
+        eq(lending.feeBps(), feeBefore, "GL-13: feeBps moved under a non-owner call");
+        eq(lending.aprMinBps(), minBefore, "GL-13: aprMinBps moved under a non-owner call");
+        eq(lending.aprMaxBps(), maxBefore, "GL-13: aprMaxBps moved under a non-owner call");
+        t(lending.treasury() == treasuryBefore, "GL-13: treasury moved under a non-owner call");
+        t(lending.tickSpacing(address(0xBEEF)) == 0, "GL-13: tickSpacing moved under a non-owner call");
     }
 
-    /// @notice GL-50: supplyLiquidity(0) reverts
-    function property_post_liquidity_zero_reverts() public {
-        try lending.supplyLiquidity(market, 1000, 0) {
-            t(false, "GL-50: supplyLiquidity(0) did not revert");
-        } catch {}
+    /// @notice GL-14: no admin action (setAprBounds) or later market state retroactively
+    ///         changes an already-originated loan's aprBps, interval, or obligation.
+    /// @dev Shares the creation-time fingerprint machinery with GL-29: the fingerprint
+    ///      hashes every non-servicing field, which includes exactly the rate-defining
+    ///      trio this property pins.
+    function property_fixedRate_frozen() public {
+        _gl_assertLoanFingerprints("GL-14: an admin action moved a live loan's rate/interval/obligation");
     }
 
-    // ─────────────── Pure-Function Monotonicity ───────────────
+    // ―― Entity bookkeeping / slot existence ――
 
-    /// @notice GL-51: toUser monotonic non-decreasing in ptAmount (fixed rate)
-    function property_touser_monotonic() public {
-        try vault.previewStream(market, vault.MIN_PT_AMOUNT()) returns (uint256 toUser1, uint256, uint256) {
-            try vault.previewStream(market, vault.MIN_PT_AMOUNT() * 10) returns (uint256 toUser2, uint256, uint256) {
-                lte(toUser1, toUser2, "GL-51: toUser not monotonic in ptAmount");
-            } catch {}
-        } catch {}
+    /// @notice GL-15: `positions[id].lender != 0` exactly for `1 <= id < nextPositionId`
+    ///         (ids start at 1); the count identity plus per-id checks make it exact.
+    function property_position_slot_exists() public {
+        uint256 next = lending.nextPositionId();
+        eq(positionIds.length + 1, next, "GL-15: tracked position count disagrees with nextPositionId");
+        (address lenderZero,,,,) = lending.positions(0);
+        t(lenderZero == address(0), "GL-15: position id 0 is populated");
+        (address lenderNext,,,,) = lending.positions(next);
+        t(lenderNext == address(0), "GL-15: the slot at nextPositionId is already populated");
+        for (uint256 i; i < positionIds.length; ++i) {
+            (address lender,,,,) = lending.positions(positionIds[i]);
+            t(lender != address(0), "GL-15: an allocated position has a zero lender");
+        }
     }
 
-    /// @notice GL-52: grossPrice monotonic non-decreasing in remaining
-    function property_gross_price_monotonic_remaining() public {
-        uint16 apr = 1000; // 10%
-        uint256 ttm = 180 days;
-        uint256 price1 = StreamPricing.grossPrice(1_000 ether, apr, ttm);
-        uint256 price2 = StreamPricing.grossPrice(2_000 ether, apr, ttm);
-        lte(price1, price2, "GL-52: grossPrice not monotonic in remaining");
+    /// @notice GL-16: `loans[id].borrower != 0` exactly for `1 <= id < nextLoanId`.
+    function property_loan_slot_exists() public {
+        uint256 next = lending.nextLoanId();
+        eq(loanIds.length + 1, next, "GL-16: tracked loan count disagrees with nextLoanId");
+        (address borrowerZero,,,,,,,,,,,) = lending.loans(0);
+        t(borrowerZero == address(0), "GL-16: loan id 0 is populated");
+        (address borrowerNext,,,,,,,,,,,) = lending.loans(next);
+        t(borrowerNext == address(0), "GL-16: the slot at nextLoanId is already populated");
+        for (uint256 i; i < loanIds.length; ++i) {
+            (address borrower,,,,,,,,,,,) = lending.loans(loanIds[i]);
+            t(borrower != address(0), "GL-16: an allocated loan has a zero borrower");
+        }
     }
 
-    /// @notice GL-53: obligation monotonic non-decreasing in borrowAmount
-    function property_obligation_monotonic_borrow() public {
-        uint16 apr = 1000; // 10%
-        uint256 ttm = 180 days;
-        uint128 oblig1 = StreamPricing.obligation(1_000 ether, apr, ttm);
-        uint128 oblig2 = StreamPricing.obligation(2_000 ether, apr, ttm);
-        lte(oblig1, oblig2, "GL-53: obligation not monotonic in borrowAmount");
+    /// @notice GL-17: an unconfigured market (`tickSpacing == 0`) holds no position or
+    ///         loan — `_validateTick` gates every write path.
+    function property_unconfigured_market_empty() public {
+        for (uint256 i; i < positionIds.length; ++i) {
+            (, address m,,,) = lending.positions(positionIds[i]);
+            t(lending.tickSpacing(m) != 0, "GL-17: a position exists on a market with unset tick spacing");
+        }
+        for (uint256 i; i < loanIds.length; ++i) {
+            (,,,, address m,,,,,,,) = lending.loans(loanIds[i]);
+            t(lending.tickSpacing(m) != 0, "GL-17: a loan exists on a market with unset tick spacing");
+        }
     }
 
-    /// @notice GL-54: grossPrice non-increasing in timeToMaturity
-    function property_gross_price_nonincreasing_ttm() public {
-        uint128 remaining = 1_000 ether;
-        uint16 apr = 1000; // 10%
-        uint256 price1 = StreamPricing.grossPrice(remaining, apr, 180 days);
-        uint256 price2 = StreamPricing.grossPrice(remaining, apr, 365 days);
-        gte(price1, price2, "GL-54: grossPrice not non-increasing in ttm");
+    /// @notice GL-18: `loanAt[market][aprBps][epoch][seq] != 0` exactly for
+    ///         `seq < loanCount`, and the per-tape loan lists partition the tracked loans.
+    function property_loanAt_soundness() public {
+        uint256 total;
+        for (uint256 i; i < tapes.length; ++i) {
+            Tape storage tape = tapes[i];
+            (,, uint64 loanCount,,,) = lending.fizz_epochState(tape.market, tape.aprBps, tape.epoch);
+            t(
+                lending.loanAt(tape.market, tape.aprBps, tape.epoch, loanCount) == 0,
+                "GL-18: the tick-epoch loan list has an entry at loanCount"
+            );
+            for (uint64 seq; seq < loanCount; ++seq) {
+                t(
+                    lending.loanAt(tape.market, tape.aprBps, tape.epoch, seq) != 0,
+                    "GL-18: hole inside a tick-epoch loan list"
+                );
+            }
+            total += loanCount;
+        }
+        eq(total, loanIds.length, "GL-18: tick-epoch loan lists do not partition the tracked loans");
+    }
+
+    /// @notice GL-19: `lenderPositionAt` / `borrowerLoanAt` are exactly (complete and
+    ///         correct) each actor's entity sets: every listed entry belongs to that
+    ///         actor, entries are strictly increasing (hence distinct), nothing sits past
+    ///         the count, and the counts sum to the total entity count.
+    function property_index_mirrors_exact() public {
+        uint256 totalPositions;
+        uint256 totalLoans;
+        for (uint256 a; a < actors.length; ++a) {
+            address who = actors[a];
+
+            uint256 positionCount = lending.lenderPositionCount(who);
+            uint256 prevId;
+            for (uint256 i; i < positionCount; ++i) {
+                uint256 positionId = lending.lenderPositionAt(who, i);
+                t(positionId > prevId, "GL-19: lender position index not strictly increasing");
+                (address lender,,,,) = lending.positions(positionId);
+                t(lender == who, "GL-19: lender index points at someone else's position");
+                prevId = positionId;
+            }
+            t(lending.lenderPositionAt(who, positionCount) == 0, "GL-19: lender index has an entry past its count");
+            totalPositions += positionCount;
+
+            uint256 loanCount = lending.borrowerLoanCount(who);
+            prevId = 0;
+            for (uint256 i; i < loanCount; ++i) {
+                uint256 loanId = lending.borrowerLoanAt(who, i);
+                t(loanId > prevId, "GL-19: borrower loan index not strictly increasing");
+                (address borrower,,,,,,,,,,,) = lending.loans(loanId);
+                t(borrower == who, "GL-19: borrower index points at someone else's loan");
+                prevId = loanId;
+            }
+            t(lending.borrowerLoanAt(who, loanCount) == 0, "GL-19: borrower index has an entry past its count");
+            totalLoans += loanCount;
+        }
+        eq(totalPositions, positionIds.length, "GL-19: lender indexes do not cover every tracked position");
+        eq(totalLoans, loanIds.length, "GL-19: borrower indexes do not cover every tracked loan");
+    }
+
+    // ―― Monotonicity ――
+
+    /// @notice GL-20: per-epoch `filled` never exceeds the tree root and never decreases.
+    function property_epoch_filled_bounds() public {
+        for (uint256 i; i < tapes.length; ++i) {
+            Tape storage tape = tapes[i];
+            bytes32 key = tapeKeyOf(tape.market, tape.aprBps, tape.epoch);
+            (uint64 root, uint64 filled,,,,) = lending.fizz_epochState(tape.market, tape.aprBps, tape.epoch);
+            lte(filled, root, "GL-20: epoch filled exceeds its tree root");
+            gte(filled, ghost_maxFilled[key], "GL-20: epoch filled decreased");
+            ghost_maxFilled[key] = filled;
+        }
+    }
+
+    /// @notice GL-21: the loan servicing accumulators (`drawn`, `repaid`) and the
+    ///         per-pair `received` totals are non-decreasing. `received` is scanned
+    ///         through a rotating one-position window over that position's own tape loan
+    ///         list, so every pair that can ever be paid is eventually covered.
+    function property_loan_accumulators_monotonic() public {
+        for (uint256 i; i < loanIds.length; ++i) {
+            uint256 loanId = loanIds[i];
+            (,,,,,,,,,, uint128 drawn, uint128 repaid) = lending.loans(loanId);
+            gte(drawn, ghost_maxDrawn[loanId], "GL-21: loan.drawn decreased");
+            ghost_maxDrawn[loanId] = drawn;
+            gte(repaid, ghost_maxRepaid[loanId], "GL-21: loan.repaid decreased");
+            ghost_maxRepaid[loanId] = repaid;
+        }
+
+        uint256 n = positionIds.length;
+        if (n == 0) return;
+        uint256 positionId = positionIds[ghosts.receivedScanCursor % n];
+        ghosts.receivedScanCursor += 1;
+        (, address m, uint16 apr, uint32 ep,) = lending.positions(positionId);
+        (,, uint64 loanCount,,,) = lending.fizz_epochState(m, apr, ep);
+        for (uint64 seq; seq < loanCount; ++seq) {
+            uint256 loanId = lending.loanAt(m, apr, ep, seq);
+            uint128 pairReceived = lending.received(loanId, positionId);
+            bytes32 pairKey = pairKeyOf(loanId, positionId);
+            gte(pairReceived, ghost_maxReceived[pairKey], "GL-21: received[loan][position] decreased");
+            ghost_maxReceived[pairKey] = pairReceived;
+        }
+    }
+
+    /// @notice GL-22: the id counters never move backwards. (Strict per-allocation
+    ///         increase is a handler-level fact; a sampled global property can only
+    ///         assert the non-decreasing envelope without turning monotone into a
+    ///         brittle equality.)
+    function property_id_counters_increasing() public {
+        uint256 nextPosition = lending.nextPositionId();
+        gte(nextPosition, ghosts.maxNextPositionId, "GL-22: nextPositionId decreased");
+        ghosts.maxNextPositionId = nextPosition;
+
+        uint256 nextLoan = lending.nextLoanId();
+        gte(nextLoan, ghosts.maxNextLoanId, "GL-22: nextLoanId decreased");
+        ghosts.maxNextLoanId = nextLoan;
+    }
+
+    /// @notice GL-23: the structural counters — tree `leaves`, tree `height`, epoch
+    ///         `loanCount` — are each non-decreasing.
+    function property_tree_structural_counters() public {
+        for (uint256 i; i < tapes.length; ++i) {
+            Tape storage tape = tapes[i];
+            bytes32 key = tapeKeyOf(tape.market, tape.aprBps, tape.epoch);
+            (,, uint64 loanCount, uint32 leaves, uint8 height,) =
+                lending.fizz_epochState(tape.market, tape.aprBps, tape.epoch);
+            gte(loanCount, ghost_maxLoanCount[key], "GL-23: epoch loanCount decreased");
+            ghost_maxLoanCount[key] = loanCount;
+            gte(leaves, ghost_maxLeaves[key], "GL-23: tree leaves decreased");
+            ghost_maxLeaves[key] = leaves;
+            gte(height, ghost_maxHeight[key], "GL-23: tree height decreased");
+            ghost_maxHeight[key] = height;
+        }
+    }
+
+    /// @notice GL-24: `currentEpoch` and `oldestLiveEpoch` are non-decreasing, and the
+    ///         cursor never passes `currentEpoch` (which would DoS the tick forever).
+    function property_epoch_cursor_monotonic() public {
+        for (uint256 i; i < tapes.length; ++i) {
+            Tape storage tape = tapes[i];
+            bytes32 key = tickKeyOf(tape.market, tape.aprBps);
+            (uint32 oldest, uint32 current) = lending.fizz_tickCursors(tape.market, tape.aprBps);
+            lte(oldest, current, "GL-24: oldestLiveEpoch passed currentEpoch");
+            gte(current, ghost_maxCurrentEpoch[key], "GL-24: currentEpoch decreased");
+            ghost_maxCurrentEpoch[key] = current;
+            gte(oldest, ghost_maxOldestEpoch[key], "GL-24: oldestLiveEpoch decreased");
+            ghost_maxOldestEpoch[key] = oldest;
+        }
+    }
+
+    /// @notice GL-25: a position's consumed prefix (`filledHistory`, derived from
+    ///         `positionState` exactly as `withdraw` derives it) never decreases —
+    ///         E-1's frozen-history lemma.
+    function property_frozen_history_floor() public {
+        uint256 unit = lending.UNIT();
+        for (uint256 i; i < positionIds.length; ++i) {
+            uint256 positionId = positionIds[i];
+            (, uint64 start, uint64 end, uint128 unfilled) = lending.positionState(positionId);
+            uint64 span = end - start;
+            uint64 unfilledUnits = uint64(unfilled / unit);
+            t(span >= unfilledUnits, "GL-25: a position's unfilled amount exceeds its own interval");
+            uint64 filledHistory = span - unfilledUnits;
+            gte(filledHistory, ghost_maxFilledHistory[positionId], "GL-25: position filled history decreased");
+            ghost_maxFilledHistory[positionId] = filledHistory;
+        }
+    }
+
+    // ―― State transitions ――
+
+    /// @notice GL-26: `loan.closed` is a one-way latch — once the hook observed a
+    ///         closure, the live flag never reads false again.
+    function property_loan_closed_latch() public {
+        for (uint256 i; i < loanIds.length; ++i) {
+            uint256 loanId = loanIds[i];
+            if (!ghost_everClosed[loanId]) continue;
+            (,,, bool closed,,,,,,,,) = lending.loans(loanId);
+            t(closed, "GL-26: a closed loan reopened (closed flipped true -> false)");
+        }
+    }
+
+    /// @notice GL-27: once closed, `loan.drawn` is frozen at its closure value — `claim`
+    ///         stays callable on a closed loan (it pays from the residual pot; that
+    ///         asymmetry is INTENTIONAL and must not be "fixed") but must never harvest
+    ///         the returned stream.
+    function property_claim_not_gated_on_closed() public {
+        for (uint256 i; i < loanIds.length; ++i) {
+            uint256 loanId = loanIds[i];
+            if (!ghost_everClosed[loanId]) continue;
+            (,,,,,,,,,, uint128 drawn,) = lending.loans(loanId);
+            eq(
+                drawn,
+                ghost_drawnAtClose[loanId],
+                "GL-27: drawn moved after closure (a closed loan's stream was harvested)"
+            );
+        }
+    }
+
+    /// @notice GL-28: an epoch rolls over ONLY at terminal capacity and only one step at
+    ///         a time: every epoch strictly below its tick's `currentEpoch` — including
+    ///         `currentEpoch - 1`, which catches a skipped never-supplied epoch — must be
+    ///         a MAX_HEIGHT tree with every leaf allocated.
+    function property_epoch_advance_predicate() public {
+        uint8 maxHeight = lending.fizz_maxTreeHeight();
+        for (uint256 i; i < tapes.length; ++i) {
+            Tape storage tape = tapes[i];
+            (, uint32 current) = lending.fizz_tickCursors(tape.market, tape.aprBps);
+            if (tape.epoch < current) {
+                (,,,, uint8 height, bool atCap) = lending.fizz_epochState(tape.market, tape.aprBps, tape.epoch);
+                t(height == maxHeight && atCap, "GL-28: an epoch rolled over before terminal capacity");
+            }
+            if (current > 0) {
+                (,,,, uint8 prevHeight, bool prevAtCap) = lending.fizz_epochState(tape.market, tape.aprBps, current - 1);
+                t(prevHeight == maxHeight && prevAtCap, "GL-28: currentEpoch advanced past a non-terminal epoch");
+            }
+        }
+    }
+
+    /// @notice GL-29: every `Loan` field except {closed, drawn, repaid} is identical at
+    ///         every observation after creation — checked against the creation-time
+    ///         fingerprint the hook recorded in the same transaction as the borrow.
+    function property_loan_immutable_fields() public {
+        _gl_assertLoanFingerprints("GL-29: an immutable loan field changed after creation");
+    }
+
+    /// @notice GL-30: the vault owns its ovrfloToken for the campaign's whole life.
+    function property_ovrfloToken_owner_stable() public {
+        t(ovrfloToken.owner() == address(vault), "GL-30: ovrfloToken ownership left the vault");
+    }
+
+    /// @notice GL-31: [GL-70 successor] a closed loan's `drawn` equals the pledged
+    ///         stream's withdrawn delta over EXACTLY that loan's custody window,
+    ///         `snapshotAtClose - snapshotAtCreation`, both recorded by the hook in the
+    ///         same transaction as origination/closure (either closure path). NEVER a
+    ///         live `getWithdrawnAmount` re-read: the counter is cumulative across uses
+    ///         and a returned stream is immediately re-pledgeable, which is precisely
+    ///         the pre-rewrite false positive this formulation buries.
+    function property_gl70_successor_closeTimeDrawIsolation() public {
+        for (uint256 i; i < loanIds.length; ++i) {
+            uint256 loanId = loanIds[i];
+            if (!ghost_everClosed[loanId]) continue;
+            (,,,,,,,,,, uint128 drawn,) = lending.loans(loanId);
+            uint128 atClose = ghost_loanWithdrawnAtClose[loanId];
+            uint128 atCreate = ghost_loanWithdrawnAtCreate[loanId];
+            gte(atClose, atCreate, "GL-31: close-time stream snapshot below the origination snapshot");
+            eq(drawn, atClose - atCreate, "GL-31: closed loan's drawn != its own custody window's stream-draw delta");
+        }
+    }
+
+    // ―― Shared global-property internals (prefixed _gl_) ――
+
+    /// @dev GL-14 / GL-29 core: recompute each tracked loan's immutable-field hash from
+    ///      the flattened getter, in the exact field order `Base._fingerprint` used at
+    ///      creation, and compare against the hook-recorded creation-time value.
+    function _gl_assertLoanFingerprints(string memory reason) internal {
+        for (uint256 i; i < loanIds.length; ++i) {
+            uint256 loanId = loanIds[i];
+            (
+                address borrower,
+                uint16 aprBps,
+                uint32 epoch,,
+                address m,
+                uint64 seq,
+                uint256 streamId,
+                uint64 fillStart,
+                uint64 fillEnd,
+                uint128 obligation_,,
+            ) = lending.loans(loanId);
+            bytes32 fingerprint =
+                keccak256(abi.encode(borrower, aprBps, epoch, m, seq, streamId, fillStart, fillEnd, obligation_));
+            t(fingerprint == ghost_loanFingerprint[loanId], reason);
+        }
     }
 
     // ――――――――――――――――――― Specific properties ――――――――――――――――――――
     // These properties must hold after specific function calls.
     // They MUST BE INTERNAL and called at the end of the relevant handlers.
 
-    // ─────────────── Round-Trip Conservation ───────────────
+    // Shared readers for the specific properties. They go through the FLATTENED public
+    // getters (and skipped tuple components) on purpose: that keeps this file free of a
+    // `OVRFLOLending` struct import, which the handlers already carry.
 
-    /// @notice SP-01, SP-06: wrap -> unwrap returns exactly same underlying (C2 dust)
-    function property_wrapUnwrapRoundTrip(uint256 underlyingBefore, uint256 underlyingAfter) internal {
-        eq(underlyingBefore, underlyingAfter, "SP-01/06: wrap->unwrap not exact round-trip");
+    /// @dev The loan fields the specific properties read, via the flattened `loans` getter.
+    function _sp_loanFields(uint256 loanId)
+        internal
+        view
+        returns (bool closed, uint64 fillStart, uint64 fillEnd, uint128 obligation_, uint128 drawn, uint128 repaid)
+    {
+        (,,, closed,,,, fillStart, fillEnd, obligation_, drawn, repaid) = lending.loans(loanId);
     }
 
-    /// @notice SP-02: unwrap -> wrap returns exactly same ovrfloToken
-    function property_unwrapWrapRoundTrip(uint256 ovrfloBefore, uint256 ovrfloAfter) internal {
-        eq(ovrfloBefore, ovrfloAfter, "SP-02: unwrap->wrap not exact round-trip");
+    /// @dev The loan's tape coordinate, via the flattened `loans` getter.
+    function _sp_loanTape(uint256 loanId)
+        internal
+        view
+        returns (address borrower, address market_, uint16 aprBps, uint32 epoch, uint64 seq)
+    {
+        (borrower, aprBps, epoch,, market_, seq,,,,,,) = lending.loans(loanId);
     }
 
-    /// @notice SP-03: supplyLiquidity -> withdrawLiquidity returns same availableLiquidity
-    function property_supplyLiquidityCancelRoundTrip(uint256 underlyingBefore, uint256 underlyingAfter) internal {
-        eq(underlyingBefore, underlyingAfter, "SP-03: supplyLiquidity->withdrawLiquidity not exact round-trip");
+    /// @dev Hash of a position's STORED fields only. Stable across a withdraw, which may
+    ///      shrink the leaf but must never rewrite the struct.
+    function _sp_positionStructHash(uint256 positionId) internal view returns (bytes32) {
+        (address lender, address market_, uint16 aprBps, uint32 epoch, uint32 leafIndex) = lending.positions(positionId);
+        return keccak256(abi.encode(lender, market_, aprBps, epoch, leafIndex));
     }
 
-    /// @notice SP-04: postSaleListing -> cancelSaleListing returns stream unchanged
-    function property_postListingCancelRoundTrip(address ownerBefore, address ownerAfter) internal {
-        t(ownerBefore == ownerAfter, "SP-04: postListing->cancelListing stream owner changed");
+    /// @dev Hash of a position's stored fields PLUS its derived tape interval. Stable across
+    ///      `supply` (append-only) and `borrow` (epoch-slot writes only), neither of which may
+    ///      move an existing coordinate. NOT stable across a withdraw, which compacts left.
+    function _sp_positionFullHash(uint256 positionId) internal view returns (bytes32) {
+        (, uint64 start, uint64 end,) = lending.positionState(positionId);
+        return keccak256(abi.encode(_sp_positionStructHash(positionId), start, end));
     }
 
-    /// @notice SP-05: deposit -> claim conserves value (actor does not gain PT)
-    /// @dev SP-61 (MTD returns to pre-deposit) was removed: the round-trip handler cannot
-    ///      isolate from other actors' deposits/claims in the same call sequence, so the
-    ///      absolute MTD equality check is a false positive. MTD conservation per-operation
-    ///      is already verified by SP-26 (deposit increases MTD by ptAmount) and SP-29
-    ///      (claim decreases MTD by amount), which run in isolation in their respective
-    ///      handlers. The combined solvency invariant (GL-02) covers the global picture.
-    function property_depositClaimRoundTrip(uint256 ptBefore, uint256 ptAfter, uint256, uint256, uint256) internal {
-        lte(ptAfter, ptBefore, "SP-05: actor gained PT from deposit->claim cycle");
-    }
-
-    // ─────────────── Deposit Properties ───────────────
-
-    /// @notice SP-07: deposit conserves toUser + toStream == ptAmount, toStream > 0
-    function property_depositConservesSplit(uint256, uint256 toStream, uint256) internal {
-        // eq leg removed as tautological (guaranteed by _computeSplit); keep toStream > 0 check
-        gt(toStream, 0, "SP-07: toStream is zero");
-    }
-
-    /// @notice SP-16: deposit toUser capped at ptAmount
-    function property_depositToUserCapped(uint256 toUser, uint256 ptAmount) internal {
-        lte(toUser, ptAmount, "SP-16: toUser > ptAmount");
-    }
-
-    /// @notice SP-17: deposit fee floored (protocol never overcharges)
-    function property_depositFeeFloored(uint256 feeAmount, uint256 toUser, uint16 feeBps) internal {
-        if (feeBps == 0) {
-            eq(feeAmount, 0, "SP-17: fee non-zero when feeBps is zero");
-            return;
-        }
-        // fee = floor(toUser * feeBps / BASIS_POINTS), so fee * BASIS_POINTS <= toUser * feeBps
-        lte(feeAmount * BASIS_POINTS, uint256(toUser) * uint256(feeBps), "SP-17: deposit fee not floored");
-    }
-
-    /// @notice SP-26: marketTotalDeposited increases by exactly ptAmount after deposit
-    function property_depositIncreasesMtd(uint256 ptAmount) internal {
-        eq(
-            stateAfter.vaultTotalDeposited,
-            stateBefore.vaultTotalDeposited + ptAmount,
-            "SP-26: MTD did not increase by ptAmount"
-        );
-    }
-
-    /// @notice SP-27: wrappedUnderlying unchanged after deposit
-    function property_depositWrappedUnchanged() internal {
-        eq(
-            stateAfter.vaultWrappedUnderlying,
-            stateBefore.vaultWrappedUnderlying,
-            "SP-27: wrappedUnderlying changed in deposit"
-        );
-    }
-
-    /// @notice SP-28: deposit only succeeds pre-maturity
-    function property_depositPreMaturity(address _market) internal {
-        (,, uint256 expiry,,,,) = vault.series(_market);
-        lt(block.timestamp, expiry, "SP-28: deposit succeeded post-maturity");
-    }
-
-    /// @notice SP-63: toUser is non-decreasing in ptAmount for a fixed rate
-    /// @dev Replaces the ratio check which failed due to mulDiv flooring. The vault uses
-    ///      fixed oracle-rate pricing (not share-based), so the ratio toUser/ptAmount varies
-    ///      with input size due to integer truncation. The meaningful check is that a larger
-    ///      deposit never yields fewer immediate tokens when the rate is unchanged.
-    function property_noShareInflation(
-        uint256 prevToUser,
-        uint256 prevPtAmount,
-        uint256 toUser,
-        uint256 ptAmount,
-        uint256 prevRate
+    /// @notice SP-01: supply -> withdraw with no intervening borrow refunds exactly the amount
+    ///         supplied and leaves the tick's borrowable depth exactly where it started.
+    function property_supplyWithdraw_exact(
+        uint256 balanceBefore,
+        uint256 balanceAfter,
+        uint128 depthBefore,
+        uint128 depthAfter
     ) internal {
-        if (prevPtAmount > 0 && ptAmount > prevPtAmount) {
-            uint256 currentRate = mockOracle.rate();
-            if (currentRate != prevRate) return;
-            gte(toUser, prevToUser, "SP-63: toUser decreased for larger ptAmount");
-        }
+        eq(balanceAfter, balanceBefore, "SP-01: supply->withdraw did not refund exactly the amount supplied");
+        eq(depthAfter, depthBefore, "SP-01: supply->withdraw moved the tick's borrowable depth (filled changed)");
     }
 
-    /// @notice SP-11: previewDeposit matches actual deposit (same block, fixed oracle)
-    function property_previewDepositMatches(
-        uint256 toUser,
-        uint256 toStream,
-        uint256 feeAmount,
-        address _market,
-        uint256 ptAmount
+    /// @notice SP-02: N repeated supply/withdraw cycles never drift the actor's underlying balance.
+    /// @dev `gained`/`lost` are cumulative across every cycle the campaign has run, so an
+    ///      off-by-one that only shows up after repeated leaf mutation cannot hide behind a
+    ///      single exact round trip.
+    function property_supplyWithdraw_noDrift(uint256 gained, uint256 lost, uint256 cycles) internal {
+        t(cycles > 0, "SP-02: drift check ran without a completed supply/withdraw cycle");
+        eq(gained, 0, "SP-02: repeated supply/withdraw cycles created underlying out of nothing");
+        eq(lost, 0, "SP-02: repeated supply/withdraw cycles leaked the lender's underlying");
+    }
+
+    /// @notice SP-03: N repeated wrap/unwrap cycles never drift the actor's balances.
+    function property_wrapUnwrap_noDrift(
+        uint256 underlyingBefore,
+        uint256 underlyingAfter,
+        uint256 tokenBefore,
+        uint256 tokenAfter,
+        uint256 cycles
     ) internal {
-        try vault.previewDeposit(_market, ptAmount) returns (
-            uint256 pToUser, uint256 pToStream, uint256 pFee, uint256
-        ) {
-            eq(toUser, pToUser, "SP-11: previewDeposit toUser mismatch");
-            eq(toStream, pToStream, "SP-11: previewDeposit toStream mismatch");
-            eq(feeAmount, pFee, "SP-11: previewDeposit fee mismatch");
-        } catch {}
+        t(cycles > 0, "SP-03: drift check ran without a completed wrap/unwrap cycle");
+        eq(underlyingAfter, underlyingBefore, "SP-03: wrap->unwrap drifted the actor's underlying balance");
+        eq(tokenAfter, tokenBefore, "SP-03: wrap->unwrap drifted the actor's ovrfloToken balance");
     }
 
-    /// @notice SP-12: previewStream matches actual deposit split
-    function property_previewStreamMatches(uint256 toUser, uint256 toStream, address _market, uint256 ptAmount)
+    /// @notice SP-04: previewDeposit's reported split AND fee are exactly what `deposit` applies
+    ///         in the same block.
+    function property_previewDeposit_matchesApplied(
+        uint256 previewToUser,
+        uint256 previewToStream,
+        uint256 previewFee,
+        uint256 actualToUser,
+        uint256 actualToStream,
+        uint256 actualFee
+    ) internal {
+        eq(previewToUser, actualToUser, "SP-04: previewDeposit's toUser is not what deposit minted");
+        eq(previewToStream, actualToStream, "SP-04: previewDeposit's toStream is not what deposit streamed");
+        eq(previewFee, actualFee, "SP-04: previewDeposit's fee is not what deposit charged");
+    }
+
+    /// @notice SP-05: a FULLY VESTED stream always covers its loan, so `close` never reverts
+    ///         NotCovered there.
+    /// @dev The gate is full vest (`withdrawable == deposited - withdrawn`), never
+    ///      `withdrawable >= outstanding` — the latter would just re-state `close`'s own guard.
+    ///      What is actually asserted is the behavioural form of `obligation <= remaining`: if
+    ///      grossPrice's floor and obligation's ceil ever drift apart, the loan becomes
+    ///      permanently unclosable and this fires.
+    function property_freshLoan_alwaysClosable(bool notCoveredAtFullVest) internal {
+        t(!notCoveredAtFullVest, "SP-05: close reverted NotCovered on a fully-vested stream (obligation > remaining)");
+    }
+
+    /// @notice SP-06: `targetBorrow == type(uint128).max` partial-fills instead of faulting.
+    /// @dev The documented deliberate exception to the `_toUnits` conversion discipline. A
+    ///      "cleanup" refactor reusing `_toUnits` here reintroduces a SafeCast narrowing revert,
+    ///      which is exactly what `arithmeticFault` detects.
+    function property_maxSentinel_partialFills(bool arithmeticFault) internal {
+        t(!arithmeticFault, "SP-06: targetBorrow == type(uint128).max tripped an arithmetic/SafeCast fault");
+    }
+
+    /// @notice SP-07: obligation <= the stream's remaining face, observed black-box from Sablier
+    ///         immediately before the fill.
+    function property_obligation_le_remaining_atOrigination(uint128 obligation_, uint128 remainingBefore) internal {
+        lte(obligation_, remainingBefore, "SP-07: loan obligation exceeded the pledged stream's remaining face");
+    }
+
+    /// @notice SP-08: on the exact fill boundary (`actualBorrow == grossPrice`) the obligation
+    ///         equals `remaining` EXACTLY, not merely `<=`.
+    function property_equalityFastPath_exact(uint128 obligation_, uint128 remainingAtOrigination) internal {
+        eq(obligation_, remainingAtOrigination, "SP-08: actualBorrow landed on grossPrice but obligation != remaining");
+    }
+
+    /// @notice SP-09: once a loan is closed AND every contributing position is drained (checked,
+    ///         not assumed), the residual pot is at most 1 wei per contributing position.
+    function property_closedLoan_dustBounded(uint128 residualPot, uint256 contributors) internal {
+        lte(residualPot, contributors, "SP-09: a closed, fully drained loan stranded more than 1 wei per contributor");
+    }
+
+    /// @notice SP-10: previewStream's reported split is exactly what `deposit` applies.
+    function property_vaultPreview_matchesMoneyPath(
+        uint256 previewToUser,
+        uint256 previewToStream,
+        uint256 actualToUser,
+        uint256 actualToStream
+    ) internal {
+        eq(previewToUser, actualToUser, "SP-10: previewStream's toUser is not what deposit minted");
+        eq(previewToStream, actualToStream, "SP-10: previewStream's toStream is not what deposit streamed");
+    }
+
+    /// @notice SP-11: repay reduces outstanding by precisely the repaid amount, with no
+    ///         time-dependent discount however early it lands relative to seriesMaturity.
+    function property_repay_faceValue_timeIndependent(uint256 loanId, uint128 outstandingBefore, uint128 amount)
         internal
     {
-        try vault.previewStream(_market, ptAmount) returns (uint256 pToUser, uint256 pToStream, uint256) {
-            eq(toUser, pToUser, "SP-12: previewStream toUser mismatch");
-            eq(toStream, pToStream, "SP-12: previewStream toStream mismatch");
-        } catch {}
-    }
-
-    /// @notice SP-14: deposit floors toUser (toUser * WAD <= ptAmount * rate)
-    function property_depositFloorsToUser(uint256 toUser, uint256 ptAmount, address _market) internal {
-        try vault.previewRate(_market) returns (uint256 rateE18) {
-            lte(toUser * WAD, ptAmount * rateE18, "SP-14: toUser not floored");
-        } catch {}
-    }
-
-    // ─────────────── Claim Properties ───────────────
-
-    /// @notice SP-29: marketTotalDeposited decreases by exactly amount after claim
-    function property_claimDecreasesMtd(uint256 amount) internal {
+        (, uint128 outstandingAfter) = lending.loanState(loanId);
         eq(
-            stateBefore.vaultTotalDeposited - stateAfter.vaultTotalDeposited,
+            outstandingBefore - outstandingAfter,
             amount,
-            "SP-29: MTD did not decrease by amount"
+            "SP-11: repay moved outstanding by other than the repaid amount"
         );
     }
 
-    /// @notice SP-30: claim only succeeds post-maturity
-    function property_claimPostMaturity(address ptToken_) internal {
-        address m = vault.ptToMarket(ptToken_);
-        (,, uint256 expiry,,,,) = vault.series(m);
-        gte(block.timestamp, expiry, "SP-30: claim succeeded pre-maturity");
-    }
+    /// @notice SP-12: supply allocates exactly one position id whose stored fields match the
+    ///         call inputs, and appends exactly one lenderPositionAt entry at the pre-call index.
+    function property_supply_postconditions(
+        uint256 returnedId,
+        uint256 nextPositionIdBefore,
+        address expectedLender,
+        address expectedMarket,
+        uint16 expectedAprBps,
+        uint128 amount,
+        uint256 lenderCountBefore
+    ) internal {
+        eq(returnedId, nextPositionIdBefore, "SP-12: supply did not allocate the next position id");
+        eq(lending.nextPositionId(), nextPositionIdBefore + 1, "SP-12: supply moved nextPositionId by other than 1");
 
-    /// @notice SP-31: wrappedUnderlying unchanged after claim
-    function property_claimWrappedUnchanged() internal {
+        (address lender, address m, uint16 apr,,) = lending.positions(returnedId);
+        t(lender == expectedLender, "SP-12: stored lender is not the caller");
+        t(m == expectedMarket, "SP-12: stored market does not match the call input");
+        eq(apr, expectedAprBps, "SP-12: stored aprBps does not match the call input");
+
+        (, uint64 intervalStart, uint64 intervalEnd, uint128 unfilled) = lending.positionState(returnedId);
         eq(
-            stateAfter.vaultWrappedUnderlying,
-            stateBefore.vaultWrappedUnderlying,
-            "SP-31: wrappedUnderlying changed in claim"
-        );
-    }
-
-    /// @notice SP-14: claim is exact 1:1 (ovrfloToken burned == PT received)
-    function property_claimExactOneToOne(uint256 amount) internal {
-        eq(stateBefore.actorOvrfloToken - stateAfter.actorOvrfloToken, amount, "SP-14: ovrfloToken not burned 1:1");
-        eq(stateAfter.actorPt - stateBefore.actorPt, amount, "SP-14: PT not received 1:1");
-    }
-
-    /// @notice SP-76: Low deposit limit does not brick claims
-    function property_lowLimitNoBrickClaim() internal {
-        // Claim succeeded, so MTD accounting worked regardless of deposit limit
-        t(stateAfter.vaultTotalDeposited <= stateBefore.vaultTotalDeposited, "SP-76: MTD increased in claim");
-    }
-
-    // ─────────────── Wrap/Unwrap Properties ───────────────
-
-    /// @notice SP-32: wrappedUnderlying increases by exactly amount after wrap
-    function property_wrapIncreasesWrapped(uint256 amount) internal {
-        eq(
-            stateAfter.vaultWrappedUnderlying,
-            stateBefore.vaultWrappedUnderlying + amount,
-            "SP-32: wrappedUnderlying did not increase by amount"
-        );
-    }
-
-    /// @notice SP-33: wrappedUnderlying decreases by exactly amount after unwrap
-    function property_unwrapDecreasesWrapped(uint256 amount) internal {
-        eq(
-            stateBefore.vaultWrappedUnderlying - stateAfter.vaultWrappedUnderlying,
+            uint256(intervalEnd - intervalStart) * lending.UNIT(),
             amount,
-            "SP-33: wrappedUnderlying did not decrease by amount"
+            "SP-12: leaf size differs from the supplied amount"
         );
-    }
+        eq(unfilled, amount, "SP-12: a fresh position is not fully unfilled");
 
-    /// @notice SP-34: marketTotalDeposited unchanged after wrap
-    function property_wrapMtdUnchanged() internal {
-        eq(stateAfter.vaultTotalDeposited, stateBefore.vaultTotalDeposited, "SP-34: MTD changed in wrap");
-    }
-
-    /// @notice SP-35: marketTotalDeposited unchanged after unwrap
-    function property_unwrapMtdUnchanged() internal {
-        eq(stateAfter.vaultTotalDeposited, stateBefore.vaultTotalDeposited, "SP-35: MTD changed in unwrap");
-    }
-
-    // ─────────────── Flash Loan Properties ───────────────
-
-    /// @notice SP-08: flash loan atomically repaid, vault never loses PT
-    function property_flashLoanAtomicRepay() internal {
-        eq(stateAfter.vaultPtBalance, stateBefore.vaultPtBalance, "SP-08: vault PT balance changed in flash loan");
-    }
-
-    /// @notice SP-18: flash loan fee double-floored (two nested mulDiv)
-    function property_flashLoanFeeFloored(uint256 fee, uint256 amount) internal {
-        if (fee == 0) return;
-        uint16 flashFeeBps = vault.flashFeeBps();
-        if (flashFeeBps == 0) return;
-        try vault.previewRate(market) returns (uint256 rateE18) {
-            // fee = floor(floor(amount * rate / WAD) * flashFeeBps / BASIS_POINTS)
-            // So: fee * BASIS_POINTS * WAD <= amount * rate * flashFeeBps
-            lte(
-                fee * BASIS_POINTS * WAD, amount * rateE18 * uint256(flashFeeBps), "SP-18: flash fee not double-floored"
-            );
-        } catch {}
-    }
-
-    /// @notice SP-36: flashLoan: marketTotalDeposited unchanged
-    function property_flashLoanMtdUnchanged() internal {
-        eq(stateAfter.vaultTotalDeposited, stateBefore.vaultTotalDeposited, "SP-36: MTD changed in flash loan");
-    }
-
-    /// @notice SP-37: flash loan only succeeds pre-maturity
-    function property_flashLoanPreMaturity() internal {
-        (,, uint256 expiry,,,,) = vault.series(market);
-        lt(block.timestamp, expiry, "SP-37: flash loan succeeded post-maturity");
-    }
-
-    /// @notice SP-38: flashLoan: wrappedUnderlying unchanged
-    function property_flashLoanWrappedUnchanged() internal {
         eq(
-            stateAfter.vaultWrappedUnderlying,
-            stateBefore.vaultWrappedUnderlying,
-            "SP-38: wrappedUnderlying changed in flash loan"
-        );
-    }
-
-    /// @notice SP-64: flash loan borrower net value <= before (no free profit from flash)
-    function property_flashLoanNoFreeProfit() internal {
-        lte(
-            stateAfter.actorUnderlying, stateBefore.actorUnderlying, "SP-64: actor underlying increased from flash loan"
-        );
-        eq(stateAfter.actorPt, stateBefore.actorPt, "SP-64: actor PT changed from flash loan");
-    }
-
-    // ─────────────── Admin/Secondary Properties ───────────────
-
-    /// @notice SP-39: sweepExcessPt: marketTotalDeposited unchanged
-    function property_sweepExcessPtMtdUnchanged() internal {
-        eq(stateAfter.vaultTotalDeposited, stateBefore.vaultTotalDeposited, "SP-39: MTD changed in sweepExcessPt");
-    }
-
-    /// @notice SP-40: sweepExcessUnderlying: wrappedUnderlying unchanged
-    function property_sweepExcessUnderlyingWrappedUnchanged() internal {
-        eq(
-            stateAfter.vaultWrappedUnderlying,
-            stateBefore.vaultWrappedUnderlying,
-            "SP-40: wrappedUnderlying changed in sweepExcessUnderlying"
-        );
-    }
-
-    /// @notice SP-41: setFlashFeeBps: flashFeeBps equals arg and <= FLASH_FEE_MAX_BPS
-    function property_setFlashFeeBpsCorrect(uint16 feeBps) internal {
-        eq(uint256(vault.flashFeeBps()), uint256(feeBps), "SP-41: flashFeeBps not set to arg");
-        lte(uint256(feeBps), uint256(vault.FLASH_FEE_MAX_BPS()), "SP-41: flashFeeBps > max");
-    }
-
-    /// @notice SP-42: setFlashLoanPaused: flashLoanPaused equals arg
-    function property_setFlashLoanPausedCorrect(bool paused) internal {
-        t(vault.flashLoanPaused() == paused, "SP-42: flashLoanPaused not set to arg");
-    }
-
-    /// @notice SP-69: Non-admin cannot call vault admin functions
-    function property_nonAdminCannotCallVaultAdmin() internal {
-        try vault.setFlashFeeBps(50) {
-            t(false, "SP-69: non-admin called vault admin function");
-        } catch {}
-    }
-
-    /// @notice SP-70: Non-owner cannot call lending admin functions
-    function property_nonOwnerCannotCallLendingAdmin() internal {
-        try lending.setFee(100) {
-            t(false, "SP-70: non-owner called lending admin function");
-        } catch {}
-    }
-
-    // ─────────────── LiquidityPosition Properties ───────────────
-
-    /// @notice SP-43: supplyLiquidity: nextLiquidityId increments by exactly 1
-    function property_supplyLiquidityIdIncrements() internal {
-        eq(stateAfter.nextLiquidityId, stateBefore.nextLiquidityId + 1, "SP-43: nextLiquidityId did not increment by 1");
-    }
-
-    /// @notice SP-44: supplyLiquidity: new liquidity active, availableLiquidity > 0, lender == sender
-    function property_supplyLiquidityNewLiquidityActive() internal {
-        uint256 liquidityId = ghosts.ghost_lastLiquidityId;
-        if (liquidityId == 0) return;
-        (address lender,,, uint128 availableLiquidity) = lending.liquidityPositions(liquidityId);
-        t(availableLiquidity > 0, "SP-44: new liquidity not active");
-        t(lender == actor, "SP-44: new liquidity lender is not the caller");
-    }
-
-    /// @notice SP-45: withdrawLiquidity: liquidity inactive, availableLiquidity == 0
-    function property_withdrawLiquidityInactive() internal {
-        uint256 liquidityId = ghosts.ghost_lastLiquidityId;
-        if (liquidityId == 0) return;
-        (,,, uint128 availableLiquidity) = lending.liquidityPositions(liquidityId);
-        t(availableLiquidity == 0, "SP-45: cancelled liquidity still active");
-    }
-
-    /// @notice SP-03: withdrawLiquidity refund matches remaining availableLiquidity (standalone)
-    function property_withdrawLiquidityRefundMatchesCapacity() internal {
-        uint256 refund = stateAfter.actorUnderlying - stateBefore.actorUnderlying;
-        eq(
-            refund,
-            uint256(stateBefore.liquidityCapacity),
-            "SP-03: withdrawLiquidity refund != remaining availableLiquidity"
-        );
-    }
-
-    /// @notice SP-46: sellStreamToLiquidity: availableLiquidity decreases by grossPrice, active=false only when availableLiquidity==0
-    function property_sellStreamToLiquidityCapacityDecreases(uint256 grossPrice) internal {
-        uint256 liquidityId = ghosts.ghost_lastLiquidityId;
-        if (liquidityId == 0) return;
-        (,,, uint128 capacityAfter) = lending.liquidityPositions(liquidityId);
-        eq(
-            uint256(stateBefore.liquidityCapacity) - uint256(capacityAfter),
-            grossPrice,
-            "SP-46: availableLiquidity did not decrease by grossPrice"
-        );
-    }
-
-    /// @notice SP-101: both indexed depth levels decrease by the touched position delta.
-    function property_liquidityDepthDecreased(uint256 decrease) internal {
-        eq(
-            stateBefore.marketLiquidityDepth - stateAfter.marketLiquidityDepth,
-            decrease,
-            "SP-101: market liquidity depth delta"
+            lending.lenderPositionCount(expectedLender),
+            lenderCountBefore + 1,
+            "SP-12: lenderPositionCount moved by other than 1"
         );
         eq(
-            stateBefore.marketAprLiquidityDepth - stateAfter.marketAprLiquidityDepth,
-            decrease,
-            "SP-101: APR liquidity depth delta"
+            lending.lenderPositionAt(expectedLender, lenderCountBefore),
+            returnedId,
+            "SP-12: lenderPositionAt was not appended at the pre-call index"
         );
     }
 
-    /// @notice SP-71: Non-lender cannot cancel liquidity (sanity: caller was the lender)
-    function property_nonMakerCannotWithdrawLiquidity(uint256 liquidityId) internal {
-        (address lender,,,) = lending.liquidityPositions(liquidityId);
-        t(lender == actor, "SP-71: non-lender cancelled liquidity");
+    /// @notice SP-13: withdraw refunds exactly the unfilled suffix, rewrites no struct field,
+    ///         moves no sibling leaf, and a second withdraw with no intervening borrow reverts
+    ///         NothingToWithdraw (no double refund).
+    function property_withdraw_postconditions(
+        uint256 positionId,
+        bytes32 structHashBefore,
+        uint128 unfilledBefore,
+        uint256 refundReceived,
+        bool siblingUntouched,
+        bool secondWithdrawSucceeded,
+        bool secondRevertWasNothingToWithdraw
+    ) internal {
+        t(
+            _sp_positionStructHash(positionId) == structHashBefore,
+            "SP-13: withdraw rewrote the position's stored struct"
+        );
+        eq(refundReceived, unfilledBefore, "SP-13: refund differs from the pre-call unfilled amount");
+        (,,, uint128 unfilledAfter) = lending.positionState(positionId);
+        eq(unfilledAfter, 0, "SP-13: position still reports unfilled liquidity after withdraw");
+        t(siblingUntouched, "SP-13: withdraw moved a sibling position's leaf or struct");
+        t(!secondWithdrawSucceeded, "SP-13: second withdraw with no intervening borrow succeeded (double refund)");
+        t(secondRevertWasNothingToWithdraw, "SP-13: second withdraw reverted with an unexpected error");
     }
 
-    /// @notice SP-19: lending fee floored with explicit feeBps
-    function property_lendingFeeFlooredWithBps(uint256 fee, uint256 grossPrice, uint16 feeBps) internal {
-        if (feeBps == 0) {
-            eq(fee, 0, "SP-19: fee non-zero when feeBps is zero");
-            return;
+    /// @notice SP-14: borrow allocates the next loan id, newly populates the epoch's loan list
+    ///         at the pre-call loanCount, appends one borrowerLoanAt entry, and escrows the
+    ///         pledged stream with the lending contract.
+    function property_borrow_postconditions(
+        uint256 returnedLoanId,
+        uint256 nextLoanIdBefore,
+        address expectedBorrower,
+        address expectedMarket,
+        uint16 expectedAprBps,
+        uint256 expectedStreamId,
+        uint256 borrowerCountBefore,
+        bool streamEscrowed
+    ) internal {
+        eq(returnedLoanId, nextLoanIdBefore, "SP-14: borrow did not allocate the next loan id");
+        eq(lending.nextLoanId(), nextLoanIdBefore + 1, "SP-14: borrow moved nextLoanId by other than 1");
+
+        {
+            (address borrower, address m, uint16 apr,,) = _sp_loanTape(returnedLoanId);
+            t(borrower == expectedBorrower, "SP-14: stored borrower is not the caller");
+            t(m == expectedMarket, "SP-14: stored market does not match the call input");
+            eq(apr, expectedAprBps, "SP-14: stored aprBps does not match the call input");
         }
-        lte(fee * BASIS_POINTS, grossPrice * uint256(feeBps), "SP-19: lending fee not floored");
-    }
 
-    // ─────────────── Sale Listing Properties ───────────────
-
-    /// @notice SP-47: postSaleListing: nextSaleListingId increments by exactly 1
-    function property_postListingIdIncrements() internal {
-        eq(
-            stateAfter.nextSaleListingId,
-            stateBefore.nextSaleListingId + 1,
-            "SP-47: nextSaleListingId did not increment by 1"
-        );
-    }
-
-    /// @notice SP-48: postSaleListing: listing active, feeBps snapshotted from current lending.feeBps
-    function property_postListingActiveFeeSnapshotted() internal {
-        uint256 listingId = ghosts.ghost_lastListingId;
-        if (listingId == 0) return;
-        (,,,, uint16 feeBps, bool active) = lending.saleListings(listingId);
-        t(active, "SP-48: new listing not active");
-        eq(uint256(feeBps), uint256(lending.feeBps()), "SP-48: listing feeBps not snapshotted from lending.feeBps");
-    }
-
-    /// @notice SP-49: cancelSaleListing: listing inactive
-    function property_cancelSaleListingInactive() internal {
-        uint256 listingId = ghosts.ghost_lastListingId;
-        if (listingId == 0) return;
-        (,,,,, bool active) = lending.saleListings(listingId);
-        t(!active, "SP-49: cancelled listing still active");
-    }
-
-    /// @notice SP-04: cancelSaleListing returns stream to lender (standalone)
-    function property_cancelSaleListingReturnsStream() internal {
-        t(stateAfter.streamOwner == actor, "SP-04: cancelSaleListing did not return stream to lender");
-    }
-
-    /// @notice SP-50: buyListing: listing inactive
-    function property_buyListingInactive() internal {
-        uint256 listingId = ghosts.ghost_lastListingId;
-        if (listingId == 0) return;
-        (,,,,, bool active) = lending.saleListings(listingId);
-        t(!active, "SP-50: bought listing still active");
-    }
-
-    /// @notice SP-71: Non-lender cannot cancel listing (sanity: caller was the lender)
-    function property_nonMakerCannotCancelListing(uint256 listingId) internal {
-        (address lender,,,,,) = lending.saleListings(listingId);
-        t(lender == actor, "SP-71: non-lender cancelled listing");
-    }
-
-    // ─────────────── Borrow / Loan Creation Properties ───────────────
-
-    /// @notice SP-09: borrow -> repay: obligation >= actualBorrow (factor >= WAD, obligation ceils)
-    function property_obligationGeBorrow() internal {
-        gte(
-            uint256(stateAfter.loanObligation),
-            uint256(stateAfter.poolTotalContributed),
-            "SP-09: obligation < actualBorrow"
-        );
-    }
-
-    /// @notice SP-10: obligation <= remaining in partial-borrow path (stream covers debt)
-    function property_obligationLeRemaining() internal {
-        lte(uint256(stateAfter.loanObligation), uint256(stateBefore.streamRemaining), "SP-10: obligation > remaining");
-    }
-
-    /// @notice SP-13: quote matches actual createBorrowerLoanPool obligation
-    function property_quoteMatchesObligation(uint256 loanPoolId, uint128 actualBorrow) internal {
-        (, uint16 aprBps, address poolMarket,) = lending.loanPools(loanPoolId);
-        (, uint256 streamId,,,,) = lending.loans(loanPoolId);
-        try lending.quote(poolMarket, streamId, aprBps, actualBorrow) returns (
-            uint256, uint128 qObligation, uint256, uint256, uint128
-        ) {
-            (,, uint128 obligation,,,) = lending.loans(loanPoolId);
-            eq(uint256(qObligation), uint256(obligation), "SP-13: quote obligation mismatch");
-        } catch {}
-    }
-
-    /// @notice SP-15: full-borrow fast-path (borrowAmount == grossPrice) returns remaining exactly
-    function property_fullBorrowFastPath() internal {
-        uint256 loanPoolId = ghosts.ghost_lastPoolId;
-        if (loanPoolId == 0) return;
-        (, uint16 aprBps, address poolMarket, uint128 totalContributed) = lending.loanPools(loanPoolId);
-        (,, uint128 obligation,,,) = lending.loans(loanPoolId);
-        (, uint256 streamId,,,,) = lending.loans(loanPoolId);
-        try lending.quote(poolMarket, streamId, aprBps, 0) returns (
-            uint256 grossPrice, uint128, uint256, uint256, uint128
-        ) {
-            if (uint256(totalContributed) == grossPrice) {
-                uint128 deposited = ISablierV2LockupLinear(SABLIER_ADDR).getDepositedAmount(streamId);
-                uint128 withdrawn = ISablierV2LockupLinear(SABLIER_ADDR).getWithdrawnAmount(streamId);
-                eq(uint256(obligation), uint256(deposited - withdrawn), "SP-15: full-borrow obligation != remaining");
-            }
-        } catch {}
-    }
-
-    /// @notice SP-22: sum(loanPoolContributions) == pool.totalContributed after createBorrowerLoanPool
-    function property_poolContributionsSum() internal {
-        uint256 loanPoolId = ghosts.ghost_lastPoolId;
-        if (loanPoolId == 0) return;
-        (,,, uint128 totalContributed) = lending.loanPools(loanPoolId);
-        uint256 sum;
-        for (uint256 i = 0; i < actors.length; i++) {
-            sum += lending.loanPoolContributions(loanPoolId, actors[i]);
+        {
+            (,,,,,, uint256 streamId,,,,,) = lending.loans(returnedLoanId);
+            eq(streamId, expectedStreamId, "SP-14: stored streamId does not match the pledged stream");
+            t(streamEscrowed, "SP-14: pledged stream is not owned by the lending contract after borrow");
         }
-        eq(sum, uint256(totalContributed), "SP-22: sum loanPoolContributions != totalContributed");
-    }
 
-    /// @notice SP-52: createBorrowerLoanPool: loan closed=false, drawn=0, repaid=0
-    function property_createPoolLoanState() internal {
-        uint256 loanPoolId = ghosts.ghost_lastPoolId;
-        if (loanPoolId == 0) return;
-        uint256 loanId = ghosts.ghost_lastLoanId;
-        if (loanId == 0) return;
-        (,,, uint128 drawn, uint128 repaid, bool closed) = lending.loans(loanId);
-        t(!closed, "SP-52: new loan is closed");
-        eq(uint256(drawn), 0, "SP-52: new loan drawn != 0");
-        eq(uint256(repaid), 0, "SP-52: new loan repaid != 0");
-    }
-
-    /// @notice SP-53: createBorrowerLoanPool: loanPoolContributions set for consumed liquidity makers
-    function property_createPoolContributionsSet() internal {
-        uint256 loanPoolId = ghosts.ghost_lastPoolId;
-        if (loanPoolId == 0) return;
-        (,,, uint128 totalContributed) = lending.loanPools(loanPoolId);
-        if (totalContributed == 0) return;
-        // At least one actor must have a non-zero contribution
-        bool foundContributor;
-        for (uint256 i = 0; i < actors.length; i++) {
-            if (lending.loanPoolContributions(loanPoolId, actors[i]) > 0) {
-                foundContributor = true;
-                break;
-            }
-        }
-        t(foundContributor, "SP-53: no contributors set for pool");
-    }
-
-    /// @notice SP-77: No self-match bypass (borrower not contributor to own pool)
-    function property_noSelfMatch() internal {
-        uint256 loanPoolId = ghosts.ghost_lastPoolId;
-        if (loanPoolId == 0) return;
-        (address borrower,,,) = lending.loanPools(loanPoolId);
-        eq(lending.loanPoolContributions(loanPoolId, borrower), 0, "SP-77: self-match detected");
-    }
-
-    /// @notice SP-78: No loan on zero-remaining stream (requireEligible reverts)
-    function property_noLoanOnZeroRemaining() internal {
-        gt(uint256(stateBefore.streamRemaining), 0, "SP-78: loan created on zero-remaining stream");
-    }
-
-    /// @notice SP-79: borrowAmount <= grossPrice (LTV check enforced)
-    function property_borrowAmountLeGrossPrice() internal {
-        uint256 loanPoolId = ghosts.ghost_lastPoolId;
-        if (loanPoolId == 0) return;
-        (, uint16 aprBps, address poolMarket, uint128 totalContributed) = lending.loanPools(loanPoolId);
-        (, uint256 streamId,,,,) = lending.loans(loanPoolId);
-        // Quote with borrowAmount=0 to get grossPrice independently (never reverts on LTV check)
-        uint256 grossPrice;
-        try lending.quote(poolMarket, streamId, aprBps, 0) returns (uint256 price, uint128, uint256, uint256, uint128) {
-            grossPrice = price;
-        } catch {
-            return; // Invalid state — cannot test
-        }
-        lte(uint256(totalContributed), grossPrice, "SP-79: borrowAmount > grossPrice");
-    }
-
-    /// @notice SP-80: LiquidityPosition IDs strictly increasing, sorted input
-    function property_liquidityIdsStrictlyIncreasing(uint256[] memory liquidityIds) internal {
-        for (uint256 i = 1; i < liquidityIds.length; i++) {
-            gt(liquidityIds[i], liquidityIds[i - 1], "SP-80: liquidity IDs not strictly increasing");
-        }
-    }
-
-    // ─────────────── Loan Servicing Properties ───────────────
-
-    /// @notice SP-21: repayLoan equality check exact (no rounding brick, exact integer wei)
-    function property_repayLoanExactCheck(uint256, uint128 amount) internal {
-        (,,,,, bool closed) = lending.loans(ghosts.ghost_lastLoanId);
-        if (closed) {
-            uint128 outstandingBefore = stateBefore.loanObligation - stateBefore.loanDrawn - stateBefore.loanRepaid;
-            eq(uint256(amount), uint256(outstandingBefore), "SP-21: repay equality not exact");
-        }
-    }
-
-    /// @notice SP-54: closeLoan: drawn += outstanding, loanPoolProceeds += outstanding (if > 0)
-    function property_closeLoanDrawnIncreases() internal {
-        uint256 loanId = ghosts.ghost_lastLoanId;
-        if (loanId == 0) return;
-        uint128 outstanding = stateBefore.loanObligation - stateBefore.loanDrawn - stateBefore.loanRepaid;
-        if (outstanding > 0) {
+        {
+            (, address m, uint16 apr, uint32 epoch, uint64 seq) = _sp_loanTape(returnedLoanId);
             eq(
-                uint256(stateAfter.loanDrawn),
-                uint256(stateBefore.loanDrawn) + uint256(outstanding),
-                "SP-54: drawn not increased by outstanding"
+                lending.loanAt(m, apr, epoch, seq),
+                returnedLoanId,
+                "SP-14: epoch loan list slot not populated with the loan"
             );
-            eq(
-                uint256(stateAfter.loanPoolProceeds),
-                uint256(stateBefore.loanPoolProceeds) + uint256(outstanding),
-                "SP-54: loanPoolProceeds not increased by outstanding"
-            );
+            (,, uint64 loanCount,,,) = lending.fizz_epochState(m, apr, epoch);
+            eq(loanCount, uint256(seq) + 1, "SP-14: epoch loanCount is not seq + 1 after the fill");
         }
-    }
 
-    /// @notice SP-55: closeLoan with outstanding==0: drawn and loanPoolProceeds unchanged
-    function property_closeLoanOutstandingZero() internal {
-        uint256 loanId = ghosts.ghost_lastLoanId;
-        if (loanId == 0) return;
-        uint128 outstanding = stateBefore.loanObligation - stateBefore.loanDrawn - stateBefore.loanRepaid;
-        if (outstanding == 0) {
-            eq(
-                uint256(stateAfter.loanDrawn),
-                uint256(stateBefore.loanDrawn),
-                "SP-55: drawn changed when outstanding==0"
-            );
-            eq(
-                uint256(stateAfter.loanPoolProceeds),
-                uint256(stateBefore.loanPoolProceeds),
-                "SP-55: loanPoolProceeds changed when outstanding==0"
-            );
-        }
-    }
-
-    /// @notice SP-56: repayLoan: repaid += amount, loanPoolProceeds += amount
-    function property_repayLoanRepaidIncreases(uint256, uint128 amount) internal {
         eq(
-            uint256(stateAfter.loanRepaid),
-            uint256(stateBefore.loanRepaid) + uint256(amount),
-            "SP-56: repaid not increased by amount"
+            lending.borrowerLoanCount(expectedBorrower),
+            borrowerCountBefore + 1,
+            "SP-14: borrowerLoanCount moved by other than 1"
         );
         eq(
-            uint256(stateAfter.loanPoolProceeds),
-            uint256(stateBefore.loanPoolProceeds) + uint256(amount),
-            "SP-56: loanPoolProceeds not increased by amount"
+            lending.borrowerLoanAt(expectedBorrower, borrowerCountBefore),
+            returnedLoanId,
+            "SP-14: borrowerLoanAt was not appended at the pre-call index"
         );
     }
 
-    /// @notice SP-57: repayLoan: closed=true iff amount==outstanding; partial stays false
-    function property_repayLoanClosedIff(uint256, uint128 amount) internal {
-        (,,,,, bool closed) = lending.loans(ghosts.ghost_lastLoanId);
-        uint128 outstandingBefore = stateBefore.loanObligation - stateBefore.loanDrawn - stateBefore.loanRepaid;
-        t(closed == (amount == outstandingBefore), "SP-57: closed != (amount == outstanding)");
-    }
-
-    /// @notice SP-72: Non-borrower cannot repayLoan (sanity: caller was the borrower)
-    function property_nonBorrowerCannotRepay(uint256 loanId) internal {
-        (address borrower,,,,,) = lending.loans(loanId);
-        t(borrower == actor, "SP-72: non-borrower repaid loan");
-    }
-
-    // ─────────────── LoanPool Claim Properties ───────────────
-
-    /// @notice SP-60: claimLoanPoolShare: loanPoolProceeds conservation (proceedsDecrease = receivedDelta - drawnDelta)
-    function property_claimLoanPoolShareReceivedIncreases() internal {
-        uint256 drawnDelta = uint256(stateAfter.loanDrawn) - uint256(stateBefore.loanDrawn);
-        uint256 receivedDelta = uint256(stateAfter.loanPoolReceived) - uint256(stateBefore.loanPoolReceived);
-        uint256 proceedsDecrease = uint256(stateBefore.loanPoolProceeds) - uint256(stateAfter.loanPoolProceeds);
-        eq(proceedsDecrease, receivedDelta - drawnDelta, "SP-60: loanPoolProceeds conservation violated");
-    }
-
-    /// @notice SP-20: pro-rata entitlement floored (protocol-favorable rounding)
-    function property_proRataEntitlementFloored() internal {
-        uint256 loanPoolId = ghosts.ghost_lastPoolId;
-        if (loanPoolId == 0) return;
-        uint128 contribution = lending.loanPoolContributions(loanPoolId, actor);
-        if (contribution == 0) return;
-        (,,, uint128 totalContributed) = lending.loanPools(loanPoolId);
-        (,, uint128 obligation,,,) = lending.loans(loanPoolId);
-        uint128 received = lending.loanPoolReceived(loanPoolId, actor);
-        // received <= floor(contribution * obligation / totalContributed)
-        lte(
-            uint256(received) * uint256(totalContributed),
-            uint256(contribution) * uint256(obligation),
-            "SP-20: pro-rata entitlement not floored"
-        );
-    }
-
-    /// @notice SP-23: sum(loanPoolReceived) <= obligation
-    function property_poolReceivedLeTotalObligation() internal {
-        uint256 loanPoolId = ghosts.ghost_lastPoolId;
-        if (loanPoolId == 0) return;
-        (,, uint128 obligation,,,) = lending.loans(loanPoolId);
-        uint256 sumReceived;
-        for (uint256 i = 0; i < actors.length; i++) {
-            sumReceived += lending.loanPoolReceived(loanPoolId, actors[i]);
-        }
-        lte(sumReceived, uint256(obligation), "SP-23: sum loanPoolReceived > obligation");
-    }
-
-    /// @notice SP-24: loanPoolReceived[loanPoolId][contributor] <= entitlement (pro-rata cap)
-    function property_poolReceivedLeEntitlement() internal {
-        uint256 loanPoolId = ghosts.ghost_lastPoolId;
-        if (loanPoolId == 0) return;
-        uint128 contribution = lending.loanPoolContributions(loanPoolId, actor);
-        if (contribution == 0) return;
-        (,,, uint128 totalContributed) = lending.loanPools(loanPoolId);
-        (,, uint128 obligation,,,) = lending.loans(loanPoolId);
-        uint128 received = lending.loanPoolReceived(loanPoolId, actor);
-        uint256 entitlement = uint256(contribution) * uint256(obligation) / uint256(totalContributed);
-        lte(uint256(received), entitlement, "SP-24: loanPoolReceived > entitlement");
-    }
-
-    /// @notice SP-25: loanPoolProceeds + sum(loanPoolReceived) == drawn + repaid (exact conservation per pool)
-    function property_poolConservation() internal {
-        uint256 loanPoolId = ghosts.ghost_lastPoolId;
-        if (loanPoolId == 0) return;
-        uint128 proceeds = lending.loanPoolProceeds(loanPoolId);
-        uint256 sumReceived;
-        for (uint256 i = 0; i < actors.length; i++) {
-            sumReceived += lending.loanPoolReceived(loanPoolId, actors[i]);
-        }
-        uint256 loanId = loanPoolId;
-        (,,, uint128 drawn, uint128 repaid,) = lending.loans(loanId);
-        eq(uint256(proceeds) + sumReceived, uint256(drawn) + uint256(repaid), "SP-25: pool conservation violated");
-    }
-
-    // ─────────────── Stream Owner Properties ───────────────
-
-    /// @notice SP-73: Stream owner only (no stream theft via sellStreamToLiquidity/postSaleListing/createBorrowerLoanPool)
-    function property_streamOwnerOnly() internal {
-        if (ghosts.ghost_lastStreamId == 0) return;
-        t(stateBefore.streamOwner == actor, "SP-73: stream owner is not the caller");
-    }
-
-    // ─────────────── GL-57: No Free Profit ───────────────
-
-    /// @notice GL-57: No free profit - total actor value <= total start value (conservation)
-    function property_no_free_profit() public {
-        uint256 totalCurrent;
-        uint256 totalStart;
-        for (uint256 i = 0; i < actors.length; i++) {
-            address a = actors[i];
-            totalCurrent += underlying.balanceOf(a) + ptToken.balanceOf(a) + ovrfloToken.balanceOf(a);
-            totalStart += ghost_actorStartValue[a];
-        }
-        lte(totalCurrent, totalStart, "GL-57: total actor value exceeds total start value");
-    }
-
-    // SP-62 removed as vacuous (ptAmount > 0 guaranteed by MIN_PT_AMOUNT check), review 2026-07-18
-
-    // ─────────────── Pattern #13: sweepExcessPt input validation ───────────────
-
-    /// @notice SP-107: sweepExcessPt reverts when passed a non-PT token (e.g. underlying)
-    function property_sweepExcessPt_reverts_non_pt() internal asAdmin {
-        try factory.sweepExcessPt(address(vault), address(underlying), admin) {
-            t(false, "SP-107: sweepExcessPt did not revert for non-PT token");
-        } catch {}
-    }
-
-    // ─────────────── GL-61/GL-62: ERC20 Transfer Invariants ───────────────
-
-    /// @notice GL-61: self-transfer doesn't change balance or totalSupply
-    function property_self_transfer_noop(uint256 balBefore, uint256 supplyBefore) internal {
-        eq(ovrfloToken.balanceOf(actor), balBefore, "GL-61: balance changed after self-transfer");
-        eq(ovrfloToken.totalSupply(), supplyBefore, "GL-61: totalSupply changed after self-transfer");
-    }
-
-    /// @notice GL-62: zero-amount transfer doesn't change balance or totalSupply
-    function property_zero_transfer_noop(uint256 balBefore, uint256 supplyBefore) internal {
-        eq(ovrfloToken.balanceOf(actor), balBefore, "GL-62: balance changed after zero transfer");
-        eq(ovrfloToken.totalSupply(), supplyBefore, "GL-62: totalSupply changed after zero transfer");
-    }
-
-    // ─────────────── Wave 2: Per-Entity Conservation ───────────────
-
-    /// @notice GL-64: Per-loan outstanding <= stream remaining (per-entity conservation)
-    function property_per_loan_outstanding_le_remaining() public {
-        uint256 nextLoan = lending.nextLoanId();
-        for (uint256 i = 1; i < nextLoan; i++) {
-            (, uint256 streamId, uint128 obligation, uint128 drawn, uint128 repaid,) = lending.loans(i);
-            uint128 outstanding = obligation - drawn - repaid;
-            if (outstanding == 0) continue;
-            try ISablierV2LockupLinear(SABLIER_ADDR).getDepositedAmount(streamId) returns (uint128 deposited) {
-                uint128 withdrawn = ISablierV2LockupLinear(SABLIER_ADDR).getWithdrawnAmount(streamId);
-                uint128 remaining = deposited > withdrawn ? deposited - withdrawn : 0;
-                lte(uint256(outstanding), uint256(remaining), "GL-64: per-loan outstanding > stream remaining");
-            } catch {}
+    /// @notice SP-15: close latches closed and returns the stream; on the documented legal
+    ///         `outstanding == 0` state (reachable via a prior full harvest through `claim`)
+    ///         it draws nothing, otherwise it draws exactly the outstanding.
+    function property_close_zeroOutstanding(
+        uint256 loanId,
+        uint128 outstandingBefore,
+        uint128 drawnBefore,
+        bool streamReturnedToBorrower
+    ) internal {
+        (bool closed,,,, uint128 drawn,) = _sp_loanFields(loanId);
+        t(closed, "SP-15: close returned without latching closed");
+        t(streamReturnedToBorrower, "SP-15: close did not return the stream to the borrower");
+        if (outstandingBefore == 0) {
+            eq(drawn, drawnBefore, "SP-15: close of a zero-outstanding loan changed drawn");
+        } else {
+            eq(drawn, uint256(drawnBefore) + outstandingBefore, "SP-15: close drew other than the outstanding");
         }
     }
 
-    /// @notice GL-65: availableLiquidity never increases after creation (one-way capacity)
-    function property_liquidity_capacity_nonincreasing() public {
-        uint256 nextLiquidity = lending.nextLiquidityId();
-        for (uint256 i = 1; i < nextLiquidity; i++) {
-            (,,, uint128 availableLiquidity) = lending.liquidityPositions(i);
-            if (ghost_liquidityCapacitySeen[i]) {
-                lte(
-                    uint256(availableLiquidity),
-                    uint256(ghost_liquidityCapacitySnapshot[i]),
-                    "GL-65: availableLiquidity increased after creation"
-                );
-            }
-            ghost_liquidityCapacitySeen[i] = true;
-            ghost_liquidityCapacitySnapshot[i] = availableLiquidity;
+    /// @notice SP-16: repay adds exactly `amount` to repaid; a full repay latches closed AND
+    ///         returns the stream in the same call; a partial repay leaves the loan open.
+    function property_repay_postconditions(
+        uint256 loanId,
+        uint128 repaidBefore,
+        uint128 amount,
+        uint128 outstandingBefore,
+        bool streamOwnedByBorrower
+    ) internal {
+        (bool closed,,,,, uint128 repaid) = _sp_loanFields(loanId);
+        eq(repaid, uint256(repaidBefore) + amount, "SP-16: repay moved repaid by other than the amount");
+        if (amount == outstandingBefore) {
+            t(closed, "SP-16: full repay did not latch closed");
+            t(streamOwnedByBorrower, "SP-16: full repay did not return the stream to the borrower");
+        } else {
+            t(!closed, "SP-16: partial repay latched closed");
         }
     }
 
-    /// @notice GL-66: Open loan stream escrowed at lending market (ownerOf == address(lending))
-    function property_open_loan_stream_escrowed() public {
-        uint256 nextLoan = lending.nextLoanId();
-        for (uint256 i = 1; i < nextLoan; i++) {
-            (, uint256 streamId,,,, bool closed) = lending.loans(i);
-            if (closed) continue;
-            try ISablierV2LockupLinear(SABLIER_ADDR).ownerOf(streamId) returns (address owner) {
-                t(owner == address(lending), "GL-66: open loan stream not escrowed at lending");
-            } catch {}
-        }
-    }
-
-    /// @notice GL-67: Active listing stream escrowed at lending market
-    function property_active_listing_stream_escrowed() public {
-        uint256 nextListing = lending.nextSaleListingId();
-        for (uint256 i = 1; i < nextListing; i++) {
-            (,, uint256 streamId,,, bool active) = lending.saleListings(i);
-            if (!active) continue;
-            try ISablierV2LockupLinear(SABLIER_ADDR).ownerOf(streamId) returns (address owner) {
-                t(owner == address(lending), "GL-67: active listing stream not escrowed at lending");
-            } catch {}
-        }
-    }
-
-    /// @notice GL-69: pool.borrower == loan.borrower (pool and loan share the same borrower)
-    function property_pool_borrower_eq_loan_borrower() public {
-        uint256 nextPool = lending.nextLoanId();
-        for (uint256 i = 1; i < nextPool; i++) {
-            (address poolBorrower,,,) = lending.loanPools(i);
-            (address loanBorrower,,,,,) = lending.loans(i);
-            t(poolBorrower == loanBorrower, "GL-69: pool.borrower != loan.borrower");
-        }
-    }
-
-    /// @notice GL-70: loan.drawn == stream withdrawals since creation (no external drain)
-    function property_loan_drawn_eq_stream_withdrawals() public {
-        uint256 nextLoan = lending.nextLoanId();
-        for (uint256 i = 1; i < nextLoan; i++) {
-            (, uint256 streamId,, uint128 drawn,, bool closed) = lending.loans(i);
-            uint128 snapshot = ghost_loanStreamWithdrawnAtCreation[i];
-            if (closed) {
-                // Closed loan — stream was returned to borrower and may have been
-                // reused or externally withdrawn since. Always trust closeSnapshot
-                // (recording is guaranteed at all close sites: closeLoan, full
-                // repayLoan, and scenario). Never live-read for closed loans.
-                uint128 closeSnapshot = ghost_loanStreamWithdrawnAtClose[i];
-                if (closeSnapshot >= snapshot) {
-                    eq(
-                        uint256(drawn),
-                        uint256(closeSnapshot - snapshot),
-                        "GL-70: loan.drawn != stream withdrawals at close"
-                    );
-                }
+    /// @notice SP-17: TickTree structural correctness. Supply path: append hands out the next
+    ///         (never-reused) leaf index and grows `leaves` by exactly 1 — index 0 of a fresh
+    ///         tree after an epoch rollover. Borrow path: the loan's fillStart equals the
+    ///         epoch's pre-call `filled` and the post-call `filled` equals fillEnd. The
+    ///         pre-call `filled` is only known when the fill landed on an epoch the handler
+    ///         snapshotted (the pre-call cursor or current epoch — the dominant case); a fill
+    ///         landing on a cursor-advanced middle epoch checks the post side only.
+    function property_tickTree_structural(
+        bool supplyPath,
+        uint32 leafIndex,
+        uint32 leavesBefore,
+        uint32 leavesAfter,
+        bool rolledEpoch,
+        uint64 fillStart,
+        uint64 fillEnd,
+        uint64 filledAfter,
+        bool preFilledKnown,
+        uint64 preFilled
+    ) internal {
+        if (supplyPath) {
+            if (rolledEpoch) {
+                eq(leafIndex, 0, "SP-17: first append of a fresh epoch did not take leaf index 0");
+                eq(leavesAfter, 1, "SP-17: fresh epoch's tree does not have exactly 1 leaf");
             } else {
-                // Open loan — live-read the stream's withdrawn amount.
-                try ISablierV2LockupLinear(SABLIER_ADDR).getWithdrawnAmount(streamId) returns (
-                    uint128 currentWithdrawn
-                ) {
-                    if (currentWithdrawn >= snapshot) {
-                        eq(
-                            uint256(drawn),
-                            uint256(currentWithdrawn - snapshot),
-                            "GL-70: loan.drawn != stream withdrawals since creation"
-                        );
-                    }
-                } catch {}
+                eq(leafIndex, leavesBefore, "SP-17: append reused or skipped a leaf index");
+                eq(leavesAfter, uint256(leavesBefore) + 1, "SP-17: append grew leaves by other than 1");
+            }
+        } else {
+            eq(filledAfter, fillEnd, "SP-17: epoch filled after borrow is not the loan's fillEnd");
+            if (preFilledKnown) {
+                eq(fillStart, preFilled, "SP-17: loan fillStart is not the epoch's pre-call filled");
             }
         }
     }
 
-    /// @notice GL-71: contributions <= consumed capacity (no over-contribution)
-    function property_contributions_le_capacity() public {
-        uint256 nextPool = lending.nextLoanId();
-        for (uint256 p = 1; p < nextPool; p++) {
-            for (uint256 a = 0; a < actors.length; a++) {
-                uint128 contribution = lending.loanPoolContributions(p, actors[a]);
-                if (contribution == 0) continue;
-                // Each contribution was consumed from a liquidity position's capacity;
-                // the contribution cannot exceed the initial capacity of any single position.
-                // This is a soft bound — we verify contribution <= sum of initial capacities
-                // of consumed positions. Since we don't track which specific positions were
-                // consumed per pool, we check against the pool's totalContributed as a proxy.
-                (,,, uint128 totalContributed) = lending.loanPools(p);
-                lte(uint256(contribution), uint256(totalContributed), "GL-71: contribution > totalContributed");
-            }
-        }
+    /// @notice SP-18: a supply by one actor never touches another lender's index or positions.
+    function property_supply_isolation(
+        bool otherLenderSampled,
+        uint256 otherCountBefore,
+        uint256 otherCountAfter,
+        bytes32 otherPositionHashBefore,
+        bytes32 otherPositionHashAfter
+    ) internal {
+        if (!otherLenderSampled) return;
+        eq(otherCountAfter, otherCountBefore, "SP-18: supply changed another lender's position count");
+        t(otherPositionHashBefore == otherPositionHashAfter, "SP-18: supply moved another lender's position");
     }
 
-    /// @notice GL-72: loan.drawn <= stream withdrawn amount (drawn never exceeds what was pulled)
-    function property_loan_drawn_le_stream_withdrawn() public {
-        uint256 nextLoan = lending.nextLoanId();
-        for (uint256 i = 1; i < nextLoan; i++) {
-            (, uint256 streamId,, uint128 drawn,,) = lending.loans(i);
-            try ISablierV2LockupLinear(SABLIER_ADDR).getWithdrawnAmount(streamId) returns (uint128 withdrawn) {
-                lte(uint256(drawn), uint256(withdrawn), "GL-72: loan.drawn > stream withdrawn amount");
-            } catch {}
-        }
+    /// @notice SP-19: borrow mutates NO Position struct or coordinate — the architectural claim
+    ///         the blind-fill design rests on (fill gas is flat in positions crossed precisely
+    ///         because no position is written).
+    function property_borrow_touchesNoPosition(bool sampled, bytes32 sampleHashBefore, bytes32 sampleHashAfter)
+        internal
+    {
+        if (!sampled) return;
+        t(sampleHashBefore == sampleHashAfter, "SP-19: borrow mutated a lender position");
     }
 
-    // ─────────────── Wave 2: All-Pool Generalizations ───────────────
-
-    /// @notice GL-73: All pools: sum(loanPoolContributions) == pool.totalContributed
-    function property_all_pools_contributions_sum() public {
-        uint256 nextPool = lending.nextLoanId();
-        for (uint256 p = 1; p < nextPool; p++) {
-            (,,, uint128 totalContributed) = lending.loanPools(p);
-            uint256 sum;
-            for (uint256 a = 0; a < actors.length; a++) {
-                sum += lending.loanPoolContributions(p, actors[a]);
-            }
-            eq(sum, uint256(totalContributed), "GL-73: sum contributions != totalContributed");
-        }
+    /// @notice SP-20: over every position on the loan's exact (market, aprBps, epoch) tape,
+    ///         contributions tile the loan's frozen fill interval exactly.
+    function property_lazyAttribution_sumsToWhole(uint256 sumOverlapUnits, uint64 fillStart, uint64 fillEnd) internal {
+        eq(
+            sumOverlapUnits,
+            uint256(fillEnd) - fillStart,
+            "SP-20: position contributions do not tile the loan's fill interval"
+        );
     }
 
-    /// @notice GL-74: All pools: proceeds + sum(received) == drawn + repaid
-    function property_all_pools_conservation() public {
-        uint256 nextPool = lending.nextLoanId();
-        for (uint256 p = 1; p < nextPool; p++) {
-            uint128 proceeds = lending.loanPoolProceeds(p);
-            uint256 sumReceived;
-            for (uint256 a = 0; a < actors.length; a++) {
-                sumReceived += lending.loanPoolReceived(p, actors[a]);
-            }
-            (,,, uint128 drawn, uint128 repaid,) = lending.loans(p);
-            eq(uint256(proceeds) + sumReceived, uint256(drawn) + uint256(repaid), "GL-74: pool conservation violated");
-        }
+    /// @notice SP-21: claim on a position with zero tape overlap with the loan (including a
+    ///         numerically-identical interval from a DIFFERENT epoch) always reverts
+    ///         NoOverlap/EpochMismatch and never pays out.
+    function property_claim_zeroOverlap_reverts(bool paidOut, bool revertedWithOverlapError) internal {
+        t(!paidOut, "SP-21: claim paid out on a position with no tape overlap");
+        t(revertedWithOverlapError, "SP-21: zero-overlap claim reverted with an unexpected error");
     }
 
-    /// @notice GL-75: All pools: loanPoolReceived[poolId][lender] <= entitlement (pro-rata cap)
-    function property_all_pools_received_le_entitlement() public {
-        uint256 nextPool = lending.nextLoanId();
-        for (uint256 p = 1; p < nextPool; p++) {
-            (,,, uint128 totalContributed) = lending.loanPools(p);
-            (,, uint128 obligation,,,) = lending.loans(p);
-            if (totalContributed == 0) continue;
-            for (uint256 a = 0; a < actors.length; a++) {
-                uint128 contribution = lending.loanPoolContributions(p, actors[a]);
-                if (contribution == 0) continue;
-                uint128 received = lending.loanPoolReceived(p, actors[a]);
-                uint256 entitlement = uint256(contribution) * uint256(obligation) / uint256(totalContributed);
-                lte(uint256(received), entitlement, "GL-75: loanPoolReceived > entitlement");
-            }
-        }
-    }
-
-    /// @notice GL-76: All pools: sum(loanPoolReceived) <= obligation
-    function property_all_pools_received_le_obligation() public {
-        uint256 nextPool = lending.nextLoanId();
-        for (uint256 p = 1; p < nextPool; p++) {
-            (,, uint128 obligation,,,) = lending.loans(p);
-            uint256 sumReceived;
-            for (uint256 a = 0; a < actors.length; a++) {
-                sumReceived += lending.loanPoolReceived(p, actors[a]);
-            }
-            lte(sumReceived, uint256(obligation), "GL-76: sum loanPoolReceived > obligation");
-        }
-    }
-
-    // ─────────────── Wave 2: Admin Config Validity ───────────────
-
-    /// @notice GL-77: APR bounds well-formed (aprMinBps <= aprMaxBps, step multiples)
-    function property_apr_bounds_wellformed() public {
-        uint16 aprMin = lending.aprMinBps();
-        uint16 aprMax = lending.aprMaxBps();
-        lte(uint256(aprMin), uint256(aprMax), "GL-77: aprMinBps > aprMaxBps");
-        t(uint256(aprMin) % lending.APR_STEP_BPS() == 0, "GL-77: aprMinBps not step-aligned");
-        t(uint256(aprMax) % lending.APR_STEP_BPS() == 0, "GL-77: aprMaxBps not step-aligned");
-    }
-
-    /// @notice GL-78: Lending fee bounded (feeBps <= MAX_FEE_BPS)
-    function property_lending_fee_bounded() public {
-        lte(uint256(lending.feeBps()), uint256(lending.MAX_FEE_BPS()), "GL-78: feeBps > MAX_FEE_BPS");
-    }
-
-    /// @notice GL-79: Lending treasury non-zero
-    function property_lending_treasury_nonzero() public {
-        t(lending.treasury() != address(0), "GL-79: lending treasury is zero address");
-    }
-
-    // ─────────────── Wave 2: Donation Resistance ───────────────
-
-    /// @notice GL-80: Direct ovrfloToken donation to lending does not inflate claimable pool proceeds
-    function property_ovrflo_donation_no_inflate() public {
-        uint256 nextPool = lending.nextLoanId();
-        for (uint256 p = 1; p < nextPool; p++) {
-            uint128 proceeds = lending.loanPoolProceeds(p);
-            (,,, uint128 drawn, uint128 repaid,) = lending.loans(p);
-            // Proceeds are internally tracked (drawn + repaid - received); a direct
-            // ovrfloToken transfer to lending cannot increase proceeds beyond recovery.
-            lte(uint256(proceeds), uint256(drawn) + uint256(repaid), "GL-80: proceeds inflated beyond recovery");
-        }
-    }
-
-    /// @notice GL-81: Direct underlying donation to lending does not inflate liquidity capacity
-    function property_underlying_donation_no_inflate() public {
-        uint256 nextLiquidity = lending.nextLiquidityId();
-        for (uint256 i = 1; i < nextLiquidity; i++) {
-            (,,, uint128 availableLiquidity) = lending.liquidityPositions(i);
-            uint128 initialCap = ghost_liquidityInitialCapacity[i];
-            // If we have the initial capacity recorded, current must not exceed it.
-            // This proves a direct underlying transfer cannot inflate capacity.
-            if (initialCap > 0) {
-                lte(
-                    uint256(availableLiquidity),
-                    uint256(initialCap),
-                    "GL-81: availableLiquidity inflated beyond initial capacity"
-                );
-            }
-        }
-    }
-
-    // ─────────────── Wave 2: Token & Identity Invariants ───────────────
-
-    /// @notice GL-82: Non-owner cannot mint/burn ovrfloToken (only vault can)
-    function property_non_owner_cannot_mint_burn() public {
-        // Attempt mint as a non-owner (actor); must revert
-        try ovrfloToken.mint(actor, 1) {
-            t(false, "GL-82: non-owner mint succeeded");
-        } catch {}
-        // Attempt burn as a non-owner (actor); must revert
-        try ovrfloToken.burn(actor, 1) {
-            t(false, "GL-82: non-owner burn succeeded");
-        } catch {}
-    }
-
-    // GL-83 removed as duplicate of GL-30, review 2026-07-18
-
-    /// @notice GL-84: Open loan stream eligibility persists (stream has remaining balance)
-    function property_open_loan_stream_eligible() public {
-        uint256 nextLoan = lending.nextLoanId();
-        for (uint256 i = 1; i < nextLoan; i++) {
-            (, uint256 streamId, uint128 obligation, uint128 drawn, uint128 repaid, bool closed) = lending.loans(i);
-            if (closed) continue;
-            uint128 outstanding = obligation - drawn - repaid;
-            if (outstanding == 0) continue;
-            // An open loan's stream must still have remaining face value so
-            // closeLoan/_claimFair can draw the outstanding amount.
-            try ISablierV2LockupLinear(SABLIER_ADDR).getDepositedAmount(streamId) returns (uint128 deposited) {
-                uint128 withdrawn = ISablierV2LockupLinear(SABLIER_ADDR).getWithdrawnAmount(streamId);
-                gt(uint256(deposited), uint256(withdrawn), "GL-84: open loan stream has no remaining balance");
-            } catch {}
-        }
-    }
-
-    // GL-85 removed as duplicate of GL-03, review 2026-07-18
-
-    /// @notice GL-86: Direct underlying transfer to vault does not inflate wrappedUnderlying
-    function property_direct_underlying_transfer_no_wrap_inflate() public {
-        // wrappedUnderlying is an internal mapping, not balance-derived. A direct underlying
-        // transfer to the vault increases the balance but not wrappedUnderlying. This is proven
-        // by wrappedUnderlying <= underlying.balanceOf(vault), which means the balance can exceed
-        // wrappedUnderlying (from donations) but wrappedUnderlying is never inflated.
+    /// @notice SP-22: no claim ordering across positions overlapping the same loan lets any one
+    ///         claimer collect more than its pro-rata share of what can ever be recovered: the
+    ///         recovery counters never exceed the obligation (the harvestCap
+    ///         `min(withdrawable, outstanding)` clamp made observable — on an over-vested
+    ///         stream a bare `withdrawable` harvest would push drawn past the obligation), and
+    ///         the pair's cumulative payout never exceeds its pro-rata slice of the obligation.
+    /// @dev Products stay far below 2^256: overlap is uint64, obligation uint128.
+    function property_claim_orderIndependent_cap(uint256 loanId, uint256 positionId, uint64 overlapUnits) internal {
+        (, uint64 fillStart, uint64 fillEnd, uint128 obligation_, uint128 drawn, uint128 repaid) =
+            _sp_loanFields(loanId);
+        lte(uint256(drawn) + repaid, obligation_, "SP-22: recovered (drawn + repaid) exceeds the loan obligation");
+        uint256 cap = (uint256(overlapUnits) * obligation_) / (fillEnd - fillStart);
         lte(
-            vault.wrappedUnderlying(),
-            underlying.balanceOf(address(vault)),
-            "GL-86: wrappedUnderlying inflated beyond internal accounting"
+            lending.received(loanId, positionId),
+            cap,
+            "SP-22: pair received more than its pro-rata share of the obligation"
         );
     }
 
-    // ─────────────── Wave 2: Oracle Safety ───────────────
-
-    /// @notice GL-87: Oracle zero rate safety (pricing degrades gracefully at rate floor)
-    function property_oracle_zero_rate_safety() public {
-        // Verify pricing functions handle zero/near-zero APR gracefully.
-        // factor(0, t) == WAD (no accrual with zero APR)
-        eq(StreamPricing.factor(0, 365 days), WAD, "GL-87: factor(0,ttm) != WAD");
-        // grossPrice with zero APR == remaining (no discount)
-        eq(StreamPricing.grossPrice(1_000 ether, 0, 365 days), 1_000 ether, "GL-87: grossPrice not at par for zero APR");
-        // obligation with zero APR == borrowAmount (no accrual)
-        eq(
-            uint256(StreamPricing.obligation(1_000 ether, 0, 365 days)),
-            1_000 ether,
-            "GL-87: obligation != borrow for zero APR"
-        );
-        // factor(0, 0) == WAD
-        eq(StreamPricing.factor(0, 0), WAD, "GL-87: factor(0,0) != WAD");
+    /// @notice SP-23: a successful borrow's realized proceeds are never below the caller's own
+    ///         `minAcceptable` floor. The handler passes the actor's realized underlying gain,
+    ///         which equals net proceeds (actualBorrow - fee) exactly unless the actor is also
+    ///         the fee treasury — where the gain additionally contains the fee, which only
+    ///         widens the left side, keeping the check sound (conservative) either way.
+    function property_belowMinAcceptable_neverBypassed(uint256 realizedGain, uint128 minAcceptable) internal {
+        gte(realizedGain, minAcceptable, "SP-23: borrow succeeded with net proceeds below minAcceptable");
     }
 
-    // ─────────────── Wave 2: Pure-Function Monotonicity & Bounds ───────────────
-
-    /// @notice GL-88: fee <= amount for all feeBps <= MAX_FEE_BPS (fee never exceeds principal)
-    function property_fee_le_amount() public {
-        uint256 amount = 1_000 ether;
-        // fee with max feeBps (10_000 = 100%) should equal amount
-        uint256 maxFee = StreamPricing.fee(amount, 10_000);
-        lte(maxFee, amount, "GL-88: fee > amount at MAX_FEE_BPS");
-        // fee with typical feeBps (100 = 1%)
-        uint256 typicalFee = StreamPricing.fee(amount, 100);
-        lte(typicalFee, amount, "GL-88: fee > amount at 1%");
-        // fee with zero feeBps should be zero
-        eq(StreamPricing.fee(amount, 0), 0, "GL-88: fee non-zero at 0 bps");
+    /// @notice SP-24: a withdraw landing immediately before another actor's borrow can at worst
+    ///         cause that borrow to revert cleanly on the thinned tick — the victim loses only
+    ///         gas: no balance moves and the pledged stream stays with its owner.
+    function property_withdrawBeforeBorrow_cleanRevert(
+        uint256 victimUnderlyingBefore,
+        uint256 victimUnderlyingAfter,
+        bool victimStillOwnsStream
+    ) internal {
+        eq(victimUnderlyingAfter, victimUnderlyingBefore, "SP-24: griefed borrow revert moved the victim's underlying");
+        t(victimStillOwnsStream, "SP-24: griefed borrow revert did not leave the stream with the victim");
     }
 
-    /// @notice GL-89: grossPrice non-increasing in aprBps (higher APR discounts the stream more)
-    function property_gross_price_nonincreasing_apr() public {
-        uint128 remaining = 1_000 ether;
-        uint256 ttm = 180 days;
-        uint256 price1 = StreamPricing.grossPrice(remaining, 500, ttm);
-        uint256 price2 = StreamPricing.grossPrice(remaining, 1000, ttm);
-        gte(price1, price2, "GL-89: grossPrice not non-increasing in aprBps");
-    }
-
-    /// @notice GL-90: obligation non-decreasing in aprBps (higher APR accrues more debt)
-    function property_obligation_nondecreasing_apr() public {
-        uint256 borrow = 1_000 ether;
-        uint256 ttm = 180 days;
-        uint128 oblig1 = StreamPricing.obligation(borrow, 500, ttm);
-        uint128 oblig2 = StreamPricing.obligation(borrow, 1000, ttm);
-        lte(uint256(oblig1), uint256(oblig2), "GL-90: obligation not non-decreasing in aprBps");
-    }
-
-    /// @notice GL-91: obligation non-decreasing in ttm (longer maturity accrues more debt)
-    function property_obligation_nondecreasing_ttm() public {
-        uint256 borrow = 1_000 ether;
-        uint16 apr = 1000;
-        uint128 oblig1 = StreamPricing.obligation(borrow, apr, 90 days);
-        uint128 oblig2 = StreamPricing.obligation(borrow, apr, 365 days);
-        lte(uint256(oblig1), uint256(oblig2), "GL-91: obligation not non-decreasing in ttm");
-    }
-
-    /// @notice GL-92: factor non-decreasing in aprBps
-    function property_factor_nondecreasing_apr() public {
-        uint256 ttm = 180 days;
-        uint256 f1 = StreamPricing.factor(500, ttm);
-        uint256 f2 = StreamPricing.factor(1000, ttm);
-        lte(f1, f2, "GL-92: factor not non-decreasing in aprBps");
-    }
-
-    /// @notice GL-93: factor non-decreasing in ttm
-    function property_factor_nondecreasing_ttm() public {
-        uint16 apr = 1000;
-        uint256 f1 = StreamPricing.factor(apr, 90 days);
-        uint256 f2 = StreamPricing.factor(apr, 365 days);
-        lte(f1, f2, "GL-93: factor not non-decreasing in ttm");
-    }
-
-    /// @notice GL-94: obligation <= remaining for all borrowAmount <= grossPrice
-    function property_obligation_le_remaining_all_borrows() public {
-        uint128 remaining = 1_000 ether;
-        uint16 apr = 1000;
-        uint256 ttm = 180 days;
-        uint256 gp = StreamPricing.grossPrice(remaining, apr, ttm);
-        // Sweep several borrow amounts in [0, grossPrice]
-        uint256[] memory borrows = new uint256[](5);
-        borrows[0] = 0;
-        borrows[1] = gp / 4;
-        borrows[2] = gp / 2;
-        borrows[3] = (3 * gp) / 4;
-        borrows[4] = gp;
-        for (uint256 i = 0; i < borrows.length; i++) {
-            uint128 oblig = StreamPricing.obligationForFill(borrows[i], gp, remaining, apr, ttm);
-            lte(uint256(oblig), uint256(remaining), "GL-94: obligation > remaining for borrow <= grossPrice");
-        }
-    }
-
-    // ─────────────── Wave 2: Stream Escrow Transitions (SP-81..SP-86) ───────────────
-
-    /// @notice SP-81: closeLoan returns the pledged stream to the borrower
-    function property_closeLoan_returns_stream() internal {
-        uint256 loanId = ghosts.ghost_lastLoanId;
-        if (loanId == 0) return;
-        (address borrower,,,,,) = lending.loans(loanId);
-        t(stateAfter.streamOwner == borrower, "SP-81: closeLoan did not return stream to borrower");
-    }
-
-    /// @notice SP-82: Full repayLoan returns the pledged stream to the borrower
-    function property_repayLoan_returns_stream() internal {
-        uint256 loanId = ghosts.ghost_lastLoanId;
-        if (loanId == 0) return;
-        (,,,,, bool closed) = lending.loans(loanId);
+    /// @notice SP-25: a position claiming both before AND after a close() on the same loan never
+    ///         receives, summed across both claims, more than its pro-rata share of the FINAL
+    ///         drawn + repaid. Asserted whenever the loan is observed closed: `received` is a
+    ///         running total, so the bound covers every earlier pre-close claim by the pair too.
+    function property_claimAcrossClose_boundedByFinal(uint256 loanId, uint256 positionId, uint64 overlapUnits)
+        internal
+    {
+        (bool closed, uint64 fillStart, uint64 fillEnd,, uint128 drawn, uint128 repaid) = _sp_loanFields(loanId);
         if (!closed) return;
-        (address borrower,,,,,) = lending.loans(loanId);
-        t(stateAfter.streamOwner == borrower, "SP-82: full repayLoan did not return stream to borrower");
+        uint256 cap = (uint256(overlapUnits) * (uint256(drawn) + repaid)) / (fillEnd - fillStart);
+        lte(lending.received(loanId, positionId), cap, "SP-25: pair received more than its share of the final recovery");
     }
 
-    /// @notice SP-83: createBorrowerLoanPool escrows the pledged stream to the lending market
-    function property_createPool_escrows_stream() internal {
-        if (ghosts.ghost_lastStreamId == 0) return;
-        t(stateAfter.streamOwner == address(lending), "SP-83: createBorrowerLoanPool did not escrow stream to lending");
-    }
-
-    /// @notice SP-84: sellStreamToLiquidity transfers the stream to the liquidity lender
-    function property_sellStream_transfers_to_lender() internal {
-        uint256 liquidityId = ghosts.ghost_lastLiquidityId;
-        if (liquidityId == 0) return;
-        (address lender,,,) = lending.liquidityPositions(liquidityId);
-        t(stateAfter.streamOwner == lender, "SP-84: sellStreamToLiquidity did not transfer stream to lender");
-    }
-
-    /// @notice SP-85: postSaleListing escrows the stream to the lending market
-    function property_postListing_escrows_stream() internal {
-        if (ghosts.ghost_lastStreamId == 0) return;
-        t(stateAfter.streamOwner == address(lending), "SP-85: postSaleListing did not escrow stream to lending");
-    }
-
-    /// @notice SP-86: buyListing transfers the escrowed stream to the buyer
-    function property_buyListing_transfers_to_buyer() internal {
-        if (ghosts.ghost_lastStreamId == 0) return;
-        t(stateAfter.streamOwner == actor, "SP-86: buyListing did not transfer stream to buyer");
-    }
-
-    // ─────────────── Wave 2: Loan Servicing Transitions (SP-87..SP-91) ───────────────
-
-    /// @notice SP-87: closeLoan sets loan.closed = true
-    function property_closeLoan_sets_closed() internal {
-        t(stateAfter.loanClosed, "SP-87: closeLoan did not set closed=true");
-    }
-
-    /// @notice SP-88: closeLoan on an invalid/already-closed loan reverts
-    function property_closeLoan_invalid_reverts() internal {
-        uint256 loanId = ghosts.ghost_lastLoanId;
-        if (loanId == 0) return;
-        // The loan was just closed; closing it again must revert
-        try lending.closeLoan(loanId) {
-            t(false, "SP-88: closeLoan on closed loan did not revert");
-        } catch {}
-    }
-
-    /// @notice SP-89: Multi-partial repay eventually closes the loan (sum of partial repays == outstanding -> closed)
-    function property_multi_partial_repay_closes() internal {
-        uint256 loanId = ghosts.ghost_lastLoanId;
-        if (loanId == 0) return;
-        (,, uint128 obligation, uint128 drawn, uint128 repaid, bool closed) = lending.loans(loanId);
-        if (closed) {
-            eq(uint256(repaid) + uint256(drawn), uint256(obligation), "SP-89: closed loan repaid+drawn != obligation");
-        }
-    }
-
-    // SP-90 removed as vacuous (closeLoan always closes), review 2026-07-18
-
-    /// @notice SP-91: Repledge obligation bounded by residual stream value
-    /// @dev EXPLORATORY: verifies obligation <= remaining for a stream with prior withdrawals
-    function property_repledge_bounded_by_residual() internal {
-        uint256 loanPoolId = ghosts.ghost_lastPoolId;
-        if (loanPoolId == 0) return;
-        if (ghosts.ghost_lastStreamId == 0) return;
-        uint128 withdrawn = ISablierV2LockupLinear(SABLIER_ADDR).getWithdrawnAmount(ghosts.ghost_lastStreamId);
-        if (withdrawn > 0) {
-            lte(
-                uint256(stateAfter.loanObligation),
-                uint256(stateBefore.streamRemaining),
-                "SP-91: repledge obligation > residual"
-            );
-        }
-    }
-
-    // ─────────────── Wave 2: Lending Zero-Input Reverts (SP-92..SP-94) ───────────────
-
-    /// @notice SP-92: createBorrowerLoanPool with targetBorrow == 0 reverts
-    function property_createPool_zero_reverts() internal {
-        uint256[] memory dummyIds = new uint256[](1);
-        dummyIds[0] = 1;
-        try lending.createBorrowerLoanPool(dummyIds, ghosts.ghost_lastStreamId, 0, 0) {
-            t(false, "SP-92: createBorrowerLoanPool(0) did not revert");
-        } catch {}
-    }
-
-    /// @notice SP-93: claimLoanPoolShare with amount == 0 reverts
-    function property_claimPool_zero_reverts() internal {
-        uint256 loanPoolId = ghosts.ghost_lastPoolId;
-        if (loanPoolId == 0) return;
-        try lending.claimLoanPoolShare(loanPoolId, 0) {
-            t(false, "SP-93: claimLoanPoolShare(0) did not revert");
-        } catch {}
-    }
-
-    /// @notice SP-94: repayLoan with amount == 0 reverts
-    function property_repayLoan_zero_reverts() internal {
-        uint256 loanId = ghosts.ghost_lastLoanId;
-        if (loanId == 0) return;
-        (,,,,, bool closed) = lending.loans(loanId);
-        if (closed) return;
-        // borrower == actor (SP-72); handler already runs under startPrank(actor)
-        try lending.repayLoan(loanId, 0) {
-            t(false, "SP-94: repayLoan(0) did not revert");
-        } catch {}
-    }
-
-    // ─────────────── Wave 2: Quote & Preview Correspondence (SP-95..SP-96) ───────────────
-
-    /// @notice SP-95: quote obligation matches pool obligation
-    function property_quote_full_correspondence() internal {
-        uint256 loanPoolId = ghosts.ghost_lastPoolId;
-        if (loanPoolId == 0) return;
-        (, uint16 aprBps, address poolMarket, uint128 totalContributed) = lending.loanPools(loanPoolId);
-        (, uint256 streamId,,,,) = lending.loans(loanPoolId);
-        try lending.quote(poolMarket, streamId, aprBps, totalContributed) returns (
-            uint256, uint128 obligation, uint256, uint256, uint128
-        ) {
-            // First assertion removed as tautological (borrowAmount == net + fee by construction)
-            (,, uint128 poolObligation,,,) = lending.loans(loanPoolId);
-            eq(uint256(obligation), uint256(poolObligation), "SP-95: quote obligation != pool obligation");
-        } catch {}
-    }
-
-    /// @notice SP-96: previewRate matches the rate used by the actual deposit (same block)
-    function property_previewRate_matches_deposit(uint256 toUser, uint256 ptAmount) internal {
-        if (ptAmount == 0) return;
-        try vault.previewRate(market) returns (uint256 rateE18) {
-            // toUser = floor(ptAmount * rate / WAD), so:
-            // toUser * WAD <= ptAmount * rate < (toUser + 1) * WAD
-            lte(toUser * WAD, ptAmount * rateE18, "SP-96: previewRate too low for deposit toUser");
-            lt(ptAmount * rateE18, (toUser + 1) * WAD, "SP-96: previewRate too high for deposit toUser");
-        } catch {}
-    }
-
-    // ─────────────── Wave 2: Pool Claim Bounds (SP-97..SP-98) ───────────────
-
-    /// @notice SP-97: loanPoolReceived <= pro-rata of actual recovered (tighter than SP-24)
-    function property_received_le_proRata_recovered() internal {
-        uint256 loanPoolId = ghosts.ghost_lastPoolId;
-        if (loanPoolId == 0) return;
-        uint128 contribution = lending.loanPoolContributions(loanPoolId, actor);
-        if (contribution == 0) return;
-        (,,, uint128 totalContributed) = lending.loanPools(loanPoolId);
-        uint256 loanId = loanPoolId;
-        (,, uint128 obligation, uint128 drawn, uint128 repaid, bool closed) = lending.loans(loanId);
-        uint256 recovered = uint256(drawn) + uint256(repaid);
-        if (!closed) {
-            (, uint256 streamId,,,,) = lending.loans(loanId);
-            uint128 outstanding = obligation - drawn - repaid;
-            uint128 withdrawable = ISablierV2LockupLinear(SABLIER_ADDR).withdrawableAmountOf(streamId);
-            recovered += withdrawable < outstanding ? uint256(withdrawable) : uint256(outstanding);
-        }
-        uint256 entitlement = uint256(contribution) * recovered / uint256(totalContributed);
-        uint128 received = lending.loanPoolReceived(loanPoolId, actor);
-        lte(uint256(received), entitlement, "SP-97: received > pro-rata of recovered");
-    }
-
-    /// @notice SP-98: Non-contributor cannot claim a pool share (claimLoanPoolShare reverts or transfers zero)
-    function property_non_contributor_cannot_claim() internal {
-        uint256 loanPoolId = ghosts.ghost_lastPoolId;
-        if (loanPoolId == 0) return;
-        uint128 contribution = lending.loanPoolContributions(loanPoolId, actor);
-        gt(uint256(contribution), 0, "SP-98: non-contributor claimed pool share");
-    }
-
-    // ─────────────── Wave 2: Settlement Conservation (SP-99..SP-100) ───────────────
-
-    /// @notice SP-99: Sale settlement conservation (treasury received exact fee)
-    function property_sale_settlement_conservation(uint256 fee) internal {
-        eq(
-            stateAfter.treasuryUnderlying - stateBefore.treasuryUnderlying,
-            fee,
-            "SP-99: treasury did not receive exact fee"
-        );
-    }
-
-    /// @notice SP-100: Borrow disbursement conservation (disbursement == sum consumed capacities)
-    function property_borrow_disbursement_conservation(uint128 actualBorrow, uint256 fee) internal {
-        // Borrower's underlying increase must equal actualBorrow - fee (net disbursement)
-        eq(
-            stateAfter.actorUnderlying - stateBefore.actorUnderlying,
-            uint256(actualBorrow) - fee,
-            "SP-100: borrow disbursement != actualBorrow - fee"
-        );
-    }
-
-    // ─────────────── Wave 2: Admin Setter Echo (SP-101) ───────────────
-
-    /// @notice SP-101: setMarketDepositLimit: the stored limit equals the argument
-    function property_setDepositLimitEcho(address _market, uint256 limit) internal {
-        eq(vault.marketDepositLimits(_market), limit, "SP-101: stored deposit limit != arg");
-    }
-
-    // ─────────────── Wave 2: Liveness & Boundary (SP-102..SP-106) ───────────────
-
-    /// @notice SP-102: Flash loan at max available PT amount succeeds (no off-by-one in the cap)
-    function property_flashLoan_max_succeeds(uint256 amount) internal {
-        // The flash loan cap is marketTotalDeposited; the borrowed amount must not exceed it
-        lte(amount, stateBefore.vaultTotalDeposited, "SP-102: flash loan amount > MTD cap");
-    }
-
-    /// @notice SP-103: deposit near the par-rate boundary (rate ~ 1e18) does not revert or over-credit
-    function property_deposit_par_rate_boundary(uint256 toUser, uint256 toStream, uint256 ptAmount) internal {
-        try vault.previewRate(market) returns (uint256 rateE18) {
-            if (rateE18 >= 0.99e18 && rateE18 <= 1.01e18) {
-                gt(toStream, 0, "SP-103: toStream is zero at par-rate boundary");
-                lte(toUser, ptAmount, "SP-103: toUser > ptAmount at par-rate boundary");
-            }
-        } catch {}
-    }
-
-    /// @notice SP-104: cancelSaleListing succeeds post-maturity (stream return path still valid)
-    function property_cancel_post_maturity() internal {
-        uint256 listingId = ghosts.ghost_lastListingId;
-        if (listingId == 0) return;
-        (, address listingMarket,,,,) = lending.saleListings(listingId);
-        (,, uint256 expiry,,,,) = vault.series(listingMarket);
-        if (block.timestamp >= expiry) {
-            t(stateAfter.streamOwner == actor, "SP-104: cancel did not return stream post-maturity");
-        }
-    }
-
-    /// @notice SP-105: withdrawLiquidity succeeds post-maturity (capacity refund path still valid)
-    function property_withdraw_post_maturity() internal {
-        uint256 liquidityId = ghosts.ghost_lastLiquidityId;
-        if (liquidityId == 0) return;
-        (, address liquidityMarket,,) = lending.liquidityPositions(liquidityId);
-        (,, uint256 expiry,,,,) = vault.series(liquidityMarket);
-        if (block.timestamp >= expiry) {
-            gt(stateAfter.actorUnderlying, stateBefore.actorUnderlying, "SP-105: no refund post-maturity");
-        }
-    }
-
-    /// @notice SP-106: RETIRED — MockSablier's withdraw ACL (owner || sender) differs from
-    /// real Sablier V2 (owner-only). The property cannot be reliably tested against the mock.
-    function property_stream_escrow_withdraw_acl() internal {
-        // No-op: retired due to MockSablier ACL divergence from Sablier V2
-    }
+    // ―――― SP-26: property_noFreeProfit_lendingChain — TODO stub, marked [-] in PROPERTIES.md ――――
+    // EXPLORATORY / LOW. A sound single-actor "no free profit" bound is not writable without
+    // full cross-actor flow attribution: a lender legitimately realizes value that originated
+    // in ANOTHER actor's pledged stream (claim payouts), and a borrower legitimately swaps
+    // future face value for discounted principal now, so one actor's realized balances can rise
+    // above `ghost_actorStartValue` through entirely legitimate flows. Any assertion tight
+    // enough to catch a real lending-chain profit leak would need to re-derive the whole
+    // conservation lane per-actor; system-level no-free-value is already covered by
+    // GL-01..GL-06 (pot, escrow, flow and supply conservation). Left as a spec note rather
+    // than an unsound assertion; `ghost_actorStartValue` in Base.sol stays reserved for a
+    // future sound formulation.
 }

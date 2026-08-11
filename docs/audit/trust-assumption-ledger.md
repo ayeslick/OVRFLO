@@ -1,5 +1,7 @@
 # Trust Assumption / Pre-Flight Ledger
 
+> **Stale IDs.** Invariant/guard IDs in this document predate the 2026-08-10 `x-ray/` regeneration at `f0661ab`; resolve them by statement via the ID map in `AUDIT.md`, not by number.
+
 > Every belief OVRFLO asks the auditor to validate, in one place. Framed as an aviation-style pre-flight briefing: the items below are declared **known hazards to probe**, not surprises to discover. Mark each **ACCEPT** or **CHALLENGE** before reading code. Link derivations are in `x-ray/invariants.md` and `x-ray/x-ray.md`.
 
 The highest-value audit targets are the items marked **On-chain: No** — these are where residual risk lives, because the protocol trusts them without enforcing them in code.

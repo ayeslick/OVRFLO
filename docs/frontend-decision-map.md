@@ -1,5 +1,12 @@
 # Frontend decision map — OVRFLO
 
+> **Superseded 2026-08 — v1-lite shipped; web rebuild is a separate plan.** `OVRFLOLending` was rewritten to the
+> loan-only tick order book (`docs/plans/2026-08-05-001-feat-lending-v1-lite-plan.md`); the web app does not build
+> against the new ABI and stays untouched until its own follow-on plan (plan Scope Boundaries). The general
+> frontend-UX rules below remain valid orientation material, but any content describing the pre-rewrite
+> OVRFLOLending ABI (liquidity positions, sale listings, loan pools) reflects the contract this frontend was
+> built against, not the currently shipped contract.
+
 Written 2026-07-28, alongside the audit remediation plan. This is orientation material, not a spec: it explains how dApp frontends are expected to work, where OVRFLO currently stands, and which decisions genuinely need a judgment call versus which are already settled by the standard.
 
 Primary source for the conventions below: [ETHSKILLS](https://ethskills.com/SKILL.md) — specifically [`/frontend-ux`](https://ethskills.com/frontend-ux), [`/qa`](https://ethskills.com/qa), and [`/indexing`](https://ethskills.com/indexing). `AGENTS.md` names it as required reading, and it is the standard the 2026-07-28 audit judged against.

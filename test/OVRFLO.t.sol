@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: UNLICENSED
+// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
@@ -84,19 +84,19 @@ contract OVRFLOProtocolTest is VaultMockHelpers {
     }
 
     function test_Constructor_RevertsForZeroAddresses() public {
-        vm.expectRevert("OVRFLO: admin is zero address");
+        vm.expectRevert(OVRFLO.ZeroAddress.selector);
         new OVRFLO(address(0), TREASURY, address(underlying), address(ovrfloToken), PENDLE_ORACLE);
 
-        vm.expectRevert("OVRFLO: treasury is zero address");
+        vm.expectRevert(OVRFLO.ZeroAddress.selector);
         new OVRFLO(ADMIN, address(0), address(underlying), address(ovrfloToken), PENDLE_ORACLE);
 
-        vm.expectRevert("OVRFLO: underlying is zero address");
+        vm.expectRevert(OVRFLO.ZeroAddress.selector);
         new OVRFLO(ADMIN, TREASURY, address(0), address(ovrfloToken), PENDLE_ORACLE);
 
-        vm.expectRevert("OVRFLO: ovrfloToken is zero address");
+        vm.expectRevert(OVRFLO.ZeroAddress.selector);
         new OVRFLO(ADMIN, TREASURY, address(underlying), address(0), PENDLE_ORACLE);
 
-        vm.expectRevert("OVRFLO: oracle is zero address");
+        vm.expectRevert(OVRFLO.ZeroAddress.selector);
         new OVRFLO(ADMIN, TREASURY, address(underlying), address(ovrfloToken), address(0));
     }
 
@@ -159,7 +159,7 @@ contract OVRFLOProtocolTest is VaultMockHelpers {
 
     function test_SetSeriesApproved_RevertsForNonAdmin() public {
         vm.prank(user);
-        vm.expectRevert("OVRFLO: not admin");
+        vm.expectRevert(OVRFLO.NotAdmin.selector);
         ovrflo.setSeriesApproved(MARKET_ONE, address(ptOne), TWAP_DURATION, 1, 0);
     }
 
@@ -167,7 +167,7 @@ contract OVRFLOProtocolTest is VaultMockHelpers {
         _approveSeries(MARKET_ONE, ptOne, block.timestamp + 30 days, 0);
 
         vm.prank(ADMIN);
-        vm.expectRevert("OVRFLO: series already configured");
+        vm.expectRevert(OVRFLO.SeriesAlreadyConfigured.selector);
         ovrflo.setSeriesApproved(MARKET_ONE, address(ptTwo), TWAP_DURATION, block.timestamp + 60 days, 0);
     }
 
@@ -175,7 +175,7 @@ contract OVRFLOProtocolTest is VaultMockHelpers {
         _approveSeries(MARKET_ONE, ptOne, block.timestamp + 30 days, 0);
 
         vm.prank(ADMIN);
-        vm.expectRevert("OVRFLO: PT already mapped");
+        vm.expectRevert(OVRFLO.PtAlreadyMapped.selector);
         ovrflo.setSeriesApproved(MARKET_TWO, address(ptOne), TWAP_DURATION, block.timestamp + 60 days, 0);
     }
 
@@ -193,7 +193,7 @@ contract OVRFLOProtocolTest is VaultMockHelpers {
 
     function test_SetMarketDepositLimit_RevertsForNonAdmin() public {
         vm.prank(user);
-        vm.expectRevert("OVRFLO: not admin");
+        vm.expectRevert(OVRFLO.NotAdmin.selector);
         ovrflo.setMarketDepositLimit(MARKET_ONE, 1);
     }
 
@@ -216,11 +216,11 @@ contract OVRFLOProtocolTest is VaultMockHelpers {
         _approveSeries(MARKET_ONE, ptOne, block.timestamp + 30 days, 0);
 
         vm.prank(user);
-        vm.expectRevert("OVRFLO: not admin");
+        vm.expectRevert(OVRFLO.NotAdmin.selector);
         ovrflo.sweepExcessPt(address(ptOne), otherUser);
 
         vm.prank(ADMIN);
-        vm.expectRevert("OVRFLO: no excess");
+        vm.expectRevert(OVRFLO.NoExcess.selector);
         ovrflo.sweepExcessPt(address(ptOne), otherUser);
     }
 
@@ -230,7 +230,7 @@ contract OVRFLOProtocolTest is VaultMockHelpers {
         uint256 balBefore = underlying.balanceOf(address(ovrflo));
 
         vm.prank(ADMIN);
-        vm.expectRevert("OVRFLO: unknown PT");
+        vm.expectRevert(OVRFLO.UnknownPT.selector);
         ovrflo.sweepExcessPt(address(underlying), TREASURY);
 
         // Balance unchanged — the drain this guard prevents
@@ -241,7 +241,7 @@ contract OVRFLOProtocolTest is VaultMockHelpers {
         fakePt.mint(address(ovrflo), 5 ether);
 
         vm.prank(ADMIN);
-        vm.expectRevert("OVRFLO: unknown PT");
+        vm.expectRevert(OVRFLO.UnknownPT.selector);
         ovrflo.sweepExcessPt(address(fakePt), TREASURY);
     }
 
@@ -274,7 +274,7 @@ contract OVRFLOProtocolTest is VaultMockHelpers {
 
     function test_Deposit_RevertsForUnapprovedMarket() public {
         vm.prank(user);
-        vm.expectRevert("OVRFLO: market not approved");
+        vm.expectRevert(OVRFLO.MarketNotApproved.selector);
         ovrflo.deposit(MARKET_ONE, 1e6, 0);
     }
 
@@ -284,7 +284,7 @@ contract OVRFLOProtocolTest is VaultMockHelpers {
         uint256 belowMin = ovrflo.MIN_PT_AMOUNT() - 1;
 
         vm.prank(user);
-        vm.expectRevert("OVRFLO: amount < min PT");
+        vm.expectRevert(OVRFLO.BelowMinPT.selector);
         ovrflo.deposit(MARKET_ONE, belowMin, 0);
     }
 
@@ -295,7 +295,7 @@ contract OVRFLOProtocolTest is VaultMockHelpers {
 
         vm.warp(expiry);
         vm.prank(user);
-        vm.expectRevert("OVRFLO: matured");
+        vm.expectRevert(OVRFLO.Matured.selector);
         ovrflo.deposit(MARKET_ONE, 1e6, 0);
     }
 
@@ -312,7 +312,7 @@ contract OVRFLOProtocolTest is VaultMockHelpers {
         );
 
         vm.prank(user);
-        vm.expectRevert("OVRFLO: oracle not ready");
+        vm.expectRevert(OVRFLO.OracleNotReady.selector);
         ovrflo.deposit(MARKET_ONE, 10 ether, 0);
     }
 
@@ -365,7 +365,7 @@ contract OVRFLOProtocolTest is VaultMockHelpers {
         (uint256 toUser,,,) = _seedPreviewAndBalances(MARKET_ONE, ptOne, 10 ether, 0.8e18, 0);
 
         vm.prank(user);
-        vm.expectRevert("OVRFLO: slippage");
+        vm.expectRevert(OVRFLO.SlippageExceeded.selector);
         ovrflo.deposit(MARKET_ONE, 10 ether, toUser + 1);
     }
 
@@ -379,7 +379,7 @@ contract OVRFLOProtocolTest is VaultMockHelpers {
         ptOne.approve(address(ovrflo), 10 ether);
 
         vm.prank(user);
-        vm.expectRevert("OVRFLO: nothing to stream");
+        vm.expectRevert(OVRFLO.NothingToStream.selector);
         ovrflo.deposit(MARKET_ONE, 10 ether, 0);
     }
 
@@ -415,7 +415,7 @@ contract OVRFLOProtocolTest is VaultMockHelpers {
         _seedPreviewAndBalances(MARKET_ONE, ptOne, 10 ether, 0.8e18, 0);
 
         vm.prank(user);
-        vm.expectRevert("OVRFLO: deposit limit exceeded");
+        vm.expectRevert(OVRFLO.DepositLimitExceeded.selector);
         ovrflo.deposit(MARKET_ONE, 10 ether, 0);
     }
 
@@ -497,7 +497,7 @@ contract OVRFLOProtocolTest is VaultMockHelpers {
 
     function test_Claim_RevertsForUnknownPt() public {
         vm.prank(user);
-        vm.expectRevert("OVRFLO: unknown PT");
+        vm.expectRevert(OVRFLO.UnknownPT.selector);
         ovrflo.claim(address(ptOne), 1);
     }
 
@@ -507,7 +507,7 @@ contract OVRFLOProtocolTest is VaultMockHelpers {
         _deposit(MARKET_ONE, ptOne, 10 ether, 0.8e18, 0, expiry, 1);
 
         vm.prank(user);
-        vm.expectRevert("OVRFLO: not matured");
+        vm.expectRevert(OVRFLO.NotMatured.selector);
         ovrflo.claim(address(ptOne), 1);
     }
 
@@ -518,7 +518,7 @@ contract OVRFLOProtocolTest is VaultMockHelpers {
 
         vm.warp(expiry);
         vm.prank(user);
-        vm.expectRevert("OVRFLO: amount is zero");
+        vm.expectRevert(OVRFLO.ZeroAmount.selector);
         ovrflo.claim(address(ptOne), 0);
     }
 
@@ -529,7 +529,7 @@ contract OVRFLOProtocolTest is VaultMockHelpers {
 
         assertEq(ovrflo.claimablePt(address(ptOne)), 10 ether);
 
-        vm.expectRevert("OVRFLO: unknown PT");
+        vm.expectRevert(OVRFLO.UnknownPT.selector);
         ovrflo.claimablePt(address(ptTwo));
     }
 
@@ -560,21 +560,21 @@ contract OVRFLOProtocolTest is VaultMockHelpers {
 
         assertEq(ovrflo.previewRate(MARKET_ONE), 1.2e18);
 
-        vm.expectRevert("OVRFLO: nothing to stream");
+        vm.expectRevert(OVRFLO.NothingToStream.selector);
         ovrflo.previewStream(MARKET_ONE, 10 ether);
 
-        vm.expectRevert("OVRFLO: nothing to stream");
+        vm.expectRevert(OVRFLO.NothingToStream.selector);
         ovrflo.previewDeposit(MARKET_ONE, 10 ether);
     }
 
     function test_PreviewFunctions_RevertForUnapprovedMarket() public {
-        vm.expectRevert("OVRFLO: market not approved");
+        vm.expectRevert(OVRFLO.MarketNotApproved.selector);
         ovrflo.previewRate(MARKET_ONE);
 
-        vm.expectRevert("OVRFLO: market not approved");
+        vm.expectRevert(OVRFLO.MarketNotApproved.selector);
         ovrflo.previewStream(MARKET_ONE, 1 ether);
 
-        vm.expectRevert("OVRFLO: market not approved");
+        vm.expectRevert(OVRFLO.MarketNotApproved.selector);
         ovrflo.previewDeposit(MARKET_ONE, 1 ether);
     }
 
@@ -624,7 +624,7 @@ contract OVRFLOProtocolTest is VaultMockHelpers {
         vm.warp(expiry);
 
         vm.prank(user);
-        vm.expectRevert("OVRFLO: deposit accounting");
+        vm.expectRevert(OVRFLO.InsufficientDeposited.selector);
         ovrflo.claim(address(ptOne), 13 ether);
     }
 

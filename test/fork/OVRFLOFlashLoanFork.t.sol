@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: UNLICENSED
+// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
@@ -332,13 +332,13 @@ contract OVRFLOFlashLoanForkTest is OVRFLOForkBase {
     //////////////////////////////////////////////////////////////*/
 
     function test_FlashLoan_ExceedsDeposited_RevertsOnRealToken() public {
-        vm.expectRevert("OVRFLO: exceeds deposited");
+        vm.expectRevert(OVRFLO.ExceedsDeposited.selector);
         flashBorrower.executeFlashLoan(PRIMARY_PT, PT_AMOUNT + 1, "");
     }
 
     function test_FlashLoan_RevertsAfterMaturity_RealToken() public {
         vm.warp(PRIMARY_EXPIRY);
-        vm.expectRevert("OVRFLO: matured");
+        vm.expectRevert(OVRFLO.Matured.selector);
         flashBorrower.executeFlashLoan(PRIMARY_PT, FLASH_AMOUNT, "");
     }
 
@@ -365,7 +365,7 @@ contract OVRFLOFlashLoanForkTest is OVRFLOForkBase {
         // Pause and verify revert
         vm.prank(OWNER);
         factory.setFlashLoanPaused(address(ovrflo), true);
-        vm.expectRevert("OVRFLO: flash paused");
+        vm.expectRevert(OVRFLO.FlashPaused.selector);
         flashBorrower.executeFlashLoan(PRIMARY_PT, FLASH_AMOUNT, "");
 
         // Unpause and verify it works again

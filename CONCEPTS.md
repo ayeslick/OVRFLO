@@ -76,9 +76,13 @@ A per-deposit linear vesting stream used by OVRFLO to deliver the discount betwe
 
 Sablier streams belong to the PT deposit path. Wrap and unwrap do not create, modify, or settle streams.
 
-## OVRFLOLending
+## OVRFLOLending (superseded — see "OVRFLOLending v1-lite" below)
+
+**Superseded 2026-08 by the v1-lite tick order book** (`docs/plans/2026-08-05-001-feat-lending-v1-lite-plan.md`). The entries in this section describe the pre-rewrite contract (liquidity positions, sale listings, and pooled loan-pool batching) and are kept for history — none of `sellStreamToLiquidity`, `postSaleListing`, `cancelSaleListing`, `buyListing`, `createBorrowerLoanPool`, or `claimLoanPoolShare` exist in the shipped contract. See "OVRFLOLending v1-lite" for the current vocabulary.
 
 ### LiquidityPosition
+
+**Superseded** — replaced by Position (see "OVRFLOLending v1-lite" below); the sale/loan duality this entry describes no longer exists (loan-only market).
 
 A standing order in the OVRFLOLending secondary market where a lender posts underlying liquidity at a discount rate (APR), not bound to a specific stream, consumable by any eligible stream from a chosen market. An liquidity can be consumed as a sale (stream transfers permanently to the lender via `sellStreamToLiquidity`) or as a loan (stream pledged with obligation via `createBorrowerLoanPool`); the lender cannot restrict which.
 
@@ -86,11 +90,15 @@ LiquidityPositions carry no stream at creation, so they front-load only market-l
 
 ### Listing
 
+**Superseded** — deleted with no replacement; a full borrow is now economically a sale (obligation caps at the stream's remaining value), so a separate sale-listing mechanism is redundant.
+
 A sell-side order in the OVRFLOLending secondary market where a lender escrows a specific Sablier stream, priced at a discount rate until the series maturity.
 
 Listings bind a stream at creation and run full stream eligibility validation at post time.
 
 ### Loan
+
+**Amended for v1-lite:** origination is no longer a `createBorrowerLoanPool` batch across LiquidityPositions — a loan now originates from a single `borrow()` blind fill against one APR tick (see "Blind fill" below), and the lender side is one or more Positions attributed lazily by interval overlap rather than a pool of address-keyed contributions. The paragraphs below (obligation semantics, recovery cap, re-pledging) remain accurate.
 
 A borrow in the OVRFLOLending backed by a pledged Sablier stream, where the obligation is denominated in the stream's payout asset (ovrfloToken) and the lender recovers by drawing from the stream or by direct repayment.
 
@@ -102,25 +110,33 @@ A loan's obligation size depends on how much of the pledged stream's discounted 
 
 A loan against a pledged Sablier stream where the stream's deterministic payouts repay the lender without liquidations or health checks. The stream is non-cancelable and pays a fixed asset on a fixed schedule, so it cannot underperform; the lender draws accrued value until the obligation is satisfied, then the residual stream returns to the borrower.
 
+Unchanged by the v1-lite rewrite — this concept-level definition applies to loans originated either the old (pool) or current (blind-fill) way.
+
 ### Pool
+
+**Superseded** — deleted; lender attribution across a shared borrow is now lazy interval-overlap over a tick's tape (see "Blind fill" and "Frozen history" below), not an explicit batch/pool struct. `claimLoanPoolShare` is replaced by `claim(loanId, positionId, amount)`.
 
 The only lending mechanism in the OVRFLOLending: an atomic batch primitive where a borrower aggregates multiple liquidityPositions into a single transaction. A borrower pool (`createBorrowerLoanPool`) batches borrows across multiple liquidityPositions; the borrower is the only pooling actor. The pool is the virtual lender on its loan (the lending contract itself holds the lender role, since each pool has exactly one loan and they share a single ID space). Each pool has exactly one loan. Claims are address-based (no NFTs): lenders claim pro-rata proceeds via `claimLoanPoolShare`, which works for both open and closed loans. Claimable amount is the lender's pro-rata share of total recovery (drawn plus repaid, plus stream withdrawable for open loans) minus cumulative prior receipts, ensuring order-independent fairness.
 
 ### OVRFLO cycle
 
-The composition of PT deposit, lending sale, and unwrap or swap that lets the PT discount -- fixed at deposit -- overflow into extractable value. A depositor receives immediate ovrfloToken (principal at TWAP value) plus a Sablier stream (the yield). Selling the stream on the lending and exiting the immediate portion via unwrap or a swap pool converts both legs to underlying, capturing the fixed yield. Executable today with held PT, zero capital via an underlying flash loan from an external provider (swap for PT on the Pendle AMM, run the cycle, repay in underlying), or zero capital via a PT flash loan from OVRFLO itself (run the cycle, buy PT on the Pendle AMM for repayment). The protocol remains solvent throughout: the deposit adds PT backing, the unwrap (if used) consumes wrap-reserve backing, and every participant is economically whole. See `README.md` "What's Fixed Will OVRFLO" for the full example.
+The composition of PT deposit, lending, and unwrap or swap that lets the PT discount -- fixed at deposit -- overflow into extractable value. A depositor receives immediate ovrfloToken (principal at TWAP value) plus a Sablier stream (the yield). Borrowing the stream's full discounted price on the lending (economically a sale — see "Loan" above) and exiting the immediate portion via unwrap or a swap pool converts both legs to underlying, capturing the fixed yield. Executable today with held PT, zero capital via an underlying flash loan from an external provider (swap for PT on the Pendle AMM, run the cycle, repay in underlying), or zero capital via a PT flash loan from OVRFLO itself (run the cycle, buy PT on the Pendle AMM for repayment). The protocol remains solvent throughout: the deposit adds PT backing, the unwrap (if used) consumes wrap-reserve backing, and every participant is economically whole. See `README.md` "What's Fixed Will OVRFLO" for the full example.
 
 ### PT flash loan
 
 An atomic loan of deposited PT from the OVRFLO vault, repaid via safeTransferFrom within the same transaction. The borrower implements an EIP-4531 callback that receives PT, executes logic (typically the OVRFLO cycle), and returns PT plus an oracle-adjusted fee in underlying. The fee routes to the treasury, which wraps it to fund the wrap reserve. Capped by marketTotalDeposited, gated pre-maturity, and globally pausable by the multisig. No nonReentrant modifier is applied because the borrower must deposit during the callback to run the cycle.
 
-## OVRFLOLending v1-lite (planned redesign)
+## OVRFLOLending v1-lite
 
-Vocabulary for the claim-range order-book redesign specified in `docs/plans/2026-08-05-001-feat-lending-v1-lite-plan.md`. The entries above in "OVRFLOLending" describe the current contract; these describe its planned replacement.
+Current vocabulary for the loan-only, fixed-rate tick order book shipped per `docs/plans/2026-08-05-001-feat-lending-v1-lite-plan.md` — this is the live `OVRFLOLending` contract. The "OVRFLOLending" section above describes the pre-rewrite contract it replaced.
+
+### Position
+
+A lender's permanent coordinate in one tick epoch's tape, created by `supply(market, aprBps, amount)`. Replaces LiquidityPosition: a Position is not itself consumable as a sale or a loan — it is a claim on a contiguous tape interval that `borrow()` fills blindly (see "Blind fill") and that later loans' `contributionOf`/`claim` attribute against by interval overlap (see "Frozen history"). Never restricted to one loan; one Position can contribute to many loans, and one loan can draw from many Positions, with no stored link between them.
 
 ### Tick
 
-A fixed APR price level in a lending market's order book, at a per-market spacing set at series approval (default 25 bps). Lenders rest capital at a tick; every fill at a tick executes at the tick's deterministic price (`1/factor(aprBps, ttm)`), so bidders at one tick get identical terms and ordering carries no adverse selection.
+A fixed APR price level in a lending market's order book, at a per-market spacing set once via the factory's `setLendingTickSpacing` forwarder (a separate admin action from series approval; no default is enforced on-chain — the plan's stated per-market default is 25 bps). Lenders rest capital at a tick; every fill at a tick executes at the tick's deterministic price (`1/factor(aprBps, ttm)`), so bidders at one tick get identical terms and ordering carries no adverse selection.
 
 ### Tape
 
@@ -140,7 +156,7 @@ One generation of a tick's bookkeeping — one segment tree, one `filled` counte
 
 ### UNIT
 
-The book's quantization granule (1e12 wei ≈ one-millionth of an 18-decimal token). All supply, fill, and depth quantities are exact UNIT multiples, enforced at the boundary, which makes book arithmetic exact (no rounding exists inside the book) and lets tree nodes be 64-bit values packed four per storage slot. Series onboarding must verify the underlying's total supply is far below `2^64 × UNIT`.
+The book's quantization granule (1e12 wei ≈ one-millionth of an 18-decimal token). All supply, fill, and depth quantities are exact UNIT multiples, enforced at the boundary, which makes book arithmetic exact (no rounding exists inside the book) and lets tree nodes be 64-bit values packed four per storage slot. Series onboarding must verify the underlying's total supply is at most `2^54 × UNIT` (the bound documented at `OVRFLOFactory.setLendingTickSpacing`, headroom under the uint64 packed-node ceiling).
 
 ## Testing infrastructure
 

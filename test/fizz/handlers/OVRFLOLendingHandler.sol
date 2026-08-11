@@ -1,539 +1,718 @@
 // SPDX-License-Identifier: MIT
 pragma solidity >=0.6.2 <0.9.0;
 
+import "../Base.sol";
 import {Properties} from "../Properties.sol";
+import {OVRFLOLending} from "../../../src/OVRFLOLending.sol";
 import {MockSablier} from "../mocks/MockSablier.sol";
-import {ISablierV2LockupLinear} from "../../../interfaces/ISablierV2LockupLinear.sol";
 
 /// @notice Handles the interaction with OVRFLOLending
+/// @dev Ghost-accounting hooks: Base.sol's `asActor` modifier runs the
+///      `_beforeHandlerCall`/`_afterHandlerCall` pair (with a depth guard) around every
+///      actor handler — handlers must NOT call the hooks directly, or a composed handler
+///      would double-count. Specific properties (SP-*) are called at the end of the
+///      handler they belong to, after the state change they check; pre-state is captured
+///      locally in the handler rather than through the global snapshot machinery, because
+///      it is entity-keyed (position/loan ids) rather than actor-keyed.
 abstract contract OVRFLOLendingHandler is Properties {
-    uint16 constant APR_STEP = 100;
-    // Fixed treasury target — not an actor, not lending/vault/Sablier.
-    // Clamping prevents corrupting SP-99's balance-delta check.
-    address constant TREASURY_CLAMP = address(0xFEED);
+    /// @dev `Panic(uint256)` selector, for SP-06's arithmetic-fault detection.
+    bytes4 internal constant PANIC_SELECTOR = 0x4e487b71;
+    /// @dev `Error(string)` selector, for SP-06's SafeCast-require detection (OZ v4
+    ///      SafeCast reverts with a require string, not a panic).
+    bytes4 internal constant ERROR_SELECTOR = 0x08c379a0;
 
-    // ――――――――――――――――――――― Stream picker ―――――――――――――――――――――
-
-    function _pickStream(uint256 seed) internal view returns (uint256) {
-        uint256 maxId = MockSablier(SABLIER_ADDR).nextStreamId();
-        if (maxId == 0) return 0;
-        for (uint256 i = 0; i < 5; i++) {
-            uint256 streamId = (seed + i) % maxId + 1;
-            try ISablierV2LockupLinear(SABLIER_ADDR).ownerOf(streamId) returns (address owner) {
-                if (owner == actor) return streamId;
-            } catch {}
-        }
-        return 0;
-    }
-
-    function _clampApr(uint16 apr) internal view returns (uint16) {
-        // forge-lint: disable-next-line(divide-before-multiply) — intentional round-to-step
-        apr = (apr / APR_STEP) * APR_STEP; // round to step
-        if (apr < lending.aprMinBps()) apr = lending.aprMinBps();
-        if (apr > lending.aprMaxBps()) apr = lending.aprMaxBps();
-        return apr;
-    }
-
-    function _listingPrice(uint256 listingId) internal view returns (uint256 grossPrice, bool active) {
-        (, address listingMarket, uint256 streamId, uint16 apr,, bool isActive) = lending.saleListings(listingId);
-        if (!isActive) return (0, false);
-        try lending.quote(listingMarket, streamId, apr, 0) returns (uint256 price, uint128, uint256, uint256, uint128) {
-            return (price, true);
-        } catch {
-            return (0, false);
-        }
-    }
-
-    function _claimable(uint256 loanPoolId, address account) internal view returns (uint256) {
-        uint128 contribution = lending.loanPoolContributions(loanPoolId, account);
-        if (contribution == 0) return 0;
-        (,,, uint128 totalContributed) = lending.loanPools(loanPoolId);
-        (, uint256 streamId, uint128 obligation, uint128 drawn, uint128 repaid, bool closed) = lending.loans(loanPoolId);
-        uint256 recovered = uint256(drawn) + uint256(repaid);
-        if (!closed) {
-            uint128 outstanding = obligation - drawn - repaid;
-            uint128 withdrawable = MockSablier(SABLIER_ADDR).withdrawableAmountOf(streamId);
-            recovered += withdrawable < outstanding ? withdrawable : outstanding;
-        }
-        uint256 entitled = uint256(contribution) * recovered / totalContributed;
-        uint256 received = lending.loanPoolReceived(loanPoolId, account);
-        return entitled > received ? entitled - received : 0;
-    }
+    // ―― Ghosts owned by this handler's specific properties ――
+    /// @dev SP-02: cumulative supply→withdraw round-trip drift across the whole campaign,
+    ///      so an accumulation bug cannot hide behind a single exact round trip.
+    uint256 internal spRoundTripCycles;
+    uint256 internal spRoundTripGained;
+    uint256 internal spRoundTripLost;
+    /// @dev SP-20/SP-09 pacing: the O(positions) tape scan runs every Nth claim only.
+    uint256 internal spClaimCount;
+    uint256 internal constant SP_SCAN_EVERY = 8;
+    /// @dev SP-20/SP-09 cost bound: skip the tape scan once the campaign has more
+    ///      positions than this (the scan is O(positions) with ~2 view calls each).
+    uint256 internal constant SP_SCAN_POSITION_BOUND = 400;
 
     // ――――――――――――――――――――――――― Clamped ――――――――――――――――――――――――――
 
-    function _recordLoanCloseGhost(uint256 loanId, uint256 streamId) internal {
-        ghost_loanStreamWithdrawnAtClose[loanId] = ISablierV2LockupLinear(SABLIER_ADDR).getWithdrawnAmount(streamId);
+    /// @dev amount MUST be an exact multiple of UNIT and >= MIN_LIQUIDITY_AMOUNT.
+    function lending_supply_clamped(uint256 aprSeed, uint256 amountSeed) public {
+        uint128 minLiquidity = lending.MIN_LIQUIDITY_AMOUNT();
+        uint256 balance = underlying.balanceOf(actor);
+        if (balance < minLiquidity) return;
+
+        uint256 unit = lending.UNIT();
+        uint256 cap = balance < 1_000e18 ? balance : 1_000e18;
+        if (cap < minLiquidity) return;
+
+        // forge-lint: disable-next-line(divide-before-multiply) — flooring to a UNIT multiple is the point.
+        uint256 amount = (clampBetween(amountSeed, minLiquidity, cap) / unit) * unit;
+        if (amount < minLiquidity) return;
+
+        uint16 aprBps = validTick(aprSeed);
+        lending_supply(market, aprBps, uint128(amount));
     }
 
-    function _recordLoanCreateGhost(uint256 loanId, uint256 streamId) internal {
-        ghost_loanStreamWithdrawnAtCreation[loanId] = ISablierV2LockupLinear(SABLIER_ADDR).getWithdrawnAmount(streamId);
+    /// @dev Withdraws from a position actually owned by the current actor.
+    function lending_withdraw_clamped(uint256 seed) public {
+        (uint256 positionId, bool found) = _actorPosition(actor, seed);
+        if (!found) return;
+        lending_withdraw(positionId);
     }
 
-    function oVRFLOLending_supplyLiquidity_clamped(address, uint16 aprBps, uint128 availableLiquidity) public {
-        availableLiquidity = uint128(clampBetween(uint256(availableLiquidity), 1, underlying.balanceOf(actor)));
-        if (availableLiquidity == 0) return;
-        aprBps = _clampApr(aprBps);
-        oVRFLOLending_supplyLiquidity(market, aprBps, availableLiquidity);
-    }
-
-    function oVRFLOLending_sellStreamToLiquidity_clamped(uint256 liquidityId, uint256 streamSeed, uint256) public {
-        uint256 maxLiquidity = lending.nextLiquidityId();
-        if (maxLiquidity <= 1) return;
-        uint256 streamId = _pickStream(streamSeed);
-        if (streamId == 0) return;
-        uint256 start = clampBetween(liquidityId, 1, maxLiquidity - 1);
-        for (uint256 offset; offset < maxLiquidity - 1; offset++) {
-            uint256 candidate = (start - 1 + offset) % (maxLiquidity - 1) + 1;
-            (, address liquidityMarket, uint16 apr, uint128 capacity) = lending.liquidityPositions(candidate);
-            if (capacity == 0) continue;
-            try lending.quote(liquidityMarket, streamId, apr, 0) returns (
-                uint256 grossPrice, uint128, uint256, uint256, uint128
-            ) {
-                if (grossPrice > 0 && grossPrice <= capacity) {
-                    oVRFLOLending_sellStreamToLiquidity(candidate, streamId, 0);
-                    return;
-                }
-            } catch {}
-        }
-    }
-
-    function oVRFLOLending_postSaleListing_clamped(address, uint256 streamSeed, uint16 aprBps) public {
-        uint256 streamId = _pickStream(streamSeed);
-        if (streamId == 0) return;
-        aprBps = _clampApr(aprBps);
-        oVRFLOLending_postSaleListing(market, streamId, aprBps);
-    }
-
-    function oVRFLOLending_buyListing_clamped(uint256 listingId, uint256 maxPriceIn) public {
-        uint256 maxListing = lending.nextSaleListingId();
-        if (maxListing <= 1) return;
-        uint256 start = clampBetween(listingId, 1, maxListing - 1);
-        for (uint256 offset; offset < maxListing - 1; offset++) {
-            uint256 candidate = (start - 1 + offset) % (maxListing - 1) + 1;
-            (uint256 grossPrice, bool active) = _listingPrice(candidate);
-            if (!active) continue;
-            uint256 balance = underlying.balanceOf(actor);
-            if (grossPrice == 0 || grossPrice > balance) continue;
-            maxPriceIn = clampBetween(maxPriceIn, grossPrice, balance);
-            oVRFLOLending_buyListing(candidate, maxPriceIn);
-            return;
-        }
-    }
-
-    function oVRFLOLending_createBorrowerLoanPool_clamped(
-        uint256[] memory,
+    /// @dev Pledges a stream the actor currently owns (i.e. not already backing an
+    ///      open loan). targetBorrow spans partial and full fills; the contract's own
+    ///      min(target, available, price) sizing does the rest. `minAcceptable` is
+    ///      usually 0, but is occasionally fuzzed to reach BelowMinAcceptable.
+    function lending_borrow_clamped(
+        uint256 aprSeed,
+        uint256 targetSeed,
         uint256 streamSeed,
-        uint128 targetBorrow,
-        uint128 poolSizeSeed
+        bool useMinAcceptable,
+        uint256 minAcceptableSeed
     ) public {
-        uint256 maxLiquidity = lending.nextLiquidityId();
-        if (maxLiquidity <= 1) return;
-        uint256 streamId = _pickStream(streamSeed);
-        if (streamId == 0) return;
+        (uint256 streamId, bool found) = _actorStream(actor, streamSeed);
+        if (!found) return;
 
-        // Determine pool size: 1-3 liquidityPositions
-        uint256 poolSize = uint256(poolSizeSeed) % 3 + 1;
-        if (poolSize > maxLiquidity - 1) poolSize = maxLiquidity - 1;
+        uint16 aprBps = validTick(aprSeed);
+        uint128 targetBorrow = uint128(clampBetween(targetSeed, lending.MIN_LIQUIDITY_AMOUNT(), 1_000e18));
+        uint128 minAcceptable = useMinAcceptable ? uint128(clampBetween(minAcceptableSeed, 0, 1_000e18)) : 0;
 
-        // Find a first valid liquidity (active, not owned by actor)
-        uint256 firstLiquidityId = 0;
-        for (uint256 i = 1; i < maxLiquidity; i++) {
-            (address lender,,, uint128 cap) = lending.liquidityPositions(i);
-            if (cap > 0 && lender != actor) {
-                firstLiquidityId = i;
-                break;
+        lending_borrow(market, aprBps, targetBorrow, streamId, minAcceptable);
+    }
+
+    /// @dev SP-06: the documented max-borrow sentinel (`targetBorrow == type(uint128).max`)
+    ///      must partial-fill, never arithmetic-fault. `_toUnits(type(uint128).max)` would
+    ///      overflow SafeCast.toUint64; the inlined `/ UNIT` at OVRFLOLending.sol:1070
+    ///      avoids that, and a "cleanup" refactor reintroducing `_toUnits` is exactly what
+    ///      the fault detection below catches. Legitimate custom-error reverts (EmptyTick,
+    ///      BelowMinimum, eligibility gates, EpochBacklog) pass through unflagged.
+    function lending_borrow_maxSentinel(uint256 aprSeed, uint256 streamSeed) public {
+        (uint256 streamId, bool found) = _actorStream(actor, streamSeed);
+        if (!found) return;
+        uint16 aprBps = validTick(aprSeed);
+
+        try this.lending_borrow(market, aprBps, type(uint128).max, streamId, 0) {
+            property_maxSentinel_partialFills(false); // SP-06: filled without faulting
+        } catch (bytes memory err) {
+            bool fault;
+            bytes4 sel = _errSelector(err);
+            if (sel == PANIC_SELECTOR) {
+                // Panic(0x01) is an inner property assertion — re-raise it instead of
+                // relabeling it as an arithmetic fault. Any other panic code is a fault.
+                uint256 code = _panicCode(err);
+                if (code == 0x01) assert(false);
+                fault = true;
+            } else if (sel == ERROR_SELECTOR) {
+                fault = _isSafeCastError(err);
             }
+            property_maxSentinel_partialFills(fault); // SP-06
         }
-        if (firstLiquidityId == 0) return;
+    }
 
-        // Get first liquidity's market and aprBps for matching
-        (, address liquidityMarket, uint16 liquidityApr,) = lending.liquidityPositions(firstLiquidityId);
+    /// @dev SP-24: the withdraw-then-borrow griefing race. The griefer (another position's
+    ///      owner) withdraws immediately before the victim's borrow lands. Both legs run
+    ///      through the instrumented `asActor` handlers — the griefer leg by temporarily
+    ///      rotating `actor`, so the hook accounting stays truthful. If the thinned borrow
+    ///      reverts, the victim must have lost nothing but gas.
+    function scenario_withdrawThenBorrow(uint256 griefSeed, uint256 aprSeed, uint256 targetSeed, uint256 streamSeed)
+        public
+    {
+        (uint256 streamId, bool found) = _actorStream(actor, streamSeed);
+        if (!found) return;
 
-        // Build liquidity array with matching liquidityPositions (ascending order by construction)
-        uint256[] memory liquidityIds = new uint256[](poolSize);
-        liquidityIds[0] = firstLiquidityId;
-        uint256 count = 1;
-        for (uint256 i = firstLiquidityId + 1; i < maxLiquidity && count < poolSize; i++) {
-            (address lender, address m, uint16 apr, uint128 cap) = lending.liquidityPositions(i);
-            if (cap > 0 && lender != actor && m == liquidityMarket && apr == liquidityApr) {
-                liquidityIds[count] = i;
-                count++;
+        // Pick any tracked position with unfilled liquidity as the griefer's weapon.
+        if (positionIds.length == 0) return;
+        uint256 griefPositionId = positionIds[griefSeed % positionIds.length];
+        (address griefer,,,,) = lending.positions(griefPositionId);
+        if (griefer == address(0)) return;
+        (,,, uint128 unfilled) = lending.positionState(griefPositionId);
+        if (unfilled == 0) return;
+
+        address victim = actor;
+        uint16 aprBps = validTick(aprSeed);
+        uint128 targetBorrow = uint128(clampBetween(targetSeed, lending.MIN_LIQUIDITY_AMOUNT(), 1_000e18));
+
+        // Griefer leg: withdraw as the position's owner, through the instrumented handler.
+        if (griefer != victim) {
+            actor = griefer;
+            lending_withdraw(griefPositionId);
+            actor = victim;
+        } else {
+            lending_withdraw(griefPositionId);
+        }
+
+        // Victim leg: the borrow lands on the thinned tick.
+        uint256 balanceBefore = underlying.balanceOf(victim);
+        try this.lending_borrow(market, aprBps, targetBorrow, streamId, 0) {
+        // Fill still succeeded on the thinned tick — nothing to assert.
+        }
+        catch (bytes memory err) {
+            if (_errSelector(err) == PANIC_SELECTOR && _panicCode(err) == 0x01) assert(false); // inner assertion
+            bool ownsStream = MockSablier(SABLIER_ADDR).ownerOf(streamId) == victim;
+            property_withdrawBeforeBorrow_cleanRevert(balanceBefore, underlying.balanceOf(victim), ownsStream); // SP-24
+        }
+    }
+
+    /// @dev Repays against a real loan, clamped to its live outstanding and the actor's
+    ///      ovrfloToken balance. Repay is permissionless, so any tracked loan qualifies.
+    function lending_repay_clamped(uint256 loanSeed, uint256 amountSeed) public {
+        if (loanIds.length == 0) return;
+        uint256 loanId = loanIds[loanSeed % loanIds.length];
+
+        (OVRFLOLending.Loan memory loan, uint128 outstanding) = lending.loanState(loanId);
+        if (loan.closed || outstanding == 0) return;
+
+        uint256 balance = ovrfloToken.balanceOf(actor);
+        if (balance == 0) return;
+
+        uint256 cap = outstanding < balance ? outstanding : balance;
+        uint128 amount = uint128(clampBetween(amountSeed, 1, cap));
+        lending_repay(loanId, amount);
+    }
+
+    /// @dev Fully repays a real loan using the actor's full outstanding-capped balance,
+    ///      the boundary case that closes the loan and returns the stream in one call.
+    function lending_repay_full_clamped(uint256 loanSeed) public {
+        if (loanIds.length == 0) return;
+        uint256 loanId = loanIds[loanSeed % loanIds.length];
+
+        (OVRFLOLending.Loan memory loan, uint128 outstanding) = lending.loanState(loanId);
+        if (loan.closed || outstanding == 0) return;
+
+        uint256 balance = ovrfloToken.balanceOf(actor);
+        if (balance < outstanding) return;
+
+        lending_repay(loanId, outstanding);
+    }
+
+    /// @dev Closes a real loan. `advanceTime` optionally skips to the pledged stream's
+    ///      end so its withdrawable accrual covers the outstanding — without this,
+    ///      `close` almost always reverts NotCovered because nothing has vested yet.
+    ///      SP-05 rides the fully-vested case: past the stream's end time the whole
+    ///      remaining face is withdrawable, so `close` reverting NotCovered there means
+    ///      grossPrice's floor and obligation's ceil have drifted apart and the loan is
+    ///      permanently unclosable.
+    function lending_close_clamped(uint256 loanSeed, bool advanceTime) public {
+        if (loanIds.length == 0) return;
+        uint256 loanId = loanIds[loanSeed % loanIds.length];
+
+        (OVRFLOLending.Loan memory loan, uint128 outstanding) = lending.loanState(loanId);
+        if (loan.closed) return;
+
+        MockSablier sablierMock = MockSablier(SABLIER_ADDR);
+        if (advanceTime && outstanding > 0) {
+            uint40 endTime = sablierMock.getEndTime(loan.streamId);
+            if (endTime > block.timestamp) skipTime(uint256(endTime) - block.timestamp + 1);
+        }
+
+        if (block.timestamp >= sablierMock.getEndTime(loan.streamId)) {
+            try this.lending_close(loanId) {
+            // Closed fine — the fully-vested stream covered the loan, as required.
             }
-        }
-
-        // Trim if fewer matching liquidityPositions found
-        if (count < poolSize) {
-            uint256[] memory trimmed = new uint256[](count);
-            for (uint256 i = 0; i < count; i++) {
-                trimmed[i] = liquidityIds[i];
+            catch (bytes memory err) {
+                bytes4 sel = _errSelector(err);
+                if (sel == PANIC_SELECTOR) assert(false); // bubble an inner assertion/panic
+                property_freshLoan_alwaysClosable(sel == OVRFLOLending.NotCovered.selector); // SP-05
             }
-            liquidityIds = trimmed;
-        }
-
-        uint256 totalAvailable;
-        for (uint256 i; i < liquidityIds.length; i++) {
-            (,,, uint128 capacity) = lending.liquidityPositions(liquidityIds[i]);
-            totalAvailable += capacity;
-        }
-        uint256 maxBorrow;
-        try lending.quote(liquidityMarket, streamId, liquidityApr, 0) returns (
-            uint256 grossPrice, uint128, uint256, uint256, uint128
-        ) {
-            maxBorrow = grossPrice < totalAvailable ? grossPrice : totalAvailable;
-        } catch {
             return;
         }
-        if (maxBorrow == 0) return;
-        targetBorrow = uint128(clampBetween(uint256(targetBorrow), 1, maxBorrow));
-        oVRFLOLending_createBorrowerLoanPool(liquidityIds, streamId, targetBorrow, 0);
+
+        lending_close(loanId);
     }
 
-    function oVRFLOLending_closeLoan_clamped(uint256 loanId) public {
-        uint256 maxLoan = lending.nextLoanId();
-        if (maxLoan <= 1) return;
-        uint256 start = clampBetween(loanId, 1, maxLoan - 1);
-        for (uint256 offset; offset < maxLoan - 1; offset++) {
-            uint256 candidate = (start - 1 + offset) % (maxLoan - 1) + 1;
-            (,, uint128 obligation, uint128 drawn, uint128 repaid, bool closed) = lending.loans(candidate);
-            uint128 outstanding = obligation - drawn - repaid;
-            (, uint256 streamId,,,,) = lending.loans(candidate);
-            if (!closed && MockSablier(SABLIER_ADDR).withdrawableAmountOf(streamId) >= outstanding) {
-                oVRFLOLending_closeLoan(candidate);
-                return;
-            }
+    /// @dev Claims against a loan discovered to actually overlap the actor's position
+    ///      via `loansOf` — the intended discovery path. Picking a random loanId here
+    ///      would almost always hit EpochMismatch/NotLender and never cover the payout
+    ///      math.
+    function lending_claim_clamped(uint256 positionSeed, uint256 loanPickSeed, bool claimMax, uint256 amountSeed)
+        public
+    {
+        (uint256 positionId, bool found) = _actorPosition(actor, positionSeed);
+        if (!found) return;
+
+        (OVRFLOLending.LoanShare[] memory shares,) = lending.loansOf(positionId, 0, 10);
+        if (shares.length == 0) return;
+
+        uint256 loanId = shares[loanPickSeed % shares.length].loanId;
+        uint128 amount = claimMax ? type(uint128).max : uint128(clampBetween(amountSeed, 1, type(uint128).max));
+
+        lending_claim(loanId, positionId, amount);
+    }
+
+    function lending_advanceEpochCursor_clamped(uint256 aprSeed, uint256 maxStepsSeed) public {
+        uint16 aprBps = validTick(aprSeed);
+        uint32 maxSteps = uint32(clampBetween(maxStepsSeed, 1, 64));
+        lending_advanceEpochCursor(market, aprBps, maxSteps);
+    }
+
+    // ―――――――――――――――――― Round-trip / scenario handlers ――――――――――――――――――
+
+    /// @dev SP-01/SP-02: atomic supply → withdraw round trip. Both legs run through the
+    ///      instrumented `asActor` handlers, so each leg fires its own postconditions and
+    ///      hook accounting; the round-trip identity is asserted across the pair.
+    function roundTrip_supplyWithdraw(uint256 aprSeed, uint256 amountSeed) public {
+        uint128 minLiquidity = lending.MIN_LIQUIDITY_AMOUNT();
+        uint256 balance = underlying.balanceOf(actor);
+        if (balance < minLiquidity) return;
+        uint256 unit = lending.UNIT();
+        uint256 cap = balance < 1_000e18 ? balance : 1_000e18;
+        // forge-lint: disable-next-line(divide-before-multiply) — flooring to a UNIT multiple is the point.
+        uint256 amount = (clampBetween(amountSeed, minLiquidity, cap) / unit) * unit;
+        if (amount < minLiquidity) return;
+        uint16 aprBps = validTick(aprSeed);
+
+        snapshotBefore();
+        lending_supply(market, aprBps, uint128(amount));
+        uint256 positionId = positionIds[positionIds.length - 1];
+        (,,, uint32 epoch,) = lending.positions(positionId);
+        (, uint64 filledMid,,,,) = lending.fizz_epochState(market, aprBps, epoch);
+
+        lending_withdraw(positionId);
+        snapshotAfter();
+
+        (, uint64 filledAfter,,,,) = lending.fizz_epochState(market, aprBps, epoch);
+        property_supplyWithdraw_exact(
+            stateBefore.actorUnderlyingBalance, stateAfter.actorUnderlyingBalance, filledMid, filledAfter
+        ); // SP-01
+
+        if (stateAfter.actorUnderlyingBalance > stateBefore.actorUnderlyingBalance) {
+            spRoundTripGained += stateAfter.actorUnderlyingBalance - stateBefore.actorUnderlyingBalance;
         }
+        if (stateBefore.actorUnderlyingBalance > stateAfter.actorUnderlyingBalance) {
+            spRoundTripLost += stateBefore.actorUnderlyingBalance - stateAfter.actorUnderlyingBalance;
+        }
+        spRoundTripCycles += 1;
+        property_supplyWithdraw_noDrift(spRoundTripGained, spRoundTripLost, spRoundTripCycles); // SP-02
     }
 
-    function oVRFLOLending_repayLoan_clamped(uint256 loanId, uint128 amount) public {
-        uint256 maxLoan = lending.nextLoanId();
-        if (maxLoan <= 1) return;
-        uint256 start = clampBetween(loanId, 1, maxLoan - 1);
-        for (uint256 offset; offset < maxLoan - 1; offset++) {
-            uint256 candidate = (start - 1 + offset) % (maxLoan - 1) + 1;
-            (address borrower,, uint128 obligation, uint128 drawn, uint128 repaid, bool closed) =
-                lending.loans(candidate);
-            uint256 maxRepay = obligation - drawn - repaid;
+    /// @dev Bare-donation handler (property-plan `fizz_donate`): sends tokens straight to
+    ///      the lending contract, bypassing supply/repay. No specific property — the
+    ///      global donation-resistance lane (GL-10/GL-11) and the hook's donation
+    ///      classification consume the resulting state. Runs `asActor` so the hook pair
+    ///      observes and classifies the transfer.
+    function lending_donate(bool donateOvrflo, uint256 amountSeed) public asActor {
+        if (donateOvrflo) {
             uint256 balance = ovrfloToken.balanceOf(actor);
-            if (!closed && borrower == actor && maxRepay > 0 && balance > 0) {
-                if (maxRepay > balance) maxRepay = balance;
-                // Occasionally repay exact outstanding to exercise loan-close path
-                if (amount % 3 == 0) {
-                    amount = uint128(maxRepay);
-                } else {
-                    amount = uint128(clampBetween(uint256(amount), 1, maxRepay));
-                }
-                oVRFLOLending_repayLoan(candidate, amount);
-                return;
-            }
+            if (balance == 0) return;
+            require(ovrfloToken.transfer(address(lending), clampBetween(amountSeed, 1, balance)), "donate failed");
+        } else {
+            uint256 balance = underlying.balanceOf(actor);
+            if (balance == 0) return;
+            require(underlying.transfer(address(lending), clampBetween(amountSeed, 1, balance)), "donate failed");
         }
-    }
-
-    function oVRFLOLending_claimLoanPoolShare_clamped(uint256 loanPoolId, uint128 amount) public {
-        uint256 maxPool = lending.nextLoanId();
-        if (maxPool <= 1) return;
-        uint256 start = clampBetween(loanPoolId, 1, maxPool - 1);
-        for (uint256 offset; offset < maxPool - 1; offset++) {
-            uint256 candidate = (start - 1 + offset) % (maxPool - 1) + 1;
-            uint256 claimable = _claimable(candidate, actor);
-            if (claimable > 0) {
-                amount = uint128(clampBetween(uint256(amount), 1, claimable));
-                oVRFLOLending_claimLoanPoolShare(candidate, amount);
-                return;
-            }
-        }
-    }
-
-    function oVRFLOLending_withdrawLiquidity_clamped(uint256 liquidityId) public {
-        uint256 maxLiquidity = lending.nextLiquidityId();
-        if (maxLiquidity <= 1) return;
-        uint256 start = clampBetween(liquidityId, 1, maxLiquidity - 1);
-        for (uint256 offset; offset < maxLiquidity - 1; offset++) {
-            uint256 candidate = (start - 1 + offset) % (maxLiquidity - 1) + 1;
-            (address lender,,, uint128 cap) = lending.liquidityPositions(candidate);
-            if (cap > 0 && lender == actor) {
-                oVRFLOLending_withdrawLiquidity(candidate);
-                return;
-            }
-        }
-    }
-
-    function oVRFLOLending_cancelSaleListing_clamped(uint256 listingId) public {
-        uint256 maxListing = lending.nextSaleListingId();
-        if (maxListing <= 1) return;
-        uint256 start = clampBetween(listingId, 1, maxListing - 1);
-        for (uint256 offset; offset < maxListing - 1; offset++) {
-            uint256 candidate = (start - 1 + offset) % (maxListing - 1) + 1;
-            (address seller,,,,, bool active) = lending.saleListings(candidate);
-            if (active && seller == actor) {
-                oVRFLOLending_cancelSaleListing(candidate);
-                return;
-            }
-        }
-    }
-
-    function oVRFLOLending_secondary(uint8 selector, uint256 arg0, uint256 arg1) public {
-        selector = uint8(selector % 3);
-        if (selector == 0) _oVRFLOLending_setAprBounds(uint16(arg0), uint16(arg1));
-        else if (selector == 1) _oVRFLOLending_setFee(uint16(arg0));
-        else _oVRFLOLending_setTreasury(address(uint160(arg0)));
-        // SP-70: Non-owner cannot call lending admin functions
-        property_nonOwnerCannotCallLendingAdmin();
     }
 
     // ―――――――――――――――――――――――― Unclamped ―――――――――――――――――――――――――
 
-    function oVRFLOLending_supplyLiquidity(address _market, uint16 aprBps, uint128 availableLiquidity) public asActor {
-        uint256 marketDepthBefore = lending.marketAvailableLiquidity(_market);
-        uint256 aprDepthBefore = lending.marketAprAvailableLiquidity(_market, aprBps);
-        snapshotBefore();
-        uint256 liquidityId = lending.supplyLiquidity(_market, aprBps, availableLiquidity);
-        ghosts.ghost_lastLiquidityId = liquidityId;
-        // Ghost: record initial capacity for GL-71, GL-81
-        ghost_liquidityInitialCapacity[liquidityId] = availableLiquidity;
-        snapshotAfter();
-        // Property assertions
-        property_supplyLiquidityIdIncrements();
-        property_supplyLiquidityNewLiquidityActive();
-        eq(
-            lending.marketAvailableLiquidity(_market),
-            marketDepthBefore + availableLiquidity,
-            "SP-101: supply market liquidity depth delta"
-        );
-        eq(
-            lending.marketAprAvailableLiquidity(_market, aprBps),
-            aprDepthBefore + availableLiquidity,
-            "SP-101: supply APR liquidity depth delta"
-        );
+    /// @dev Locals for `lending_supply`'s pre-state, packed to stay off the stack.
+    struct SupplySnap {
+        uint256 nextIdBefore;
+        uint256 lenderCountBefore;
+        uint32 currentEpochBefore;
+        uint32 leavesBefore;
+        bool otherSampled;
+        address otherLender;
+        uint256 otherPositionId;
+        uint256 otherCountBefore;
+        bytes32 otherHashBefore;
     }
 
-    function oVRFLOLending_sellStreamToLiquidity(uint256 liquidityId, uint256 streamId, uint256 minNetOut)
-        public
-        asActor
-    {
-        ghosts.ghost_lastLiquidityId = liquidityId;
-        ghosts.ghost_lastStreamId = streamId;
-        // Derive grossPrice from quote() (not capacity delta) — mirrors buyListing pattern
-        (, address liqMarket, uint16 liqAprBps,) = lending.liquidityPositions(liquidityId);
-        uint256 grossPrice;
-        try lending.quote(liqMarket, streamId, liqAprBps, 0) returns (
-            uint256 price, uint128, uint256, uint256, uint128
-        ) {
-            grossPrice = price;
-        } catch {
-            return;
+    function lending_supply(address _market, uint16 aprBps, uint128 amount) public asActor {
+        SupplySnap memory snap;
+        snap.nextIdBefore = lending.nextPositionId();
+        snap.lenderCountBefore = lending.lenderPositionCount(actor);
+        (, snap.currentEpochBefore) = lending.fizz_tickCursors(_market, aprBps);
+        (,,, snap.leavesBefore,,) = lending.fizz_epochState(_market, aprBps, snap.currentEpochBefore);
+        (snap.otherSampled, snap.otherLender, snap.otherPositionId, snap.otherCountBefore, snap.otherHashBefore) =
+            _sampleOtherLender();
+
+        uint256 positionId = lending.supply(_market, aprBps, amount);
+        positionIds.push(positionId);
+
+        property_supply_postconditions(
+            positionId, snap.nextIdBefore, actor, _market, aprBps, amount, snap.lenderCountBefore
+        ); // SP-12
+
+        (,,, uint32 storedEpoch, uint32 leafIndex) = lending.positions(positionId);
+        (,,, uint32 leavesAfter,,) = lending.fizz_epochState(_market, aprBps, storedEpoch);
+        property_tickTree_structural(
+            true, leafIndex, snap.leavesBefore, leavesAfter, storedEpoch != snap.currentEpochBefore, 0, 0, 0, false, 0
+        ); // SP-17 (append half)
+
+        if (snap.otherSampled) {
+            property_supply_isolation(
+                true,
+                snap.otherCountBefore,
+                lending.lenderPositionCount(snap.otherLender),
+                snap.otherHashBefore,
+                _sp_positionFullHash(snap.otherPositionId)
+            ); // SP-18
         }
-        snapshotBefore();
-        lending.sellStreamToLiquidity(liquidityId, streamId, minNetOut);
-        snapshotAfter();
-        uint256 feeBps = lending.feeBps();
-        // Expected fee from formula (for SP-99 settlement conservation)
-        uint256 expectedFee = feeBps == 0 ? 0 : grossPrice * feeBps / 10_000;
-        // Observed fee from treasury delta (for SP-19 floored check)
-        uint256 observedFee = stateAfter.treasuryUnderlying - stateBefore.treasuryUnderlying;
-        // Property assertions
-        property_sellStreamToLiquidityCapacityDecreases(grossPrice);
-        property_lendingFeeFlooredWithBps(observedFee, grossPrice, uint16(feeBps));
-        property_streamOwnerOnly();
-        property_sellStream_transfers_to_lender();
-        property_sale_settlement_conservation(expectedFee);
-        property_stream_escrow_withdraw_acl();
-        property_liquidityDepthDecreased(grossPrice);
     }
 
-    function oVRFLOLending_postSaleListing(address _market, uint256 streamId, uint16 aprBps) public asActor {
-        ghosts.ghost_lastStreamId = streamId;
-        snapshotBefore();
-        uint256 listingId = lending.postSaleListing(_market, streamId, aprBps);
-        ghosts.ghost_lastListingId = listingId;
-        snapshotAfter();
-        // Property assertions
-        property_postListingIdIncrements();
-        property_postListingActiveFeeSnapshotted();
-        property_streamOwnerOnly();
-        property_postListing_escrows_stream();
-        property_stream_escrow_withdraw_acl();
-    }
+    function lending_withdraw(uint256 positionId) public asActor {
+        // Instrument only ids that exist and belong to the current actor — anything else
+        // reverts inside `withdraw` and discards the whole call anyway.
+        (address positionLender,,,,) = lending.positions(positionId);
+        bool instrumented = positionLender == actor;
 
-    function oVRFLOLending_buyListing(uint256 listingId, uint256 maxPriceIn) public asActor {
-        ghosts.ghost_lastListingId = listingId;
-        // Single read of saleListings; derive grossPrice from quote() (not balance delta)
-        (, address listingMarket, uint256 streamId, uint16 aprBps, uint16 listingFeeBps, bool isActive) =
-            lending.saleListings(listingId);
-        ghosts.ghost_lastStreamId = streamId;
-        if (!isActive) return;
-        uint256 grossPrice;
-        try lending.quote(listingMarket, streamId, aprBps, 0) returns (
-            uint256 price, uint128, uint256, uint256, uint128
-        ) {
-            grossPrice = price;
-        } catch {
-            return;
+        bytes32 structHashBefore;
+        uint128 unfilledBefore;
+        uint256 balanceBefore;
+        bool siblingSampled;
+        uint256 siblingId;
+        bytes32 siblingSigBefore;
+        if (instrumented) {
+            structHashBefore = _sp_positionStructHash(positionId);
+            (,,, unfilledBefore) = lending.positionState(positionId);
+            balanceBefore = underlying.balanceOf(actor);
+            (siblingSampled, siblingId) = _sampleSibling(positionId);
+            if (siblingSampled) siblingSigBefore = _siblingSig(siblingId);
         }
-        uint256 fee = listingFeeBps == 0 ? 0 : grossPrice * listingFeeBps / 10_000;
-        snapshotBefore();
-        lending.buyListing(listingId, maxPriceIn);
-        snapshotAfter();
-        // Property assertions
-        property_buyListingInactive();
-        property_buyListing_transfers_to_buyer();
-        property_sale_settlement_conservation(fee);
+
+        lending.withdraw(positionId);
+
+        if (!instrumented) return;
+
+        uint256 refund = underlying.balanceOf(actor) - balanceBefore;
+        bool siblingUntouched = !siblingSampled || _siblingSig(siblingId) == siblingSigBefore;
+
+        // A second withdraw with no intervening borrow must revert NothingToWithdraw.
+        bool secondSucceeded;
+        bool secondRevertExpected;
+        try lending.withdraw(positionId) {
+            secondSucceeded = true;
+        } catch (bytes memory err) {
+            secondRevertExpected = _errSelector(err) == OVRFLOLending.NothingToWithdraw.selector;
+        }
+
+        property_withdraw_postconditions(
+            positionId,
+            structHashBefore,
+            unfilledBefore,
+            refund,
+            siblingUntouched,
+            secondSucceeded,
+            secondRevertExpected
+        ); // SP-13
     }
 
-    function oVRFLOLending_createBorrowerLoanPool(
-        uint256[] memory liquidityIds,
-        uint256 streamId,
+    /// @dev Locals for `lending_borrow`'s pre-state, packed to stay off the stack.
+    struct BorrowSnap {
+        uint128 remainingBefore;
+        uint256 balanceBefore;
+        uint256 nextLoanIdBefore;
+        uint256 borrowerCountBefore;
+        uint32 oldestBefore;
+        uint32 currentBefore;
+        uint64 filledOldestBefore;
+        uint64 filledCurrentBefore;
+        bool positionsSampled;
+        bytes32 positionsHashBefore;
+    }
+
+    function lending_borrow(
+        address _market,
+        uint16 aprBps,
         uint128 targetBorrow,
+        uint256 streamId,
         uint128 minAcceptable
     ) public asActor {
-        ghosts.ghost_lastStreamId = streamId;
-        if (liquidityIds.length != 0) {
-            ghosts.ghost_lastLiquidityId = liquidityIds[0];
+        BorrowSnap memory snap;
+        {
+            MockSablier sablierMock = MockSablier(SABLIER_ADDR);
+            uint128 deposited = sablierMock.getDepositedAmount(streamId);
+            uint128 withdrawn = sablierMock.getWithdrawnAmount(streamId);
+            snap.remainingBefore = deposited > withdrawn ? deposited - withdrawn : 0;
         }
-        snapshotBefore();
-        uint256 loanPoolId = lending.createBorrowerLoanPool(liquidityIds, streamId, targetBorrow, minAcceptable);
-        ghosts.ghost_lastPoolId = loanPoolId;
-        ghosts.ghost_lastLoanId = loanPoolId;
-        // Ghost: record stream withdrawn amount at creation for GL-70
-        _recordLoanCreateGhost(ghosts.ghost_lastLoanId, streamId);
-        snapshotAfter();
-        uint128 actualBorrow = stateAfter.poolTotalContributed;
-        uint256 feeBps = lending.feeBps();
-        // Expected fee from formula (for SP-100 disbursement conservation)
-        uint256 expectedFee = feeBps == 0 ? 0 : uint256(actualBorrow) * feeBps / 10_000;
-        // Observed fee from treasury delta (for SP-19 floored check)
-        uint256 observedFee = stateAfter.treasuryUnderlying - stateBefore.treasuryUnderlying;
-        // Property assertions
-        property_obligationGeBorrow();
-        property_obligationLeRemaining();
-        property_quoteMatchesObligation(loanPoolId, actualBorrow);
-        property_fullBorrowFastPath();
-        property_poolContributionsSum();
-        property_createPoolLoanState();
-        property_createPoolContributionsSet();
-        property_noSelfMatch();
-        property_noLoanOnZeroRemaining();
-        property_borrowAmountLeGrossPrice();
-        property_liquidityIdsStrictlyIncreasing(liquidityIds);
-        property_lendingFeeFlooredWithBps(observedFee, uint256(actualBorrow), uint16(feeBps));
-        property_streamOwnerOnly();
-        property_createPool_escrows_stream();
-        property_repledge_bounded_by_residual();
-        property_createPool_zero_reverts();
-        property_quote_full_correspondence();
-        // SP-100 only valid when actor is not the treasury (otherwise actor receives fee too)
-        if (lending.treasury() != actor) {
-            property_borrow_disbursement_conservation(actualBorrow, expectedFee);
+        snap.balanceBefore = underlying.balanceOf(actor);
+        snap.nextLoanIdBefore = lending.nextLoanId();
+        snap.borrowerCountBefore = lending.borrowerLoanCount(actor);
+        (snap.oldestBefore, snap.currentBefore) = lending.fizz_tickCursors(_market, aprBps);
+        (, snap.filledOldestBefore,,,,) = lending.fizz_epochState(_market, aprBps, snap.oldestBefore);
+        (, snap.filledCurrentBefore,,,,) = lending.fizz_epochState(_market, aprBps, snap.currentBefore);
+        (snap.positionsSampled, snap.positionsHashBefore) = _samplePositionsHash();
+
+        uint256 loanId = lending.borrow(_market, aprBps, targetBorrow, streamId, minAcceptable);
+        loanIds.push(loanId);
+
+        {
+            (,,, uint128 obligation_,,) = _sp_loanFields(loanId);
+            property_obligation_le_remaining_atOrigination(obligation_, snap.remainingBefore); // SP-07
         }
-        property_stream_escrow_withdraw_acl();
-        property_liquidityDepthDecreased(actualBorrow);
-    }
 
-    function oVRFLOLending_closeLoan(uint256 loanId) public asActor {
-        ghosts.ghost_lastLoanId = loanId;
-        ghosts.ghost_lastPoolId = loanId;
-        (, uint256 streamId,,,,) = lending.loans(loanId);
-        ghosts.ghost_lastStreamId = streamId;
-        snapshotBefore();
-        lending.closeLoan(loanId);
-        _recordLoanCloseGhost(loanId, streamId);
-        snapshotAfter();
-        // Property assertions
-        property_closeLoanDrawnIncreases();
-        property_closeLoanOutstandingZero();
-        property_closeLoan_returns_stream();
-        property_closeLoan_sets_closed();
-        property_closeLoan_invalid_reverts();
-    }
-
-    function oVRFLOLending_repayLoan(uint256 loanId, uint128 amount) public asActor {
-        ghosts.ghost_lastLoanId = loanId;
-        ghosts.ghost_lastPoolId = loanId;
-        (, uint256 streamId,,,,) = lending.loans(loanId);
-        ghosts.ghost_lastStreamId = streamId;
-        snapshotBefore();
-        lending.repayLoan(loanId, amount);
-        snapshotAfter();
-        // Record stream withdrawn snapshot if repay closed the loan (stream returned to borrower)
-        if (stateAfter.loanClosed) {
-            _recordLoanCloseGhost(loanId, streamId);
+        {
+            bool escrowed = MockSablier(SABLIER_ADDR).ownerOf(streamId) == address(lending);
+            property_borrow_postconditions(
+                loanId, snap.nextLoanIdBefore, actor, _market, aprBps, streamId, snap.borrowerCountBefore, escrowed
+            ); // SP-14
         }
-        // Property assertions
-        property_repayLoanExactCheck(loanId, amount);
-        property_repayLoanRepaidIncreases(loanId, amount);
-        property_repayLoanClosedIff(loanId, amount);
-        property_nonBorrowerCannotRepay(loanId);
-        property_repayLoan_returns_stream();
-        property_multi_partial_repay_closes();
-        property_repayLoan_zero_reverts();
-    }
 
-    function oVRFLOLending_claimLoanPoolShare(uint256 loanPoolId, uint128 amount) public asActor {
-        ghosts.ghost_lastPoolId = loanPoolId;
-        ghosts.ghost_lastLoanId = loanPoolId;
-        (, uint256 streamId,,,,) = lending.loans(ghosts.ghost_lastLoanId);
-        ghosts.ghost_lastStreamId = streamId;
-        snapshotBefore();
-        lending.claimLoanPoolShare(loanPoolId, amount);
-        snapshotAfter();
-        // Property assertions
-        property_claimLoanPoolShareReceivedIncreases();
-        property_proRataEntitlementFloored();
-        property_poolReceivedLeTotalObligation();
-        property_poolReceivedLeEntitlement();
-        property_poolConservation();
-        property_claimPool_zero_reverts();
-        property_received_le_proRata_recovered();
-        property_non_contributor_cannot_claim();
-    }
-
-    function oVRFLOLending_withdrawLiquidity(uint256 liquidityId) public asActor {
-        ghosts.ghost_lastLiquidityId = liquidityId;
-        snapshotBefore();
-        lending.withdrawLiquidity(liquidityId);
-        snapshotAfter();
-        // Property assertions
-        property_withdrawLiquidityInactive();
-        property_withdrawLiquidityRefundMatchesCapacity();
-        property_nonMakerCannotWithdrawLiquidity(liquidityId);
-        property_withdraw_post_maturity();
-        property_liquidityDepthDecreased(stateBefore.liquidityCapacity);
-    }
-
-    function oVRFLOLending_cancelSaleListing(uint256 listingId) public asActor {
-        ghosts.ghost_lastListingId = listingId;
-        (,, uint256 streamId,,,) = lending.saleListings(listingId);
-        ghosts.ghost_lastStreamId = streamId;
-        snapshotBefore();
-        lending.cancelSaleListing(listingId);
-        snapshotAfter();
-        // Property assertions
-        property_cancelSaleListingInactive();
-        property_cancelSaleListingReturnsStream();
-        property_nonMakerCannotCancelListing(listingId);
-        property_cancel_post_maturity();
-    }
-
-    // ――――――――――――――――――― Admin (via factory) ―――――――――――――――――――
-
-    function _oVRFLOLending_setAprBounds(uint16 aprMinBps_, uint16 aprMaxBps_) internal asAdmin {
-        uint16 ceiling = lending.APR_MAX_CEILING();
-        aprMinBps_ = uint16(uint256(aprMinBps_) % (uint256(ceiling) + 1));
-        aprMaxBps_ = uint16(uint256(aprMaxBps_) % (uint256(ceiling) + 1));
-        aprMinBps_ -= aprMinBps_ % APR_STEP;
-        aprMaxBps_ -= aprMaxBps_ % APR_STEP;
-        if (aprMinBps_ > aprMaxBps_) {
-            (aprMinBps_, aprMaxBps_) = (aprMaxBps_, aprMinBps_);
+        {
+            (,,, uint32 loanEpoch,) = _sp_loanTape(loanId);
+            (, uint64 filledAfter,,,,) = lending.fizz_epochState(_market, aprBps, loanEpoch);
+            bool preFilledKnown;
+            uint64 preFilled;
+            if (loanEpoch == snap.oldestBefore) {
+                preFilledKnown = true;
+                preFilled = snap.filledOldestBefore;
+            } else if (loanEpoch == snap.currentBefore) {
+                preFilledKnown = true;
+                preFilled = snap.filledCurrentBefore;
+            }
+            (, uint64 fillStart, uint64 fillEnd,,,) = _sp_loanFields(loanId);
+            property_tickTree_structural(
+                false, 0, 0, 0, false, fillStart, fillEnd, filledAfter, preFilledKnown, preFilled
+            ); // SP-17 (fill half)
         }
-        factory.setLendingAprBounds(address(lending), aprMinBps_, aprMaxBps_);
+
+        if (snap.positionsSampled) {
+            (, bytes32 positionsHashAfter) = _samplePositionsHash();
+            property_borrow_touchesNoPosition(true, snap.positionsHashBefore, positionsHashAfter); // SP-19
+        }
+
+        property_belowMinAcceptable_neverBypassed(underlying.balanceOf(actor) - snap.balanceBefore, minAcceptable); // SP-23
     }
 
-    function _oVRFLOLending_setFee(uint16 feeBps_) internal asAdmin {
-        factory.setLendingFee(address(lending), feeBps_);
+    function lending_repay(uint256 loanId, uint128 amount) public asActor {
+        (address borrowerBefore,,,,) = _sp_loanTape(loanId);
+        bool instrumented = borrowerBefore != address(0);
+
+        uint128 outstandingBefore;
+        uint128 repaidBefore;
+        uint256 pledgedStreamId;
+        if (instrumented) {
+            (,,,,, repaidBefore) = _sp_loanFields(loanId);
+            (, outstandingBefore) = lending.loanState(loanId);
+            (,,,,,, pledgedStreamId,,,,,) = lending.loans(loanId);
+        }
+
+        lending.repay(loanId, amount);
+
+        if (!instrumented) return;
+        property_repay_faceValue_timeIndependent(loanId, outstandingBefore, amount); // SP-11
+        property_repay_postconditions(
+            loanId,
+            repaidBefore,
+            amount,
+            outstandingBefore,
+            MockSablier(SABLIER_ADDR).ownerOf(pledgedStreamId) == borrowerBefore
+        ); // SP-16
     }
 
-    function _oVRFLOLending_setTreasury(address) internal asAdmin {
-        // Clamp to fixed non-actor address — prevents corrupting SP-99's balance-delta check
-        try factory.setLendingTreasury(address(lending), TREASURY_CLAMP) {} catch {}
+    function lending_close(uint256 loanId) public asActor {
+        (address borrowerBefore,,,,) = _sp_loanTape(loanId);
+        bool instrumented = borrowerBefore != address(0);
+
+        uint128 outstandingBefore;
+        uint128 drawnBefore;
+        uint256 pledgedStreamId;
+        if (instrumented) {
+            (,,,, drawnBefore,) = _sp_loanFields(loanId);
+            (, outstandingBefore) = lending.loanState(loanId);
+            (,,,,,, pledgedStreamId,,,,,) = lending.loans(loanId);
+        }
+
+        lending.close(loanId);
+
+        if (!instrumented) return;
+        property_close_zeroOutstanding(
+            loanId, outstandingBefore, drawnBefore, MockSablier(SABLIER_ADDR).ownerOf(pledgedStreamId) == borrowerBefore
+        ); // SP-15
+    }
+
+    function lending_claim(uint256 loanId, uint256 positionId, uint128 amount) public asActor {
+        (bool pairValid, uint64 overlapUnits) = _pairOverlap(loanId, positionId);
+
+        lending.claim(loanId, positionId, amount);
+
+        if (!pairValid) return;
+        property_claim_orderIndependent_cap(loanId, positionId, overlapUnits); // SP-22
+        property_claimAcrossClose_boundedByFinal(loanId, positionId, overlapUnits); // SP-25
+
+        _spClaimTapeScan(loanId); // SP-20 + SP-09, reduced frequency
+        _spZeroOverlapProbe(loanId); // SP-21, opportunistic
+    }
+
+    function lending_advanceEpochCursor(address _market, uint16 aprBps, uint32 maxSteps) public asActor {
+        lending.advanceEpochCursor(_market, aprBps, maxSteps);
+    }
+
+    // ―――――――――――――――――――――― Wiring internals ――――――――――――――――――――――
+
+    /// @dev First 4 bytes of a revert payload, or zero when it is too short to carry one.
+    function _errSelector(bytes memory err) internal pure returns (bytes4 sel) {
+        if (err.length < 4) return bytes4(0);
+        assembly {
+            sel := mload(add(err, 0x20))
+        }
+    }
+
+    /// @dev The code word of a `Panic(uint256)` payload (0 when malformed).
+    function _panicCode(bytes memory err) internal pure returns (uint256 code) {
+        if (err.length < 36) return 0;
+        assembly {
+            code := mload(add(err, 0x24))
+        }
+    }
+
+    /// @dev True for an `Error(string)` payload whose message starts with "SafeCast" —
+    ///      OZ v4 SafeCast reverts with require strings, which SP-06 must treat as an
+    ///      arithmetic fault. Payload layout: selector, string offset, length, data.
+    function _isSafeCastError(bytes memory err) internal pure returns (bool) {
+        if (err.length < 4 + 32 + 32 + 8) return false;
+        bytes32 firstWord;
+        assembly {
+            firstWord := mload(add(err, 0x64))
+        }
+        return bytes8(firstWord) == bytes8("SafeCast");
+    }
+
+    /// @dev Picks another actor with at least one position, for SP-18's isolation check.
+    function _sampleOtherLender()
+        internal
+        view
+        returns (bool sampled, address otherLender, uint256 otherPositionId, uint256 countBefore, bytes32 hashBefore)
+    {
+        for (uint256 i; i < actors.length; ++i) {
+            address candidate = actors[i];
+            if (candidate == actor) continue;
+            uint256 count = lending.lenderPositionCount(candidate);
+            if (count == 0) continue;
+            otherPositionId = lending.lenderPositionAt(candidate, count - 1);
+            return (true, candidate, otherPositionId, count, _sp_positionFullHash(otherPositionId));
+        }
+    }
+
+    /// @dev Sibling signature for SP-13: the stored struct plus the leaf's SIZE (end - start).
+    ///      Withdrawing an earlier position legitimately compacts later siblings left (their
+    ///      interval start moves), but must never change a sibling's leaf size or struct.
+    function _siblingSig(uint256 positionId) internal view returns (bytes32) {
+        (, uint64 start, uint64 end,) = lending.positionState(positionId);
+        return keccak256(abi.encode(_sp_positionStructHash(positionId), end - start));
+    }
+
+    /// @dev Finds another position on the same tape, scanning recent ids (bounded).
+    function _sampleSibling(uint256 positionId) internal view returns (bool found, uint256 siblingId) {
+        (, address m, uint16 apr, uint32 epoch,) = lending.positions(positionId);
+        uint256 total = positionIds.length;
+        uint256 scanned;
+        for (uint256 i = total; i > 0 && scanned < 20; --i) {
+            uint256 candidate = positionIds[i - 1];
+            ++scanned;
+            if (candidate == positionId) continue;
+            (, address cm, uint16 capr, uint32 cepoch,) = lending.positions(candidate);
+            if (cm == m && capr == apr && cepoch == epoch) return (true, candidate);
+        }
+    }
+
+    /// @dev Aggregate full-hash over (up to) the 3 most recent positions, for SP-19.
+    function _samplePositionsHash() internal view returns (bool sampled, bytes32 aggregate) {
+        uint256 total = positionIds.length;
+        if (total == 0) return (false, bytes32(0));
+        uint256 take = total < 3 ? total : 3;
+        for (uint256 i; i < take; ++i) {
+            aggregate = keccak256(abi.encode(aggregate, _sp_positionFullHash(positionIds[total - 1 - i])));
+        }
+        return (true, aggregate);
+    }
+
+    /// @dev The pair's overlap in UNITs, recomputed from the position's live interval and
+    ///      the loan's frozen one (with the tape-equality gate first, mirroring the claim
+    ///      path's plan-risk-#3 ordering) rather than read back from `contributionOf`.
+    function _pairOverlap(uint256 loanId, uint256 positionId) internal view returns (bool valid, uint64 overlapUnits) {
+        {
+            (address borrower, address lm, uint16 lapr, uint32 lepoch,) = _sp_loanTape(loanId);
+            if (borrower == address(0)) return (false, 0);
+            (address positionLender, address pm, uint16 papr, uint32 pepoch,) = lending.positions(positionId);
+            if (positionLender == address(0)) return (false, 0);
+            if (pm != lm || papr != lapr || pepoch != lepoch) return (false, 0);
+        }
+        (, uint64 positionStart, uint64 positionEnd,) = lending.positionState(positionId);
+        (, uint64 fillStart, uint64 fillEnd,,,) = _sp_loanFields(loanId);
+        uint64 overlapStart = positionStart > fillStart ? positionStart : fillStart;
+        uint64 overlapEnd = positionEnd < fillEnd ? positionEnd : fillEnd;
+        if (overlapEnd <= overlapStart) return (false, 0);
+        return (true, overlapEnd - overlapStart);
+    }
+
+    /// @dev SP-20 (tiling) + SP-09 (dust bound) share one bounded tape scan, run every
+    ///      SP_SCAN_EVERY-th claim and skipped once the position count outgrows the bound.
+    ///      Every position ever created flows through `lending_supply`'s `positionIds`
+    ///      push, so the enumeration is complete by construction.
+    /// @dev Accumulator for `_spClaimTapeScan`, packed to stay off the stack.
+    struct TapeScanAcc {
+        uint64 fillStart;
+        uint64 fillEnd;
+        uint256 recoveredFinal;
+        uint256 sumOverlap;
+        uint256 contributors;
+        bool allDrained;
+    }
+
+    function _spClaimTapeScan(uint256 loanId) internal {
+        ++spClaimCount;
+        if (spClaimCount % SP_SCAN_EVERY != 0) return;
+        if (positionIds.length > SP_SCAN_POSITION_BOUND) return;
+
+        TapeScanAcc memory acc;
+        bool closed;
+        {
+            uint128 drawn;
+            uint128 repaid;
+            (closed, acc.fillStart, acc.fillEnd,, drawn, repaid) = _sp_loanFields(loanId);
+            acc.recoveredFinal = uint256(drawn) + repaid;
+            acc.allDrained = true;
+        }
+
+        for (uint256 i; i < positionIds.length; ++i) {
+            _spScanPosition(loanId, positionIds[i], acc);
+        }
+
+        property_lazyAttribution_sumsToWhole(acc.sumOverlap, acc.fillStart, acc.fillEnd); // SP-20
+        if (closed && acc.contributors > 0 && acc.allDrained) {
+            property_closedLoan_dustBounded(lending.proceeds(loanId), acc.contributors); // SP-09
+        }
+    }
+
+    /// @dev One `_spClaimTapeScan` probe: folds a position's overlap with the loan's fill
+    ///      interval into the accumulator. `_pairOverlap` re-derives the tape-equality
+    ///      gate and interval intersection itself.
+    function _spScanPosition(uint256 loanId, uint256 positionId, TapeScanAcc memory acc) internal view {
+        (bool overlaps, uint64 overlap) = _pairOverlap(loanId, positionId);
+        if (!overlaps) return;
+        acc.sumOverlap += overlap;
+        acc.contributors += 1;
+        // Floor entitlement mirror, for the SP-09 drain gate only: a contributor with
+        // unpaid entitlement means the residual pot is legitimately unclaimed value.
+        uint256 entitlement = (uint256(overlap) * acc.recoveredFinal) / (acc.fillEnd - acc.fillStart);
+        if (entitlement > lending.received(loanId, positionId)) acc.allDrained = false;
+    }
+
+    /// @dev SP-21: opportunistically pick one of the actor's OWN positions with no tape
+    ///      overlap with the loan and assert the claim path rejects it cleanly. Own
+    ///      positions only — claim checks NotLender before the overlap gate, so a foreign
+    ///      position would never reach the check this property targets.
+    function _spZeroOverlapProbe(uint256 loanId) internal {
+        uint256 count = lending.lenderPositionCount(actor);
+        if (count == 0) return;
+        uint256 scan = count < 10 ? count : 10;
+        for (uint256 i; i < scan; ++i) {
+            uint256 positionId = lending.lenderPositionAt(actor, count - 1 - i);
+            (bool overlaps,) = _pairOverlap(loanId, positionId);
+            if (overlaps) continue;
+            bool paidOut;
+            bool cleanReject;
+            try lending.claim(loanId, positionId, type(uint128).max) {
+                paidOut = true;
+            } catch (bytes memory err) {
+                bytes4 sel = _errSelector(err);
+                cleanReject = sel == OVRFLOLending.NoOverlap.selector || sel == OVRFLOLending.EpochMismatch.selector;
+            }
+            property_claim_zeroOverlap_reverts(paidOut, cleanReject); // SP-21
+            return;
+        }
     }
 }

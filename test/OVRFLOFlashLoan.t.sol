@@ -202,17 +202,17 @@ contract OVRFLOFlashLoanTest is VaultMockHelpers {
         fakePt.mint(address(borrower), 10 ether);
         vm.prank(address(borrower));
         fakePt.approve(address(ovrflo), type(uint256).max);
-        vm.expectRevert("OVRFLO: unknown PT");
+        vm.expectRevert(OVRFLO.UnknownPT.selector);
         borrower.executeFlashLoan(address(fakePt), 10 ether, "");
     }
 
     function test_RevertZeroAmount() public {
-        vm.expectRevert("OVRFLO: zero flash");
+        vm.expectRevert(OVRFLO.ZeroAmount.selector);
         borrower.executeFlashLoan(address(pt), 0, "");
     }
 
     function test_RevertExceedsDeposited() public {
-        vm.expectRevert("OVRFLO: exceeds deposited");
+        vm.expectRevert(OVRFLO.ExceedsDeposited.selector);
         borrower.executeFlashLoan(address(pt), DEPOSIT_AMOUNT + 1, "");
     }
 
@@ -220,13 +220,13 @@ contract OVRFLOFlashLoanTest is VaultMockHelpers {
         vm.prank(ADMIN);
         ovrflo.setFlashLoanPaused(true);
 
-        vm.expectRevert("OVRFLO: flash paused");
+        vm.expectRevert(OVRFLO.FlashPaused.selector);
         borrower.executeFlashLoan(address(pt), 10 ether, "");
     }
 
     function test_RevertMatured() public {
         vm.warp(block.timestamp + 366 days);
-        vm.expectRevert("OVRFLO: matured");
+        vm.expectRevert(OVRFLO.Matured.selector);
         borrower.executeFlashLoan(address(pt), 10 ether, "");
     }
 
@@ -236,7 +236,7 @@ contract OVRFLOFlashLoanTest is VaultMockHelpers {
             abi.encodeCall(IPendleOracle.getOracleState, (MARKET, TWAP_DURATION)),
             abi.encode(false, 0, false)
         );
-        vm.expectRevert("OVRFLO: oracle not ready");
+        vm.expectRevert(OVRFLO.OracleNotReady.selector);
         borrower.executeFlashLoan(address(pt), 10 ether, "");
     }
 
@@ -301,7 +301,7 @@ contract OVRFLOFlashLoanTest is VaultMockHelpers {
 
     function test_RevertWrongCallbackHash() public {
         borrower.setReturnSuccess(false);
-        vm.expectRevert("OVRFLO: callback failed");
+        vm.expectRevert(OVRFLO.FlashCallbackFailed.selector);
         borrower.executeFlashLoan(address(pt), 10 ether, "");
     }
 
@@ -391,13 +391,13 @@ contract OVRFLOFlashLoanTest is VaultMockHelpers {
 
     function test_SetFlashFeeBps_RevertExceedsMax() public {
         vm.prank(ADMIN);
-        vm.expectRevert("OVRFLO: flash fee too high");
+        vm.expectRevert(OVRFLO.FeeTooHigh.selector);
         ovrflo.setFlashFeeBps(101);
     }
 
     function test_SetFlashFeeBps_RevertNonAdmin() public {
         vm.prank(user);
-        vm.expectRevert("OVRFLO: not admin");
+        vm.expectRevert(OVRFLO.NotAdmin.selector);
         ovrflo.setFlashFeeBps(50);
     }
 
@@ -432,7 +432,7 @@ contract OVRFLOFlashLoanTest is VaultMockHelpers {
 
     function test_SetFlashLoanPaused_RevertNonAdmin() public {
         vm.prank(user);
-        vm.expectRevert("OVRFLO: not admin");
+        vm.expectRevert(OVRFLO.NotAdmin.selector);
         ovrflo.setFlashLoanPaused(true);
     }
 
@@ -728,7 +728,7 @@ contract OVRFLOFlashLoanTest is VaultMockHelpers {
         OVRFLOFactory factory = new OVRFLOFactory(FACTORY_OWNER, PENDLE_ORACLE);
 
         vm.prank(FACTORY_OWNER);
-        vm.expectRevert("OVRFLOFactory: unknown ovrflo");
+        vm.expectRevert(OVRFLOFactory.UnknownOvrflo.selector);
         factory.setFlashFeeBps(address(0xdead), 50);
     }
 
@@ -736,7 +736,7 @@ contract OVRFLOFlashLoanTest is VaultMockHelpers {
         OVRFLOFactory factory = new OVRFLOFactory(FACTORY_OWNER, PENDLE_ORACLE);
 
         vm.prank(FACTORY_OWNER);
-        vm.expectRevert("OVRFLOFactory: unknown ovrflo");
+        vm.expectRevert(OVRFLOFactory.UnknownOvrflo.selector);
         factory.setFlashLoanPaused(address(0xdead), true);
     }
 

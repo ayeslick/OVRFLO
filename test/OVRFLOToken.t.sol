@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: UNLICENSED
+// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
@@ -27,11 +27,11 @@ contract OVRFLOTokenTest is Test {
 
     function test_TransferOwnership_RevertsForUnauthorizedOrZeroAddress() public {
         vm.prank(USER);
-        vm.expectRevert("ovrflo: not owner");
+        vm.expectRevert(OVRFLOToken.NotOwner.selector);
         token.transferOwnership(NEW_OWNER);
 
         vm.prank(OWNER);
-        vm.expectRevert("ovrflo: new owner is zero address");
+        vm.expectRevert(OVRFLOToken.ZeroAddress.selector);
         token.transferOwnership(address(0));
     }
 
@@ -45,7 +45,7 @@ contract OVRFLOTokenTest is Test {
         assertEq(token.owner(), NEW_OWNER);
 
         vm.prank(OWNER);
-        vm.expectRevert("ovrflo: not owner");
+        vm.expectRevert(OVRFLOToken.NotOwner.selector);
         token.mint(USER, 1e6);
 
         vm.prank(NEW_OWNER);
@@ -59,7 +59,7 @@ contract OVRFLOTokenTest is Test {
 
     function test_Mint_RevertsForUnauthorizedCaller() public {
         vm.prank(USER);
-        vm.expectRevert("ovrflo: not owner");
+        vm.expectRevert(OVRFLOToken.NotOwner.selector);
         token.mint(USER, 1);
     }
 
@@ -73,7 +73,7 @@ contract OVRFLOTokenTest is Test {
 
     function test_Burn_RevertsForUnauthorizedCallerAndInsufficientBalance() public {
         vm.prank(USER);
-        vm.expectRevert("ovrflo: not owner");
+        vm.expectRevert(OVRFLOToken.NotOwner.selector);
         token.burn(USER, 1);
 
         vm.prank(OWNER);

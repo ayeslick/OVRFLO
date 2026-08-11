@@ -1,5 +1,7 @@
 # Sablier V2 Interface Contract for OVRFLO
 
+> **Stale IDs.** Invariant/guard IDs in this document predate the 2026-08-10 `x-ray/` regeneration at `f0661ab`; resolve them by statement via the ID map in `AUDIT.md`, not by number.
+
 > Dependency assumptions OVRFLO relies on from Sablier V2 Lockup Linear, scoped to the calls OVRFLO actually makes. This is a contract to falsify, not a Sablier tutorial. Pinned to the deployed address `0xAFb979d9afAd1aD27C5eFf4E27226E3AB9e5dCC9` (tag `v1.1`). The v1.1 version distinction is load-bearing — see the ACL table below.
 
 OVRFLO uses Sablier only for linear vesting streams created on PT deposit and then traded/pledged through `OVRFLOLending`. It never cancels a stream programmatically and relies on non-cancelability for the self-repaying-loan design.
@@ -33,6 +35,13 @@ OVRFLO uses Sablier only for linear vesting streams created on PT deposit and th
 - **Enforced?** **External (trusted).** This is the exact distinction that flipped audit finding **H-2** from High to Rejected — see the ACL table and `rejected-findings-record.md`.
 - **If violated:** A permissionless withdraw path would let a third party drain an escrowed stream. Verified not to exist in v1.1 bytecode at the pinned address.
 - **OVRFLO call site:** `OVRFLOLending.claimLoanPoolShare()` (via _claimFair harvest) / `closeLoan()` (lending, as NFT owner, withdraws to lender or `loanPoolProceeds`).
+
+### S5. `withdraw` fires no recipient hook when the caller *is* the recipient (v1.1)
+
+- **Assumed property:** v2-core v1.1 `SablierV2Lockup.withdraw` calls `ISablierV2LockupRecipient.onStreamWithdrawn` on the stream's recipient — in a `try/catch`, so a reverting hook cannot block the withdraw — **only** when the recipient is a contract **and** the source predicate `msg.sender != recipient` holds. When the caller is the recipient itself, the hook branch is skipped entirely and `withdraw` performs no callback into any address.
+- **Enforced?** **Structurally, at every OVRFLO call site.** `OVRFLOLending` only ever withdraws from a stream whose NFT it currently owns (it takes custody with `transferFrom` at borrow and gives it back at close), so at each call `msg.sender == address(this) == recipient` and the predicate is false. There is no OVRFLO path that withdraws from a stream owned by someone else — S4's ACL would reject it anyway. Belt-and-braces: `claim`, `close`, and `repay` each carry `nonReentrant` individually, so even a hook that did fire could not re-enter the market.
+- **If violated:** A recipient callback would hand an arbitrary contract control mid-`withdraw`, before OVRFLO's post-call transfers. The claim path is written effects-before-interactions regardless (all of `received`, `proceeds`, and `loan.drawn` are written before the first external call), so a firing hook would observe consistent state — but the assumption above is what makes the callback surface empty in the first place, and it is the falsifiable claim: **if a v1.1 `withdraw` ever invokes `onStreamWithdrawn` when `msg.sender == recipient`, this row is wrong.**
+- **OVRFLO call site:** `OVRFLOLending.claim()` (just-in-time deficit harvest, `sablier.withdraw(loan.streamId, address(this), harvestAmount)`) and `OVRFLOLending.close()` (settlement draw, `sablier.withdraw(streamId, address(this), outstanding)`). Both pass `address(this)` as `to`, and both run while the market is the NFT owner — the only two `withdraw` call sites in the contract.
 
 ## Verified v1.1 withdraw-ACL table
 

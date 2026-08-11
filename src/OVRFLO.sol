@@ -34,6 +34,55 @@ contract OVRFLO is ReentrancyGuard {
     bytes32 private constant FLASH_CALLBACK_SUCCESS = keccak256("OVRFLO.onFlashLoan");
 
     /*//////////////////////////////////////////////////////////////
+                                ERRORS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @dev Caller is not the factory (the vault's sole admin).
+    error NotAdmin();
+    /// @dev A required constructor or admin-call address argument was the zero address.
+    error ZeroAddress();
+    /// @dev `setSeriesApproved` was called for a market that already has a configured series.
+    error SeriesAlreadyConfigured();
+    /// @dev `setSeriesApproved` was called for a PT already mapped to a different market.
+    error PtAlreadyMapped();
+    /// @dev The supplied PT token has no market registered via `ptToMarket`.
+    error UnknownPT();
+    /// @dev There is no surplus above tracked balance to sweep.
+    error NoExcess();
+    /// @dev The supplied token amount is zero.
+    error ZeroAmount();
+    /// @dev The pulled token delivered less than the requested amount (fee-on-transfer behavior).
+    error TransferMismatch();
+    /// @dev `unwrap` requested more than the tracked wrap reserve holds.
+    error InsufficientReserve();
+    /// @dev The Pendle oracle lacks sufficient historical data for the series' fixed TWAP duration.
+    error OracleNotReady();
+    /// @dev A deposit's rate-split left nothing to stream (rounding produced a zero-duration stream).
+    error NothingToStream();
+    /// @dev `ptAmount` is below `MIN_PT_AMOUNT`.
+    error BelowMinPT();
+    /// @dev The series has reached or passed its maturity timestamp.
+    error Matured();
+    /// @dev The deposit would push a market's total above its configured deposit limit.
+    error DepositLimitExceeded();
+    /// @dev `toUser` fell below the caller's `minToUser` slippage floor.
+    error SlippageExceeded();
+    /// @dev `claim` was called before the series reached its maturity timestamp.
+    error NotMatured();
+    /// @dev `claim` requested more than the market's tracked total deposited.
+    error InsufficientDeposited();
+    /// @dev Flash loans are currently paused.
+    error FlashPaused();
+    /// @dev The requested flash loan amount exceeds the market's total deposited PT.
+    error ExceedsDeposited();
+    /// @dev The flash borrower's callback did not return the expected success value.
+    error FlashCallbackFailed();
+    /// @dev `feeBps` exceeds its configured maximum.
+    error FeeTooHigh();
+    /// @dev The market has no configured series (`ptToken == address(0)`).
+    error MarketNotApproved();
+
+    /*//////////////////////////////////////////////////////////////
                                 STORAGE
     //////////////////////////////////////////////////////////////*/
 
@@ -205,7 +254,7 @@ contract OVRFLO is ReentrancyGuard {
 
     /// @notice Restricts function access to the factory
     modifier onlyAdmin() {
-        require(msg.sender == factory, "OVRFLO: not admin");
+        if (msg.sender != factory) revert NotAdmin();
         _;
     }
 
@@ -219,11 +268,11 @@ contract OVRFLO is ReentrancyGuard {
     /// @param _underlying The underlying asset address (constant per vault)
     /// @param _ovrfloToken The ovrflo token address (constant per vault)
     constructor(address admin, address treasury, address _underlying, address _ovrfloToken, address _oracle) {
-        require(admin != address(0), "OVRFLO: admin is zero address");
-        require(treasury != address(0), "OVRFLO: treasury is zero address");
-        require(_underlying != address(0), "OVRFLO: underlying is zero address");
-        require(_ovrfloToken != address(0), "OVRFLO: ovrfloToken is zero address");
-        require(_oracle != address(0), "OVRFLO: oracle is zero address");
+        if (admin == address(0)) revert ZeroAddress();
+        if (treasury == address(0)) revert ZeroAddress();
+        if (_underlying == address(0)) revert ZeroAddress();
+        if (_ovrfloToken == address(0)) revert ZeroAddress();
+        if (_oracle == address(0)) revert ZeroAddress();
 
         factory = admin;
         TREASURY_ADDR = treasury;
@@ -249,8 +298,8 @@ contract OVRFLO is ReentrancyGuard {
         onlyAdmin
     {
         SeriesInfo storage info = _series[market];
-        require(info.ptToken == address(0), "OVRFLO: series already configured");
-        require(ptToMarket[pt] == address(0), "OVRFLO: PT already mapped");
+        if (info.ptToken != address(0)) revert SeriesAlreadyConfigured();
+        if (ptToMarket[pt] != address(0)) revert PtAlreadyMapped();
 
         info.twapDurationFixed = twapDuration;
         info.feeBps = feeBps;
@@ -278,12 +327,12 @@ contract OVRFLO is ReentrancyGuard {
     /// @param to The recipient address
     function sweepExcessPt(address ptToken, address to) external onlyAdmin {
         address market = ptToMarket[ptToken];
-        require(market != address(0), "OVRFLO: unknown PT");
+        if (market == address(0)) revert UnknownPT();
         uint256 balance = IERC20(ptToken).balanceOf(address(this));
         uint256 deposited = marketTotalDeposited[market];
         uint256 excess = balance > deposited ? balance - deposited : 0;
 
-        require(excess > 0, "OVRFLO: no excess");
+        if (excess == 0) revert NoExcess();
         IERC20(ptToken).safeTransfer(to, excess);
         emit ExcessSwept(ptToken, to, excess);
     }
@@ -298,7 +347,7 @@ contract OVRFLO is ReentrancyGuard {
         uint256 reserve = wrappedUnderlying;
         uint256 excess = balance > reserve ? balance - reserve : 0;
 
-        require(excess > 0, "OVRFLO: no excess");
+        if (excess == 0) revert NoExcess();
         IERC20(underlying).safeTransfer(to, excess);
         emit ExcessUnderlyingSwept(underlying, to, excess);
     }
@@ -310,14 +359,14 @@ contract OVRFLO is ReentrancyGuard {
     /// @notice Wraps underlying 1:1 into ovrfloToken without fees or streams
     /// @param amount Amount of underlying to wrap
     function wrap(uint256 amount) external {
-        require(amount > 0, "OVRFLO: amount is zero");
+        if (amount == 0) revert ZeroAmount();
 
         wrappedUnderlying += amount;
 
         uint256 balanceBefore = IERC20(underlying).balanceOf(address(this));
         IERC20(underlying).safeTransferFrom(msg.sender, address(this), amount);
         uint256 balanceAfter = IERC20(underlying).balanceOf(address(this));
-        require(balanceAfter - balanceBefore == amount, "OVRFLO: transfer amount mismatch");
+        if (balanceAfter - balanceBefore != amount) revert TransferMismatch();
 
         OVRFLOToken(ovrfloToken).mint(msg.sender, amount);
 
@@ -327,10 +376,10 @@ contract OVRFLO is ReentrancyGuard {
     /// @notice Unwraps ovrfloToken 1:1 into underlying when the reserve is funded
     /// @param amount Amount of ovrfloToken to burn
     function unwrap(uint256 amount) external {
-        require(amount > 0, "OVRFLO: amount is zero");
+        if (amount == 0) revert ZeroAmount();
 
         uint256 reserve = wrappedUnderlying;
-        require(reserve >= amount, "OVRFLO: insufficient reserve");
+        if (reserve < amount) revert InsufficientReserve();
 
         wrappedUnderlying = reserve - amount;
         OVRFLOToken(ovrfloToken).burn(msg.sender, amount);
@@ -343,7 +392,7 @@ contract OVRFLO is ReentrancyGuard {
     ///      Matches the freshness check performed at market onboarding in OVRFLOFactory.addMarket.
     function _requireOracleFresh(address market, uint32 twapDuration) internal view {
         (,, bool oldestObservationSatisfied) = IPendleOracle(oracle).getOracleState(market, twapDuration);
-        require(oldestObservationSatisfied, "OVRFLO: oracle not ready");
+        if (!oldestObservationSatisfied) revert OracleNotReady();
     }
 
     /// @dev Splits a PT deposit into the immediate mint and the streamed remainder,
@@ -352,7 +401,7 @@ contract OVRFLO is ReentrancyGuard {
         toUser = Math.mulDiv(ptAmount, rateE18, WAD);
         if (toUser > ptAmount) toUser = ptAmount;
         toStream = ptAmount - toUser;
-        require(toStream > 0, "OVRFLO: nothing to stream");
+        if (toStream == 0) revert NothingToStream();
     }
 
     /// @notice Deposits PT tokens to receive ovrfloTokens immediately and a stream for the discount
@@ -373,15 +422,15 @@ contract OVRFLO is ReentrancyGuard {
         SeriesInfo memory info;
         uint256 rateE18;
         (info, rateE18) = _approvedRate(market);
-        require(ptAmount >= MIN_PT_AMOUNT, "OVRFLO: amount < min PT");
-        require(block.timestamp < info.expiryCached, "OVRFLO: matured");
+        if (ptAmount < MIN_PT_AMOUNT) revert BelowMinPT();
+        if (block.timestamp >= info.expiryCached) revert Matured();
 
         {
             uint256 currentDeposited = marketTotalDeposited[market];
             uint256 limit = marketDepositLimits[market];
 
             if (limit > 0) {
-                require(currentDeposited + ptAmount <= limit, "OVRFLO: deposit limit exceeded");
+                if (currentDeposited + ptAmount > limit) revert DepositLimitExceeded();
             }
             marketTotalDeposited[market] = currentDeposited + ptAmount;
         }
@@ -390,7 +439,7 @@ contract OVRFLO is ReentrancyGuard {
 
         (toUser, toStream) = _computeSplit(ptAmount, rateE18);
 
-        require(toUser >= minToUser, "OVRFLO: slippage");
+        if (toUser < minToUser) revert SlippageExceeded();
 
         uint256 feeAmount = StreamPricing.fee(toUser, info.feeBps);
 
@@ -428,14 +477,14 @@ contract OVRFLO is ReentrancyGuard {
     /// @param amount Amount of ovrfloTokens to burn (receives equal amount of PT)
     function claim(address ptToken, uint256 amount) external {
         address market = ptToMarket[ptToken];
-        require(market != address(0), "OVRFLO: unknown PT");
+        if (market == address(0)) revert UnknownPT();
 
         SeriesInfo storage info = _series[market];
-        require(block.timestamp >= info.expiryCached, "OVRFLO: not matured");
-        require(amount > 0, "OVRFLO: amount is zero");
+        if (block.timestamp < info.expiryCached) revert NotMatured();
+        if (amount == 0) revert ZeroAmount();
 
         uint256 currentDeposited = marketTotalDeposited[market];
-        require(currentDeposited >= amount, "OVRFLO: deposit accounting");
+        if (currentDeposited < amount) revert InsufficientDeposited();
         marketTotalDeposited[market] = currentDeposited - amount;
 
         OVRFLOToken(ovrfloToken).burn(msg.sender, amount);
@@ -458,13 +507,13 @@ contract OVRFLO is ReentrancyGuard {
     /// @param data Arbitrary data passed to the borrower's callback
     function flashLoan(address ptToken, uint256 amount, bytes calldata data) external nonReentrant {
         address market = ptToMarket[ptToken];
-        require(market != address(0), "OVRFLO: unknown PT");
+        if (market == address(0)) revert UnknownPT();
 
         SeriesInfo storage info = _series[market];
-        require(!flashLoanPaused, "OVRFLO: flash paused");
-        require(block.timestamp < info.expiryCached, "OVRFLO: matured");
-        require(amount > 0, "OVRFLO: zero flash");
-        require(amount <= marketTotalDeposited[market], "OVRFLO: exceeds deposited");
+        if (flashLoanPaused) revert FlashPaused();
+        if (block.timestamp >= info.expiryCached) revert Matured();
+        if (amount == 0) revert ZeroAmount();
+        if (amount > marketTotalDeposited[market]) revert ExceedsDeposited();
 
         uint256 rateE18 = _freshRate(market, info.twapDurationFixed);
         uint256 fee = StreamPricing.fee(Math.mulDiv(amount, rateE18, WAD), flashFeeBps);
@@ -472,7 +521,7 @@ contract OVRFLO is ReentrancyGuard {
         IERC20(ptToken).safeTransfer(msg.sender, amount);
 
         bytes32 ret = IFlashBorrower(msg.sender).onFlashLoan(msg.sender, ptToken, amount, fee, data);
-        require(ret == FLASH_CALLBACK_SUCCESS, "OVRFLO: callback failed");
+        if (ret != FLASH_CALLBACK_SUCCESS) revert FlashCallbackFailed();
 
         IERC20(ptToken).safeTransferFrom(msg.sender, address(this), amount);
 
@@ -486,7 +535,7 @@ contract OVRFLO is ReentrancyGuard {
     /// @notice Sets the flash loan fee in basis points (admin only)
     /// @param feeBps The new fee in basis points (max FLASH_FEE_MAX_BPS)
     function setFlashFeeBps(uint16 feeBps) external onlyAdmin {
-        require(feeBps <= FLASH_FEE_MAX_BPS, "OVRFLO: flash fee too high");
+        if (feeBps > FLASH_FEE_MAX_BPS) revert FeeTooHigh();
         flashFeeBps = feeBps;
         emit FlashFeeBpsSet(feeBps);
     }
@@ -526,7 +575,7 @@ contract OVRFLO is ReentrancyGuard {
     /// @param ptToken The PT token address
     /// @return The contract's PT token balance
     function claimablePt(address ptToken) external view returns (uint256) {
-        require(ptToMarket[ptToken] != address(0), "OVRFLO: unknown PT");
+        if (ptToMarket[ptToken] == address(0)) revert UnknownPT();
         return IERC20(ptToken).balanceOf(address(this));
     }
 
@@ -572,7 +621,7 @@ contract OVRFLO is ReentrancyGuard {
 
     function _approvedRate(address market) internal view returns (SeriesInfo memory info, uint256 rateE18) {
         info = _series[market];
-        require(info.ptToken != address(0), "OVRFLO: market not approved");
+        if (info.ptToken == address(0)) revert MarketNotApproved();
         rateE18 = _freshRate(market, info.twapDurationFixed);
     }
 

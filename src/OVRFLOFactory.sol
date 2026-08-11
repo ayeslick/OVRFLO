@@ -23,6 +23,41 @@ contract OVRFLOFactory is Ownable2Step {
     uint32 public constant MIN_TWAP_DURATION = 15 minutes;
     uint32 public constant MAX_TWAP_DURATION = 30 minutes;
 
+    /*//////////////////////////////////////////////////////////////
+                                  ERRORS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @dev A required constructor or admin-call address argument was the zero address.
+    error ZeroAddress();
+    /// @dev `configureDeployment` was called for an underlying that already has a deployed vault.
+    error UnderlyingAlreadyDeployed();
+    /// @dev `nameSuffix` is empty or exceeds 64 bytes.
+    error InvalidName();
+    /// @dev `symbolSuffix` is empty or exceeds 32 bytes.
+    error InvalidSymbol();
+    /// @dev No deployment configuration is currently staged.
+    error NothingPending();
+    /// @dev `deployLending` was called for a vault that already has a lending market.
+    error LendingExists();
+    /// @dev `feeBps` exceeds `FEE_MAX_BPS`.
+    error FeeTooHigh();
+    /// @dev The Pendle oracle needs additional cardinality before this TWAP duration is usable.
+    error OracleCardinalityRequired();
+    /// @dev The Pendle oracle lacks sufficient historical data for this TWAP duration.
+    error OracleNotReady();
+    /// @dev The market's SY yield token does not match the vault's underlying.
+    error UnderlyingMismatch();
+    /// @dev The Pendle market has already reached its expiry.
+    error MarketExpired();
+    /// @dev The supplied address has no OVRFLO vault registered with this factory.
+    error UnknownOvrflo();
+    /// @dev The supplied address has no OVRFLOLending registered with this factory.
+    error UnknownLending();
+    /// @dev `twapDuration` is below `MIN_TWAP_DURATION`.
+    error TwapTooShort();
+    /// @dev `twapDuration` exceeds `MAX_TWAP_DURATION`.
+    error TwapTooLong();
+
     struct DeploymentConfig {
         address treasury;
         bool pending;
@@ -71,19 +106,22 @@ contract OVRFLOFactory is Ownable2Step {
 
     event DeploymentConfigured(address indexed treasury, address indexed underlying);
     event DeploymentCancelled();
-    event OvrfloDeployed(address indexed ovrflo, address indexed ovrfloToken, address treasury, address indexed underlying);
+    event OvrfloDeployed(
+        address indexed ovrflo, address indexed ovrfloToken, address treasury, address indexed underlying
+    );
     event LendingDeployed(address indexed ovrflo, address indexed lending);
     event LendingAprBoundsSet(address indexed lending, uint16 aprMinBps, uint16 aprMaxBps);
     event LendingFeeSet(address indexed lending, uint16 feeBps);
     event LendingTreasurySet(address indexed lending, address indexed treasury);
+    event LendingTickSpacingSet(address indexed lending, address indexed market, uint16 spacing);
 
     /*//////////////////////////////////////////////////////////////
                               CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
 
     constructor(address _owner, address _oracle) {
-        require(_owner != address(0), "OVRFLOFactory: owner zero");
-        require(_oracle != address(0), "OVRFLOFactory: oracle zero");
+        if (_owner == address(0)) revert ZeroAddress();
+        if (_oracle == address(0)) revert ZeroAddress();
         _transferOwnership(_owner);
         oracle = _oracle;
     }
@@ -103,11 +141,11 @@ contract OVRFLOFactory is Ownable2Step {
         string calldata nameSuffix,
         string calldata symbolSuffix
     ) external onlyOwner {
-        require(treasury != address(0), "OVRFLOFactory: treasury zero");
-        require(underlying != address(0), "OVRFLOFactory: underlying zero");
-        require(underlyingToOvrflo[underlying] == address(0), "OVRFLOFactory: underlying already deployed");
-        require(bytes(nameSuffix).length != 0 && bytes(nameSuffix).length <= 64, "OVRFLOFactory: bad name");
-        require(bytes(symbolSuffix).length != 0 && bytes(symbolSuffix).length <= 32, "OVRFLOFactory: bad symbol");
+        if (treasury == address(0)) revert ZeroAddress();
+        if (underlying == address(0)) revert ZeroAddress();
+        if (underlyingToOvrflo[underlying] != address(0)) revert UnderlyingAlreadyDeployed();
+        if (bytes(nameSuffix).length == 0 || bytes(nameSuffix).length > 64) revert InvalidName();
+        if (bytes(symbolSuffix).length == 0 || bytes(symbolSuffix).length > 32) revert InvalidSymbol();
 
         pendingDeployment = DeploymentConfig({
             treasury: treasury,
@@ -122,7 +160,7 @@ contract OVRFLOFactory is Ownable2Step {
 
     /// @notice Cancel a pending deployment
     function cancelDeployment() external onlyOwner {
-        require(pendingDeployment.pending, "OVRFLOFactory: nothing pending");
+        if (!pendingDeployment.pending) revert NothingPending();
         delete pendingDeployment;
         emit DeploymentCancelled();
     }
@@ -131,7 +169,7 @@ contract OVRFLOFactory is Ownable2Step {
     /// @return ovrflo The deployed OVRFLO contract address
     /// @return ovrfloToken The deployed OVRFLOToken address
     function deploy() external onlyOwner returns (address ovrflo, address ovrfloToken) {
-        require(pendingDeployment.pending, "OVRFLOFactory: nothing pending");
+        if (!pendingDeployment.pending) revert NothingPending();
 
         DeploymentConfig memory config = pendingDeployment;
 
@@ -165,7 +203,7 @@ contract OVRFLOFactory is Ownable2Step {
     /// @return lending The deployed OVRFLOLending address
     function deployLending(address ovrflo) external onlyOwner returns (address lending) {
         _requireKnownOvrflo(ovrflo);
-        require(ovrfloToLending[ovrflo] == address(0), "OVRFLOFactory: lending exists");
+        if (ovrfloToLending[ovrflo] != address(0)) revert LendingExists();
 
         address sablierAddr = address(OVRFLO(ovrflo).sablierLL());
         OVRFLOLending lendingMarket = new OVRFLOLending(address(this), ovrflo, sablierAddr);
@@ -191,13 +229,13 @@ contract OVRFLOFactory is Ownable2Step {
     function addMarket(address ovrflo, address market, uint32 twapDuration, uint16 feeBps) external onlyOwner {
         _requireKnownOvrflo(ovrflo);
         _validateTwapBounds(twapDuration);
-        require(feeBps <= FEE_MAX_BPS, "OVRFLOFactory: fee too high");
+        if (feeBps > FEE_MAX_BPS) revert FeeTooHigh();
 
         {
             (bool increaseCardinalityRequired,, bool oldestObservationSatisfied) =
                 IPendleOracle(oracle).getOracleState(market, twapDuration);
-            require(!increaseCardinalityRequired, "OVRFLOFactory: oracle cardinality");
-            require(oldestObservationSatisfied, "OVRFLOFactory: oracle not ready");
+            if (increaseCardinalityRequired) revert OracleCardinalityRequired();
+            if (!oldestObservationSatisfied) revert OracleNotReady();
         }
 
         OvrfloInfo memory info = ovrfloInfo[ovrflo];
@@ -205,11 +243,11 @@ contract OVRFLOFactory is Ownable2Step {
         {
             address sy;
             (sy, pt,) = IPendleMarket(market).readTokens();
-            require(IStandardizedYield(sy).yieldToken() == info.underlying, "OVRFLOFactory: underlying mismatch");
+            if (IStandardizedYield(sy).yieldToken() != info.underlying) revert UnderlyingMismatch();
         }
 
         uint256 expiry = IPendleMarket(market).expiry();
-        require(expiry > block.timestamp, "OVRFLOFactory: market expired");
+        if (expiry <= block.timestamp) revert MarketExpired();
         OVRFLO(ovrflo).setSeriesApproved(market, pt, twapDuration, expiry, feeBps);
 
         isMarketApproved[ovrflo][market] = true;
@@ -301,20 +339,33 @@ contract OVRFLOFactory is Ownable2Step {
         emit LendingTreasurySet(lending, treasury_);
     }
 
+    /// @notice Set a market's immutable APR tick spacing on an OVRFLOLending.
+    /// @dev The multisig must verify during series onboarding that the underlying's
+    ///      total supply is at most `2^54 * OVRFLOLending.UNIT()`. That operational
+    ///      check intentionally remains offchain and is not duplicated here.
+    /// @param lending The OVRFLOLending address.
+    /// @param market The Pendle market whose APR ladder is configured.
+    /// @param spacing Tick spacing in basis points; zero is invalid and a market is set once.
+    function setLendingTickSpacing(address lending, address market, uint16 spacing) external onlyOwner {
+        _requireKnownLending(lending);
+        OVRFLOLending(lending).setTickSpacing(market, spacing);
+        emit LendingTickSpacingSet(lending, market, spacing);
+    }
+
     /*//////////////////////////////////////////////////////////////
                               INTERNALS
     //////////////////////////////////////////////////////////////*/
 
     function _requireKnownOvrflo(address ovrflo) internal view {
-        require(ovrfloInfo[ovrflo].treasury != address(0), "OVRFLOFactory: unknown ovrflo");
+        if (ovrfloInfo[ovrflo].treasury == address(0)) revert UnknownOvrflo();
     }
 
     function _requireKnownLending(address lending) internal view {
-        require(lendingToOvrflo[lending] != address(0), "OVRFLOFactory: unknown lending");
+        if (lendingToOvrflo[lending] == address(0)) revert UnknownLending();
     }
 
     function _validateTwapBounds(uint32 twapDuration) internal pure {
-        require(twapDuration >= MIN_TWAP_DURATION, "OVRFLOFactory: twap too short");
-        require(twapDuration <= MAX_TWAP_DURATION, "OVRFLOFactory: twap too long");
+        if (twapDuration < MIN_TWAP_DURATION) revert TwapTooShort();
+        if (twapDuration > MAX_TWAP_DURATION) revert TwapTooLong();
     }
 }

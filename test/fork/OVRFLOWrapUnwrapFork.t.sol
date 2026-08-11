@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: UNLICENSED
+// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -44,7 +44,7 @@ contract OVRFLOWrapUnwrapForkTest is OVRFLOForkBase {
         _wrapWstEth(ovrflo, USER, WRAP_AMOUNT);
 
         vm.prank(USER);
-        vm.expectRevert("OVRFLO: insufficient reserve");
+        vm.expectRevert(OVRFLO.InsufficientReserve.selector);
         ovrflo.unwrap(WRAP_AMOUNT + 1);
     }
 

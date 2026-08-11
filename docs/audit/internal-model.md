@@ -1,5 +1,7 @@
 # OVRFLO Internal Protocol Model
 
+> **Stale IDs.** Invariant/guard IDs in this document predate the 2026-08-10 `x-ray/` regeneration at `f0661ab`; resolve them by statement via the ID map in `AUDIT.md`, not by number.
+
 > The two subtlest OVRFLO mechanics, framed for an auditor as checkable accounting identities rather than happy-path prose. Insolvency-first: the thesis is "here is every way the lending markets could stop balancing," not "here is the happy path." Links to `x-ray/invariants.md` for derivations instead of restating them.
 
 ## Part 1 — Dual-backing solvency tie-out

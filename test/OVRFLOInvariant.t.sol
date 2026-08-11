@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: UNLICENSED
+// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
@@ -161,7 +161,7 @@ contract OVRFLOInvariantHandler is Test {
         uint256 underlyingBefore = underlying.balanceOf(address(ovrflo));
 
         vm.prank(actor);
-        vm.expectRevert("OVRFLO: insufficient reserve");
+        vm.expectRevert(OVRFLO.InsufficientReserve.selector);
         ovrflo.unwrap(amount);
 
         assertEq(ovrflo.wrappedUnderlying(), reserve);

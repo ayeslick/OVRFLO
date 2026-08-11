@@ -1,52 +1,81 @@
 // SPDX-License-Identifier: MIT
 pragma solidity >=0.6.2 <0.9.0;
 
+import "../Base.sol";
 import {Properties} from "../Properties.sol";
 
-/// @notice Handles the interaction with OVRFLOFactory
+/// @notice Handles the interaction with OVRFLOFactory. Every selected entry point here
+///         is tier `secondary`, so they are grouped behind one dispatcher handler and
+///         reached only occasionally, rather than dominating the call sequence.
 abstract contract OVRFLOFactoryHandler is Properties {
     // ――――――――――――――――――――――――― Clamped ――――――――――――――――――――――――――
 
-    function oVRFLOFactory_secondary(uint8 selector, uint256 arg0, uint256 arg1, address) public {
-        // setLendingTreasury removed: changing treasury to an actor corrupts SP-99's
-        // balance-delta check (actor receives sale proceeds, not just fees).
-        selector = uint8(selector % 5);
+    /// @dev Single admin-tier entry point covering all 8 secondary OVRFLOFactory
+    ///      forwarders. `selector` picks which one fires; every call is pranked as the
+    ///      factory owner (`admin`) exactly once.
+    function handler_factoryAdmin(uint8 selector, uint256 arg0, uint256 arg1, address addr0, bool flag0)
+        public
+        asAdmin
+    {
+        selector = uint8(selector % 8);
         if (selector == 0) {
-            _oVRFLOFactory_setFlashFeeBps(uint16(arg0 % (uint256(vault.FLASH_FEE_MAX_BPS()) + 1)));
+            _factory_setFlashFeeBps(uint16(clampBetween(arg0, 0, vault.FLASH_FEE_MAX_BPS())));
         } else if (selector == 1) {
-            _oVRFLOFactory_setFlashLoanPaused(arg0 > 0);
+            _factory_setFlashLoanPaused(flag0);
         } else if (selector == 2) {
-            uint16 minApr = uint16(arg0 % 101) * lending.APR_STEP_BPS();
-            uint16 maxApr = uint16(arg1 % 101) * lending.APR_STEP_BPS();
-            if (minApr > maxApr) (minApr, maxApr) = (maxApr, minApr);
-            _oVRFLOFactory_setLendingAprBounds(minApr, maxApr);
+            // forge-lint: disable-next-line(divide-before-multiply) — flooring to a spacing multiple is the point.
+            uint16 aprMin = uint16((clampBetween(arg0, 0, lending.APR_MAX_CEILING()) / TICK_SPACING) * TICK_SPACING);
+            uint16 aprMax =
+            // forge-lint: disable-next-line(divide-before-multiply) — flooring to a spacing multiple is the point.
+            uint16((clampBetween(arg1, aprMin, lending.APR_MAX_CEILING()) / TICK_SPACING) * TICK_SPACING);
+            if (aprMax < aprMin) aprMax = aprMin;
+            _factory_setLendingAprBounds(aprMin, aprMax);
         } else if (selector == 3) {
-            _oVRFLOFactory_setLendingFee(uint16(arg0 % (uint256(lending.MAX_FEE_BPS()) + 1)));
+            _factory_setLendingFee(uint16(clampBetween(arg0, 0, lending.MAX_FEE_BPS())));
+        } else if (selector == 4) {
+            _factory_setLendingTreasury(toActor(addr0));
+        } else if (selector == 5) {
+            _factory_setMarketDepositLimit(clampBetween(arg0, 0, type(uint256).max));
+        } else if (selector == 6) {
+            _factory_sweepExcessPt(toActor(addr0));
         } else {
-            _oVRFLOFactory_setMarketDepositLimit(arg0);
+            _factory_sweepExcessUnderlying(toActor(addr0));
         }
     }
 
     // ―――――――――――――――――――――――― Unclamped ―――――――――――――――――――――――――
+    // Secondary-tier calls are internal-only; the dispatcher above is the sole fuzz
+    // entry point and already applies the `asAdmin` caller context.
 
-    function _oVRFLOFactory_setFlashFeeBps(uint16 feeBps) internal asAdmin {
+    function _factory_setFlashFeeBps(uint16 feeBps) internal {
         factory.setFlashFeeBps(address(vault), feeBps);
     }
 
-    function _oVRFLOFactory_setFlashLoanPaused(bool paused) internal asAdmin {
+    function _factory_setFlashLoanPaused(bool paused) internal {
         factory.setFlashLoanPaused(address(vault), paused);
     }
 
-    function _oVRFLOFactory_setLendingAprBounds(uint16 aprMinBps_, uint16 aprMaxBps_) internal asAdmin {
+    function _factory_setLendingAprBounds(uint16 aprMinBps_, uint16 aprMaxBps_) internal {
         factory.setLendingAprBounds(address(lending), aprMinBps_, aprMaxBps_);
     }
 
-    function _oVRFLOFactory_setLendingFee(uint16 feeBps_) internal asAdmin {
+    function _factory_setLendingFee(uint16 feeBps_) internal {
         factory.setLendingFee(address(lending), feeBps_);
     }
 
-    function _oVRFLOFactory_setMarketDepositLimit(uint256 limit) internal asAdmin {
+    function _factory_setLendingTreasury(address treasury_) internal {
+        factory.setLendingTreasury(address(lending), treasury_);
+    }
+
+    function _factory_setMarketDepositLimit(uint256 limit) internal {
         factory.setMarketDepositLimit(address(vault), market, limit);
-        property_setDepositLimitEcho(market, limit);
+    }
+
+    function _factory_sweepExcessPt(address to) internal {
+        factory.sweepExcessPt(address(vault), address(ptToken), to);
+    }
+
+    function _factory_sweepExcessUnderlying(address to) internal {
+        factory.sweepExcessUnderlying(address(vault), to);
     }
 }
