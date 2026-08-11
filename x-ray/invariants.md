@@ -749,8 +749,9 @@ On-chain: **Yes**
 **Caller side** — `OVRFLOLending.sol:317-333` reads `factory.ovrfloInfo(core_)` once in the constructor and
 stores the results as immutables; every fund flow (`:423`, `:454`, `:606`, `:706`) uses them without re-validation.
 
-**Callee side** — `OVRFLOFactory.sol:191-192` (`ovrfloInfo[ovrflo] = OvrfloInfo{...}`) is the only writer of that
-mapping, executed once inside `deploy()`. No setter exists, so the read cannot go stale.
+**Callee side** — `OVRFLOFactory.sol:155` (`ovrfloInfo[ovrflo] = OvrfloInfo({...})`) is the only writer of that
+mapping, executed once inside `registerOvrflo()` after checks confirm the candidate's `factory()`/`oracle()`
+immutables match this factory. No setter exists, so the read cannot go stale.
 
 **If violated** — Lending would escrow one token and pay out another. Note this is the **strengthened** successor
 to the pre-rewrite `X-2` (then On-chain=No): the write-once property of `ovrfloInfo` is what upgrades it.
@@ -784,9 +785,13 @@ On-chain: **Yes**
 
 **Caller side** — `OVRFLO.sol:371`, `:385`, `:452-453`, `:490` call `mint`/`burn` unconditionally.
 
-**Callee side** — `OVRFLOToken.sol:38`/`:42` gate both on `onlyOwner`; `:32` `transferOwnership` is itself
-`onlyOwner`, and `OVRFLOFactory.sol:187` hands ownership to the vault at deploy time. `renounceOwnership` is
-deliberately absent (`OVRFLOToken.sol:6-8`), so authority cannot be dropped.
+**Callee side** — `OVRFLOToken.sol:30`/`:34` gate `mint`/`burn` on `onlyOwner`; `owner` (`:19`) is `immutable`,
+assigned to `msg.sender` in the constructor (`:27`) — the OVRFLO vault that constructs the token
+(`OVRFLO.sol:290`, `ovrfloToken = address(new OVRFLOToken(name_, symbol_))`). No `transferOwnership` or
+`renounceOwnership` exists (deleted under Decision 8, 2026-08-11), so authority cannot move after construction.
+`OVRFLOFactory.registerOvrflo` performs no token-ownership check: under Decision 7(a) the vault constructs its
+own token, so `token.owner() == vault` holds by construction for canonical bytecode — registration verifies the
+vault's other bindings (`factory()`, `oracle()`, duplicate-underlying) instead.
 
 **If violated** — ovrfloToken supply could be inflated outside the vault's accounting, breaking I-24.
 

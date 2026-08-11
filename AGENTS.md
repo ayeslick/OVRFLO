@@ -52,6 +52,7 @@ Read `docs/agents/testing.md` before running the E2E suite — it covers require
 ### Code Quality
 - `forge fmt` - Format Solidity code
 - `forge snapshot` - Generate gas snapshots for tests
+- `forge build --sizes` - Diagnostic table of runtime/initcode size per contract (the gate itself is `test/DeploySize.t.sol`, run via `forge test`)
 
 ### Frontend
 - `npm --prefix web run dev` - Start Next.js dev server
@@ -66,7 +67,7 @@ Foundry-based Solidity project implementing OVRFLO, a Pendle-based vault system 
 
 ### Core Contracts (`src/`)
 
-**OVRFLOFactory** — Admin hub owned by a timelocked multisig (`Ownable2Step`). Two-step deployment: `configureDeployment()` then `deploy()`. Deploys OVRFLO vaults, OVRFLOToken instances, and OVRFLOLending instances. Serves as immutable `factory` (admin) for all deployed vaults and owner of all deployed lending markets. Forwards admin calls (series approval, deposit limits, oracle prep, lending admin including `setLendingTickSpacing`) to vaults and lending markets. Prevents duplicate vault deployment per underlying (`underlyingToOvrflo` mapping).
+**OVRFLOFactory** — Registry and admin hub owned by a timelocked multisig (`Ownable2Step`). Deploys nothing: children (OVRFLO vaults, which construct their own OVRFLOToken, and OVRFLOLending instances) are deployed externally by any EOA/script, then `registerOvrflo()`/`registerLending()` (`onlyOwner`) verify every constructor-arg binding on-chain — vault `factory`/`oracle` immutables, duplicate-underlying, lending `factory`/`owner`/Sablier bindings, 1:1 vault-lending mapping — before admitting the candidate to the registry. The factory embeds no child creation code (EIP-170). Serves as immutable `factory` (admin) for all registered vaults and owner of all registered lending markets. Forwards admin calls (series approval, deposit limits, oracle prep, lending admin including `setLendingTickSpacing`) to vaults and lending markets. Prevents duplicate vault registration per underlying (`underlyingToOvrflo` mapping).
 
 **OVRFLO** — Pendle basket vault that wraps PT deposits into ovrfloTokens. Handles PT (Principal Token) deposits with market-value fees. Integrates with Sablier V2 for streaming yield distribution. Permissionless wrap/unwrap path (underlying <-> ovrfloToken 1:1). PT flash loan facility (atomic loan of deposited PT via EIP-4531 callback). Admin functions gated by `onlyAdmin` modifier (factory is admin).
 
@@ -97,10 +98,12 @@ Foundry-based Solidity project implementing OVRFLO, a Pendle-based vault system 
 ### Security Features
 - Timelocked multisig owns factory (all admin operations require consensus + delay)
 - Factory serves as single admin entry point for all vaults and lending markets (pattern #8)
+- Factory registers externally deployed children instead of constructing them — embeds no child creation code, so the factory stays under the EIP-170 runtime cap by construction; every registration re-verifies the constructor-arg bindings construction used to fix (`docs/plans/2026-08-11-001-fix-factory-mainnet-code-size-registry-plan.md`)
+- `test/DeploySize.t.sol` gates all four deployables (plus an `OVRFLOLending` headroom canary) against the EIP-170/EIP-3860 mainnet caps so this finding class cannot silently regress
 - TWAP oracle pricing for market valuation
 - Reentrancy protection on critical functions
 - Per-market deposit limits (0 = unlimited)
-- Duplicate underlying prevention via `underlyingToOvrflo` mapping (pattern #9)
+- Duplicate underlying prevention via `underlyingToOvrflo` mapping, enforced at registration (pattern #9)
 - Pro-rata cap on shared claims across positions overlapping a loan (pattern #12)
 - Frozen-history / lazy-attribution correctness: no tape coordinate below a tick epoch's `filled` counter ever changes, so interval-overlap attribution stays exact forever (see `x-ray/invariants.md` I-2)
 - Blind-fill borrow has no self-match guard by design — blind fills cannot enumerate lender positions, and per the `docs/audit/rejected-findings-record.md` L-12 reasoning a self-fill is self-neutral minus the protocol fee (critical pattern #4, superseded-by-design)
@@ -140,7 +143,7 @@ Foundry-based Solidity project implementing OVRFLO, a Pendle-based vault system 
 - License is MIT across all contracts.
 - Pendle PT tokens always have 18 decimals; code assumes and enforces this invariant (e.g. `MIN_PT_AMOUNT`).
 - Admin flows are multisig -> factory -> vault or lending; no dependent contract is administered directly.
-- Per-series Pendle oracle address is stored in `SeriesInfo` via `setSeriesApproved` — there is no hardcoded `PENDLE_ORACLE` in the factory; pass the oracle per market.
+- The factory carries a factory-wide `oracle` immutable, set at construction (`OVRFLOFactory.sol` constructor) — `registerOvrflo`'s `OracleMismatch` check validates a candidate vault's `oracle` immutable against it, and `addMarket` reads it directly. Per-series storage still exists too: `SeriesInfo` (written by `setSeriesApproved`) caches per-market TWAP duration, fee, expiry, and PT address, but the oracle *address* itself is the factory-wide immutable, not a per-series value. (Corrected 2026-08-11 — the prior fact claiming "no hardcoded `PENDLE_ORACLE` in the factory" was stale; user decision.)
 - `MIN_TWAP_DURATION` (15 minutes) and `MAX_TWAP_DURATION` (30 minutes) are both enforced in the factory.
 - `setSeriesApproved` is intended to be called once per market and never overwritten; claims depend on `ptToken`/`ovrfloToken`/expiry staying immutable for the life of outstanding deposits.
 - Sablier streams are per-deposit, per-customer — not per-market; fees are taken in underlying via a separate zap contract path.

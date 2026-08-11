@@ -30,7 +30,7 @@ For a visual overview of the protocol's architecture, see the [architecture diag
 |-----------|--------------|------:|------|
 | Lending book | OVRFLOLending, TickTree | 768 | Fixed-rate tick order book: blind fills, lazy interval attribution, epoch rollover |
 | Vault | OVRFLO, OVRFLOToken | 317 | PT custody, TWAP-split deposit, wrap/unwrap reserve, PT flash loans |
-| Admin | OVRFLOFactory | 199 | Two-step deployment; single admin entry point for vaults and books |
+| Admin | OVRFLOFactory | 199 | Registers externally deployed children (no child creation code embedded); single admin entry point for vaults and books |
 | Shared pricing | StreamPricing | 95 | Stream eligibility, discounted gross price, obligation, fee (unchanged by the rewrite) |
 
 ### How It Fits Together
