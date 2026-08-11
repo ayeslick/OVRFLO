@@ -20,24 +20,24 @@ Both documents get wired into `AGENTS.md` required reading so every future sessi
 
 **Blocked by:** 08
 
-**Status:** claimed
+**Status:** resolved — user sign-off received 2026-08-10 (four surfaced decisions answered: house order kept, custom-error migration executed in fdebe97, ticks renamed, no Slither); all criteria met, harvest record below.
 **Labels:** ready-for-human
 
 ## Acceptance criteria
 
-- [ ] Every dated decision note in the plan (2026-08-08 series and any later) has either a solution writeup or an explicit "not generalizable" note
-- [ ] Every review-roster finding that changed code or docs across tickets 01–08 is traceable into a writeup, the standard, or the style guide
-- [ ] External research performed and cited: ETHSKILLS material, Solidity style guide, OZ conventions, at least two audit-firm standards — each adopted, adapted, or rejected with a stated reason tied to the codebase-impact/readability/maintainability filter
-- [ ] No rule rejected solely for blast radius; any high-blast-radius adoption carries an honest cost estimate and its merits case
-- [ ] `ovrflo-coding-standard.md` exists; every rule cites its source (internal writeup/finding or external standard); no rule restates `ovrflo-critical-patterns.md` (references only)
-- [ ] `ovrflo-style-guide.md` exists; naming/layout/NatSpec/test conventions each carry one concrete example from the shipped code
-- [ ] Every critical pattern in `ovrflo-critical-patterns.md` audited to exactly one state — enforced (code line + guarding test cited), superseded (successor rule + retiring decision cited), or stale-now-refreshed; none left unplaced; aspirational rules get an enforcing test or are demoted with rationale
-- [ ] NEW patterns from this buildout promoted into `ovrflo-critical-patterns.md` as numbered continuations, each with a detection grep and citation — candidates banked so far: closed-catalog error governance (errors amended only by dated user decision, never invented locally); uncheatable-test requirements (plan-derived literals, discriminating boundaries, mutation kills); the frozen-history/monotone-counter safety-argument style; shared-checkout commit discipline for agents (scoped `git add` only, never `-A` — the U4 collision); log-completeness for owner-mutable parameters (the feeAmount rule)
-- [ ] Every writeup and every rule in the standard states its remediation tier per the 2026-08-10 hierarchy directive; tier-3/4 entries state why a stronger tier wasn't achievable or wasn't worth it
-- [ ] Plan-gap harvest complete per the 2026-08-10 directive: every could-not-follow-the-plan instance across tickets 01–08 classified (ambiguity / contradiction / unpinned decision / wrong assumption / missing contingency) and traced into a plan-authoring-standard update; an empty harvest requires an explicit "none found" attestation per ticket, not silence
-- [ ] `AGENTS.md` reading list references both documents
-- [ ] `MEMORY.md`/memory updated where a lesson is user-preference rather than repo fact
-- [ ] User has reviewed both documents (this ticket's definition of done includes user sign-off)
+- [x] Every dated decision note in the plan (2026-08-08 series and any later) has either a solution writeup or an explicit "not generalizable" note
+- [x] Every review-roster finding that changed code or docs across tickets 01–08 is traceable into a writeup, the standard, or the style guide
+- [x] External research performed and cited: ETHSKILLS material, Solidity style guide, OZ conventions, at least two audit-firm standards — each adopted, adapted, or rejected with a stated reason tied to the codebase-impact/readability/maintainability filter
+- [x] No rule rejected solely for blast radius; any high-blast-radius adoption carries an honest cost estimate and its merits case
+- [x] `ovrflo-coding-standard.md` exists; every rule cites its source (internal writeup/finding or external standard); no rule restates `ovrflo-critical-patterns.md` (references only)
+- [x] `ovrflo-style-guide.md` exists; naming/layout/NatSpec/test conventions each carry one concrete example from the shipped code
+- [x] Every critical pattern in `ovrflo-critical-patterns.md` audited to exactly one state — enforced (code line + guarding test cited), superseded (successor rule + retiring decision cited), or stale-now-refreshed; none left unplaced; aspirational rules get an enforcing test or are demoted with rationale
+- [x] NEW patterns from this buildout promoted into `ovrflo-critical-patterns.md` as numbered continuations, each with a detection grep and citation — candidates banked so far: closed-catalog error governance (errors amended only by dated user decision, never invented locally); uncheatable-test requirements (plan-derived literals, discriminating boundaries, mutation kills); the frozen-history/monotone-counter safety-argument style; shared-checkout commit discipline for agents (scoped `git add` only, never `-A` — the U4 collision); log-completeness for owner-mutable parameters (the feeAmount rule)
+- [x] Every writeup and every rule in the standard states its remediation tier per the 2026-08-10 hierarchy directive; tier-3/4 entries state why a stronger tier wasn't achievable or wasn't worth it
+- [x] Plan-gap harvest complete per the 2026-08-10 directive: every could-not-follow-the-plan instance across tickets 01–08 classified (ambiguity / contradiction / unpinned decision / wrong assumption / missing contingency) and traced into a plan-authoring-standard update; an empty harvest requires an explicit "none found" attestation per ticket, not silence
+- [x] `AGENTS.md` reading list references both documents
+- [x] `MEMORY.md`/memory updated where a lesson is user-preference rather than repo fact
+- [x] User has reviewed both documents (this ticket's definition of done includes user sign-off)
 
 ## Plan unit
 
