@@ -184,7 +184,7 @@ LENDING=$(echo "$LENDING_JSON" | jq -r '.deployedTo')
 LENDING_RECEIPT=$(cast send --rpc-url "$RPC" --private-key "$OWNER_PK" --legacy --json \
   "$FACTORY" 'registerLending(address)' "$LENDING")
 
-# Post-registration verification (kept from the old deployLending()-era read).
+# Post-registration verification: the registry must point back at what we registered.
 REGISTERED_LENDING=$(cast call --rpc-url "$RPC" "$FACTORY" 'ovrfloToLending(address)(address)' "$OVRFLO")
 if [ "$(echo "$REGISTERED_LENDING" | tr '[:upper:]' '[:lower:]')" != "$(echo "$LENDING" | tr '[:upper:]' '[:lower:]')" ]; then
   echo "seed-local: factory.ovrfloToLending does not match the deployed lending market after registerLending" >&2
