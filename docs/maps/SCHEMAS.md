@@ -32,26 +32,34 @@ a11y notes, color/token references, links to covering tests.
 UI-<REGION>-<CONTROL>
 ```
 
-`<REGION>` is one of the six fixed region slugs; `<CONTROL>` is a hyphenated slug
+`<REGION>` is one of the eight fixed region slugs; `<CONTROL>` is a hyphenated slug
 unique within its region. Uppercase, hyphen-separated, no spaces.
 
 | Region | Slug |
 |---|---|
-| Header | `HEADER` |
-| Your positions | `POSITIONS` |
-| Self-repaying markets table | `MARKETS-TABLE` |
-| Expanded settlement | `SETTLEMENT` |
-| Action modal / overlay | `ACTION` |
-| System chrome | `CHROME` |
+| Shell | `SHELL` |
+| Watch surface | `WATCH` |
+| Borrow flow | `BORROW` |
+| Supply flow | `SUPPLY` |
+| ALL RATES expert workspace | `RATES` |
+| Split review + receipts | `REVIEW` |
+| Assets converter + stream creation | `ASSETS` |
+| Guided first run + risk | `FIRST-RUN` |
 
-Example: `UI-MARKETS-TABLE-BORROW`.
+Example: `UI-WATCH-CLAIM`.
+
+The SETTLEMENT step trace and PERMISSION / ACTION receipts are **shared control
+families**, documented once in `docs/maps/ui/review.md` and referenced by ID from
+the flows that use them. They are not a ninth region. Do not confuse
+`docs/maps/ui/review.md` (the REVIEW region brief) with `docs/maps/REVIEW.md`
+(the agent review contract).
 
 Gherkin stays **flow-level** and references controls by tag — one scenario per flow,
 tagged with the controls it exercises. It is not one scenario per control.
 
 ```gherkin
-@UI-MARKETS-TABLE-BORROW @UI-ACTION-CONFIRM
-Scenario: Borrower pledges a stream against standing liquidity
+@UI-WATCH-CLAIM @UI-REVIEW-CONFIRM
+Scenario: Lender collects claimable earnings from a filled position
 ```
 
 ### States must stay distinguishable

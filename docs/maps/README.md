@@ -36,28 +36,34 @@ Two rules make this operational:
 Code is last on purpose. Code that contradicts a brief is a defect in the code, not
 an amendment to the brief.
 
-## The six Markets regions
+## The eight Markets regions
 
 Region briefs live in `docs/maps/ui/` and are the meaning layer for the Markets app.
-There are six, and only six, at pass 1:
+There are eight, and only eight. This set replaced the six-region pass-1 topology
+(HEADER, POSITIONS, MARKETS-TABLE, SETTLEMENT, ACTION, CHROME) by Owner approval on
+2026-08-11 — see `docs/adr/0001-watch-surface-region-set.md`.
 
 | # | Region | Incumbent code |
 |---|---|---|
-| 1 | Header | `web/components/MarketsApp.tsx` · `web/components/CopyValue.tsx` |
-| 2 | Your positions | `web/components/PositionSummary.tsx` · `web/components/PositionList.tsx` |
-| 3 | Self-repaying markets table | `web/components/MarketsTable.tsx` |
-| 4 | Expanded settlement | `web/components/MarketRowDetail.tsx` |
-| 5 | Action modal / overlay | `web/components/ActionModal.tsx` · `web/components/MarketDetail.tsx` · `web/components/ClaimAllModal.tsx` · `web/components/RateLadder.tsx` · `web/components/action-flow/` |
-| 6 | System chrome | `web/components/Providers.tsx` · `web/components/WalletRuntime.tsx` · `web/components/ModalErrorBoundary.tsx` · `web/components/TruncationNotice.tsx` |
+| 1 | Shell | `web/app/layout.tsx` · `web/app/page.tsx` · `web/components/MarketsApp.tsx` · `web/components/WalletRuntime.tsx` · `web/components/CopyValue.tsx` · `web/components/Providers.tsx` · `web/app/{loading,error,global-error}.tsx` · `web/components/{ModalErrorBoundary,TruncationNotice}.tsx`. U7 lands `WalletControl` and `Footer`. |
+| 2 | Watch surface | U7: `web/components/watch/{Wall,SuppliedDetail,BorrowedDetail,StreamDetail,ClosedLoanDetail}.tsx`. Entry gate lives in `web/app/page.tsx`. |
+| 3 | Borrow flow | `web/components/action-flow/BorrowFlow.tsx` until U9 lands `web/app/borrow/page.tsx` and `web/components/borrow/*`. |
+| 4 | Supply flow | `web/components/action-flow/SupplyFlow.tsx` until U8 lands `web/app/supply/page.tsx` and `web/components/supply/*`. |
+| 5 | ALL RATES expert workspace | U4 `RateWindow` kit plus the U8/U9 `ALL RATES` workspace. The retired `RateLadder.tsx` does not return. |
+| 6 | Split review + receipts | `web/components/action-flow/ActionFlowShell.tsx` until U8–U11 compose `SettlementTrace` and `Receipt` from the kit. Shared SETTLEMENT / PERMISSION / ACTION families live in `ui/review.md`. |
+| 7 | Assets converter + stream creation | `web/components/action-flow/ConvertFlow.tsx` until U10 lands `web/app/assets/page.tsx` and `web/components/assets/*`. |
+| 8 | Guided first run + risk | U11: `web/components/first-run/*` and `web/app/risk/page.tsx`. |
 
 Each region documents its controls against the seven mandatory fields in
 `SCHEMAS.md`. Regions are region-level documents with **nested controls** — not one
 file per control.
 
-The `Incumbent code` column above says where a region's behaviour lives today, and it
-follows the code: `RateLadder` and `MarketDetail` sit under *Action* because that is
-what renders them, not under the table and settlement rows a first reading would
-suggest. `ui/README.md` carries the same mapping in more detail.
+The `Incumbent code` column names where a region's behaviour lives now and where the
+watch-surface rebuild lands it. `ui/README.md` carries the same mapping plus the
+render-inventory coverage table.
+
+Do not confuse `docs/maps/ui/review.md` (the REVIEW region brief) with
+`docs/maps/REVIEW.md` (this charter's agent review contract).
 
 ## Client state
 
@@ -87,10 +93,10 @@ Current state of the fill:
 | `README.md`, `SCHEMAS.md`, `REVIEW.md` | published |
 | `docs/adr/README.md` | published |
 | `.scratch/decisions/` process | published — local only, see `SCHEMAS.md` §4 |
-| `docs/maps/ui/` region briefs | filled — six regions, 53 controls |
+| `docs/maps/ui/` region briefs | filled — eight regions (U2); coverage table in `ui/README.md` |
 | `docs/maps/state/` keys + generated index | filled — 50 keys, index generated |
 | `web/reviews/testing.md` + accountability | current as of 2026-08-03 |
-| `ui/CODING_STANDARD.md` | extracted — 40 rules, all brief-cited |
+| `ui/CODING_STANDARD.md` | extracted from the retired six-region briefs; U3 re-extracts against the eight |
 | Presence gate | wired — `npm --prefix web run lint:maps` |
 | `STACK_FITNESS.md` | published — scored 2026-08-03; re-run is Owner-scheduled |
 
