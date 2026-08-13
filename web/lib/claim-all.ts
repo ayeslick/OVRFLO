@@ -4,7 +4,7 @@ import type { BlockIdentity } from "./discovery/types";
 import { isFreshReady, type ReadOutcome } from "./read-outcome";
 
 // Pure claim-all planner (plan KTD4). Pool claims batch per lending contract
-// (multicall of claimLoanPoolShare), then individual stream claims. `claimable`
+// (multicall of per-position claim), then individual stream claims. `claimable`
 // is the caller's projected value from recoveredForClaimable, not raw proceeds.
 //
 // `asset` is the token the claim pays out in — the market's ovrfloToken for a
@@ -395,7 +395,10 @@ export function sameClaimAllPlan(
 ): boolean {
   return (
     left.length === right.length &&
-    left.every((tx, index) => stableTx(tx) === stableTx(right[index]))
+    left.every((tx, index) => {
+      const other = right[index];
+      return other !== undefined && stableTx(tx) === stableTx(other);
+    })
   );
 }
 

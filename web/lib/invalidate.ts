@@ -60,9 +60,9 @@ export function keyMentionsAny(
 /**
  * Every contract a write inside one market can change the reads of.
  *
- * The transaction's `to` address is not the whole answer: `supplyLiquidity`
+ * The transaction's `to` address is not the whole answer: `supply`
  * targets the lending market but pulls the underlying ERC-20, `deposit` targets
- * the vault but pulls PT and mints ovrfloToken, and `repayLoan` moves underlying
+ * the vault but pulls PT and mints ovrfloToken, and `repay` moves underlying
  * back. Those balance/allowance reads are keyed by *token* address, so scoping
  * to `to` alone leaves the balance the user is about to act on next showing a
  * pre-transaction number — and with window-focus refetching off, it stays that

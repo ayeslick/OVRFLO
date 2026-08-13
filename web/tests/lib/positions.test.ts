@@ -1,18 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { encodeAbiParameters, encodeEventTopics, type Address, type Log } from "viem";
-import { ovrfloLendingAbi } from "@/lib/generated";
+import type { Address } from "viem";
 import {
-  adjustReceiptSummary,
   borrowTeaserBps,
   classifyAdjustError,
   loanCardState,
   obligationPct,
-  selectForMarket,
   selectLiquidityForLender,
   streamedPct,
 } from "@/lib/positions";
 import type { TickDepth } from "@/lib/router";
-import type { LiquidityPosition, LoanPool } from "@/lib/types";
+import type { LiquidityPosition } from "@/lib/types";
 
 function testAddress(id: number): Address {
   return `0x${id.toString(16).padStart(40, "0")}` as Address;
@@ -70,64 +67,6 @@ describe("borrowTeaserBps", () => {
   it("returns null when no tick has liquidity", () => {
     expect(borrowTeaserBps([tick(1000, 0n)], YEAR, 0)).toBeNull();
     expect(borrowTeaserBps([], YEAR, 0)).toBeNull();
-  });
-});
-
-// --- adjustReceiptSummary ---
-
-const LENDING = testAddress(0x999);
-
-function suppliedLog(liquidityId: bigint, moved: bigint, emitter = LENDING): Log {
-  const topics = encodeEventTopics({
-    abi: ovrfloLendingAbi,
-    eventName: "LiquiditySupplied",
-    args: { liquidityId, lender: testAddress(0x111), market: testAddress(0x333) },
-  });
-  return {
-    address: emitter,
-    topics,
-    data: encodeAbiParameters([{ type: "uint16" }, { type: "uint128" }], [1100, moved]),
-  } as unknown as Log;
-}
-
-function withdrawnLog(liquidityId: bigint, refunded: bigint): Log {
-  const topics = encodeEventTopics({
-    abi: ovrfloLendingAbi,
-    eventName: "LiquidityWithdrawn",
-    args: { liquidityId, lender: testAddress(0x111) },
-  });
-  return {
-    address: LENDING,
-    topics,
-    data: encodeAbiParameters([{ type: "uint128" }], [refunded]),
-  } as unknown as Log;
-}
-
-describe("adjustReceiptSummary", () => {
-  it("pairs the withdraw refund with the supplied amount", () => {
-    expect(adjustReceiptSummary([withdrawnLog(3n, 500n), suppliedLog(9n, 500n)], LENDING)).toEqual({
-      liquidityId: 9n,
-      aprBps: 1100,
-      moved: 500n,
-      refunded: 500n,
-    });
-  });
-
-  it("exposes a wallet top-up when the position shrank before execution", () => {
-    const summary = adjustReceiptSummary([withdrawnLog(3n, 300n), suppliedLog(9n, 500n)], LENDING);
-    expect(summary?.refunded).toBe(300n);
-    expect(summary?.moved).toBe(500n);
-  });
-
-  it("ignores logs from other contracts and empty receipts", () => {
-    expect(adjustReceiptSummary([suppliedLog(9n, 500n, testAddress(0xbad))], LENDING)).toBeNull();
-    expect(adjustReceiptSummary([], LENDING)).toBeNull();
-  });
-
-  it("falls back to the supplied amount for refunded when there is no withdraw leg at all", () => {
-    // A pure top-up (increasing available liquidity) never emits LiquidityWithdrawn.
-    const summary = adjustReceiptSummary([suppliedLog(9n, 500n)], LENDING);
-    expect(summary).toEqual({ liquidityId: 9n, aprBps: 1100, moved: 500n, refunded: 500n });
   });
 });
 
@@ -192,21 +131,5 @@ describe("selectLiquidityForLender", () => {
 
   it("returns nothing when no wallet is connected (normalizedUser undefined)", () => {
     expect(selectLiquidityForLender(rows, MARKET_A, undefined)).toEqual([]);
-  });
-});
-
-function poolRow(market: Address): { pool: Pick<LoanPool, "market"> } {
-  return { pool: { market } };
-}
-
-describe("selectForMarket", () => {
-  it("keeps only rows whose pool.market matches, case-insensitively", () => {
-    const rows = [poolRow(MARKET_A), poolRow(MARKET_B)];
-    const upperMarket = MARKET_A.toUpperCase().replace("0X", "0x") as Address;
-    expect(selectForMarket(rows, upperMarket)).toEqual([rows[0]]);
-  });
-
-  it("returns an empty array when nothing matches", () => {
-    expect(selectForMarket([poolRow(MARKET_B)], MARKET_A)).toEqual([]);
   });
 });

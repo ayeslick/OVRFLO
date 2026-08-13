@@ -150,12 +150,11 @@ When("I select the second available rate", async ({ page }) => {
   await scope.getByRole("radio").nth(1).click();
 });
 
-// Longer than the default 5s: a just-confirmed write only bumps the enumeration
-// count (e.g. `nextLiquidityId`) via one invalidated read, and the position
-// list itself is a *second* read keyed off that count (see useLendingLiquidity)
-// — it can't refetch with the right args until the first read's new value has
-// round-tripped back and re-rendered, so this is inherently a two-hop refetch,
-// not a single query invalidation.
+// Longer than the default 5s: a just-confirmed write only bumps the
+// enumeration via one invalidated read, and the position list itself is a
+// second read keyed off that result — it can't refetch with the right args
+// until the first read's new value has round-tripped back and re-rendered,
+// so this is inherently a two-hop refetch, not a single query invalidation.
 Then("I see a {string} position card", async ({ page }, label: string) => {
   await expect(page.locator(".position-card", { hasText: label }).first()).toBeVisible({ timeout: 15_000 });
 });
@@ -173,11 +172,10 @@ Then("no modal is open", async ({ page }) => {
 });
 
 Then("I see the caption {string}", async ({ page }, text: string) => {
-  // .first(), not a strict match: MarketRowDetail computes supplyCaption and
-  // borrowCaption from the same baseActionCaption() call (see
-  // MarketRowDetail.tsx), so a matured market renders "MARKET MATURED" twice
-  // at once — once per action area, in the SAME market's own row-detail, not
-  // across two markets. A strict getByText would throw on that duplicate.
+  // .first(), not a strict match: a matured market can render the same
+  // caption twice at once — once per action area, in the SAME market's own
+  // row-detail, not across two markets. A strict getByText would throw on
+  // that duplicate.
   // Longer than the default 5s: this step is also used for "CONFIRMED" after
   // a real on-chain write, which only surfaces once wagmi's own
   // useWaitForTransactionReceipt polling notices the mined receipt (see the

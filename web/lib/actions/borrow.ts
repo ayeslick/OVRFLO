@@ -164,8 +164,14 @@ export const borrowDefinition: ActionDefinition<"borrow"> = {
     const call = {
       target: lending,
       contract: "lending" as const,
-      functionName: "createBorrowerLoanPool",
-      args: [selected.selectedIds, intent.streamId, parsed.amount, quote.minAcceptable] as const,
+      functionName: "borrow",
+      args: [
+        snapshot.market.market,
+        routing.aprBps,
+        parsed.amount,
+        intent.streamId,
+        quote.minAcceptable,
+      ] as const,
       value: 0n,
     };
     return readyAction({
@@ -212,7 +218,7 @@ export const borrowDefinition: ActionDefinition<"borrow"> = {
       },
       receiptSummary: {
         source: lending,
-        eventName: "BorrowerLoanPoolCreated",
+        eventName: "Borrowed",
         label: "BORROWED",
         expectedIds: [intent.streamId, ...selected.selectedIds],
         expectedAmounts: {

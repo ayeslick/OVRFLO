@@ -11,4 +11,35 @@
 # Format:
 #   web/components/Example.tsx # why this file may change without a companion
 #
-# There are no exemptions today. Prefer writing the companion artifact.
+# Temporary U1 purge exemptions. U2 removes them when the briefs and ADR land.
+
+web/hooks/useLendingProjection.ts # purged in U1, region set replaced by U2 briefs + ADR
+web/hooks/useProjectionSync.ts # purged in U1, region set replaced by U2 briefs + ADR
+web/hooks/useLendingLiquidity.ts # purged in U1, region set replaced by U2 briefs + ADR
+web/hooks/useBorrowDemand.ts # purged in U1, region set replaced by U2 briefs + ADR
+web/hooks/useLoanBook.ts # purged in U1, region set replaced by U2 briefs + ADR
+web/hooks/useClaimAllPreflight.ts # purged in U1, region set replaced by U2 briefs + ADR
+web/hooks/useClaimAllExecution.ts # purged in U1, region set replaced by U2 briefs + ADR
+web/hooks/useBorrowerLoans.ts # purged in U1, region set replaced by U2 briefs + ADR
+web/hooks/useHeldStreams.ts # purged in U1, region set replaced by U2 briefs + ADR
+web/hooks/useWriteFlow.ts # purged in U1, region set replaced by U2 briefs + ADR
+web/hooks/useLending.ts # purged in U1, region set replaced by U2 briefs + ADR
+web/hooks/useTxQueue.ts # purged in U1, region set replaced by U2 briefs + ADR
+web/hooks/useFocusTrap.ts # purged in U1, region set replaced by U2 briefs + ADR
+web/hooks/useNowSeconds.ts # purged in U1, region set replaced by U2 briefs + ADR
+web/components/MarketsTable.tsx # purged in U1, region set replaced by U2 briefs + ADR
+web/components/MarketRowDetail.tsx # purged in U1, region set replaced by U2 briefs + ADR
+web/components/MarketDetail.tsx # purged in U1, region set replaced by U2 briefs + ADR
+web/components/RateLadder.tsx # purged in U1, region set replaced by U2 briefs + ADR
+web/components/ClaimAllModal.tsx # purged in U1, region set replaced by U2 briefs + ADR
+web/components/PositionSummary.tsx # purged in U1, region set replaced by U2 briefs + ADR
+web/components/PositionList.tsx # purged in U1, region set replaced by U2 briefs + ADR
+web/components/ActionModal.tsx # purged in U1, region set replaced by U2 briefs + ADR
+web/components/MarketsApp.tsx # purged in U1, region set replaced by U2 briefs + ADR
+web/components/action-flow/ActionFlowShell.tsx # purged in U1, region set replaced by U2 briefs + ADR
+web/components/action-flow/BorrowFlow.tsx # purged in U1, region set replaced by U2 briefs + ADR
+web/components/action-flow/SupplyFlow.tsx # purged in U1, region set replaced by U2 briefs + ADR
+web/components/action-flow/PositionFlow.tsx # purged in U1, region set replaced by U2 briefs + ADR
+web/components/action-flow/ClaimFlow.tsx # purged in U1, region set replaced by U2 briefs + ADR
+web/components/action-flow/RepayFlow.tsx # purged in U1, region set replaced by U2 briefs + ADR
+web/components/action-flow/ConvertFlow.tsx # purged in U1, region set replaced by U2 briefs + ADR

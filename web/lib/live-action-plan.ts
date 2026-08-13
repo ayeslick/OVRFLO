@@ -24,10 +24,6 @@ import type {
 } from "./actions/types";
 import { applySlippageDown } from "./modal-logic";
 import { SABLIER_LOCKUP_ADDRESS, ZERO_ADDRESS } from "./config";
-import {
-  loanPoolClaimable,
-  recoveredForClaimable,
-} from "./lending-math";
 import { readyOutcome } from "./read-outcome";
 import type { LiquidityPosition, Loan, MarketInfo } from "./types";
 
@@ -93,7 +89,7 @@ function requireNumber(value: unknown, label: string): number {
 function parseAction(raw: LiveWriteArgs): ParsedAction | null {
   const args = raw.args ?? [];
   switch (raw.functionName) {
-    case "supplyLiquidity":
+    case "supply":
       return {
         intent: {
           type: "supply",
@@ -102,19 +98,11 @@ function parseAction(raw: LiveWriteArgs): ParsedAction | null {
         },
         raw,
       };
-    case "withdrawLiquidity":
+    case "withdraw":
       return {
         intent: {
           type: "withdraw",
           positionId: requireBigint(args[0], "position ID"),
-        },
-        raw,
-      };
-    case "claimLoanPoolShare":
-      return {
-        intent: {
-          type: "claim_share",
-          loanId: requireBigint(args[0], "loan ID"),
         },
         raw,
       };
@@ -127,6 +115,15 @@ function parseAction(raw: LiveWriteArgs): ParsedAction | null {
         raw,
       };
     case "claim":
+      if (args.length >= 3) {
+        return {
+          intent: {
+            type: "claim_share",
+            loanId: requireBigint(args[0], "loan ID"),
+          },
+          raw,
+        };
+      }
       return {
         intent: {
           type: "claim_matured",
@@ -150,11 +147,11 @@ function parseAction(raw: LiveWriteArgs): ParsedAction | null {
         },
         raw,
       };
-    case "createBorrowerLoanPool":
+    case "borrow":
       return {
         intent: {
           type: "borrow",
-          streamId: requireBigint(args[1], "stream ID"),
+          streamId: requireBigint(args[3], "stream ID"),
           amount: amount(requireBigint(args[2], "borrow amount")),
         },
         raw,
@@ -178,9 +175,9 @@ function parseAction(raw: LiveWriteArgs): ParsedAction | null {
           abi: ovrfloLendingAbi,
           data: call as `0x${string}`,
         });
-        if (decoded.functionName === "withdrawLiquidity") {
+        if (decoded.functionName === "withdraw") {
           positionId = decoded.args[0];
-        } else if (decoded.functionName === "supplyLiquidity") {
+        } else if (decoded.functionName === "supply") {
           newAprBps = decoded.args[1];
         }
       }
@@ -192,7 +189,7 @@ function parseAction(raw: LiveWriteArgs): ParsedAction | null {
         raw,
       };
     }
-    case "repayLoan":
+    case "repay":
       return {
         intent: {
           type: "repay",
@@ -201,7 +198,7 @@ function parseAction(raw: LiveWriteArgs): ParsedAction | null {
         },
         raw,
       };
-    case "closeLoan":
+    case "close":
       return {
         intent: {
           type: "close",
@@ -228,17 +225,32 @@ async function positionAt(
   id: bigint,
   blockNumber: bigint,
 ): Promise<LiquidityPosition | null> {
-  const [lender, market, aprBps, availableLiquidity] = await read<
-    [Address, Address, number, bigint]
-  >(client, blockNumber, {
-    address: lending,
-    abi: ovrfloLendingAbi,
-    functionName: "liquidityPositions",
-    args: [id],
-  });
-  return isAddressEqual(lender, ZERO_ADDRESS)
-    ? null
-    : { id, lender, market, aprBps, availableLiquidity };
+  try {
+    const [position, , , unfilled] = await read<
+      [
+        { lender: Address; market: Address; aprBps: number; epoch: number; leafIndex: number },
+        bigint,
+        bigint,
+        bigint,
+      ]
+    >(client, blockNumber, {
+      address: lending,
+      abi: ovrfloLendingAbi,
+      functionName: "positionState",
+      args: [id],
+    });
+    return isAddressEqual(position.lender, ZERO_ADDRESS)
+      ? null
+      : {
+          id,
+          lender: position.lender,
+          market: position.market,
+          aprBps: position.aprBps,
+          availableLiquidity: unfilled,
+        };
+  } catch {
+    return null;
+  }
 }
 
 async function loanAt(
@@ -247,17 +259,39 @@ async function loanAt(
   id: bigint,
   blockNumber: bigint,
 ): Promise<Loan | null> {
-  const [borrower, streamId, obligation, drawn, repaid, closed] = await read<
-    [Address, bigint, bigint, bigint, bigint, boolean]
-  >(client, blockNumber, {
-    address: lending,
-    abi: ovrfloLendingAbi,
-    functionName: "loans",
-    args: [id],
-  });
-  return isAddressEqual(borrower, ZERO_ADDRESS)
-    ? null
-    : { id, borrower, streamId, obligation, drawn, repaid, closed };
+  try {
+    const [loan] = await read<
+      [
+        {
+          borrower: Address;
+          streamId: bigint;
+          obligation: bigint;
+          drawn: bigint;
+          repaid: bigint;
+          closed: boolean;
+        },
+        bigint,
+      ]
+    >(client, blockNumber, {
+      address: lending,
+      abi: ovrfloLendingAbi,
+      functionName: "loanState",
+      args: [id],
+    });
+    return isAddressEqual(loan.borrower, ZERO_ADDRESS)
+      ? null
+      : {
+          id,
+          borrower: loan.borrower,
+          streamId: loan.streamId,
+          obligation: loan.obligation,
+          drawn: loan.drawn,
+          repaid: loan.repaid,
+          closed: loan.closed,
+        };
+  } catch {
+    return null;
+  }
 }
 
 function marketContext(
@@ -284,7 +318,6 @@ async function loadSnapshot(
   client: LiveClient,
   {
     pinnedBlock,
-    loadBorrowProjection,
   }: LiveSnapshotOptions = {},
 ): Promise<ActionSnapshot> {
   const block = pinnedBlock ?? await client.getBlock({ blockTag: "latest" });
@@ -347,43 +380,19 @@ async function loadSnapshot(
     case "claim_share": {
       if (!lending) throw new Error("Lending is not configured");
       const loanId = parsed.intent.loanId;
-      const loan = await loanAt(client, lending, loanId, blockNumber);
-      const [pool, contribution, received, withdrawable] = await Promise.all([
-        read<[Address, number, Address, bigint]>(client, blockNumber, {
+      const positionId =
+        typeof parsed.raw.args?.[1] === "bigint" ? parsed.raw.args[1] : 0n;
+      let claimable = 0n;
+      if (positionId > 0n) {
+        const [entry] = await read<[{ claimable: bigint }[], bigint]>(client, blockNumber, {
           address: lending,
           abi: ovrfloLendingAbi,
-          functionName: "loanPools",
-          args: [loanId],
-        }),
-        read<bigint>(client, blockNumber, {
-          address: lending,
-          abi: ovrfloLendingAbi,
-          functionName: "loanPoolContributions",
-          args: [loanId, identity.account],
-        }),
-        read<bigint>(client, blockNumber, {
-          address: lending,
-          abi: ovrfloLendingAbi,
-          functionName: "loanPoolReceived",
-          args: [loanId, identity.account],
-        }),
-        loan
-          ? read<bigint>(client, blockNumber, {
-              address: SABLIER_LOCKUP_ADDRESS,
-              abi: sablierLockupAbi,
-              functionName: "withdrawableAmountOf",
-              args: [loan.streamId],
-            })
-          : Promise.resolve(0n),
-      ]);
-      const claimable = loan
-        ? loanPoolClaimable({
-            contribution,
-            received,
-            recovered: recoveredForClaimable({ loan, withdrawable }),
-            totalContributed: pool[3],
-          })
-        : 0n;
+          functionName: "loansOf",
+          args: [positionId, 0n, 32n],
+        });
+        const match = entry.find((row) => row.claimable >= 0n);
+        claimable = match?.claimable ?? 0n;
+      }
       return {
         type: "claim_share",
         identity,
@@ -545,69 +554,30 @@ async function loadSnapshot(
     }
     case "borrow": {
       if (!lending) throw new Error("Lending is not configured");
-      if (!loadBorrowProjection) {
-        throw new Error("Fresh projected borrow routing is unavailable");
-      }
       const streamId = parsed.intent.streamId;
+      const aprBps = requireNumber(parsed.raw.args?.[1], "APR");
       const target = requireBigint(parsed.raw.args?.[2], "borrow amount");
-      const reviewedMin = requireBigint(parsed.raw.args?.[3], "minimum received");
-      const rawIds = parsed.raw.args?.[0];
-      if (!Array.isArray(rawIds) || rawIds.length === 0) {
-        throw new Error("Reviewed route is empty");
-      }
-      const reviewedFirst = await positionAt(
-        client,
-        lending,
-        requireBigint(rawIds[0], "liquidity ID"),
-        blockNumber,
-      );
-      if (!reviewedFirst) throw new Error("Reviewed route is no longer available");
-      const aprBps = reviewedFirst.aprBps;
-      const [projectedRoute, recipient, approved, approvedForAll, quote, maxRouteIds] =
-        await Promise.all([
-          loadBorrowProjection({
-            lending,
-            market: scope.market,
-            aprBps,
-            block: {
-              number: blockNumber,
-              hash: blockHash,
-              timestamp: block.timestamp,
-            },
-          }),
-          read<Address>(client, blockNumber, {
-            address: SABLIER_LOCKUP_ADDRESS,
-            abi: sablierLockupAbi,
-            functionName: "getRecipient",
-            args: [streamId],
-          }),
-          read<Address>(client, blockNumber, {
-            address: SABLIER_LOCKUP_ADDRESS,
-            abi: sablierLockupAbi,
-            functionName: "getApproved",
-            args: [streamId],
-          }),
-          read<boolean>(client, blockNumber, {
-            address: SABLIER_LOCKUP_ADDRESS,
-            abi: sablierLockupAbi,
-            functionName: "isApprovedForAll",
-            args: [identity.account, lending],
-          }),
-          read<[bigint, bigint, bigint, bigint, bigint]>(client, blockNumber, {
-            address: lending,
-            abi: ovrfloLendingAbi,
-            functionName: "quote",
-            args: [scope.market, streamId, aprBps, target],
-          }),
-          read<bigint>(client, blockNumber, {
-            address: lending,
-            abi: ovrfloLendingAbi,
-            functionName: "MAX_ROUTE_IDS",
-          }),
-        ]);
-      if (projectedRoute.positions.length === 0) {
-        throw new Error("Fresh projected liquidity cannot fill the reviewed borrow");
-      }
+      const reviewedMin = requireBigint(parsed.raw.args?.[4], "minimum received");
+      const [recipient, approved, approvedForAll] = await Promise.all([
+        read<Address>(client, blockNumber, {
+          address: SABLIER_LOCKUP_ADDRESS,
+          abi: sablierLockupAbi,
+          functionName: "getRecipient",
+          args: [streamId],
+        }),
+        read<Address>(client, blockNumber, {
+          address: SABLIER_LOCKUP_ADDRESS,
+          abi: sablierLockupAbi,
+          functionName: "getApproved",
+          args: [streamId],
+        }),
+        read<boolean>(client, blockNumber, {
+          address: SABLIER_LOCKUP_ADDRESS,
+          abi: sablierLockupAbi,
+          functionName: "isApprovedForAll",
+          args: [identity.account, lending],
+        }),
+      ]);
       return {
         type: "borrow",
         identity,
@@ -626,26 +596,23 @@ async function loadSnapshot(
           {
             market: scope.market,
             aprBps,
-            candidateIds: projectedRoute.positions.map((position) => position.id),
-            aggregateDepth: projectedRoute.aggregateDepth,
-            maxRouteIds: Number(maxRouteIds),
+            candidateIds: [],
+            aggregateDepth: 0n,
+            maxRouteIds: 0,
           },
           metadata,
         ),
-        hydration: readyOutcome(
-          { positions: projectedRoute.positions },
-          metadata,
-        ),
+        hydration: readyOutcome({ positions: [] }, metadata),
         quote: readyOutcome(
           {
             market: scope.market,
             streamId,
             aprBps,
             amount: target,
-            grossPrice: quote[0],
-            obligation: quote[1],
-            netToBorrower: quote[3],
-            residual: quote[4],
+            grossPrice: 0n,
+            obligation: 0n,
+            netToBorrower: 0n,
+            residual: 0n,
             minAcceptable: reviewedMin,
           },
           metadata,

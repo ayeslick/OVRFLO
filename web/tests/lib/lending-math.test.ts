@@ -10,10 +10,8 @@ import {
   liquidityExists,
   loanExists,
   loanOutstanding,
-  loanPoolClaimable,
   MAX_ENUMERATION_IDS,
   MAX_UINT128,
-  poolExists,
   recoveredForClaimable,
   upfrontBps,
   WAD,
@@ -42,31 +40,6 @@ describe("lending math", () => {
     expect(isLoanOpen({ obligation: 100n, drawn: 50n, repaid: 0n, closed: false })).toBe(true);
     expect(isLoanOpen({ obligation: 100n, drawn: 100n, repaid: 0n, closed: false })).toBe(false);
     expect(isLoanOpen({ obligation: 100n, drawn: 50n, repaid: 0n, closed: true })).toBe(false);
-  });
-
-  it("computes pro-rata loan pool claimable less already received", () => {
-    expect(
-      loanPoolClaimable({
-        contribution: 25n,
-        received: 5n,
-        recovered: 80n,
-        totalContributed: 100n,
-      }),
-    ).toBe(15n);
-  });
-
-  it("floors claimable at zero once received catches up to (or passes) entitled, never going negative", () => {
-    expect(
-      loanPoolClaimable({ contribution: 25n, received: 20n, recovered: 80n, totalContributed: 100n }),
-    ).toBe(0n); // entitled == 20, received == 20 -> exactly zero
-    expect(
-      loanPoolClaimable({ contribution: 25n, received: 21n, recovered: 80n, totalContributed: 100n }),
-    ).toBe(0n); // received > entitled -> still zero, not negative
-  });
-
-  it("returns zero for a zero contribution or a zero total-contributed pool, never dividing by zero", () => {
-    expect(loanPoolClaimable({ contribution: 0n, received: 0n, recovered: 80n, totalContributed: 100n })).toBe(0n);
-    expect(loanPoolClaimable({ contribution: 25n, received: 0n, recovered: 80n, totalContributed: 0n })).toBe(0n);
   });
 
   it("caps open-stream recovery at outstanding debt", () => {
@@ -104,8 +77,6 @@ describe("lending math", () => {
     expect(liquidityExists({ lender: ZERO_ADDRESS })).toBe(false);
     expect(loanExists({ borrower })).toBe(true);
     expect(loanExists({ borrower: ZERO_ADDRESS })).toBe(false);
-    expect(poolExists({ borrower })).toBe(true);
-    expect(poolExists({ borrower: ZERO_ADDRESS })).toBe(false);
   });
 
   it("mirrors the contract's linear accrual factor on a golden vector", () => {
@@ -156,7 +127,7 @@ describe("lending math", () => {
     expect(formatBpsPct(0n)).toBe("0.0%");
   });
 
-  it("pins MAX_UINT128 to the real uint128 max (the claimLoanPoolShare max-amount sentinel)", () => {
+  it("pins MAX_UINT128 to the real uint128 max (the claim max-amount sentinel)", () => {
     expect(MAX_UINT128).toBe(340_282_366_920_938_463_463_374_607_431_768_211_455n);
   });
 

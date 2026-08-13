@@ -185,10 +185,6 @@ function parseReownProjectId(profile: RuntimeProfile) {
   return value;
 }
 
-function optionalUrl(raw: string | undefined, name: string, profile: RuntimeProfile) {
-  return raw ? parseUrl(raw, name, profile) : undefined;
-}
-
 export const runtimeProfile = parseProfile();
 export const chainId = parseChainId(env.chainId, runtimeProfile);
 export const factoryAddress = parseAddress(
@@ -234,7 +230,9 @@ export const factoryDeployment: FactoryDeployment = {
   ),
 };
 export const rpcUrls = parseRpcUrls(runtimeProfile);
-export const rpcUrl = rpcUrls[0];
+const primaryRpcUrl = rpcUrls[0];
+if (!primaryRpcUrl) throw new Error("NEXT_PUBLIC_RPC_URL is required");
+export const rpcUrl = primaryRpcUrl;
 export const historicalRpcUrl = parseUrl(
   runtimeProfile === "production"
     ? required(env.historicalRpcUrl, "NEXT_PUBLIC_HISTORICAL_RPC_URL")

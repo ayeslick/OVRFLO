@@ -111,9 +111,9 @@ describe("runActionExecution", () => {
     const result = await runActionExecution(plan(), rt);
 
     expect(result.status).toBe("success");
-    const simulated = await vi.mocked(rt.simulate).mock.results[0].value;
+    const simulated = await vi.mocked(rt.simulate).mock.results[0]!.value;
     expect(rt.submit).toHaveBeenCalledExactlyOnceWith(simulated.request);
-    expect(vi.mocked(rt.submit).mock.calls[0][0]).toBe(simulated.request);
+    expect(vi.mocked(rt.submit).mock.calls[0]![0]).toBe(simulated.request);
   });
 
   it("does not prompt the wallet when final simulation fails", async () => {

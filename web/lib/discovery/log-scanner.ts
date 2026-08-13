@@ -515,7 +515,7 @@ function validateLog(log: Log, range: RangeTask, filter: NormalizedLogFilter): V
   if (!filter.addresses.has(log.address.toLowerCase())) throw new Error("Log address does not match the scope");
   for (let index = 0; index < filter.topics.length; index += 1) {
     const expected = filter.topics[index];
-    if (expected === null) continue;
+    if (expected == null) continue;
     const actual = log.topics[index]?.toLowerCase();
     if (!actual || !expected.has(actual)) throw new Error(`Log topic ${index} does not match the scope`);
   }

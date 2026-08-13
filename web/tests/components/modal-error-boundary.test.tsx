@@ -10,7 +10,7 @@ function Bomb({ armed }: { armed: boolean }) {
 
 describe("ModalErrorBoundary", () => {
   it("swaps a throwing body for the fallback and recovers via onReset remount", () => {
-    // Parent mirrors ActionModal's contract: onReset bumps a key that also
+    // Parent mirrors the modal contract: onReset bumps a key that also
     // disarms the bomb, so TRY AGAIN remounts a healthy subtree.
     function Harness() {
       const [reloadKey, setReloadKey] = useState(0);

@@ -21,9 +21,9 @@ describe("buildLadder", () => {
       self,
     );
     expect(ladder).toHaveLength(2);
-    expect(ladder[0]).toMatchObject({ aprBps: 1000, total: 100n, own: 50n });
-    expect(ladder[0].positions.map((p) => p.id)).toEqual([1n, 2n]);
-    expect(ladder[1]).toMatchObject({ aprBps: 1100, total: 70n, own: 0n });
+    expect(ladder[0]!).toMatchObject({ aprBps: 1000, total: 100n, own: 50n });
+    expect(ladder[0]!.positions.map((p) => p.id)).toEqual([1n, 2n]);
+    expect(ladder[1]!).toMatchObject({ aprBps: 1100, total: 70n, own: 0n });
   });
 
   it("filters other markets and zero-liquidity positions", () => {
@@ -36,13 +36,13 @@ describe("buildLadder", () => {
       market,
       [1000],
     );
-    expect(ladder[0].total).toBe(100n);
-    expect(ladder[0].positions.map((p) => p.id)).toEqual([1n]);
+    expect(ladder[0]!.total).toBe(100n);
+    expect(ladder[0]!.positions.map((p) => p.id)).toEqual([1n]);
   });
 
   it("sorts positions ascending by id even when the input is descending", () => {
     const ladder = buildLadder([pos(9n, 1000, 10n), pos(4n, 1000, 10n), pos(2n, 1000, 10n)], market, [1000]);
-    expect(ladder[0].positions.map((p) => p.id)).toEqual([2n, 4n, 9n]);
+    expect(ladder[0]!.positions.map((p) => p.id)).toEqual([2n, 4n, 9n]);
   });
 
   it("sorts tick output ascending by apr regardless of input tick order", () => {
@@ -59,7 +59,7 @@ describe("buildLadder", () => {
     // an omitted `self` param as "matches everything" (or anything other than
     // "matches nothing"), this position would wrongly count as `own`.
     const ladder = buildLadder([pos(1n, 1000, 10n, self)], market, [1000]);
-    expect(ladder[0]).toMatchObject({ total: 10n, own: 0n });
+    expect(ladder[0]!).toMatchObject({ total: 10n, own: 0n });
   });
 
   it("matches self and market case-insensitively", () => {
@@ -69,8 +69,8 @@ describe("buildLadder", () => {
       [1000],
       self,
     );
-    expect(ladder[0].own).toBe(5n);
-    expect(ladder[0].total).toBe(0n);
+    expect(ladder[0]!.own).toBe(5n);
+    expect(ladder[0]!.total).toBe(0n);
   });
 });
 

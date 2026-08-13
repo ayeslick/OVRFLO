@@ -33,10 +33,10 @@ Each item cites the `DESIGN.md` section it verifies.
 
 ## Typography (§3)
 
-- [ ] Headers, descriptions, and button labels use the display sans-serif (Inter), normal weight
+- [ ] Headers, descriptions, and button labels use the display sans-serif (Schibsted Grotesk), normal weight
       (400-500) — nothing looks heavily bolded.
 - [ ] All financial data (APYs, token amounts), table headers, and structural/ASCII elements use
-      the monospace face (IBM Plex Mono).
+      the monospace face (Martian Mono).
 - [ ] Display text reads with a visibly tight tracking (-0.02em) rather than default letter-spacing.
 
 ## Component rules (§4, §5, §9)

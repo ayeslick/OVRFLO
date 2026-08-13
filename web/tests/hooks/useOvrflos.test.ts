@@ -61,7 +61,7 @@ describe("useOvrflos", () => {
 
     const { result } = renderHook(() => useOvrflos(FACTORY));
     expect(result.current.vaults).toHaveLength(2);
-    expect(result.current.vaults[0]).toEqual({
+    expect(result.current.vaults[0]!).toEqual({
       vault: VAULT_A,
       treasury: TREASURY,
       underlying: UNDERLYING,
@@ -70,7 +70,7 @@ describe("useOvrflos", () => {
     });
     // Vault B has no lending market deployed yet: ovrfloToLending returns the
     // zero address, which must surface as null, not as a truthy zero address.
-    expect(result.current.vaults[1].lending).toBeNull();
+    expect(result.current.vaults[1]!.lending).toBeNull();
   });
 
   it("drops zero-address vault slots (unfilled factory registry entries)", () => {
@@ -84,7 +84,7 @@ describe("useOvrflos", () => {
 
     const { result } = renderHook(() => useOvrflos(FACTORY));
     expect(result.current.vaults).toHaveLength(1);
-    expect(result.current.vaults[0].vault).toBe(VAULT_A);
+    expect(result.current.vaults[0]!.vault).toBe(VAULT_A);
   });
 
   it("returns an empty vault list and is loading when the count read has not resolved yet", () => {

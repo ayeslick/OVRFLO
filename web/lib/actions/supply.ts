@@ -57,7 +57,7 @@ export const supplyDefinition: ActionDefinition<"supply"> = {
     const call = {
       target: lending,
       contract: "lending" as const,
-      functionName: "supplyLiquidity",
+      functionName: "supply",
       args: [snapshot.market.market, intent.aprBps, parsed.amount] as const,
       value: 0n,
     };
@@ -81,7 +81,7 @@ export const supplyDefinition: ActionDefinition<"supply"> = {
       economics: { amount: parsed.amount, aprBps: intent.aprBps },
       receiptSummary: {
         source: lending,
-        eventName: "LiquiditySupplied",
+        eventName: "Supplied",
         label: "SUPPLIED",
         expectedIds: [],
         expectedAmounts: { supplied: parsed.amount },
@@ -110,7 +110,7 @@ export const withdrawDefinition: ActionDefinition<"withdraw"> = {
     const call = {
       target: lending,
       contract: "lending" as const,
-      functionName: "withdrawLiquidity",
+      functionName: "withdraw",
       args: [intent.positionId] as const,
       value: 0n,
     };
@@ -129,7 +129,7 @@ export const withdrawDefinition: ActionDefinition<"withdraw"> = {
       economics: { positionId: intent.positionId, amount: position.availableLiquidity },
       receiptSummary: {
         source: lending,
-        eventName: "LiquidityWithdrawn",
+        eventName: "Withdrawn",
         label: "WITHDRAWN",
         expectedIds: [intent.positionId],
         expectedAmounts: { requested: position.availableLiquidity },
@@ -155,8 +155,8 @@ export const claimShareDefinition: ActionDefinition<"claim_share"> = {
     const call = {
       target: lending,
       contract: "lending" as const,
-      functionName: "claimLoanPoolShare",
-      args: [intent.loanId, MAX_UINT128] as const,
+      functionName: "claim",
+      args: [intent.loanId, 0n, MAX_UINT128] as const,
       value: 0n,
     };
     return readyAction({
@@ -173,7 +173,7 @@ export const claimShareDefinition: ActionDefinition<"claim_share"> = {
       economics: { loanId: intent.loanId, claimable: state.claimable },
       receiptSummary: {
         source: lending,
-        eventName: "LoanPoolShareClaimed",
+        eventName: "Claimed",
         label: "CLAIMED",
         expectedIds: [intent.loanId],
         expectedAmounts: { claimable: state.claimable },

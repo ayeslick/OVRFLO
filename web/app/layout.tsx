@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { martianMono, schibstedGrotesk } from "./fonts";
 import "./globals.css";
 
 // R32/L-4: absolute URLs for social unfurls, from configuration rather than
@@ -33,10 +34,21 @@ export const metadata: Metadata = {
   },
 };
 
+const DIRECTION_CONTRACT = `<!--
+THESIS: A new financial mechanism inside a familiar machine — one decision per viewport, receipts before signatures; the category's dark casino is refused.
+OWN-WORLD: One-bit instrument workbench — paper white, hard black rules, bitmap texture, square controls; Schibsted Grotesk decisions over Martian Mono receipts; a single gold active-operation accent.
+STORY: The home is the watch surface. Borrow and Supply are launchable flows. Watch earnings grow or debt shrink to a known done-date; sign with a receipt. No engagement mechanics.
+FIRST VIEWPORT: Watch wall with role lens and gold accent.
+FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, and DESIGN.md
+-->`;
+
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en">
-      <body className="grid-bg">{children}</body>
+    <html lang="en" className={`${schibstedGrotesk.variable} ${martianMono.variable}`}>
+      <body className={schibstedGrotesk.className}>
+        <span hidden dangerouslySetInnerHTML={{ __html: DIRECTION_CONTRACT }} />
+        {children}
+      </body>
     </html>
   );
 }

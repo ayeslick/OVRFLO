@@ -68,13 +68,13 @@ describe("useAllMarkets", () => {
 
     const { result } = renderHook(() => useAllMarkets());
     expect(result.current.markets).toHaveLength(2);
-    expect(result.current.markets[0]).toMatchObject({
+    expect(result.current.markets[0]!).toMatchObject({
       vault: VAULT_A,
       market: MARKET_A,
       ptToken: PT_TOKEN,
       feeBps: 40,
     });
-    expect(result.current.markets[1].market).toBe(MARKET_B);
+    expect(result.current.markets[1]!.market).toBe(MARKET_B);
   });
 
   it("keeps the flat read cursor correct across vault boundaries with uneven market counts", () => {
@@ -99,8 +99,8 @@ describe("useAllMarkets", () => {
 
     const { result } = renderHook(() => useAllMarkets());
     expect(result.current.markets).toHaveLength(3);
-    expect(result.current.markets[0]).toMatchObject({ vault: VAULT_A, market: MARKET_A });
-    expect(result.current.markets[1]).toMatchObject({ vault: VAULT_B, market: MARKET_B });
+    expect(result.current.markets[0]!).toMatchObject({ vault: VAULT_A, market: MARKET_A });
+    expect(result.current.markets[1]!).toMatchObject({ vault: VAULT_B, market: MARKET_B });
     expect(result.current.markets[2]).toMatchObject({ vault: VAULT_B, market: MARKET_C });
   });
 
@@ -116,7 +116,7 @@ describe("useAllMarkets", () => {
 
     const { result } = renderHook(() => useAllMarkets());
     expect(result.current.markets).toHaveLength(1);
-    expect(result.current.markets[0].market).toBe(MARKET_B);
+    expect(result.current.markets[0]!.market).toBe(MARKET_B);
   });
 
   it("returns no markets when there are no vaults at all", () => {

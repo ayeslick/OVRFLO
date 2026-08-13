@@ -21,6 +21,7 @@ const useE2EWalletRuntime = process.env.E2E_WALLET_RUNTIME === "1";
 
 const nextConfig: NextConfig = {
   output: "export",
+  trailingSlash: true,
   reactStrictMode: true,
   turbopack: {
     root: path.resolve(__dirname),

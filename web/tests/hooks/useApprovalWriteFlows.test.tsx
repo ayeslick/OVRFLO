@@ -61,13 +61,13 @@ describe("useApprovalWriteFlows", () => {
   });
 
   it("is busy for either wallet prompt, receipt wait, or critical refresh", () => {
-    states[1].isInFlight = true;
+    states[1]!.isInFlight = true;
     const { result } = renderHook(() => useApprovalWriteFlows());
     expect(result.current.busy).toBe(true);
   });
 
   it("stays blocked after receipt success when critical refresh failed", () => {
-    states[0].refreshFailed = true;
+    states[0]!.refreshFailed = true;
     const { result } = renderHook(() => useApprovalWriteFlows());
     expect(result.current.busy).toBe(true);
   });

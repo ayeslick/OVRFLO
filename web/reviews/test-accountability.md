@@ -66,6 +66,126 @@ that is the evidence that nothing was lost.
 
 ---
 
+## 2026-08-12 — U1 foundation purge (ticket 01)
+
+**Author:** worker implementing U1
+**Review:** pending
+**Escalation:** none
+
+Old-book / old-ABI modules were deleted so the app compiles against the
+v1-lite ABI. Coverage that belonged to that topology is retired with it;
+watch-surface, flow, and executor re-anchor tests land in U7–U14.
+
+- `web/tests/hooks/useLendingLiquidity.test.ts`: deleted.
+  **Reason:** `useLendingLiquidity` was purged with the old liquidity-id book.
+  **Covered now by:** later U6/U7 hook re-anchor; retired with old topology.
+- `web/tests/hooks/useLoanBook.test.tsx`: deleted.
+  **Reason:** `useLoanBook` was purged with the old loan-pool book.
+  **Covered now by:** later U6/U7; retired with old topology.
+- `web/tests/hooks/useProjectionSync.test.tsx`: deleted.
+  **Reason:** `useProjectionSync` was purged with live-projection.
+  **Covered now by:** later U6; retired with old topology.
+- `web/tests/hooks/useClaimAllPreflight.test.tsx`: deleted.
+  **Reason:** claim-all preflight hook was purged with the old claim-all UI.
+  **Covered now by:** later U7/U10; retired with old topology.
+- `web/tests/hooks/useHeldStreams.test.tsx`: deleted.
+  **Reason:** `useHeldStreams` was purged with old stream discovery wiring.
+  **Covered now by:** later U6/U7; retired with old topology.
+- `web/tests/lib/demand.test.ts`: deleted.
+  **Reason:** `lib/demand.ts` was purged with the old demand surface.
+  **Covered now by:** later U5/U7; retired with old topology.
+- `web/tests/lib/claim-all-execution.test.ts`: deleted.
+  **Reason:** `claim-all-execution` was purged with the old claim-all path.
+  **Covered now by:** later U10; retired with old topology.
+- `web/tests/lib/discovery/lending-projection.test.ts`: deleted.
+  **Reason:** lending-projection was purged with the old log-projection stack.
+  **Covered now by:** later U6; retired with old topology.
+- `web/tests/lib/discovery/live-projection.test.ts`: deleted.
+  **Reason:** live-projection was purged with the old book.
+  **Covered now by:** later U6; retired with old topology.
+- `web/tests/lib/discovery/shadow-adapters.test.ts`: deleted.
+  **Reason:** shadow adapters were purged with live-projection.
+  **Covered now by:** later U6; retired with old topology.
+- `web/tests/lib/live-action-plan.test.ts`: deleted.
+  **Reason:** live-action-plan was stubbed for identifier purge, not rewritten
+  (U6 owns the executor re-anchor). The old-book suite cannot compile.
+  **Covered now by:** U6 executor tests; retired with old topology until then.
+- `web/tests/components/markets-table.test.tsx`: deleted.
+  **Reason:** `MarketsTable` was retired; watch UI is U7.
+  **Covered now by:** U7 / U14; retired with old topology.
+- `web/tests/components/position-cards.test.tsx`: deleted.
+  **Reason:** `PositionList` was retired.
+  **Covered now by:** U7; retired with old topology.
+- `web/tests/components/position-summary.test.tsx`: deleted.
+  **Reason:** `PositionSummary` was retired.
+  **Covered now by:** U7; retired with old topology.
+- `web/tests/components/claim-all-modal.test.tsx`: deleted.
+  **Reason:** `ClaimAllModal` was retired.
+  **Covered now by:** U10; retired with old topology.
+- `web/tests/components/claim-all-preflight.test.tsx`: deleted.
+  **Reason:** claim-all preflight UI was retired with the modal.
+  **Covered now by:** U10; retired with old topology.
+- `web/tests/components/ActionModal.test.tsx`: deleted.
+  **Reason:** `ActionModal` and action-flow were purged as old-book UI.
+  **Covered now by:** U8–U11 flow units; retired with old topology.
+- `web/tests/components/borrow-form.test.tsx`: deleted.
+  **Reason:** borrow form lived in retired action-flow.
+  **Covered now by:** U9; retired with old topology.
+- `web/tests/components/supply-form.test.tsx`: deleted.
+  **Reason:** supply form lived in retired action-flow.
+  **Covered now by:** U8; retired with old topology.
+- `web/tests/components/deposit-cap.test.tsx`: deleted.
+  **Reason:** deposit-cap UI lived in retired convert/action-flow.
+  **Covered now by:** U10; retired with old topology.
+- `web/tests/components/data-layer.test.tsx`: deleted.
+  **Reason:** data-layer test targeted retired MarketsTable wiring.
+  **Covered now by:** U7; retired with old topology.
+- `web/tests/components/launch-scope.test.tsx`: deleted.
+  **Reason:** launch-scope test targeted retired MarketsApp composition.
+  **Covered now by:** U7 / U12; retired with old topology.
+- `web/tests/components/ladder-keyboard.test.tsx`: deleted.
+  **Reason:** `RateLadder` was retired.
+  **Covered now by:** U4 kit / U8–U9; retired with old topology.
+- `web/tests/components/market-detail-error-boundary.test.tsx`: deleted.
+  **Reason:** `MarketDetail` was retired.
+  **Covered now by:** U7; retired with old topology.
+- `web/tests-live/parity-freeze.test.ts`: deleted.
+  **Reason:** live-projection parity freeze cannot compile without the old
+  projection stack and `nextLiquidityId`.
+  **Covered now by:** U6 / U14; retired with old topology.
+- `web/tests-live/reorg-freshness.test.ts`: deleted.
+  **Reason:** reorg-freshness imported deleted live-projection.
+  **Covered now by:** U6 / U14; retired with old topology.
+- `web/tests/lib/lending-math.test.ts`: rewritten (dropped `loanPoolClaimable`
+  / `poolExists` cases).
+  **Reason:** those helpers were removed from `lending-math.ts` with the old
+  pool ABI.
+  **Covered now by:** nothing, because the helpers no longer exist.
+- `web/tests/lib/positions.test.ts`: rewritten (dropped `adjustReceiptSummary`
+  / `selectForMarket` cases).
+  **Reason:** those helpers were removed from `positions.ts` with old events
+  and `LoanPool`.
+  **Covered now by:** nothing, because the helpers no longer exist; receipt
+  parsing returns in U5/U6.
+- `web/tests/hooks/useLending.test.ts`: rewritten to the four v1-lite reads.
+  **Reason:** `nextLiquidityId` / `nextSaleListingId` / `MAX_ROUTE_IDS` left
+  the contract.
+  **Covered now by:** the same file against `aprMinBps` / `aprMaxBps` /
+  `feeBps` / `nextLoanId`.
+- `web/tests/lib/borrow.test.ts`: rewritten `borrowReceiptSummary` to the
+  `Borrowed` event (`actualBorrow`).
+  **Reason:** `BorrowerLoanPoolCreated` / `totalContributed` left the ABI.
+  **Covered now by:** the same file against `Borrowed`.
+- `web/tests/lib/abis.test.ts`: rewritten event-name pins to `Supplied` /
+  `Borrowed`.
+  **Reason:** `LiquidityCheckpoint` / `BorrowerLoanPoolCreated` left the ABI.
+  **Covered now by:** the same file against v1-lite events.
+- `web/tests/lib/actions.test.ts`: borrow call assertion now expects `borrow`
+  rather than `createBorrowerLoanPool`.
+  **Reason:** the action definition encodes the v1-lite function name.
+  **Covered now by:** the same file; projected-route selection still asserted
+  until U5/U6 rewrite the borrow snapshot.
+
 ## 2026-07-31 — U12 Ponder/Envio deletion (ticket 11)
 
 Owner: Claude ticket-11 implementation

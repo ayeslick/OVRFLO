@@ -59,12 +59,12 @@ describe("ABI drift checks", () => {
     expect(local).toEqual(verified);
   });
 
-  it("includes generated checkpoint and borrower-pool events used by the scanner", () => {
+  it("includes generated supply and borrow events used by the scanner", () => {
     const eventNames = ovrfloLendingAbi
       .filter((entry) => entry.type === "event")
       .map((entry) => entry.name);
-    expect(eventNames).toContain("LiquidityCheckpoint");
-    expect(eventNames).toContain("BorrowerLoanPoolCreated");
+    expect(eventNames).toContain("Supplied");
+    expect(eventNames).toContain("Borrowed");
   });
 
   it("keeps exactly the 8 StreamPricing errors in the generated lending ABI", () => {

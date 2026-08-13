@@ -16,12 +16,12 @@ import { DEV_WALLET_ADDRESS } from "../fixtures/mock-wallet";
 // Module-scoped, not React state: these thread an arranged fixture's id from
 // a Given step to a later When/Then step within the *same* scenario. Safe
 // under workers: 1 (serial) — each scenario overwrites it before reading.
-let liquidityId: bigint | null = null;
+let positionId: bigint | null = null;
 
 Given("a lender has posted liquidity for the active market", async () => {
   const deployment = readDeployment();
   const { aprMinBps } = await readAprBounds(deployment.lending);
-  liquidityId = await lenderSupplyLiquidity({
+  positionId = await lenderSupplyLiquidity({
     lending: deployment.lending,
     market: readSecondaryMarket(),
     aprBps: aprMinBps,
@@ -57,9 +57,9 @@ Given("my wallet holds an eligible stream", async () => {
 // this scenario needs the modal to stay open.
 When("the posted liquidity is withdrawn by the lender", async ({ page }) => {
   const deployment = readDeployment();
-  if (liquidityId === null) throw new Error("no liquidity arranged yet — call the supply Given step first");
+  if (positionId === null) throw new Error("no liquidity arranged yet — call the supply Given step first");
   await expect(page.getByRole("dialog").getByRole("button", { name: "BORROW", exact: true }).first()).toBeEnabled();
-  await withdrawLiquidity({ lending: deployment.lending, liquidityId });
+  await withdrawLiquidity({ lending: deployment.lending, positionId });
 });
 
 When("I select the first available stream", async ({ page }) => {

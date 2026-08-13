@@ -25,13 +25,7 @@ import {
 } from "viem";
 import { erc20Abi, ovrfloAbi, ovrfloFactoryAbi, ovrfloLendingAbi, sablierLockupAbi } from "@/lib/abis";
 import { SABLIER_LOCKUP_ADDRESS } from "@/lib/config";
-import {
-  createProjectionReadClient,
-  discoverHeldStreams,
-  discoverMarketLiquidity,
-} from "@/lib/discovery/live-projection";
 import { formatMaturityDate } from "@/lib/format";
-import { selectHydratedRoute } from "@/lib/router";
 import { DEV_WALLET_ADDRESS, LENDER_WALLET_ADDRESS } from "./mock-wallet";
 import { RPC_URL, rpcCall } from "./rpc";
 
@@ -322,11 +316,11 @@ export async function supplyLiquidityAs(params: {
   const hash = await client.writeContract({
     address: params.lending,
     abi: ovrfloLendingAbi,
-    functionName: "supplyLiquidity",
+    functionName: "supply",
     args: [params.market, params.aprBps, params.amount],
   });
   const receipt = await mineAndGetReceipt(hash);
-  return decodeLiquidityId(receipt.logs);
+  return decodePositionId(receipt.logs);
 }
 
 // Convenience wrapper for the common case (borrow.feature's counterparty
@@ -353,28 +347,28 @@ export async function claimStreamMax(streamId: bigint) {
 // Withdraws a lender's liquidity position out from under an in-flight borrow
 // quote — the arrange half of borrow.feature's AE5 scenario (a stale-liquidity
 // revert reason auto-re-quotes the BORROW form instead of dead-ending it).
-export async function withdrawLiquidity(params: { lending: Address; liquidityId: bigint }) {
+export async function withdrawLiquidity(params: { lending: Address; positionId: bigint }) {
   const hash = await lenderClient.writeContract({
     address: params.lending,
     abi: ovrfloLendingAbi,
-    functionName: "withdrawLiquidity",
-    args: [params.liquidityId],
+    functionName: "withdraw",
+    args: [params.positionId],
   });
   await mineAndGetReceipt(hash);
 }
 
-function decodeLiquidityId(logs: readonly Log[]) {
+function decodePositionId(logs: readonly Log[]) {
   for (const log of logs) {
     try {
       const decoded = decodeEventLog({ abi: ovrfloLendingAbi, data: log.data, topics: log.topics });
-      if (decoded.eventName === "LiquiditySupplied") {
-        return (decoded.args as { liquidityId: bigint }).liquidityId;
+      if (decoded.eventName === "Supplied") {
+        return (decoded.args as { positionId: bigint }).positionId;
       }
     } catch {
       // Not every log in the receipt matches this ABI — expected, keep scanning.
     }
   }
-  throw new Error("supplyLiquidity receipt did not contain a LiquiditySupplied event");
+  throw new Error("supply receipt did not contain a Supplied event");
 }
 
 // Deposits PT as `account` to mint a fresh eligible Sablier stream — the
@@ -425,56 +419,40 @@ export async function depositPtForStream(params: { account: Address; ovrflo: Add
 }
 
 export async function waitForHeldStream(recipient: Address, streamId: bigint, timeoutMs = 15_000) {
-  const deployment = readDeployment();
-  const client = createProjectionReadClient(publicClient);
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    const projection = await discoverHeldStreams({
-      client,
-      vaults: [deployment.ovrflo],
-      account: recipient,
-      fromBlock: BigInt(deployment.factoryDeploymentBlock),
-    });
-    if (
-      projection.status === "ready" &&
-      projection.data.streams.some((stream) => stream.streamId === streamId)
-    ) {
-      return;
+    try {
+      const owner = await publicClient.readContract({
+        address: SABLIER_LOCKUP_ADDRESS,
+        abi: sablierLockupAbi,
+        functionName: "ownerOf",
+        args: [streamId],
+      });
+      if (typeof owner === "string" && owner.toLowerCase() === recipient.toLowerCase()) {
+        return;
+      }
+    } catch {
+      // Stream may not exist yet; keep polling until the timeout.
     }
     await new Promise((resolve) => setTimeout(resolve, 500));
   }
   throw new Error(
-    `waitForHeldStream: direct projection did not hydrate stream ${streamId} for ${recipient} within ${timeoutMs}ms`,
+    `waitForHeldStream: ownerOf did not show stream ${streamId} for ${recipient} within ${timeoutMs}ms`,
   );
 }
 
-// The discounted price of a stream's full remaining face value (see
-// StreamPricing.grossPrice) — a function of the live-discovered market's PT
-// rate and time-to-maturity, NOT the PT amount deposited (OVRFLO.deposit
-// streams only the discount fraction, `_computeSplit`'s `toStream`). Callers
-// that need to borrow a genuinely *partial* amount against a fresh stream
-// (so `createBorrowerLoanPool`'s obligation stays proportional to the
-// borrow rather than jumping to the full-borrow branch, which sets
-// obligation = the entire remaining stream) must size their target against
-// this, not a hardcoded absolute.
-export async function readStreamGrossPrice(params: {
+// Arrangement helper: size a partial borrow against remaining stream face.
+// v1-lite has no quote view; callers that need a live price wait on U6.
+export async function readStreamGrossPrice(_params: {
   lending: Address;
   market: Address;
   streamId: bigint;
   aprBps: number;
 }) {
-  const [grossPrice] = await publicClient.readContract({
-    address: params.lending,
-    abi: ovrfloLendingAbi,
-    functionName: "quote",
-    args: [params.market, params.streamId, params.aprBps, 0n],
-  });
-  return grossPrice;
+  return 0n;
 }
 
-// Full borrow flow (approve stream, quote, gather, createBorrowerLoanPool) as
-// `account` — arrangement for repay-close.feature, which needs an existing
-// open loan before REPAY/CLOSE are meaningful actions.
+// Full borrow as `account` — arrangement for repay-close.feature.
 export async function borrowAgainstStream(params: {
   account: Address;
   lending: Address;
@@ -500,181 +478,91 @@ export async function borrowAgainstStream(params: {
     await mineAndGetReceipt(approveHash);
   }
 
-  const [grossPrice] = await publicClient.readContract({
-    address: params.lending,
-    abi: ovrfloLendingAbi,
-    functionName: "quote",
-    args: [params.market, params.streamId, params.aprBps, 0n],
-  });
-  const fill = grossPrice < params.targetBorrow ? grossPrice : params.targetBorrow;
-
-  const [, , , netToBorrower] = await publicClient.readContract({
-    address: params.lending,
-    abi: ovrfloLendingAbi,
-    functionName: "quote",
-    args: [params.market, params.streamId, params.aprBps, fill],
-  });
-  const projection = await discoverMarketLiquidity({
-    client: createProjectionReadClient(publicClient),
-    lending: params.lending,
-    market: params.market,
-    // Anchor at the deployment block like every other fixture scan: from
-    // genesis, the chunked getLogs sweep of a mainnet fork forwards hundreds
-    // of pre-fork ranges upstream and blows the per-test timeout.
-    fromBlock: BigInt(readDeployment().factoryDeploymentBlock),
-  });
-  if (projection.status !== "ready") {
-    throw new Error(
-      `borrowAgainstStream: projected liquidity unavailable — ${projection.failures
-        .map((failure) => failure.message)
-        .join("; ")}`,
-    );
-  }
-  const maxRouteIds = await publicClient.readContract({
-    address: params.lending,
-    abi: ovrfloLendingAbi,
-    functionName: "MAX_ROUTE_IDS",
-  });
-  const route = selectHydratedRoute({
-    positions: projection.data.positions.filter(
-      (position) => position.aprBps === params.aprBps,
-    ),
-    borrower: params.account,
-    target: fill,
-    aggregateDepth:
-      projection.data.aggregateByApr.get(params.aprBps) ?? 0n,
-    maxRouteIds: Number(maxRouteIds),
-  });
-  if (route.status !== "ready") {
-    throw new Error(
-      `borrowAgainstStream: projected route is ${route.status} — supply more first`,
-    );
-  }
-  const ids = route.selectedIds;
-  const minAcceptable = (netToBorrower * 99n) / 100n; // 1% slippage, arrangement only
-
-  // `eth_estimateGas`'s result here sits close enough to the true minimum
-  // that it occasionally under-shoots by the time the tx actually mines a
-  // moment later (fill/minAcceptable drift by a few wei as real time passes,
-  // which is enough to flip an SSTORE between its cheap and expensive gas
-  // cost) — the shortfall then surfaces as an out-of-gas revert right at the
-  // nonReentrant guard's exit, immediately after all of the function's real
-  // work (including the BorrowerLoanPoolCreated emit) has already run. Padding
-  // the estimate is the standard wallet-side mitigation for this class of
-  // gas-estimation flakiness.
   const estimatedGas = await publicClient.estimateContractGas({
     account: params.account,
     address: params.lending,
     abi: ovrfloLendingAbi,
-    functionName: "createBorrowerLoanPool",
-    args: [ids, params.streamId, fill, minAcceptable],
+    functionName: "borrow",
+    args: [params.market, params.aprBps, params.targetBorrow, params.streamId, 0n],
   });
   const hash = await client.writeContract({
     address: params.lending,
     abi: ovrfloLendingAbi,
-    functionName: "createBorrowerLoanPool",
-    args: [ids, params.streamId, fill, minAcceptable],
+    functionName: "borrow",
+    args: [params.market, params.aprBps, params.targetBorrow, params.streamId, 0n],
     gas: (estimatedGas * 130n) / 100n,
   });
   const receipt = await mineAndGetReceipt(hash);
   for (const log of receipt.logs) {
     try {
       const decoded = decodeEventLog({ abi: ovrfloLendingAbi, data: log.data, topics: log.topics });
-      if (decoded.eventName === "BorrowerLoanPoolCreated") {
+      if (decoded.eventName === "Borrowed") {
         return (decoded.args as { loanId: bigint }).loanId;
       }
     } catch {
       // Expected for logs from other contracts.
     }
   }
-  throw new Error("createBorrowerLoanPool receipt did not contain a BorrowerLoanPoolCreated event");
+  throw new Error("borrow receipt did not contain a Borrowed event");
 }
 
 export async function readLoan(lending: Address, loanId: bigint) {
-  const [borrower, streamId, obligation, drawn, repaid, closed] = await publicClient.readContract({
+  const [loan] = await publicClient.readContract({
     address: lending,
     abi: ovrfloLendingAbi,
-    functionName: "loans",
+    functionName: "loanState",
     args: [loanId],
   });
-  return { borrower, streamId, obligation, drawn, repaid, closed };
+  return {
+    borrower: loan.borrower,
+    streamId: loan.streamId,
+    obligation: loan.obligation,
+    drawn: loan.drawn,
+    repaid: loan.repaid,
+    closed: loan.closed,
+  };
 }
 
-// Fully repays a loan directly (bypassing the UI) — used to race an
-// already-open REPAY modal so it discovers "LOAN NOT FOUND" once the
-// borrower-loan list refetches, mirroring the claim-all "claimed elsewhere"
-// pattern for the repay/close journey.
 export async function repayLoanFully(params: { account: Address; lending: Address; loanId: bigint; ovrfloToken: Address }) {
   const loan = await readLoan(params.lending, params.loanId);
   const satisfied = loan.drawn + loan.repaid;
   const outstanding = satisfied >= loan.obligation ? 0n : loan.obligation - satisfied;
   if (outstanding === 0n) return;
   const client = walletFor(params.account);
-  // repayLoan pulls ovrfloToken via safeTransferFrom (src/OVRFLOLending.sol's
-  // `_pullExact`), same as the UI's own "APPROVE REPAY" step — this direct
-  // fixture call bypasses the UI entirely, so it must approve itself first.
   await approveIfNeeded(client, params.ovrfloToken, params.lending, outstanding);
   const hash = await client.writeContract({
     address: params.lending,
     abi: ovrfloLendingAbi,
-    functionName: "repayLoan",
+    functionName: "repay",
     args: [params.loanId, outstanding],
   });
   await mineAndGetReceipt(hash);
 }
 
-// R46/F2: the sale side of a liquidity position. A lender cannot choose whether
-// their liquidity is drawn as a loan or consumed by an outright sale, and the
-// two leave them holding different things — a loan claim versus the stream NFT
-// itself. This arranges the sale path so the app's own positions view can be
-// checked against it.
-//
-// Deliberately drives the contract rather than the UI: there is no sell-side
-// form (listings stay contract-only by scope), so this is the only way to
-// produce the state the buyer's positions view has to render.
-export async function sellStreamIntoLiquidity(params: {
+// Sale listings retired with the old book. Kept as a named arrange hook so
+// existing step imports compile; U13 rewrites the journey.
+export async function sellStreamIntoLiquidity(_params: {
   seller: Address;
   lending: Address;
   market: Address;
   streamId: bigint;
-  liquidityId: bigint;
+  positionId: bigint;
 }) {
-  const client = walletFor(params.seller);
-
-  const approved = await publicClient.readContract({
-    address: SABLIER_LOCKUP_ADDRESS,
-    abi: sablierLockupAbi,
-    functionName: "getApproved",
-    args: [params.streamId],
-  });
-  if (approved.toLowerCase() !== params.lending.toLowerCase()) {
-    const approveHash = await client.writeContract({
-      address: SABLIER_LOCKUP_ADDRESS,
-      abi: sablierLockupAbi,
-      functionName: "approve",
-      args: [params.lending, params.streamId],
-    });
-    await mineAndGetReceipt(approveHash);
-  }
-
-  // minNetOut 0: this fixture is arranging state, not asserting price. A
-  // scenario that cares about the seller's proceeds should assert them itself.
-  const hash = await client.writeContract({
-    address: params.lending,
-    abi: ovrfloLendingAbi,
-    functionName: "sellStreamToLiquidity",
-    args: [params.liquidityId, params.streamId, 0n],
-  });
-  await mineAndGetReceipt(hash);
+  throw new Error("stream sale retired; v1-lite is loan-only");
 }
 
-// The id of the most recently created liquidity position, for pairing a supply
-// with the sale that fills it.
-export async function readLatestLiquidityId(lending: Address): Promise<bigint> {
-  const next = await publicClient.readContract({
+export async function readLatestPositionId(lending: Address): Promise<bigint> {
+  const count = await publicClient.readContract({
     address: lending,
     abi: ovrfloLendingAbi,
-    functionName: "nextLiquidityId",
+    functionName: "lenderPositionCount",
+    args: [LENDER_WALLET_ADDRESS],
   });
-  return (next as bigint) - 1n;
+  if (count === 0n) throw new Error("no lender positions to read");
+  return publicClient.readContract({
+    address: lending,
+    abi: ovrfloLendingAbi,
+    functionName: "lenderPositionAt",
+    args: [LENDER_WALLET_ADDRESS, count - 1n],
+  });
 }

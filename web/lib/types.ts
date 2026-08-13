@@ -35,14 +35,6 @@ export type Loan = {
   closed: boolean;
 };
 
-export type LoanPool = {
-  id: bigint;
-  borrower: Address;
-  aprBps: number;
-  market: Address;
-  totalContributed: bigint;
-};
-
 export type HeldStream = {
   streamId: bigint;
   recipient: Address;

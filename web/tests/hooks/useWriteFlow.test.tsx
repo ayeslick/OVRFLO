@@ -120,9 +120,9 @@ describe("useWriteFlow executor adapter", () => {
 
     await submit(hook.result);
 
-    const simulated = await publicClient.simulateContract.mock.results[0].value;
+    const simulated = await publicClient.simulateContract.mock.results[0]!.value;
     expect(walletClient.writeContract).toHaveBeenCalledExactlyOnceWith(simulated.request);
-    expect(walletClient.writeContract.mock.calls[0][0]).toBe(simulated.request);
+    expect(walletClient.writeContract.mock.calls[0]![0]).toBe(simulated.request);
     expect(simulated.request.chainId).toBe(1);
     await vi.waitFor(() => expect(hook.result.current.isConfirmed).toBe(true));
   });
@@ -170,8 +170,8 @@ describe("useWriteFlow executor adapter", () => {
       expect.objectContaining({ functionName: "aprMinBps", blockNumber: 101n }),
     );
     expect(publicClient.getBlock).toHaveBeenCalledTimes(3);
-    const simulated = await publicClient.simulateContract.mock.results[0].value;
-    expect(walletClient.writeContract.mock.calls[0][0]).toBe(simulated.request);
+    const simulated = await publicClient.simulateContract.mock.results[0]!.value;
+    expect(walletClient.writeContract.mock.calls[0]![0]).toBe(simulated.request);
   });
 
   it("overwrites a JavaScript caller's chain override before simulation", async () => {
@@ -189,7 +189,7 @@ describe("useWriteFlow executor adapter", () => {
     });
     await vi.waitFor(() => expect(publicClient.simulateContract).toHaveBeenCalled());
 
-    expect(publicClient.simulateContract.mock.calls[0][0].chainId).toBe(1);
+    expect(publicClient.simulateContract.mock.calls[0]![0].chainId).toBe(1);
   });
 
   it("fails before snapshot loading or simulation when the wallet starts on another chain", async () => {

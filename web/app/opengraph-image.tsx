@@ -28,18 +28,16 @@ export default function OpengraphImage() {
           flexDirection: "column",
           justifyContent: "center",
           padding: "96px",
-          // Matches DESIGN.md's obsidian/chalk pairing so the card reads as the
-          // same product as the app it links to.
-          background: "#050505",
-          color: "#f4f4f4",
+          background: "#FDFDFC",
+          color: "#0A0A0A",
           fontFamily: "monospace",
         }}
       >
         <div style={{ fontSize: 96, letterSpacing: "-0.03em" }}>OVRFLO</div>
-        <div style={{ fontSize: 40, color: "#888888", marginTop: 24 }}>
+        <div style={{ fontSize: 40, color: "#6B6B6B", marginTop: 24 }}>
           Self-repaying loans against Pendle PT yield
         </div>
-        <div style={{ display: "flex", marginTop: 64, height: 4, background: "#00e5ff", width: 240 }} />
+        <div style={{ display: "flex", marginTop: 64, height: 4, background: "#E8930C", width: 240 }} />
       </div>
     ),
     size,

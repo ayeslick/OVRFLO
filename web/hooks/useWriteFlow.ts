@@ -26,13 +26,8 @@ import type {
 import { erc20Abi, ovrfloAbi, ovrfloLendingAbi, sablierLockupAbi } from "@/lib/abis";
 import {
   chainId as configuredChainId,
-  factoryDeployment,
   SABLIER_LOCKUP_ADDRESS,
 } from "@/lib/config";
-import {
-  discoverMarketLiquidity,
-} from "@/lib/discovery/live-projection";
-import { captureHeadSnapshot } from "@/lib/discovery/log-scanner";
 import { buildRefreshPlan, refreshQueryResources } from "@/lib/query-resource-registry";
 import { marketContracts } from "@/lib/invalidate";
 import { isRevertFailure } from "@/lib/errors";
@@ -41,7 +36,6 @@ import {
   createLiveExecutionPlan,
   type LiveMarketScope,
 } from "@/lib/live-action-plan";
-import { getProjectionClient } from "./useProjectionSync";
 
 /**
  * Form-facing adapter for the single transaction executor.
@@ -239,7 +233,7 @@ export function useWriteFlow(
                 await publicClient.readContract({
                   address: resource.lending,
                   abi: ovrfloLendingAbi,
-                  functionName: "liquidityPositions",
+                  functionName: "positionState",
                   args: [resource.id],
                   blockNumber,
                 });
@@ -358,39 +352,6 @@ export function useWriteFlow(
               identity,
               scopeRef.current as LiveMarketScope,
               publicClient,
-              async ({ lending, market, aprBps, block }) => {
-                const projectionClient = getProjectionClient("primary");
-                const head = await captureHeadSnapshot(projectionClient);
-                const latest = { number: block.number, hash: block.hash };
-                const outcome = await discoverMarketLiquidity({
-                  client: projectionClient,
-                  lending,
-                  market,
-                  fromBlock: factoryDeployment.blockNumber,
-                  snapshot: {
-                    finalized:
-                      head.finalized.number <= block.number
-                        ? head.finalized
-                        : latest,
-                    latest,
-                  },
-                  signal: preparationAbort.signal,
-                });
-                if (outcome.status !== "ready") {
-                  throw new Error(
-                    outcome.failures
-                      .map((failure) => failure.message)
-                      .join("; ") || "Fresh projected borrow route is unavailable",
-                  );
-                }
-                return {
-                  positions: outcome.data.positions.filter(
-                    (position) => position.aprBps === aprBps,
-                  ),
-                  aggregateDepth:
-                    outcome.data.aggregateByApr.get(aprBps) ?? 0n,
-                };
-              },
             );
             if (!isCurrentPreparation()) {
               handled = true;
@@ -503,12 +464,10 @@ export function useWriteFlow(
 
 function actionTypeFor(functionName: string): ActionType {
   switch (functionName) {
-    case "supplyLiquidity":
+    case "supply":
       return "supply";
-    case "withdrawLiquidity":
+    case "withdraw":
       return "withdraw";
-    case "claimLoanPoolShare":
-      return "claim_share";
     case "deposit":
       return "deposit";
     case "claim":
@@ -517,15 +476,15 @@ function actionTypeFor(functionName: string): ActionType {
       return "wrap";
     case "unwrap":
       return "unwrap";
-    case "createBorrowerLoanPool":
+    case "borrow":
       return "borrow";
     case "withdrawMax":
       return "claim_stream";
     case "multicall":
       return "adjust_rate";
-    case "repayLoan":
+    case "repay":
       return "repay";
-    case "closeLoan":
+    case "close":
       return "close";
     default:
       // ERC-20/ERC-721 approval requests use the same executor transport but
@@ -646,7 +605,7 @@ function legacyTouchedResources(
       }
       break;
     }
-    case "supplyLiquidity":
+    case "supply":
       if (callArgs[0] && typeof callArgs[1] === "number") {
         resources.push({
           kind: "market-depth",
@@ -667,7 +626,7 @@ function legacyTouchedResources(
         );
       }
       break;
-    case "withdrawLiquidity":
+    case "withdraw":
       if (typeof callArgs[0] === "bigint") {
         resources.push({
           kind: "liquidity-position",
@@ -683,50 +642,31 @@ function legacyTouchedResources(
         });
       }
       break;
-    case "claimLoanPoolShare":
+    case "claim":
       if (typeof callArgs[0] === "bigint") {
         resources.push({ kind: "loan", lending: args.address, id: callArgs[0] });
       }
       if (market) {
-        resources.push({
-          kind: "token-balance",
-          token: market.ovrfloToken,
-          account: identity.account,
-        });
+        resources.push(
+          { kind: "market", vault: args.address, market: market.market },
+          { kind: "token-balance", token: market.ovrfloToken, account: identity.account },
+          { kind: "token-balance", token: market.ptToken, account: identity.account },
+          { kind: "token-balance", token: market.underlying, account: identity.account },
+        );
       }
       break;
     case "deposit":
-      if (market && callArgs[0]) {
-        resources.push({
-          kind: "market",
-          vault: args.address,
-          market: callArgs[0] as Address,
-        });
+      if (market) {
         resources.push(
-          { kind: "token-balance", token: market.ptToken, account: identity.account },
+          { kind: "market", vault: args.address, market: market.market },
           { kind: "token-balance", token: market.underlying, account: identity.account },
           { kind: "token-balance", token: market.ovrfloToken, account: identity.account },
-          {
-            kind: "allowance",
-            token: market.ptToken,
-            owner: identity.account,
-            spender: args.address,
-          },
           {
             kind: "allowance",
             token: market.underlying,
             owner: identity.account,
             spender: args.address,
           },
-        );
-      }
-      break;
-    case "claim":
-      if (market) {
-        resources.push({ kind: "market", vault: args.address, market: market.market });
-        resources.push(
-          { kind: "token-balance", token: market.ptToken, account: identity.account },
-          { kind: "token-balance", token: market.underlying, account: identity.account },
         );
       }
       break;
@@ -754,28 +694,22 @@ function legacyTouchedResources(
         );
       }
       break;
-    case "createBorrowerLoanPool": {
-      const ids = Array.isArray(callArgs[0]) ? callArgs[0] : [];
-      for (const id of ids) {
-        if (typeof id === "bigint") {
-          resources.push({ kind: "liquidity-position", lending: args.address, id });
-        }
-      }
+    case "borrow": {
       if (market) {
         resources.push({ kind: "market-depth", lending: args.address, market: market.market });
       }
-      if (typeof callArgs[1] === "bigint") {
+      if (typeof callArgs[3] === "bigint") {
         resources.push({
           kind: "stream",
           sablier: SABLIER_LOCKUP_ADDRESS,
-          id: callArgs[1],
+          id: callArgs[3],
         });
         resources.push({
           kind: "nft-approval",
           token: SABLIER_LOCKUP_ADDRESS,
           owner: identity.account,
           spender: args.address,
-          tokenId: callArgs[1],
+          tokenId: callArgs[3],
         });
       }
       break;
@@ -797,13 +731,13 @@ function legacyTouchedResources(
         if (typeof encoded !== "string") continue;
         try {
           const decoded = decodeFunctionData({ abi: ovrfloLendingAbi, data: encoded as `0x${string}` });
-          if (decoded.functionName === "withdrawLiquidity") {
+          if (decoded.functionName === "withdraw") {
             resources.push({
               kind: "liquidity-position",
               lending: args.address,
               id: decoded.args[0],
             });
-          } else if (decoded.functionName === "supplyLiquidity") {
+          } else if (decoded.functionName === "supply") {
             resources.push({
               kind: "market-depth",
               lending: args.address,
@@ -826,7 +760,7 @@ function legacyTouchedResources(
         });
       }
       break;
-    case "repayLoan":
+    case "repay":
       if (typeof callArgs[0] === "bigint") {
         resources.push({ kind: "loan", lending: args.address, id: callArgs[0] });
       }
@@ -842,7 +776,7 @@ function legacyTouchedResources(
         );
       }
       break;
-    case "closeLoan":
+    case "close":
       if (typeof callArgs[0] === "bigint") {
         resources.push({ kind: "loan", lending: args.address, id: callArgs[0] });
       }

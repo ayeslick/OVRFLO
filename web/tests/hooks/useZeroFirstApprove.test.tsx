@@ -37,7 +37,9 @@ function failWithRevert() {
 }
 
 function argsOf(mock: ReturnType<typeof vi.fn>, call: number) {
-  return mock.mock.calls[call][0].args;
+  const invoked = mock.mock.calls[call];
+  if (!invoked?.[0]) throw new Error(`expected call ${call}`);
+  return invoked[0].args;
 }
 
 describe("useZeroFirstApprove (R28)", () => {

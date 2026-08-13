@@ -156,8 +156,8 @@ describe("useTxQueue executor orchestration", () => {
       act(() => result.current.start(rows));
 
       await vi.waitFor(() => expect(result.current.paused).toBe(true));
-      expect(result.current.rows[0].status).toBe("confirmed");
-      expect(result.current.rows[1].status).toBe("paused");
+      expect(result.current.rows[0]!.status).toBe("confirmed");
+      expect(result.current.rows[1]!.status).toBe("paused");
       expect(executor.confirm).toHaveBeenCalledTimes(1);
     },
   );
@@ -167,17 +167,17 @@ describe("useTxQueue executor orchestration", () => {
     changed.rebuild.mockResolvedValueOnce({
       status: "needs-review",
       replacement: {
-        ...rows[0],
+        ...rows[0]!,
         claims: [{ loanId: 1n, claimable: 5n }],
       } as QueuedTx,
     });
-    act(() => changed.result.current.start([rows[0]]));
-    await vi.waitFor(() => expect(changed.result.current.rows[0].status).toBe("needs-review"));
+    act(() => changed.result.current.start([rows[0]!]));
+    await vi.waitFor(() => expect(changed.result.current.rows[0]!.status).toBe("needs-review"));
     expect(changed.executor.confirm).not.toHaveBeenCalled();
 
     const disappeared = setup();
     disappeared.rebuild.mockResolvedValueOnce({ status: "skipped" });
-    act(() => disappeared.result.current.start([rows[0], rows[1]]));
+    act(() => disappeared.result.current.start([rows[0]!, rows[1]!]));
     await vi.waitFor(() => expect(disappeared.result.current.done).toBe(true));
     expect(disappeared.result.current.rows.map((row) => row.status)).toEqual(["skipped", "confirmed"]);
     expect(disappeared.executor.confirm).toHaveBeenCalledTimes(1);
@@ -196,7 +196,7 @@ describe("useTxQueue executor orchestration", () => {
       ],
     }));
 
-    act(() => spent.result.current.start([rows[0], rows[1]]));
+    act(() => spent.result.current.start([rows[0]!, rows[1]!]));
 
     await vi.waitFor(() => expect(spent.result.current.done).toBe(true));
     expect(spent.result.current.rows.map((row) => row.status)).toEqual([
@@ -215,19 +215,19 @@ describe("useTxQueue executor orchestration", () => {
       identity: plan.accepted.action.identity,
       error: new Error("hydration failed"),
     }));
-    executor.retryRefresh.mockImplementationOnce(async () => success(executionPlan(rows[0], {
+    executor.retryRefresh.mockImplementationOnce(async () => success(executionPlan(rows[0]!, {
       account: userA,
       chainId: 1,
     })));
 
     act(() => result.current.start(rows));
-    await vi.waitFor(() => expect(result.current.rows[0].status).toBe("refresh-failed"));
+    await vi.waitFor(() => expect(result.current.rows[0]!.status).toBe("refresh-failed"));
 
     act(() => result.current.resume(rows.slice(1)));
     await vi.waitFor(() => expect(result.current.done).toBe(true));
     expect(executor.retryRefresh).toHaveBeenCalledTimes(1);
     expect(executor.confirm).toHaveBeenCalledTimes(2);
-    expect(result.current.rows[0].status).toBe("confirmed");
+    expect(result.current.rows[0]!.status).toBe("confirmed");
   });
 
   it("never repeats confirmed grouped constituents when a fresh resume plan adds work", async () => {
@@ -242,22 +242,22 @@ describe("useTxQueue executor orchestration", () => {
 
     act(() => result.current.start(rows));
     await vi.waitFor(() => expect(result.current.failed).toBe(true));
-    expect(result.current.rows[0].status).toBe("confirmed");
+    expect(result.current.rows[0]!.status).toBe("confirmed");
 
     const expanded: QueuedTx[] = [
       {
-        ...rows[0],
+        ...rows[0]!,
         claims: [
-          ...(rows[0].kind === "pool-claims" ? rows[0].claims : []),
+          ...(rows[0]!.kind === "pool-claims" ? rows[0]!.claims : []),
           { loanId: 3n, claimable: 11n },
         ],
       } as QueuedTx,
-      rows[1],
+      rows[1]!,
     ];
     act(() => result.current.resume(expanded));
 
     expect(result.current.needsReview).toBe(true);
-    expect(result.current.rows[0].status).toBe("confirmed");
+    expect(result.current.rows[0]!.status).toBe("confirmed");
     expect(executor.confirm).toHaveBeenCalledTimes(2);
 
     act(() => result.current.acceptReview(expanded));
@@ -270,7 +270,7 @@ describe("useTxQueue executor orchestration", () => {
         claims: [{ loanId: 3n, claimable: 11n }],
         asset,
       },
-      rows[1],
+      rows[1]!,
     ]);
   });
 
@@ -296,7 +296,7 @@ describe("useTxQueue executor orchestration", () => {
       await act(async () => releaseFirst());
 
       await vi.waitFor(() => expect(result.current.paused).toBe(true));
-      expect(result.current.rows[0].status).toBe("confirmed");
+      expect(result.current.rows[0]!.status).toBe("confirmed");
       expect(result.current.pauseReason).toBe(expectedReason);
       expect(executor.confirm).toHaveBeenCalledTimes(1);
     },

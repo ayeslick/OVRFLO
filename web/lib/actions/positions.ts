@@ -56,14 +56,14 @@ export const adjustRateDefinition: ActionDefinition<"adjust_rate"> = {
       {
         target: lending,
         contract: "lending" as const,
-        functionName: "withdrawLiquidity",
+        functionName: "withdraw",
         args: [intent.positionId] as const,
         value: 0n,
       },
       {
         target: lending,
         contract: "lending" as const,
-        functionName: "supplyLiquidity",
+        functionName: "supply",
         args: [snapshot.market.market, intent.newAprBps, position.availableLiquidity] as const,
         value: 0n,
       },
@@ -74,15 +74,15 @@ export const adjustRateDefinition: ActionDefinition<"adjust_rate"> = {
       functionName: "multicall",
       args: [
         calls.map((nestedCall) =>
-          nestedCall.functionName === "withdrawLiquidity"
+          nestedCall.functionName === "withdraw"
             ? encodeFunctionData({
                 abi: ovrfloLendingAbi,
-                functionName: "withdrawLiquidity",
+                functionName: "withdraw",
                 args: [intent.positionId],
               })
             : encodeFunctionData({
                 abi: ovrfloLendingAbi,
-                functionName: "supplyLiquidity",
+                functionName: "supply",
                 args: [
                   snapshot.market.market,
                   intent.newAprBps,
@@ -159,7 +159,7 @@ export const closeDefinition: ActionDefinition<"close"> = {
     const call = {
       target: lending,
       contract: "lending" as const,
-      functionName: "closeLoan",
+      functionName: "close",
       args: [intent.loanId] as const,
       value: 0n,
     };
@@ -181,7 +181,7 @@ export const closeDefinition: ActionDefinition<"close"> = {
       },
       receiptSummary: {
         source: lending,
-        eventName: "LoanClosed",
+        eventName: "Closed",
         label: "CLOSED",
         expectedIds: [intent.loanId, loan.streamId],
         expectedAmounts: { outstanding, withdrawable: state.withdrawable },

@@ -1,5 +1,5 @@
 import { ZERO_ADDRESS } from "./config";
-import type { LiquidityPosition, Loan, LoanPool } from "./types";
+import type { LiquidityPosition, Loan } from "./types";
 
 export const APR_STEP_BPS = 100;
 export const MAX_ENUMERATION_IDS = 500n;
@@ -48,22 +48,6 @@ export function isLoanOpen(loan: Pick<Loan, "closed" | "obligation" | "drawn" | 
   return !loan.closed && loanOutstanding(loan) > 0n;
 }
 
-export function loanPoolClaimable({
-  contribution,
-  received,
-  recovered,
-  totalContributed,
-}: {
-  contribution: bigint;
-  received: bigint;
-  recovered: bigint;
-  totalContributed: bigint;
-}) {
-  if (contribution === 0n || totalContributed === 0n) return 0n;
-  const entitled = (contribution * recovered) / totalContributed;
-  return entitled > received ? entitled - received : 0n;
-}
-
 export function recoveredForClaimable({
   loan,
   withdrawable,
@@ -97,8 +81,4 @@ export function liquidityExists(position: Pick<LiquidityPosition, "lender">) {
 
 export function loanExists(loan: Pick<Loan, "borrower">) {
   return loan.borrower !== ZERO_ADDRESS;
-}
-
-export function poolExists(pool: Pick<LoanPool, "borrower">) {
-  return pool.borrower !== ZERO_ADDRESS;
 }

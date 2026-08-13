@@ -48,7 +48,9 @@ export function planSelectedBorrow(
 export function parseSlippageBps(raw: string): bigint | null {
   const match = raw.trim().match(/^(\d+)(?:\.(\d{1,2}))?$/);
   if (!match) return null;
-  const bps = BigInt(match[1]) * 100n + BigInt((match[2] ?? "").padEnd(2, "0") || "0");
+  const whole = match[1];
+  if (whole === undefined) return null;
+  const bps = BigInt(whole) * 100n + BigInt((match[2] ?? "").padEnd(2, "0") || "0");
   if (bps < SLIPPAGE_MIN_BPS || bps > SLIPPAGE_MAX_BPS) return null;
   return bps;
 }
@@ -75,11 +77,11 @@ export function borrowReceiptSummary(
   const lendingKey = lending.toLowerCase();
   const [created] = parseEventLogs({
     abi: ovrfloLendingAbi,
-    eventName: "BorrowerLoanPoolCreated",
+    eventName: "Borrowed",
     logs: logs.filter((log) => log.address.toLowerCase() === lendingKey),
   });
   if (!created) return null;
-  const contributed = created.args.totalContributed;
+  const contributed = created.args.actualBorrow;
   const fee = (contributed * BigInt(feeBps)) / BPS;
   return { loanId: created.args.loanId, contributed, net: contributed - fee };
 }

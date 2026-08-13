@@ -46,6 +46,7 @@ export function useFocusTrap<T extends HTMLElement>(
       if (elements.length === 0) return;
       const first = elements[0];
       const last = elements[elements.length - 1];
+      if (!first || !last) return;
 
       // Focus already escaped the panel — an element was removed while focused,
       // or the user tabbed out to browser chrome and back. Reel it in rather

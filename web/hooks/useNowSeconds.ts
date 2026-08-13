@@ -19,7 +19,7 @@ export function useNowSeconds(live = false): bigint {
 }
 
 // Hydration-safe variant for components that render unconditionally in the
-// initial page tree (e.g. MarketsTable). This app builds with
+// initial page tree. This app builds with
 // `output: "export"` (next.config.ts), so that initial HTML is static,
 // baked at `next build` time — an eager Date.now() read would embed a
 // build-time value that mismatches the client's real clock at hydration.

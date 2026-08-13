@@ -270,7 +270,8 @@ describe("pure action registry", () => {
 describe("amount validity before authorization planning or call construction (AE5)", () => {
   for (const amount of ["", "0", "-1", "abc", "1e18", "1.0000000000000000001"]) {
     it(`rejects ${JSON.stringify(amount)} without a call or authorization plan`, () => {
-      const base = cases[0];
+      const base = cases[0]!;
+      if (!base) throw new Error("missing supply fixture");
       const result = buildAction({ type: "supply", amount, aprBps: 1_000 }, base.snapshot);
       expect(result).toMatchObject({ status: "invalid" });
       expect(result).not.toHaveProperty("action");
@@ -350,8 +351,8 @@ describe("Borrow projected-route definitions", () => {
     const borrow = cases.find(({ intent }) => intent.type === "borrow")!;
     const action = expectReady(borrow.intent, borrow.snapshot);
     expect(action.call).toMatchObject({
-      functionName: "createBorrowerLoanPool",
-      args: [[4n], 31n, 4n * WAD, (4n * WAD * 9_925n) / 10_000n],
+      functionName: "borrow",
+      args: [marketAddress, 1_000, 4n * WAD, 31n, (4n * WAD * 9_925n) / 10_000n],
     });
     expect(action.review.route).toEqual({
       ids: [4n],
@@ -497,7 +498,8 @@ describe("authorization planning", () => {
 
 describe("frozen review revalidation (AE6)", () => {
   it("does not replace review when an accepted authorization merely becomes satisfied", () => {
-    const supply = cases[0];
+    const supply = cases[0]!;
+    if (!supply) throw new Error("missing supply fixture");
     const reviewed = expectReady(supply.intent, supply.snapshot);
     if (supply.snapshot.type !== "supply") throw new Error("wrong fixture");
     const rebuilt = expectReady(supply.intent, {
@@ -530,7 +532,8 @@ describe("frozen review revalidation (AE6)", () => {
     });
     expect(revalidateReview(reviewed.review, economicsChanged.review)).toMatchObject({ status: "needs-review" });
 
-    const supply = cases[0];
+    const supply = cases[0]!;
+    if (!supply) throw new Error("missing supply fixture");
     const supplyReviewed = expectReady(supply.intent, supply.snapshot);
     if (supply.snapshot.type !== "supply") throw new Error("wrong fixture");
     const authorizationChanged = expectReady({ type: "supply", amount: "11", aprBps: 1_000 }, {

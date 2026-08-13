@@ -53,7 +53,7 @@ export const repayDefinition: ActionDefinition<"repay"> = {
     const call = {
       target: lending,
       contract: "lending" as const,
-      functionName: "repayLoan",
+      functionName: "repay",
       args: [intent.loanId, parsed.amount] as const,
       value: 0n,
     };
@@ -81,7 +81,7 @@ export const repayDefinition: ActionDefinition<"repay"> = {
       economics: { loanId: intent.loanId, amount: parsed.amount, outstanding },
       receiptSummary: {
         source: lending,
-        eventName: "LoanRepaid",
+        eventName: "Repaid",
         label: "REPAID",
         expectedIds: [intent.loanId],
         expectedAmounts: { repaid: parsed.amount, outstandingBefore: outstanding },

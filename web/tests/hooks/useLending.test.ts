@@ -18,9 +18,9 @@ vi.mock("wagmi", () => ({
 }));
 
 describe("useLending", () => {
-  it("unpacks the 7 params in declared order on success", () => {
+  it("unpacks the 4 params in declared order on success", () => {
     mockReturn = {
-      data: [success(1000), success(1200), success(40), success(3n), success(7n), success(2n), success(128n)],
+      data: [success(1000), success(1200), success(40), success(7n)],
       isLoading: false,
       error: null,
     };
@@ -29,29 +29,23 @@ describe("useLending", () => {
       aprMinBps: 1000,
       aprMaxBps: 1200,
       feeBps: 40,
-      nextLiquidityId: 3n,
       nextLoanId: 7n,
-      nextSaleListingId: 2n,
-      maxRouteIds: 128,
     });
     expect(result.current.isLoading).toBe(false);
     expect(result.current.error).toBeNull();
 
     // Pins the positional unpack to the actual requested order — the values
-    // above are deliberately distinct-and-non-sequential (1000, 1200, 40, 3,
-    // 7, 2) so a swap between any two positions would be caught even though
-    // the assertion above already would; this makes the "declared order"
-    // claim in the test name an assertion on the request, not just the result.
+    // above are deliberately distinct-and-non-sequential so a swap between
+    // any two positions would be caught even though the assertion above
+    // already would; this makes the "declared order" claim in the test name
+    // an assertion on the request, not just the result.
     expect(readContractsConfig).toHaveBeenLastCalledWith(
       expect.objectContaining({
         contracts: [
           expect.objectContaining({ functionName: "aprMinBps" }),
           expect.objectContaining({ functionName: "aprMaxBps" }),
           expect.objectContaining({ functionName: "feeBps" }),
-          expect.objectContaining({ functionName: "nextLiquidityId" }),
           expect.objectContaining({ functionName: "nextLoanId" }),
-          expect.objectContaining({ functionName: "nextSaleListingId" }),
-          expect.objectContaining({ functionName: "MAX_ROUTE_IDS" }),
         ],
       }),
     );
@@ -64,17 +58,14 @@ describe("useLending", () => {
       aprMinBps: 0,
       aprMaxBps: 0,
       feeBps: 0,
-      nextLiquidityId: 1n,
       nextLoanId: 1n,
-      nextSaleListingId: 1n,
-      maxRouteIds: 0,
     });
     expect(result.current.isLoading).toBe(true);
   });
 
   it("fails closed when any required parameter read fails", () => {
     mockReturn = {
-      data: [success(1000), failure(new Error("rpc")), success(40), success(3n), success(7n), success(2n), success(128n)],
+      data: [success(1000), failure(new Error("rpc")), success(40), success(7n)],
       isLoading: false,
       error: null,
     };
@@ -97,7 +88,7 @@ describe("useLending", () => {
   it("still returns safe defaults for a null/undefined lending address, with the read disabled", () => {
     mockReturn = { data: undefined, isLoading: false, error: null };
     const { result } = renderHook(() => useLending(null));
-    expect(result.current.params.nextLiquidityId).toBe(1n);
+    expect(result.current.params.nextLoanId).toBe(1n);
 
     // The defaults above hold regardless of `enabled` (mockReturn.data is
     // undefined either way) — this asserts the hook actually gates the read

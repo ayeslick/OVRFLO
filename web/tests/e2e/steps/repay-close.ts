@@ -42,7 +42,7 @@ Given("my wallet has an open loan against a stream", async () => {
   // function of the live-discovered market's rate/time-to-maturity, not the
   // 10 PT deposited — it can easily be smaller than any hardcoded absolute.
   // Sizing the borrow off the stream's own quoted price instead keeps this a
-  // genuine partial borrow (below `createBorrowerLoanPool`'s full-borrow
+  // genuine partial borrow (below a full-face borrow, which would otherwise
   // branch, which would otherwise set obligation = the *entire* remaining
   // stream), so the modest half-time vest below reliably covers it — see
   // "the loan's stream has vested enough to close it".
@@ -97,7 +97,7 @@ Given("the loan is fully repaid from another channel", async () => {
 // Shared by two scenarios with different preconditions.
 //
 // "Insufficient balance" drains before any amount is filled: RepayForm's
-// `balanceRead` (web/components/ActionModal.tsx) has no write of its own to
+// `balanceRead` has no write of its own to
 // key an invalidation off of here, so it's polled (`refetchInterval: 2_000`)
 // rather than invalidation-driven — the drain lands correctly within a poll
 // or two, well inside the 15s caption timeout, regardless of whether it

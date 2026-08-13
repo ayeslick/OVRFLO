@@ -1,14 +1,14 @@
 :root {
-  --obsidian: #050505;
-  --carbon: #111111;
-  --graphite: #333333;
-  --chalk: #f4f4f4;
-  --dim: #888888;
-  --accent-cyan: #00e5ff;
-  --accent-gold: #ffcf00;
-  --positive: #4ade80;
-  --negative: #f87171;
-  --warning: #ffcf00;
+  --paper: #FDFDFC;
+  --ink: #0A0A0A;
+  --dim: #6B6B6B;
+  --halftone: #EFEFEC;
+  --gold: #E8930C;
+  --gold-ink: #FFB84D;
+  --ok: #177245;
+  --err: #C22F2F;
+  --font-decision: var(--font-schibsted), ui-sans-serif, system-ui, sans-serif;
+  --font-receipt: var(--font-martian), ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
 * {
@@ -19,12 +19,12 @@ html,
 body {
   margin: 0;
   min-height: 100%;
-  background: var(--obsidian);
-  color: var(--chalk);
+  background: var(--paper);
+  color: var(--ink);
 }
 
 body {
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: var(--font-decision);
   letter-spacing: -0.02em;
 }
 
@@ -38,17 +38,16 @@ button {
   border-radius: 0;
 }
 
-.grid-bg {
-  background-image:
-    linear-gradient(to right, rgba(51, 51, 51, 0.35) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(51, 51, 51, 0.35) 1px, transparent 1px);
-  background-size: 40px 40px;
-}
-
 .mono {
-  font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+  font-family: var(--font-receipt);
   font-variant-numeric: tabular-nums;
   letter-spacing: 0;
+}
+
+table {
+  font-family: var(--font-receipt);
+  font-stretch: condensed;
+  font-variant-numeric: tabular-nums;
 }
 
 .container {
@@ -60,8 +59,8 @@ button {
      for engines without it. */
   min-height: 100vh;
   min-height: 100dvh;
-  border-left: 1px solid var(--graphite);
-  border-right: 1px solid var(--graphite);
+  border-left: 1px solid var(--ink);
+  border-right: 1px solid var(--ink);
   padding: 0 2rem 4rem;
 }
 
@@ -70,7 +69,7 @@ button {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  border-bottom: 1px solid var(--graphite);
+  border-bottom: 1px solid var(--ink);
 }
 
 .brand {
@@ -105,42 +104,34 @@ button {
 
 .button {
   background: transparent;
-  border: 1px solid var(--chalk);
-  color: var(--chalk);
+  border: 1px solid var(--ink);
+  color: var(--ink);
   padding: 0.65rem 0.85rem;
   cursor: pointer;
-  transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+  border-radius: 0;
 }
 
 .button:hover:not(:disabled) {
-  background: var(--chalk);
-  color: var(--obsidian);
+  background: var(--ink);
+  color: var(--paper);
 }
 
 .button:disabled {
-  border-color: rgba(136, 136, 136, 0.5);
-  color: rgba(136, 136, 136, 0.65);
+  border-color: var(--dim);
+  color: var(--dim);
   cursor: not-allowed;
 }
 
-.button-cyan {
-  border-color: var(--accent-cyan);
-  color: var(--accent-cyan);
-}
-
 .button-gold {
-  border-color: var(--accent-gold);
-  color: var(--accent-gold);
-}
-
-.button-cyan:hover:not(:disabled) {
-  background: var(--accent-cyan);
-  color: var(--obsidian);
+  background: var(--gold);
+  border-color: var(--gold);
+  color: var(--ink);
 }
 
 .button-gold:hover:not(:disabled) {
-  background: var(--accent-gold);
-  color: var(--obsidian);
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--paper);
 }
 
 h2,
@@ -165,47 +156,77 @@ h3 {
   max-width: 60ch;
 }
 
-.table-container {
-  overflow-x: auto;
-  border: 1px solid var(--graphite);
-}
-
-table {
+.input {
   width: 100%;
-  border-collapse: collapse;
-  min-width: 760px;
+  background: transparent;
+  border: 1px solid var(--ink);
+  color: var(--ink);
+  padding: 0.75rem;
+  border-radius: 0;
 }
 
-th,
-td {
-  padding: 0.9rem;
-  border-bottom: 1px solid var(--graphite);
-  text-align: left;
-  vertical-align: top;
+.input:focus-visible,
+.button:focus-visible,
+.modal-close:focus-visible,
+.copy-value:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
 }
 
-th {
+.input:focus {
+  outline: none;
+  border-color: var(--ink);
+}
+
+.input-error {
+  border-color: var(--err);
+}
+
+.status-positive {
+  color: var(--ok);
+}
+
+.status-negative {
+  color: var(--err);
+}
+
+.status-warning {
+  color: var(--gold);
+}
+
+.copy-value {
+  background: transparent;
+  border: 1px solid transparent;
+  color: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.25rem 0.4rem;
+  min-height: 24px;
+  border-radius: 0;
+}
+
+.copy-value:hover {
+  border-color: var(--ink);
+}
+
+.copy-value-icon {
   color: var(--dim);
-  font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
-  font-size: 0.72rem;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
+  width: 1ch;
+  text-align: center;
 }
 
-tr:last-child td {
-  border-bottom: 0;
+.wallet-identity {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
 }
 
-.empty {
-  color: var(--dim);
-  font-size: 0.85rem;
-}
-
-/* Modal */
 .modal-scrim {
   position: fixed;
   inset: 0;
-  background: rgba(5, 5, 5, 0.85);
+  background: var(--paper);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -213,8 +234,8 @@ tr:last-child td {
 }
 
 .modal-panel {
-  background: var(--carbon);
-  border: 1px solid var(--graphite);
+  background: var(--paper);
+  border: 1px solid var(--ink);
   border-radius: 0;
   max-width: 500px;
   width: 100%;
@@ -246,292 +267,18 @@ tr:last-child td {
   cursor: pointer;
   padding: 0.25rem 0.5rem;
   line-height: 1;
-  /* Computed to roughly 26x26 — a pass that would break on any font-size
-     change. Pinned so it cannot drift under the minimum silently. */
   min-height: 24px;
   min-width: 24px;
-  transition: color 0.2s ease;
+  border-radius: 0;
 }
 
 .modal-close:hover {
-  color: var(--chalk);
+  color: var(--ink);
 }
 
-/* Market detail overlay */
-.market-detail-panel {
-  max-width: 640px;
-}
-
-.market-detail-actions {
-  display: flex;
-  gap: 1rem;
-  padding-top: 1.25rem;
-  border-top: 1px solid var(--graphite);
-}
-
-.action-with-caption {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.market-detail-view {
-  animation: slideIn 0.2s ease;
-}
-
-@keyframes slideIn {
-  from { transform: translateX(16px); opacity: 0; }
-  to { transform: translateX(0); opacity: 1; }
-}
-
-.modal-step-list {
-  display: flex;
-  gap: 1rem;
-  font-size: 0.75rem;
-}
-
-.step-done {
-  color: var(--positive);
-}
-
-.step-active {
-  color: var(--chalk);
-}
-
-.step-error {
-  color: var(--negative);
-}
-
-.step-pending {
+.empty {
   color: var(--dim);
-}
-
-.modal-step-list[data-accent="gold"] .step-active {
-  color: var(--accent-gold);
-}
-
-.modal-step-list[data-accent="cyan"] .step-active {
-  color: var(--accent-cyan);
-}
-
-.modal-step-list[data-accent="neutral"] .step-active {
-  color: var(--chalk);
-}
-
-/* Position list */
-.position-list {
-  display: grid;
-  gap: 1rem;
-}
-
-.position-group {
-  border-bottom: 1px solid var(--graphite);
-  padding-bottom: 1rem;
-}
-
-.position-group:last-child {
-  border-bottom: 0;
-}
-
-.position-group table {
-  min-width: 0;
-}
-
-/* Balance summary */
-.balance-summary {
-  border: 1px solid var(--graphite);
-  display: grid;
-}
-
-.balance-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0.75rem 1rem;
-  border-bottom: 1px solid var(--graphite);
-  gap: 1rem;
-}
-
-.balance-row:last-child {
-  border-bottom: 0;
-}
-
-.balance-row .button {
-  padding: 0.4rem 0.6rem;
-  font-size: 0.75rem;
-}
-
-.input {
-  width: 100%;
-  background: transparent;
-  border: 1px solid var(--graphite);
-  color: var(--chalk);
-  padding: 0.75rem;
-}
-
-/* R19/L-5: the focus indicator was a border-colour shift on inputs and nothing
-   at all on buttons or ladder rows, so a keyboard user could not tell where
-   they were. DESIGN.md rules out a glow, so the edge thickens instead of
-   growing a halo — the audit's own recommendation. Padding drops by the extra
-   border width so focusing never nudges layout, and :focus-visible keeps the
-   treatment off pointer clicks. */
-.input:focus-visible,
-.button:focus-visible,
-.ladder-row:focus-visible,
-.row-toggle:focus-visible,
-.modal-close:focus-visible,
-.advanced-toggle:focus-visible {
-  outline: none;
-  border-style: solid;
-  border-width: 2px;
-  border-color: var(--chalk);
-}
-
-.input:focus-visible {
-  padding: calc(0.75rem - 1px);
-}
-
-.button:focus-visible {
-  padding: calc(0.65rem - 1px) calc(0.85rem - 1px);
-}
-
-.ladder-row:focus-visible {
-  padding: calc(0.5rem - 1px) calc(0.75rem - 1px);
-}
-
-/* Kept so a pointer click still reads as focused on the field being typed in. */
-.input:focus {
-  outline: none;
-  border-color: var(--chalk);
-}
-
-.input-error {
-  border-color: var(--negative);
-}
-
-.form-grid {
-  display: grid;
-  gap: 0.75rem;
-}
-
-/* Groups the label, field, balance line, and validation message so they read as
-   one control. Gap is tighter than .form-grid's so the group stays visually
-   distinct from the fields around it. */
-.amount-field {
-  display: grid;
-  gap: 0.375rem;
-}
-
-.summary-row {
-  border: 1px solid var(--graphite);
-  color: var(--chalk);
-  padding: 0.75rem;
-}
-
-.ladder {
-  display: grid;
-  gap: 0.375rem;
-}
-
-.position-cards {
-  display: grid;
-  gap: 0.75rem;
-}
-
-.position-card {
-  display: grid;
-  gap: 0.5rem;
-  border: 1px solid var(--graphite);
-  padding: 0.75rem;
-}
-
-/* R18/M-10: was `opacity: 0.5`, which composites the whole subtree against the
-   card background — .label text landed near 2.1:1 against a 4.5:1 requirement,
-   and body text at a borderline 4.6:1. A settled card is not a disabled
-   control, so it has no contrast exemption. Explicit dimmed colours keep the
-   visual step down while letting each element clear AA on its own. */
-.card-dimmed {
-  border-color: var(--graphite);
-}
-
-.card-dimmed .mono {
-  color: var(--dim);
-}
-
-.card-dimmed .label {
-  /* --dim would itself fall short once dimmed further, so the settled label
-     holds at the body colour rather than stepping down twice. */
-  color: var(--dim);
-}
-
-.card-head {
-  display: flex;
-  justify-content: space-between;
-  gap: 0.75rem;
-  align-items: baseline;
-}
-
-.card-badge {
-  font-size: 0.75rem;
-  color: var(--chalk);
-  border: 1px solid var(--graphite);
-  padding: 0.125rem 0.375rem;
-}
-
-.card-actions {
-  display: flex;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-  align-items: center;
-}
-
-.progress-track {
-  height: 4px;
-  background: var(--graphite);
-  width: 100%;
-}
-
-.progress-fill {
-  height: 100%;
-  background: var(--accent-gold);
-}
-
-.progress-fill-cyan {
-  background: var(--accent-cyan);
-}
-
-.ladder-row {
-  display: flex;
-  gap: 0.75rem;
-  justify-content: space-between;
-  align-items: baseline;
-  width: 100%;
-  background: transparent;
-  border: 1px solid var(--graphite);
-  color: var(--chalk);
-  padding: 0.5rem 0.75rem;
-  cursor: pointer;
-  text-align: left;
-}
-
-.ladder-row:hover {
-  border-color: var(--chalk);
-}
-
-.ladder-row-selected {
-  border-color: var(--accent-cyan);
-}
-
-.status-positive {
-  color: var(--positive);
-}
-
-.status-negative {
-  color: var(--negative);
-}
-
-.status-warning {
-  color: var(--warning);
+  font-size: 0.85rem;
 }
 
 @media (max-width: 800px) {
@@ -542,221 +289,10 @@ tr:last-child td {
   .modal-panel {
     max-width: calc(100vw - 2rem);
   }
-
-  .modal-step-list {
-    flex-direction: column;
-    gap: 0.25rem;
-  }
-
-  .balance-row {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 0.5rem;
-  }
-
-  .position-group table {
-    font-size: 0.8rem;
-  }
 }
 
-/* --- Expandable markets table (U4) --- */
-/* R17/M-16: `padding: 0` gave these computed heights around 19px and 14px
-   against WCAG 2.2 AA's 24x24 minimum. Neither qualifies for the inline
-   exception — both are standalone controls, and .advanced-toggle gates the
-   only route to WRAP and to REPAY EARLY. */
-.row-toggle {
-  background: transparent;
-  border: none;
-  color: inherit;
-  cursor: pointer;
-  font-size: inherit;
-  padding: 0.25rem 0;
-  min-height: 24px;
-  text-align: left;
-}
-tbody tr {
-  cursor: pointer;
-}
-
-.row-expanded {
-  background: var(--carbon);
-}
-
-.row-expanded .row-toggle {
-  color: var(--chalk);
-}
-
-/* Sibling of .table-container, not a row inside it — see MarketsTable. Borders
-   on all sides now that it is no longer bounded by the table's own edges. */
-.market-row-detail {
-  cursor: default;
-  padding: 1.25rem 1rem;
-  border: 1px solid var(--graphite);
-  border-top: 0;
-}
-.market-detail-heading {
-  align-items: baseline;
-  border-bottom: 1px solid var(--graphite);
-  display: flex;
-  justify-content: space-between;
-  margin-bottom: 1rem;
-  padding-bottom: 0.75rem;
-}
-.row-detail {
-  display: grid;
-  gap: 1rem;
-}
-.row-detail-section {
-  display: grid;
-  gap: 0.5rem;
-}
-.advanced-toggle {
-  background: transparent;
-  border: none;
-  color: var(--dim);
-  cursor: pointer;
-  justify-self: start;
-  padding: 0.35rem 0;
-  min-height: 24px;
-}
-.advanced-toggle:hover {
-  color: var(--chalk);
-}
-
-/* --- Summary strip + claim-all queue (U5) --- */
-/* Referenced by PositionSummary but previously undefined (R30). The strip is a
-   distinct band above the markets table, so it carries its own top rule rather
-   than inheriting only .section's padding. */
-.summary-strip {
-  border-top: 1px solid var(--graphite);
-}
-
-.summary-strip-head {
-  align-items: center;
-  display: flex;
-  justify-content: space-between;
-  margin-bottom: 0.75rem;
-}
-
-.summary-strip-cells {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 1rem;
-  align-items: start;
-}
-.summary-cell {
-  display: grid;
-  gap: 0.25rem;
-}
-.claim-queue {
-  display: grid;
-  gap: 0.5rem;
-  max-height: 40vh;
-  overflow-y: auto;
-}
-.claim-queue-row {
-  border-bottom: 1px solid var(--graphite);
-  display: flex;
-  justify-content: space-between;
-  gap: 1rem;
-  padding-bottom: 0.5rem;
-}
-@media (max-width: 800px) {
-  /* Referenced by PositionSummary but previously undefined (R30). The strip is a
-   distinct band above the markets table, so it carries its own top rule rather
-   than inheriting only .section's padding. */
-.summary-strip {
-  border-top: 1px solid var(--graphite);
-}
-
-  .summary-strip-cells {
-    grid-template-columns: 1fr;
-  }
-
-  .summary-strip-head {
-    align-items: stretch;
-    flex-direction: column;
-    gap: 0.75rem;
-  }
-
-  .summary-strip-head .button {
-    width: 100%;
-  }
-}
-
-.rate-pair {
-  display: grid;
-  gap: 0.25rem;
-}
-
-.rate-pair > span {
-  display: grid;
-  grid-template-columns: 4.5rem 1fr;
-  gap: 0.5rem;
-}
-
-.rate-lend {
-  color: var(--accent-gold);
-}
-
-.rate-borrow {
-  color: var(--accent-cyan);
-}
-
-/* The market-detail slide is the only spatial motion in the interface. Its
-   content and hierarchy are complete without the entrance animation. */
-@media (prefers-reduced-motion: reduce) {
-  .market-detail-view {
-    animation: none;
-  }
-}
-
-/* R23/I-5: the layout jumped straight from the mobile stack to the full desktop
-   grid, leaving the ~800px band with action buttons crowded onto one line. */
 @media (max-width: 860px) {
   .container {
     padding: 0 1rem 3rem;
   }
-
-  .market-detail-actions,
-  .balance-row {
-    flex-wrap: wrap;
-  }
-
-  .ladder-row {
-    flex-wrap: wrap;
-    row-gap: 0.25rem;
-  }
-}
-
-/* R27/L-13: the copy control reads as the value it carries, not as a button —
-   it sits inline where an address or id was previously plain text. The icon is
-   the only affordance, so it must not shift layout when it swaps to the
-   acknowledgement tick. */
-.copy-value {
-  background: transparent;
-  border: 1px solid transparent;
-  color: inherit;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  padding: 0.25rem 0.4rem;
-  min-height: 24px;
-}
-
-.copy-value:hover {
-  border-color: var(--graphite);
-}
-
-.copy-value-icon {
-  color: var(--dim);
-  width: 1ch;
-  text-align: center;
-}
-
-.wallet-identity {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
 }

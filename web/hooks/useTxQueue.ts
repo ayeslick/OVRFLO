@@ -84,7 +84,9 @@ function withoutCompleted(
   completed: ReadonlySet<string>,
 ): QueuedTx | null {
   if (tx.kind === "stream-claim") {
-    return completed.has(txCoverageKeys(tx)[0]) ? null : tx;
+    const coverageKey = txCoverageKeys(tx)[0];
+    if (coverageKey === undefined) return tx;
+    return completed.has(coverageKey) ? null : tx;
   }
   const claims = tx.claims.filter(
     (claim) =>

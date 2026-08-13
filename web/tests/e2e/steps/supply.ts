@@ -5,7 +5,7 @@ import {
   drainUnderlyingBalance,
   readAprBounds,
   readDeployment,
-  readLatestLiquidityId,
+  readLatestPositionId,
   readSecondaryMarket,
   readSecondaryPt,
   sellStreamIntoLiquidity,
@@ -22,7 +22,7 @@ import { DEV_WALLET_ADDRESS, LENDER_WALLET_ADDRESS } from "../fixtures/mock-wall
 // as the DOM interaction completes, well before the tx reaches the mempool,
 // so a fixed delay or a nonce-parity check alone can still land before the
 // browser's tx is submitted. Waiting for the app's own "CONFIRMING" caption
-// (`.status-warning`, ActionModal.tsx's ApproveTxState) to clear ties this to
+// (the approve caption) to clear ties this to
 // the real on-chain event instead of a guessed timing window.
 When("my wstETH balance is drained", async ({ page }) => {
   // Waiting only for `.status-warning` absence is trivially satisfied in the
@@ -61,7 +61,7 @@ Given("my supplied liquidity is filled by an outright stream sale", async () => 
     aprBps: aprMinBps,
     amount: parseUnits("50", 18),
   });
-  const liquidityId = await readLatestLiquidityId(deployment.lending);
+  const positionId = await readLatestPositionId(deployment.lending);
 
   // A different persona holds the stream and sells it in.
   const streamId = await depositPtForStream({
@@ -77,7 +77,7 @@ Given("my supplied liquidity is filled by an outright stream sale", async () => 
     lending: deployment.lending,
     market,
     streamId,
-    liquidityId,
+    positionId,
   });
 
   // The NFT is the buyer's now — wait for the direct projection to agree

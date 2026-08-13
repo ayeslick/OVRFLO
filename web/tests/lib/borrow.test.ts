@@ -168,15 +168,23 @@ const LENDING = testAddress(0x999);
 function borrowCreatedLog(loanId: bigint, contributed: bigint, emitter = LENDING): Log {
   const topics = encodeEventTopics({
     abi: ovrfloLendingAbi,
-    eventName: "BorrowerLoanPoolCreated",
+    eventName: "Borrowed",
     args: { loanId, borrower: SELF, market: MARKET },
   });
   return {
     address: emitter,
     topics,
     data: encodeAbiParameters(
-      [{ type: "uint16" }, { type: "uint128" }],
-      [1000, contributed],
+      [
+        { type: "uint16" },
+        { type: "uint64" },
+        { type: "uint64" },
+        { type: "uint128" },
+        { type: "uint128" },
+        { type: "uint128" },
+        { type: "uint256" },
+      ],
+      [1000, 0n, 0n, contributed, 0n, 0n, 0n],
     ),
   } as unknown as Log;
 }
