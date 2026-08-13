@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Providers } from "@/components/Providers";
 import { martianMono, schibstedGrotesk } from "./fonts";
 import "./globals.css";
 
@@ -47,7 +48,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <html lang="en" className={`${schibstedGrotesk.variable} ${martianMono.variable}`}>
       <body className={schibstedGrotesk.className}>
         <span hidden dangerouslySetInnerHTML={{ __html: DIRECTION_CONTRACT }} />
-        {children}
+        <Providers>{children}</Providers>
       </body>
     </html>
   );

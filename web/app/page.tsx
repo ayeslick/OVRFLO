@@ -1,10 +1,5 @@
-import { MarketsApp } from "@/components/MarketsApp";
-import { Providers } from "@/components/Providers";
+import { WatchApp } from "@/components/watch/WatchApp";
 
 export default function Page() {
-  return (
-    <Providers>
-      <MarketsApp />
-    </Providers>
-  );
+  return <WatchApp />;
 }

@@ -1,0 +1,278 @@
+"use client";
+
+import { EntityRow } from "@/components/kit/EntityRow";
+import { LensTabs, type LensId, type LensTab } from "@/components/kit/LensTabs";
+import { RollingNumber } from "@/components/kit/RollingNumber";
+import type { BorrowerLoanRow } from "@/hooks/useBorrowerBook";
+import type { LenderPositionRow } from "@/hooks/useLenderBook";
+import type { HydratedStream } from "@/hooks/useStreams";
+import { formatTruncatedDecimal } from "@/lib/format";
+import type { StreamSchedule } from "@/lib/payoff";
+import type { WatchLens } from "@/lib/parse";
+import type { WatchSelection } from "@/lib/watch-url";
+import {
+  borrowedRowState,
+  borrowedStateLine,
+  displayedOutstanding,
+  fraction01,
+  loanCoverAt,
+  positionClaimable,
+  positionFilled,
+  streamRowState,
+  streamStateLine,
+  suppliedMatchState,
+  suppliedStateLine,
+} from "@/lib/watch-rows";
+import "./watch.css";
+
+export type WallTab = LensTab;
+
+export function Wall({
+  tabs,
+  lens,
+  onSelectLens,
+  positions,
+  loans,
+  streams,
+  pledgedByStream,
+  loanStreams,
+  nowSeconds,
+  nowMs,
+  lastReadAt,
+  selection,
+  onSelect,
+  streamsDegraded,
+}: {
+  tabs: readonly WallTab[];
+  lens: LensId;
+  onSelectLens: (id: LensId) => void;
+  positions: readonly LenderPositionRow[];
+  loans: readonly BorrowerLoanRow[];
+  streams: readonly HydratedStream[];
+  pledgedByStream: ReadonlyMap<string, bigint>;
+  loanStreams: ReadonlyMap<string, { withdrawable: bigint; schedule: StreamSchedule }>;
+  nowSeconds: bigint;
+  nowMs: number;
+  lastReadAt: bigint;
+  selection: WatchSelection;
+  onSelect: (selection: WatchSelection) => void;
+  streamsDegraded: "pending" | "could-not-ask" | null;
+}) {
+  return (
+    <section className="watch-wall" data-region="watch-wall" data-lens={lens}>
+      <LensTabs tabs={tabs} selected={lens} onSelect={onSelectLens} />
+      <div role="tabpanel" id={`lens-panel-${lens}`} aria-labelledby={`lens-tab-${lens}`}>
+        {lens === "supplied"
+          ? positions.map((position) => (
+              <SuppliedRow
+                key={position.id.toString()}
+                position={position}
+                selected={selection.kind === "position" && selection.id === position.id}
+                onSelect={() => onSelect({ kind: "position", id: position.id })}
+              />
+            ))
+          : null}
+        {lens === "borrowed"
+          ? loans.map((loan) => (
+              <BorrowedRow
+                key={loan.id.toString()}
+                loan={loan}
+                truth={loanStreams.get(loan.streamId.toString())}
+                nowSeconds={nowSeconds}
+                nowMs={nowMs}
+                lastReadAt={lastReadAt}
+                selected={selection.kind === "loan" && selection.id === loan.id}
+                onSelect={() => onSelect({ kind: "loan", id: loan.id })}
+              />
+            ))
+          : null}
+        {lens === "streams" && streamsDegraded ? (
+          <StreamsDegraded kind={streamsDegraded} />
+        ) : null}
+        {lens === "streams" && !streamsDegraded
+          ? streams.map((stream) => (
+              <StreamRow
+                key={stream.streamId.toString()}
+                stream={stream}
+                pledgedLoanId={pledgedByStream.get(stream.streamId.toString())}
+                nowMs={nowMs}
+                selected={selection.kind === "stream" && selection.id === stream.streamId}
+                onSelect={() => onSelect({ kind: "stream", id: stream.streamId })}
+              />
+            ))
+          : null}
+      </div>
+    </section>
+  );
+}
+
+function SuppliedRow({
+  position,
+  selected,
+  onSelect,
+}: {
+  position: LenderPositionRow;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  const filled = positionFilled(position);
+  const unfilled = position.availableLiquidity;
+  const supplied = filled + unfilled;
+  const claimable = positionClaimable(position);
+  const match = suppliedMatchState(filled, unfilled);
+  const decisive =
+    match === "resting" ? (
+      formatTruncatedDecimal(unfilled, 18, 5)
+    ) : claimable > 0n ? (
+      <RollingNumber value={claimable} ticking displayDecimals={6} />
+    ) : (
+      formatTruncatedDecimal(filled, 18, 5)
+    );
+  return (
+    <EntityRow
+      state={match}
+      identity={`SUPPLY #${position.id.toString()}`}
+      stateLine={suppliedStateLine({ match, filled, unfilled, aprBps: position.aprBps })}
+      decisive={decisive}
+      selected={selected}
+      miniband={{ filled: fraction01(filled, supplied) }}
+      onSelect={onSelect}
+    />
+  );
+}
+
+function BorrowedRow({
+  loan,
+  truth,
+  nowSeconds,
+  nowMs,
+  lastReadAt,
+  selected,
+  onSelect,
+}: {
+  loan: BorrowerLoanRow;
+  truth?: { withdrawable: bigint; schedule: StreamSchedule };
+  nowSeconds: bigint;
+  nowMs: number;
+  lastReadAt: bigint;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  const state = borrowedRowState({ loan, withdrawable: truth?.withdrawable });
+  const coverAt = truth ? loanCoverAt(truth.schedule, loan.outstanding, nowSeconds) : undefined;
+  const outstanding = displayedOutstanding({
+    schedule: truth?.schedule,
+    lastOutstanding: loan.outstanding,
+    lastReadAt,
+    now: nowSeconds,
+    closeReady: state === "close-ready",
+  });
+  return (
+    <EntityRow
+      state={state}
+      identity={`LOAN #${loan.id.toString()}`}
+      stateLine={borrowedStateLine({ state, streamId: loan.streamId, coverAt })}
+      decisive={
+        state === "settled" ? (
+          "0"
+        ) : (
+          <RollingNumber
+            value={outstanding}
+            ticking={state === "repaying"}
+            nowMs={nowMs}
+            displayDecimals={8}
+          />
+        )
+      }
+      badge={state === "settled" ? "SETTLED" : undefined}
+      selected={selected}
+      onSelect={onSelect}
+    />
+  );
+}
+
+function StreamRow({
+  stream,
+  pledgedLoanId,
+  nowMs,
+  selected,
+  onSelect,
+}: {
+  stream: HydratedStream;
+  pledgedLoanId?: bigint;
+  nowMs: number;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  const pledged = pledgedLoanId !== undefined;
+  const state = streamRowState(stream, pledged);
+  return (
+    <EntityRow
+      state={state}
+      identity={`STREAM #${stream.streamId.toString()}`}
+      stateLine={streamStateLine({ state, loanId: pledgedLoanId })}
+      decisive={
+        <RollingNumber
+          schedule={{
+            startMs: Number(stream.schedule.start) * 1000,
+            endMs: Number(stream.schedule.end) * 1000,
+            startAmount: 0n,
+            endAmount: stream.schedule.deposited - stream.schedule.refunded,
+          }}
+          ticking
+          nowMs={nowMs}
+          displayDecimals={8}
+        />
+      }
+      selected={selected}
+      onSelect={onSelect}
+    />
+  );
+}
+
+export function StreamsDegraded({ kind }: { kind: "pending" | "could-not-ask" }) {
+  if (kind === "pending") {
+    return (
+      <div className="watch-degraded" data-region="streams-degraded" data-state="pending">
+        <p>CHECKING STREAMS…</p>
+      </div>
+    );
+  }
+  return (
+    <div className="watch-degraded" data-region="streams-degraded" data-state="could-not-ask">
+      <p>STREAM DISCOVERY IS UNAVAILABLE. YOUR STREAMS ARE UNAFFECTED.</p>
+      <p>
+        RECOVER DIRECTLY ON SABLIER AT 0xAFb9…dCC9 USING YOUR STREAM ID.
+      </p>
+    </div>
+  );
+}
+
+export function visibleLensTabs(args: {
+  positions: { status: "loading" | "ready" | "unavailable"; count: number };
+  loans: { status: "loading" | "ready" | "unavailable"; count: number };
+  streams: { status: "loading" | "ready" | "unavailable"; count: number };
+}): WallTab[] {
+  return [
+    lensTab("supplied", "SUPPLIED", args.positions),
+    lensTab("borrowed", "BORROWED", args.loans),
+    lensTab("streams", "STREAMS", args.streams),
+  ];
+}
+
+function lensTab(
+  id: WatchLens,
+  label: string,
+  book: { status: "loading" | "ready" | "unavailable"; count: number },
+): WallTab {
+  if (book.status === "loading") {
+    return { id, label, visible: true, state: "loading" };
+  }
+  if (book.status === "unavailable") {
+    return { id, label, visible: true, state: "unavailable" };
+  }
+  if (book.count === 0) {
+    return { id, label, visible: false, state: "ready" };
+  }
+  return { id, label, visible: true, state: "ready" };
+}
