@@ -9,9 +9,8 @@ the maps exist; set the stack afterwards.* This is the scoring half of D9, not t
 setting half.
 
 **A stack change is not an Owner escalation trigger** (`REVIEW.md`). Nothing in this
-scorecard should be read as raising one. The Owner schedules a stack review when the
-Owner wants one; this file exists so that review starts from evidence instead of from
-a blank page.
+scorecard should be read as raising one. This file is the scoring instrument, not
+Owner-scheduled work; re-run it when the evidence inputs change.
 
 Charter: `README.md`. Schemas: `SCHEMAS.md`. Review contract: `REVIEW.md`.
 
@@ -34,7 +33,7 @@ and should be fixed before it is argued with.
 
 **Scoring is of the incumbent against an absolute rubric, not against a rival.** There
 is no column for Elixir, SolidJS, or anything else, and adding one is a separate,
-Owner-scheduled exercise. A rival stack is scored by running the *same* rubric against
+separate exercise. A rival stack is scored by running the *same* rubric against
 it, which requires building enough of it to have evidence — which is exactly the cost
 this scorecard exists to make visible before anyone pays it.
 

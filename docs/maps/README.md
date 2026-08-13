@@ -99,7 +99,7 @@ Current state of the fill:
 | `ui/CODING_STANDARD.md` | re-extracted from the eight live briefs (U3) |
 | `docs/solutions/patterns/ovrflo-web-standard.md` | published (U3) |
 | Presence gate | wired — `npm --prefix web run lint:maps` |
-| `STACK_FITNESS.md` | published — scored 2026-08-03; re-run is Owner-scheduled |
+| `STACK_FITNESS.md` | published — scored 2026-08-03 |
 
 An artifact marked *stub* or *not yet* is **not** an invitation to invent its
 contents inline. It means a later unit owns it.
@@ -144,8 +144,7 @@ rather than adding prose here.
 - **Clearing Ledger visual redesign implementation** — deferred consumer of these
   maps (`docs/plans/2026-07-31-002-feat-clearing-ledger-markets-visual-redesign-plan.md`)
 - **Stack migration** — Next.js + React stands for this fill;
-  [`STACK_FITNESS.md`](STACK_FITNESS.md) scores fitness for a later Owner-directed
-  review and does not perform a switch
+  [`STACK_FITNESS.md`](STACK_FITNESS.md) scores fitness and does not perform a switch
 - **Replacing Solidity `x-ray/`** — on-chain state authority stays where it is
 - **Mandatory human review of routine changes** — the point of the system is that
   agent review can accept or reject a change without the Owner
