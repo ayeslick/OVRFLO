@@ -74,6 +74,12 @@ describe("userFacingError", () => {
     );
     expect(userFacingError(reverted)).toBe("Price moved outside your limit.");
   });
+
+  it("never returns a raw RPC blob for an undecoded revert", () => {
+    const blob =
+      "execution reverted: 0x08c379a00000000000000000000000000000000000000000000000000000000000000020";
+    expect(userFacingError(new Error(blob))).not.toContain("0x08c379a");
+  });
 });
 
 describe("STALE_LIQUIDITY_REASONS", () => {

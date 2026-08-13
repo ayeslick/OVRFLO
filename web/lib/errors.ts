@@ -175,6 +175,9 @@ export const STALE_LIQUIDITY_REASONS = [
 export const REBUILD_STALE_REASONS = [
   "routing-insufficient",
   "Reviewed route is no longer available",
+  "snapshot-not-ready",
+  "snapshot-block-mismatch",
+  "snapshot-resource-mismatch",
 ] as const;
 
 export const ABI_STALE_ERRORS = ["EmptyTick", "EpochMismatch", "SlippageExceeded", "BelowMinAcceptable"] as const;

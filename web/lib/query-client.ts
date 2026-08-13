@@ -1,4 +1,5 @@
 import { QueryClient } from "@tanstack/react-query";
+import { QUERY_RETRY, READ_INTERVAL_MS } from "./query-keys";
 
 // Separate from lib/wagmi.ts on purpose. That module constructs the Reown
 // `WagmiAdapter` at module scope, so anything importing it pulls AppKit and its
@@ -10,11 +11,15 @@ import { QueryClient } from "@tanstack/react-query";
 // A module-level singleton rather than the `useState(() => new QueryClient())`
 // the wagmi docs show: that pattern exists to stop one server process sharing a
 // cache across users, and `output: "export"` means there is no server process.
+// Custom query factories stringify entity IDs so TanStack's hashKey never sees
+// a bigint (mixed `5n`/`"5"` cannot sneak in).
+
 export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 10_000,
-      refetchOnWindowFocus: false,
+      staleTime: READ_INTERVAL_MS,
+      refetchOnWindowFocus: true,
+      retry: QUERY_RETRY,
     },
   },
 });

@@ -1,9 +1,10 @@
+import { encodeFunctionData, type Address } from "viem";
 import { readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import type { Address } from "viem";
+import { erc20Abi, ovrfloLendingAbi } from "@/lib/abis";
 import { readyOutcome } from "@/lib/read-outcome";
-import { WAD } from "@/lib/lending-math";
+import { MAX_UINT128, WAD } from "@/lib/lending-math";
 import type { LiquidityPosition, Loan } from "@/lib/types";
 import {
   ACTION_TYPES,
@@ -11,7 +12,8 @@ import {
   buildAction,
   revalidateReview,
 } from "@/lib/actions/registry";
-import { maturedClaimCapacity, maturedClaimMax } from "@/lib/actions/claim";
+import { CLAIM_PAIRS_PER_TX, maturedClaimCapacity, maturedClaimMax } from "@/lib/actions/claim";
+import { permissionCalldata } from "@/lib/actions/types";
 import type {
   ActionIntent,
   ActionSnapshot,
@@ -101,6 +103,22 @@ const cases: Array<{ intent: ActionIntent; snapshot: ActionSnapshot }> = [
       identity,
       market,
       state: fresh({ loanId: 21n, claimable: 5n * WAD }),
+    },
+  },
+  {
+    intent: { type: "claim_position", positionId: 7n },
+    snapshot: {
+      type: "claim_position",
+      identity,
+      market,
+      state: fresh({
+        positionId: 7n,
+        pairs: [
+          { loanId: 21n, claimable: 3n * WAD },
+          { loanId: 22n, claimable: 2n * WAD },
+        ],
+        truncated: false,
+      }),
     },
   },
   {
@@ -243,11 +261,12 @@ function expectReady(intent: ActionIntent, snapshot: ActionSnapshot): ReadyActio
 }
 
 describe("pure action registry", () => {
-  it("resolves all twelve ActionType values exactly once", () => {
+  it("resolves all thirteen ActionType values exactly once", () => {
     expect(ACTION_TYPES).toEqual([
       "supply",
       "withdraw",
       "claim_share",
+      "claim_position",
       "deposit",
       "claim_matured",
       "wrap",
@@ -259,7 +278,7 @@ describe("pure action registry", () => {
       "close",
     ]);
     expect(Object.keys(actionRegistry).sort()).toEqual([...ACTION_TYPES].sort());
-    expect(new Set(Object.values(actionRegistry).map((definition) => definition.type)).size).toBe(12);
+    expect(new Set(Object.values(actionRegistry).map((definition) => definition.type)).size).toBe(13);
   });
 
   it("builds one ready pure action for every existing action type", () => {
@@ -543,6 +562,88 @@ describe("frozen review revalidation (AE6)", () => {
     expect(revalidateReview(supplyReviewed.review, authorizationChanged.review)).toMatchObject({
       status: "needs-review",
     });
+  });
+});
+
+describe("PERMISSION RECEIPT see-equals-sign", () => {
+  it("encodes ERC-20 approval calldata byte-equal to the authorization amount", () => {
+    const supply = cases.find(({ intent }) => intent.type === "supply")!;
+    const action = expectReady(supply.intent, supply.snapshot);
+    const authorization = action.authorizations[0];
+    if (!authorization || authorization.kind !== "erc20") throw new Error("expected erc20 auth");
+    expect(permissionCalldata(authorization)).toBe(
+      encodeFunctionData({
+        abi: erc20Abi,
+        functionName: "approve",
+        args: [authorization.spender, authorization.approvalAmount],
+      }),
+    );
+  });
+
+  it("encodes the action call byte-equal to reviewed args", () => {
+    const supply = cases.find(({ intent }) => intent.type === "supply")!;
+    const action = expectReady(supply.intent, supply.snapshot);
+    expect(
+      encodeFunctionData({
+        abi: ovrfloLendingAbi,
+        functionName: "supply",
+        args: action.call.args as [Address, number, bigint],
+      }),
+    ).toBe(
+      encodeFunctionData({
+        abi: ovrfloLendingAbi,
+        functionName: action.call.functionName as "supply",
+        args: [marketAddress, 1_000, 10n * WAD],
+      }),
+    );
+  });
+});
+
+describe("per-position claim", () => {
+  it("batches claimable pairs through Multicall with the uint128 max sentinel", () => {
+    const claim = cases.find(({ intent }) => intent.type === "claim_position")!;
+    const action = expectReady(claim.intent, claim.snapshot);
+    expect(action.call.functionName).toBe("multicall");
+    const encoded = action.call.args[0] as readonly `0x${string}`[];
+    expect(encoded).toHaveLength(2);
+    for (const data of encoded) {
+      const decoded = encodeFunctionData({
+        abi: ovrfloLendingAbi,
+        functionName: "claim",
+        args: [21n, 7n, MAX_UINT128],
+      });
+      expect(typeof data).toBe("string");
+      expect(data.startsWith("0x")).toBe(true);
+      void decoded;
+    }
+    const first = encoded[0]!;
+    expect(first).toBe(
+      encodeFunctionData({
+        abi: ovrfloLendingAbi,
+        functionName: "claim",
+        args: [21n, 7n, MAX_UINT128],
+      }),
+    );
+  });
+
+  it("caps pairs per transaction and marks remaining", () => {
+    expect(CLAIM_PAIRS_PER_TX).toBe(32);
+    const pairs = Array.from({ length: 40 }, (_, index) => ({
+      loanId: BigInt(index + 1),
+      claimable: WAD,
+    }));
+    const action = expectReady(
+      { type: "claim_position", positionId: 7n },
+      {
+        type: "claim_position",
+        identity,
+        market,
+        state: fresh({ positionId: 7n, pairs, truncated: false }),
+      },
+    );
+    expect(action.call.functionName).toBe("multicall");
+    expect((action.call.args[0] as readonly unknown[]).length).toBe(CLAIM_PAIRS_PER_TX);
+    expect(action.review.economics.truncated).toBe(true);
   });
 });
 

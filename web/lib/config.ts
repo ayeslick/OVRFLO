@@ -10,6 +10,23 @@ export const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as cons
 export const SABLIER_LOCKUP_ADDRESS =
   "0xAFb979d9afAd1aD27C5eFf4E27226E3AB9e5dCC9" as const;
 
+/**
+ * Chainlink mainnet stETH/USD (EACAggregatorProxy).
+ * Verified 2026-08-12 on https://etherscan.io/address/0xCfE54B5cD566aB89272946F602D76Ea879CAb4a8
+ * — page title "Lido: Chainlink stETH-USD Price Feed"; contract name EACAggregatorProxy;
+ * ABI includes `latestRoundData`. Display-only (KTD14).
+ */
+export const CHAINLINK_STETH_USD =
+  "0xCfE54B5cD566aB89272946F602D76Ea879CAb4a8" as const;
+
+/**
+ * Lido wstETH. Verified 2026-08-12 on
+ * https://etherscan.io/address/0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0
+ * — page title "Lido: wstETH Token". `stEthPerToken` × the feed is the USD product.
+ */
+export const WSTETH_ADDRESS =
+  "0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0" as const;
+
 const env = {
   profile: process.env.NEXT_PUBLIC_RUNTIME_PROFILE,
   chainId: process.env.NEXT_PUBLIC_CHAIN_ID,

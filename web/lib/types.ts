@@ -52,6 +52,7 @@ export type ActionType =
   | "supply"
   | "withdraw"
   | "claim_share"
+  | "claim_position"
   | "deposit"
   | "claim_matured"
   | "wrap"

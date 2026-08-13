@@ -1,5 +1,5 @@
 import { borrowDefinition } from "./borrow";
-import { maturedClaimDefinition, streamClaimDefinition } from "./claim";
+import { claimPositionDefinition, maturedClaimDefinition, streamClaimDefinition } from "./claim";
 import { depositDefinition, unwrapDefinition, wrapDefinition } from "./convert";
 import { adjustRateDefinition, closeDefinition } from "./positions";
 import { repayDefinition } from "./repay";
@@ -19,6 +19,7 @@ export const ACTION_TYPES = [
   "supply",
   "withdraw",
   "claim_share",
+  "claim_position",
   "deposit",
   "claim_matured",
   "wrap",
@@ -34,6 +35,7 @@ export const actionRegistry = {
   supply: supplyDefinition,
   withdraw: withdrawDefinition,
   claim_share: claimShareDefinition,
+  claim_position: claimPositionDefinition,
   deposit: depositDefinition,
   claim_matured: maturedClaimDefinition,
   wrap: wrapDefinition,

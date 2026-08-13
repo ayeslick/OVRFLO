@@ -147,6 +147,34 @@ export const sablierLockupAbi = [
   },
 ] as const;
 
+/** Chainlink AggregatorV3 `latestRoundData` — display-only USD path. */
+export const chainlinkAggregatorAbi = [
+  {
+    type: "function",
+    name: "latestRoundData",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [
+      { name: "roundId", type: "uint80" },
+      { name: "answer", type: "int256" },
+      { name: "startedAt", type: "uint256" },
+      { name: "updatedAt", type: "uint256" },
+      { name: "answeredInRound", type: "uint80" },
+    ],
+  },
+] as const;
+
+/** Lido wstETH rate. Used with the stETH/USD feed; never a write gate. */
+export const wstethAbi = [
+  {
+    type: "function",
+    name: "stEthPerToken",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+] as const;
+
 export const erc20Abi = [
   {
     type: "function",

@@ -86,9 +86,15 @@ function requireNumber(value: unknown, label: string): number {
   return value;
 }
 
+function canonicalCallName(name: string | undefined): string | undefined {
+  if (name === "supplyLiquidity") return "supply";
+  if (name === "withdrawLiquidity") return "withdraw";
+  return name;
+}
+
 function parseAction(raw: LiveWriteArgs): ParsedAction | null {
   const args = raw.args ?? [];
-  switch (raw.functionName) {
+  switch (canonicalCallName(raw.functionName)) {
     case "supply":
       return {
         intent: {
@@ -169,6 +175,7 @@ function parseAction(raw: LiveWriteArgs): ParsedAction | null {
       if (!Array.isArray(calls)) throw new Error("multicall children are missing");
       let positionId: bigint | undefined;
       let newAprBps: number | undefined;
+      const claimPairs: Array<{ loanId: bigint; positionId: bigint }> = [];
       for (const call of calls) {
         if (typeof call !== "string") continue;
         const decoded = decodeFunctionData({
@@ -179,7 +186,17 @@ function parseAction(raw: LiveWriteArgs): ParsedAction | null {
           positionId = decoded.args[0];
         } else if (decoded.functionName === "supply") {
           newAprBps = decoded.args[1];
+        } else if (decoded.functionName === "claim") {
+          claimPairs.push({ loanId: decoded.args[0], positionId: decoded.args[1] });
         }
+      }
+      if (claimPairs.length > 0) {
+        const claimedPosition = claimPairs[0]?.positionId;
+        if (claimedPosition === undefined) throw new Error("claim multicall is incomplete");
+        return {
+          intent: { type: "claim_position", positionId: claimedPosition },
+          raw,
+        };
       }
       if (positionId === undefined || newAprBps === undefined) {
         throw new Error("adjust-rate multicall is incomplete");
@@ -398,6 +415,37 @@ async function loadSnapshot(
         identity,
         market,
         state: readyOutcome({ loanId, claimable }, metadata),
+      };
+    }
+    case "claim_position": {
+      if (!lending) throw new Error("Lending is not configured");
+      const positionId = parsed.intent.positionId;
+      const pairs: Array<{ loanId: bigint; claimable: bigint }> = [];
+      let startSeq = 0n;
+      const seen = new Set<string>();
+      for (;;) {
+        const [entries, nextSeq] = await read<
+          [{ loanId: bigint; contribution: bigint; claimable: bigint }[], bigint]
+        >(client, blockNumber, {
+          address: lending,
+          abi: ovrfloLendingAbi,
+          functionName: "loansOf",
+          args: [positionId, startSeq, 64n],
+        });
+        for (const entry of entries) {
+          if (entry.claimable > 0n) pairs.push({ loanId: entry.loanId, claimable: entry.claimable });
+        }
+        if (nextSeq === 0n) break;
+        const key = nextSeq.toString();
+        if (seen.has(key)) break;
+        seen.add(key);
+        startSeq = nextSeq;
+      }
+      return {
+        type: "claim_position",
+        identity,
+        market,
+        state: readyOutcome({ positionId, pairs, truncated: false }, metadata),
       };
     }
     case "deposit": {
@@ -746,7 +794,7 @@ function rawCallMatches(raw: LiveWriteArgs, action: ReadyAction): boolean {
   return (
     raw.address !== undefined &&
     isAddressEqual(raw.address, action.call.target) &&
-    raw.functionName === action.call.functionName &&
+    canonicalCallName(raw.functionName) === action.call.functionName &&
     (raw.value ?? 0n) === action.call.value &&
     stable(raw.args ?? []) === stable(action.call.args)
   );

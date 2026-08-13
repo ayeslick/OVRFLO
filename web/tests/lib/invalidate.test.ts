@@ -5,10 +5,11 @@ import { SABLIER_LOCKUP_ADDRESS } from "@/lib/config";
 import {
   invalidateAllOnChainReads,
   invalidateOnChainReads,
+  invalidateTouchedResources,
   marketContracts,
   scheduleHeldStreamsRetry,
 } from "@/lib/invalidate";
-import { streamKeys } from "@/lib/query-keys";
+import { borrowerBookKeys, lenderBookKeys, streamKeys } from "@/lib/query-keys";
 
 const user = "0x0000000000000000000000000000000000000a11" as Address;
 
@@ -184,5 +185,55 @@ describe("marketContracts", () => {
     });
     expect(contracts).not.toContain(null);
     expect(contracts).toHaveLength(5);
+  });
+});
+
+describe("invalidateTouchedResources", () => {
+  const lending = "0x00000000000000000000000000000000000000aa" as Address;
+  const vault = "0x00000000000000000000000000000000000000bb" as Address;
+  const identity = { account: user, chainId: 1 };
+
+  it("invalidates lender-book keys after supply/withdraw (market-depth / liquidity-position)", () => {
+    const client = new QueryClient();
+    const spy = vi.spyOn(client, "invalidateQueries");
+    invalidateTouchedResources(client, [
+      { kind: "market-depth", lending, market: vault, aprBps: 1000 },
+    ]);
+    expect(spy).toHaveBeenCalledWith({ queryKey: lenderBookKeys.all });
+    expect(spy.mock.calls).not.toContainEqual([{ queryKey: borrowerBookKeys.all }]);
+  });
+
+  it("invalidates both books after repay/close (loan)", () => {
+    const client = new QueryClient();
+    const spy = vi.spyOn(client, "invalidateQueries");
+    invalidateTouchedResources(client, [{ kind: "loan", lending, id: 1n }]);
+    expect(spy).toHaveBeenCalledWith({ queryKey: borrowerBookKeys.all });
+    expect(spy).toHaveBeenCalledWith({ queryKey: lenderBookKeys.all });
+  });
+
+  it("invalidates stream candidate/truth keys after borrow/close stream resources", () => {
+    const client = new QueryClient();
+    const spy = vi.spyOn(client, "invalidateQueries");
+    invalidateTouchedResources(
+      client,
+      [{ kind: "stream", sablier: SABLIER_LOCKUP_ADDRESS, id: 9n }],
+      identity,
+    );
+    expect(spy).toHaveBeenCalledWith({ queryKey: streamKeys.held(user) });
+    expect(spy).toHaveBeenCalledWith({ queryKey: streamKeys.candidates(1, user) });
+    expect(spy).toHaveBeenCalledWith({ queryKey: streamKeys.truth(1, user) });
+  });
+
+  it("does not invalidate stream factories for a supply that never touched a stream", () => {
+    const client = new QueryClient();
+    const spy = vi.spyOn(client, "invalidateQueries");
+    invalidateTouchedResources(
+      client,
+      [{ kind: "token-balance", token: vault, account: user }],
+      identity,
+    );
+    expect(spy.mock.calls.map((call) => call[0])).not.toContainEqual({
+      queryKey: streamKeys.held(user),
+    });
   });
 });

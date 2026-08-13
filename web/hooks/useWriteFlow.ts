@@ -29,8 +29,8 @@ import {
   SABLIER_LOCKUP_ADDRESS,
 } from "@/lib/config";
 import { buildRefreshPlan, refreshQueryResources } from "@/lib/query-resource-registry";
-import { marketContracts } from "@/lib/invalidate";
-import { isRevertFailure } from "@/lib/errors";
+import { invalidateTouchedResources, marketContracts } from "@/lib/invalidate";
+import { isRevertFailure, userFacingError } from "@/lib/errors";
 import type { ActionType, MarketInfo } from "@/lib/types";
 import {
   createLiveExecutionPlan,
@@ -176,7 +176,10 @@ export function useWriteFlow(
       },
       waitForReceipt: async (hash) => {
         if (!publicClient) throw new Error("Public client is unavailable");
-        const receipt = await publicClient.waitForTransactionReceipt({ hash });
+        const receipt = await publicClient.waitForTransactionReceipt({
+          hash,
+          onReplaced: ({ transactionReceipt }) => transactionReceipt,
+        });
         return {
           transactionHash: receipt.transactionHash,
           status: receipt.status,
@@ -186,6 +189,7 @@ export function useWriteFlow(
       },
       refresh: async (resources, identity, receipt) => {
         if (!publicClient) throw new Error("Public client is unavailable");
+        invalidateTouchedResources(queryClient, resources, identity);
         const plan = buildRefreshPlan(resources, identity);
         await refreshQueryResources(queryClient, plan, {
           captureHead: async () => {
@@ -436,7 +440,7 @@ export function useWriteFlow(
   return {
     writeContract,
     reset,
-    hash: executor.hash,
+    hash: executor.receipt?.transactionHash ?? executor.hash,
     receipt,
     isSigning: executor.isSigning,
     isConfirming: executor.isConfirming,
@@ -452,14 +456,15 @@ export function useWriteFlow(
         ? executor.result.draft.action.review
         : null,
     retryRefresh: executor.retryRefresh,
-    error:
-      executor.error instanceof Error
-        ? executor.error
-        : executor.error
-          ? new Error(String(executor.error))
-          : null,
+    error: surfaceExecutorError(executor.error),
     hasFailed: executor.hasFailed,
   };
+}
+
+function surfaceExecutorError(error: unknown): Error | null {
+  if (!error) return null;
+  if (isRevertFailure(error)) return new Error(userFacingError(error));
+  return error instanceof Error ? error : new Error(String(error));
 }
 
 function actionTypeFor(functionName: string): ActionType {

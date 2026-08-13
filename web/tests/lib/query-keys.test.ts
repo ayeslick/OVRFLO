@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { demandKeys, projectionKeys, streamKeys } from "@/lib/query-keys";
+import {
+  borrowerBookKeys,
+  demandKeys,
+  freshnessKeys,
+  ladderKeys,
+  lenderBookKeys,
+  projectionKeys,
+  streamKeys,
+  usdKeys,
+} from "@/lib/query-keys";
 
 const USER_A = "0x1234567890abcdef1234567890abcdef12345678" as const;
 const USER_B = "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd" as const;
@@ -87,5 +96,23 @@ describe("projectionKeys", () => {
       transportRole: "verifier",
     });
     expect(primary).not.toEqual(verifier);
+  });
+});
+
+describe("watch-surface query factories", () => {
+  it("keeps chainId and addresses on custom keys, and stringifies entity ids", () => {
+    expect(streamKeys.candidates(1, USER_A)).toEqual(["streams", "candidates", 1, USER_A]);
+    expect(ladderKeys.market(1, USER_A, USER_B)[0]).toBe("ladder");
+    expect(lenderBookKeys.loansOf(1, USER_A, 5n)).toEqual([
+      "lender-book",
+      "loans-of",
+      1,
+      USER_A,
+      "5",
+    ]);
+    expect(lenderBookKeys.loansOf(1, USER_A, 5n)).toEqual(lenderBookKeys.loansOf(1, USER_A, "5"));
+    expect(borrowerBookKeys.account(1, USER_A, USER_B)[0]).toBe("borrower-book");
+    expect(usdKeys.price(1, USER_A, USER_B)[0]).toBe("usd");
+    expect(freshnessKeys.scope(1, USER_A)[0]).toBe("freshness");
   });
 });

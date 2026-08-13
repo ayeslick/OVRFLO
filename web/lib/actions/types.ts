@@ -1,4 +1,5 @@
-import { parseUnits, type Address } from "viem";
+import { encodeFunctionData, parseUnits, type Address, type Hex } from "viem";
+import { erc20Abi } from "../abis";
 import type { ReadOutcome } from "../read-outcome";
 import type { ActionType, LiquidityPosition, Loan } from "../types";
 
@@ -25,6 +26,7 @@ type AmountIntent<T extends ActionType> = BaseIntent<T> & { amount: string };
 export type SupplyIntent = AmountIntent<"supply"> & { aprBps: number };
 export type WithdrawIntent = BaseIntent<"withdraw"> & { positionId: bigint };
 export type ClaimShareIntent = BaseIntent<"claim_share"> & { loanId: bigint };
+export type ClaimPositionIntent = BaseIntent<"claim_position"> & { positionId: bigint };
 export type DepositIntent = AmountIntent<"deposit">;
 export type MaturedClaimIntent = AmountIntent<"claim_matured">;
 export type WrapIntent = AmountIntent<"wrap">;
@@ -42,6 +44,7 @@ export type ActionIntent =
   | SupplyIntent
   | WithdrawIntent
   | ClaimShareIntent
+  | ClaimPositionIntent
   | DepositIntent
   | MaturedClaimIntent
   | WrapIntent
@@ -80,6 +83,20 @@ export type WithdrawSnapshot = StateSnapshot<
 export type ClaimShareSnapshot = StateSnapshot<
   "claim_share",
   { loanId: bigint; claimable: bigint }
+>;
+
+export type ClaimPair = {
+  loanId: bigint;
+  claimable: bigint;
+};
+
+export type ClaimPositionSnapshot = StateSnapshot<
+  "claim_position",
+  {
+    positionId: bigint;
+    pairs: readonly ClaimPair[];
+    truncated: boolean;
+  }
 >;
 
 export type DepositPreview = {
@@ -191,6 +208,7 @@ export type ActionSnapshot =
   | SupplySnapshot
   | WithdrawSnapshot
   | ClaimShareSnapshot
+  | ClaimPositionSnapshot
   | DepositSnapshot
   | MaturedClaimSnapshot
   | WrapSnapshot
@@ -226,6 +244,7 @@ export type ActionErrorCode =
   | "position-not-found"
   | "not-owner"
   | "nothing-claimable"
+  | "claim-pairs-empty"
   | "stream-not-owned"
   | "stream-ineligible"
   | "loan-not-found"
@@ -442,4 +461,13 @@ export function readyAction({
       receiptSummary,
     },
   };
+}
+
+/** See-equals-sign: PERMISSION RECEIPT amount is this exact approve calldata. */
+export function permissionCalldata(authorization: Erc20Authorization): Hex {
+  return encodeFunctionData({
+    abi: erc20Abi,
+    functionName: "approve",
+    args: [authorization.spender, authorization.approvalAmount],
+  });
 }

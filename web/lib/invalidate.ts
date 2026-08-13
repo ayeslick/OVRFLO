@@ -1,7 +1,8 @@
 import type { QueryClient } from "@tanstack/react-query";
 import type { Address } from "viem";
+import type { ActionIdentity, TouchedResource } from "./actions/types";
 import { SABLIER_LOCKUP_ADDRESS } from "./config";
-import { streamKeys } from "./query-keys";
+import { borrowerBookKeys, lenderBookKeys, streamKeys } from "./query-keys";
 import type { MarketInfo } from "./types";
 
 // wagmi v3 roots useReadContract / useReadContracts keys at these string
@@ -80,6 +81,57 @@ export function marketContracts(market: Pick<MarketInfo, "vault" | "lending" | "
     market.ptToken,
     SABLIER_LOCKUP_ADDRESS,
   ].filter((address): address is Address => Boolean(address));
+}
+
+function resourceContracts(resource: TouchedResource): Address[] {
+  switch (resource.kind) {
+    case "contract":
+      return [resource.address];
+    case "market":
+      return [resource.vault, resource.market];
+    case "market-depth":
+    case "liquidity-position":
+    case "loan":
+      return [resource.lending];
+    case "stream":
+      return [resource.sablier];
+    case "nft-approval":
+      return [resource.token];
+    case "token-balance":
+    case "allowance":
+      return [resource.token];
+  }
+}
+
+/**
+ * After a write receipt, invalidate exactly the declared `touchedResources`.
+ * Broadest sensible level: wagmi reads whose keys mention a touched contract,
+ * plus the book/stream query factories those resources correspond to.
+ */
+export function invalidateTouchedResources(
+  queryClient: QueryClient,
+  resources: readonly TouchedResource[],
+  identity?: ActionIdentity,
+) {
+  const contracts = new Set(resources.flatMap(resourceContracts).map((address) => address.toLowerCase()));
+  for (const root of WAGMI_READ_ROOTS) {
+    queryClient.invalidateQueries({
+      predicate: (query) => query.queryKey[0] === root && keyMentionsAny(query.queryKey, contracts),
+    });
+  }
+  const kinds = new Set(resources.map((resource) => resource.kind));
+  if (kinds.has("liquidity-position") || kinds.has("market-depth")) {
+    queryClient.invalidateQueries({ queryKey: lenderBookKeys.all });
+  }
+  if (kinds.has("loan")) {
+    queryClient.invalidateQueries({ queryKey: borrowerBookKeys.all });
+    queryClient.invalidateQueries({ queryKey: lenderBookKeys.all });
+  }
+  if ((kinds.has("stream") || kinds.has("nft-approval")) && identity) {
+    queryClient.invalidateQueries({ queryKey: streamKeys.held(identity.account) });
+    queryClient.invalidateQueries({ queryKey: streamKeys.candidates(identity.chainId, identity.account) });
+    queryClient.invalidateQueries({ queryKey: streamKeys.truth(identity.chainId, identity.account) });
+  }
 }
 
 /**

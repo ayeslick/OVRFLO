@@ -589,4 +589,69 @@ describe("useWriteFlow executor adapter", () => {
     expect(walletClient.writeContract).toHaveBeenCalledTimes(4);
     expect(publicClient.waitForTransactionReceipt).toHaveBeenCalledTimes(4);
   });
+
+  it("resolves a replaced transaction to the new hash (same nonce)", async () => {
+    const replacedHash = `0x${"ef".repeat(32)}` as Hash;
+    publicClient.waitForTransactionReceipt.mockImplementation(
+      async ({
+        hash: submitted,
+        onReplaced,
+      }: {
+        hash: Hash;
+        onReplaced?: (replacement: {
+          reason: string;
+          transaction: { hash: Hash; nonce: number };
+          transactionReceipt: {
+            transactionHash: Hash;
+            status: "success";
+            blockNumber: bigint;
+            logs: never[];
+          };
+        }) => void;
+      }) => {
+        const receipt = {
+          transactionHash: replacedHash,
+          status: "success" as const,
+          blockNumber: 100n,
+          logs: [],
+        };
+        onReplaced?.({
+          reason: "replaced",
+          transaction: { hash: replacedHash, nonce: 7 },
+          transactionReceipt: receipt,
+        });
+        expect(submitted).toBe(hash);
+        return receipt;
+      },
+    );
+    const { wrapper } = createWrapper();
+    const hook = renderHook(() => useWriteFlow(user, [token]), { wrapper });
+    await submit(hook.result);
+    await vi.waitFor(() => expect(hook.result.current.isConfirmed).toBe(true));
+    expect(hook.result.current.hash).toBe(replacedHash);
+    expect(hook.result.current.receipt?.transactionHash).toBe(replacedHash);
+  });
+
+  it("surfaces a decoded contract error, never a raw RPC blob", async () => {
+    publicClient.simulateContract.mockRejectedValue(
+      new Error(
+        "execution reverted: 0x08c379a00000000000000000000000000000000000000000000000000000000000000020",
+      ),
+    );
+    const { wrapper } = createWrapper();
+    const hook = renderHook(() => useWriteFlow(user), { wrapper });
+    act(() => {
+      hook.result.current.writeContract({
+        address: lending,
+        abi: [],
+        functionName: "withdrawLiquidity",
+        args: [1n],
+      } as never);
+    });
+    await vi.waitFor(() => expect(hook.result.current.hasFailed).toBe(true));
+    expect(hook.result.current.error?.message).not.toMatch(/0x08c379a/i);
+    expect(hook.result.current.error?.message).toBe(
+      "The transaction failed. Check the entered values and try again.",
+    );
+  });
 });
