@@ -1,0 +1,189 @@
+.supply-flow {
+  display: grid;
+  gap: 28px;
+  padding: 28px 0 48px;
+  max-width: 720px;
+}
+
+.supply-flow[data-split="true"] {
+  max-width: 1100px;
+}
+
+.supply-split {
+  display: grid;
+  gap: 32px;
+}
+
+@media (min-width: 900px) {
+  .supply-split {
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+    align-items: start;
+  }
+}
+
+.supply-kicker {
+  margin: 0;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  color: var(--dim);
+  font-family: var(--font-receipt), ui-monospace, monospace;
+}
+
+.supply-title {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.supply-lede {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.45;
+  max-width: 42em;
+}
+
+.supply-change {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  min-height: 44px;
+}
+
+.supply-market-meta {
+  display: grid;
+  gap: 4px;
+  font-family: var(--font-receipt), ui-monospace, monospace;
+  font-size: 13px;
+}
+
+.supply-facts {
+  display: grid;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.supply-fact {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid #ddd;
+  padding: 8px 0;
+  font-family: var(--font-receipt), ui-monospace, monospace;
+}
+
+.supply-notice {
+  border: 1.5px solid var(--ink);
+  padding: 12px 14px;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.supply-notice[data-kind="filled"] {
+  border-color: var(--gold);
+}
+
+.supply-notice[data-kind="updated"] {
+  background: var(--paper);
+}
+
+.supply-handoff {
+  display: grid;
+  gap: 16px;
+  max-width: 36em;
+}
+
+.supply-error {
+  color: var(--err);
+  font-size: 13px;
+}
+
+.supply-rates-dialog {
+  width: min(720px, calc(100vw - 24px));
+  max-height: min(80vh, 720px);
+  border: 2px solid var(--ink);
+  background: var(--paper);
+  color: var(--ink);
+  padding: 0;
+}
+
+.supply-rates-dialog::backdrop {
+  background: rgb(0 0 0 / 0.28);
+}
+
+.supply-rates-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 18px;
+  border-bottom: 2px solid var(--ink);
+}
+
+.supply-rates-head h2 {
+  margin: 0;
+  font-size: 14px;
+  letter-spacing: 0.12em;
+  font-family: var(--font-receipt), ui-monospace, monospace;
+}
+
+.supply-rates-list {
+  display: grid;
+  padding: 8px 0 16px;
+}
+
+.supply-rate-row {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid #ddd;
+  padding: 12px 18px;
+  color: var(--ink);
+  cursor: pointer;
+  min-height: 44px;
+  font-family: var(--font-receipt), ui-monospace, monospace;
+}
+
+.supply-rate-row[aria-checked="true"] {
+  outline: 2px solid var(--gold);
+  outline-offset: -2px;
+}
+
+.supply-status {
+  font-size: 12px;
+  color: var(--dim);
+  letter-spacing: 0.06em;
+  font-family: var(--font-receipt), ui-monospace, monospace;
+}
+
+.supply-actions {
+  display: grid;
+  gap: 12px;
+  justify-items: start;
+}
+
+.supply-diff {
+  display: grid;
+  gap: 6px;
+  font-family: var(--font-receipt), ui-monospace, monospace;
+  font-size: 12px;
+}
+
+.supply-hint {
+  font-size: 12px;
+  color: var(--dim);
+  margin: 0;
+}
+
+.supply-market-list {
+  display: grid;
+  gap: 8px;
+}
