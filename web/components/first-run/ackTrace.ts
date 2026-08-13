@@ -12,8 +12,8 @@ export type AcknowledgmentGate = {
  * Insert `ACKNOWLEDGE RISK` as the first SETTLEMENT stage on the wallet's
  * first write. Omit it forever after acknowledge(). Never a read gate.
  *
- * U12 adopts this when composing traces. This unit does not rewrite the
- * executor — wiring into live write flows is a remaining gap until then.
+ * U12 adopts this when composing traces. Live write flows call
+ * `useAcknowledgeRiskTrace` rather than rewriting the executor.
  */
 export function withAcknowledgeRiskStep(
   steps: readonly TraceStep[],

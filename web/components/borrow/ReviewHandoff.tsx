@@ -5,6 +5,7 @@ import { ActionButton } from "@/components/kit/ActionButton";
 import { DisclosureRow } from "@/components/kit/DisclosureRow";
 import { Receipt, type ReceiptLine, type ReceiptState } from "@/components/kit/Receipt";
 import { SettlementTrace, type TraceStep, type TraceStepState } from "@/components/kit/SettlementTrace";
+import { AcknowledgeRiskStep } from "@/components/first-run/AcknowledgeRiskStep";
 import { formatAddress, formatAprBps, formatCoverDate, formatId, formatTokenAmount } from "@/lib/format";
 import type { CoverDate } from "@/lib/payoff";
 import { BorrowFacts, coverLabel } from "./Facts";
@@ -24,6 +25,7 @@ export function ReviewHandoff({
   frozen,
   drifted,
   checkpoint,
+  steps,
   underlyingSymbol,
   ovrfloSymbol,
   aprBps,
@@ -44,7 +46,6 @@ export function ReviewHandoff({
   confirmedCover,
   errorCopy,
   recoveryLabel,
-  onAcknowledge,
   onApprove,
   onBorrow,
   onRelatch,
@@ -55,6 +56,7 @@ export function ReviewHandoff({
   frozen: QuoteSnapshot;
   drifted: boolean;
   checkpoint: BorrowCheckpoint;
+  steps?: readonly TraceStep[];
   underlyingSymbol: string;
   ovrfloSymbol: string;
   aprBps: number;
@@ -84,7 +86,8 @@ export function ReviewHandoff({
 }) {
   const [feeOpen, setFeeOpen] = useState(true);
   const [repayOpen, setRepayOpen] = useState(true);
-  const trace = settlementSteps(checkpoint, streamApproved, acknowledged);
+  const trace = steps ? [...steps] : settlementSteps(checkpoint, streamApproved, acknowledged);
+  const ackRequired = !acknowledged && (checkpoint === "acknowledge" || checkpoint === "review");
   const permissionState: ReceiptState =
     checkpoint === "approve" ? "current" : streamApproved ? "skipped" : "ghosted";
   const actionState = actionReceiptState(checkpoint);
@@ -138,6 +141,7 @@ export function ReviewHandoff({
       </div>
       <div>
         <SettlementTrace steps={trace} />
+        {ackRequired ? <AcknowledgeRiskStep /> : null}
         {!streamApproved ? (
           <Receipt
             kind="permission"
@@ -185,11 +189,6 @@ export function ReviewHandoff({
           </p>
         ) : null}
         <div className="borrow-actions">
-          {checkpoint === "acknowledge" ? (
-            <ActionButton variant="primary" onClick={onAcknowledge}>
-              ACKNOWLEDGE RISK
-            </ActionButton>
-          ) : null}
           {checkpoint === "approve" ? (
             approveBusy ? (
               <ActionButton variant="primary" busy>
@@ -236,6 +235,14 @@ export function ReviewHandoff({
       </div>
     </div>
   );
+}
+
+export function borrowTrace(
+  checkpoint: BorrowCheckpoint,
+  streamApproved: boolean,
+  acknowledged: boolean,
+): TraceStep[] {
+  return settlementSteps(checkpoint, streamApproved, acknowledged);
 }
 
 function settlementSteps(

@@ -116,7 +116,7 @@ Latch raised when the connected address changes while a form is open.
 
 - **trust_domain:** `pure-client`
 - **writers:**
-  - `web/hooks/useWalletChangeReset.ts` — raises it on an address change and clears it on explicit acknowledgement
+  - `web/hooks/useWalletChangeReset.ts` — raises it on an address or chain change, drops identity-keyed queries, and clears it on explicit acknowledgement
 - **readers:**
   - `web/components/kit/SettlementTrace.tsx` — landing U4: replaces the form body with `UI-SHELL-WALLET-CHANGED`
   - `web/app/borrow/page.tsx` — landing U9: form reset
@@ -171,15 +171,32 @@ Whether the zero-first path was taken for the current approval.
 
 ### `persist.drafts`
 
-Unsubmitted amount / tick / stream / market drafts, per wallet and flow.
+Unsubmitted amount / tick / stream / market drafts, per wallet, chain, and factory.
 
 - **trust_domain:** `pure-client`
 - **writers:**
+  - `web/lib/storage.ts` — landing U12: throw-tolerant `ovrflo:draft:{kind}:{factory}:{chainId}:{account}`
   - `web/lib/parse.ts` — landing U5: bigint-safe serializer (`JSON.stringify` throws on bigint)
 - **readers:**
-  - `web/app/supply/page.tsx` — landing U8: restore on return
-  - `web/app/borrow/page.tsx` — landing U9: restore on return
-- **notes:** Navigation between Borrow and Supply preserves each flow's
-  selections independently for the current wallet and chain. Quotes always
-  rebuild from live reads — a restored draft is input, not a frozen quote.
-  Throw-tolerant storage; missing store → empty draft, not an error.
+  - `web/components/supply/SupplyFlow.tsx` — landing U12: restore selections on return
+  - `web/components/borrow/BorrowFlow.tsx` — landing U12: restore selections on return
+- **notes:** Selections only — never a quote, fill, or ahead figure. Factory
+  namespacing keeps a fork session (chainId 1) from poisoning mainnet storage.
+  Quotes always rebuild from live reads. Throw-tolerant storage; missing
+  store → empty draft, not an error.
+
+### `action.flow-step`
+
+The current decision stage in history (`select` · `amount-rate` · `review`), carried as `?step=`.
+
+- **trust_domain:** `pure-client`
+- **writers:**
+  - `web/hooks/useFlowDecisionHistory.ts` — landing U12: `pushState` / `replaceState` / popstate
+  - `web/lib/flow-history.ts` — landing U12: parse, serialize, revalidate; checkpoints map to review
+- **readers:**
+  - `web/components/supply/SupplyFlow.tsx` — landing U12: Back moves one decision
+  - `web/components/borrow/BorrowFlow.tsx` — landing U12: Back moves one decision
+- **notes:** Transaction checkpoints (`acknowledge` · `approve` · `sign` ·
+  `pending` · `confirmed`) are never enterable from history. A URL that names
+  one revalidates to review, then drops to amount-rate when no frozen snapshot
+  exists. Valid selections survive Back.

@@ -139,10 +139,43 @@ Whether this wallet has completed `UI-REVIEW-ACKNOWLEDGE-RISK`.
 - **writers:**
   - `web/hooks/useAcknowledgment.ts` — landing U6: one-time per address
 - **readers:**
-  - `web/components/kit/SettlementTrace.tsx` — landing U4: inserts the ack stage on the first write
+  - `web/components/first-run/useAcknowledgeRiskTrace.ts` — landing U12: prepends ACKNOWLEDGE RISK on the first write
   - `web/app/risk/page.tsx` — landing U11: does not fork the SETTLEMENT step
 - **notes:** Reads are never gated by acknowledgment — only the first write
   (`UI-FIRST-RUN-RISK` rule 5). Throw-tolerant storage. Never a safety score.
+  Live SETTLEMENT traces compose this key; the executor is not rewritten.
+
+### `chrome.refetch-notice`
+
+Whether a background refetch failed while last-known data is still shown.
+
+- **trust_domain:** `pure-client`
+- **writers:**
+  - `web/lib/refetch-notice.ts` — landing U12: module store; one flag for the whole app
+  - `web/hooks/useIdentityQueryReset.ts` — landing U12: QueryCache subscriber in Providers
+- **readers:**
+  - `web/components/kit/RefetchNotice.tsx` — landing U12: `UI-SHELL-REFETCH-NOTICE`
+  - `web/components/kit/Shell.tsx` — landing U12: notice lives in the shell body, not Providers
+- **notes:** One global notice, never a per-hook toast. `UI-SHELL-PROVIDERS`
+  stays banner-free. A first load error is not this key — only
+  `status === error` with `dataUpdatedAt > 0`.
+
+### `chrome.surface-state`
+
+The eight-state grammar class for the current topology (`LOADING` … `ERROR`).
+
+- **trust_domain:** `pure-client`
+- **writers:**
+  - `web/lib/surface-state.ts` — landing U12: `classifySurfaceState`; LOADING is never zero
+- **readers:**
+  - `web/components/kit/SurfaceState.tsx` — landing U12: labeled `data-surface-state`
+  - `web/components/watch/WatchApp.tsx` — landing U12: watch wall
+  - `web/components/supply/SupplyFlow.tsx` — landing U12: supply topology
+  - `web/components/borrow/BorrowFlow.tsx` — landing U12: borrow topology
+  - `web/components/assets/AssetsPage.tsx` — landing U12: assets topology
+- **notes:** STALE (signing disabled, refresh) is a distinct class from
+  LOADING. Write-lifecycle states outrank data states. Confirmed-empty requires
+  a ready read with count zero.
 
 ### `persist.scan-checkpoint`
 

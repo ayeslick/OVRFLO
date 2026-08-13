@@ -120,6 +120,25 @@ The sequential write run: one row per queued transaction, with its status and an
   row is rebuilt immediately before the executor may prompt the wallet. A
   `confirmed` row is never rewritten.
 
+### `persist.receipts`
+
+A recoverable tx-hash receipt kept until chain reads reflect the created entity.
+
+- **trust_domain:** `pure-client`
+- **writers:**
+  - `web/lib/receipts.ts` — landing U12: factory-namespaced `ovrflo:receipt:{factory}:{hash}`
+  - `web/components/supply/SupplyFlow.tsx` — landing U12: persist on pending / confirmed supply
+  - `web/components/borrow/BorrowFlow.tsx` — landing U12: persist on pending / confirmed borrow
+- **readers:**
+  - `web/lib/receipts.ts` — landing U12: `reconcileReceipt`; `guardConfirmedBalances`
+  - `web/hooks/useStaleBalanceGuard.ts` — landing U12: stale RPC must not resurrect pre-tx balances
+- **notes:** Executor CONFIRMED waits `RECEIPT_CONFIRMATIONS = 2`. The
+  suppression guard re-fetches `getTransactionReceipt`; a null receipt means
+  the block reorged out — regress to PENDING rather than pinning CONFIRMED.
+  Matching live balances against the pre-tx snapshot suppresses those numbers
+  and keeps last-known post-tx. Drop the local receipt once the entity is
+  present in reads.
+
 ### `queue.running`
 
 Whether the sequential write run is advancing.

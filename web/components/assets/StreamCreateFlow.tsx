@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useConnection, useReadContract, useReadContracts } from "wagmi";
 import type { Address } from "viem";
 import { erc20Abi, ovrfloAbi } from "@/lib/abis";
@@ -10,6 +11,7 @@ import { applySlippageDown } from "@/lib/modal-logic";
 import { readQuery } from "@/lib/query-keys";
 import type { MarketInfo } from "@/lib/types";
 import { useAcknowledgment } from "@/hooks/useAcknowledgment";
+import { useAcknowledgeRiskTrace } from "@/components/first-run/useAcknowledgeRiskTrace";
 import { useChainGuard } from "@/hooks/useChainGuard";
 import { useNowSecondsHydrationSafe } from "@/hooks/useNowSeconds";
 import { useWalletChangeReset } from "@/hooks/useWalletChangeReset";
@@ -33,6 +35,7 @@ export function StreamCreateFlow({
   signingAllowed: boolean;
 }) {
   const connection = useConnection();
+  const queryClient = useQueryClient();
   const user = connection.addresses?.[0];
   const now = useNowSecondsHydrationSafe();
   const ack = useAcknowledgment();
@@ -72,7 +75,10 @@ export function StreamCreateFlow({
     depositTx.reset();
   }, [depositTx, feeApprove, ptApprove]);
 
-  const walletReset = useWalletChangeReset(user, reset);
+  const walletReset = useWalletChangeReset(user, reset, {
+    chainId: connection.chainId,
+    queryClient,
+  });
 
   const enabled = Boolean(user && market);
   const reads = useReadContracts({
@@ -320,12 +326,14 @@ export function StreamCreateFlow({
           ? "confirmed"
           : "review";
 
-  const steps = streamTrace({
+  const baseSteps = streamTrace({
     needsPt: latchedNeedsPt || approval.needsPtApproval,
     needsFee: latchedNeedsFee || approval.needsUnderlyingApproval,
-    ackRequired: ack.ready && !ack.acknowledged,
+    ackRequired: false,
     stage: traceStage,
   });
+  const ackTrace = useAcknowledgeRiskTrace(baseSteps);
+  const steps = ackTrace.steps;
 
   const permissionCurrent =
     stage === "approve-pt"

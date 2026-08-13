@@ -12,28 +12,34 @@ import { Shell } from "@/components/kit/Shell";
 import { StatusLine } from "@/components/kit/StatusLine";
 import { TokenUsdSwitch } from "@/components/kit/TokenUsdSwitch";
 import { ModalErrorBoundary } from "@/components/ModalErrorBoundary";
+import { SurfaceState } from "@/components/kit/SurfaceState";
+import { useAcknowledgeRiskTrace } from "@/components/first-run/useAcknowledgeRiskTrace";
 import { useAcknowledgment } from "@/hooks/useAcknowledgment";
 import { useAllMarkets } from "@/hooks/useAllMarkets";
 import { useApprovalWriteFlows } from "@/hooks/useApprovalWriteFlows";
 import { useChainGuard } from "@/hooks/useChainGuard";
 import { useClearOnConfirm } from "@/hooks/useClearOnConfirm";
 import { sourceFromOutcome, useFreshness } from "@/hooks/useFreshness";
+import { useFlowDecisionHistory } from "@/hooks/useFlowDecisionHistory";
 import { useLadder } from "@/hooks/useLadder";
 import { useLending } from "@/hooks/useLending";
 import { useMarketSymbols, symbolFor } from "@/hooks/useMarketSymbols";
 import { useNowSeconds } from "@/hooks/useNowSeconds";
+import { useStaleBalanceGuard } from "@/hooks/useStaleBalanceGuard";
 import { useStaleRecovery } from "@/hooks/useStaleRecovery";
 import { useUsdPrice } from "@/hooks/useUsdPrice";
 import { useWalletChangeReset } from "@/hooks/useWalletChangeReset";
 import { erc20Abi, ovrfloLendingAbi } from "@/lib/abis";
-import { chainId } from "@/lib/config";
+import { chainId, factoryAddress } from "@/lib/config";
 import { decodeContractError, isUserRejection } from "@/lib/errors";
 import { formatUsd } from "@/lib/format";
 import { stepWindow, tickWindow, type LadderModel } from "@/lib/ladder";
 import { MIN_LIQUIDITY_AMOUNT, UNIT, unitsToWei } from "@/lib/lending-math";
-import { parseDecimalInput, parseFlowDraft, serializeFlowDraft } from "@/lib/parse";
+import { parseDecimalInput } from "@/lib/parse";
+import { classifySurfaceState } from "@/lib/surface-state";
 import { readQuery } from "@/lib/query-keys";
-import { storageGet, storageSet } from "@/lib/storage";
+import { writeReceipt } from "@/lib/receipts";
+import { flowDraftKey, readFlowDraft, writeFlowDraft } from "@/lib/storage";
 import { tokenUsd8 } from "@/lib/usd";
 import { AmountStep } from "./AmountStep";
 import { SupplyFacts } from "./Facts";
@@ -42,6 +48,7 @@ import {
   classifySupplyError,
   snapshotSupply,
   supplyDrift,
+  supplyTrace,
   tickNoLongerValid,
   weiToAmountInput,
   type SupplyCheckpoint,
@@ -59,7 +66,7 @@ type Stage = "select-market" | "amount-rate" | "review";
 const APPROVE_COOLDOWN_MS = 4000;
 
 function draftKey(account: string) {
-  return `ovrflo:draft:supply:${chainId}:${account.toLowerCase()}`;
+  return flowDraftKey("supply", factoryAddress, chainId, account);
 }
 
 export function SupplyFlow() {
@@ -75,7 +82,6 @@ export function SupplyFlow() {
   const symbols = useMarketSymbols(marketsResult.markets);
   const usd = useUsdPrice();
   const [usdMode, setUsdMode] = useState<"token" | "usd">("token");
-  const [stage, setStage] = useState<Stage>("select-market");
   const [selectedMarket, setSelectedMarket] = useState<Address | null>(null);
   const [amountRaw, setAmountRaw] = useState("");
   const [selectedAprBps, setSelectedAprBps] = useState<number | null>(null);
@@ -87,6 +93,7 @@ export function SupplyFlow() {
   const [approveSubmitting, setApproveSubmitting] = useState(false);
   const [approveCooldown, setApproveCooldown] = useState(false);
   const [actionSubmitting, setActionSubmitting] = useState(false);
+  const [preTxBalance, setPreTxBalance] = useState<bigint | null>(null);
   const [unavailable, setUnavailable] = useState<{
     name: string;
     reason: "matured-or-inactive" | "tick-config-changed";
@@ -103,8 +110,24 @@ export function SupplyFlow() {
   const { freshness, signingAllowed } = useFreshness([sourceFromOutcome(ladderOutcome)]);
   const stale = useStaleRecovery(actionTx.error, classifySupplyError, queryClient, account);
 
+  const { decision, go: goDecision } = useFlowDecisionHistory({
+    hasFrozenSnapshot: frozen !== null,
+    hasSelection: selectedMarket !== null,
+  });
+  const stage: Stage =
+    decision === "select" ? "select-market" : decision === "amount-rate" ? "amount-rate" : "review";
+  const setStage = useCallback(
+    (next: Stage, mode: "push" | "replace" = "push") => {
+      goDecision(
+        next === "select-market" ? "select" : next === "amount-rate" ? "amount-rate" : "review",
+        mode,
+      );
+    },
+    [goDecision],
+  );
+
   const resetForm = useCallback(() => {
-    setStage("select-market");
+    goDecision("select", "replace");
     setSelectedMarket(null);
     setAmountRaw("");
     setSelectedAprBps(null);
@@ -114,13 +137,17 @@ export function SupplyFlow() {
     setApproveSubmitting(false);
     setApproveCooldown(false);
     setActionSubmitting(false);
+    setPreTxBalance(null);
     setUnavailable(null);
     approveTx.reset();
     actionTx.reset();
     stale.setStaleRecovery(false);
-  }, [actionTx, approveTx, stale]);
+  }, [actionTx, approveTx, goDecision, stale]);
 
-  const walletReset = useWalletChangeReset(account, resetForm);
+  const walletReset = useWalletChangeReset(account, resetForm, {
+    chainId: connection.chainId,
+    queryClient,
+  });
   useClearOnConfirm(actionTx.isConfirmed, () => setAmountRaw(""));
 
   useEffect(() => {
@@ -128,7 +155,7 @@ export function SupplyFlow() {
       setDraftReady(true);
       return;
     }
-    const stored = parseFlowDraft(storageGet(draftKey(account)));
+    const stored = readFlowDraft(draftKey(account));
     if (stored) {
       setAmountRaw(stored.amountRaw);
       setSelectedAprBps(stored.selectedAprBps);
@@ -139,15 +166,12 @@ export function SupplyFlow() {
 
   useEffect(() => {
     if (!account || !draftReady) return;
-    storageSet(
-      draftKey(account),
-      serializeFlowDraft({
-        amountRaw,
-        selectedAprBps,
-        selectedStreamId: null,
-        selectedMarket: market?.market ?? selectedMarket,
-      }),
-    );
+    writeFlowDraft(draftKey(account), {
+      amountRaw,
+      selectedAprBps,
+      selectedStreamId: null,
+      selectedMarket: market?.market ?? selectedMarket,
+    });
   }, [account, amountRaw, draftReady, market?.market, selectedAprBps, selectedMarket]);
 
   const moneyEnabled = Boolean(account && market && lending);
@@ -265,6 +289,54 @@ export function SupplyFlow() {
     : approveTx.error && !isUserRejection(approveTx.error)
       ? decodeContractError(approveTx.error)
       : null;
+
+  const ackTrace = useAcknowledgeRiskTrace(
+    supplyTrace({
+      underlyingSymbol,
+      needsApprove: !tokenApproved,
+      ackRequired: false,
+      checkpoint,
+    }),
+  );
+
+  const liveBalances =
+    walletBalance !== null && market
+      ? { [market.underlying.toLowerCase()]: walletBalance }
+      : null;
+  const preTxBalances =
+    preTxBalance !== null && market
+      ? { [market.underlying.toLowerCase()]: preTxBalance.toString() }
+      : null;
+  const lastKnownPostTx =
+    preTxBalance !== null && frozen && market
+      ? {
+          [market.underlying.toLowerCase()]:
+            preTxBalance > frozen.amount ? preTxBalance - frozen.amount : 0n,
+        }
+      : null;
+  const guarded = useStaleBalanceGuard({
+    hash: actionTx.hash,
+    confirmed: actionTx.isConfirmed,
+    liveBalances,
+    preTxBalances,
+    lastKnownPostTx,
+  });
+  const displayBalance =
+    guarded.suppressed && lastKnownPostTx && market
+      ? (lastKnownPostTx[market.underlying.toLowerCase()] ?? walletBalance)
+      : walletBalance;
+
+  useEffect(() => {
+    if (!actionTx.hash || !market) return;
+    if (!actionTx.isConfirming && !actionTx.isConfirmed) return;
+    writeReceipt(factoryAddress, {
+      hash: actionTx.hash,
+      status: actionTx.isConfirmed ? "confirmed" : "pending",
+      entityKind: "position",
+      entityId: receipt?.positionId?.toString() ?? null,
+      preTxBalances: preTxBalances ?? {},
+    });
+  }, [actionTx.hash, actionTx.isConfirmed, actionTx.isConfirming, market, preTxBalances, receipt?.positionId]);
 
   useEffect(() => {
     if (!market || stage === "select-market") return;
@@ -387,7 +459,7 @@ export function SupplyFlow() {
   }
 
   function onMax() {
-    if (walletBalance !== null && walletBalance > 0n) setAmountRaw(weiToAmountInput(walletBalance));
+    if (displayBalance !== null && displayBalance > 0n) setAmountRaw(weiToAmountInput(displayBalance));
   }
 
   function onReview() {
@@ -410,6 +482,7 @@ export function SupplyFlow() {
 
   function onSupply() {
     if (!lending || !market || !frozen || drifted || chainGuard.wrongChain || !signingAllowed) return;
+    setPreTxBalance(walletBalance);
     setActionSubmitting(true);
     actionTx.writeContract({
       address: lending,
@@ -435,6 +508,24 @@ export function SupplyFlow() {
           ? "empty-ahead"
           : "ready";
 
+  const surface = classifySurfaceState({
+    dataStatus:
+      marketSelectState === "loading"
+        ? "loading"
+        : marketSelectState === "empty"
+          ? "empty"
+          : marketSelectState === "unavailable"
+            ? "unavailable"
+            : "ready",
+    hasLastKnown: marketSelectState === "ready" || Boolean(market),
+    stale: !signingAllowed || stale.staleRecovery || drifted,
+    signingAllowed,
+    isSigning: actionTx.isSigning || approveTx.isSigning,
+    isConfirming: actionTx.isConfirming,
+    isConfirmed: actionTx.isConfirmed,
+    error: Boolean(decoded && !isUserRejection(actionTx.error) && !isUserRejection(approveTx.error)),
+  });
+
   return (
     <Shell
       currentNav="supply"
@@ -442,8 +533,20 @@ export function SupplyFlow() {
       status={<StatusLine status={freshness.kind} asOf={asOf} usdUnavailable={usdUnavailable} />}
       onHome={() => router.push("/")}
     >
-      <ModalErrorBoundary onReset={() => setBodyKey((key) => key + 1)}>
+      <ModalErrorBoundary control="UI-REVIEW-ERROR-BOUNDARY" onReset={() => setBodyKey((key) => key + 1)}>
         <div className="supply-flow" data-split={stage === "review" ? "true" : "false"} key={bodyKey}>
+          <SurfaceState
+            state={surface}
+            topology="supply"
+            onRefresh={
+              surface === "STALE"
+                ? () => {
+                    void queryClient.invalidateQueries();
+                    stale.setStaleRecovery(false);
+                  }
+                : undefined
+            }
+          />
           {walletReset.walletChanged ? (
             <div className="supply-notice" role="alert">
               <p>WALLET CHANGED — RE-ENTER</p>
@@ -577,6 +680,7 @@ export function SupplyFlow() {
                 live={liveSnapshot}
                 drifted={drifted || actionTx.needsReview || stale.staleRecovery}
                 checkpoint={checkpoint}
+                steps={ackTrace.steps}
                 underlyingSymbol={underlyingSymbol}
                 expiry={market.expiryCached}
                 operator={lending}
@@ -586,7 +690,7 @@ export function SupplyFlow() {
                 approveBusy={approveSubmitting || approveTx.isSigning || approveTx.isConfirming || approveTx.isInFlight}
                 approveCooldown={approveCooldown}
                 clearing={zeroFirst.clearing}
-                supplyBusy={actionSubmitting || actionTx.isSigning || actionTx.isConfirming || actionTx.isInFlight}
+                supplyBusy={actionSubmitting || actionTx.isSigning || actionTx.isInFlight || actionTx.isConfirming}
                 txHash={actionTx.hash ? String(actionTx.hash) : undefined}
                 positionId={receipt?.positionId}
                 errorCopy={

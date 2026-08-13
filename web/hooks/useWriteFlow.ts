@@ -31,6 +31,7 @@ import {
 import { buildRefreshPlan, refreshQueryResources } from "@/lib/query-resource-registry";
 import { invalidateTouchedResources, marketContracts } from "@/lib/invalidate";
 import { isRevertFailure, userFacingError } from "@/lib/errors";
+import { RECEIPT_CONFIRMATIONS } from "@/lib/receipts";
 import type { ActionType, MarketInfo } from "@/lib/types";
 import {
   createLiveExecutionPlan,
@@ -119,7 +120,10 @@ export function useWriteFlow(
             throw new Error("Wallet identity changed during authorization simulation");
           }
           const hash = await wallet.data.writeContract(simulated.request as never);
-          const receipt = await publicClient.waitForTransactionReceipt({ hash });
+          const receipt = await publicClient.waitForTransactionReceipt({
+            hash,
+            confirmations: RECEIPT_CONFIRMATIONS,
+          });
           return {
             transactionHash: receipt.transactionHash,
             status: receipt.status,
@@ -178,6 +182,7 @@ export function useWriteFlow(
         if (!publicClient) throw new Error("Public client is unavailable");
         const receipt = await publicClient.waitForTransactionReceipt({
           hash,
+          confirmations: RECEIPT_CONFIRMATIONS,
           onReplaced: ({ transactionReceipt }) => transactionReceipt,
         });
         return {

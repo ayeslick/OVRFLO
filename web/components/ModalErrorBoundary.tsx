@@ -11,6 +11,8 @@ import { Component, type ErrorInfo, type ReactNode } from "react";
 interface Props {
   children: ReactNode;
   onReset?: () => void;
+  region?: string;
+  control?: "UI-REVIEW-ERROR-BOUNDARY" | "UI-SHELL-REGION-BOUNDARY";
 }
 
 interface State {
@@ -38,7 +40,13 @@ export class ModalErrorBoundary extends Component<Props, State> {
   render(): ReactNode {
     if (this.state.error) {
       return (
-        <div className="form-grid" role="alert" data-testid="modal-error-boundary">
+        <div
+          className="form-grid"
+          role="alert"
+          data-testid="modal-error-boundary"
+          data-ui={this.props.control ?? "UI-REVIEW-ERROR-BOUNDARY"}
+          data-region={this.props.region}
+        >
           <div className="label mono status-negative">SOMETHING WENT WRONG — {this.state.error.message}</div>
           <button
             type="button"
@@ -53,4 +61,21 @@ export class ModalErrorBoundary extends Component<Props, State> {
     }
     return this.props.children;
   }
+}
+
+/** Independent display region — shell chrome stays outside. */
+export function RegionErrorBoundary({
+  region,
+  children,
+  onReset,
+}: {
+  region: string;
+  children: ReactNode;
+  onReset?: () => void;
+}) {
+  return (
+    <ModalErrorBoundary region={region} control="UI-SHELL-REGION-BOUNDARY" onReset={onReset}>
+      {children}
+    </ModalErrorBoundary>
+  );
 }

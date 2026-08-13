@@ -6,7 +6,8 @@ import { ActionButton } from "@/components/kit/ActionButton";
 import { AmountField } from "@/components/kit/AmountField";
 import { Receipt } from "@/components/kit/Receipt";
 import { SettlementTrace, type TraceStep } from "@/components/kit/SettlementTrace";
-import { useAcknowledgment } from "@/hooks/useAcknowledgment";
+import { AcknowledgeRiskStep } from "@/components/first-run/AcknowledgeRiskStep";
+import { useAcknowledgeRiskTrace } from "@/components/first-run/useAcknowledgeRiskTrace";
 import { useChainGuard } from "@/hooks/useChainGuard";
 import { useWriteFlow } from "@/hooks/useWriteFlow";
 import { ovrfloLendingAbi } from "@/lib/abis";
@@ -50,9 +51,9 @@ export function WatchWrite({
   signingAllowed: boolean;
   onClose: () => void;
 }) {
-  const ack = useAcknowledgment();
   const chain = useChainGuard();
   const flow = useWriteFlow(undefined, market);
+  const ackTrace = useAcknowledgeRiskTrace(traceSteps(kind, flow, true));
   const [repayRaw, setRepayRaw] = useState(
     outstanding !== undefined ? formatTruncatedDecimal(outstanding, 18, 5) : "",
   );
@@ -78,7 +79,7 @@ export function WatchWrite({
     );
   }
 
-  const steps = traceSteps(kind, flow, ack.acknowledged);
+  const steps = ackTrace.steps;
   const stale = !signingAllowed;
   const busy = flow.isSigning || flow.isConfirming || flow.isInFlight;
   const parsedRepay = parseDecimalInput(repayRaw);
@@ -142,11 +143,7 @@ export function WatchWrite({
   return (
     <div className="watch-write" data-write={kind}>
       <SettlementTrace steps={steps} />
-      {!ack.acknowledged ? (
-        <ActionButton variant="primary" onClick={() => ack.acknowledge()}>
-          ACKNOWLEDGE RISK
-        </ActionButton>
-      ) : null}
+      {ackTrace.needsAcknowledgment ? <AcknowledgeRiskStep /> : null}
       {kind === "repay" && !flow.isConfirmed ? (
         <AmountField
           label="REPAY AMOUNT"
@@ -161,7 +158,7 @@ export function WatchWrite({
       {flow.error ? <p className="kit-field-error">{userFacingError(flow.error)}</p> : null}
       {flow.hash ? <p className="watch-hero-meta">{truncateHash(flow.hash)}</p> : null}
       <div className="watch-actions">
-        {ack.acknowledged && !flow.isConfirmed ? (
+        {ackTrace.needsAcknowledgment ? null : !flow.isConfirmed ? (
           stale ? (
             <ActionButton disabled disabledReason="EVENTS STALE — SIGNING DISABLED">
               {actionLabel(kind, symbol, claimable)}

@@ -12,12 +12,15 @@ import { Shell } from "@/components/kit/Shell";
 import { StatusLine } from "@/components/kit/StatusLine";
 import { TokenUsdSwitch } from "@/components/kit/TokenUsdSwitch";
 import { ModalErrorBoundary } from "@/components/ModalErrorBoundary";
+import { SurfaceState } from "@/components/kit/SurfaceState";
+import { useAcknowledgeRiskTrace } from "@/components/first-run/useAcknowledgeRiskTrace";
 import { useAcknowledgment } from "@/hooks/useAcknowledgment";
 import { useAllMarkets } from "@/hooks/useAllMarkets";
 import { useApprovalWriteFlows } from "@/hooks/useApprovalWriteFlows";
 import { useChainGuard } from "@/hooks/useChainGuard";
 import { useClearOnConfirm } from "@/hooks/useClearOnConfirm";
 import { sourceFromOutcome, useFreshness } from "@/hooks/useFreshness";
+import { useFlowDecisionHistory } from "@/hooks/useFlowDecisionHistory";
 import { useLadder } from "@/hooks/useLadder";
 import { useMarketSymbols, symbolFor } from "@/hooks/useMarketSymbols";
 import { useNowSeconds } from "@/hooks/useNowSeconds";
@@ -28,19 +31,21 @@ import { useUsdPrice } from "@/hooks/useUsdPrice";
 import { useWalletChangeReset } from "@/hooks/useWalletChangeReset";
 import { ovrfloLendingAbi, sablierLockupAbi } from "@/lib/abis";
 import { classifyBorrowError } from "@/lib/borrow";
-import { chainId, SABLIER_LOCKUP_ADDRESS, ZERO_ADDRESS } from "@/lib/config";
+import { chainId, factoryAddress, SABLIER_LOCKUP_ADDRESS, ZERO_ADDRESS } from "@/lib/config";
 import { decodeContractError, isUserRejection } from "@/lib/errors";
 import { formatAprBps, formatUsd } from "@/lib/format";
 import { bestDepthTick, stepWindow, tickWindow, type LadderModel } from "@/lib/ladder";
 import { MIN_LIQUIDITY_AMOUNT, MIN_STREAM_AMOUNT } from "@/lib/lending-math";
-import { parseDecimalInput, parseEntityId, parseFlowDraft, serializeFlowDraft } from "@/lib/parse";
-import { storageGet, storageSet } from "@/lib/storage";
+import { parseDecimalInput, parseEntityId } from "@/lib/parse";
+import { classifySurfaceState } from "@/lib/surface-state";
+import { writeReceipt } from "@/lib/receipts";
+import { flowDraftKey, readFlowDraft, writeFlowDraft } from "@/lib/storage";
 import { tokenUsd8 } from "@/lib/usd";
 import { AmountStep, amountErrorCopy } from "./AmountStep";
 import { BorrowFacts } from "./Facts";
 import { PoolBand } from "./PoolBand";
 import { RateStep } from "./RateStep";
-import { ReviewHandoff, type BorrowCheckpoint } from "./ReviewHandoff";
+import { ReviewHandoff, borrowTrace, type BorrowCheckpoint } from "./ReviewHandoff";
 import { NoStream, SelectStream } from "./SelectStream";
 import { StreamContext } from "./StreamContext";
 import {
@@ -62,7 +67,7 @@ import "./borrow.css";
 type Stage = "select-stream" | "amount-rate" | "review";
 
 function draftKey(account: string) {
-  return `ovrflo:draft:borrow:${chainId}:${account.toLowerCase()}`;
+  return flowDraftKey("borrow", factoryAddress, chainId, account);
 }
 
 export function BorrowFlow() {
@@ -79,7 +84,6 @@ export function BorrowFlow() {
   const symbols = useMarketSymbols(marketsResult.markets);
   const usd = useUsdPrice();
   const [usdMode, setUsdMode] = useState<"token" | "usd">("token");
-  const [stage, setStage] = useState<Stage>("select-stream");
   const [selectedStreamId, setSelectedStreamId] = useState<bigint | null>(null);
   const [amountRaw, setAmountRaw] = useState("");
   const [selectedAprBps, setSelectedAprBps] = useState<number | null>(null);
@@ -119,8 +123,24 @@ export function BorrowFlow() {
   ]);
   const stale = useStaleRecovery(actionTx.error, classifyBorrowError, queryClient, account);
 
+  const { decision, go: goDecision } = useFlowDecisionHistory({
+    hasFrozenSnapshot: frozen !== null,
+    hasSelection: selectedStreamId !== null,
+  });
+  const stage: Stage =
+    decision === "select" ? "select-stream" : decision === "amount-rate" ? "amount-rate" : "review";
+  const setStage = useCallback(
+    (next: Stage, mode: "push" | "replace" = "push") => {
+      goDecision(
+        next === "select-stream" ? "select" : next === "amount-rate" ? "amount-rate" : "review",
+        mode,
+      );
+    },
+    [goDecision],
+  );
+
   const resetForm = useCallback(() => {
-    setStage("select-stream");
+    goDecision("select", "replace");
     setSelectedStreamId(null);
     setAmountRaw("");
     setSelectedAprBps(null);
@@ -129,9 +149,12 @@ export function BorrowFlow() {
     approveTx.reset();
     actionTx.reset();
     stale.setStaleRecovery(false);
-  }, [actionTx, approveTx, stale]);
+  }, [actionTx, approveTx, goDecision, stale]);
 
-  const walletReset = useWalletChangeReset(account, resetForm);
+  const walletReset = useWalletChangeReset(account, resetForm, {
+    chainId: connection.chainId,
+    queryClient,
+  });
   useClearOnConfirm(actionTx.isConfirmed, () => setAmountRaw(""));
 
   useEffect(() => {
@@ -139,7 +162,7 @@ export function BorrowFlow() {
       setDraftReady(true);
       return;
     }
-    const stored = parseFlowDraft(storageGet(draftKey(account)));
+    const stored = readFlowDraft(draftKey(account));
     if (stored) {
       setAmountRaw(stored.amountRaw);
       setSelectedAprBps(stored.selectedAprBps);
@@ -153,15 +176,12 @@ export function BorrowFlow() {
 
   useEffect(() => {
     if (!account || !draftReady) return;
-    storageSet(
-      draftKey(account),
-      serializeFlowDraft({
-        amountRaw,
-        selectedAprBps,
-        selectedStreamId: selectedStreamId === null ? null : selectedStreamId.toString(),
-        selectedMarket: market?.market ?? null,
-      }),
-    );
+    writeFlowDraft(draftKey(account), {
+      amountRaw,
+      selectedAprBps,
+      selectedStreamId: selectedStreamId === null ? null : selectedStreamId.toString(),
+      selectedMarket: market?.market ?? null,
+    });
   }, [account, amountRaw, draftReady, market?.market, selectedAprBps, selectedStreamId]);
 
   const nftEnabled = Boolean(account && lending && selectedStream);
@@ -288,6 +308,20 @@ export function BorrowFlow() {
       ? decodeContractError(approveTx.error, belowMinContext)
       : null;
 
+  const ackTrace = useAcknowledgeRiskTrace(borrowTrace(checkpoint, streamApproved, true));
+
+  useEffect(() => {
+    if (!actionTx.hash) return;
+    if (!actionTx.isConfirming && !actionTx.isConfirmed) return;
+    writeReceipt(factoryAddress, {
+      hash: actionTx.hash,
+      status: actionTx.isConfirmed ? "confirmed" : "pending",
+      entityKind: "loan",
+      entityId: receipt?.loanId?.toString() ?? null,
+      preTxBalances: {},
+    });
+  }, [actionTx.hash, actionTx.isConfirmed, actionTx.isConfirming, receipt?.loanId]);
+
   function onSelectStream(id: bigint) {
     const next = eligible.find((row) => row.streamId === id);
     if (next && parsedAmount.ok) {
@@ -378,6 +412,24 @@ export function BorrowFlow() {
   const usdUnavailable =
     usd.status === "unavailable" || (usd.status === "ready" && usd.data.status === "unavailable");
 
+  const surface = classifySurfaceState({
+    dataStatus:
+      streamSelectState === "loading"
+        ? "loading"
+        : streamSelectState === "empty"
+          ? "empty"
+          : streamSelectState === "unavailable"
+            ? "unavailable"
+            : "ready",
+    hasLastKnown: streamSelectState === "ready" || Boolean(selectedStream),
+    stale: !signingAllowed || stale.staleRecovery || drifted,
+    signingAllowed,
+    isSigning: actionTx.isSigning || approveTx.isSigning,
+    isConfirming: actionTx.isConfirming,
+    isConfirmed: actionTx.isConfirmed,
+    error: Boolean(decoded && !isUserRejection(actionTx.error) && !isUserRejection(approveTx.error)),
+  });
+
   return (
     <Shell
       currentNav="borrow"
@@ -385,8 +437,20 @@ export function BorrowFlow() {
       status={<StatusLine status={freshness.kind} asOf={asOf} usdUnavailable={usdUnavailable} />}
       onHome={() => router.push("/")}
     >
-      <ModalErrorBoundary onReset={() => setBodyKey((key) => key + 1)}>
+      <ModalErrorBoundary control="UI-REVIEW-ERROR-BOUNDARY" onReset={() => setBodyKey((key) => key + 1)}>
         <div className="borrow-flow" data-split={stage === "review" ? "true" : "false"} key={bodyKey}>
+          <SurfaceState
+            state={surface}
+            topology="borrow"
+            onRefresh={
+              surface === "STALE"
+                ? () => {
+                    void queryClient.invalidateQueries();
+                    stale.setStaleRecovery(false);
+                  }
+                : undefined
+            }
+          />
           {walletReset.walletChanged ? (
             <div className="borrow-notice" role="alert">
               <p>WALLET CHANGED — RE-ENTER</p>
@@ -483,6 +547,7 @@ export function BorrowFlow() {
                 frozen={frozen}
                 drifted={drifted || actionTx.needsReview}
                 checkpoint={checkpoint}
+                steps={ackTrace.steps}
                 underlyingSymbol={underlyingSymbol}
                 ovrfloSymbol={ovrfloSymbol}
                 aprBps={selectedAprBps}

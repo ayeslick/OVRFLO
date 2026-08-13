@@ -5,8 +5,10 @@ import { useConnection } from "wagmi";
 import { Footer } from "@/components/Footer";
 import { FirstRun } from "@/components/first-run/FirstRun";
 import { WalletControl } from "@/components/WalletControl";
+import { RegionErrorBoundary } from "@/components/ModalErrorBoundary";
 import { Shell } from "@/components/kit/Shell";
 import { StatusLine } from "@/components/kit/StatusLine";
+import { SurfaceState } from "@/components/kit/SurfaceState";
 import { TokenUsdSwitch, type TokenUsdMode } from "@/components/kit/TokenUsdSwitch";
 import { useAllMarkets } from "@/hooks/useAllMarkets";
 import { useBorrowerBook } from "@/hooks/useBorrowerBook";
@@ -22,6 +24,8 @@ import { formatUsd } from "@/lib/format";
 import type { Freshness } from "@/lib/freshness";
 import { parseUsdMode, parseWatchLens, type WatchLens } from "@/lib/parse";
 import type { ReadOutcome } from "@/lib/read-outcome";
+import { queryClient } from "@/lib/query-client";
+import { classifySurfaceState } from "@/lib/surface-state";
 import { lensKey, storageGet, storageSet, usdModeKey } from "@/lib/storage";
 import { tokenUsd8 } from "@/lib/usd";
 import type { Usd8 } from "@/lib/units";
@@ -194,6 +198,22 @@ export function WatchApp() {
 
   const showWatch = entry === "watch" || entry === "watch-streams-degraded";
   const detailOpen = url.selection.kind !== "none";
+  const wallBook =
+    resolvedLens === "supplied" ? positionBook : resolvedLens === "borrowed" ? loanBook : streamBook;
+  const wallSurface = classifySurfaceState({
+    dataStatus:
+      wallBook.status === "loading"
+        ? "loading"
+        : wallBook.status === "unavailable"
+          ? "unavailable"
+          : wallBook.count === 0
+            ? "empty"
+            : "ready",
+    hasLastKnown:
+      Boolean(lenderData) || Boolean(borrowerData) || Boolean(streamData) || wallBook.status !== "loading",
+    stale: !freshness.signingAllowed,
+    signingAllowed: freshness.signingAllowed,
+  });
 
   return (
     <Shell
@@ -232,7 +252,11 @@ export function WatchApp() {
           <p className="watch-kicker">CHECKING…</p>
         </section>
       ) : null}
-      {entry === "first-run" ? <FirstRun /> : null}
+      {entry === "first-run" ? (
+        <RegionErrorBoundary region="first-run">
+          <FirstRun />
+        </RegionErrorBoundary>
+      ) : null}
       {showWatch ? (
         <div className="watch-split" data-region="watch" data-narrow-detail={narrow && detailOpen ? "true" : "false"}>
           {narrow && detailOpen ? (
@@ -245,23 +269,38 @@ export function WatchApp() {
               ←
             </button>
           ) : null}
-          <Wall
-            tabs={tabs}
-            lens={resolvedLens}
-            onSelectLens={onSelectLens}
-            positions={positions}
-            loans={loans}
-            streams={wallStreams}
-            pledgedByStream={pledgedByStream}
-            loanStreams={loanStreams}
-            nowSeconds={nowSeconds}
-            nowMs={nowMs}
-            lastReadAt={lastReadAt}
-            selection={url.selection}
-            onSelect={onSelect}
-            streamsDegraded={resolvedLens === "streams" ? streamsDegraded : null}
-          />
-          <div className="watch-detail">
+          <RegionErrorBoundary region="watch-wall">
+            <SurfaceState
+              state={wallSurface}
+              topology="watch"
+              onRefresh={
+                wallSurface === "STALE"
+                  ? () => {
+                      void queryClient.invalidateQueries();
+                    }
+                  : undefined
+              }
+            />
+            <Wall
+              tabs={tabs}
+              lens={resolvedLens}
+              onSelectLens={onSelectLens}
+              positions={wallSurface === "LOADING" ? [] : positions}
+              loans={wallSurface === "LOADING" ? [] : loans}
+              streams={wallSurface === "LOADING" ? [] : wallStreams}
+              panelStatus={wallSurface === "LOADING" ? "loading" : wallSurface === "EMPTY" ? "empty" : "ready"}
+              pledgedByStream={pledgedByStream}
+              loanStreams={loanStreams}
+              nowSeconds={nowSeconds}
+              nowMs={nowMs}
+              lastReadAt={lastReadAt}
+              selection={url.selection}
+              onSelect={onSelect}
+              streamsDegraded={resolvedLens === "streams" ? streamsDegraded : null}
+            />
+          </RegionErrorBoundary>
+          <RegionErrorBoundary region="watch-detail">
+            <div className="watch-detail">
             {selectedPosition ? (
               <SuppliedDetail
                 position={selectedPosition}
@@ -330,7 +369,8 @@ export function WatchApp() {
                 onSelectLoan={(loanId) => onSelect({ kind: "loan", id: loanId })}
               />
             ) : null}
-          </div>
+            </div>
+          </RegionErrorBoundary>
         </div>
       ) : null}
       <Footer />

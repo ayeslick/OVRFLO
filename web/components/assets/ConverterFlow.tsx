@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useConnection, useReadContracts } from "wagmi";
 import type { Address } from "viem";
 import { erc20Abi, ovrfloAbi } from "@/lib/abis";
@@ -8,6 +9,7 @@ import { formatTokenAmount } from "@/lib/format";
 import { readQuery } from "@/lib/query-keys";
 import type { MarketInfo } from "@/lib/types";
 import { useAcknowledgment } from "@/hooks/useAcknowledgment";
+import { useAcknowledgeRiskTrace } from "@/components/first-run/useAcknowledgeRiskTrace";
 import { useApprovalWriteFlows } from "@/hooks/useApprovalWriteFlows";
 import { useChainGuard } from "@/hooks/useChainGuard";
 import { useNowSecondsHydrationSafe } from "@/hooks/useNowSeconds";
@@ -31,6 +33,7 @@ export function ConverterFlow({
   repayHref?: string;
   signingAllowed: boolean;
 }) {
+  const queryClient = useQueryClient();
   const connection = useConnection();
   const user = connection.addresses?.[0];
   const connected = connection.status === "connected";
@@ -63,7 +66,10 @@ export function ConverterFlow({
     claimTx.reset();
   }, [unwrapTx, wrapFlows.actionTx, wrapFlows.approveTx, claimTx]);
 
-  const walletReset = useWalletChangeReset(user, reset);
+  const walletReset = useWalletChangeReset(user, reset, {
+    chainId: connection.chainId,
+    queryClient,
+  });
 
   const enabled = Boolean(user && market);
   const reads = useReadContracts({
@@ -258,18 +264,20 @@ export function ConverterFlow({
         ? "unwrap"
         : "amount";
 
-  const steps =
+  const baseSteps =
     direction === "wrap"
       ? wrapTrace({
           underlyingSymbol,
           needsApprove: traceNeedsApprove || needsApprove,
-          ackRequired: ack.ready && !ack.acknowledged,
+          ackRequired: false,
           stage: wrapStage,
         })
       : unwrapTrace({
-          ackRequired: ack.ready && !ack.acknowledged,
+          ackRequired: false,
           stage: unwrapStage,
         });
+  const ackTrace = useAcknowledgeRiskTrace(baseSteps);
+  const steps = ackTrace.steps;
 
   const permissionLines =
     direction === "wrap"

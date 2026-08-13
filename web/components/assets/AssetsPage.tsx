@@ -2,15 +2,19 @@
 
 import { useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { useConnection } from "wagmi";
 import { WalletButton } from "wallet-runtime";
+import { RegionErrorBoundary } from "@/components/ModalErrorBoundary";
 import { ActionButton } from "@/components/kit/ActionButton";
 import { Shell } from "@/components/kit/Shell";
 import { StatusLine } from "@/components/kit/StatusLine";
+import { SurfaceState } from "@/components/kit/SurfaceState";
 import { useAllMarkets } from "@/hooks/useAllMarkets";
 import { useChainGuard } from "@/hooks/useChainGuard";
 import { useFreshness } from "@/hooks/useFreshness";
 import { useMarketSymbols, symbolFor } from "@/hooks/useMarketSymbols";
+import { classifySurfaceState } from "@/lib/surface-state";
 import { parseAddressParam } from "@/lib/parse";
 import { ConverterFlow } from "./ConverterFlow";
 import { StreamCreateFlow } from "./StreamCreateFlow";
@@ -21,6 +25,7 @@ export function AssetsPage() {
   const router = useRouter();
   const params = useSearchParams();
   const connection = useConnection();
+  const queryClient = useQueryClient();
   const chain = useChainGuard();
   const allMarkets = useAllMarkets();
   const symbols = useMarketSymbols(allMarkets.markets);
@@ -55,6 +60,20 @@ export function AssetsPage() {
     return "ready" as const;
   }, [allMarkets.markets.length, allMarkets.status]);
 
+  const surface = classifySurfaceState({
+    dataStatus:
+      marketStatus === "loading"
+        ? "loading"
+        : marketStatus === "empty"
+          ? "empty"
+          : marketStatus === "unavailable"
+            ? "unavailable"
+            : "ready",
+    hasLastKnown: marketStatus === "ready",
+    stale: !freshness.signingAllowed,
+    signingAllowed: freshness.signingAllowed,
+  });
+
   return (
     <Shell
       currentNav="assets"
@@ -68,6 +87,17 @@ export function AssetsPage() {
       onHome={() => router.push("/")}
     >
       <div className="assets-page">
+        <SurfaceState
+          state={surface}
+          topology="assets"
+          onRefresh={
+            surface === "STALE"
+              ? () => {
+                  void queryClient.invalidateQueries();
+                }
+              : undefined
+          }
+        />
         {connection.status !== "connected" ? (
           <div className="assets-banner">
             <p>CONNECT WALLET to wrap, unwrap, or create a stream.</p>
@@ -121,13 +151,16 @@ export function AssetsPage() {
         ) : null}
 
         {flow === "stream" ? (
+          <RegionErrorBoundary region="assets-stream">
           <StreamCreateFlow
             markets={allMarkets.markets}
             marketsStatus={marketStatus}
             symbolFor={(address) => symbolFor(symbols, address)}
             signingAllowed={freshness.signingAllowed && !chain.wrongChain}
           />
+          </RegionErrorBoundary>
         ) : (
+          <RegionErrorBoundary region="assets-convert">
           <ConverterFlow
             market={selected}
             underlyingSymbol={underlyingSymbol}
@@ -135,6 +168,7 @@ export function AssetsPage() {
             repayHref={repayHref}
             signingAllowed={freshness.signingAllowed && !chain.wrongChain}
           />
+          </RegionErrorBoundary>
         )}
       </div>
     </Shell>

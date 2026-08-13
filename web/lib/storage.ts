@@ -1,5 +1,6 @@
-import { parseJsonStorage, stringifyWithBigint } from "./parse";
+import type { Address } from "viem";
 import type { BlockIdentity } from "./discovery/types";
+import { parseFlowDraft, parseJsonStorage, serializeFlowDraft, stringifyWithBigint, type FlowDraft } from "./parse";
 
 /**
  * Throw-tolerant localStorage (Safari private mode throws).
@@ -87,6 +88,33 @@ export function scanCheckpointKey(chainId: number, account: string): string {
 
 export function streamCandidatesKey(chainId: number, account: string): string {
   return `ovrflo:stream-candidates:${chainId}:${account.toLowerCase()}`;
+}
+
+export type FlowDraftKind = "supply" | "borrow";
+
+/**
+ * Selections-only drafts, namespaced by factory so a fork session cannot
+ * poison mainnet storage (sweep: deployment identity, not chainId alone).
+ */
+export function flowDraftKey(
+  kind: FlowDraftKind,
+  factory: Address | string,
+  chainIdValue: number,
+  account: string,
+): string {
+  return `ovrflo:draft:${kind}:${factory.toLowerCase()}:${chainIdValue}:${account.toLowerCase()}`;
+}
+
+export function readFlowDraft(key: string): FlowDraft | null {
+  return parseFlowDraft(storageGet(key));
+}
+
+export function writeFlowDraft(key: string, draft: FlowDraft): boolean {
+  return storageSet(key, serializeFlowDraft(draft));
+}
+
+export function clearFlowDraft(key: string): boolean {
+  return storageRemove(key);
 }
 
 function isDecimalIdList(value: unknown): value is string[] {

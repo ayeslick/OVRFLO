@@ -2,7 +2,8 @@
 
 import { ActionButton } from "@/components/kit/ActionButton";
 import { Receipt, type ReceiptLine, type ReceiptState } from "@/components/kit/Receipt";
-import { SettlementTrace } from "@/components/kit/SettlementTrace";
+import { SettlementTrace, type TraceStep } from "@/components/kit/SettlementTrace";
+import { AcknowledgeRiskStep } from "@/components/first-run/AcknowledgeRiskStep";
 import { formatAddress, formatAprBps, formatId, formatMaturityDate, formatTokenAmount } from "@/lib/format";
 import { SupplyFacts } from "./Facts";
 import {
@@ -17,6 +18,7 @@ export function ReviewHandoff({
   live,
   drifted,
   checkpoint,
+  steps,
   underlyingSymbol,
   expiry,
   operator,
@@ -31,7 +33,6 @@ export function ReviewHandoff({
   positionId,
   errorCopy,
   recoveryLabel,
-  onAcknowledge,
   onApprove,
   onSupply,
   onRelatch,
@@ -42,6 +43,7 @@ export function ReviewHandoff({
   live: SupplySnapshot;
   drifted: boolean;
   checkpoint: SupplyCheckpoint;
+  steps?: readonly TraceStep[];
   underlyingSymbol: string;
   expiry: bigint;
   operator: string;
@@ -65,12 +67,14 @@ export function ReviewHandoff({
 }) {
   const needsApprove = !tokenApproved;
   const ackRequired = !acknowledged && (checkpoint === "acknowledge" || checkpoint === "review");
-  const trace = supplyTrace({
-    underlyingSymbol,
-    needsApprove,
-    ackRequired,
-    checkpoint,
-  });
+  const trace = steps
+    ? [...steps]
+    : supplyTrace({
+        underlyingSymbol,
+        needsApprove,
+        ackRequired,
+        checkpoint,
+      });
   const permissionState: ReceiptState =
     checkpoint === "approve" ? "current" : tokenApproved ? "skipped" : "ghosted";
   const actionState = actionReceiptState(checkpoint);
@@ -110,6 +114,7 @@ export function ReviewHandoff({
       </div>
       <div>
         <SettlementTrace steps={trace} />
+        {ackRequired ? <AcknowledgeRiskStep /> : null}
         {!tokenApproved ? (
           <Receipt kind="permission" state={permissionState} lines={permissionLines(frozen.amount, operator, underlyingSymbol)} />
         ) : null}
@@ -154,11 +159,6 @@ export function ReviewHandoff({
           </p>
         ) : null}
         <div className="supply-actions">
-          {checkpoint === "acknowledge" ? (
-            <ActionButton variant="primary" onClick={onAcknowledge}>
-              ACKNOWLEDGE RISK
-            </ActionButton>
-          ) : null}
           {checkpoint === "approve" && signingBlockedReason ? (
             <ActionButton disabled disabledReason={signingBlockedReason}>
               {`APPROVE ${underlyingSymbol}`}

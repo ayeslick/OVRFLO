@@ -113,6 +113,52 @@
   color: var(--dim);
 }
 
+.kit-surface-state {
+  display: grid;
+  gap: 8px;
+  padding: 10px 0;
+  font-family: var(--font-receipt), ui-monospace, monospace;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.kit-surface-state-label {
+  color: var(--ink);
+}
+
+.kit-surface-state[data-surface-state="LOADING"] .kit-surface-state-label,
+.kit-surface-state[data-surface-state="READY"] .kit-surface-state-label {
+  color: var(--dim);
+}
+
+.kit-surface-state[data-surface-state="STALE"] {
+  border-left: 2px solid var(--ink);
+  padding-left: 10px;
+}
+
+.kit-surface-state[data-surface-state="EMPTY"] .kit-surface-state-label {
+  color: var(--dim);
+}
+
+.kit-surface-state[data-surface-state="ERROR"] {
+  color: var(--negative, var(--ink));
+}
+
+.kit-refetch-notice {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  padding: 7px 0;
+  border-bottom: 1.5px solid var(--ink);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  color: var(--ink);
+  font-family: var(--font-receipt), ui-monospace, monospace;
+  text-transform: uppercase;
+}
+
 .kit-lens {
   display: flex;
   gap: 0;

@@ -151,6 +151,36 @@ export function invalidateAllOnChainReads(queryClient: QueryClient, user?: Addre
   queryClient.invalidateQueries({ queryKey: streamKeys.held(user) });
 }
 
+/**
+ * Drop every address- or chain-keyed cache entry for a departed identity so
+ * no surface can keep rendering the previous account's entities.
+ */
+export function removeIdentityQueries(
+  queryClient: QueryClient,
+  identity: { account?: Address; chainId?: number },
+) {
+  const account = identity.account?.toLowerCase();
+  const chainId = identity.chainId;
+  if (!account && chainId === undefined) return;
+  queryClient.removeQueries({
+    predicate: (query) => queryTouchesIdentity(query.queryKey, { account, chainId }),
+  });
+}
+
+export function queryTouchesIdentity(
+  queryKey: readonly unknown[],
+  identity: { account?: string; chainId?: number },
+): boolean {
+  if (identity.account) {
+    const serialised = JSON.stringify(queryKey, bigintSafe).toLowerCase();
+    if (serialised.includes(identity.account)) return true;
+  }
+  if (identity.chainId !== undefined) {
+    return queryKey.some((part) => part === identity.chainId);
+  }
+  return false;
+}
+
 const bigintSafe = (_key: string, value: unknown) => (typeof value === "bigint" ? value.toString() : value);
 
 // The held-streams list is indexer-backed, so the instant invalidation above

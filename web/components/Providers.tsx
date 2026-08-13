@@ -2,6 +2,7 @@
 
 import { QueryClientProvider } from "@tanstack/react-query";
 import { WagmiProvider } from "wagmi";
+import { useIdentityQueryReset } from "@/hooks/useIdentityQueryReset";
 import { queryClient } from "@/lib/query-client";
 import { ensureWalletKit, walletConfig } from "wallet-runtime";
 
@@ -11,10 +12,18 @@ import { ensureWalletKit, walletConfig } from "wallet-runtime";
 // production bundle.
 ensureWalletKit();
 
+function IdentityReset() {
+  useIdentityQueryReset();
+  return null;
+}
+
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <WagmiProvider config={walletConfig}>
-      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+      <QueryClientProvider client={queryClient}>
+        <IdentityReset />
+        {children}
+      </QueryClientProvider>
     </WagmiProvider>
   );
 }

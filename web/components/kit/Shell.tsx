@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { RefetchNotice } from "./RefetchNotice";
 import "./kit.css";
 
 const NAV = [
@@ -50,6 +51,7 @@ export function Shell({
       </header>
       <div className="kit-shell-body">
         {status}
+        <RefetchNotice />
         {children}
       </div>
     </div>

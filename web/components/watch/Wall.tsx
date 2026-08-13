@@ -42,6 +42,7 @@ export function Wall({
   selection,
   onSelect,
   streamsDegraded,
+  panelStatus = "ready",
 }: {
   tabs: readonly WallTab[];
   lens: LensId;
@@ -57,12 +58,13 @@ export function Wall({
   selection: WatchSelection;
   onSelect: (selection: WatchSelection) => void;
   streamsDegraded: "pending" | "could-not-ask" | null;
+  panelStatus?: "loading" | "empty" | "ready";
 }) {
   return (
     <section className="watch-wall" data-region="watch-wall" data-lens={lens}>
       <LensTabs tabs={tabs} selected={lens} onSelect={onSelectLens} />
       <div role="tabpanel" id={`lens-panel-${lens}`} aria-labelledby={`lens-tab-${lens}`}>
-        {lens === "supplied"
+        {panelStatus === "ready" && lens === "supplied"
           ? positions.map((position) => (
               <SuppliedRow
                 key={position.id.toString()}
@@ -72,7 +74,7 @@ export function Wall({
               />
             ))
           : null}
-        {lens === "borrowed"
+        {panelStatus === "ready" && lens === "borrowed"
           ? loans.map((loan) => (
               <BorrowedRow
                 key={loan.id.toString()}
@@ -89,7 +91,7 @@ export function Wall({
         {lens === "streams" && streamsDegraded ? (
           <StreamsDegraded kind={streamsDegraded} />
         ) : null}
-        {lens === "streams" && !streamsDegraded
+        {panelStatus === "ready" && lens === "streams" && !streamsDegraded
           ? streams.map((stream) => (
               <StreamRow
                 key={stream.streamId.toString()}
