@@ -1,0 +1,246 @@
+.first-run-surface,
+.first-run-chooser,
+.first-run-ack,
+.risk-note {
+  color: var(--ink);
+  background: var(--paper);
+}
+
+.first-run-bays {
+  display: grid;
+  grid-template-columns: 1fr 1.15fr 1fr;
+  gap: 28px;
+  padding: 28px 0 20px;
+  border-bottom: 1.5px solid var(--ink);
+}
+
+.first-run-kicker {
+  margin: 0 0 12px;
+  font-size: 10.5px;
+  letter-spacing: 0.14em;
+  color: var(--dim);
+  font-family: var(--font-receipt), ui-monospace, monospace;
+  font-weight: 400;
+}
+
+.first-run-teaching {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 12px;
+  font-size: 15px;
+  line-height: 1.4;
+}
+
+.first-run-cycle {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-receipt), ui-monospace, monospace;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  font-weight: 700;
+}
+
+.first-run-cycle-arrow {
+  color: var(--dim);
+  font-weight: 400;
+  margin-right: 8px;
+}
+
+.first-run-mint {
+  margin: 14px 0 18px;
+  font-size: 13px;
+  color: var(--dim);
+}
+
+.first-run-series-list {
+  margin: 0 0 16px;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 8px;
+}
+
+.first-run-series-pick {
+  width: 100%;
+  text-align: left;
+  min-height: 44px;
+  border: 1.5px solid var(--ink);
+  background: var(--paper);
+  color: var(--ink);
+  padding: 8px 12px;
+  cursor: pointer;
+  font-family: var(--font-receipt), ui-monospace, monospace;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+}
+
+.first-run-series-pick[aria-pressed="true"] {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.first-run-intents {
+  display: grid;
+  gap: 12px;
+  justify-items: start;
+}
+
+.first-run-intents .kit-action {
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+}
+
+.first-run-external {
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  font-weight: 400;
+  color: var(--dim);
+  margin-left: 8px;
+  font-family: var(--font-receipt), ui-monospace, monospace;
+}
+
+.first-run-series-pick[aria-pressed="true"] + .first-run-external,
+.first-run-intent-note {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--dim);
+  line-height: 1.4;
+}
+
+.first-run-degraded-label {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  font-family: var(--font-receipt), ui-monospace, monospace;
+}
+
+.first-run-have {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 10px;
+  font-size: 13px;
+}
+
+.first-run-have-step {
+  display: block;
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  color: var(--dim);
+  font-family: var(--font-receipt), ui-monospace, monospace;
+}
+
+.first-run-skip {
+  margin: 18px 0 0;
+  padding: 10px 0;
+  min-height: 44px;
+  border: 0;
+  background: transparent;
+  color: var(--dim);
+  cursor: pointer;
+  letter-spacing: 0.1em;
+  font-size: 11px;
+  font-family: var(--font-receipt), ui-monospace, monospace;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.first-run-chooser {
+  padding: 36px 0;
+}
+
+.first-run-chooser-lead {
+  margin: 0 0 20px;
+  font-size: 15px;
+}
+
+.first-run-chooser-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.first-run-chooser-nav .kit-action {
+  text-decoration: none;
+}
+
+.first-run-ack {
+  display: grid;
+  gap: 14px;
+  padding: 16px 0;
+  border-bottom: 1.5px solid var(--ink);
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.first-run-ack a {
+  color: var(--ink);
+}
+
+.risk-note {
+  padding: 28px 0 48px;
+  max-width: 42rem;
+}
+
+.risk-note h2 {
+  margin: 0 0 8px;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  font-weight: 400;
+  font-family: var(--font-receipt), ui-monospace, monospace;
+}
+
+.risk-section {
+  margin: 0 0 28px;
+  padding: 0 0 20px;
+  border-bottom: 1px solid #ccc;
+}
+
+.risk-section p,
+.risk-section li {
+  margin: 0 0 10px;
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+.risk-section ul {
+  margin: 0;
+  padding-left: 1.2rem;
+}
+
+.risk-docs {
+  display: grid;
+  gap: 6px;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+}
+
+.risk-docs a {
+  color: var(--ink);
+}
+
+.risk-docs span {
+  color: var(--dim);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  margin-left: 8px;
+  font-family: var(--font-receipt), ui-monospace, monospace;
+}
+
+@media (max-width: 720px) {
+  .first-run-bays {
+    grid-template-columns: 1fr;
+    gap: 24px;
+  }
+}

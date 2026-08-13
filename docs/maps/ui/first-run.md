@@ -2,8 +2,7 @@
 
 **Slug:** `FIRST-RUN` · **Control ID prefix:** `UI-FIRST-RUN-` (`../SCHEMAS.md` §1)
 
-**Incumbent code:** none until U11 lands `web/components/first-run/*` and
-`web/app/risk/page.tsx`.
+**Incumbent code:** `web/components/first-run/*` · `web/app/risk/page.tsx`.
 
 **Purpose of the region.** The app's only teaching surface: a guided path for a
 connected wallet confirmed empty of positions, loans, *and* streams, plus the
