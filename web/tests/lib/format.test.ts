@@ -4,11 +4,15 @@ import {
   formatAddress,
   formatAprBps,
   formatCountdown,
+  formatCoverDate,
   formatId,
   formatMaturityDate,
   formatMaturityId,
   formatTokenAmount,
+  formatUsd,
+  usdFieldMap,
 } from "@/lib/format";
+import { MAX_UINT128 } from "@/lib/units";
 import { formatBpsPct } from "@/lib/lending-math";
 
 describe("formatTokenAmount", () => {
@@ -33,6 +37,10 @@ describe("formatTokenAmount", () => {
     expect(formatTokenAmount(parseUnits("2.5", 6), "usdc", 6)).toBe("2.50 usdc");
   });
 
+  it("formats the uint128.max claim-everything sentinel without a huge number", () => {
+    expect(formatTokenAmount(MAX_UINT128, "ovrflo")).toBe("MAX ovrflo");
+  });
+
   it("never lets a sub-1 value display as a whole unit", () => {
     // Under round-half-up this read "1.0000" — a balance one wei short of 1
     // presented as a full unit, which is the exact overstatement M-14 names.
@@ -53,6 +61,26 @@ describe("formatBpsPct", () => {
     expect(formatBpsPct(9523n)).toBe("95.2%");
     expect(formatBpsPct(9529n)).toBe("95.2%");
     expect(formatBpsPct(500n)).toBe("5.0%");
+  });
+});
+
+describe("USD field map and formatting", () => {
+  it("shows USD beside wstETH and 1:1 ovrflo, never beside post-maturity PT claims", () => {
+    expect(usdFieldMap("wsteth")).toEqual({ show: true, label: null });
+    expect(usdFieldMap("ovrflo-1-1")).toEqual({ show: true, label: "AT 1:1 UNWRAP BASIS" });
+    expect(usdFieldMap("pt")).toEqual({ show: true, label: "AT MATURITY BASIS" });
+    expect(usdFieldMap("ovrflo-pt-claim")).toEqual({ show: false });
+    expect(usdFieldMap("never-usd")).toEqual({ show: false });
+  });
+
+  it("formats USD to cents below $1000 and whole dollars at or above", () => {
+    expect(formatUsd(123_000_000n)).toBe("$1.23");
+    expect(formatUsd(999_990_000_00n)).toBe("$999.99");
+    expect(formatUsd(1_000_000_000_00n)).toBe("$1,000");
+  });
+
+  it("prefixes cover dates with ~ at day precision", () => {
+    expect(formatCoverDate(1_782_345_600n)).toMatch(/^~/);
   });
 });
 

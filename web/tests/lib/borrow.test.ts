@@ -177,6 +177,8 @@ function borrowCreatedLog(loanId: bigint, contributed: bigint, emitter = LENDING
     data: encodeAbiParameters(
       [
         { type: "uint16" },
+        { type: "uint32" },
+        { type: "uint64" },
         { type: "uint64" },
         { type: "uint64" },
         { type: "uint128" },
@@ -184,7 +186,7 @@ function borrowCreatedLog(loanId: bigint, contributed: bigint, emitter = LENDING
         { type: "uint128" },
         { type: "uint256" },
       ],
-      [1000, 0n, 0n, contributed, 0n, 0n, 0n],
+      [1000, 0, 0n, 0n, 0n, contributed, 0n, 0n, 0n],
     ),
   } as unknown as Log;
 }

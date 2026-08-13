@@ -1,12 +1,18 @@
 import { describe, expect, it } from "vitest";
 import { BaseError, ContractFunctionRevertedError, UserRejectedRequestError } from "viem";
 import {
+  belowMinimumCopy,
+  decodeContractError,
+  disambiguateBelowMinimum,
   eligibilityErrorNames,
+  errorCatalog,
+  generatedErrorNames,
   isRevertFailure,
   isUserRejection,
   STALE_LIQUIDITY_REASONS,
   userFacingError,
 } from "@/lib/errors";
+import { MIN_LIQUIDITY_AMOUNT, MIN_STREAM_AMOUNT } from "@/lib/lending-math";
 
 describe("userFacingError", () => {
   it("maps the current lending stale-liquidity string to refresh copy", () => {
@@ -84,6 +90,66 @@ describe("STALE_LIQUIDITY_REASONS", () => {
     for (const reason of STALE_LIQUIDITY_REASONS) {
       expect(userFacingError(new Error(`execution reverted: ${reason}`))).toBe(expectedCopy[reason]);
     }
+  });
+});
+
+function revertedWith(errorName: string) {
+  return Object.assign(Object.create(ContractFunctionRevertedError.prototype) as ContractFunctionRevertedError, {
+    data: { errorName },
+    message: "reverted",
+  });
+}
+
+describe("ABI-enumerated error catalog", () => {
+  it("decodes every generated ABI error to copy plus one recovery action", () => {
+    expect(generatedErrorNames.length).toBeGreaterThan(0);
+    expect([...generatedErrorNames].sort()).toEqual(Object.keys(errorCatalog).sort());
+
+    for (const name of generatedErrorNames) {
+      const decoded = decodeContractError(revertedWith(name));
+      expect(decoded.name, name).toBe(name);
+      expect(decoded.copy.length, name).toBeGreaterThan(0);
+      expect(decoded.recovery.id, name).toBeTruthy();
+      expect(decoded.recovery.label.length, name).toBeGreaterThan(0);
+      if (name !== "BelowMinimum") {
+        expect(decoded.copy).toBe(errorCatalog[name].copy);
+        expect(decoded.recovery).toEqual(errorCatalog[name].recovery);
+      }
+    }
+  });
+});
+
+describe("BelowMinimum disambiguation", () => {
+  it("classifies stream-face when remaining is below MIN_STREAM_AMOUNT", () => {
+    expect(disambiguateBelowMinimum({ remaining: MIN_STREAM_AMOUNT - 1n })).toBe("stream-face");
+    expect(belowMinimumCopy("stream-face")).toBe(
+      "This stream's remaining value is below the minimum to borrow against.",
+    );
+  });
+
+  it("classifies fill-floor when the fill is below MIN_LIQUIDITY_AMOUNT", () => {
+    expect(
+      disambiguateBelowMinimum({
+        remaining: 10n ** 18n,
+        actualBorrow: MIN_LIQUIDITY_AMOUNT - 1n,
+      }),
+    ).toBe("fill-floor");
+    expect(belowMinimumCopy("fill-floor")).toBe("This tick does not have enough resting liquidity to fill.");
+  });
+
+  it("decodes BelowMinimum with stream fixtures to the matching copy and recovery", () => {
+    const streamFace = decodeContractError(revertedWith("BelowMinimum"), {
+      remaining: MIN_STREAM_AMOUNT - 1n,
+    });
+    expect(streamFace.copy).toBe(belowMinimumCopy("stream-face"));
+    expect(streamFace.recovery.id).toBe("change-stream");
+
+    const fillFloor = decodeContractError(revertedWith("BelowMinimum"), {
+      remaining: 10n ** 18n,
+      actualBorrow: 1n,
+    });
+    expect(fillFloor.copy).toBe(belowMinimumCopy("fill-floor"));
+    expect(fillFloor.recovery.id).toBe("change-tick");
   });
 });
 

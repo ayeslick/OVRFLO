@@ -8,7 +8,7 @@ export default defineConfig({
     environment: "jsdom",
     globals: true,
     setupFiles: ["./tests/setup.ts"],
-    include: ["tests/**/*.test.{ts,tsx}"],
+    include: ["tests/**/*.test.{ts,tsx}", "type-tests/**/*.test.ts"],
     coverage: {
       // R3/KTD5: informational only, no CI gate, no per-file threshold.
       provider: "v8",

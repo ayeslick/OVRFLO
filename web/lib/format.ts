@@ -1,4 +1,65 @@
 import type { Address } from "viem";
+import { MAX_UINT128 } from "./units";
+
+export type TokenFieldKind = "wsteth" | "ovrflo-1-1" | "ovrflo-pt-claim" | "pt" | "never-usd";
+
+export type UsdFieldBasis =
+  | { show: false }
+  | { show: true; label: null }
+  | { show: true; label: "AT 1:1 UNWRAP BASIS" }
+  | { show: true; label: "AT MATURITY BASIS" };
+
+const formatterCache = new Map<string, Intl.NumberFormat>();
+
+function formatter(locale: string, options: Intl.NumberFormatOptions): Intl.NumberFormat {
+  const key = `${locale}:${JSON.stringify(options)}`;
+  const cached = formatterCache.get(key);
+  if (cached) return cached;
+  const created = new Intl.NumberFormat(locale, options);
+  formatterCache.set(key, created);
+  return created;
+}
+
+function formatWhole(whole: bigint, locale: string): string {
+  if (whole <= BigInt(Number.MAX_SAFE_INTEGER)) {
+    return formatter(locale, { maximumFractionDigits: 0 }).format(Number(whole));
+  }
+  return whole.toString();
+}
+
+/** Truncate toward zero to `displayDecimals` of `decimals`. */
+export function formatTruncatedDecimal(
+  value: bigint,
+  decimals: number,
+  displayDecimals: number,
+  locale = "en-US",
+): string {
+  const negative = value < 0n;
+  const abs = negative ? -value : value;
+  const scale = 10n ** BigInt(decimals);
+  const whole = abs / scale;
+  const fraction = abs % scale;
+  if (displayDecimals <= 0) {
+    return `${negative ? "-" : ""}${formatWhole(whole, locale)}`;
+  }
+  const fracScale = 10n ** BigInt(decimals - displayDecimals);
+  const fracTrunc = fraction / fracScale;
+  return `${negative ? "-" : ""}${formatWhole(whole, locale)}.${fracTrunc.toString().padStart(displayDecimals, "0")}`;
+}
+
+export function usdFieldMap(kind: TokenFieldKind): UsdFieldBasis {
+  switch (kind) {
+    case "wsteth":
+      return { show: true, label: null };
+    case "ovrflo-1-1":
+      return { show: true, label: "AT 1:1 UNWRAP BASIS" };
+    case "pt":
+      return { show: true, label: "AT MATURITY BASIS" };
+    case "ovrflo-pt-claim":
+    case "never-usd":
+      return { show: false };
+  }
+}
 
 export function formatAddress(address?: Address | null) {
   if (!address) return "—";
@@ -14,29 +75,23 @@ export function formatAprBps(aprBps: bigint | number) {
 
 export function formatTokenAmount(value: bigint | undefined, symbol: string, decimals = 18) {
   if (value === undefined) return `— ${symbol}`;
+  if (value === MAX_UINT128) return `MAX ${symbol}`;
   const scale = 10n ** BigInt(decimals);
   const whole = value / scale;
   const fraction = value % scale;
   const displayDecimals = whole === 0n && fraction > 0n ? 4 : 2;
-  const divisor = 10n ** BigInt(decimals - displayDecimals);
-  // R21/M-14: floor, never round half-up. Rounding up overstates what the user
-  // holds — a 0.999 balance rendering as "1.00" invites them to spend a whole
-  // unit they do not have and eat the revert. Displaying slightly less than the
-  // truth is the safe direction for a balance.
-  const roundedTotal = value / divisor;
-  const displayScale = 10n ** BigInt(displayDecimals);
-  const displayWhole = roundedTotal / displayScale;
-  const displayFraction = roundedTotal % displayScale;
-  return `${displayWhole}.${displayFraction.toString().padStart(displayDecimals, "0")} ${symbol}`;
+  return `${formatTruncatedDecimal(value, decimals, displayDecimals)} ${symbol}`;
 }
 
-// DESIGN.md §10 gives maturity distinct forms per job. L-10: only the bare date
-// existed, so identifiers had no compact form and the countdown lost its hours.
-// The spec's caption form ("Matures Jun 27, 2027") has no call site today — no
-// surface renders maturity as prose — so it is deliberately not defined here
-// rather than shipped as dead code (R30). Add it with its first consumer.
+export function formatUsd(usd8: bigint, locale = "en-US"): string {
+  const dollars8 = usd8 < 0n ? 0n : usd8;
+  const dollars = dollars8 / 100_000_000n;
+  if (dollars >= 1000n) {
+    return `$${formatTruncatedDecimal(dollars8, 8, 0, locale)}`;
+  }
+  return `$${formatTruncatedDecimal(dollars8, 8, 2, locale)}`;
+}
 
-/// Bare date, for places that supply their own surrounding prose.
 export function formatMaturityDate(timestamp: bigint | undefined) {
   if (!timestamp) return "unknown";
   const date = new Date(Number(timestamp) * 1000);
@@ -48,7 +103,6 @@ export function formatMaturityDate(timestamp: bigint | undefined) {
   }).format(date);
 }
 
-/// Identifier form: `27JUN27` — day, month, two-digit year, no separators.
 export function formatMaturityId(timestamp: bigint | undefined) {
   if (!timestamp) return "—";
   const date = new Date(Number(timestamp) * 1000);
@@ -58,8 +112,17 @@ export function formatMaturityId(timestamp: bigint | undefined) {
   return `${day}${month}${year}`;
 }
 
-/// Countdown form: `142d 06h`. Floors both parts — a countdown that rounds up
-/// tells the user they have more time than they do.
+export function formatCoverDate(timestamp: bigint): string {
+  const date = new Date(Number(timestamp) * 1000);
+  const formatted = new Intl.DateTimeFormat("en", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(date);
+  return `~${formatted}`;
+}
+
 export function formatCountdown(secondsRemaining: bigint) {
   if (secondsRemaining <= 0n) return "0d 00h";
   const days = secondsRemaining / 86_400n;
@@ -69,4 +132,16 @@ export function formatCountdown(secondsRemaining: bigint) {
 
 export function formatId(id: bigint | undefined) {
   return id === undefined ? "—" : `#${id.toString()}`;
+}
+
+export function formatAsOf(timestamp: bigint, locale = "en-US"): string {
+  const date = new Date(Number(timestamp) * 1000);
+  const time = new Intl.DateTimeFormat(locale, {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+    timeZone: "UTC",
+  }).format(date);
+  return `EVENTS AS OF ${time}`;
 }

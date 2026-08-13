@@ -1,50 +1,131 @@
 import { ZERO_ADDRESS } from "./config";
 import type { LiquidityPosition, Loan } from "./types";
-
-export const APR_STEP_BPS = 100;
-export const MAX_ENUMERATION_IDS = 500n;
-export const MAX_UINT128 = (1n << 128n) - 1n;
+import { MAX_UINT128, mulDiv as mulDivAmount, type OvrfloWei, wei, type Wei } from "./units";
 
 export const WAD = 10n ** 18n;
 export const BPS = 10_000n;
 export const YEAR_SECONDS = 31_536_000n;
+export const APR_STEP_BPS = 100;
+export const MAX_ENUMERATION_IDS = 500n;
+export { MAX_UINT128 };
 
-// Display-only mirrors of StreamPricing (src/StreamPricing.sol). BigInt `/` floors,
-// matching the contract's Math.mulDiv. Every number a transaction submits must come
-// from the contract's own quote() read — never from these.
+export const UNIT = 10n ** 12n;
+export const MIN_LIQUIDITY_AMOUNT = 10n ** 15n;
+export const MIN_STREAM_AMOUNT = 10n ** 6n;
 
-// f = WAD + ttm * apr * WAD / (YEAR * BPS), mirrors StreamPricing.factor.
-export function factorWad(aprBps: number, ttmSeconds: bigint): bigint {
-  return WAD + (ttmSeconds * BigInt(aprBps) * WAD) / (YEAR_SECONDS * BPS);
+export type StreamBuckets = {
+  remaining: Wei;
+  claimable: Wei;
+  locked: Wei;
+};
+
+export function mulDiv(a: bigint, b: bigint, den: bigint): bigint {
+  if (den <= 0n) throw new Error("mulDiv denominator must be positive");
+  return (a * b) / den;
 }
 
-// Fraction of the stream's remaining value the borrower receives now, net of fee,
-// in plain bps. Invariant: upfrontBps ≈ netToBorrower * BPS / (obligation + residual)
-// for a full borrow.
+export function mulDivUp(a: bigint, b: bigint, den: bigint): bigint {
+  if (den <= 0n) throw new Error("mulDivUp denominator must be positive");
+  const prod = a * b;
+  const floor = prod / den;
+  return prod % den === 0n ? floor : floor + 1n;
+}
+
+/** `f = WAD + ttm * apr * WAD / (YEAR * BPS)`, mirrors StreamPricing.factor. */
+export function factor(aprBps: number, ttmSeconds: bigint): bigint {
+  return WAD + mulDiv(ttmSeconds, BigInt(aprBps) * WAD, YEAR_SECONDS * BPS);
+}
+
+export function factorWad(aprBps: number, ttmSeconds: bigint): bigint {
+  return factor(aprBps, ttmSeconds);
+}
+
+/** Floor: discounted present value of `remaining`. Mirrors StreamPricing.grossPrice. */
+export function grossPrice(remaining: bigint, aprBps: number, ttmSeconds: bigint): bigint {
+  return mulDiv(remaining, WAD, factor(aprBps, ttmSeconds));
+}
+
+/**
+ * Ceil: future value of `borrowAmount`. Mirrors StreamPricing.obligation.
+ * Throws when the result exceeds uint128 (SafeCast analogue).
+ */
+export function obligation(borrowAmount: bigint, aprBps: number, ttmSeconds: bigint): bigint {
+  const value = mulDivUp(borrowAmount, factor(aprBps, ttmSeconds), WAD);
+  if (value > MAX_UINT128) {
+    throw new Error("obligation overflows uint128");
+  }
+  return value;
+}
+
+export function obligationForFill(
+  borrowAmount: bigint,
+  grossPrice_: bigint,
+  remaining: bigint,
+  aprBps: number,
+  ttmSeconds: bigint,
+): bigint {
+  if (borrowAmount === grossPrice_) return remaining;
+  return obligation(borrowAmount, aprBps, ttmSeconds);
+}
+
+/** Floor: `amount * feeBps / BPS`. Mirrors StreamPricing.fee. */
+export function fee(borrowAmount: bigint, feeBps: number): bigint {
+  if (feeBps === 0) return 0n;
+  return mulDiv(borrowAmount, BigInt(feeBps), BPS);
+}
+
+export function netToBorrower(borrowAmount: bigint, feeBps: number): bigint {
+  return borrowAmount - fee(borrowAmount, feeBps);
+}
+
 export function upfrontBps(aprBps: number, ttmSeconds: bigint, feeBps: number): bigint {
-  const grossBps = (WAD * BPS) / factorWad(aprBps, ttmSeconds);
+  const grossBps = (WAD * BPS) / factor(aprBps, ttmSeconds);
   return (grossBps * (BPS - BigInt(feeBps))) / BPS;
 }
 
-// Simple-interest lender return over the remaining period, in plain bps.
 export function lenderReturnBps(aprBps: number, ttmSeconds: bigint): bigint {
   return (BigInt(aprBps) * ttmSeconds) / YEAR_SECONDS;
 }
 
-// bps -> percent string with exactly one decimal, truncated (never rounded),
-// matching the contract's floor bias. APR rates use formatAprBps (two decimals).
 export function formatBpsPct(x: bigint): string {
   const whole = x / 100n;
   const tenth = (x % 100n) / 10n;
   return `${whole}.${tenth}%`;
 }
 
-export function loanOutstanding(loan: Pick<Loan, "obligation" | "drawn" | "repaid">) {
+/**
+ * Sablier three-bucket vocabulary (vesting-data guide):
+ * remaining = deposited − withdrawn − refunded
+ * claimable = streamed − withdrawn
+ * locked = deposited − streamed − refunded
+ */
+export function streamBuckets(input: {
+  deposited: bigint;
+  withdrawn: bigint;
+  refunded: bigint;
+  streamed: bigint;
+}): StreamBuckets {
+  const remaining = input.deposited - input.withdrawn - input.refunded;
+  const claimable = input.streamed - input.withdrawn;
+  const locked = input.deposited - input.streamed - input.refunded;
+  return {
+    remaining: wei(remaining < 0n ? 0n : remaining),
+    claimable: wei(claimable < 0n ? 0n : claimable),
+    locked: wei(locked < 0n ? 0n : locked),
+  };
+}
+
+export function loanOutstanding(loan: { obligation: bigint; drawn: bigint; repaid: bigint }) {
   const satisfied = loan.drawn + loan.repaid;
   return satisfied >= loan.obligation ? 0n : loan.obligation - satisfied;
 }
 
-export function isLoanOpen(loan: Pick<Loan, "closed" | "obligation" | "drawn" | "repaid">) {
+export function isLoanOpen(loan: {
+  closed: boolean;
+  obligation: bigint;
+  drawn: bigint;
+  repaid: bigint;
+}) {
   return !loan.closed && loanOutstanding(loan) > 0n;
 }
 
@@ -52,7 +133,7 @@ export function recoveredForClaimable({
   loan,
   withdrawable,
 }: {
-  loan: Pick<Loan, "drawn" | "repaid" | "closed" | "obligation">;
+  loan: { drawn: bigint; repaid: bigint; closed: boolean; obligation: bigint };
   withdrawable: bigint;
 }) {
   const outstanding = loanOutstanding(loan);
@@ -73,6 +154,29 @@ export function aprChoices(minBps: number, maxBps: number, stepBps = APR_STEP_BP
     choices.push(aprBps);
   }
   return choices;
+}
+
+export function floorToUnit(amount: bigint, unit: bigint = UNIT): bigint {
+  if (unit <= 0n) throw new Error("UNIT must be positive");
+  return amount - (amount % unit);
+}
+
+export function unitsToWei(availableUnits: bigint, unit: bigint = UNIT): bigint {
+  return availableUnits * unit;
+}
+
+export function weiToUnits(amount: bigint, unit: bigint = UNIT): bigint {
+  return amount / unit;
+}
+
+/** Ratio in bps, bigint mulDiv — never `Number` on the token amount. */
+export function ratioBps(numerator: bigint, denominator: bigint): bigint {
+  if (denominator <= 0n) return 0n;
+  return mulDiv(numerator, BPS, denominator);
+}
+
+export function scaleOvrflo(amount: OvrfloWei, num: bigint, den: bigint): OvrfloWei {
+  return mulDivAmount(amount, num, den);
 }
 
 export function liquidityExists(position: Pick<LiquidityPosition, "lender">) {

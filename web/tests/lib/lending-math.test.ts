@@ -3,8 +3,12 @@ import {
   aprChoices,
   BPS,
   enumerateIds,
+  factor,
   factorWad,
+  fee,
+  floorToUnit,
   formatBpsPct,
+  grossPrice,
   isLoanOpen,
   lenderReturnBps,
   liquidityExists,
@@ -12,7 +16,14 @@ import {
   loanOutstanding,
   MAX_ENUMERATION_IDS,
   MAX_UINT128,
+  mulDiv,
+  netToBorrower,
+  obligation,
+  obligationForFill,
+  ratioBps,
   recoveredForClaimable,
+  streamBuckets,
+  UNIT,
   upfrontBps,
   WAD,
   YEAR_SECONDS,
@@ -129,6 +140,67 @@ describe("lending math", () => {
 
   it("pins MAX_UINT128 to the real uint128 max (the claim max-amount sentinel)", () => {
     expect(MAX_UINT128).toBe(340_282_366_920_938_463_463_374_607_431_768_211_455n);
+  });
+
+  it("agrees with StreamPricing.math fixture values for factor, gross, obligation, and fee", () => {
+    const ether = 10n ** 18n;
+    const halfYearExact = 182n * 86_400n + 12n * 3_600n;
+    expect(factor(1000, YEAR_SECONDS)).toBe(1_100_000_000_000_000_000n);
+    expect(factor(2500, halfYearExact)).toBe(1_125_000_000_000_000_000n);
+    expect(factor(0, YEAR_SECONDS)).toBe(WAD);
+    expect(factor(1000, 0n)).toBe(WAD);
+    expect(grossPrice(110n * ether, 1000, YEAR_SECONDS)).toBe(100n * ether);
+    expect(grossPrice(100n * ether, 0, YEAR_SECONDS)).toBe(100n * ether);
+    expect(grossPrice(100n * ether, 1000, 0n)).toBe(100n * ether);
+    expect(grossPrice(1n, 65_535, 10n * YEAR_SECONDS)).toBe(0n);
+    expect(obligation(100n * ether, 1000, YEAR_SECONDS)).toBe(110n * ether);
+    expect(obligation(50n * ether, 0, YEAR_SECONDS)).toBe(50n * ether);
+    expect(obligation(50n * ether, 1000, 0n)).toBe(50n * ether);
+    expect(fee(99n, 0)).toBe(0n);
+    expect(fee(99n, 100)).toBe(0n);
+    expect(fee(100n, 100)).toBe(1n);
+    expect(netToBorrower(100n * ether, 40)).toBe(100n * ether - fee(100n * ether, 40));
+  });
+
+  it("reverts obligation when the ceil exceeds uint128", () => {
+    expect(() => obligation(MAX_UINT128, 1000, 50n * YEAR_SECONDS)).toThrow(/uint128/);
+  });
+
+  it("ceils obligation by at most one wei when mulmod != 0", () => {
+    const borrowAmount = 97n * 10n ** 18n + 1n;
+    const f = factor(1000, YEAR_SECONDS);
+    const floored = (borrowAmount * f) / WAD;
+    expect(obligation(borrowAmount, 1000, YEAR_SECONDS)).toBe(floored + 1n);
+  });
+
+  it("fast-paths obligationForFill when borrowAmount equals grossPrice", () => {
+    const remaining = 110n * 10n ** 18n;
+    const price = grossPrice(remaining, 1000, YEAR_SECONDS);
+    expect(obligationForFill(price, price, remaining, 1000, YEAR_SECONDS)).toBe(remaining);
+  });
+
+  it("uses Sablier remaining / claimable / locked buckets", () => {
+    const buckets = streamBuckets({
+      deposited: 100n,
+      withdrawn: 10n,
+      refunded: 0n,
+      streamed: 40n,
+    });
+    expect(buckets.remaining).toBe(90n);
+    expect(buckets.claimable).toBe(30n);
+    expect(buckets.locked).toBe(60n);
+  });
+
+  it("keeps ratio math exact above 2^53", () => {
+    const num = 2n ** 53n;
+    const den = 2n ** 54n + 3n;
+    expect(Number(num) === Number(num + 1n)).toBe(true);
+    expect(ratioBps(num, den)).toBe(mulDiv(num, BPS, den));
+  });
+
+  it("floors odd-wei inputs to UNIT", () => {
+    expect(floorToUnit(UNIT + 1n)).toBe(UNIT);
+    expect(floorToUnit(UNIT - 1n)).toBe(0n);
   });
 
   it("drops pending stream recovery once a loan is closed", () => {
