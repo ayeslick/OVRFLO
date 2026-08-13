@@ -94,9 +94,10 @@ Current state of the fill:
 | `docs/adr/README.md` | published |
 | `.scratch/decisions/` process | published — local only, see `SCHEMAS.md` §4 |
 | `docs/maps/ui/` region briefs | filled — eight regions (U2); coverage table in `ui/README.md` |
-| `docs/maps/state/` keys + generated index | filled — 50 keys, index generated |
+| `docs/maps/state/` keys + generated index | filled — watch-surface catalog (U3); index generated |
 | `web/reviews/testing.md` + accountability | current as of 2026-08-03 |
-| `ui/CODING_STANDARD.md` | extracted from the retired six-region briefs; U3 re-extracts against the eight |
+| `ui/CODING_STANDARD.md` | re-extracted from the eight live briefs (U3) |
+| `docs/solutions/patterns/ovrflo-web-standard.md` | published (U3) |
 | Presence gate | wired — `npm --prefix web run lint:maps` |
 | `STACK_FITNESS.md` | published — scored 2026-08-03; re-run is Owner-scheduled |
 

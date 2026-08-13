@@ -1,147 +1,80 @@
 # View state
 
-Selection, expansion, and overlay state — what the user is currently looking at.
-All `pure-client`: none of it is chain truth, and none of it may gate an action.
+Lens, selection, USD display mode, shell chrome, first-run memory, and the ALL
+RATES workspace flag — what the user is currently looking at.
+All `pure-client` except where a note points at an on-chain companion: none of
+it is chain truth, and none of it may gate an action.
 
 Entry format and rules: `README.md`.
 
 ---
 
-### `markets.selected-market`
+### `watch.lens`
 
-The market whose row is expanded in the table. `null` collapses every row.
-
-- **trust_domain:** `pure-client`
-- **writers:**
-  - `web/components/MarketsApp.tsx` — owns the `selectedMarket` state; clears it to `null` when the connected address changes
-  - `web/components/MarketsTable.tsx` — calls `onSelect(expanded ? null : market)` from the row toggle
-- **readers:**
-  - `web/components/MarketsTable.tsx` — `selected` prop decides which row reads as expanded and whether the detail region renders
-  - `web/components/MarketRowDetail.tsx` — rendered only for the selected market; every read it issues is scoped to it
-- **notes:** Level one of the two-level view state; `markets.active-mode` is level
-  two. Collapsing the row is what stops the row's historical scans, so this key
-  bounds work as well as layout. The signer-switch reset in `MarketsApp` is
-  deliberate — an expanded row's balances describe the previous account.
-
-### `markets.active-mode`
-
-The `{ market, action }` pair backing the action overlay. `null` means no overlay.
+Which role lens is active: `supplied` · `borrowed` · `streams`.
 
 - **trust_domain:** `pure-client`
 - **writers:**
-  - `web/components/MarketsApp.tsx` — owns `activeMode`; sets it from `onMode`, clears it on overlay close and on signer switch
-  - `web/components/MarketsTable.tsx` — forwards `onMode(selected, action)` from the expanded detail
-  - `web/components/MarketRowDetail.tsx` — raises `onMode` from the per-action controls
+  - `web/components/kit/LensTabs.tsx` — landing U4: APG tablist writes URL `?lens=` and per-wallet localStorage
+  - `web/app/page.tsx` — resolution order: URL param → per-wallet memory → supplied default
 - **readers:**
-  - `web/components/MarketsApp.tsx` — gates whether the overlay mounts at all; a null value renders no overlay
-  - `web/components/MarketDetail.tsx` — renders the overlay for `activeMode.market` and `activeMode.action`
-- **notes:** Closing the overlay clears this key only — the row stays expanded. The
-  overlay scrim blocks the table while open, so this key and
-  `markets.selected-market` can never point at different markets. Changing that
-  invariant is a state-map change, not a styling change.
+  - `web/components/watch/Wall.tsx` — landing U7: which row set to render
+  - `web/components/kit/LensTabs.tsx` — landing U4: selected tab
+- **notes:** Resolution order is URL → per-wallet memory → supplied (dual-role
+  wallets; lenders visit most, on claim cadence). An invalid URL value is
+  ignored. Memory is keyed by lowercased address; a different account never
+  inherits the previous account's lens. A lens whose **confirmed** count is
+  zero is hidden; a pending or failed book read is not a confirmed zero
+  (`UI-WATCH-LENS`). Client-only: apply in an effect after first paint, never
+  a render-read of localStorage (static-export hydration). Throw-tolerant
+  storage wrapper (U6).
 
-### `markets.row-detail.advanced-open`
+### `watch.selected-entity`
 
-Whether the expanded row's advanced (raw-value) block is showing.
+The entity whose detail is open: `{ kind: position | loan | stream, id }` or none.
 
 - **trust_domain:** `pure-client`
 - **writers:**
-  - `web/components/MarketRowDetail.tsx` — `advancedOpen` toggle
+  - `web/components/watch/Wall.tsx` — landing U7: `UI-WATCH-SELECT` writes `?position=` / `?loan=` / `?stream=`
+  - `web/app/page.tsx` — hydrates from the URL; clears on disconnect
 - **readers:**
-  - `web/components/MarketRowDetail.tsx` — gates rendering of the advanced block
-- **notes:** Local disclosure only. It hides presentation, never a control that
-  changes what an action does.
+  - `web/components/watch/SuppliedDetail.tsx` — landing U7: mounted when kind is `position`
+  - `web/components/watch/BorrowedDetail.tsx` — landing U7: mounted when kind is `loan` (active)
+  - `web/components/watch/StreamDetail.tsx` — landing U7: mounted when kind is `stream`
+  - `web/components/watch/ClosedLoanDetail.tsx` — landing U7: mounted when kind is `loan` (SETTLED)
+  - `web/components/watch/Wall.tsx` — landing U7: which row reads as selected
+- **notes:** URL carries selection at every width so deep links and Back work
+  (KTD13). Wide: detail in place. Narrow (<1024px): `watch.narrow-nav` list→detail.
+  Selecting does not authorise; it only scopes which on-chain entity is shown.
+  Account change clears this key.
 
-### `positions.advanced-open`
+### `watch.narrow-nav`
 
-The same disclosure toggle inside the per-market position list.
+Whether the narrow viewport is showing the wall list or the selected detail.
 
 - **trust_domain:** `pure-client`
 - **writers:**
-  - `web/components/PositionList.tsx` — `advancedOpen` toggle
+  - `web/components/watch/Wall.tsx` — landing U7: list vs detail from viewport + `watch.selected-entity`
 - **readers:**
-  - `web/components/PositionList.tsx` — gates rendering of the advanced block
-- **notes:** Deliberately separate from `markets.row-detail.advanced-open`; the two
-  disclosures are independent and sharing one key would couple them.
+  - `web/components/watch/Wall.tsx` — landing U7: `UI-WATCH-NARROW-NAV` return affordance
+- **notes:** Derived from viewport and selection, not a third URL param. The
+  URL still carries the selected entity so Back deselects. Below 1024px only.
 
-### `positions.loaded-user`
+### `usd.mode`
 
-The address whose personal history the user has explicitly asked to load.
+Whether amounts emphasize token units or a USD reference. Default `token`.
 
 - **trust_domain:** `pure-client`
 - **writers:**
-  - `web/components/PositionSummary.tsx` — set to the connected address by the LOAD POSITIONS button
+  - `web/components/kit/TokenUsdSwitch.tsx` — landing U4: `UI-SHELL-TOKEN-USD`
 - **readers:**
-  - `web/components/PositionSummary.tsx` — compares against the connected address; renders the load prompt until they match, then mounts `LoadedPositionSummary`
-- **notes:** This is the consent gate for historical scanning: no candidate
-  discovery or hydration runs for an account until the user asks. It is compared
-  case-insensitively against the live connected address, so a signer switch drops
-  back to the prompt rather than showing the previous account's history. It gates
-  *work*, never *permission* — nothing downstream treats it as authorisation.
-
-### `positions.aggregates`
-
-Per-market rollups reported upward by each mounted market row, keyed by market.
-
-- **trust_domain:** `pure-client`
-- **writers:**
-  - `web/components/PositionSummary.tsx` — `onData(key, data)` inserts or removes one market's aggregate
-- **readers:**
-  - `web/components/PositionSummary.tsx` — reduces the rows into per-symbol supplied/claimable totals and the loan summary
-- **notes:** Derived state, not a fact: every value in it originates in an
-  `on-chain` or `projection` key owned elsewhere. Each row carries its own
-  `status`, and a symbol renders `—` until every market reporting under it is
-  ready — one market's failure must never be absorbed into another market's total.
-  Summing across mixed-readiness rows would manufacture a confident wrong number,
-  which is the failure this shape exists to prevent.
-
-### `positions.claim-all-open`
-
-Whether the Claim All modal is mounted.
-
-- **trust_domain:** `pure-client`
-- **writers:**
-  - `web/components/PositionSummary.tsx` — `claimAllOpen`, set by the CLAIM ALL control and cleared on close
-- **readers:**
-  - `web/components/PositionSummary.tsx` — mounts `ClaimAllModal`
-- **notes:** Unmounting the modal discards the whole queue surface
-  (`queue.rows` and the `claim-all.*` keys). Confirmed rows are already on chain;
-  the queue's own history is not recoverable across a close.
-
-### `chrome.market-detail.reload-key`
-
-Remount counter for the overlay body after an error-boundary reset.
-
-- **trust_domain:** `pure-client`
-- **writers:**
-  - `web/components/MarketDetail.tsx` — incremented by `ModalErrorBoundary`'s `onReset`
-- **readers:**
-  - `web/components/MarketDetail.tsx` — passed as `key` to the form body, forcing a fresh mount
-- **notes:** Only the body sits inside the boundary; the header and close button
-  stay outside so a body-level throw never traps the user. Incrementing this key
-  discards all `form-state.md` keys for that form by remounting — which is the
-  point, since the form state that produced the throw is not trustworthy.
-
-### `chrome.now-seconds`
-
-The browser's current wall-clock second, used for countdowns and maturity display.
-
-- **trust_domain:** `pure-client`
-- **writers:**
-  - `web/hooks/useNowSeconds.ts` — interval tick from `Date.now()`
-- **readers:**
-  - `web/components/MarketsTable.tsx` — maturity and rate-window display
-  - `web/components/MarketRowDetail.tsx` — countdown display
-  - `web/components/PositionList.tsx` — stream progress display
-  - `web/components/action-flow/SupplyFlow.tsx` — window display
-  - `web/components/action-flow/BorrowFlow.tsx` — window display
-  - `web/components/action-flow/ConvertFlow.tsx` — window display
-  - `web/components/action-flow/PositionFlow.tsx` — window display
-- **notes:** Client clock, not block time — it can be wrong by any amount and is
-  attacker-controlled on the user's own machine. Display only. Anything that
-  decides whether an action is permitted uses block timestamp
-  (`chain.block-timestamp`) or the contract's own check. The deferred variant
-  returns `null` before hydration so server and client renders agree.
+  - `web/components/kit/Amount.tsx` — landing U4: companion USD figure
+  - `web/components/kit/Receipt.tsx` — landing U4: **ignores this key** — receipts stay token-exact
+  - `web/components/watch/SuppliedDetail.tsx` — landing U7: hero companion
+- **notes:** Display mode only. Never changes calldata, allowances, receipts, or
+  gates. Persisted in throw-tolerant storage; applied in an effect after first
+  paint. When `usd.staleness` is unavailable the switch is disabled
+  (`USD UNAVAILABLE`) and this key must not print a guessed figure.
 
 ### `chrome.copy-value.copied`
 
@@ -151,6 +84,78 @@ Transient "copied" acknowledgement on a copyable value.
 - **writers:**
   - `web/components/CopyValue.tsx` — set on copy, cleared by a timer
 - **readers:**
-  - `web/components/CopyValue.tsx` — swaps the control's label
-- **notes:** Catalogued for completeness so the index's module coverage is honest.
-  It carries no product meaning.
+  - `web/components/CopyValue.tsx` — swaps the control's label (`UI-SHELL-ADDRESS-COPY`)
+- **notes:** Catalogued so module coverage is honest. No product meaning.
+
+### `review.reload-key`
+
+Remount counter for a review-body error-boundary reset.
+
+- **trust_domain:** `pure-client`
+- **writers:**
+  - `web/components/kit/SettlementTrace.tsx` — landing U4: incremented by `UI-REVIEW-ERROR-BOUNDARY` `onReset`
+- **readers:**
+  - `web/components/kit/SettlementTrace.tsx` — landing U4: passed as `key` to the form body
+- **notes:** Only the body sits inside the boundary; header and close stay
+  outside so a body-level throw never traps the user. Incrementing discards
+  `form-state.md` keys for that form by remounting. Distinct from
+  `UI-SHELL-REGION-BOUNDARY` / `UI-SHELL-ROUTE-ERROR`.
+
+### `rates.workspace-open`
+
+Whether the ALL RATES expert workspace is open, and which flow opened it.
+
+- **trust_domain:** `pure-client`
+- **writers:**
+  - `web/components/borrow/RateStep.tsx` — landing U9: `UI-BORROW-ALL-RATES`
+  - `web/components/supply/RateStep.tsx` — landing U8: `UI-SUPPLY-ALL-RATES`
+  - `web/components/rates/Workspace.tsx` — landing U8/U9: `UI-RATES-CLOSE` / successful pick
+- **readers:**
+  - `web/components/rates/Workspace.tsx` — landing U8/U9: `borrow-context` vs `supply-context`
+- **notes:** A pick writes `action.selected-apr-raw` and closes. Escape / close
+  without a pick leaves the caller's tick standing. This workspace does not
+  sign (`UI-RATES-WORKSPACE`).
+
+### `first-run.dismissed`
+
+Whether the connected empty wallet has dismissed the guided first run.
+
+- **trust_domain:** `pure-client`
+- **writers:**
+  - `web/components/first-run/Surface.tsx` — landing U11: `UI-FIRST-RUN-DISMISS`
+- **readers:**
+  - `web/app/page.tsx` — chooser vs guided when emptiness is confirmed
+  - `web/components/first-run/Chooser.tsx` — landing U11: `UI-FIRST-RUN-CHOOSER`
+- **notes:** Does not assert emptiness — R12 emptiness is on-chain books plus
+  stream **truth**, and discovery could-not-ask never reaches first-run.
+  Persisted per wallet; effect-applied. Dismissing still requires
+  `persist.acknowledgment` before the first write.
+
+### `persist.acknowledgment`
+
+Whether this wallet has completed `UI-REVIEW-ACKNOWLEDGE-RISK`.
+
+- **trust_domain:** `pure-client`
+- **writers:**
+  - `web/hooks/useAcknowledgment.ts` — landing U6: one-time per address
+- **readers:**
+  - `web/components/kit/SettlementTrace.tsx` — landing U4: inserts the ack stage on the first write
+  - `web/app/risk/page.tsx` — landing U11: does not fork the SETTLEMENT step
+- **notes:** Reads are never gated by acknowledgment — only the first write
+  (`UI-FIRST-RUN-RISK` rule 5). Throw-tolerant storage. Never a safety score.
+
+### `persist.scan-checkpoint`
+
+Per-wallet last-scanned-block for stream-candidate discovery.
+
+- **trust_domain:** `pure-client`
+- **writers:**
+  - `web/hooks/useStreams.ts` — landing U6: `max(existing, new)` so a stale tab cannot regress a fresher tab
+- **readers:**
+  - `web/hooks/useStreams.ts` — landing U6: incremental scan from checkpoint; cold scan from deployment block once per wallet+device
+  - `web/lib/discovery/log-scanner.ts` — range start
+- **notes:** Not a projection value and not an authority. A missing or throwing
+  store falls back to cold-scan, never errors (Safari private mode). Does not
+  gate. If history growth ever outpaces incremental scan, that is the recorded
+  trigger to revisit the no-indexer decision — a `ponytail:` ceiling on the
+  scanner, not a new key.

@@ -8,6 +8,10 @@ the wallet provider) and is the authority the UI is allowed to gate on.** It doe
 authority for Solidity entry points and contract state. These entries answer
 "which browser modules depend on this chain fact?", nothing more.
 
+USD feed keys (`usd.price`, `usd.staleness`) are on-chain **and display-only**:
+they never appear on receipts, never enter calldata, and never reach a write
+gate. Token amounts remain the signed unit.
+
 Entry format and rules: `README.md`.
 
 ---
@@ -20,25 +24,21 @@ The wallet connection: status, connected addresses, and chain ID.
 - **writers:**
   - `web/components/Providers.tsx` — mounts the wagmi and AppKit providers that own the connection
   - `web/components/WalletRuntime.tsx` — connect / disconnect surface
+  - `web/components/WalletControl.tsx` — landing U7: shell wallet control
 - **readers:**
-  - `web/components/MarketsApp.tsx` — derives the connected address; clears `markets.selected-market` and `markets.active-mode` when it changes
+  - `web/app/page.tsx` — R12 entry: disconnected vs syncing vs watch vs first-run
   - `web/hooks/useChainGuard.ts` — derives `wrongChain` against the configured chain
   - `web/hooks/useWriteFlow.ts` — builds the execution identity every write is checked against
-  - `web/hooks/useClaimAllExecution.ts` — supplies the queue's owning identity
-  - `web/components/action-flow/SupplyFlow.tsx` — signer-switch reset
-  - `web/components/action-flow/BorrowFlow.tsx` — signer-switch reset
-  - `web/components/action-flow/RepayFlow.tsx` — signer-switch reset
-  - `web/components/action-flow/ConvertFlow.tsx` — signer-switch reset
-  - `web/components/action-flow/PositionFlow.tsx` — signer-switch reset
-  - `web/components/action-flow/ClaimFlow.tsx` — signer-switch reset
+  - `web/hooks/useWalletChangeReset.ts` — raises `action.wallet-changed` on address change
+  - `web/components/watch/Wall.tsx` — landing U7: scopes the wall to the connected account
 - **notes:** Provider-authoritative rather than contract-read, and the one
   `on-chain` key that gates directly: `useChainGuard` replaces every primary
-  action control with a switch-network prompt on the wrong chain. The gate is
-  only half of it — every write also names its expected chain, so a broadcast is
-  refused at the write layer even when the gate is bypassed by a stale tab or a
-  switch that races a click. `wrongChain` is deliberately `false` while
-  disconnected or reconnecting, so a switch-network prompt never displaces
-  CONNECT WALLET.
+  write surface with a switch-network prompt on the wrong chain
+  (`UI-SHELL-NETWORK-GATE`). Every write also names its expected chain, so a
+  broadcast is refused at the write layer even when the gate is bypassed.
+  `wrongChain` is deliberately `false` while disconnected or reconnecting, so a
+  switch-network prompt never displaces `CONNECT WALLET`. Disconnecting clears
+  account-scoped UI; a transaction already broadcast continues on chain.
 
 ### `chain.vault-registry`
 
@@ -49,33 +49,35 @@ The factory's vault set and each vault's underlying, ovrfloToken, and lending ad
   - `web/hooks/useOvrflos.ts` — batched factory reads (`ovrfloCount`, `ovrflos`, `ovrfloInfo`, `ovrfloToLending`)
 - **readers:**
   - `web/hooks/useAllMarkets.ts` — the vault list every market enumeration starts from
-  - `web/hooks/useHeldStreams.ts` — the vault set stream discovery is scoped to, and the readiness precondition for starting it
+  - `web/hooks/useStreams.ts` — landing U6: vault set that stream discovery is scoped to, and the readiness precondition for starting it
 - **notes:** Fails closed in two directions. A partial hydration returns an empty
   vault list **plus** an explicit incompleteness error rather than a short list
-  that reads as complete; and a registry larger than the enumeration cap sets
-  `tooLarge` rather than silently truncating. Consumers must propagate both —
-  `useHeldStreams` refuses to start discovery unless the registry is loaded,
-  error-free, and within the cap, and marks itself unavailable otherwise.
+  that reads as complete; a registry larger than the enumeration cap sets
+  `tooLarge` rather than silently truncating. `useStreams` refuses to start
+  discovery unless the registry is loaded, error-free, and within the cap, and
+  marks itself unavailable otherwise. Truncation surfaces through
+  `UI-SHELL-TRUNCATION`.
 
 ### `chain.markets`
 
-The approved market set per vault, with each market's series data.
+The approved market set per vault, with each market's series data (expiry, PT, fee, TWAP).
 
 - **trust_domain:** `on-chain`
 - **writers:**
   - `web/hooks/useAllMarkets.ts` — batched `approvedMarketCount` / `approvedMarketAt` / `series` reads
 - **readers:**
-  - `web/components/MarketsApp.tsx` — passes the market list to the table and the positions strip
-  - `web/components/MarketsTable.tsx` — renders one row per market
-  - `web/components/PositionSummary.tsx` — filters to markets that have a lending instance
+  - `web/app/page.tsx` — market list for shell and flow launch
+  - `web/components/supply/SelectMarket.tsx` — landing U8: `UI-SUPPLY-SELECT-MARKET`
+  - `web/components/assets/StreamSelectMarket.tsx` — landing U10: `UI-ASSETS-STREAM-SELECT-MARKET`
   - `web/hooks/useMarketSymbols.ts` — collects the token addresses to resolve symbols for
 - **notes:** Exposes a three-valued `status` — `loading` · `ready` ·
   `unavailable` — alongside `tooLarge`, and returns `[]` for markets whenever
-  the enumeration is incomplete or over budget. The empty list is therefore only
+  the enumeration is incomplete or over budget. The empty list is only
   meaningful together with `status` and `tooLarge`: rendering it as "no markets"
-  without checking both is exactly the empty-versus-cannot-ask collapse the
-  system chrome exists to prevent. `MarketsTable` receives `registryStatus` and
-  `truncated` for that reason.
+  without checking both is the empty-versus-cannot-ask collapse.
+  `UI-SUPPLY-SELECT-MARKET` and `UI-ASSETS-STREAM-SELECT-MARKET` must keep those
+  states distinguishable. Token names are market-driven via `symbol()`, never a
+  hardcoded `ovrfloWSTETH`.
 
 ### `chain.market-symbols`
 
@@ -85,35 +87,214 @@ Lowercased-address → ERC-20 symbol map for every market's ovrfloToken and unde
 - **writers:**
   - `web/hooks/useMarketSymbols.ts` — one batched, deduplicated `symbol()` read
 - **readers:**
-  - `web/components/MarketsApp.tsx` — resolves once and threads the map down as a prop
-  - `web/components/MarketsTable.tsx` — row labels
-  - `web/components/MarketRowDetail.tsx` — detail labels
-  - `web/components/PositionSummary.tsx` — per-symbol rollup labels
-  - `web/components/PositionList.tsx` — position labels
-  - `web/components/MarketDetail.tsx` — overlay labels
-- **notes:** Resolve through `symbolFor` so lookups never depend on address
-  casing; an unresolved symbol falls back to a formatted address rather than an
-  empty label. Read once at the top and passed down deliberately — resolving per
-  row would re-issue the same batch for every market. PT symbols are
-  deliberately not read.
+  - `web/components/kit/Amount.tsx` — landing U4: labels
+  - `web/components/watch/Wall.tsx` — landing U7: row labels
+  - `web/components/supply/AmountStep.tsx` — landing U8: underlying symbol on the amount field
+  - `web/components/borrow/AmountStep.tsx` — landing U9: ovrflo-token symbol once the stream's market is known
+- **notes:** Resolve through a case-insensitive lookup; an unresolved symbol
+  falls back to a formatted address rather than an empty label. Before a market
+  is chosen, copy says "the market's ovrflo token". PT symbols are deliberately
+  not read for customer-facing labels except on the stream-deposit path, which
+  names PT, ovrflo token, and underlying fee separately.
 
 ### `chain.lending-config`
 
-One lending market's APR bounds, fee, next IDs, and route cap.
+One lending market's book constants: `UNIT`, `MIN_LIQUIDITY_AMOUNT`,
+`MIN_STREAM_AMOUNT`, `feeBps`, `aprMinBps` / `aprMaxBps`, `tickSpacing`.
 
 - **trust_domain:** `on-chain`
 - **writers:**
   - `web/hooks/useLending.ts` — batched `OVRFLOLending` config reads
+  - `web/hooks/useLadder.ts` — landing U6: consumes config as ladder bounds
 - **readers:**
-  - `web/components/MarketsTable.tsx` — ladder bounds for the rate cell
-  - `web/components/MarketRowDetail.tsx` — ladder bounds and fee display
-  - `web/components/PositionList.tsx` — fee and obligation context
-  - `web/components/action-flow/SupplyFlow.tsx` — validates the chosen tick against the configured APR range
-  - `web/components/action-flow/BorrowFlow.tsx` — ladder bounds and the route-ID cap that bounds batch assembly
-  - `web/components/action-flow/PositionFlow.tsx` — ladder bounds for a rate adjustment
-- **notes:** Exposes a `complete` flag; a partial read must not be treated as
-  a configured range, because a wrong `aprMin`/`aprMax` would silently reshape
-  the ladder the user picks from. The contract re-validates the tick regardless.
+  - `web/lib/ladder.ts` — landing U5: window derivation, stepper clamps
+  - `web/components/kit/RateWindow.tsx` — landing U4: paddle disabled-with-reason at bounds
+  - `web/components/supply/AmountStep.tsx` — landing U8: `MIN_LIQUIDITY_AMOUNT` inline feedback
+  - `web/components/borrow/AmountStep.tsx` — landing U9: `MIN_STREAM_AMOUNT` / fill floor
+- **notes:** Cached long; never duplicated in `web/lib/config.ts`. Exposes a
+  `complete` flag; a partial read must not be treated as a configured range,
+  because a wrong `aprMin`/`aprMax` would silently reshape the ladder. The
+  contract re-validates the tick regardless. This is the mechanism-map "book
+  constants" row.
+
+### `chain.tick-depths`
+
+Every configured tick's resting depth from one `tickDepths(market)` view.
+
+- **trust_domain:** `on-chain`
+- **writers:**
+  - `web/hooks/useLadder.ts` — landing U6: the one-read ladder
+- **readers:**
+  - `web/lib/ladder.ts` — landing U5: three-tick window, neighbor hints, clamps
+  - `web/components/kit/RateWindow.tsx` — landing U4: stepper window
+  - `web/components/rates/Workspace.tsx` — landing U8/U9: `UI-RATES-LADDER`
+  - `web/components/borrow/PoolBand.tsx` — landing U9: draw vs resting liquidity
+  - `web/components/supply/QueueBand.tsx` — landing U8: unfilled-ahead
+- **notes:** On-chain, not a projection. The whole ladder arrives in one read,
+  so stepping is instant. Depth is not a fill guarantee — a tick that looked
+  deep may fill short; that race is `action.stale-recovery` / `UI-REVIEW-STALE`,
+  not a reason to treat this key as a quote. v1-lite has no self-match guard on
+  blind fill; do not subtract the user's own supply from borrow depth
+  (`UI-RATES-ROW`). Empty (every rung zero after a successful read) is
+  `UI-RATES-EMPTY`; a failed read is `unavailable` on `UI-RATES-LADDER`. Those
+  must not share a representation. Re-quoted at every checkpoint.
+
+### `chain.lender-positions`
+
+The connected account's supply positions: `lenderPositionCount` →
+`lenderPositionAt` → batched `positionState`.
+
+- **trust_domain:** `on-chain`
+- **writers:**
+  - `web/hooks/useLenderBook.ts` — landing U6: enumeration then batched state
+- **readers:**
+  - `web/app/page.tsx` — R12: any position → watch, not first-run
+  - `web/components/watch/Wall.tsx` — landing U7: supplied lens rows
+  - `web/components/watch/SuppliedDetail.tsx` — landing U7: capital band, claim, withdraw
+  - `web/lib/invalidate.ts` — post-write refresh of declared `touchedResources`
+- **notes:** Confirmed-empty (count zero, read succeeded) is a different answer
+  from unavailable. A failed book read must not hide the supplied lens as
+  zero-count (`UI-WATCH-LENS`). Matching `enabled` predicates on the batched
+  reads are required for wagmi batching. No health-factor or utilisation field
+  exists on a position.
+
+### `chain.borrower-loans`
+
+The connected account's loans: `borrowerLoanCount` → `borrowerLoanAt` →
+`loanState` (obligation, drawn, repaid, outstanding). Closed loans stay in the
+book as SETTLED.
+
+- **trust_domain:** `on-chain`
+- **writers:**
+  - `web/hooks/useBorrowerBook.ts` — landing U6: enumeration then batched state; `loansOf` pagination follows `nextSeq` and never reuses a foreign `startSeq`
+- **readers:**
+  - `web/app/page.tsx` — R12: any loan → watch
+  - `web/components/watch/Wall.tsx` — landing U7: borrowed lens, SETTLED rows after active
+  - `web/components/watch/BorrowedDetail.tsx` — landing U7: outstanding, repay, close
+  - `web/components/watch/ClosedLoanDetail.tsx` — landing U7: returned-stream identity
+- **notes:** Outstanding after repay/close is event-derived: it changes only on
+  a chain read, not on the interpolation tick. Close-ready is `outstanding`
+  covered by current `withdrawableAmountOf` — both re-read at the gate
+  (`UI-WATCH-CLOSE`, `UI-REVIEW-CLOSE`). Never invent a health factor or
+  liquidation threshold beside outstanding.
+
+### `chain.loans-of-position`
+
+Paginated `loansOf(positionId, startSeq, maxN)` — the pairs a per-position claim
+will batch.
+
+- **trust_domain:** `on-chain`
+- **writers:**
+  - `web/hooks/useLenderBook.ts` — landing U6: paginated by returned `nextSeq`
+- **readers:**
+  - `web/lib/actions/claim.ts` — landing U6: Multicall batch of this position only
+  - `web/components/watch/SuppliedDetail.tsx` — landing U7: `UI-WATCH-CLAIM` gate
+  - `web/components/kit/ActionButton.tsx` — landing U4: live amount in the control
+- **notes:** Claimability at the gate is this read plus `loanState`, never
+  interpolated earnings. Display interpolation may preview accrual
+  (`schedule.interpolated-earnings`); it does not authorise. Cross-position
+  Claim-All does not exist. A pair cap (gas headroom) is a named constant with
+  a `ponytail:` ceiling comment; overflow is "claim remaining", not one
+  oversized Multicall.
+
+### `chain.stream-truth`
+
+Hydrated Sablier facts for each surviving candidate: `ownerOf`, `getStream`,
+`withdrawableAmountOf`.
+
+- **trust_domain:** `on-chain`
+- **writers:**
+  - `web/hooks/useStreams.ts` — landing U6: truth step after `projection.stream`
+- **readers:**
+  - `web/app/page.tsx` — R12 emptiness: hydrated streams, not candidates
+  - `web/components/watch/Wall.tsx` — landing U7: Streams lens rows (render predicate)
+  - `web/components/watch/StreamDetail.tsx` — landing U7: vested hero, borrow route
+  - `web/components/borrow/SelectStream.tsx` — landing U9: eligible unpledged list
+  - `web/lib/lending-math.ts` — landing U5: eligibility mirror of `requireEligible`
+- **notes:** Discovery names IDs; this key is the authority. Drop any stream
+  whose on-chain owner is not the connected address. Two distinct predicates:
+  the *render* predicate (sender is a registered vault AND asset is that
+  market's ovrflo token — `StreamPricing` identity checks) decides what appears
+  under Streams; the *borrow-route* predicate (full `requireEligible` including
+  `SeriesMatured` plus `MIN_STREAM_AMOUNT`) decides whether `UI-WATCH-BORROW-ROUTE`
+  is offered. A matured market must not make fully-vested streams vanish from
+  the wall. Gates always re-read these fields. Interpolation inputs are the
+  immutable slice in `schedule.stream-params`, not a second RPC.
+
+### `chain.balances`
+
+ERC-20 `balanceOf` for the connected wallet, per token the open surface needs.
+
+- **trust_domain:** `on-chain`
+- **writers:**
+  - `web/hooks/useLadder.ts` — landing U6: underlying balance beside supply
+  - `web/app/assets/page.tsx` — landing U10: underlying / ovrflo / PT balances
+- **readers:**
+  - `web/components/kit/AmountField.tsx` — landing U4: MAX and insufficient-balance
+  - `web/components/supply/AmountStep.tsx` — landing U8: `loading-balance` is not `0`
+  - `web/components/assets/Converter.tsx` — landing U10: wrap / unwrap / claim-PT
+- **notes:** Refetch on window focus (U6 re-enables it). A missing balance is
+  `loading` or `unavailable`, never a zero that enables MAX. Touched as a
+  resource after wrap, unwrap, supply, repay, and deposit.
+
+### `chain.allowances`
+
+ERC-20 `allowance(owner, spender)` for the exact token and spender of the open write.
+
+- **trust_domain:** `on-chain`
+- **writers:**
+  - `web/hooks/useApprovalWriteFlows.ts` — refreshes allowance as a touched resource after approve
+- **readers:**
+  - `web/hooks/useApprovalWriteFlows.ts` — skip-without-renumber when allowance already covers
+  - `web/components/kit/SettlementTrace.tsx` — landing U4: omits the approve stage when covered
+  - `web/components/kit/Receipt.tsx` — landing U4: PERMISSION RECEIPT exact allowance
+- **notes:** **The gate.** `action.approved-amount` is progress display only.
+  Treating the form's memory as sufficient would let a stale or
+  externally-revoked allowance present as approved. The contract reverts if
+  allowance is insufficient regardless.
+
+### `chain.nft-operator`
+
+Sablier `isApprovedForAll` / `getApproved` for the stream being pledged.
+
+- **trust_domain:** `on-chain`
+- **writers:**
+  - `web/hooks/useApprovalWriteFlows.ts` — NFT-approval equivalent of allowance
+- **readers:**
+  - `web/components/borrow/ReviewHandoff.tsx` — landing U9: skip stream-approve when operator already covers
+  - `web/components/kit/Receipt.tsx` — landing U4: PERMISSION RECEIPT for the stream
+- **notes:** Same rule as `chain.allowances`: re-read at the gate. Borrow has
+  no ERC-20 fee approval — the fee comes from proceeds (`UI-BORROW-FACTS`).
+
+### `chain.wrap-reserve`
+
+The vault's tracked wrap reserve (not the raw token balance).
+
+- **trust_domain:** `on-chain`
+- **writers:**
+  - `web/app/assets/page.tsx` — landing U10: vault wrap-reserve read
+- **readers:**
+  - `web/components/assets/Converter.tsx` — landing U10: unwrap removed when reserve is empty; `UI-ASSETS-CLAIM-PT` replaces it
+  - `web/components/kit/Receipt.tsx` — landing U4: `UI-REVIEW-CLAIM-CONFIRMED` unwrap-enabled vs reserve-insufficient
+- **notes:** Empty reserve is an unavailable unwrap route, not a failed claim
+  and not a failed user balance. Direct transfers to the vault do not increase
+  wrap reserve.
+
+### `chain.block-timestamp`
+
+The latest block timestamp, from a block read.
+
+- **trust_domain:** `on-chain`
+- **writers:**
+  - `web/hooks/useClock.ts` — landing U6: reads `block.timestamp` on each event-truth refresh
+- **readers:**
+  - `web/lib/payoff.ts` — landing U5: skew estimator (local clock vs chain)
+  - `web/hooks/useClock.ts` — landing U6: writes `schedule.skew-offset`
+- **notes:** Chain time, not client time. `schedule.clock` is the client tick
+  and is display-only. When this read errors, skew is unknown and interpolated
+  values must not pretend to be chain-aligned — freshness degrades; signing
+  follows existing STALE rules. Used for the skew offset, never as a
+  per-second animation driver.
 
 ### `chain.wagmi-reads`
 
@@ -133,56 +314,109 @@ rooted at `["readContract"]` and `["readContracts"]`.
   - `web/lib/query-resource-registry.ts` — `buildRefreshPlan` decides which keys a write must refresh
   - `web/hooks/useWriteFlow.ts` — names the touched resources per action and awaits the refresh before reporting success
 - **notes:** wagmi read hooks own their own keys; only real `useQuery` keys live
-  in `web/lib/query-keys.ts`. Matching is done on the **serialised** key rather
-  than by walking wagmi's internal key shape, because that shape is not part of
-  its public contract and an address sits at different depths for a single read
-  versus a batched one. Post-write refresh is scoped to the contracts the
-  transaction actually touched — the market's whole contract set, not just the
-  `to` address, because balance and allowance reads are keyed by *token*.
-  A refresh failure is surfaced as `refresh_failed`, never swallowed: the
+  in `web/lib/query-keys.ts` (rewritten U6 as factories per feature). Matching
+  is done on the **serialised** key. Post-write refresh is scoped to the
+  contracts the transaction actually touched — the market's whole contract set,
+  not just the `to` address, because balance and allowance reads are keyed by
+  *token*. A refresh failure is `refresh_failed`, never swallowed: the
   transaction landed but the numbers on screen are not known to reflect it.
 
-### `chain.block-timestamp`
+### `usd.price`
 
-The latest block timestamp, from `useBlock`.
-
-- **trust_domain:** `on-chain`
-- **writers:**
-  - `web/hooks/useBorrowDemand.ts` — `useBlock` with a 30s stale time
-- **readers:**
-  - `web/hooks/useBorrowDemand.ts` — the window boundary for the trailing-30-day demand aggregation
-- **notes:** Chain time, not client time — `chrome.now-seconds` is the client
-  clock and is display-only. When this read errors, demand reports
-  `unavailable`; when it is merely absent, demand reports `loading`. Those are
-  two different answers and the hook keeps them apart.
-
-### `query.streams.held`
-
-Declared TanStack query key for the held-stream list: `["streams", "held", user]`.
+Chainlink mainnet stETH/USD × wstETH `stEthPerToken`. Display-only.
 
 - **trust_domain:** `on-chain`
 - **writers:**
-  - `web/lib/query-keys.ts` — declares `streamKeys.all` and `streamKeys.held`
+  - `web/hooks/useUsdPrice.ts` — landing U6: product of the two on-chain answers
+  - `web/lib/usd.ts` — landing U5: pure product + classification
 - **readers:**
-  - `web/lib/invalidate.ts` — `invalidateOnChainReads` (streams option), `invalidateAllOnChainReads`, and `scheduleHeldStreamsRetry` all target this key
-- **notes:** **No producer currently registers a query under this key.** Held
-  streams moved to the projection scope `projection.stream` during the on-chain
-  discovery cutover, so every invalidation listed above is a no-op against an
-  empty cache entry. Recorded rather than deleted because the drift is the
-  finding: an agent reading `invalidate.ts` would otherwise conclude that
-  refreshing held streams is handled. `scheduleHeldStreamsRetry` also describes
-  indexer polling that no longer exists. Reviving this key means registering a
-  producer; refreshing held streams today means matching the projection scope.
+  - `web/components/kit/Amount.tsx` — landing U4: USD reference beside the token amount
+  - `web/components/kit/TokenUsdSwitch.tsx` — landing U4: disables when unavailable
+  - `web/components/watch/SuppliedDetail.tsx` — landing U7: hero USD companion
+- **notes:** **Display-only.** Never in receipts (`UI-REVIEW-PERMISSION-RECEIPT`,
+  `UI-REVIEW-ACTION-RECEIPT`), never in calldata, never a write gate. The token
+  amount never disappears when USD mode is on. The per-second tick never
+  extrapolates a price (KTD14) — this refreshes with the read cadence. Feed
+  addresses enter `web/lib/config.ts` only after explorer verification. Never
+  assume stETH ≈ ETH.
 
-### `query.demand.market`
+### `usd.staleness`
 
-Declared TanStack query key for per-market borrow demand: `["demand", "market", market]`.
+Classification of the USD feed: fresh, heartbeat-stale, or `USD UNAVAILABLE`.
 
 - **trust_domain:** `on-chain`
 - **writers:**
-  - `web/lib/query-keys.ts` — declares `demandKeys.all` and `demandKeys.market`
+  - `web/lib/usd.ts` — landing U5: non-positive answer, heartbeat-plus-grace, 24h absolute cutoff
+  - `web/hooks/useUsdPrice.ts` — landing U6: exposes the class
 - **readers:**
-  - `web/lib/query-keys.ts` — no production consumer; referenced only by its own unit test
-- **notes:** Dead declaration. Borrow demand is served by `projection.demand`
-  under the projection key space. Catalogued so the next agent does not wire a
-  new consumer onto a key nothing invalidates.
+  - `web/components/kit/TokenUsdSwitch.tsx` — landing U4: `disabled-unavailable`
+  - `web/components/kit/StatusLine.tsx` — landing U4: `UI-SHELL-STATUS` `usd-unavailable`
+  - `web/components/kit/Amount.tsx` — landing U4: `USD UNAVAILABLE` — no guessed figure
+- **notes:** Display-only, same as `usd.price`. Unavailable disables the switch;
+  it does not invent a dollar figure and does not block token-denominated
+  writes. Token amounts are unaffected.
+
+### `query.books.lender`
+
+Declared TanStack query key for the lender book: factory per account + market.
+
+- **trust_domain:** `on-chain`
+- **writers:**
+  - `web/lib/query-keys.ts` — landing U6: `bookKeys.lender` factory
+- **readers:**
+  - `web/hooks/useLenderBook.ts` — landing U6: registers the query
+  - `web/lib/invalidate.ts` — post-write invalidation via `touchedResources`
+- **notes:** No inline key literals outside this factory (U6 grep gate). Broadest
+  sensible invalidation after supply / withdraw / claim receipts.
+
+### `query.books.borrower`
+
+Declared TanStack query key for the borrower book.
+
+- **trust_domain:** `on-chain`
+- **writers:**
+  - `web/lib/query-keys.ts` — landing U6: `bookKeys.borrower` factory
+- **readers:**
+  - `web/hooks/useBorrowerBook.ts` — landing U6: registers the query
+  - `web/lib/invalidate.ts` — post-write invalidation after borrow / repay / close
+- **notes:** Same factory discipline as `query.books.lender`. Closed loans remain
+  in this book as SETTLED; invalidation after close must also refresh streams
+  so the freed stream reappears on the same reconciling read (R9).
+
+### `query.ladder`
+
+Declared TanStack query key for `tickDepths(market)`.
+
+- **trust_domain:** `on-chain`
+- **writers:**
+  - `web/lib/query-keys.ts` — landing U6: `ladderKeys.market` factory
+- **readers:**
+  - `web/hooks/useLadder.ts` — landing U6: registers the query
+  - `web/lib/invalidate.ts` — re-quote at every checkpoint and after supply / borrow
+- **notes:** One key per market, not per tick — the view returns every rung.
+
+### `query.streams.truth`
+
+Declared TanStack query key for hydrated stream truth (not candidates).
+
+- **trust_domain:** `on-chain`
+- **writers:**
+  - `web/lib/query-keys.ts` — landing U6: `streamKeys.truth` factory
+- **readers:**
+  - `web/hooks/useStreams.ts` — landing U6: registers the hydration query
+  - `web/lib/invalidate.ts` — loan and stream writes refresh truth
+- **notes:** Distinct from `query.streams.candidates` (`projection.md`).
+  Invalidating truth does not re-run the log scan; invalidating candidates does
+  not authorise. The incumbent `streamKeys.held` declaration is superseded by
+  this split.
+
+### `query.usd.price`
+
+Declared TanStack query key for the USD product.
+
+- **trust_domain:** `on-chain`
+- **writers:**
+  - `web/lib/query-keys.ts` — landing U6: `usdKeys.price` factory
+- **readers:**
+  - `web/hooks/useUsdPrice.ts` — landing U6: registers the query
+- **notes:** Read cadence, not tick cadence. Display-only consumers.

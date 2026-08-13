@@ -9,15 +9,21 @@ entry points and contract state. Nothing here covers, mirrors, or replaces it. A
 whose `trust_domain` is `on-chain` describes *the browser's copy of* a chain fact and
 who depends on that copy — the contract-side truth lives in `x-ray/`.
 
+This catalog describes the **watch-surface app** (U4–U11 landing paths). Writers and
+readers may name modules that land in a later unit; those roles are marked
+`landing U4` / `U5` / `U6` / `U7` (and U8–U11 where a flow owns the key). Do not
+treat the purged projection-era shell as the blast radius.
+
 ## Files
 
 | File | Contents |
 |---|---|
-| `view-state.md` | Selection, expansion, and overlay state — what the user is looking at |
+| `view-state.md` | Lens, selection, USD mode, shell chrome, first-run memory — what the user is looking at |
 | `form-state.md` | Action-form input and per-form guard state |
-| `execution-state.md` | Executor phase, write-flow, and Claim All queue latches |
-| `chain-reads.md` | The browser's copies of chain facts, and the query keys that hold them |
-| `projection.md` | Browser-side log projection — candidate sets, never authorities |
+| `execution-state.md` | Executor phase, write-flow, and transaction-lifecycle latches |
+| `chain-reads.md` | The browser's copies of chain facts, USD feed, and the query keys that hold them |
+| `schedule.md` | Clock, interpolation inputs, payoff derivations, event freshness |
+| `projection.md` | Stream-candidate discovery only — never an authority, never a gate |
 
 ## Entry format
 
@@ -49,14 +55,28 @@ Rules the parser enforces:
 The four parsed fields are exactly `../../SCHEMAS.md` §3. `notes` carries everything
 else so the machine-readable core stays small.
 
+### Mechanism-map domains vs parser domains
+
+The mechanism map names four *kinds* of knowledge. The parser still has three
+trust domains — map the finer kinds into `notes`, never into a fourth
+`trust_domain` value:
+
+| Mechanism-map kind | Parser `trust_domain` | Where the distinction lives |
+|---|---|---|
+| On-chain view / Sablier / ERC-20 | `on-chain` | Default. Anything that reaches an `if (…) allow` must be this. |
+| Stream-candidate discovery | `projection` | `projection.md`. No field reaches a gate. |
+| Derived from on-chain schedule × clock | `pure-client` | `schedule.md`. Computed in render; never stored per-tick in the query cache; never a gate. |
+| Display-only USD | `on-chain` (feed) or `pure-client` (mode) | `usd.*`. Never in receipts, calldata, or tx params. |
+
 ## Naming
 
 `namespace.key-name` — lowercase, dot-separated namespace, hyphenated leaf. The
-namespace groups by surface (`markets.`, `positions.`, `action.`, `queue.`,
-`executor.`, `chain.`, `projection.`, `query.`), not by file.
+namespace groups by surface (`watch.`, `action.`, `executor.`, `queue.`, `tx.`,
+`chain.`, `query.`, `schedule.`, `usd.`, `projection.`, `persist.`, `rates.`,
+`review.`, `first-run.`, `approve.`, `chrome.`), not by file.
 
-Keys name **meaning**, not the React identifier. `positions.loaded-user` survives a
-rename of `loadedUser`; a key named after the variable does not.
+Keys name **meaning**, not the React identifier. `watch.lens` survives a rename of
+`activeLens`; a key named after the variable does not.
 
 ## What must be in a `projection` entry
 

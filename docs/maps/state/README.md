@@ -29,11 +29,12 @@ fix the keys and regenerate.
 | File | Contents |
 |---|---|
 | `keys/README.md` | Entry format the generator parses, and the naming rules |
-| `keys/view-state.md` | Selection, expansion, overlay — what the user is looking at |
+| `keys/view-state.md` | Lens, selection, USD mode, shell chrome, first-run memory |
 | `keys/form-state.md` | Action-form input and per-form guard state |
-| `keys/execution-state.md` | Executor phase, write-flow, Claim All queue latches |
-| `keys/chain-reads.md` | The browser's copies of chain facts, and the query keys holding them |
-| `keys/projection.md` | Browser-side log projection — candidate sets, never authorities |
+| `keys/execution-state.md` | Executor phase, write-flow, and transaction-lifecycle latches |
+| `keys/chain-reads.md` | The browser's copies of chain facts, USD feed, and the query keys holding them |
+| `keys/schedule.md` | Clock, interpolation inputs, payoff derivations, event freshness |
+| `keys/projection.md` | Stream-candidate discovery only — never an authority, never a gate |
 | `functions/INDEX.md` | **Generated.** Module → keys, trust-domain exposure per module, and the key → readers reverse lookup |
 
 ## Regenerating
@@ -121,8 +122,8 @@ Two rules ride with it:
 
 - **Identity.** An operation is bound at start to intent, account, chain, and
   deployment — and once signed, to nonce, calldata, and hash. A later account or
-  chain switch never re-attributes it (`queue.pause-reason`,
-  `UI-ACTION-WALLET-CHANGED`).
+  chain switch never re-attributes it (`action.wallet-changed`,
+  `UI-SHELL-WALLET-CHANGED`).
 - **Re-simulation.** Any change to what the transaction depends on — state,
   account, chain, deadline, allowance, or quote — invalidates the prepared plan
   and routes through re-simulation and visible re-confirmation, never silent
@@ -174,11 +175,9 @@ dependent modules, per the charter's step 2 (`../README.md`).
 
 ## Sources the catalog is built from
 
-- `web/components/` — the region components that own selection, overlay, and
-  disclosure state (every `view-state.md` key is written here)
-- `web/hooks/` — the hooks that read and write client state
-- `web/lib/query-keys.ts` — query key surface
-- `web/lib/discovery/` — projection boundary, and where `projection` stops
+- The mechanism map in `docs/plans/2026-08-11-003-feat-watch-surface-markets-experience-plan.md`
+- Eight region briefs in `docs/maps/ui/`
+- `web/lib/discovery/` — stream-candidate projection boundary
 - `web/lib/read-outcome.ts` — the four-status outcome shape projections resolve to
-- `web/lib/query-resource-registry.ts` · `web/lib/invalidate.ts` — post-write refresh scoping
-- `web/components/action-flow/` — executor and transaction-queue state
+- Landing modules in U4–U11 (kit, lib, hooks, watch, flows) — catalogued before those files exist
+- Incumbent executor / query / invalidation modules that U6 re-anchors

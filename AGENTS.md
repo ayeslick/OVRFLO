@@ -1,6 +1,7 @@
 Read https://ethskills.com/SKILL.md and follow it before writing Solidity or shipping anything onchain.
 Read `docs/solutions/patterns/solidity-implementation-discipline.md` before writing or modifying Solidity — it carries the minimality ladder, the FREI-PI gate, the root-cause-fix procedure, and the precedence rule (plan > critical patterns > ladder).
 Read `docs/solutions/patterns/ovrflo-coding-standard.md` (enforceable rules, each citing its source and remediation tier) and `docs/solutions/patterns/ovrflo-style-guide.md` (naming, layout, NatSpec voice, comment discipline, fixture conventions) before writing OVRFLO Solidity or tests — they exist to eliminate micro-decisions; deviations need a recorded reason.
+Read `docs/solutions/patterns/ovrflo-web-standard.md` before writing or modifying the Markets frontend — it carries the micro-decision rules (state placement, effects, branded money, dependencies, abstraction, platform-native) and the browser-runtime pathology section.
 Use BASE_SECURITY.md for security guidelines.
 Use VAULT_SECURITY.md for Vault security guidelines.
 
@@ -17,6 +18,14 @@ Use VAULT_SECURITY.md for Vault security guidelines.
 Full disproofs and evidence: `docs/audit/rejected-findings-record.md`. Sablier ACL table: `docs/audit/sablier-interface-contract.md`. Enforceable rules: `docs/solutions/patterns/ovrflo-critical-patterns.md`.
 
 ## Agent skills
+
+### Planning
+
+Before any implementation-ready plan is declared build-ready, run the **ignorance-lens sweep** per `docs/solutions/patterns/ignorance-lens-sweep.md`: *assume the implementer doesn't understand X; ask what the plan does not address but should; rotate X until dry* — parallel lens-agents with verified-only findings, point-fix wrong plan text, fold the rest into a `### Sweep Contracts` section, finish with a completeness critic and stop at its diminishing-returns verdict. A plan that has not been swept is not build-ready, regardless of review verdicts. Two binding authorship rules from the same pattern doc: never paraphrase working code into a plan (cite its contract with a `file:line` anchor instead), and a test-accountability entry names the specific successor scenario, never just a unit.
+
+### Git commits
+
+Write commit messages per `.cursor/rules/commit-message-style.mdc` (Pope/Beams structure; STE100 + Google prose). Agent commits must use the plumbing bypass in `.cursor/rules/no-commit-attribution.mdc` — never bare `git commit`.
 
 ### GitHub
 

@@ -1,11 +1,12 @@
 # Form state
 
-Per-form input and guard state inside the action overlay. All `pure-client`.
+Per-form input and guard state inside Borrow, Supply, Assets, and in-place watch
+actions. All `pure-client`.
 
 The load-bearing rule for this file: **nothing here may decide what an action is
 allowed to do.** Amounts are re-derived at submit, approvals are re-read from the
-token, and eligibility is re-read from chain. These keys shape the form; the
-authority sits in `chain-reads.md`.
+token, eligibility is re-read from chain, depths are re-quoted at every
+checkpoint. These keys shape the form; the authority sits in `chain-reads.md`.
 
 Entry format and rules: `README.md`.
 
@@ -17,24 +18,18 @@ The literal string in the amount field, before parsing.
 
 - **trust_domain:** `pure-client`
 - **writers:**
-  - `web/components/action-flow/SupplyFlow.tsx` — `raw`, from `AmountInput`
-  - `web/components/action-flow/BorrowFlow.tsx` — `raw`, from `AmountInput`
-  - `web/components/action-flow/RepayFlow.tsx` — `raw`, from `AmountInput`
-  - `web/components/action-flow/ConvertFlow.tsx` — `raw`, from `AmountInput`
+  - `web/components/kit/AmountField.tsx` — landing U4: `inputmode="decimal"`; never blocks paste
   - `web/hooks/useClearOnConfirm.ts` — clears it exactly once per confirmation
 - **readers:**
-  - `web/components/action-flow/ActionFlowShell.tsx` — `parseAmount` turns it into the 18-decimal `bigint` the call uses
-  - `web/components/action-flow/SupplyFlow.tsx` — validation, MAX handling, submit
-  - `web/components/action-flow/BorrowFlow.tsx` — validation and submit
-  - `web/components/action-flow/RepayFlow.tsx` — validation, bounded by outstanding obligation rather than wallet balance
-  - `web/components/action-flow/ConvertFlow.tsx` — validation and submit
+  - `web/lib/parse.ts` — landing U5: locale-aware parse into branded wei (German `1,5`)
+  - `web/components/supply/AmountStep.tsx` — landing U8: validation, MAX, `MIN_LIQUIDITY_AMOUNT`
+  - `web/components/borrow/AmountStep.tsx` — landing U9: bounded by stream remaining, not wallet balance
+  - `web/app/assets/page.tsx` — landing U10: wrap / unwrap / PT deposit amounts
 - **notes:** Kept as a string on purpose — a `bigint` cannot represent a
-  half-typed decimal, and round-tripping through one eats keystrokes.
-  `parseAmount` returns `0n` for anything unparseable, so *invalid* and *zero*
-  are the same value downstream; forms must reject on their own validation, not
-  on the parsed number being falsy. Clearing on confirmation is only safe
-  because the form simultaneously shows CONFIRMED and CLOSE — an empty field
-  alone is indistinguishable from a form never touched.
+  half-typed decimal, and round-tripping through one eats keystrokes. Invalid
+  and zero are different; forms reject on their own validation, not on a parsed
+  `0n`. Several independent per-flow instances share this *meaning*, not one
+  cell. Locale-aware parsing is mandatory (browser-runtime pathology).
 
 ### `action.selected-apr-raw`
 
@@ -42,18 +37,15 @@ The ladder tick the user picked, in raw basis-point form. `null` means untouched
 
 - **trust_domain:** `pure-client`
 - **writers:**
-  - `web/components/action-flow/SupplyFlow.tsx` — `selectedAprRaw`
-  - `web/components/action-flow/BorrowFlow.tsx` — `selectedAprRaw`
-  - `web/components/action-flow/PositionFlow.tsx` — `selectedAprRaw`
+  - `web/components/kit/RateWindow.tsx` — landing U4: stepper paddles
+  - `web/components/rates/Workspace.tsx` — landing U8/U9: direct pick from `UI-RATES-ROW`
 - **readers:**
-  - `web/components/action-flow/SupplyFlow.tsx` — the APR argument of the supply call
-  - `web/components/action-flow/BorrowFlow.tsx` — bounds the ladder scan and the quote
-  - `web/components/action-flow/PositionFlow.tsx` — the target tick of a rate adjustment
-- **notes:** A selection, not a quote. The depth behind the chosen tick comes
-  from `projection.market-apr`, which is a candidate set — the fill is decided
-  on chain at submit, and a tick that looked deep may fill short. That race
-  surfaces as a classified stale error and is handled by
-  `action.stale-recovery`, not by trusting this key.
+  - `web/components/supply/RateStep.tsx` — landing U8: supply tick argument
+  - `web/components/borrow/RateStep.tsx` — landing U9: borrow tick; pool band
+  - `web/lib/ladder.ts` — landing U5: window centering
+- **notes:** A selection, not a quote. Depth behind the chosen tick comes from
+  `chain.tick-depths`. The fill is decided on chain at submit. Changing
+  selection resets `action.stale-recovery` and `action.frozen-quote`.
 
 ### `action.selected-stream-id`
 
@@ -61,76 +53,62 @@ The Sablier stream the borrower intends to pledge.
 
 - **trust_domain:** `pure-client`
 - **writers:**
-  - `web/components/action-flow/BorrowFlow.tsx` — `selectedStreamId`, seeded from the invoking action and changed by the picker
+  - `web/components/borrow/SelectStream.tsx` — landing U9: picker; seeded from `UI-WATCH-BORROW-ROUTE`
 - **readers:**
-  - `web/components/action-flow/BorrowFlow.tsx` — chooses which held stream backs the quote and the loan call
-- **notes:** An ID is a **pointer, not a claim of ownership or eligibility**. The
-  candidate list comes from `projection.stream`; whether this stream is owned by
-  the connected address, matches the series, and is neither cancelled nor
-  depleted is decided by the Sablier hydration behind `projection.stream` and by
-  `isSeriesMatchedStream` in `web/lib/modal-logic.ts` against hydrated fields —
-  never by projection metadata. Selecting an ID must never widen what the user
-  can do.
+  - `web/components/borrow/StreamContext.tsx` — landing U9: `UI-BORROW-STREAM-CONTEXT`
+  - `web/lib/actions/borrow.ts` — landing U6: stream id argument of the loan call
+- **notes:** An ID is a **pointer, not a claim of ownership or eligibility**.
+  The candidate list comes from `projection.stream`; whether this stream is
+  owned, matches the series, and passes `requireEligible` is decided by
+  `chain.stream-truth`. Selecting an ID must never widen what the user can do.
+  Continue does not authorise the borrow.
 
-### `action.slippage-raw`
+### `action.selected-market`
 
-Borrow slippage tolerance as typed, in percent.
+The market the supply or stream-deposit flow is targeting.
 
 - **trust_domain:** `pure-client`
 - **writers:**
-  - `web/components/action-flow/BorrowFlow.tsx` — `slippageRaw`, defaulted rather than left blank
+  - `web/components/supply/SelectMarket.tsx` — landing U8: `UI-SUPPLY-SELECT-MARKET`
+  - `web/components/assets/StreamSelectMarket.tsx` — landing U10: `UI-ASSETS-STREAM-SELECT-MARKET`
 - **readers:**
-  - `web/components/action-flow/BorrowFlow.tsx` — becomes the minimum-net bound carried into the call
-- **notes:** This is a *user-chosen bound on an on-chain check*, not a client-side
-  check. The contract enforces the bound; the form only chooses it.
-
-### `action.show-alternative`
-
-Whether the borrow form is showing the alternative fill it found.
-
-- **trust_domain:** `pure-client`
-- **writers:**
-  - `web/components/action-flow/BorrowFlow.tsx` — `showAlternative`
-- **readers:**
-  - `web/components/action-flow/BorrowFlow.tsx` — swaps the quote panel for the alternative
-- **notes:** Disclosure only. Accepting the alternative writes
-  `action.selected-apr-raw`; this key never becomes an argument.
+  - `web/components/supply/AmountStep.tsx` — landing U8: scopes balances and ladder
+  - `web/app/assets/page.tsx` — landing U10: scopes PT / series
+- **notes:** A pointer. If the market matures or deactivates mid-flow,
+  `UI-SUPPLY-MARKET-UNAVAILABLE` returns here and keeps the amount when it
+  still applies — never silently retargets another market or APR.
 
 ### `action.approved-amount`
 
-The form's memory of the approval it just issued, per token.
+The form's memory of the approval it just issued, per token (or stream operator).
 
 - **trust_domain:** `pure-client`
 - **writers:**
-  - `web/components/action-flow/SupplyFlow.tsx` — `approvedAmount`
-  - `web/components/action-flow/RepayFlow.tsx` — `repayApprovedAmount`
-  - `web/components/action-flow/PositionFlow.tsx` — `approvedAmount`
-  - `web/components/action-flow/ConvertFlow.tsx` — `ptApprovedAmount` and `underlyingApprovedAmount`
-  - `web/components/action-flow/BorrowFlow.tsx` — `streamApprovedId`, the NFT-approval equivalent
+  - `web/hooks/useApprovalWriteFlows.ts` — set when the approve receipt lands
 - **readers:**
-  - `web/components/action-flow/SupplyFlow.tsx` — step indicator and which button is primary
-  - `web/components/action-flow/RepayFlow.tsx` — step indicator and primary button
-  - `web/components/action-flow/PositionFlow.tsx` — step indicator and primary button
-  - `web/components/action-flow/ConvertFlow.tsx` — step indicator and primary button, per token
-  - `web/components/action-flow/BorrowFlow.tsx` — step indicator and primary button
-- **notes:** **Progress display, never a gate.** The real allowance is the
-  on-chain `allowance` read (`chain.wagmi-reads`), refreshed as a touched
-  resource after the approval confirms; the contract reverts if it is
-  insufficient regardless of what this key says. Treating it as a gate would let
-  a stale or externally-revoked allowance present as approved. It is per-token
-  because Convert approves two.
+  - `web/components/kit/SettlementTrace.tsx` — landing U4: which stage is primary
+  - `web/hooks/useApprovalWriteFlows.ts` — step indicator only
+- **notes:** **Progress display, never a gate.** The real allowance is
+  `chain.allowances` / `chain.nft-operator`, refreshed as a touched resource.
+  Treating this as a gate would let a stale or externally-revoked allowance
+  present as approved. Approval states never render `CONFIRMED`
+  (`UI-REVIEW-APPROVE`).
 
-### `action.submitted`
+### `action.frozen-quote`
 
-The borrow target and quoted net captured at submit.
+The review snapshot: amounts, tick, depth, fee, net, captured when review opened.
 
 - **trust_domain:** `pure-client`
 - **writers:**
-  - `web/components/action-flow/BorrowFlow.tsx` — `submitted`, set when the loan call is issued
+  - `web/hooks/useWriteFlow.ts` — captured at review; compared to the rebuilt plan at sign
 - **readers:**
-  - `web/components/action-flow/BorrowFlow.tsx` — compares the settled result against what was quoted, so a short fill is reported rather than silently accepted
-- **notes:** Exists to make a partial fill visible. The comparison is display
-  only; the fill itself is whatever the chain did.
+  - `web/hooks/useWriteFlow.ts` — drift → `needs_review`
+  - `web/components/kit/Receipt.tsx` — landing U4: ACTION RECEIPT lines; `UI-BORROW-QUOTE-UPDATED` / `UI-REVIEW-STALE`
+- **notes:** See-equals-sign. Drift between this snapshot and the rebuilt
+  calldata routes through visible re-confirmation, never silent resubmit.
+  Display only; the fill is whatever the chain does. Partial-fill actuals
+  (`UI-BORROW-PARTIAL-FILL`) re-present before sign against live depth, not
+  against this snapshot's target.
 
 ### `action.wallet-changed`
 
@@ -140,19 +118,15 @@ Latch raised when the connected address changes while a form is open.
 - **writers:**
   - `web/hooks/useWalletChangeReset.ts` — raises it on an address change and clears it on explicit acknowledgement
 - **readers:**
-  - `web/components/action-flow/SupplyFlow.tsx` — replaces the form body with WALLET CHANGED — RE-ENTER
-  - `web/components/action-flow/BorrowFlow.tsx` — same
-  - `web/components/action-flow/RepayFlow.tsx` — same
-  - `web/components/action-flow/ConvertFlow.tsx` — same
-  - `web/components/action-flow/PositionFlow.tsx` — same
-  - `web/components/action-flow/ClaimFlow.tsx` — same
-  - `web/components/action-flow/ActionFlowShell.tsx` — renders `WalletChangedNotice`
+  - `web/components/kit/SettlementTrace.tsx` — landing U4: replaces the form body with `UI-SHELL-WALLET-CHANGED`
+  - `web/app/borrow/page.tsx` — landing U9: form reset
+  - `web/app/supply/page.tsx` — landing U8: form reset
+  - `web/app/assets/page.tsx` — landing U10: form reset
 - **notes:** The hook resets the form's own state *and* raises the latch, so a
   selection made as one account can never be submitted as another. It is a
   **UX guard, not the security boundary** — the executor independently refuses
-  to broadcast on an identity change (`executor.status` → `identity_changed`),
-  and the queue independently pauses. Removing the latch degrades the
-  experience; removing the executor check is a trust-domain change.
+  to broadcast on an identity change (`executor.status` → `identity_changed`).
+  Watch selection and lens memory re-key to the new account.
 
 ### `action.stale-recovery`
 
@@ -162,24 +136,12 @@ Latch raised when a write failed because someone else's transaction moved the bo
 - **writers:**
   - `web/hooks/useStaleRecovery.ts` — raised on a `stale`-classified error; each form clears it on submit, selection change, or wallet change
 - **readers:**
-  - `web/components/action-flow/BorrowFlow.tsx` — requires one explicit re-confirm instead of dead-ending
-  - `web/components/action-flow/PositionFlow.tsx` — same
-- **notes:** Raising it also fires `invalidateAllOnChainReads` — deliberately
-  unscoped, because the change came from another party's write and there is no
-  transaction of ours to scope by. The re-confirm is what makes the refreshed
-  numbers something the user actually saw before signing.
-
-### `action.pending-label`
-
-Which sub-step of a multi-call claim is currently in flight.
-
-- **trust_domain:** `pure-client`
-- **writers:**
-  - `web/components/action-flow/ClaimFlow.tsx` — `pendingLabel`
-- **readers:**
-  - `web/components/action-flow/ClaimFlow.tsx` — passed to `TxState` as the pending prefix
-  - `web/components/action-flow/ActionFlowShell.tsx` — prefixes SIGNING / CONFIRMING copy
-- **notes:** Labelling only. The authoritative phase is `executor.status`.
+  - `web/app/borrow/page.tsx` — landing U9: requires one explicit re-confirm
+  - `web/app/supply/page.tsx` — landing U8: same
+- **notes:** Raising it also fires `invalidateAllOnChainReads` — unscoped,
+  because the change came from another party's write. The re-confirm is what
+  makes the refreshed numbers something the user actually saw before signing
+  (`UI-REVIEW-STALE`).
 
 ### `approve.clearing`
 
@@ -189,7 +151,7 @@ Whether a zero-first approval fallback is mid-sequence.
 - **writers:**
   - `web/hooks/useZeroFirstApprove.ts` — set when a reverted approve is retried via zero-first
 - **readers:**
-  - `web/hooks/useApprovalWriteFlows.ts` — folded into the shared `busy` flag every approve-then-write form gates its buttons on
+  - `web/hooks/useApprovalWriteFlows.ts` — folded into the shared `busy` flag
 - **notes:** The fallback fires only when the approve reverted *and* both the
   existing and target allowances were non-zero — the exact shape of the
   USDT-class revert. Paying for the extra transaction unconditionally would be
@@ -203,6 +165,21 @@ Whether the zero-first path was taken for the current approval.
 - **writers:**
   - `web/hooks/useZeroFirstApprove.ts` — set once the fallback is used
 - **readers:**
-  - `web/hooks/useZeroFirstApprove.ts` — prevents a second fallback attempt, so a token failing for another reason surfaces its error instead of looping
+  - `web/hooks/useZeroFirstApprove.ts` — prevents a second fallback attempt
 - **notes:** A loop-breaker. Clearing it without also clearing the attempt refs
   reintroduces the loop.
+
+### `persist.drafts`
+
+Unsubmitted amount / tick / stream / market drafts, per wallet and flow.
+
+- **trust_domain:** `pure-client`
+- **writers:**
+  - `web/lib/parse.ts` — landing U5: bigint-safe serializer (`JSON.stringify` throws on bigint)
+- **readers:**
+  - `web/app/supply/page.tsx` — landing U8: restore on return
+  - `web/app/borrow/page.tsx` — landing U9: restore on return
+- **notes:** Navigation between Borrow and Supply preserves each flow's
+  selections independently for the current wallet and chain. Quotes always
+  rebuild from live reads — a restored draft is input, not a frozen quote.
+  Throw-tolerant storage; missing store → empty draft, not an error.
