@@ -1,5 +1,7 @@
+import { expect } from "@playwright/test";
 import { formatUnits, parseUnits } from "viem";
-import { Given, When } from "../fixtures/bdd";
+import { Given, Then, When } from "../fixtures/bdd";
+import { ui } from "./locators";
 import {
   depositPtForStream,
   exhaustDepositCap,
@@ -34,9 +36,6 @@ Given("the wrap reserve holds {string}", async ({}, underlyingAmount: string) =>
 
 Given("the deposit cap for the active market is reached", async () => {
   const deployment = readDeployment();
-  // A tiny prior deposit from the lender persona (not DEV_WALLET) bumps
-  // marketTotalDeposited above zero without touching the balances this
-  // scenario's own assertions read from, then the cap gets pinned to match.
   const secondaryMarket = readSecondaryMarket();
   await depositPtForStream({
     account: LENDER_WALLET_ADDRESS,
@@ -55,5 +54,31 @@ When("I fill the amount field with a value exceeding my PT balance", async ({ pa
     functionName: "balanceOf",
     args: [DEV_WALLET_ADDRESS],
   });
-  await page.locator("input.input").first().fill(formatUnits(balance + 1n, 18));
+  await page.locator("#assets-pt-amount, input[inputMode='decimal']").first().fill(formatUnits(balance + 1n, 18));
+});
+
+When("I choose the wrap direction", async ({ page }) => {
+  await page.getByRole("button", { name: "WRAP", exact: true }).click();
+});
+
+When("I choose the unwrap direction", async ({ page }) => {
+  const unwrap = page.getByRole("button", { name: "UNWRAP", exact: true });
+  if (await unwrap.count()) await unwrap.click();
+});
+
+When("I open stream creation", async ({ page }) => {
+  await page.getByRole("tab", { name: "CREATE STREAM", exact: true }).click();
+});
+
+When("I select the first stream market", async ({ page }) => {
+  await ui(page, "UI-ASSETS-STREAM-SELECT-MARKET").locator(".assets-market").first().click();
+});
+
+Then("the assets converter is open", async ({ page }) => {
+  await expect(ui(page, "UI-ASSETS-CONVERTER")).toBeVisible();
+});
+
+Then("I see a borrow handoff for the new stream", async ({ page }) => {
+  await expect(ui(page, "UI-ASSETS-STREAM-CONFIRMED")).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByRole("link", { name: /BORROW AGAINST THIS STREAM/ })).toBeVisible();
 });

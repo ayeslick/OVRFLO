@@ -11,16 +11,16 @@ web
 OVRFLO serves three closely related DeFi participants:
 
 - Lenders supply underlying liquidity at a chosen APR and earn fixed-rate yield from deterministic collateral streams.
-- Borrowers pledge eligible OVRFLO Sablier streams to access underlying liquidity without liquidation risk or health-factor management.
+- Borrowers pledge eligible OVRFLO Streams to access underlying liquidity without liquidation risk or health-factor management.
 - Pendle PT holders deposit principal tokens to receive immediate ovrfloToken value plus a stream of the remaining fixed discount, which they can hold, sell, or use as collateral.
 
 Users interact through a wallet-connected application and are expected to understand token approvals, transaction signing, maturities, APRs, and on-chain settlement.
 
 ## Product Purpose
 
-OVRFLO enables self-repaying loans backed by deterministic, non-cancelable Sablier streams created from Pendle PT deposits. It turns the fixed discount embedded in a principal token into two usable legs: immediate ovrfloToken value and streamed value through maturity.
+OVRFLO enables self-repaying loans backed by deterministic, non-cancelable OVRFLO Streams created from Pendle PT deposits. It turns the fixed discount embedded in a principal token into two usable legs: immediate ovrfloToken value and streamed value through maturity.
 
-Success means users can supply liquidity, borrow against streams, sell streams, manage positions, and exit their ovrfloToken positions with the exact financial consequences visible before signing.
+Success means users can supply liquidity at a fixed APR, borrow against streams (a maximum borrow is economically a sale), manage positions, and exit their ovrfloToken positions with the exact financial consequences visible before signing.
 
 ## Positioning
 
@@ -30,24 +30,25 @@ The broader OVRFLO cycle lets a Pendle PT holder make its fixed discount immedia
 
 ## Operating Context
 
-The primary product is a wallet-connected web application backed by Ethereum-compatible smart contracts. Core workflows include:
+The primary product is a wallet-connected web application backed by Ethereum-compatible smart contracts. The Markets app's home is the watch surface: a connected wallet holding any protocol object lands on a role-lens wall of those entities. Borrow, Supply, and Assets launch as flows from home and from navigation. A wallet confirmed empty of positions, loans, and streams lands on a guided first run.
 
-- depositing an approved Pendle PT series to create ovrfloTokens and a Sablier stream;
-- supplying standing liquidity for eligible streams at a chosen APR;
-- borrowing underlying against one stream across one or more liquidity positions;
-- selling a stream into standing liquidity or through a listing;
-- claiming lender proceeds, repaying or closing loans, and tracking streams, loans, and supplied liquidity;
+Core workflows include:
+
+- depositing an approved Pendle PT series to create ovrfloTokens and an OVRFLO Stream;
+- supplying standing liquidity at a chosen fixed APR tick, where it rests until matched;
+- borrowing underlying against one stream at one APR tick in a single blind fill, up to the stream's full remaining value (there are no sale listings; a maximum borrow is economically a sale);
+- claiming lender proceeds on the supplied position that earned them, repaying or closing loans from the borrowed detail, and watching streams, loans, and supplied liquidity on the home wall;
 - wrapping and unwrapping the vault underlying one-to-one with ovrfloToken;
 - claiming PT against ovrfloToken after series maturity.
 
-Users evaluate token amounts, APR, maturity, stream value, loan obligation, fees, residual value, wallet state, approvals, and transaction status. Ponder may discover candidate streams and demand data, but ownership and all action-critical stream facts are verified on-chain.
+Users evaluate token amounts, APR, maturity, stream value, loan obligation, fees, residual value, wallet state, approvals, and transaction status. Amounts may be displayed with a USD reference at the user's option, but transactions are always denominated in token units and USD values are display-only. There is no indexer backend. Stream discovery is still a two-step browser verified-log scan: Transfer logs yield a candidate set, then ownership and every action-critical fact are verified by direct on-chain reads. Candidates never gate.
 
 ## Capabilities and Constraints
 
 - OVRFLO is Pendle-specific. Pendle PT is always treated as 18-decimal, and support for another principal-token protocol would require a separate adapter or wrapper.
-- Collateral streams use the immutable Sablier V2 deployment intentionally. They are per deposit and per customer, linear, deterministic, non-cancelable, and denominated in ovrfloToken.
+- Collateral streams use OVRFLO Streams, the protocol's own stream layer. It is a fork of Sablier V2 v1.1, and it keeps that version's stream behaviour and its withdrawal access control. Streams are per deposit and per customer, linear, deterministic, non-cancelable, and denominated in ovrfloToken. Shipped holder discovery does not list streams via Enumerable; the frontend still finds candidates from verified logs and hydrates each id on-chain.
 - Loans are self-repaying and require no liquidation mechanism or health factor. A lender may recover from streamed accrual or direct borrower repayment, capped at the obligation.
-- Borrowing uses loan pools that atomically aggregate multiple liquidity positions against one pledged stream. Each pool has one loan, and lenders claim proceeds pro rata.
+- Lending is a loan-only, fixed-rate tick order book. Lenders rest capital at an APR tick; a borrow is a blind fill against one tick that never enumerates lender positions; lender attribution is computed by interval overlap and claims are pro rata against a loan's recovered value.
 - One ovrfloToken exists per underlying. Its fungibility across PT deposit and underlying wrap origins is intentional and increases exit optionality.
 - Wrap and unwrap are permissionless and one-to-one, bounded by a separately tracked underlying reserve. PT claims are bounded by PT backing.
 - Administrative actions flow from a timelocked multisig through OVRFLOFactory to vaults and lending markets. Product design must not imply direct administration of dependent contracts.
@@ -65,7 +66,7 @@ Existing brand and interface assets live under `web/public/brand/` and `web/publ
 ## Evidence on Hand
 
 - `README.md` contains the public product narrative, worked lending example, protocol architecture, contract capabilities, and user flows.
-- `CONCEPTS.md` defines shared OVRFLO vocabulary and the exact meanings of the PT deposit, wrap, unwrap, claim, lending, stream, and loan-pool processes.
+- `CONCEPTS.md` defines shared OVRFLO vocabulary and the exact meanings of the PT deposit, wrap, unwrap, claim, stream, and v1-lite lending (tick, tape, blind fill, epoch) processes.
 - `src/` and `interfaces/` contain the protocol implementation and external integration boundaries.
 - `web/` contains the Next.js application, wallet integration, on-chain reads and writes, transaction flows, and automated tests.
 - `docs/audit/`, `docs/solutions/`, `BASE_SECURITY.md`, and `VAULT_SECURITY.md` contain security evidence, rejected-finding records, and enforceable implementation guidance.

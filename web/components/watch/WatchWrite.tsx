@@ -60,7 +60,7 @@ export function WatchWrite({
 
   if (chain.wrongChain) {
     return (
-      <div className="watch-write" data-write={kind} data-gate="network">
+      <div className="watch-write" data-ui="UI-WATCH-WRITE" data-write={kind} data-gate="network">
         <p>
           CONNECTED CHAIN {chain.connectedChainId ?? "—"} · EXPECTED {chain.expectedChainId}
         </p>
@@ -141,7 +141,7 @@ export function WatchWrite({
   }
 
   return (
-    <div className="watch-write" data-write={kind}>
+    <div className="watch-write" data-ui="UI-WATCH-WRITE" data-write={kind}>
       <SettlementTrace steps={steps} />
       {ackTrace.needsAcknowledgment ? <AcknowledgeRiskStep /> : null}
       {kind === "repay" && !flow.isConfirmed ? (

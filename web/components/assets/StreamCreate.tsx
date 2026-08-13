@@ -139,7 +139,7 @@ export function StreamCreate({
 
   if (stage === "amount") {
     return (
-      <section data-control="UI-ASSETS-STREAM-ENTER-PT" data-state={amountError ? "invalid" : amountRaw ? "valid" : "empty"}>
+      <section data-ui="UI-ASSETS-STREAM-ENTER-PT" data-control="UI-ASSETS-STREAM-ENTER-PT" data-state={amountError ? "invalid" : amountRaw ? "valid" : "empty"}>
         <span className="assets-bay-kicker">CREATE STREAM</span>
         <h2 className="assets-bay-title">PT amount</h2>
         <p className="assets-note">WALLET PT {ptBalanceLabel}</p>
@@ -171,6 +171,7 @@ export function StreamCreate({
 
   return (
     <section
+      data-ui={stage === "confirmed" ? "UI-ASSETS-STREAM-CONFIRMED" : "UI-REVIEW-STREAM-DEPOSIT"}
       data-control={stage === "confirmed" ? "UI-ASSETS-STREAM-CONFIRMED" : "UI-REVIEW-STREAM-DEPOSIT"}
       data-state={stage}
     >

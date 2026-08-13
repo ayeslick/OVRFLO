@@ -7,7 +7,7 @@
 `web/components/CopyValue.tsx` · `web/components/Providers.tsx` ·
 `web/app/{loading,error,global-error}.tsx` ·
 `web/components/{ModalErrorBoundary,TruncationNotice}.tsx`.
-U7 lands `WalletControl` and `Footer`.
+U7 lands `Footer`. Wallet connect/disconnect is `WalletButton` from `wallet-runtime` (`web/components/WalletRuntime.tsx`).
 
 **Purpose of the region.** Identify the application, connect a wallet, navigate to
 Borrow / Supply / Assets / Risk, and own every app-wide honesty surface: disconnected

@@ -45,10 +45,10 @@ There are eight, and only eight. This set replaced the six-region pass-1 topolog
 
 | # | Region | Incumbent code |
 |---|---|---|
-| 1 | Shell | `web/app/layout.tsx` · `web/app/page.tsx` · `web/components/MarketsApp.tsx` · `web/components/WalletRuntime.tsx` · `web/components/CopyValue.tsx` · `web/components/Providers.tsx` · `web/app/{loading,error,global-error}.tsx` · `web/components/{ModalErrorBoundary,TruncationNotice}.tsx`. U7 lands `WalletControl` and `Footer`. |
-| 2 | Watch surface | U7: `web/components/watch/{Wall,SuppliedDetail,BorrowedDetail,StreamDetail,ClosedLoanDetail}.tsx`. Entry gate lives in `web/app/page.tsx`. |
-| 3 | Borrow flow | `web/components/action-flow/BorrowFlow.tsx` until U9 lands `web/app/borrow/page.tsx` and `web/components/borrow/*`. |
-| 4 | Supply flow | `web/components/action-flow/SupplyFlow.tsx` until U8 lands `web/app/supply/page.tsx` and `web/components/supply/*`. |
+| 1 | Shell | `web/app/layout.tsx` · `web/app/page.tsx` · `web/components/MarketsApp.tsx` · `web/components/WalletRuntime.tsx` · `web/components/CopyValue.tsx` · `web/components/Providers.tsx` · `web/app/{loading,error,global-error}.tsx` · `web/components/{ModalErrorBoundary,TruncationNotice,Footer}.tsx`. Wallet control is `WalletButton` from `wallet-runtime`. |
+| 2 | Watch surface | `web/components/watch/{Wall,SuppliedDetail,BorrowedDetail,StreamDetail,ClosedLoanDetail}.tsx`. Entry gate lives in `web/app/page.tsx`. |
+| 3 | Borrow flow | `web/app/borrow/page.tsx` · `web/components/borrow/*`. |
+| 4 | Supply flow | `web/app/supply/page.tsx` · `web/components/supply/*`. |
 | 5 | ALL RATES expert workspace | U4 `RateWindow` kit plus the U8/U9 `ALL RATES` workspace. The retired `RateLadder.tsx` does not return. |
 | 6 | Split review + receipts | `web/components/action-flow/ActionFlowShell.tsx` until U8–U11 compose `SettlementTrace` and `Receipt` from the kit. Shared SETTLEMENT / PERMISSION / ACTION families live in `ui/review.md`. |
 | 7 | Assets converter + stream creation | `web/components/action-flow/ConvertFlow.tsx` until U10 lands `web/app/assets/page.tsx` and `web/components/assets/*`. |

@@ -76,7 +76,7 @@ export function BorrowedDetail({
       : 0n;
 
   return (
-    <article data-region="borrowed-detail" data-state={state}>
+    <article data-ui="UI-WATCH-BORROWED-DETAIL" data-region="borrowed-detail" data-state={state}>
       <div className="kit-hero">
         <span className="kit-hero-kicker">OUTSTANDING</span>
         <RollingNumber

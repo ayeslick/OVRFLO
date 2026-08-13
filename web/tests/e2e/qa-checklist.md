@@ -80,6 +80,7 @@ Each item cites the `DESIGN.md` section it verifies.
 
 ## Out of scope for this checklist
 
-- Responsive behavior at any breakpoint — covered by the automated
-  `supply.feature` viewport scenario (`page.setViewportSize()`), not manual inspection.
-- Any journey/error-state/functional behavior — covered by the rest of `tests/e2e/*.feature`.
+- Responsive behavior at any breakpoint — covered by component tests and
+  watch URL `?lens=` / `?position=` / `?loan=` persistence, not this checklist.
+- Any journey/error-state/functional behavior — covered by `tests/e2e/*.feature`
+  (`watch`, `supply`, `borrow`, `repay-close`, `deposit-wrap-unwrap`, `first-run`).

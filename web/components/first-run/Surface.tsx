@@ -52,7 +52,7 @@ export function Surface({
   const ptReady = ptBalance.status === "ready" && ptBalance.value > 0n;
 
   return (
-    <section className="first-run-surface" data-control="UI-FIRST-RUN-SURFACE" data-state="guided">
+    <section className="first-run-surface" data-ui="UI-FIRST-RUN-SURFACE" data-control="UI-FIRST-RUN-SURFACE" data-state="guided">
       <div className="first-run-bays">
         <div className="first-run-bay">
           <h2 className="first-run-kicker">A SELF-REPAYING LOAN</h2>
@@ -115,7 +115,7 @@ export function Surface({
         </div>
       </div>
 
-      <button type="button" className="first-run-skip" data-control="UI-FIRST-RUN-DISMISS" onClick={onDismiss}>
+      <button type="button" className="first-run-skip" data-ui="UI-FIRST-RUN-DISMISS" data-control="UI-FIRST-RUN-DISMISS" onClick={onDismiss}>
         SKIP FOR NOW
       </button>
     </section>
@@ -141,6 +141,7 @@ function IntentRows({
       <a
         className="kit-action"
         href="/assets"
+        data-ui="UI-FIRST-RUN-INTENT-DEPOSIT"
         data-control="UI-FIRST-RUN-INTENT-DEPOSIT"
         data-state={ptReady ? "ready-balance" : "enabled"}
       >

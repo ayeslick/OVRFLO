@@ -18,10 +18,12 @@ import { formatAddress } from "@/lib/format";
 // never associated with a private key anywhere in this codebase.
 export const DEV_WALLET_ADDRESS: Address = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8";
 export const LENDER_WALLET_ADDRESS: Address = "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC";
+// Anvil account #3 — lockstep with tests/e2e/support/WalletRuntime.tsx E2E_EMPTY_ACCOUNT.
+export const EMPTY_WALLET_ADDRESS: Address = "0x90F79bf6EB2c4f870365E785982E1f101E93b906";
 
 // Every scenario's Background waits on this rather than assuming connection —
 // the mock connector's `defaultConnected` flag only starts the reconnect
 // handshake; it isn't synchronous with first paint.
-export async function waitForWalletConnected(page: Page) {
-  await expect(page.getByRole("button", { name: formatAddress(DEV_WALLET_ADDRESS) })).toBeVisible();
+export async function waitForWalletConnected(page: Page, address: Address = DEV_WALLET_ADDRESS) {
+  await expect(page.getByRole("button", { name: formatAddress(address) })).toBeVisible();
 }

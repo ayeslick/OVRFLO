@@ -46,7 +46,7 @@ export function StreamDetail({
   const endMs = Number(stream.schedule.end) * 1000;
 
   return (
-    <article data-region="stream-detail" data-state={state}>
+    <article data-ui="UI-WATCH-STREAM-DETAIL" data-region="stream-detail" data-state={state}>
       <div className="kit-hero">
         <span className="kit-hero-kicker">VESTED</span>
         <RollingNumber

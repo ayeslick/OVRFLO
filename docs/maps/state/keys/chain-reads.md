@@ -23,8 +23,7 @@ The wallet connection: status, connected addresses, and chain ID.
 - **trust_domain:** `on-chain`
 - **writers:**
   - `web/components/Providers.tsx` — mounts the wagmi and AppKit providers that own the connection
-  - `web/components/WalletRuntime.tsx` — connect / disconnect surface
-  - `web/components/WalletControl.tsx` — landing U7: shell wallet control
+  - `web/components/WalletRuntime.tsx` — `WalletButton`: connect / disconnect (E2E swaps this module at build time)
 - **readers:**
   - `web/app/page.tsx` — R12 entry: disconnected vs syncing vs watch vs first-run
   - `web/hooks/useChainGuard.ts` — derives `wrongChain` against the configured chain

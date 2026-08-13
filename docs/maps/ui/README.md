@@ -18,10 +18,10 @@ is retired. Owner-approved replacement: `docs/adr/0001-watch-surface-region-set.
 
 | Region | Slug | Brief | Incumbent / landing code |
 |---|---|---|---|
-| Shell | `SHELL` | [`shell.md`](shell.md) | `web/app/layout.tsx` · `web/app/page.tsx` · `web/components/MarketsApp.tsx` · `web/components/WalletRuntime.tsx` · `web/components/CopyValue.tsx` · `web/components/Providers.tsx` · `web/app/{loading,error,global-error}.tsx` · `web/components/{ModalErrorBoundary,TruncationNotice}.tsx`. U7: `WalletControl`, `Footer`. |
-| Watch surface | `WATCH` | [`watch.md`](watch.md) | U7: `web/components/watch/{Wall,SuppliedDetail,BorrowedDetail,StreamDetail,ClosedLoanDetail}.tsx`. Entry gate: `web/app/page.tsx`. |
-| Borrow flow | `BORROW` | [`borrow.md`](borrow.md) | `web/components/action-flow/BorrowFlow.tsx` until U9: `web/app/borrow/page.tsx`, `web/components/borrow/*`. |
-| Supply flow | `SUPPLY` | [`supply.md`](supply.md) | `web/components/action-flow/SupplyFlow.tsx` until U8: `web/app/supply/page.tsx`, `web/components/supply/*`. |
+| Shell | `SHELL` | [`shell.md`](shell.md) | `web/app/layout.tsx` · `web/app/page.tsx` · `web/components/MarketsApp.tsx` · `web/components/WalletRuntime.tsx` · `web/components/CopyValue.tsx` · `web/components/Providers.tsx` · `web/app/{loading,error,global-error}.tsx` · `web/components/{ModalErrorBoundary,TruncationNotice,Footer}.tsx`. Wallet control is `WalletButton` from `wallet-runtime`. |
+| Watch surface | `WATCH` | [`watch.md`](watch.md) | `web/components/watch/{Wall,SuppliedDetail,BorrowedDetail,StreamDetail,ClosedLoanDetail}.tsx`. Entry gate: `web/app/page.tsx`. |
+| Borrow flow | `BORROW` | [`borrow.md`](borrow.md) | `web/app/borrow/page.tsx`, `web/components/borrow/*`. |
+| Supply flow | `SUPPLY` | [`supply.md`](supply.md) | `web/app/supply/page.tsx`, `web/components/supply/*`. |
 | ALL RATES expert workspace | `RATES` | [`rates.md`](rates.md) | U4 `RateWindow` plus U8/U9 `ALL RATES` workspace. |
 | Split review + receipts | `REVIEW` | [`review.md`](review.md) | `web/components/action-flow/ActionFlowShell.tsx` until U8–U11 kit `SettlementTrace` / `Receipt`. |
 | Assets converter + stream creation | `ASSETS` | [`assets.md`](assets.md) | `web/components/action-flow/ConvertFlow.tsx` until U10: `web/app/assets/page.tsx`, `web/components/assets/*`. |

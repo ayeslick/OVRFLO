@@ -148,7 +148,7 @@ export function Converter({
           : "ready";
 
   return (
-    <section data-control="UI-ASSETS-CONVERTER" data-state={direction}>
+    <section data-ui="UI-ASSETS-CONVERTER" data-control="UI-ASSETS-CONVERTER" data-state={direction}>
       <div className="assets-bays">
         <aside className="assets-bay" data-control="UI-ASSETS-RESERVE" data-state={reserveState}>
           <span className="assets-bay-kicker">RESERVE</span>

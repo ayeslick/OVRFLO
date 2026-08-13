@@ -27,7 +27,7 @@ export function StreamSelectMarket({
   onContinue: () => void;
 }) {
   return (
-    <section data-control="UI-ASSETS-STREAM-SELECT-MARKET" data-state={status}>
+    <section data-ui="UI-ASSETS-STREAM-SELECT-MARKET" data-control="UI-ASSETS-STREAM-SELECT-MARKET" data-state={status}>
       <span className="assets-bay-kicker">CREATE STREAM</span>
       <h2 className="assets-bay-title">Choose a market</h2>
       {status === "loading" ? <p className="assets-note">CHECKING MARKETS…</p> : null}

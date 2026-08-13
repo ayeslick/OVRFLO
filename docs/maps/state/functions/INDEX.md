@@ -24,7 +24,7 @@ on-chain contract state. This index does not cover, replace, or summarise it.
 |---|---|
 | Key files | 6 |
 | Keys | 66 |
-| Modules | 90 |
+| Modules | 89 |
 | `on-chain` keys | 24 |
 | `projection` keys | 2 |
 | `pure-client` keys | 40 |
@@ -76,7 +76,6 @@ a `projection` count is a module where a fail-closed mistake can happen.
 | `web/components/supply/RateStep.tsx` | 0 | 0 | 2 |
 | `web/components/supply/SelectMarket.tsx` | 1 | 0 | 1 |
 | `web/components/supply/SupplyFlow.tsx` | 0 | 0 | 4 |
-| `web/components/WalletControl.tsx` | 1 | 0 | 0 |
 | `web/components/WalletRuntime.tsx` | 1 | 0 | 0 |
 | `web/components/watch/BorrowedDetail.tsx` | 1 | 0 | 6 |
 | `web/components/watch/ClosedLoanDetail.tsx` | 1 | 0 | 1 |
@@ -434,17 +433,11 @@ a `projection` count is a module where a fail-closed mistake can happen.
 | reads | `chrome.surface-state` | `pure-client` | landing U12: supply topology |
 | reads | `persist.drafts` | `pure-client` | landing U12: restore selections on return |
 
-### `web/components/WalletControl.tsx`
-
-| Direction | Key | Trust domain | Role |
-|---|---|---|---|
-| writes | `chain.connection` | `on-chain` | landing U7: shell wallet control |
-
 ### `web/components/WalletRuntime.tsx`
 
 | Direction | Key | Trust domain | Role |
 |---|---|---|---|
-| writes | `chain.connection` | `on-chain` | connect / disconnect surface |
+| writes | `chain.connection` | `on-chain` | `WalletButton`: connect / disconnect (E2E swaps this module at build time) |
 
 ### `web/components/watch/BorrowedDetail.tsx`
 
@@ -871,7 +864,7 @@ full entry, including fail-closed guidance on `projection` keys.
 | `chain.balances` | `on-chain` | `web/hooks/useLadder.ts`<br>`web/app/assets/page.tsx` | `web/components/kit/AmountField.tsx`<br>`web/components/supply/AmountStep.tsx`<br>`web/components/assets/Converter.tsx` | `docs/maps/state/keys/chain-reads.md` |
 | `chain.block-timestamp` | `on-chain` | `web/hooks/useClock.ts` | `web/lib/payoff.ts`<br>`web/hooks/useClock.ts` | `docs/maps/state/keys/chain-reads.md` |
 | `chain.borrower-loans` | `on-chain` | `web/hooks/useBorrowerBook.ts` | `web/app/page.tsx`<br>`web/components/watch/Wall.tsx`<br>`web/components/watch/BorrowedDetail.tsx`<br>`web/components/watch/ClosedLoanDetail.tsx` | `docs/maps/state/keys/chain-reads.md` |
-| `chain.connection` | `on-chain` | `web/components/Providers.tsx`<br>`web/components/WalletRuntime.tsx`<br>`web/components/WalletControl.tsx` | `web/app/page.tsx`<br>`web/hooks/useChainGuard.ts`<br>`web/hooks/useWriteFlow.ts`<br>`web/hooks/useWalletChangeReset.ts`<br>`web/components/watch/Wall.tsx` | `docs/maps/state/keys/chain-reads.md` |
+| `chain.connection` | `on-chain` | `web/components/Providers.tsx`<br>`web/components/WalletRuntime.tsx` | `web/app/page.tsx`<br>`web/hooks/useChainGuard.ts`<br>`web/hooks/useWriteFlow.ts`<br>`web/hooks/useWalletChangeReset.ts`<br>`web/components/watch/Wall.tsx` | `docs/maps/state/keys/chain-reads.md` |
 | `chain.lender-positions` | `on-chain` | `web/hooks/useLenderBook.ts` | `web/app/page.tsx`<br>`web/components/watch/Wall.tsx`<br>`web/components/watch/SuppliedDetail.tsx`<br>`web/lib/invalidate.ts` | `docs/maps/state/keys/chain-reads.md` |
 | `chain.lending-config` | `on-chain` | `web/hooks/useLending.ts`<br>`web/hooks/useLadder.ts` | `web/lib/ladder.ts`<br>`web/components/kit/RateWindow.tsx`<br>`web/components/supply/AmountStep.tsx`<br>`web/components/borrow/AmountStep.tsx` | `docs/maps/state/keys/chain-reads.md` |
 | `chain.loans-of-position` | `on-chain` | `web/hooks/useLenderBook.ts` | `web/lib/actions/claim.ts`<br>`web/components/watch/SuppliedDetail.tsx`<br>`web/components/kit/ActionButton.tsx` | `docs/maps/state/keys/chain-reads.md` |

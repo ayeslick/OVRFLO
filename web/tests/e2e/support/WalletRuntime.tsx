@@ -27,6 +27,10 @@ import { CopyValue } from "@/components/CopyValue";
 // default — keep the two in lockstep.
 export const E2E_DEV_ACCOUNT: Address = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8";
 
+// Anvil account #3 — seed-local.sh never funds it with a stream or loan, so
+// first-run.feature can switch here without draining the seeded demo book.
+export const E2E_EMPTY_ACCOUNT: Address = "0x90F79bf6EB2c4f870365E785982E1f101E93b906";
+
 // The mock connector's provider reads `chain.rpcUrls.default.http[0]` directly
 // (see @wagmi/core's connectors/mock.ts) rather than the `transports` map
 // below, so both must point at the local fork.
@@ -48,7 +52,10 @@ const e2eChain = {
 export const walletConfig: Config = createConfig({
   ssr: true,
   chains: [e2eChain],
-  connectors: [mock({ accounts: [E2E_DEV_ACCOUNT], features: { defaultConnected: true, reconnect: true } })],
+  connectors: [
+    mock({ accounts: [E2E_DEV_ACCOUNT], features: { defaultConnected: true, reconnect: true } }),
+    mock({ accounts: [E2E_EMPTY_ACCOUNT], features: { defaultConnected: false, reconnect: false } }),
+  ],
   transports: { [e2eChain.id]: http(rpcUrl) },
 });
 
@@ -61,31 +68,42 @@ export function WalletButton() {
   const { connect, connectors } = useConnect();
   const connected = connection.status === "connected";
   const address = connection.addresses?.[0];
+  const emptyConnector = connectors[1];
+  const devConnector = connectors[0];
 
-  if (connected) {
-    return (
-      <span className="wallet-identity">
-        <CopyValue value={address ?? ""} display={formatAddress(address)} label="Copy wallet address" />
-        <button className="button mono" type="button" onClick={() => disconnect()}>
-          DISCONNECT
-        </button>
-      </span>
-    );
-  }
-
-  // Mock connector is defaultConnected+reconnect, but first paint can still
-  // race reconnect — offer an explicit connect so the page isn't stuck on
-  // CONNECT if auto-reconnect hasn't finished yet.
   return (
-    <button
-      className="button mono"
-      type="button"
-      onClick={() => {
-        const connector = connectors[0];
-        if (connector) connect({ connector });
-      }}
-    >
-      CONNECT
-    </button>
+    <span className="wallet-identity">
+      {connected ? (
+        <>
+          <CopyValue value={address ?? ""} display={formatAddress(address)} label="Copy wallet address" />
+          <button className="button mono" type="button" onClick={() => disconnect()}>
+            DISCONNECT
+          </button>
+        </>
+      ) : (
+        <button
+          className="button mono"
+          type="button"
+          onClick={() => {
+            if (devConnector) connect({ connector: devConnector });
+          }}
+        >
+          CONNECT WALLET
+        </button>
+      )}
+      {emptyConnector ? (
+        <button
+          className="button mono"
+          type="button"
+          data-ui="UI-E2E-USE-EMPTY-WALLET"
+          onClick={() => {
+            disconnect();
+            connect({ connector: emptyConnector });
+          }}
+        >
+          USE EMPTY WALLET
+        </button>
+      ) : null}
+    </span>
   );
 }

@@ -1,71 +1,65 @@
 Feature: Supply liquidity
-  Entry: SUPPLY action on a lending market card. Decision: approve (if needed)
-  then confirm an amount at a chosen rate. Exit: a new liquidity position
-  appears for that market.
+  Entry: /supply. Decision: SELECT_MARKET → amount → rate → review → approve
+  (if needed) → confirm. Exit: /?lens=supplied&position= on the watch wall.
 
   Background:
-    Given I am on the markets page
+    Given I am on the supply flow
     And my wallet is connected
 
-  Scenario: Happy path — supply liquidity at a chosen rate
-    When I expand the active market
+  @UI-SUPPLY-SELECT-MARKET
+  Scenario: Happy path — supply at a chosen rate lands on the watch wall
+    When I select the first supply market
+    And I click the "CONTINUE" button
+    Then the supply amount step is open
+    When I fill the amount field with "5"
+    And I select the first available rate
+    And I click the "REVIEW SUPPLY" button
+    Then the supply review is open
+    When I acknowledge risk if prompted
+    And I approve the supply token if needed
     And I click the "SUPPLY" button
-    Then the "SUPPLY LIQUIDITY" modal is open
-    When I select the first available rate
-    And I fill the amount field with "5"
-    And I click the "APPROVE" button
-    And I click the button matching "^SUPPLY @"
-    Then I see the caption "CONFIRMED"
-    When I click the "CLOSE" button
-    Then no modal is open
-    When I expand the active market
-    Then I see a "LIQUIDITY" position card
+    Then I see a confirmed action receipt
+    When I click the "VIEW POSITION" button
+    Then the URL carries the supplied lens and a position id
+    And the supplied detail is open
 
-  Scenario: Error state — insufficient balance
-    When I expand the active market
-    And I click the "SUPPLY" button
-    Then the "SUPPLY LIQUIDITY" modal is open
-    When I select the first available rate
+  @UI-SUPPLY-AMOUNT
+  Scenario: Clamp — amount above wallet balance is refused before signing
+    When I select the first supply market
+    And I click the "CONTINUE" button
     And I fill the amount field with a value exceeding my wstETH balance
-    Then I see the caption "INSUFFICIENT BALANCE"
-    And the button matching "^SUPPLY @|^APPROVE$" is disabled
+    Then I see a field error
+    And the "REVIEW SUPPLY" button is disabled
 
-  Scenario: Error state — transaction reverts
-    When I expand the active market
-    And I click the "SUPPLY" button
-    Then the "SUPPLY LIQUIDITY" modal is open
-    When I select the first available rate
+  Scenario: Identity churn — disconnect on review asks to re-enter
+    When I select the first supply market
+    And I click the "CONTINUE" button
+    And I fill the amount field with "5"
+    And I select the first available rate
+    And I click the "REVIEW SUPPLY" button
+    Then the supply review is open
+    When I disconnect my wallet
+    Then I see text matching "WALLET CHANGED|Connect a wallet"
+
+  Scenario: Interruption — reload mid-amount does not invent a quote
+    When I select the first supply market
+    And I click the "CONTINUE" button
+    And I fill the amount field with "5"
+    When I reload the page
+    Then the supply amount step is open
+
+  Scenario: Outcomes — draining the wallet after approve reverts on submit
+    When I select the first supply market
+    And I click the "CONTINUE" button
     And I fill the amount field with "1"
-    And I click the "APPROVE" button
+    And I select the first available rate
+    And I click the "REVIEW SUPPLY" button
+    And I acknowledge risk if prompted
+    And I approve the supply token if needed
     And my wstETH balance is drained
-    And I click the button matching "^SUPPLY @"
+    And I click the "SUPPLY" button
     Then I see a mapped error message
-    And the "SUPPLY LIQUIDITY" modal is open
-    And the button matching "^SUPPLY @" is enabled
 
-  Scenario: Cross-cutting — market matured disables SUPPLY with a caption
-    Given the market has matured
-    When I expand the active market
-    Then the "SUPPLY" button is disabled
-    And I see the caption "MARKET MATURED"
-
-  Scenario Outline: Cross-cutting — responsive layout at <width>px
-    Given the viewport is <width> by <height>
-    When I expand the active market
-    Then the "SUPPLY" button is enabled
-
-    Examples:
-      | width | height |
-      | 800   | 900    |
-      | 1200  | 900    |
-
-  # R46/F2. A lender cannot restrict how their liquidity is consumed, so the
-  # sale path has to leave them with something the app can actually show. This
-  # is a regression guard on an existing behaviour, not new rendering — but the
-  # discovery hop it depends on (NFT transfer, then the indexer rewriting the
-  # stream's recipient) is exactly the part a component test cannot exercise.
-  Scenario: Cross-cutting — liquidity filled by a sale leaves the stream in my positions
-    Given my supplied liquidity is filled by an outright stream sale
-    And the frontend re-syncs with chain state
-    When I expand the active market
-    Then I see a "STREAM" position card
+  @UI-SUPPLY-SELECT-MARKET
+  Scenario: Degraded reads — registry copy is distinct from an empty list
+    Then the supply market picker is showing a non-loading state

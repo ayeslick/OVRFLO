@@ -18,7 +18,7 @@ export function ClosedLoanDetail({
   onSelectStream: (streamId: bigint) => void;
 }) {
   return (
-    <article data-region="settled-detail" data-state="settled">
+    <article data-ui="UI-WATCH-CLOSED-DETAIL" data-region="settled-detail" data-state="settled">
       <div className="kit-hero">
         <span className="kit-hero-kicker">SETTLED</span>
         <p className="watch-hero-meta">LOAN #{loan.id.toString()}</p>

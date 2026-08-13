@@ -58,6 +58,7 @@ export function LensTabs({
       className="kit-lens"
       role="tablist"
       aria-label="Watch lens"
+      data-ui="UI-WATCH-LENS"
       onKeyDown={onKeyDown}
     >
       {visible.map((tab) => {

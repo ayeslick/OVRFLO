@@ -52,8 +52,8 @@ export function WalletButton() {
   }
 
   return (
-    <button className="button mono" type="button" onClick={() => void open()}>
-      CONNECT
-    </button>
+        <button className="button mono" type="button" onClick={() => void open()}>
+          CONNECT WALLET
+        </button>
   );
 }

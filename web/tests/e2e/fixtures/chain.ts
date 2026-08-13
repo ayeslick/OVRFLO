@@ -26,6 +26,7 @@ import {
 import { erc20Abi, ovrfloAbi, ovrfloFactoryAbi, ovrfloLendingAbi, sablierLockupAbi } from "@/lib/abis";
 import { SABLIER_LOCKUP_ADDRESS } from "@/lib/config";
 import { formatMaturityDate } from "@/lib/format";
+import { floorToUnit, grossPrice } from "@/lib/lending-math";
 import { DEV_WALLET_ADDRESS, LENDER_WALLET_ADDRESS } from "./mock-wallet";
 import { RPC_URL, rpcCall } from "./rpc";
 
@@ -288,10 +289,6 @@ export async function readAprBounds(lending: Address) {
 // (src/OVRFLOLending.sol) — a deliberate single-tick launch default, widened
 // later by governance via setAprBounds. seed-local.sh never widens it, so
 // every freshly-seeded local market starts with exactly one rate tick.
-// adjust-rate.feature's scenarios need a second, distinct tick to move
-// liquidity *to* — arrange one via the same factory-forwarded admin path
-// real governance would use (AGENTS.md: multisig -> factory -> lending,
-// never the lending market directly).
 export async function widenAprBounds(params: { factory: Address; lending: Address; aprMinBps: number; aprMaxBps: number }) {
   const hash = await ownerClient.writeContract({
     address: params.factory,
@@ -331,9 +328,7 @@ export async function lenderSupplyLiquidity(params: { lending: Address; market: 
 }
 
 // Withdraws a stream's full current balance directly (bypassing the app UI
-// entirely) as the recipient — simulates "already claimed through another
-// channel" for claim-all.feature's mid-queue-revert scenario: the review
-// modal's queue is planned from an on-open snapshot, so this can race it.
+// entirely) as the recipient — fixture-direct "already claimed elsewhere".
 export async function claimStreamMax(streamId: bigint) {
   const hash = await devClient.writeContract({
     address: SABLIER_LOCKUP_ADDRESS,
@@ -441,15 +436,36 @@ export async function waitForHeldStream(recipient: Address, streamId: bigint, ti
   );
 }
 
-// Arrangement helper: size a partial borrow against remaining stream face.
-// v1-lite has no quote view; callers that need a live price wait on U6.
-export async function readStreamGrossPrice(_params: {
+// Arrangement helper: UNIT-floored present value of remaining stream face.
+export async function readStreamGrossPrice(params: {
   lending: Address;
   market: Address;
   streamId: bigint;
   aprBps: number;
 }) {
-  return 0n;
+  const deposited = await publicClient.readContract({
+    address: SABLIER_LOCKUP_ADDRESS,
+    abi: sablierLockupAbi,
+    functionName: "getDepositedAmount",
+    args: [params.streamId],
+  });
+  const withdrawn = await publicClient.readContract({
+    address: SABLIER_LOCKUP_ADDRESS,
+    abi: sablierLockupAbi,
+    functionName: "getWithdrawnAmount",
+    args: [params.streamId],
+  });
+  const endTime = await publicClient.readContract({
+    address: SABLIER_LOCKUP_ADDRESS,
+    abi: sablierLockupAbi,
+    functionName: "getEndTime",
+    args: [params.streamId],
+  });
+  const remaining = deposited - withdrawn;
+  const latest = await publicClient.getBlock();
+  const end = BigInt(endTime);
+  const ttm = end > latest.timestamp ? end - latest.timestamp : 0n;
+  return floorToUnit(grossPrice(remaining, params.aprBps, ttm));
 }
 
 // Full borrow as `account` — arrangement for repay-close.feature.

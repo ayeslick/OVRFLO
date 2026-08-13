@@ -76,11 +76,19 @@ The tracked amount of underlying asset that backs the unwrap path.
 
 Direct token transfers or donations to the vault do not increase the wrap reserve. Excess underlying above the tracked reserve can be recovered without reducing unwrap capacity.
 
-### Sablier stream
+### OVRFLO Stream
 
 A per-deposit linear vesting stream used by OVRFLO to deliver the discount between a principal token's current value and its face value over time. OVRFLO mints the non-discounted portion to the depositor immediately as ovrfloToken and streams only the remaining discount, so a stream's face value is that discount — not the deposited principal token amount, which can be far larger.
 
-Sablier streams belong to the PT deposit path. Wrap and unwrap do not create, modify, or settle streams.
+OVRFLO Streams belong to the PT deposit path. Wrap and unwrap do not create, modify, or settle streams. Minted by `OVRFLOStream`, OVRFLO's fork of the Sablier v1.1 lockup (historically these were Sablier streams on the canonical deployment).
+
+### OVRFLO Streams (layer)
+
+The OVRFLO-owned stream layer that fully replaces Sablier pre-launch — deployment, identifiers, config, and vocabulary; "Sablier" survives only as upstream provenance in the audit record. `OVRFLOStream` is the contract: a Linear-only GPL fork of Sablier v2-core v1.1.2 changing exactly three things in logic — ERC721 becomes ERC721Enumerable (indexerless held-stream discovery), the NFT descriptor becomes a custom on-chain ledger card, and LockupDynamic is dropped — with identifiers, comments, and NatSpec rebranded throughout. The v1.1 withdraw ACL the audit record depends on is preserved byte-for-byte. Lives in its own GPL repo; the OVRFLO repo stays MIT. Naming: `OVRFLOStream` as an identifier only; in prose, "OVRFLO Streams" (the layer) or "OVRFLO Stream" (one stream). See `docs/plans/2026-08-13-001-feat-ovrflo-streams-plan.md`.
+
+### Ledger card
+
+The OVRFLO Stream NFT's on-chain SVG direction: a data-dense card with a segmented progress bar and typographic rows (streamed %, streamed/remaining amounts, rate, end date, asset, status) — no pictorial motif. Chosen over dot-ribbon, progress-arc, and overflow-vessel directions. In the watch surface it renders as a selected stream's detail view; list rows keep the dot-ribbon idiom.
 
 ## OVRFLOLending (superseded — see "OVRFLOLending v1-lite" below)
 
@@ -202,39 +210,61 @@ A user-confirmed write proposal that still must be rebuilt and identity-checked 
 
 ### Clearing Ledger
 
-The approved visual world for the Markets app: security-paper white canvas, navy/graphite structural rules, muted gold for Supply facts and muted cyan for Borrow facts, humanist grotesk + tabular mono, and the nested-wave mark reading as OVRFLO’s first O.
+A superseded visual-world candidate for the Markets app (security-paper white, navy rules, wave-as-O lockup), replaced 2026-08-11 by the Three-Bay Instrument Workbench direction (`docs/plans/2026-08-11-three-bay-instrument-workbench-design-direction.md` and ratifications in `docs/plans/2026-08-11-002-feat-web-v1-lite-frontend-rebuild-plan.md`). Retained as a name so older artifacts stay legible; it is not a live authority.
 
-Clearing Ledger is a visual metaphor only. Product identity remains self-repaying loans; the UI must not claim OVRFLO is a securities clearing house or clearing-ledger product. Architectural Dark (obsidian, Inter, tiled grid) is the incumbent anti-reference this world replaces.
+### Watch surface
+
+The Markets app's home for any connected wallet holding protocol objects: the wallet's entities rendered through a role lens (Supplied / Borrowed / Streams; supplied is the default for dual-role wallets) as a wall of rows, each opening its detail in place. There is no aggregate action strip — actions live on the entities that own them. Its job is trust at natural moments (post-sign, claim-ready, covered, maturity), never engagement-driven retention.
+
+### Meter wall
+
+The watch surface's landing scan: one row per entity in the active lens, each carrying identity, a human-readable state line, a miniature ribbon, and the role's decisive number (earnings accruing, outstanding shrinking, match state, or vested amount). A resting supply row renders visibly inert — animating it would be dishonest.
+
+### Ribbon
+
+The canonical form for every moving value: a horizontal dot band — dense recorded dots for what has happened, a gold edge marker at now, faint dots for the scheduled future — ending at the entity's terminal date. The borrowed detail leads with the outstanding counting down above its debt ribbon; the supplied detail leads with earnings counting up above its earnings ribbon and a segmented capital band whose fills are divided by hard rules. Supersedes the earlier x/y strip-chart "recorder" treatment.
+
+### Split-truth rendering
+
+The honesty rule for every moving number: schedule truth (Sablier's immutable start/end/deposited) is interpolated client-side per second and stays exact with no RPC; event truth (repay, claim, close, fill) changes only on chain reads and carries visible freshness. Degraded reads keep schedule motion running while the surface marks events as-of; the display never freezes and never pretends.
+
+### Cover date
+
+The computed date a loan's pledged stream covers its outstanding obligation — the answer to "when is this over?", displayed as approximate (`~08 JAN 2027`) because repayments and claims shift it. Deterministic by construction; the one number fear-driven lending apps cannot show.
 
 ### Claim-all
 
-The batch exit flow where a connected lender reviews and sequentially confirms all pending pool share claims and withdrawable Sablier stream balances from the position summary strip.
+Historical name for a retired global CLAIM ALL queue on the old position summary strip. v1-lite has no cross-position claim.
 
-Each step is a separate on-chain transaction: pool claims batch per lending contract via multicall, then individual stream withdrawals. The plan shown for review is a snapshot taken when the flow opens, but the plan actually submitted is recomputed from live data at the moment of confirmation — and again on resume — so work claimed elsewhere in the interval is never re-submitted. A recomputation that comes back empty is reported as such rather than treated as a completed queue. Resume subtracts already-confirmed and skipped claim IDs so an expanded pool group cannot replay finished work; changed or newly appearing constituents require explicit re-review before the queue continues.
-
-A step failure — including a transaction that mines but reverts on-chain, not only a signature rejection or transport error — halts the queue immediately. Already-confirmed steps stay checked off; resuming always re-plans from live data rather than retrying the step that failed.
+Claim is per supplied position, in place on that row's watch detail. The write is `claim(loanId, positionId, type(uint128).max)` for each of that position's `loansOf` pairs with nonzero claimable — a single pair is one `claim` call; several pairs go through `multicall`, capped at 32 named pairs per submission. The `uint128` max is a sentinel (claim whatever is claimable), not an amount the user types. There is no global queue, no stream-withdrawal step inside claim, and no resume-over-confirmed-ids planner.
 
 ### Loan book
 
-The client-side enumeration of one connected user's full position against one OVRFLOLending market — every loan pool they've contributed to (lender view) plus every loan they've borrowed (borrower view) — assembled from a single multicall over the shared id space rather than two separate scans.
+The client-side enumeration of one connected user's v1-lite book against one OVRFLOLending market. It is not an on-chain object and it is not a merged `useLoanBook`.
 
-A loan book is not an on-chain concept; it's the frontend's `useLoanBook` hook (`web/hooks/useLoanBook.ts`) reading the same five per-id fields (`loanPools`, `loans`, `loanPoolContributions`, `loanPoolReceived`, `loanPoolProceeds`) once, plus one shared Sablier `withdrawableAmountOf` batch over the union of loans either view needs, then deriving the lender-view `pools` and borrower-view `loans` from that shared result. Capped at `MAX_ENUMERATION_IDS`; a market with more ids than the cap sets `tooLarge` rather than silently truncating. Call sites that only need the lean borrower-only shape for a single loan (e.g. `RepayForm`) intentionally stay on the narrower `useBorrowerLoans` rather than pulling in a full loan book — the merge exists for callers that need both views of the same `(lending, user)` pair (`PositionSummary`, `PositionList`), not as a universal replacement for every lending read.
+The lender lens is `useLenderBook` (`web/hooks/useLenderBook.ts`): `lenderPositionCount` / `lenderPositionAt`, then a batched `positionState` read, then paginated `loansOf` per position. The borrower lens is `useBorrowerBook` (`web/hooks/useBorrowerBook.ts`): `borrowerLoanCount` / `borrowerLoanAt`, then a batched `loanState` read. There is no `loanPools` field and no shared id-space multicall over pools.
+
+Both hooks cap enumeration at `MAX_ENUMERATION_IDS` (500). Over-budget is the *tooLarge* case: the read fails closed as unavailable rather than silently truncating. That is distinct from *confirmed-empty* (count is 0 and the outcome is ready with an empty list) and from *unavailable* (transport or incomplete subcall). Zero-count lenses are hidden on the watch wall; unavailable lenses stay visible in a degraded state.
 
 ### Ponder
 
-The off-chain indexer the frontend used to query for data assembled from historical chain events rather than a direct RPC read (held-stream discovery for a connected wallet, and the borrow-demand ladder). Removed in favor of browser-side verified-log projection plus direct contract hydration. See Stream discovery below for the rule now governing which questions on-chain discovery is allowed to answer.
+Historical name for an off-chain indexer the frontend once queried for held-stream discovery and a borrow-demand ladder. It is not a live authority.
+
+Discovery today is a browser verified-log projection under `web/lib/discovery/`: Transfer logs yield a candidate set; every displayed or actionable fact is re-read from the stream contract. Candidates never gate. See Stream discovery.
 
 ### Stream discovery
 
-Finding which Sablier streams a connected wallet may hold. Browser-side on-chain discovery answers this one question and nothing else; every value the app then displays or acts on is read from Sablier directly.
+Finding which streams a connected wallet may hold. Browser-side on-chain discovery answers this one question and nothing else; every value the app then displays or acts on is read from the stream contract directly.
 
 The split is a trust boundary, not an optimisation. A discovery projection naming a stream id is a candidate set, not a claim of ownership — a stream whose on-chain owner is not the connected address is dropped rather than rendered, and the fields that decide whether a stream is eligible for an action are always re-read from chain. Discovery results are also three-valued: streams, no streams, and *unavailable*. The third must never be presented as the second, since "you hold nothing" and "this list cannot be trusted" call for opposite user responses. Partial or stale projections stay unavailable/preparing, never ready-empty or actionable. A previously-discovered set may be served past a discovery failure only within a bounded staleness window, after which it is discarded rather than shown behind a warning.
 
+Shipped discovery is still this two-step candidate/truth log scan. The unbuilt OVRFLO Streams plan (Enumerable holder lists, no log scan) is not the live path.
+
 ### Position groups
 
-The three-way split the frontend's position list uses to present one connected user's holdings for a market: LENDING (liquidityPositions plus the lender half of their loan book — see Loan book), BORROWING (the borrower half of their loan book), and STREAMS (Sablier streams held, discovered via the browser-side on-chain event projection — see Stream discovery).
+Historical name for the old market-row split LENDING / BORROWING / STREAMS inside an expanded table row.
 
-LENDING and BORROWING are sourced from direct contract reads; STREAMS is sourced from the same on-chain projection transport (verified-log scan plus direct Sablier hydration) but through a different code path. The groups still render and fail independently — a projection-layer failure hides only STREAMS, and a direct-read failure hides only LENDING/BORROWING — but the source for all three is now on-chain data rather than a separate indexer.
+The watch wall uses role lenses instead: Supplied, Borrowed, and Streams. Dual-role wallets default to Supplied. Zero-count lenses are hidden; an unavailable or still-pending Streams discovery keeps the Streams lens visible in its degraded state rather than asserting emptiness. Selecting a row opens that entity's detail in place. Actions live on the entity (CLAIM / WITHDRAW on a supplied position, REPAY / CLOSE on a loan, borrow route on an eligible stream).
 
 ### Stale-recovery classification
 
@@ -242,7 +272,7 @@ The three-way sorting of a failed write transaction that decides what the form o
 
 Classification is per flow, not global: the same revert can be terminal in one flow and stale in another (an ERC20 shortfall is a liquidity race inside a withdraw-then-supply multicall). A stale outcome is never presented as a dead-end error. Pre-submit rebuild failures that only carry structured `errors` must still be surfaced as a single consumer-visible error so this classification can run — an `invalid` result that hides its payload dead-ends the recovery path.
 
-This classification only covers failures that populate the transaction's error signal (wallet rejection, transport failure, a revert caught before broadcast, or a synthesized rebuild error). A transaction that mines but reverts on-chain populates no error at all and is surfaced as its own distinct failure state outside this three-way sort — see Claim-all above for the queue-level version of that state.
+This classification only covers failures that populate the transaction's error signal (wallet rejection, transport failure, a revert caught before broadcast, or a synthesized rebuild error). A transaction that mines but reverts on-chain populates no error at all and is surfaced as its own distinct failure state outside this three-way sort — the per-position claim write (see Claim-all) and the other in-place watch writes render that as a reverted action receipt, not as a queue skip.
 
 ## Refactoring patterns
 

@@ -54,7 +54,7 @@ export function SuppliedDetail({
   const ribbonState = stale ? "degraded" : resting ? "inert" : "edge";
 
   return (
-    <article data-region="supplied-detail" data-state={match}>
+    <article data-ui="UI-WATCH-SUPPLIED-DETAIL" data-region="supplied-detail" data-state={match}>
       {filled > 0n ? (
         <div className="kit-hero">
           <span className="kit-hero-kicker">YOUR EARNINGS</span>

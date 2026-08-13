@@ -1,95 +1,77 @@
-# "Insufficient balance" from the plan's R11 borrow row has no reachable
-# equivalent in this form: BORROW pays the borrower out of pledged-liquidity
-# depth, not their own wallet balance, so there is no wallet-balance guard to
-# violate (confirmed against borrow-form.test.tsx, which has no such case
-# either). "No liquidity posted" is the closest real analog — an empty ladder
-# that keeps the market-row control disabled with a reason shown — and stands
-# in for it below.
 Feature: Borrow against a stream
-  Entry: BORROW action on a lending market card. Decision: selecting a stream,
-  a liquidity rung, and a slippage tolerance. Exit: a new loan appears in the
-  borrower's loan book and the borrowed amount reaches the wallet.
+  Entry: /borrow. Decision: stream → amount+rate → review → NFT approve →
+  confirm. Exit: /?lens=borrowed&loan= on the watch wall. There is no sale
+  listing; a max borrow is economically a sale.
 
   Background:
-    Given I am on the markets page
+    Given I am on the borrow flow
     And my wallet is connected
 
-  Scenario: Happy path — borrow against a stream via the rate ladder
+  @UI-BORROW-SELECT-STREAM
+  Scenario: Happy path — borrow against a stream lands on the watch wall
     Given a lender has posted liquidity for the active market
     And my wallet holds an eligible stream
     And the frontend re-syncs with chain state
-    When I expand the active market
-    And I click the "BORROW" button
-    Then the "BORROW AGAINST STREAM" modal is open
     When I select the first available stream
+    And I click the "CONTINUE" button
+    Then the borrow amount step is open
+    When I fill the amount field with "1"
     And I select the first available rate
-    And I fill the amount field with "1"
-    And I click the "APPROVE STREAM" button
+    And I click the "REVIEW BORROW" button
+    Then the borrow review is open
+    When I acknowledge risk if prompted
+    And I click the "APPROVE STREAM" button if it is shown
     And I click the "BORROW" button
-    Then I see text matching "RECEIVED"
-    When I click the "CLOSE" button
-    Then no modal is open
-    When I expand the active market
-    Then I see a "LOAN" position card
+    Then I see a confirmed action receipt
+    When I click the "VIEW LOAN" button
+    Then the URL carries the borrowed lens and a loan id
+    And the borrowed detail is open
 
-  # Pre-gated at the market row: with an empty ladder the borrow flow never
-  # opens, so no APPROVE STREAM signature is ever requested for a borrow that
-  # could not fill. The modal keeps its own empty-ladder handling as defense in
-  # depth (covered by borrow-form.test.tsx), which is why this no longer clicks
-  # through to it.
-  Scenario: Error state — no liquidity posted for this market
+  Scenario: Error state — no eligible stream offers Assets, not a fake empty book
+    Then I see the no-eligible-stream handoff
+
+  Scenario: Clamp — empty tick keeps review disabled
     Given my wallet holds an eligible stream
     And the frontend re-syncs with chain state
-    When I expand the active market
-    Then the "BORROW" button is disabled
-    And I see the caption "NO LIQUIDITY POSTED AT ANY RATE"
-    And no modal is open
+    When I select the first available stream
+    And I click the "CONTINUE" button
+    Then I see text matching "NO LIQUIDITY POSTED AT ANY RATE"
+    And the "REVIEW BORROW" button is disabled
 
-  Scenario: Error state — invalid slippage
+  Scenario: Outcomes — stale liquidity after approve asks for re-review
     Given a lender has posted liquidity for the active market
     And my wallet holds an eligible stream
     And the frontend re-syncs with chain state
-    When I expand the active market
-    And I click the "BORROW" button
-    Then the "BORROW AGAINST STREAM" modal is open
     When I select the first available stream
-    And I select the first available rate
+    And I click the "CONTINUE" button
     And I fill the amount field with "1"
-    And I fill the slippage field with "10"
-    Then I see the caption "SLIPPAGE MUST BE 0.1–5%"
-    And I click the "APPROVE STREAM" button
-    And the "BORROW" button is disabled
-
-  Scenario: Error state — stale liquidity triggers an automatic re-quote, not a dead end
-    Given a lender has posted liquidity for the active market
-    And my wallet holds an eligible stream
-    And the frontend re-syncs with chain state
-    When I expand the active market
-    And I click the "BORROW" button
-    Then the "BORROW AGAINST STREAM" modal is open
-    When I select the first available stream
     And I select the first available rate
-    And I fill the amount field with "1"
-    And I click the "APPROVE STREAM" button
+    And I click the "REVIEW BORROW" button
+    And I acknowledge risk if prompted
+    And I click the "APPROVE STREAM" button if it is shown
     And the posted liquidity is withdrawn by the lender
     And I click the "BORROW" button
-    Then I see the caption "LIQUIDITY CHANGED SINCE YOUR QUOTE — REVIEW THE NEW NUMBER AND RE-CONFIRM"
-    And I see text matching "RE-CONFIRM BORROW"
+    Then I see text matching "QUOTE UPDATED|REVIEW AGAIN"
 
-  Scenario: Cross-cutting — market matured disables BORROW with a caption
-    Given the market has matured
-    When I expand the active market
-    Then the "BORROW" button is disabled
-    And I see the caption "MARKET MATURED"
-
-  Scenario: Cross-cutting — focus trap and Escape (AE2)
+  Scenario: Identity churn — disconnect on review asks to re-enter
     Given a lender has posted liquidity for the active market
     And my wallet holds an eligible stream
     And the frontend re-syncs with chain state
-    When I expand the active market
-    And I click the "BORROW" button
-    Then the "BORROW AGAINST STREAM" modal is open
-    And focus is trapped within the "BORROW AGAINST STREAM" modal
-    When I press Escape
-    Then no modal is open
-    And focus returns to the "BORROW" button
+    When I select the first available stream
+    And I click the "CONTINUE" button
+    And I fill the amount field with "1"
+    And I select the first available rate
+    And I click the "REVIEW BORROW" button
+    Then the borrow review is open
+    When I disconnect my wallet
+    Then I see text matching "WALLET CHANGED|Connect a wallet"
+
+  Scenario: Interruption — reload mid-amount does not keep a frozen quote
+    Given a lender has posted liquidity for the active market
+    And my wallet holds an eligible stream
+    And the frontend re-syncs with chain state
+    When I select the first available stream
+    And I click the "CONTINUE" button
+    And I fill the amount field with "1"
+    When I reload the page
+    Then the borrow amount step is open

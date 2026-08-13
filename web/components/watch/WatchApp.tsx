@@ -2,9 +2,9 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useConnection } from "wagmi";
+import { WalletButton } from "wallet-runtime";
 import { Footer } from "@/components/Footer";
 import { FirstRun } from "@/components/first-run/FirstRun";
-import { WalletControl } from "@/components/WalletControl";
 import { RegionErrorBoundary } from "@/components/ModalErrorBoundary";
 import { Shell } from "@/components/kit/Shell";
 import { StatusLine } from "@/components/kit/StatusLine";
@@ -218,7 +218,7 @@ export function WatchApp() {
   return (
     <Shell
       currentNav={null}
-      wallet={<WalletControl />}
+      wallet={<WalletButton />}
       status={
         <div className="watch-status-row">
           {connected ? (
@@ -380,7 +380,7 @@ export function WatchApp() {
 
 function DisconnectedEntry() {
   return (
-    <section className="watch-entry" data-region="entry-disconnected">
+    <section className="watch-entry" data-ui="UI-WATCH-ENTRY-DISCONNECTED" data-region="entry-disconnected">
       <p className="watch-kicker">ENTRY</p>
       <p>
         Once a wallet is connected, this home becomes the instruments you can watch:

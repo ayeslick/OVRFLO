@@ -47,6 +47,14 @@ vi.mock("@reown/appkit/react", () => ({
   useAppKit: () => ({ open: vi.fn() }),
 }));
 
+vi.mock("wallet-runtime", () => ({
+  WalletButton: () => (
+    <button type="button">CONNECT WALLET</button>
+  ),
+  ensureWalletKit: () => undefined,
+  walletConfig: {},
+}));
+
 vi.mock("@/hooks/useClock", () => ({
   useClockHydrationSafe: () => ({ localNow: NOW, skew: 0n, adjustedNow: NOW }),
   useClock: () => ({ localNow: NOW, skew: 0n, adjustedNow: NOW }),

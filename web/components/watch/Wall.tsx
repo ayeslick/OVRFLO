@@ -61,7 +61,7 @@ export function Wall({
   panelStatus?: "loading" | "empty" | "ready";
 }) {
   return (
-    <section className="watch-wall" data-region="watch-wall" data-lens={lens}>
+    <section className="watch-wall" data-ui="UI-WATCH-WALL" data-region="watch-wall" data-lens={lens}>
       <LensTabs tabs={tabs} selected={lens} onSelect={onSelectLens} />
       <div role="tabpanel" id={`lens-panel-${lens}`} aria-labelledby={`lens-tab-${lens}`}>
         {panelStatus === "ready" && lens === "supplied"
@@ -235,13 +235,13 @@ function StreamRow({
 export function StreamsDegraded({ kind }: { kind: "pending" | "could-not-ask" }) {
   if (kind === "pending") {
     return (
-      <div className="watch-degraded" data-region="streams-degraded" data-state="pending">
+      <div className="watch-degraded" data-ui="UI-WATCH-STREAMS-DEGRADED" data-region="streams-degraded" data-state="pending">
         <p>CHECKING STREAMS…</p>
       </div>
     );
   }
   return (
-    <div className="watch-degraded" data-region="streams-degraded" data-state="could-not-ask">
+    <div className="watch-degraded" data-ui="UI-WATCH-STREAMS-DEGRADED" data-region="streams-degraded" data-state="could-not-ask">
       <p>STREAM DISCOVERY IS UNAVAILABLE. YOUR STREAMS ARE UNAFFECTED.</p>
       <p>
         RECOVER DIRECTLY ON SABLIER AT 0xAFb9…dCC9 USING YOUR STREAM ID.

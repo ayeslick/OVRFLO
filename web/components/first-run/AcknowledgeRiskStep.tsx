@@ -15,7 +15,7 @@ export function AcknowledgeRiskStep() {
   if (!needsAcknowledgeRisk(acknowledgment)) return null;
 
   return (
-    <section className="first-run-ack" data-control="UI-REVIEW-ACKNOWLEDGE-RISK" data-state="required">
+    <section className="first-run-ack" data-ui="UI-REVIEW-ACKNOWLEDGE-RISK" data-control="UI-REVIEW-ACKNOWLEDGE-RISK" data-state="required">
       <p>
         One acknowledgment per wallet, before the first write. Reads stay open. The
         factual note is on <a href="/risk">/risk</a>.

@@ -78,9 +78,12 @@ See `docs/plans/2026-07-23-002-test-web-frontend-test-suite-plan.md` (R2, KTD8) 
 
 ## Structure
 
-- `*.feature` — one file per key journey: `supply`, `borrow`, `claim-all`, `adjust-rate`,
-  `deposit-wrap-unwrap` (PT deposit, post-maturity claim, wrap, unwrap), `repay-close` (see the plan's R10/R11/R12
-  for the full journey → error-state map)
+- `*.feature` — one file per key journey: `watch` (home wall, lens, in-place
+  claim/withdraw/repay/close), `supply`, `borrow`, `repay-close` (from watch
+  borrowed detail), `deposit-wrap-unwrap` (Assets converter + PT deposit),
+  `first-run`. Retired: `claim-all.feature` (global CLAIM ALL queue) and
+  `adjust-rate.feature` (old liquidity-card topology) — ledger in
+  `web/reviews/test-accountability.md`.
 - `steps/` — step definitions, one file per journey plus `common.ts` (navigation, modal/caption/button assertions,
   focus-trap checks — anything reused across multiple journeys)
 - `fixtures/` —

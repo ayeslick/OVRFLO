@@ -1,65 +1,74 @@
-Feature: Repay and close a loan
-  Entry: REPAY LOAN (behind ADVANCED) or CLOSE on an open loan card. Decision:
-  for repay, how much to pay down early; close takes no input. Exit: the
-  loan's outstanding balance drops, or the loan settles and the stream
-  returns to the borrower.
+Feature: Repay and close from the watch surface
+  Entry: borrowed detail on the watch wall. Decision: repay amount or close
+  from stream, in place. Exit: outstanding drops, or the loan settles and the
+  stream returns under the Streams lens.
 
   Background:
-    Given I am on the markets page
+    Given I am on the watch surface
     And my wallet is connected
 
-  Scenario: Happy path — repay early reduces the outstanding balance
+  @UI-WATCH-BORROWED-DETAIL
+  Scenario: Happy path — repay early from borrowed detail
     Given my wallet has an open loan against a stream
     And the frontend re-syncs with chain state
-    When I expand the active market
-    And I open the loan's advanced panel
-    And I click the "REPAY LOAN" button
-    Then the "REPAY LOAN" modal is open
+    When I select the "BORROWED" lens
+    And I select the first loan row
+    Then the borrowed detail is open
+    When I start the in-place "REPAY" write
     And I fill the amount field with "0.5"
-    And I click the "APPROVE REPAY" button
-    And I click the button matching "^REPAY "
-    Then I see the caption "CONFIRMED"
+    And I acknowledge risk if prompted
+    And I confirm the watch write
+    Then I see a confirmed action receipt
 
-  Scenario: Happy path — close a loan once the stream can cover it
+  Scenario: Happy path — close once the stream covers the outstanding
     Given my wallet has an open loan against a stream
     And the loan's stream has vested enough to close it
-    When I expand the active market
-    And I click the "CLOSE" button
-    Then the "CLOSE LOAN" modal is open
-    And I click the "CLOSE LOAN" button
-    Then I see the caption "CONFIRMED"
+    When I select the "BORROWED" lens
+    And I select the first loan row
+    Then the borrowed detail is close-ready
+    When I start the in-place "CLOSE FROM STREAM" write
+    And I acknowledge risk if prompted
+    And I confirm the watch write
+    Then I see a confirmed action receipt
 
-  Scenario: Error state — repay blocked by insufficient ovrfloToken balance
+  Scenario: Clamp — repay blocked by insufficient ovrfloToken
     Given my wallet has an open loan against a stream
     And the frontend re-syncs with chain state
-    When I expand the active market
-    And I open the loan's advanced panel
-    And I click the "REPAY LOAN" button
-    Then the "REPAY LOAN" modal is open
+    When I select the "BORROWED" lens
+    And I select the first loan row
+    And I start the in-place "REPAY" write
     And my ovrfloToken balance is drained
     And I fill the amount field with "0.5"
-    Then I see the caption "INSUFFICIENT BALANCE"
+    Then I see a field error
 
-  Scenario: Error state — the loan disappears while the modal is open
+  Scenario: Outcomes — the loan disappears while repay is open
     Given my wallet has an open loan against a stream
     And the frontend re-syncs with chain state
-    When I expand the active market
-    And I open the loan's advanced panel
-    And I click the "REPAY LOAN" button
-    Then the "REPAY LOAN" modal is open
+    When I select the "BORROWED" lens
+    And I select the first loan row
+    And I start the in-place "REPAY" write
     And the loan is fully repaid from another channel
-    Then I see the caption "LOAN NOT FOUND"
+    And the frontend re-syncs with chain state
+    Then I see a settled loan detail
 
-  Scenario: Error state — repay reverts if the balance is drained mid-flow
+  Scenario: Outcomes — repay reverts if the balance is drained mid-flow
     Given my wallet has an open loan against a stream
     And the frontend re-syncs with chain state
-    When I expand the active market
-    And I open the loan's advanced panel
-    And I click the "REPAY LOAN" button
-    Then the "REPAY LOAN" modal is open
+    When I select the "BORROWED" lens
+    And I select the first loan row
+    And I start the in-place "REPAY" write
     And I fill the amount field with "0.5"
-    And I click the "APPROVE REPAY" button
+    And I acknowledge risk if prompted
     And my ovrfloToken balance is drained
-    And I click the button matching "^REPAY "
+    And I confirm the watch write
     Then I see a mapped error message
-    And the "REPAY LOAN" modal is open
+
+  Scenario: Interruption — Back leaves the write without broadcasting
+    Given my wallet has an open loan against a stream
+    And the frontend re-syncs with chain state
+    When I select the "BORROWED" lens
+    And I select the first loan row
+    And I start the in-place "REPAY" write
+    And I click the "BACK" button
+    Then the borrowed detail is open
+    And the watch write is closed
