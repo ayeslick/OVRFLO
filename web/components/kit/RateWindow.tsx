@@ -1,6 +1,7 @@
 "use client";
 
 import "./kit.css";
+import "./forced-colors.css";
 
 export type RateTick = {
   id: string;

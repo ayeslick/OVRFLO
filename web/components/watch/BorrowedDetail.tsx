@@ -25,6 +25,7 @@ import "./watch.css";
 export function BorrowedDetail({
   loan,
   symbol,
+  underlyingSymbol,
   market,
   lending,
   nowSeconds,
@@ -41,6 +42,7 @@ export function BorrowedDetail({
 }: {
   loan: BorrowerLoanRow;
   symbol: string;
+  underlyingSymbol?: string;
   market: MarketInfo | null;
   lending: Address | null;
   nowSeconds: bigint;
@@ -121,7 +123,10 @@ export function BorrowedDetail({
           outstanding={loan.outstanding}
           withdrawable={withdrawable}
           symbol={symbol}
+          underlyingSymbol={underlyingSymbol}
           signingAllowed={signingAllowed}
+          schedule={schedule}
+          nowSeconds={nowSeconds}
           onClose={() => setWrite(null)}
         />
       ) : (
@@ -166,7 +171,12 @@ export function BorrowedDetail({
         <Fact label="RECOVERED" value={`${formatTruncatedDecimal(loan.drawn + loan.repaid, 18, 5)} ${symbol}`} />
         <Fact label="OUTSTANDING" value={`${formatTruncatedDecimal(outstanding, 18, 5)} ${symbol}`} />
         <Fact label="PLEDGED STREAM" value={`#${loan.streamId.toString()}`} />
-        {coverAt ? <Fact label="DONE DATE" value={formatCoverDate(coverAt).toUpperCase()} /> : null}
+        <Fact
+          label="DONE DATE"
+          value={
+            !schedule ? "CHECKING…" : coverAt ? formatCoverDate(coverAt).toUpperCase() : "UNCOVERED"
+          }
+        />
       </dl>
       <p className="watch-freshness">{freshnessCaption(freshness)}</p>
       <button type="button" className="watch-back" onClick={() => onSelectStream(loan.streamId)}>

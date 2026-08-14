@@ -62,13 +62,15 @@ export function borrowedStateLine(args: {
   state: "repaying" | "close-ready" | "settled";
   streamId: bigint;
   coverAt?: bigint;
+  scheduleHydrated?: boolean;
 }): string {
   if (args.state === "settled") return `RETURNED STREAM #${args.streamId.toString()}`;
   if (args.state === "close-ready") return "COVERED · CLOSE FROM STREAM";
+  if (args.scheduleHydrated === false) return "CHECKING… · STREAM REPAYING";
   if (args.coverAt !== undefined) {
     return `${formatCoverDate(args.coverAt).toUpperCase()} · STREAM REPAYING`;
   }
-  return "STREAM REPAYING";
+  return "UNCOVERED · STREAM REPAYING";
 }
 
 export function streamRowState(stream: Pick<HydratedStream, "borrowRouteEligible" | "remaining">, pledged: boolean): Extract<

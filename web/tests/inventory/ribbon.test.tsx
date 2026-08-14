@@ -52,9 +52,11 @@ describe("inventory — B ribbon state set + C degraded status", () => {
     expect(screen.getByRole("status")).toHaveAttribute("data-state", "degraded");
     expect(screen.getByRole("status")).toHaveTextContent("DEGRADED — SHOWING LAST KNOWN");
     expect(screen.getByRole("status")).toHaveTextContent("EVENTS AS OF 12:34:56");
+    expect(screen.getByRole("status")).not.toHaveTextContent("SCHEDULES TICK LIVE");
 
     rerender(<StatusLine status="unavailable" />);
     expect(screen.getByRole("status")).toHaveAttribute("data-state", "unavailable");
     expect(screen.getByRole("status")).toHaveTextContent("EVENTS UNAVAILABLE");
+    expect(screen.getByRole("status")).not.toHaveTextContent("SCHEDULES TICK LIVE");
   });
 });

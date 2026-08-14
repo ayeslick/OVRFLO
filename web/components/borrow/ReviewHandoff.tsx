@@ -189,7 +189,12 @@ export function ReviewHandoff({
           </p>
         ) : null}
         <div className="borrow-actions">
-          {checkpoint === "approve" ? (
+          {checkpoint === "approve" && signingBlockedReason ? (
+            <ActionButton disabled disabledReason={signingBlockedReason}>
+              APPROVE STREAM
+            </ActionButton>
+          ) : null}
+          {checkpoint === "approve" && !signingBlockedReason ? (
             approveBusy ? (
               <ActionButton variant="primary" busy>
                 APPROVE STREAM

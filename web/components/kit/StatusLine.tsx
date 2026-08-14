@@ -14,10 +14,16 @@ export function StatusLine({
   usdUnavailable?: boolean;
 }) {
   const copy = statusCopy(status, asOf);
+  const schedules =
+    usdUnavailable
+      ? "USD UNAVAILABLE"
+      : status === "synced" || status === "reconnecting"
+        ? "SCHEDULES TICK LIVE"
+        : null;
   return (
     <div className="kit-status" data-state={status} role="status">
       <span>{copy}</span>
-      <span>{usdUnavailable ? "USD UNAVAILABLE" : "SCHEDULES TICK LIVE"}</span>
+      {schedules ? <span>{schedules}</span> : null}
     </div>
   );
 }

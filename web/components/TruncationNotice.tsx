@@ -10,6 +10,8 @@
 // `detail` carries what is specific to a surface; the shared half is the shape
 // of the sentence and the fact that it is a warning rather than an error — a
 // truncated list is incomplete, not broken.
+import "@/app/status-warning.css";
+
 export function TruncationNotice({ limit, noun, detail }: { limit: number; noun: string; detail?: string }) {
   return (
     <div className="label mono status-warning" role="status">

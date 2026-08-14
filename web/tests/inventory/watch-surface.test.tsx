@@ -198,6 +198,16 @@ describe("inventory — entry, lenses, watch index, first-run, degraded, narrow 
     expect(screen.queryByText(/liquidat/i)).not.toBeInTheDocument();
   });
 
+  it("16 loan detail shows CHECKING… for DONE DATE until the schedule hydrates", () => {
+    fx.connected = true;
+    fx.loans = [activeLoan()];
+    fx.loanStreams = new Map();
+    writeWatchSearch({ lens: "borrowed", selection: { kind: "loan", id: 12n } }, "replace");
+    render(<WatchApp />);
+    expect(screen.getByText("DONE DATE")).toBeInTheDocument();
+    expect(screen.getByText("CHECKING…")).toBeInTheDocument();
+  });
+
   it("17 POSITIONS.INDEX + STREAM_DETAIL — BORROW AGAINST THIS STREAM when eligible", () => {
     fx.connected = true;
     fx.streams = [eligibleStream()];

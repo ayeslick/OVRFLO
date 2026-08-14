@@ -31,7 +31,13 @@ export function AssetsPage() {
   const symbols = useMarketSymbols(allMarkets.markets);
   const flowParam = params.get("flow");
   const flow = flowParam === "stream" ? "stream" : "convert";
-  const repayHref = params.get("return") === "repay" ? "/" : undefined;
+  const returnLoan = params.get("loan");
+  const repayHref =
+    params.get("return") === "repay"
+      ? returnLoan && /^(0|[1-9][0-9]*)$/.test(returnLoan)
+        ? `/?lens=borrowed&loan=${returnLoan}`
+        : "/"
+      : undefined;
   const requestedMarket = parseAddressParam(params.get("market"));
   const [pickedMarket, setPickedMarket] = useState<string | null>(null);
 

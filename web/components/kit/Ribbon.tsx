@@ -5,6 +5,7 @@ import { drawDotRibbon, RIBBON_FUTURE, RIBBON_GOLD, RIBBON_INK } from "./drawRib
 import { progress01 } from "./formatDisplay";
 import { useHiDpiCanvas } from "./useHiDpiCanvas";
 import "./kit.css";
+import "./forced-colors.css";
 
 export type RibbonState = "recorded" | "edge" | "future" | "inert" | "degraded";
 

@@ -53,7 +53,11 @@ export const walletConfig: Config = createConfig({
   ssr: true,
   chains: [e2eChain],
   connectors: [
-    mock({ accounts: [E2E_DEV_ACCOUNT], features: { defaultConnected: true, reconnect: true } }),
+    // defaultConnected:true reconnects during the first client render, before
+    // Hydrate's post-commit effect, so the server HTML (CONNECT WALLET) never
+    // matches the client tree. React then regenerates the page and Playwright
+    // sees a reload loop. Click CONNECT in restoreSeededWallet instead.
+    mock({ accounts: [E2E_DEV_ACCOUNT], features: { defaultConnected: false, reconnect: true } }),
     mock({ accounts: [E2E_EMPTY_ACCOUNT], features: { defaultConnected: false, reconnect: false } }),
   ],
   transports: { [e2eChain.id]: http(rpcUrl) },

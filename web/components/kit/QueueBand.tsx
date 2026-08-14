@@ -1,6 +1,7 @@
 "use client";
 
 import "./kit.css";
+import "./forced-colors.css";
 
 export type QueueBandVariant = "queue" | "pool";
 export type QueueBandState = "ready" | "empty-ahead" | "fits" | "partial" | "empty-tick" | "loading" | "unavailable";

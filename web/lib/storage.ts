@@ -90,6 +90,30 @@ export function streamCandidatesKey(chainId: number, account: string): string {
   return `ovrflo:stream-candidates:${chainId}:${account.toLowerCase()}`;
 }
 
+/** One-shot wrap-shortfall handoff so repay amount survives the Assets round-trip. */
+export function repayHandoffKey(): string {
+  return "ovrflo:repay-handoff";
+}
+
+/** # ponytail: throw-tolerant storage; wrap-shortfall amount is lost if setItem fails. Recover by re-entering the amount. */
+export function writeRepayHandoff(loanId: bigint, amountRaw: string): void {
+  storageSet(repayHandoffKey(), JSON.stringify({ loanId: loanId.toString(), amountRaw }));
+}
+
+export function readRepayHandoff(loanId: bigint): string | null {
+  const parsed = parseJsonStorage(
+    storageGet(repayHandoffKey()),
+    (value): value is { loanId: string; amountRaw: string } =>
+      typeof value === "object" &&
+      value !== null &&
+      typeof (value as { loanId?: unknown }).loanId === "string" &&
+      typeof (value as { amountRaw?: unknown }).amountRaw === "string",
+  );
+  if (!parsed || parsed.loanId !== loanId.toString()) return null;
+  storageRemove(repayHandoffKey());
+  return parsed.amountRaw;
+}
+
 export type FlowDraftKind = "supply" | "borrow";
 
 /**

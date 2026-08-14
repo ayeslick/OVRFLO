@@ -1,0 +1,12 @@
+@media (forced-colors: active) {
+  .kit-entity-row[data-selected="true"],
+  .kit-rate[data-selected="true"] {
+    outline: 2px solid CanvasText;
+    outline-offset: 0;
+  }
+
+  .kit-queue-band,
+  .kit-ribbon-wrap {
+    forced-color-adjust: none;
+  }
+}

@@ -360,7 +360,7 @@ export function BorrowFlow() {
   }
 
   function onApprove() {
-    if (!lending || !selectedStream) return;
+    if (!lending || !selectedStream || chainGuard.wrongChain || !signingAllowed) return;
     approveTx.writeContract({
       address: SABLIER_LOCKUP_ADDRESS,
       abi: sablierLockupAbi,
@@ -370,7 +370,7 @@ export function BorrowFlow() {
   }
 
   function onBorrow() {
-    if (!lending || !market || !selectedStream || !quote || !frozen || drifted) return;
+    if (!lending || !market || !selectedStream || !quote || !frozen || drifted || chainGuard.wrongChain || !signingAllowed) return;
     actionTx.writeContract({
       address: lending,
       abi: ovrfloLendingAbi,

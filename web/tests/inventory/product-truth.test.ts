@@ -93,4 +93,11 @@ describe("inventory — product truth", () => {
     }
     expect(hits).toEqual([]);
   });
+
+  it("gold heroes use display scale and warning copy is ink", () => {
+    const hero = read(join(WEB_ROOT, "components", "kit", "hero-rolling.css"));
+    expect(hero).toMatch(/font-size:\s*36px/);
+    const warning = read(join(WEB_ROOT, "app", "status-warning.css"));
+    expect(warning).toMatch(/color:\s*var\(--ink\)/);
+  });
 });

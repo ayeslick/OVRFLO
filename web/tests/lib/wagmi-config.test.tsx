@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { render, screen } from "@testing-library/react";
+import { WagmiProvider, useConfig, useConnection } from "wagmi";
 
 // The production wallet stack had no coverage in any tier: E2E swapped it out
 // wholesale, and no unit test imported it. That is how `ssr` went missing from
@@ -36,5 +38,29 @@ describe("production wagmi config", () => {
   it("targets exactly one chain, matching the configured chain id", () => {
     expect(wagmiConfig.chains).toHaveLength(1);
     expect(wagmiConfig.chains[0].id).toBe(1);
+  });
+
+  it("is accepted at runtime by the WagmiProvider from wagmi's own @wagmi/core", () => {
+    // The seam the removed `as unknown as Config` cast was hiding. The adapter
+    // builds this object with the @wagmi/core it resolves; `WagmiProvider` and
+    // the hooks consume it with the one wagmi resolves. While those were two
+    // versions the assignment could not typecheck uncast, and the cast would
+    // equally have absorbed a genuine incompatibility. `overrides` collapses
+    // them to one copy — this asserts the object actually round-trips through
+    // the provider into a hook, which is what a wallet connection depends on.
+    // No wallet or network involved: an unconnected config is enough.
+    function Probe() {
+      const seen = useConfig();
+      const connection = useConnection();
+      return <span data-testid="probe">{`${seen.chains[0].id}:${connection.status}`}</span>;
+    }
+
+    render(
+      <WagmiProvider config={wagmiConfig}>
+        <Probe />
+      </WagmiProvider>,
+    );
+
+    expect(screen.getByTestId("probe").textContent).toBe("1:disconnected");
   });
 });

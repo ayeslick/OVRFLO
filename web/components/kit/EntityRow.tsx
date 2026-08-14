@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 import "./kit.css";
+import "./forced-colors.css";
 
 export type EntityRowState =
   | "resting"

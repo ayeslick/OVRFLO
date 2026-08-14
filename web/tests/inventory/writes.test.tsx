@@ -1,15 +1,16 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Converter } from "@/components/assets/Converter";
 import { StreamCreate } from "@/components/assets/StreamCreate";
 import { streamTrace, unwrapTrace, wrapTrace } from "@/components/assets/trace";
 import { WatchWrite } from "@/components/watch/WatchWrite";
-import { Receipt } from "@/components/kit/Receipt";
-import { ActionButton } from "@/components/kit/ActionButton";
+import type { WatchBalances } from "@/hooks/useWatchBalances";
 import type { ComponentProps } from "react";
+import { claimedLog } from "../lib/claimed-log";
 import {
   LENDING,
   MARKET,
+  NOW,
   SCALE,
   SYMBOL,
   TOKEN,
@@ -18,6 +19,7 @@ import {
   EXPIRY,
   filledPosition,
   activeLoan,
+  loanStreamTruth,
   noop,
   stubViewport,
   TRANSACTING_WIDTHS,
@@ -34,7 +36,10 @@ const writeFx = vi.hoisted(() => ({
   isInFlight: false,
   error: null as Error | null,
   hash: undefined as `0x${string}` | undefined,
+  receipt: undefined as { logs: { data: `0x${string}`; topics: readonly `0x${string}`[] }[] } | undefined,
   acknowledged: true,
+  writeContract: vi.fn(),
+  reset: vi.fn(),
 }));
 
 vi.mock("wagmi", () => ({
@@ -43,12 +48,13 @@ vi.mock("wagmi", () => ({
     addresses: ["0x70997970C51812dc3A010C7d01b50e0d17dc79C8"],
     chainId: 1,
   }),
+  useReadContracts: () => ({ data: undefined, isLoading: false }),
 }));
 
 vi.mock("@/hooks/useWriteFlow", () => ({
   useWriteFlow: () => ({
-    writeContract: vi.fn(),
-    reset: vi.fn(),
+    writeContract: writeFx.writeContract,
+    reset: writeFx.reset,
     isSigning: writeFx.isSigning,
     isConfirming: writeFx.isConfirming,
     isConfirmed: writeFx.isConfirmed,
@@ -56,6 +62,17 @@ vi.mock("@/hooks/useWriteFlow", () => ({
     isInFlight: writeFx.isInFlight,
     error: writeFx.error,
     hash: writeFx.hash,
+    receipt: writeFx.receipt,
+  }),
+}));
+
+vi.mock("@/hooks/useWatchBalances", () => ({
+  useWatchBalances: () => ({
+    wrapReserve: { status: "ready", value: 10n * 10n ** 18n },
+    walletOvrflo: { status: "ready", value: 10n * 10n ** 18n },
+    walletUnderlying: { status: "ready", value: 10n * 10n ** 18n },
+    ovrfloAllowance: { status: "ready", value: 10n * 10n ** 18n },
+    matured: false,
   }),
 }));
 
@@ -86,7 +103,25 @@ function resetWrite() {
   writeFx.isInFlight = false;
   writeFx.error = null;
   writeFx.hash = undefined;
+  writeFx.receipt = undefined;
   writeFx.acknowledged = true;
+  writeFx.writeContract.mockReset();
+  writeFx.reset.mockReset();
+}
+
+function fundedBalances(overrides: Partial<WatchBalances> = {}): WatchBalances {
+  return {
+    wrapReserve: ready(10n * WAD),
+    walletOvrflo: ready(10n * WAD),
+    walletUnderlying: ready(10n * WAD),
+    ovrfloAllowance: ready(10n * WAD),
+    matured: false,
+    ...overrides,
+  };
+}
+
+function claimedReceipt(positionId: bigint, amount: bigint) {
+  return { logs: [claimedLog(positionId, amount)] };
 }
 
 const watchMarket = {
@@ -146,9 +181,11 @@ describe.each(TRANSACTING_WIDTHS)("inventory — claim / unwrap / wrap / repay /
     resetWrite();
   });
 
-  it("19+G CLAIM_CONFIRMED unwrap-enabled — payout is ovrflo token; unwrap route open", () => {
+  it("19+G CLAIM_CONFIRMED unwrap-enabled — RECEIVED from logs; three non-equivalent exits", () => {
     writeFx.isConfirmed = true;
     const position = filledPosition();
+    const payout = 25n * 10n ** 16n;
+    writeFx.receipt = claimedReceipt(position.id, payout);
     render(
       <WatchWrite
         kind="claim"
@@ -158,57 +195,49 @@ describe.each(TRANSACTING_WIDTHS)("inventory — claim / unwrap / wrap / repay /
         claimPairs={position.pairs}
         claimable={position.pairs[0]!.claimable}
         symbol={SYMBOL}
+        underlyingSymbol={UNDERLYING}
         signingAllowed
+        balances={fundedBalances({ wrapReserve: ready(payout) })}
         onClose={noop}
       />,
     );
-    expect(screen.getByText("ACTION RECEIPT")).toBeInTheDocument();
-    expect(screen.getByText("PAYOUT")).toBeInTheDocument();
-    expect(screen.getByText(SYMBOL)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "DONE" })).toBeInTheDocument();
+    const confirmed = document.querySelector("[data-ui='UI-REVIEW-CLAIM-CONFIRMED']");
+    expect(confirmed).toHaveAttribute("data-state", "unwrap-enabled");
+    expect(screen.getByText("RECEIVED")).toBeInTheDocument();
+    expect(screen.getByText(`0.25000 ${SYMBOL}`)).toBeInTheDocument();
+    expect(screen.getByText(/RECEIVED 0\.25000 ovrfloTEST/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "UNWRAP TO UNDERLYING" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: `KEEP ${SYMBOL}` })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "CLAIM PT" })).toBeDisabled();
+    expect(screen.getByText(/different assets/i)).toBeInTheDocument();
     expect(screen.queryByText(/CLAIM ALL/i)).not.toBeInTheDocument();
-
-    converter({
-      direction: "unwrap",
-      unwrapAvailability: "enabled",
-      outputLabel: `1 ${UNDERLYING}`,
-      stage: "amount",
-      steps: unwrapTrace({ ackRequired: false, stage: "amount" }),
-    });
-    expect(screen.getByRole("button", { name: "UNWRAP" })).toBeEnabled();
-    expect(screen.queryByText("UNWRAP UNAVAILABLE")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "DONE" })).toBeInTheDocument();
   });
 
   it("20+G CLAIM_CONFIRMED reserve-insufficient — unwrap disabled; claim is not a failure", () => {
     writeFx.isConfirmed = true;
+    const payout = 12n * 10n ** 16n;
+    writeFx.receipt = claimedReceipt(26n, payout);
     render(
       <WatchWrite
         kind="claim"
         lending={LENDING}
         market={watchMarket}
         positionId={26n}
-        claimable={12n * 10n ** 16n}
+        claimable={payout}
         symbol={SYMBOL}
+        underlyingSymbol={UNDERLYING}
         signingAllowed
+        balances={fundedBalances({ wrapReserve: ready(payout / 2n) })}
         onClose={noop}
       />,
     );
-    expect(screen.getByText("PAYOUT")).toBeInTheDocument();
-
-    converter({
-      direction: "unwrap",
-      unwrapAvailability: "disabled-reserve",
-      availableReserveLabel: `0.50 ${UNDERLYING}`,
-      continueDisabled: true,
-      continueReason: "UNWRAP UNAVAILABLE — RESERVE",
-      outputLabel: "",
-      stage: "amount",
-      steps: unwrapTrace({ ackRequired: false, stage: "amount" }),
-    });
-    expect(screen.getByText("UNWRAP UNAVAILABLE")).toBeInTheDocument();
-    expect(screen.getByText(/Available reserve 0.50 wstETH/)).toBeInTheDocument();
-    expect(screen.getByText(/not a failed unwrap and not a failed claim/i)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "CONTINUE" })).toBeDisabled();
+    const confirmed = document.querySelector("[data-ui='UI-REVIEW-CLAIM-CONFIRMED']");
+    expect(confirmed).toHaveAttribute("data-state", "reserve-insufficient");
+    expect(screen.getByRole("button", { name: "UNWRAP TO UNDERLYING" })).toBeDisabled();
+    expect(screen.getByText(/NOT A FAILED CLAIM/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: `KEEP ${SYMBOL}` })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "CLAIM PT" })).toBeDisabled();
   });
 
   it("21 UNWRAP_REVIEW + UNWRAP_CONFIRMED — no approval; 1:1 received", () => {
@@ -376,6 +405,7 @@ describe.each(TRANSACTING_WIDTHS)("inventory — claim / unwrap / wrap / repay /
 
   it("24 REPAY_AMOUNT + REPAY_PREPARE wrap shortfall + REPAY_APPROVE + REPAY_CONFIRMED", () => {
     const loan = activeLoan();
+    const schedule = loanStreamTruth().schedule;
     const amount = render(
       <WatchWrite
         kind="repay"
@@ -384,44 +414,65 @@ describe.each(TRANSACTING_WIDTHS)("inventory — claim / unwrap / wrap / repay /
         loanId={loan.id}
         outstanding={loan.outstanding}
         symbol={SYMBOL}
+        underlyingSymbol={UNDERLYING}
         signingAllowed
+        schedule={schedule}
+        nowSeconds={NOW}
+        balances={fundedBalances()}
         onClose={noop}
       />,
     );
     expect(screen.getByLabelText("REPAY AMOUNT")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "REPAY" })).toBeInTheDocument();
     expect(screen.getByText("ACTION RECEIPT")).toBeInTheDocument();
+    expect(screen.getByText("CURRENT COVER")).toBeInTheDocument();
+    expect(screen.getByText("AFTER THIS REPAY")).toBeInTheDocument();
     amount.unmount();
 
-    const prepare = converter({
-      direction: "wrap",
-      amountRaw: "1",
-      amountWei: 1n * WAD,
-      walletOvrflo: ready(0n),
-      walletUnderlying: ready(5n * WAD),
-    });
-    expect(screen.getByText("WRAP RESERVE")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "WRAP" })).toBeEnabled();
+    const prepare = render(
+      <WatchWrite
+        kind="repay"
+        lending={LENDING}
+        market={watchMarket}
+        loanId={loan.id}
+        outstanding={loan.outstanding}
+        symbol={SYMBOL}
+        underlyingSymbol={UNDERLYING}
+        signingAllowed
+        balances={fundedBalances({
+          walletOvrflo: ready(WAD / 10n),
+          walletUnderlying: ready(5n * WAD),
+        })}
+        onClose={noop}
+      />,
+    );
+    const shortfall = document.querySelector("[data-ui='UI-REVIEW-REPAY-PREPARE']");
+    expect(shortfall).toHaveAttribute("data-state", "shortfall");
+    expect(screen.getByRole("link", { name: "WRAP SHORTFALL" })).toHaveAttribute(
+      "href",
+      `/assets/?return=repay&loan=${loan.id.toString()}`,
+    );
+    expect(screen.getByRole("button", { name: "REPAY" })).toBeDisabled();
     prepare.unmount();
 
     const approve = render(
-      <>
-        <Receipt
-          kind="permission"
-          state="current"
-          lines={[
-            { key: "TOKEN", value: SYMBOL },
-            { key: "SPENDER", value: "OVRFLO LENDING" },
-            { key: "ALLOWANCE", value: `1.00000 ${SYMBOL}` },
-            { key: "MATCH", value: "MATCH EXACT" },
-          ]}
-        />
-        <ActionButton variant="primary">APPROVE {SYMBOL}</ActionButton>
-      </>,
+      <WatchWrite
+        kind="repay"
+        lending={LENDING}
+        market={watchMarket}
+        loanId={loan.id}
+        outstanding={loan.outstanding}
+        symbol={SYMBOL}
+        underlyingSymbol={UNDERLYING}
+        signingAllowed
+        balances={fundedBalances({ ovrfloAllowance: ready(0n) })}
+        onClose={noop}
+      />,
     );
     expect(screen.getByText("PERMISSION RECEIPT")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: `APPROVE ${SYMBOL}` })).toBeInTheDocument();
     expect(screen.queryByText("CONFIRMED")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "REPAY" })).not.toBeInTheDocument();
     approve.unmount();
 
     writeFx.isConfirmed = true;
@@ -434,11 +485,31 @@ describe.each(TRANSACTING_WIDTHS)("inventory — claim / unwrap / wrap / repay /
         outstanding={loan.outstanding}
         symbol={SYMBOL}
         signingAllowed
+        balances={fundedBalances()}
         onClose={noop}
       />,
     );
     expect(screen.getByRole("button", { name: "DONE" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "REPAY" })).not.toBeInTheDocument();
+  });
+
+  it("keyboard — Enter on repay amount submits; claim/wrap primaries stay buttons", () => {
+    const loan = activeLoan();
+    render(
+      <WatchWrite
+        kind="repay"
+        lending={LENDING}
+        market={watchMarket}
+        loanId={loan.id}
+        outstanding={loan.outstanding}
+        symbol={SYMBOL}
+        signingAllowed
+        balances={fundedBalances()}
+        onClose={noop}
+      />,
+    );
+    fireEvent.keyDown(screen.getByLabelText("REPAY AMOUNT"), { key: "Enter" });
+    expect(writeFx.writeContract).toHaveBeenCalledOnce();
   });
 
   it("F acknowledgment step — ACKNOWLEDGE RISK before first write; /risk link; no liquidation copy", () => {

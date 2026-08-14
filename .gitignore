@@ -64,6 +64,8 @@ tools/ponder/.ponder/
 tools/ponder/generated/
 node_modules/
 .gas-snapshot
+.superdesign
+.githooks
 
 # Agents
 .claude/

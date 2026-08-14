@@ -191,6 +191,10 @@ export function WatchApp() {
   const selectedStreamId = url.selection.kind === "stream" ? url.selection.id : null;
   const selectedPosition =
     selectedPositionId !== null ? positions.find((row) => row.id === selectedPositionId) : undefined;
+  const selectedPositionMarket = selectedPosition
+    ? markets.markets.find((row) => row.market.toLowerCase() === selectedPosition.market.toLowerCase()) ??
+      null
+    : null;
   const selectedLoan =
     selectedLoanId !== null ? loans.find((row) => row.id === selectedLoanId) : undefined;
   const selectedStream =
@@ -306,14 +310,14 @@ export function WatchApp() {
                 position={selectedPosition}
                 symbol={symbolFor(
                   symbols,
-                  markets.markets.find((row) => row.market.toLowerCase() === selectedPosition.market.toLowerCase())
-                    ?.ovrfloToken ?? selectedPosition.market,
+                  selectedPositionMarket?.ovrfloToken ?? selectedPosition.market,
                 )}
-                market={
-                  markets.markets.find(
-                    (row) => row.market.toLowerCase() === selectedPosition.market.toLowerCase(),
-                  ) ?? null
+                underlyingSymbol={
+                  selectedPositionMarket
+                    ? symbolFor(symbols, selectedPositionMarket.underlying)
+                    : tokenLabel
                 }
+                market={selectedPositionMarket}
                 lending={lending}
                 nowMs={nowMs}
                 freshness={freshness.freshness}
@@ -339,6 +343,7 @@ export function WatchApp() {
                     ? symbolFor(symbols, markets.markets[0].ovrfloToken)
                     : tokenLabel
                 }
+                underlyingSymbol={tokenLabel}
                 market={markets.markets[0] ?? null}
                 lending={lending}
                 nowSeconds={nowSeconds}

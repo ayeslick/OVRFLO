@@ -12,11 +12,12 @@
     "start": "next start",
     "lint": "eslint .",
     "lint:banned-patterns": "bash scripts/check-banned-patterns.sh",
+    "lint:deps": "node scripts/check-wagmi-dedupe.mjs",
     "lint:maps-presence": "cd .. && bash tools/scripts/check-maps-presence.sh",
     "lint:state-index": "cd .. && node tools/scripts/generate-state-function-index.mjs --check",
     "lint:maps": "npm run lint:maps-presence && npm run lint:state-index",
     "lint:security": "npm run lint && npm run lint:banned-patterns",
-    "pretest": "npm run typegen && bash scripts/check-banned-patterns.sh",
+    "pretest": "npm run typegen && bash scripts/check-banned-patterns.sh && npm run lint:deps",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "npm run pretest && bddgen && playwright test",
@@ -44,6 +45,10 @@
     "react-dom": "19.2.4",
     "viem": "2.55.5",
     "wagmi": "3.7.3"
+  },
+  "overrides": {
+    "@wagmi/core": "3.6.3",
+    "@wagmi/connectors": "8.0.24"
   },
   "devDependencies": {
     "@axe-core/cli": "^4.11.2",

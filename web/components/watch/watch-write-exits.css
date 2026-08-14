@@ -1,0 +1,11 @@
+.watch-write [data-ui="UI-REVIEW-CLAIM-CONFIRMED"],
+.watch-write [data-ui="UI-REVIEW-REPAY-PREPARE"] {
+  display: grid;
+  gap: 12px;
+}
+
+.watch-write [data-ui="UI-REVIEW-CLAIM-CONFIRMED"] p,
+.watch-write [data-ui="UI-REVIEW-REPAY-PREPARE"] p {
+  margin: 0;
+  line-height: 1.45;
+}

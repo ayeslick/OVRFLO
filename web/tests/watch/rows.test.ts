@@ -45,6 +45,12 @@ describe("watch rows", () => {
     };
     expect(borrowedRowState({ loan, withdrawable: SCALE })).toBe("close-ready");
     expect(borrowedStateLine({ state: "close-ready", streamId: 8n })).toContain("COVERED");
+    expect(borrowedStateLine({ state: "repaying", streamId: 8n, scheduleHydrated: false })).toBe(
+      "CHECKING… · STREAM REPAYING",
+    );
+    expect(borrowedStateLine({ state: "repaying", streamId: 8n, scheduleHydrated: true })).toBe(
+      "UNCOVERED · STREAM REPAYING",
+    );
   });
 
   it("keeps closed loans settled and names the returned stream", () => {

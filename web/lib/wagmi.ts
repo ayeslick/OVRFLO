@@ -26,7 +26,7 @@ export const wagmiAdapter = new WagmiAdapter({
   // build-time prerender pass too: `output: "export"` removes the runtime
   // server, not the render pass that produces the HTML. Reown's own docs pass
   // this flag; it defers reconnect to Hydrate's post-commit effect.
-  // Pinned by tests/lib/wagmi-config.test.ts — nothing else covers this file.
+  // Pinned by tests/lib/wagmi-config.test.tsx — nothing else covers this file.
   ssr: true,
   transports: {
     [mainnet.id]: createOrderedReadTransport(rpcUrls.map((url) => http(url))),
@@ -35,9 +35,18 @@ export const wagmiAdapter = new WagmiAdapter({
 
 // WagmiProvider must share the exact config AppKit connects against, or wallet
 // connections made through the modal never propagate to the app's wagmi hooks.
-// The cast bridges the duplicate @wagmi/core versions (the Reown adapter pins a
-// different patch than wagmi bundles); the runtime object is the one AppKit drives.
-export const wagmiConfig = wagmiAdapter.wagmiConfig as unknown as Config;
+//
+// This is a plain typed assignment, not a cast, and that is load-bearing. The
+// adapter builds this object with its own @wagmi/core; `WagmiProvider` consumes
+// it with wagmi's. When those resolve to different versions, `Config` is two
+// nominally distinct types and the assignment only compiles behind an
+// `as unknown as` — which also suppresses any *real* incompatibility between
+// the two versions. The `overrides` block in package.json collapses both
+// @wagmi/core and @wagmi/connectors to one copy, so the compiler can check this
+// edge for real. Keep it uncast: a future version skew must fail the build here
+// rather than be absorbed silently.
+// Guarded by scripts/check-wagmi-dedupe.mjs (npm run lint:deps).
+export const wagmiConfig: Config = wagmiAdapter.wagmiConfig;
 
 let appKitCreated = false;
 

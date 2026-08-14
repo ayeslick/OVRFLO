@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { encodeFunctionData, type Address } from "viem";
 import { ActionButton } from "@/components/kit/ActionButton";
 import { AmountField } from "@/components/kit/AmountField";
@@ -8,14 +8,19 @@ import { Receipt } from "@/components/kit/Receipt";
 import { SettlementTrace, type TraceStep } from "@/components/kit/SettlementTrace";
 import { AcknowledgeRiskStep } from "@/components/first-run/AcknowledgeRiskStep";
 import { useAcknowledgeRiskTrace } from "@/components/first-run/useAcknowledgeRiskTrace";
+import { useApprovalWriteFlows } from "@/hooks/useApprovalWriteFlows";
 import { useChainGuard } from "@/hooks/useChainGuard";
-import { useWriteFlow } from "@/hooks/useWriteFlow";
-import { ovrfloLendingAbi } from "@/lib/abis";
+import { useWatchBalances, type WatchBalances } from "@/hooks/useWatchBalances";
+import { erc20Abi, ovrfloLendingAbi } from "@/lib/abis";
+import { claimedPayoutFromLogs } from "@/lib/claim-receipt";
+import { formatCoverDate, formatTruncatedDecimal } from "@/lib/format";
 import { MAX_UINT128 } from "@/lib/lending-math";
 import { parseDecimalInput } from "@/lib/parse";
-import { formatTruncatedDecimal } from "@/lib/format";
+import { coverDate, type StreamSchedule } from "@/lib/payoff";
+import { readRepayHandoff, writeRepayHandoff } from "@/lib/storage";
 import type { MarketInfo } from "@/lib/types";
 import { userFacingError } from "@/lib/errors";
+import "./watch-write-exits.css";
 
 export type WatchWriteKind = "claim" | "withdraw" | "repay" | "close";
 
@@ -31,7 +36,11 @@ export function WatchWrite({
   outstanding,
   withdrawable,
   symbol,
+  underlyingSymbol = "underlying",
   signingAllowed,
+  schedule,
+  nowSeconds,
+  balances: balancesOverride,
   onClose,
 }: {
   kind: WatchWriteKind;
@@ -48,15 +57,45 @@ export function WatchWrite({
   outstanding?: bigint;
   withdrawable?: bigint;
   symbol: string;
+  underlyingSymbol?: string;
   signingAllowed: boolean;
+  schedule?: StreamSchedule;
+  nowSeconds?: bigint;
+  balances?: WatchBalances;
   onClose: () => void;
 }) {
   const chain = useChainGuard();
-  const flow = useWriteFlow(undefined, market);
-  const ackTrace = useAcknowledgeRiskTrace(traceSteps(kind, flow, true));
+  const { approveTx, actionTx: flow } = useApprovalWriteFlows(undefined, market);
+  const liveBalances = useWatchBalances(market);
+  const balances = balancesOverride ?? liveBalances;
   const [repayRaw, setRepayRaw] = useState(
     outstanding !== undefined ? formatTruncatedDecimal(outstanding, 18, 5) : "",
   );
+  const [approvedAmount, setApprovedAmount] = useState(0n);
+  const parsedRepay = parseDecimalInput(repayRaw);
+  const repayAmount = parsedRepay.ok ? parsedRepay.value : 0n;
+  const allowance =
+    balances.ovrfloAllowance.status === "ready" ? balances.ovrfloAllowance.value : 0n;
+  const allowanceReady = balances.ovrfloAllowance.status === "ready";
+  const tokenApproved =
+    kind !== "repay" ||
+    repayAmount <= 0n ||
+    approvedAmount >= repayAmount ||
+    (allowanceReady && allowance >= repayAmount);
+  const allowancePending =
+    kind === "repay" && repayAmount > 0n && !tokenApproved && !allowanceReady;
+  const needsApprove = kind === "repay" && repayAmount > 0n && !tokenApproved && allowanceReady;
+  const ackTrace = useAcknowledgeRiskTrace(traceSteps(kind, flow, true, needsApprove));
+
+  useEffect(() => {
+    if (kind !== "repay" || loanId === undefined) return;
+    const restored = readRepayHandoff(loanId);
+    if (restored) setRepayRaw(restored);
+  }, [kind, loanId]);
+
+  useEffect(() => {
+    if (approveTx.isConfirmed && repayAmount > 0n) setApprovedAmount(repayAmount);
+  }, [approveTx.isConfirmed, repayAmount]);
 
   if (chain.wrongChain) {
     return (
@@ -79,14 +118,24 @@ export function WatchWrite({
     );
   }
 
-  const steps = ackTrace.steps;
   const stale = !signingAllowed;
   const busy = flow.isSigning || flow.isConfirming || flow.isInFlight;
-  const parsedRepay = parseDecimalInput(repayRaw);
-  const repayAmount = parsedRepay.ok ? parsedRepay.value : 0n;
+  const approveBusy = approveTx.isSigning || approveTx.isConfirming || approveTx.isInFlight;
+  const wrapShortfall = repayWrapShortfall(kind, repayAmount, balances);
+  const coverPair = repayCoverPair(schedule, outstanding, repayAmount, nowSeconds);
+  const claimedPayout = flow.isConfirmed
+    ? claimedPayoutFromLogs(flow.receipt?.logs, positionId)
+    : null;
+  const payoutValue =
+    kind === "claim" && flow.isConfirmed
+      ? claimedPayout === null
+        ? "CHECKING…"
+        : `${formatTruncatedDecimal(claimedPayout, 18, 5)} ${symbol}`
+      : undefined;
 
   function submit() {
-    if (stale || busy) return;
+    if (stale || busy || !tokenApproved || allowancePending) return;
+    if (wrapShortfall) return;
     if (kind === "claim" && positionId !== undefined) {
       const pairs = (claimPairs ?? []).filter((pair) => pair.claimable > 0n);
       if (pairs.length === 1) {
@@ -103,11 +152,7 @@ export function WatchWrite({
           address: lending,
           abi: ovrfloLendingAbi,
           functionName: "multicall",
-          args: [
-            pairs.slice(0, 32).map((pair) =>
-              encodeClaim(pair.loanId, positionId),
-            ),
-          ],
+          args: [pairs.slice(0, 32).map((pair) => encodeClaim(pair.loanId, positionId))],
         });
       }
       return;
@@ -140,9 +185,19 @@ export function WatchWrite({
     }
   }
 
+  function onApprove() {
+    if (stale || approveBusy || repayAmount <= 0n || !allowanceReady) return;
+    approveTx.writeContract({
+      address: market.ovrfloToken,
+      abi: erc20Abi,
+      functionName: "approve",
+      args: [lending, repayAmount],
+    });
+  }
+
   return (
     <div className="watch-write" data-ui="UI-WATCH-WRITE" data-write={kind}>
-      <SettlementTrace steps={steps} />
+      <SettlementTrace steps={ackTrace.steps} />
       {ackTrace.needsAcknowledgment ? <AcknowledgeRiskStep /> : null}
       {kind === "repay" && !flow.isConfirmed ? (
         <AmountField
@@ -154,27 +209,200 @@ export function WatchWrite({
           onSubmit={submit}
         />
       ) : null}
-      <Receipt kind="action" state={receiptState(flow)} lines={receiptLines(kind, symbol, { claimable, unfilled, outstanding, withdrawable, repayAmount })} />
+      {kind === "repay" && !flow.isConfirmed && coverPair ? (
+        <dl className="watch-facts" data-ui="UI-REVIEW-REPAY">
+          <div className="watch-fact">
+            <dt>CURRENT COVER</dt>
+            <dd>{coverPair.current}</dd>
+          </div>
+          <div className="watch-fact">
+            <dt>AFTER THIS REPAY</dt>
+            <dd>{coverPair.next}</dd>
+          </div>
+        </dl>
+      ) : null}
+      {wrapShortfall && !flow.isConfirmed ? (
+        <div className="watch-write" data-ui="UI-REVIEW-REPAY-PREPARE" data-state="shortfall">
+          <p>
+            Wallet holds {formatTruncatedDecimal(wrapShortfall.have, 18, 5)} {symbol}. Wrapping{" "}
+            {formatTruncatedDecimal(wrapShortfall.need, 18, 5)} {underlyingSymbol} covers the rest.
+          </p>
+          <div className="kit-action-wrap">
+            <a
+              className="kit-action"
+              href={`/assets/?return=repay&loan=${loanId?.toString() ?? ""}`}
+              onClick={() => loanId !== undefined && writeRepayHandoff(loanId, repayRaw)}
+            >
+              WRAP SHORTFALL
+            </a>
+          </div>
+        </div>
+      ) : null}
+      {kind === "repay" && !flow.isConfirmed && needsApprove ? (
+        <Receipt
+          kind="permission"
+          state="current"
+          lines={[
+            { key: "TOKEN", value: symbol },
+            { key: "SPENDER", value: "OVRFLO LENDING" },
+            { key: "ALLOWANCE", value: `${formatTruncatedDecimal(repayAmount, 18, 5)} ${symbol}` },
+            { key: "MATCH", value: "MATCH EXACT" },
+          ]}
+        />
+      ) : null}
+      <Receipt
+        kind="action"
+        state={receiptState(flow)}
+        lines={receiptLines(kind, symbol, {
+          claimable,
+          unfilled,
+          outstanding,
+          withdrawable,
+          repayAmount,
+          payoutValue,
+        })}
+      />
       {flow.error ? <p className="kit-field-error">{userFacingError(flow.error)}</p> : null}
+      {approveTx.error ? <p className="kit-field-error">{userFacingError(approveTx.error)}</p> : null}
       {flow.hash ? <p className="watch-hero-meta">{truncateHash(flow.hash)}</p> : null}
+      {kind === "claim" && flow.isConfirmed ? (
+        <ClaimConfirmedExits
+          symbol={symbol}
+          underlyingSymbol={underlyingSymbol}
+          payout={claimedPayout}
+          wrapReserve={balances.wrapReserve}
+          matured={balances.matured}
+          onKeep={onClose}
+        />
+      ) : null}
       <div className="watch-actions">
-        {ackTrace.needsAcknowledgment ? null : !flow.isConfirmed ? (
-          stale ? (
-            <ActionButton disabled disabledReason="EVENTS STALE — SIGNING DISABLED">
-              {actionLabel(kind, symbol, claimable)}
-            </ActionButton>
-          ) : (
-            <ActionButton variant="primary" busy={busy} onClick={submit}>
-              {actionLabel(kind, symbol, claimable)}
-            </ActionButton>
-          )
-        ) : null}
-        <ActionButton onClick={() => { flow.reset(); onClose(); }}>
+        {ackTrace.needsAcknowledgment || flow.isConfirmed ? null : stale ? (
+          <ActionButton disabled disabledReason="EVENTS STALE — SIGNING DISABLED">
+            {actionLabel(kind, symbol, claimable)}
+          </ActionButton>
+        ) : wrapShortfall ? (
+          <ActionButton disabled disabledReason="WRAP THE ADDITIONAL AMOUNT TO REPAY THIS">
+            REPAY
+          </ActionButton>
+        ) : allowancePending ? (
+          <ActionButton disabled disabledReason="CHECKING…">
+            REPAY
+          </ActionButton>
+        ) : needsApprove ? (
+          <ActionButton variant="primary" busy={approveBusy} onClick={onApprove}>
+            {`APPROVE ${symbol}`}
+          </ActionButton>
+        ) : (
+          <ActionButton variant="primary" busy={busy} onClick={submit}>
+            {actionLabel(kind, symbol, claimable)}
+          </ActionButton>
+        )}
+        <ActionButton
+          onClick={() => {
+            flow.reset();
+            approveTx.reset();
+            onClose();
+          }}
+        >
           {flow.isConfirmed ? "DONE" : "BACK"}
         </ActionButton>
       </div>
     </div>
   );
+}
+
+function ClaimConfirmedExits({
+  symbol,
+  underlyingSymbol,
+  payout,
+  wrapReserve,
+  matured,
+  onKeep,
+}: {
+  symbol: string;
+  underlyingSymbol: string;
+  payout: bigint | null;
+  wrapReserve: WatchBalances["wrapReserve"];
+  matured: boolean;
+  onKeep: () => void;
+}) {
+  const unwrapEnabled =
+    payout !== null && wrapReserve.status === "ready" && wrapReserve.value >= payout;
+  const reserveLabel =
+    wrapReserve.status === "ready"
+      ? formatTruncatedDecimal(wrapReserve.value, 18, 5)
+      : wrapReserve.status === "loading"
+        ? "CHECKING…"
+        : "UNAVAILABLE";
+  const state = unwrapEnabled ? "unwrap-enabled" : "reserve-insufficient";
+  return (
+    <div data-ui="UI-REVIEW-CLAIM-CONFIRMED" data-state={state}>
+      <p>
+        {payout === null
+          ? "RECEIVED CHECKING…"
+          : `RECEIVED ${formatTruncatedDecimal(payout, 18, 5)} ${symbol}`}
+        . Unwrap, keep, and claim PT are different assets.
+      </p>
+      {unwrapEnabled ? (
+        <div className="kit-action-wrap">
+          <a className="kit-action" href="/assets/">
+            UNWRAP TO UNDERLYING
+          </a>
+        </div>
+      ) : (
+        <ActionButton disabled disabledReason={`RESERVE ${reserveLabel} ${underlyingSymbol} — NOT A FAILED CLAIM`}>
+          UNWRAP TO UNDERLYING
+        </ActionButton>
+      )}
+      <ActionButton onClick={onKeep}>{`KEEP ${symbol}`}</ActionButton>
+      {matured ? (
+        <div className="kit-action-wrap">
+          <a className="kit-action" href="/assets/">
+            CLAIM PT
+          </a>
+        </div>
+      ) : (
+        <ActionButton disabled disabledReason="CLAIM PT OPENS AT SERIES MATURITY">
+          CLAIM PT
+        </ActionButton>
+      )}
+    </div>
+  );
+}
+
+function repayWrapShortfall(
+  kind: WatchWriteKind,
+  repayAmount: bigint,
+  balances: WatchBalances,
+): { have: bigint; need: bigint } | null {
+  if (kind !== "repay" || repayAmount <= 0n) return null;
+  if (balances.walletOvrflo.status !== "ready" || balances.walletUnderlying.status !== "ready") return null;
+  if (balances.walletOvrflo.value >= repayAmount) return null;
+  const need = repayAmount - balances.walletOvrflo.value;
+  if (balances.walletUnderlying.value < need) return null;
+  return { have: balances.walletOvrflo.value, need };
+}
+
+function repayCoverPair(
+  schedule: StreamSchedule | undefined,
+  outstanding: bigint | undefined,
+  repayAmount: bigint,
+  nowSeconds: bigint | undefined,
+): { current: string; next: string } | null {
+  if (!schedule || outstanding === undefined || nowSeconds === undefined) return null;
+  const current = coverDate(schedule, outstanding, nowSeconds);
+  const nextOutstanding = outstanding > repayAmount ? outstanding - repayAmount : 0n;
+  const next = coverDate(schedule, nextOutstanding, nowSeconds);
+  return {
+    current: coverLabel(current),
+    next: coverLabel(next),
+  };
+}
+
+function coverLabel(cover: ReturnType<typeof coverDate>): string {
+  if (cover.status === "uncovered") return "UNCOVERED";
+  if (cover.status === "covered") return formatCoverDate(cover.at).toUpperCase();
+  return `~ ${formatCoverDate(cover.at).toUpperCase()}`;
 }
 
 function encodeClaim(loanId: bigint, positionId: bigint) {
@@ -185,7 +413,7 @@ function encodeClaim(loanId: bigint, positionId: bigint) {
   });
 }
 
-function actionLabel(kind: WatchWriteKind, symbol: string, claimable?: bigint) {
+function actionLabel(kind: WatchWriteKind, symbol: string, claimable: bigint | undefined) {
   if (kind === "claim") {
     return claimable !== undefined
       ? `CLAIM ${formatTruncatedDecimal(claimable, 18, 5)} ${symbol}`
@@ -200,6 +428,7 @@ function traceSteps(
   kind: WatchWriteKind,
   flow: { isSigning: boolean; isConfirming: boolean; isConfirmed: boolean; isReverted: boolean },
   acknowledged: boolean,
+  repayApprove: boolean,
 ): TraceStep[] {
   const actionState: TraceStep["state"] = flow.isConfirmed
     ? "done"
@@ -223,9 +452,13 @@ function traceSteps(
   if (kind === "close") {
     return [...ack, { id: "close", label: "CLOSE", state: actionState }, { id: "settled", label: "SETTLED", state: settled }];
   }
+  const approve: TraceStep[] = repayApprove
+    ? [{ id: "approve", label: "APPROVE", state: "active" }]
+    : [];
   return [
     ...ack,
     { id: "amount", label: "AMOUNT", state: acknowledged ? "done" : "pending" },
+    ...approve,
     { id: "repay", label: "REPAY", state: actionState },
     { id: "settled", label: "SETTLED", state: settled },
   ];
@@ -248,11 +481,17 @@ function receiptLines(
     outstanding?: bigint;
     withdrawable?: bigint;
     repayAmount: bigint;
+    payoutValue?: string;
   },
 ) {
   if (kind === "claim") {
     return [
-      { key: "PAYOUT", value: `${formatTruncatedDecimal(amounts.claimable ?? 0n, 18, 5)} ${symbol}` },
+      {
+        key: amounts.payoutValue !== undefined ? "RECEIVED" : "PAYOUT",
+        value:
+          amounts.payoutValue ??
+          `${formatTruncatedDecimal(amounts.claimable ?? 0n, 18, 5)} ${symbol}`,
+      },
       { key: "ASSET", value: symbol },
     ];
   }

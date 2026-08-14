@@ -9,6 +9,7 @@ import {
   chainId,
   factoryDeployment,
   isConfiguredAddress,
+  runtimeProfile,
   SABLIER_LOCKUP_ADDRESS,
 } from "@/lib/config";
 import {
@@ -173,9 +174,13 @@ export function useStreams(input: {
       }
       const client = createViemDiscoveryClient(publicClient);
       const live = await captureHeadSnapshot(client);
-      // Scan only through finalized (or the same identity as latest) so a
-      // 1-2 block reorg cannot orphan events the checkpoint already advanced past.
-      const snapshot = { finalized: live.finalized, latest: live.finalized };
+      // Production scans through finalized so a 1-2 block reorg cannot orphan
+      // events the checkpoint already advanced past. Anvil forks report mainnet
+      // finality (~64 blocks behind latest), so local seed and arrange
+      // transactions sit in that window and stay invisible unless the cap is
+      // latest.
+      const cap = runtimeProfile === "local" ? live.latest : live.finalized;
+      const snapshot = { finalized: cap, latest: cap };
       const fromBlock = checkpoint?.number ?? factoryDeployment.blockNumber;
       const originScan = await scanLogs(client, {
         address: vaultAddresses,

@@ -184,6 +184,35 @@ describe.each(TRANSACTING_WIDTHS)("inventory — borrow topology at %ipx", (widt
     expect(screen.queryByRole("button", { name: "BORROW" })).not.toBeInTheDocument();
   });
 
+  it("6b BORROW.APPROVE_STREAM — wrong-chain / stale blocks APPROVE in the same slot", () => {
+    render(
+      <ReviewHandoff
+        quote={QUOTE}
+        frozen={FROZEN}
+        drifted={false}
+        checkpoint="approve"
+        underlyingSymbol={UNDERLYING}
+        ovrfloSymbol={SYMBOL}
+        aprBps={500}
+        streamId={441n}
+        operator={LENDING}
+        cover={COVER}
+        repayCurrent={COVER}
+        repayNext={{ status: "covered", at: NOW }}
+        acknowledged
+        streamApproved={false}
+        signingBlockedReason="SWITCH NETWORK"
+        approveBusy={false}
+        borrowBusy={false}
+        {...noopWrite}
+      />,
+    );
+    const approve = screen.getByRole("button", { name: "APPROVE STREAM" });
+    expect(approve).toBeDisabled();
+    expect(screen.getByText("SWITCH NETWORK")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "BORROW" })).not.toBeInTheDocument();
+  });
+
   it("7 BORROW.SIGN — BORROW armed; permission skipped when already approved", () => {
     render(
       <ReviewHandoff

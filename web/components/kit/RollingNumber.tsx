@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { formatTokenFromWei, interpolateAmount } from "./formatDisplay";
 import { subscribeRaf } from "./rafDriver";
 import "./kit.css";
+import "./hero-rolling.css";
 
 export type RollingSchedule = {
   startMs: number;

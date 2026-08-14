@@ -73,6 +73,16 @@ vi.mock("@/hooks/useWriteFlow", () => ({
   }),
 }));
 
+vi.mock("@/hooks/useWatchBalances", () => ({
+  useWatchBalances: () => ({
+    wrapReserve: { status: "ready", value: 10n * 10n ** 18n },
+    walletOvrflo: { status: "ready", value: 10n * 10n ** 18n },
+    walletUnderlying: { status: "ready", value: 10n * 10n ** 18n },
+    ovrfloAllowance: { status: "ready", value: 10n * 10n ** 18n },
+    matured: false,
+  }),
+}));
+
 vi.mock("@/hooks/useAcknowledgment", () => ({
   useAcknowledgment: () => ({ acknowledged: true, ready: true, acknowledge: vi.fn() }),
 }));

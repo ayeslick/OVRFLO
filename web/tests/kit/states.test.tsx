@@ -32,18 +32,22 @@ describe("kit labels, roles, and state classes", () => {
     const { rerender } = render(<StatusLine status="synced" asOf="12:34:56" />);
     expect(screen.getByRole("status")).toHaveAttribute("data-state", "synced");
     expect(screen.getByRole("status")).toHaveTextContent("EVENTS AS OF 12:34:56");
+    expect(screen.getByRole("status")).toHaveTextContent("SCHEDULES TICK LIVE");
 
     rerender(<StatusLine status="reconnecting" asOf="12:34:56" />);
     expect(screen.getByRole("status")).toHaveAttribute("data-state", "reconnecting");
     expect(screen.getByRole("status")).toHaveTextContent("RECONNECTING");
+    expect(screen.getByRole("status")).toHaveTextContent("SCHEDULES TICK LIVE");
 
     rerender(<StatusLine status="degraded" asOf="12:34:56" />);
     expect(screen.getByRole("status")).toHaveAttribute("data-state", "degraded");
     expect(screen.getByRole("status")).toHaveTextContent("DEGRADED — SHOWING LAST KNOWN");
+    expect(screen.getByRole("status")).not.toHaveTextContent("SCHEDULES TICK LIVE");
 
     rerender(<StatusLine status="unavailable" />);
     expect(screen.getByRole("status")).toHaveAttribute("data-state", "unavailable");
     expect(screen.getByRole("status")).toHaveTextContent("EVENTS UNAVAILABLE");
+    expect(screen.getByRole("status")).not.toHaveTextContent("SCHEDULES TICK LIVE");
   });
 
   it("TokenUsdSwitch disables with USD UNAVAILABLE", () => {

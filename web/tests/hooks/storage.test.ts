@@ -1,10 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   readCheckpoint,
+  readRepayHandoff,
   storageGet,
   storageSet,
   writeCandidateIdsUnion,
   writeCheckpointMax,
+  writeRepayHandoff,
 } from "@/lib/storage";
 
 const KEY = "ovrflo:test-checkpoint";
@@ -47,5 +49,12 @@ describe("throw-tolerant storage", () => {
   it("unions candidate ids across incremental scans", () => {
     expect(writeCandidateIdsUnion(IDS_KEY, [2n, 1n])).toEqual([1n, 2n]);
     expect(writeCandidateIdsUnion(IDS_KEY, [2n, 9n])).toEqual([1n, 2n, 9n]);
+  });
+
+  it("restores a matching repay handoff once", () => {
+    writeRepayHandoff(12n, "1.25000");
+    expect(readRepayHandoff(99n)).toBeNull();
+    expect(readRepayHandoff(12n)).toBe("1.25000");
+    expect(readRepayHandoff(12n)).toBeNull();
   });
 });

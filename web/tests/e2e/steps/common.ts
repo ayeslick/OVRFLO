@@ -26,14 +26,15 @@ async function amountInput(page: Page): Promise<Locator> {
 }
 
 async function restoreSeededWallet(page: Page) {
-  const devChip = page.getByRole("button", { name: formatAddressChip(DEV_WALLET_ADDRESS) });
+  const identity = page.locator(".wallet-identity");
+  const devChip = identity.getByRole("button", { name: formatAddressChip(DEV_WALLET_ADDRESS) });
   if (await devChip.count()) {
     await expect(devChip).toBeVisible();
     return;
   }
-  const disconnect = page.getByRole("button", { name: "DISCONNECT", exact: true });
+  const disconnect = identity.getByRole("button", { name: "DISCONNECT", exact: true });
   if (await disconnect.count()) await disconnect.click();
-  await page.getByRole("button", { name: "CONNECT WALLET", exact: true }).click();
+  await identity.getByRole("button", { name: "CONNECT WALLET", exact: true }).click();
   await waitForWalletConnected(page);
 }
 
@@ -62,7 +63,7 @@ Given("my wallet is connected", async ({ page }) => {
 });
 
 Given("the frontend re-syncs with chain state", async ({ page }) => {
-  await page.reload();
+  await page.reload({ waitUntil: "domcontentloaded" });
   await restoreSeededWallet(page);
 });
 
@@ -70,20 +71,20 @@ Given("the market has matured", async ({ page }) => {
   const secondaryExpiry = readSecondaryExpiry();
   await advancePastExpiry(secondaryExpiry);
   await page.clock.setFixedTime(new Date(Number(secondaryExpiry) * 1000 + 5_000));
-  await page.reload();
+  await page.reload({ waitUntil: "domcontentloaded" });
   await restoreSeededWallet(page);
 });
 
 When("I reload the page", async ({ page }) => {
-  await page.reload();
+  await page.reload({ waitUntil: "domcontentloaded" });
 });
 
 When("I disconnect my wallet", async ({ page }) => {
-  await page.getByRole("button", { name: "DISCONNECT", exact: true }).click();
+  await page.locator(".wallet-identity").getByRole("button", { name: "DISCONNECT", exact: true }).click();
 });
 
 When("I reconnect my wallet", async ({ page }) => {
-  await page.getByRole("button", { name: "CONNECT WALLET", exact: true }).click();
+  await page.locator(".wallet-identity").getByRole("button", { name: "CONNECT WALLET", exact: true }).click();
   await waitForWalletConnected(page);
 });
 

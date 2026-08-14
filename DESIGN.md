@@ -1,198 +1,284 @@
-# OVRFLO Design System
+---
+name: OVRFLO Markets
+description: One-bit instrument workbench for self-repaying loans
+colors:
+  paper: "#FDFDFC"
+  ink: "#0A0A0A"
+  dim: "#6B6B6B"
+  halftone: "#EFEFEC"
+  gold: "#E8930C"
+  gold-ink: "#FFB84D"
+  ok: "#177245"
+  err: "#C22F2F"
+  rule-hairline: "#CCCCCC"
+  rule-faint: "#DDDDDD"
+typography:
+  display:
+    fontFamily: "Martian Mono, ui-monospace, SFMono-Regular, Menlo, monospace"
+    fontSize: "36px"
+    fontWeight: 700
+    lineHeight: 1.1
+    letterSpacing: "-0.03em"
+    fontFeature: "tabular-nums"
+  headline:
+    fontFamily: "Schibsted Grotesk, ui-sans-serif, system-ui, sans-serif"
+    fontSize: "28px"
+    fontWeight: 800
+    lineHeight: 1.15
+    letterSpacing: "-0.02em"
+  title:
+    fontFamily: "Schibsted Grotesk, ui-sans-serif, system-ui, sans-serif"
+    fontSize: "20px"
+    fontWeight: 900
+    lineHeight: 1.2
+    letterSpacing: "-0.02em"
+  body:
+    fontFamily: "Schibsted Grotesk, ui-sans-serif, system-ui, sans-serif"
+    fontSize: "15px"
+    fontWeight: 400
+    lineHeight: 1.45
+    letterSpacing: "-0.02em"
+  label:
+    fontFamily: "Martian Mono, ui-monospace, SFMono-Regular, Menlo, monospace"
+    fontSize: "11px"
+    fontWeight: 400
+    lineHeight: 1.3
+    letterSpacing: "0.08em"
+rounded:
+  none: "0px"
+spacing:
+  xs: "8px"
+  sm: "12px"
+  md: "16px"
+  lg: "22px"
+  xl: "32px"
+components:
+  button-primary:
+    backgroundColor: "{colors.ink}"
+    textColor: "{colors.gold-ink}"
+    typography: "{typography.label}"
+    rounded: "{rounded.none}"
+    padding: "11px 22px"
+    height: "44px"
+  button-primary-hover:
+    backgroundColor: "{colors.ink}"
+    textColor: "{colors.gold-ink}"
+    rounded: "{rounded.none}"
+  button-default:
+    backgroundColor: "{colors.paper}"
+    textColor: "{colors.ink}"
+    rounded: "{rounded.none}"
+    padding: "11px 22px"
+    height: "44px"
+  button-default-hover:
+    backgroundColor: "{colors.paper}"
+    textColor: "{colors.ink}"
+    rounded: "{rounded.none}"
+  button-disabled:
+    backgroundColor: "{colors.paper}"
+    textColor: "{colors.dim}"
+    rounded: "{rounded.none}"
+    height: "44px"
+  lens-tab:
+    backgroundColor: "{colors.paper}"
+    textColor: "{colors.ink}"
+    rounded: "{rounded.none}"
+    padding: "9px 20px"
+    height: "44px"
+  lens-tab-selected:
+    backgroundColor: "{colors.ink}"
+    textColor: "{colors.paper}"
+    rounded: "{rounded.none}"
+    height: "44px"
+  entity-row:
+    backgroundColor: "{colors.paper}"
+    textColor: "{colors.ink}"
+    rounded: "{rounded.none}"
+    padding: "14px 16px"
+  entity-row-selected:
+    backgroundColor: "{colors.ink}"
+    textColor: "{colors.paper}"
+    rounded: "{rounded.none}"
+  receipt:
+    backgroundColor: "{colors.paper}"
+    textColor: "{colors.ink}"
+    rounded: "{rounded.none}"
+  amount-field:
+    backgroundColor: "{colors.paper}"
+    textColor: "{colors.ink}"
+    typography: "{typography.display}"
+    rounded: "{rounded.none}"
+  rate-chip:
+    backgroundColor: "{colors.paper}"
+    textColor: "{colors.ink}"
+    rounded: "{rounded.none}"
+    padding: "13px 14px"
+    height: "44px"
+  rate-chip-selected:
+    backgroundColor: "{colors.ink}"
+    textColor: "{colors.gold-ink}"
+    rounded: "{rounded.none}"
+---
 
-## Status and Change Policy
+# Design System: OVRFLO Markets
 
-This document records the strongest current design hypothesis, not an immutable constitution. Product truth and task clarity are stable; visual choices are replaceable when a materially better direction is demonstrated.
+## Overview
 
-- No aesthetic choice is protected merely because it appears here or already exists in code.
-- Proposed changes must be evaluated as rendered alternatives, not argued from adjectives.
-- Comparisons include the incumbent as a baseline whenever practical.
-- A selected alternative replaces the superseded rule here; the document must describe the built system rather than defend its history.
-- Revisit a choice when user behavior, content density, accessibility, implementation constraints, or a stronger visual direction exposes a weakness.
+**Creative North Star: "One-bit instrument workbench"**
 
-## Product Expression
+The Markets app is a paper instrument, not a dark casino. Warm newsprint (`--paper`) is the canvas. Hard black rules (`--ink`) are structure. Square controls, inverted selection, and a single amber accent mark the live operation. Schibsted Grotesk carries decisions and prose; Martian Mono carries receipts, amounts, labels, and navigation. Bitmap dots live in frames and capital bands, never behind copy.
 
-OVRFLO is an exact, self-repaying lending protocol. The interface must feel like financial infrastructure: quiet, legible, deterministic, and specific to streamed collateral.
+Home is the watch wall. Borrow, Supply, and Assets launch as flows. Depth comes from 1–2px rules and inversion, never from shadow, glass, or glow. Motion is compositor-only and interruptible; ticking numbers update in place. Region briefs own meaning and copy; this file recovers the visual system from the shipped CSS and kit (`web/app/globals.css`, `web/app/status-warning.css`, `web/components/kit/kit.css`, `web/components/kit/hero-rolling.css`, flow CSS).
 
-The visual world is **Architectural Dark**: an obsidian technical canvas, strict graphite rules, restrained typography, and semantic cyan/gold accents. It is not a generic “crypto terminal.” Every surface must make a financial decision easier.
+**Key Characteristics:**
 
-The page hierarchy is:
+- Paper canvas, ink rules, one gold accent
+- Square corners; selection is inversion
+- Grotesk decisions over mono receipts
+- Gold-ink on ink for body-size accent text; display-scale gold on paper only where the CSS actually sizes it
+- No cyan, Inter, NOW/NEXT strip, or health-factor gauge
 
-1. Choose a market.
-2. Choose **Supply** or **Borrow**.
-3. Review exact consequences.
-4. Sign and retain a receipt.
+## Colors
 
-Depositing PT, wrapping, unwrapping, claiming, and servicing positions remain available as contextual utilities. They must not compete with Supply and Borrow at the market level.
+Eight tokens on `:root` in `web/app/globals.css`. Hairline greys in kit CSS are not tokens; they are structural rules.
 
-## Simplicity Contract
+### Primary
 
-OVRFLO is complex; the interface must not expose that complexity all at once.
+- **Instrument ink** (`{colors.ink}`): text, rails, selected fills, primary action fills, focus outline.
+- **Operation gold** (`{colors.gold}`): the only accent. Used as a 2px outline on primary actions, as fill on queue/self/draw band parts, as selected rate-band color, and as display-scale gold on paper (36px) for Borrow `YOU RECEIVE` and watch earnings. Do not invent a second accent.
 
-- One region has one dominant decision.
-- A market may expose at most two primary actions: **Supply** and **Borrow**.
-- One action gets one canonical control. Never repeat the same action in a balance row and an action band.
-- Secondary utilities appear beside the balance or position they affect, or behind a clearly named disclosure.
-- Conditional utilities such as `CLAIM ALL` appear only when actionable. Primary actions remain visible when disabled and state why.
-- Default views show decision inputs, not every implementation detail. Full ladders, advanced repayment, and conversion utilities use progressive disclosure.
-- Do not add cards, labels, borders, or explanatory copy unless they improve grouping, hierarchy, or consequence clarity.
-- A screen with more than four peer choices must group, rank, or progressively disclose them.
+- **Gold on ink** (`{colors.gold-ink}`): gold-family text and numerals on inverted ink — selected entity decisive numbers, selected rate APR, primary action label.
 
-## Canvas and Structure
+### Neutral
 
-- `--obsidian: #050505` is the page canvas.
-- `--carbon: #111111` is reserved for selected, expanded, or interactive surfaces.
-- `--graphite: #333333` defines structural rules.
-- Depth comes from borders and surface shifts, never shadows, blur, or glow.
-- Corners are square; a 2px radius is the absolute maximum.
-- The current implementation uses a 40px root grid as a measurement metaphor. It is a candidate treatment, not a brand invariant; comparisons may reduce, replace, or remove it.
-- Borders are structural, not decorative. Nested bordered containers are forbidden unless the inner boundary represents a real interactive object such as a position.
-- Selected market state must remain visible while its detail is open.
+- **Newsprint** (`{colors.paper}`): page and shell ground. Body, html, kit, receipts, and modal scrim all sit on it.
+- **Caption grey** (`{colors.dim}`): kickers, secondary labels, disabled copy, USD captions, pending trace steps.
+- **Halftone** (`{colors.halftone}`): defined on `:root` as the warm frame fill. Shipped surfaces do not yet paint it; bitmap texture uses `currentColor` radial dots instead (`background-size: 5px 5px`).
+- **Hairline rule** (`{colors.rule-hairline}` / `{colors.rule-faint}`): wall/footer/receipt row dividers (`#ccc` / `#ddd`). Not accent.
 
-## Color
+### Outcomes (not accents)
 
-Accent colors are semantic and never decorative:
+- **Confirm green** (`{colors.ok}`): confirmed / closed status only (`.status-positive`).
+- **Reject red** (`{colors.err}`): invalid fields, reverted/error trace steps, field errors.
 
-- `--chalk: #f4f4f4` — neutral facts and primary text.
-- `--dim: #888888` — secondary labels and captions.
-- `--accent-gold: #ffcf00` — lender return, supplied liquidity, claimable yield, and Supply actions.
-- `--accent-cyan: #00e5ff` — borrower proceeds, obligations, debt, and Borrow actions.
-- `--positive: #4ade80` — confirmed or closed.
-- `--negative: #f87171` — invalid or reverted.
-- `--warning: #ffcf00` — pending or approaching maturity.
+**The One Gold Rule.** Gold is the sole accent. Cyan is retired. Green and red never decorate idle chrome; they only report transaction outcomes.
 
-A number is colored by its side of the market, not whether it is “good” or “bad.” Never flood a surface with an accent. Use accent on the decisive number, action border, or compact status label.
+**The Gold-on-Ink Rule.** Gold-family *text* at body size sits on inverted ink (`gold-ink` on `ink`). Display-scale gold-on-paper is 36px: Borrow `YOU RECEIVE`, watch earnings inside `.kit-hero` (`hero-rolling.css`), and the Assets amount at `min-width: 800px`. Warning copy is ink (`status-warning.css` loads after `globals.css`, which still contains a gold `.status-warning` rule). Queue-band gold is a fill, not copy. Gold `RollingNumber` outside `.kit-hero` is body-size on paper — do not ship that.
 
 ## Typography
 
-- **Display and prose:** the current implementation uses Inter, weight 400–500, tracking `-0.02em`. Future comparisons may replace it with a more distinctive, equally legible workhorse face.
-- **Data and structure:** IBM Plex Mono with tabular numerals and normal tracking.
-- The application must load both faces; do not rely on local installation.
-- Monospace is for amounts, rates, IDs, table headers, compact labels, and transaction state—not paragraphs or brand costume.
-- Use no more than four type sizes on an application surface.
-- Headings must create an obvious scale step. A label cannot substitute for hierarchy.
-- Uppercase is reserved for controls, compact labels, and state. Explanatory prose uses sentence case.
+**Display Font:** Schibsted Grotesk (ui-sans-serif / system-ui / sans-serif), loaded via `next/font/local` as `--font-schibsted` (`web/app/fonts.ts`). Weights 400 / 500 / 700 / 900. Fallback metrics on; `display: swap`. Body letter-spacing `-0.02em`.
 
-Inter and the canvas grid are known slop signatures in the incumbent implementation. They may survive only after an unsuppressed review presents them beside rendered alternatives and the retained version wins on task clarity and audience identification.
+**Body Font:** the same Grotesk stack (`--font-decision`).
 
-## Market Index
+**Label/Mono Font:** Martian Mono (ui-monospace / SFMono-Regular / Menlo), `--font-martian` / `--font-receipt`. Weights 400 / 700. Tables use `font-stretch: condensed` plus `tabular-nums`. Dense labels track `0.08em`–`0.14em` and are usually uppercase.
 
-The market index is the page’s primary navigation and comparison surface.
+**Character:** Grotesk is the decision voice — titles, ledes, wordmark. Mono is the instrument voice — amounts, rates, IDs, nav, receipts, status. Mono never carries paragraphs.
 
-- Market data remains a table at every breakpoint. Narrow screens scroll the table horizontally.
-- The section heading explains the task, not merely the container. Prefer `SELF-REPAYING MARKETS` over repeating `MARKETS`.
-- Each row shows only what supports comparison: asset, maturity, TVL, lender terms, and borrower terms.
-- Lender APR and borrower upfront value are distinct lenses. Label them explicitly; never compress them into an unexplained `APR · value ↑` string.
-- Expanding a market must produce a persistent selected-row treatment and repeat the asset and maturity in the detail heading.
-- Only one market may be expanded at a time.
-- Loading, failed, empty, and truncated are distinct states. `—` is not a substitute for a state label.
+### Hierarchy
 
-## Positions and Balances
+- **Display** (Martian Mono 700, 36px / 44px amount field at `min-width: 800px`, line-height 1.1): Borrow proceeds, amount entry, the live money the user is deciding. `tabular-nums`; width in `ch` from the locale formatter's max-magnitude sentinel.
+- **Headline** (Schibsted 800, 28px): Borrow / Supply flow titles.
+- **Title** (Schibsted 900, 20px): `OVRFLO` wordmark. First-run / disconnected entry prose is Schibsted 400 at 18px / line-height 1.45.
+- **Body** (Schibsted 400, 15px / line-height 1.45, max ~42em on ledes): teaching copy, first-run lists, degraded explanations.
+- **Label** (Martian Mono 400, 10–13px, tracking 0.08–0.14em, often uppercase): kickers (`11px`), nav (`12px` / `0.1em`), status line (`10.5px`), receipt titles (`10px` / inverted), fact rows and stream meta (`12.5–13px`), change links (`12px`).
 
-Market data stays tabular. A user’s stateful positions may use compact `.position-card` blocks because they carry per-item progress, state, and actions.
+Flow CSS uses `font-weight: 800` on titles; the loaded Grotesk files are 400/500/700/900, so 800 synthesizes.
 
-- Position cards are the only routine card exception.
-- Cards must not be nested.
-- The global position summary contains at most four metrics.
-- Summary actions appear in the heading and only when actionable.
-- Balance utilities live beside the balance they affect.
-- Advanced position servicing stays collapsed until requested.
-- Progress bars always include a programmatic label and numeric value.
+**The Receipt Face Rule.** Amounts, APRs, addresses, timestamps, and committed receipt lines are Martian Mono with `tabular-nums`. Sentence-case prose is Schibsted. Uppercase is for controls, compact labels, and state — not body paragraphs.
 
-## Controls
+## Layout
 
-- Buttons are transparent with a 1px semantic border; hover inverts foreground and background.
-- Primary market actions are equal peers: gold Supply and cyan Borrow.
-- Neutral utilities use chalk or dim styling and must not visually outrank primary actions.
-- Disabled primary controls stay visible and include a concise reason.
-- Secondary controls with no possible action may be omitted until relevant.
-- Touch targets should be at least 44×44px where space permits and never below 24×24px.
-- Focus uses a 2px edge treatment with no glow and no layout shift.
-- Unicode glyphs must not become an ad hoc icon system. Simple disclosure markers and mathematical symbols are the only exceptions.
+The shell is a `min(1200px, 100%)` column, `100dvh` min-height (`100vh` fallback), 1px ink rails left and right (`web/components/kit/kit.css` `.kit-shell`). Header is 56px min-height, 22px horizontal padding, 2px ink bottom rule. Body padding is 22px / 32px; header and body drop to 12px below 800px.
 
-## Forms and Transaction Flow
+Watch home is a two-column split (`1fr 1fr`) with a 1.5px ink top rule. The wall has a `#ccc` right rule; detail pads 22px left. Below 1024px the split stacks and `data-narrow-detail` hides wall or detail so one pane fills the viewport; back control is 44px min-height.
 
-- Inputs are transparent, sharp, and bordered in graphite.
-- Every input and select has a persistent programmatic label.
-- Numeric fields use mono text, decimal input mode, a balance line where relevant, and `MAX` only when the maximum is truthful.
-- Parsing errors are distinct from zero and appear inline with `aria-invalid` and linked error text.
-- Field errors never use toasts.
-- Transaction steps use `[1] APPROVE  [2] SIGN  [3] CONFIRMED`.
-- Every confirmation shows exact assets, amounts, fees, obligation, residual, and slippage where relevant.
-- Confirmation must preserve the submitted values and end on a durable receipt until the modal closes.
-- Users sign numbers, not vibes.
+Borrow and Supply default to a 720px single-decision column (28px gap). Review split (`data-split="true"`) opens to 1100px and, from 900px, `1.1fr / 0.9fr`. First-run teaching uses a 1 / 1.15 / 1 three-bay grid (28px gap) that is that surface's composition, not a global three-bay.
 
-## Data and Copy
+Spacing rhythm in use: 8 / 12 / 16 / 22 / 32px. Touch targets are ≥24px on compact chrome (copy, MAX, connect) and ≥44px on primary actions, paddles, lens tabs, amount inputs, series picks, and the narrow back control. Amount inputs are 16px on viewports under 800px (mobile zoom) and 44px at 800px and up.
 
-- Token amounts show 2 decimals by default and 4 below one unit; always include the symbol.
-- Rates show 2 decimals.
-- Maturity identifiers use `27JUN27`; captions use `Matures Jun 27, 2027`; countdowns use `142d 06h` only when time drives a decision.
-- Addresses and IDs truncate in the middle and support copy.
-- Protocol terms are acceptable only when they are the correct term. Define PT, upfront value, obligation, residual, wrap reserve, and pool share at their first decision point.
-- Errors name the problem and recovery. Never expose raw exception messages.
-- Empty states state what is absent. Loading states say `LOADING`; unavailable states say `UNAVAILABLE`.
-- Do not use `—` for multiple semantic states.
-- Copy is direct and factual. No unsupported claims, marketing filler, or invented proof.
+URL state is client-only; the exported HTML is the parameterless shell. `dir="ltr"` is asserted on the layout. DOM source order inside a region matches the brief's aural order.
 
-## Motion
+**The One Decision Rule.** Default Borrow/Supply viewports are a single column. Density (ALL RATES, converter bays, watch wall+detail) is a named surface composition, not a dashboard of peer cards.
 
-- Motion never blocks reading, focus, or task completion.
-- Color, background, and border transitions may use `0.2s ease`.
-- Market-detail entrance may use one short transform/opacity transition.
-- No parallax, bounce, scale-on-hover, ambient movement, shimmer, or decorative entrance cascades.
-- Reduced-motion rules target the actual animated components. Do not globally collapse every future animation to `0.01ms`.
-- Live financial values update in place without flashing.
+## Elevation & Depth
 
-## Responsive Behavior
+The system is flat. Depth is a 1–2.5px ink (or hairline) rule, or a full inversion to ink. There are no box-shadows, blurs, glows, or glass. Modal scrim is opaque paper, not a dim overlay. Ghosted receipts use `opacity: 0.55`. Stale surface state gets a 2px ink left rule, not a warning wash.
 
-- The application column is at most 1200px with graphite rails.
-- Desktop side padding is 2rem; narrow layouts use 1rem.
-- Below approximately 800px, split panels stack and market tables scroll.
-- Position cards remain cards rather than becoming table rows.
-- Primary actions wrap without changing their order or semantic color.
-- Modals fit the dynamic viewport and preserve access to their close control and final action.
-- Compactness never justifies hiding labels, clipping values, or shrinking controls below the minimum target.
+Bitmap / dither is `radial-gradient(currentColor 1.1px, transparent 1.1px)` at `5px 5px`, used on minibands, queue parts, and rate bands — frames and fills, never as a page background behind text. Review and receipt surfaces stay untextured.
 
-## Slop Rejection
+**The Flat Rule.** Do not add shadow, glow, or translucency to encode hierarchy. Invert or rule.
 
-Reject these patterns unless a future product brief explicitly replaces this design system:
+## Shapes
 
-- gradients, glass, blur, glow, drop shadows, soft rounded cards, pills, or floating dashboard tiles;
-- decorative grid repetition outside the root measurement canvas;
-- interchangeable icon-heading-description card grids;
-- hero metrics, fake analytics, ornamental sparklines, or meaningless progress rings;
-- monospace paragraphs used to simulate technical credibility;
-- unlabeled arrows, mystery icons, decorative badges, or color without semantic meaning;
-- repeated headings, repeated actions, nested panels, and borders that do not encode structure;
-- every value visible at once, every action equally loud, or every empty state rendered as a dash;
-- generic DeFi copy that could belong to another protocol unchanged.
+Every control is square (`border-radius: 0` on buttons, inputs, chips, receipts, paddles, lens tabs, action buttons, switches). A 2px radius is not used. Primary actions use a 2px ink border plus, when `data-variant="primary"`, a 2px gold outline offset 2px. Focus-visible is a 2px ink outline offset 2px; `:focus` without `:focus-visible` is outline none. Hairlines (`1px #ccc/#ddd`) separate rows; structural edges are 1.5–2.5px ink. Dashed 1.5px `#999` rules join settlement-trace steps.
 
-## Slop Review Protocol
+**The Square Rule.** No pills, no cards with radius, no rounded fields. Inversion, not rounding, marks selection.
 
-Slop detection is a design input, not an automatic veto and never a silent waiver.
+## Components
 
-1. Run the detector without configuration, design-system, or inline-ignore suppression for the review target.
-2. Present every signature with its rule name, location, visible symptom, and likely effect on hierarchy, trust, or usability.
-3. Draw up at least three materially different responses. Whenever practical these are: remove it, reinterpret it, and retain it with stronger execution.
-4. Render the alternatives at the real surface viewport. Text-only rationales are insufficient for a visual choice.
-5. Compare against the incumbent and state the tradeoffs. A detector finding may be retained only because its rendered execution wins—not because DESIGN.md previously allowed it.
-6. Record the selected disposition here and in any local suppression, including the rationale and the condition that should reopen the decision.
+Kit lives in `web/components/kit/`. Flow pages compose it; they do not restyle a second visual world.
 
-Never globally disable a detector rule. Never add a local suppression before the finding and its rendered alternatives have been presented.
+### Buttons
 
-## Review Gate
+- **Shape:** square; 2px ink border; 11px 22px padding; min-height 44px; Grotesk 700 / 12px / 0.08em tracking on `.kit-action`.
+- **Primary:** ink fill, gold-ink label, 2px gold outline offset 2px. Busy label is `SIGNING…`. Disabled stays visible with a reason under the control (`.kit-action-reason`, dim, 10.5px).
+- **Default:** paper fill, ink border and text. Hover on the older `.button` utility inverts to ink/paper; kit action buttons do not invert on hover.
+- **Connect / text actions:** unbordered, inherit the shell chip or receipt face (`CONNECT WALLET` in the header chip).
 
-Before shipping a surface, verify:
+### Chips
 
-1. The primary decision is identifiable within five seconds.
-2. No action is duplicated.
-3. No region has more than four ungrouped peer choices.
-4. Lender and borrower values are explicitly labeled.
-5. Loading, unavailable, empty, error, and confirmed states remain distinct.
-6. Every form control has a persistent accessible label.
-7. The user can state what will happen on-chain before signing.
-8. Confirmation leaves a durable receipt.
-9. Desktop and mobile preserve the same hierarchy.
-10. The unsuppressed source and rendered-page slop scans have been run.
-11. Every signature has been presented with rendered alternatives and a recorded disposition.
-12. Every remaining suppression is local, documented, and backed by the selected comparison.
+- **Address chip:** 1.5px ink border, 7px 11px padding, Martian Mono 11px, min-height 24px. Truncates `0x` + 4, copies full value.
+- **Lens tabs:** paper, 1.5px ink, no bottom border (they sit on the wall). Selected inverts to ink/paper and weight 700. Min-height 44px.
+- **Rate chips:** three-up window, 1.5px ink, selected inverts to ink with gold-ink APR (19px mono 700). Selected hint and band use gold-ink / gold. Paddles are 44×44 square.
+
+### Cards / Containers
+
+There are no elevated cards. The receipt is the contained object: 1.5px ink box, inverted 10px title bar (`PERMISSION RECEIPT` / `ACTION RECEIPT` plus `ALWAYS TOKEN-EXACT`), 11.5px mono lines, 1px `#ddd` row rules. Entity rows are full-bleed list buttons with 1px `#ccc` bottoms; selected inverts the whole row and paints state/decisive in gold-ink.
+
+### Inputs / Fields
+
+- **Amount field:** no box border; 2.5px ink underline; mono tabular input; unit 20px; MAX is 11px / 700 / 0.1em. Invalid underline is `--err`. Desktop type jumps to 44px at 800px. Focus uses the kit 2px ink ring.
+- **Token / USD switch:** square 1.5px ink segmented control; on-side inverts to ink/paper. USD captions are dim, never receipt lines.
+- **Binary switch** (wrap/unwrap, etc.): same inversion language as lens tabs.
+
+### Navigation
+
+Header: 900 / 20px `OVRFLO` wordmark (home). Nav is Martian Mono 12px / 0.1em: BORROW, SUPPLY, ASSETS, RISK. Current page is a 3px ink underline and weight 700. Wallet sits in a 1.5px ink chip (11px mono) unless a connected identity cluster removes the chip border. Footer links are 11px / 0.1em mono on a `#ccc` top rule.
+
+### Status and trace
+
+Status line is 10.5px uppercase mono on a 1.5px ink bottom rule. Synced is dim; degraded/unavailable is ink. Settlement trace is a horizontal mono step list (active = ink 700, pending = dim, error = `--err`) joined by dashed rules. Refetch notice matches the status line, ink not dim.
+
+### Signature: Rolling number and ribbon
+
+Rolling numbers are inline mono 700, `tabular-nums`, width in `ch`, `role="timer"` while ticking. Decorative canvas ribbons and minibands use the 5px dot stamp; `prefers-reduced-motion` unsubscribes canvas motion while numeric text keeps updating. Live amounts are never part of a focused control's accessible name.
+
+### Signature: Queue / capital band
+
+16px-tall 1px ink band. Self/draw parts are gold fill; ahead/pool are `#8a8a8a`; overrun is ink with a 2px ink leading rule.
+
+## Do's and Don'ts
+
+### Do:
+
+- **Do** load Schibsted Grotesk and Martian Mono from `web/app/fonts.ts` (`next/font/local`, subset woff2). Do not rely on a user-installed face or a runtime font package.
+- **Do** put gold-family body text on ink (`--gold-ink`) or size gold-on-paper to display scale (36px / 44px).
+- **Do** invert to mark selection (lens, row, rate, switch, primary action fill).
+- **Do** keep receipts token-exact, paper, untextured, with an inverted title bar.
+- **Do** honor `prefers-reduced-motion` on canvas; keep ticking numerals.
+- **Do** size updating numbers in `ch` from the active locale's formatter.
+- **Do** use `:focus-visible` 2px ink outline offset 2px; never a gold or glow ring.
+
+### Don't:
+
+- **Don't** reintroduce cyan, Inter, IBM Plex, Architectural Dark / obsidian canvas, or a tiled page grid.
+- **Don't** add NOW/NEXT, NEEDS YOU, LIVE badges, or any aggregate attention strip.
+- **Don't** draw a health-factor, LTV, or liquidation gauge — including as decoration.
+- **Don't** put shadows, glass, blur, glow, pills, or visible color ramps on surfaces.
+- **Don't** put bitmap texture behind text or on Review/receipt surfaces.
+- **Don't** paint `--gold` on paper below display scale (36px / 44px). Warning copy stays ink.
+- **Don't** color a number "good" or "bad"; `--ok` / `--err` are outcomes, not market sides.
+- **Don't** put USD on a receipt line or in calldata. USD is a display switch.
+- **Don't** use em dash `—` as a stand-in for loading, empty, or failed. Those states have copy.
+- **Don't** nest another visual system on flow pages. Compose the kit.

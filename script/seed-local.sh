@@ -273,6 +273,12 @@ send_as "$DEV_PK" "$LENDING" 'borrow(address,uint16,uint128,uint256,uint128)' \
   "$PRIMARY_MARKET" "$LAUNCH_APR_BPS" "$BORROW_TARGET_AMOUNT" "$STREAM_ID" 0
 echo "      dev wallet borrowed against stream #$STREAM_ID at ${LAUNCH_APR_BPS}bps"
 
+# Browser discovery caps log scans at `finalized`. Anvil forks report mainnet
+# finality (~64 blocks behind latest), so seed transactions in that window
+# stay invisible until they age past the lag.
+echo "      mining 80 blocks so seed transactions sit behind finalized"
+cast rpc anvil_mine 80 --rpc-url "$RPC" >/dev/null
+
 echo "[9/9] write deployments/local.json"
 jq -n \
   --arg factory   "$FACTORY" \

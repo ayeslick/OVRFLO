@@ -173,7 +173,12 @@ function BorrowedRow({
     <EntityRow
       state={state}
       identity={`LOAN #${loan.id.toString()}`}
-      stateLine={borrowedStateLine({ state, streamId: loan.streamId, coverAt })}
+      stateLine={borrowedStateLine({
+        state,
+        streamId: loan.streamId,
+        coverAt,
+        scheduleHydrated: Boolean(truth),
+      })}
       decisive={
         state === "settled" ? (
           "0"

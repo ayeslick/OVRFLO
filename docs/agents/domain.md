@@ -10,7 +10,7 @@ How the engineering skills should consume this repo's domain documentation when 
 
 If any of these files don't exist, **proceed silently**. Don't flag their absence; don't suggest creating them upfront. The `/domain-modeling` skill (reached via `/grill-with-docs` and `/improve-codebase-architecture`) creates them lazily when terms or decisions actually get resolved.
 
-Note: this repo already has `CONCEPTS.md` at the root for shared domain vocabulary — that's distinct from `CONTEXT.md` and is documented in `AGENTS.md`. Read it too when orienting to domain concepts.
+Note: this repo already has `CONCEPTS.md` at the root for shared domain vocabulary — that's distinct from `CONTEXT.md` and is documented in `AGENTS.md`. Read it too when orienting to domain concepts. Protocol briefing for agents (live `src/` vs stale docs) is `docs/agents/onboarding.md`.
 
 ## File structure
 

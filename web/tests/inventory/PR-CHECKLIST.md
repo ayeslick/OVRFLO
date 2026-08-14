@@ -54,7 +54,7 @@ Transacting topologies asserted at 1280px and 360px.
 ## Verification Contract (orchestrator)
 
 - [ ] Build — `npm --prefix web run build` (needs production profile)
-- [ ] E2E — seeded-fork Playwright (`workers: 1`); U14 worker did not run `bootstrap:e2e` / `test:e2e`
+- [ ] E2E — seeded-fork Playwright (`workers: 1`); last run 22 passed / 16 failed (write/confirm cluster on `STALE — SIGNING DISABLED`). Deferred until OVRFLOStream replaces Sablier in the seed/E2E path.
 - [x] Unit + component — `cd web && node ./node_modules/vitest/dist/cli.js run tests/inventory` (worker: 9 files, 70 tests, pass)
 - [x] Types — `cd web && npx tsc --noEmit` (worker: pass)
 - [ ] Maps presence / purge greps / query discipline / unit-safety / supply-chain / see-equals-sign — orchestrator

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Providers } from "@/components/Providers";
 import { martianMono, schibstedGrotesk } from "./fonts";
 import "./globals.css";
+import "./status-warning.css";
 
 // R32/L-4: absolute URLs for social unfurls, from configuration rather than
 // inferred. A static export has no request context to infer a host from, and a

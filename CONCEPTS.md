@@ -84,7 +84,7 @@ OVRFLO Streams belong to the PT deposit path. Wrap and unwrap do not create, mod
 
 ### OVRFLO Streams (layer)
 
-The OVRFLO-owned stream layer that fully replaces Sablier pre-launch — deployment, identifiers, config, and vocabulary; "Sablier" survives only as upstream provenance in the audit record. `OVRFLOStream` is the contract: a Linear-only GPL fork of Sablier v2-core v1.1.2 changing exactly three things in logic — ERC721 becomes ERC721Enumerable (indexerless held-stream discovery), the NFT descriptor becomes a custom on-chain ledger card, and LockupDynamic is dropped — with identifiers, comments, and NatSpec rebranded throughout. The v1.1 withdraw ACL the audit record depends on is preserved byte-for-byte. Lives in its own GPL repo; the OVRFLO repo stays MIT. Naming: `OVRFLOStream` as an identifier only; in prose, "OVRFLO Streams" (the layer) or "OVRFLO Stream" (one stream). See `docs/plans/2026-08-13-001-feat-ovrflo-streams-plan.md`.
+The OVRFLO-owned stream layer that fully replaces Sablier pre-launch — deployment, identifiers, config, and vocabulary; "Sablier" survives only as upstream provenance in the audit record. `OVRFLOStream` is the contract: a GPL fork of Sablier v2-core v1.1.2 changing three things in logic — ERC721 becomes ERC721Enumerable (indexerless held-stream discovery), the NFT descriptor becomes a custom on-chain ledger card, and stream creation is restricted to one minter address — with identifiers, comments, and NatSpec rebranded throughout. LockupDynamic stays in the tree, renamed, but is never deployed. The v1.1 withdraw ACL the audit record depends on is preserved byte-for-byte. Lives in its own GPL repo; the OVRFLO repo stays MIT. Naming: `OVRFLOStream` as an identifier only; in prose, "OVRFLO Streams" (the layer) or "OVRFLO Stream" (one stream). See `docs/plans/2026-08-13-001-feat-ovrflo-streams-plan.md`.
 
 ### Ledger card
 
@@ -147,6 +147,12 @@ Current vocabulary for the loan-only, fixed-rate tick order book shipped per `do
 ### Position
 
 A lender's permanent coordinate in one tick epoch's tape, created by `supply(market, aprBps, amount)`. Replaces LiquidityPosition: a Position is not itself consumable as a sale or a loan — it is a claim on a contiguous tape interval that `borrow()` fills blindly (see "Blind fill") and that later loans' `contributionOf`/`claim` attribute against by interval overlap (see "Frozen history"). Never restricted to one loan; one Position can contribute to many loans, and one loan can draw from many Positions, with no stored link between them.
+
+### Claimed
+
+The OVRFLOLending payout event for one position against one loan. Confirmed watch RECEIVED is the sum of those amounts on the receipt. It is not the vault Claim of Principal Tokens after maturity.
+
+Pre-tx claimable is a forecast. Confirmed RECEIVED is the event amount. Missing evidence is CHECKING…, not a paid zero.
 
 ### Tick
 
@@ -216,6 +222,10 @@ A superseded visual-world candidate for the Markets app (security-paper white, n
 
 The Markets app's home for any connected wallet holding protocol objects: the wallet's entities rendered through a role lens (Supplied / Borrowed / Streams; supplied is the default for dual-role wallets) as a wall of rows, each opening its detail in place. There is no aggregate action strip — actions live on the entities that own them. Its job is trust at natural moments (post-sign, claim-ready, covered, maturity), never engagement-driven retention.
 
+### Wrap shortfall
+
+The repay prepare state when the wallet holds enough underlying to wrap the ovrfloToken gap, but not enough ovrfloToken to repay. REPAY stays disabled. WRAP SHORTFALL is the next write. A wallet that also lacks underlying is not a wrap shortfall.
+
 ### Meter wall
 
 The watch surface's landing scan: one row per entity in the active lens, each carrying identity, a human-readable state line, a miniature ribbon, and the role's decisive number (earnings accruing, outstanding shrinking, match state, or vested amount). A resting supply row renders visibly inert — animating it would be dishonest.
@@ -231,6 +241,8 @@ The honesty rule for every moving number: schedule truth (Sablier's immutable st
 ### Cover date
 
 The computed date a loan's pledged stream covers its outstanding obligation — the answer to "when is this over?", displayed as approximate (`~08 JAN 2027`) because repayments and claims shift it. Deterministic by construction; the one number fear-driven lending apps cannot show.
+
+Borrowed detail always shows DONE DATE. Missing schedule is CHECKING…. An uncovered loan is UNCOVERED. The label stays while the value hydrates.
 
 ### Claim-all
 
@@ -266,6 +278,12 @@ Historical name for the old market-row split LENDING / BORROWING / STREAMS insid
 
 The watch wall uses role lenses instead: Supplied, Borrowed, and Streams. Dual-role wallets default to Supplied. Zero-count lenses are hidden; an unavailable or still-pending Streams discovery keeps the Streams lens visible in its degraded state rather than asserting emptiness. Selecting a row opens that entity's detail in place. Actions live on the entity (CLAIM / WITHDRAW on a supplied position, REPAY / CLOSE on a loan, borrow route on an eligible stream).
 
+### Signing block
+
+The named reason that disables every wallet broadcast on a review — both the token or stream approve and the action — when the chain is wrong, event truth is stale, or the quoted fill has already drifted.
+
+A signing block is a pre-prompt gate. It is not the same as stale-recovery classification, which sorts a write that already failed. The reason occupies the disabled approve or action slot. A silent no-op behind an armed button is not a signing block. Wrong-chain may also keep a live switch control above that disabled slot.
+
 ### Stale-recovery classification
 
 The three-way sorting of a failed write transaction that decides what the form offers next: *stale* (on-chain liquidity or pricing moved between quoting and signing — refresh every on-chain read, show a "here's the new number" banner, and offer one explicit re-confirm), *terminal* (the input can never succeed, such as an ineligible stream or self-match — disable the action and say why, never invite a retry), or *retryable* (wallet rejection or transport failure — leave the action live).
@@ -279,3 +297,7 @@ This classification only covers failures that populate the transaction's error s
 ### Vestigial state
 
 Correct but redundant protocol state that duplicates information recoverable from other on-chain sources. Common forms in OVRFLO: duplicate ID spaces with translation maps (loan vs loan-pool), derived booleans that mirror a quantitative check (`active` vs `availableLiquidity > 0`), dual registries that duplicate a sentinel (`approved` vs `ptToken != address(0)`), and hand-rolled wrapper getters that re-shape data the compiler's auto-getters already expose. Vestigial state is not a bug, but it is attack surface, gas cost, and cognitive load. Deleting it is a behavior-preserving refactor: prove no consumer depends on the redundant field (grep-verified across `src/` and `test/`), delete the declaration, then mechanically update all destructures and call sites. See `docs/solutions/architecture-patterns/behavior-preserving-simplification-refactor.md`.
+
+## Flagged ambiguities
+
+- "Claim" is the vault Principal Token exit after maturity. "Claimed" is the lending payout event. They are distinct.

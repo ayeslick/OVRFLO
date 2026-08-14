@@ -23,6 +23,7 @@ import "./watch.css";
 export function SuppliedDetail({
   position,
   symbol,
+  underlyingSymbol,
   market,
   lending,
   nowMs,
@@ -34,6 +35,7 @@ export function SuppliedDetail({
 }: {
   position: LenderPositionRow;
   symbol: string;
+  underlyingSymbol?: string;
   market: MarketInfo | null;
   lending: Address | null;
   nowMs: number;
@@ -89,6 +91,7 @@ export function SuppliedDetail({
           claimable={claimable}
           unfilled={unfilled}
           symbol={symbol}
+          underlyingSymbol={underlyingSymbol}
           signingAllowed={signingAllowed}
           onClose={() => setWrite(null)}
         />
