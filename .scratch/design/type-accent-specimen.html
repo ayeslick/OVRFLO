@@ -1,0 +1,186 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>OVRFLO — type + accent candidates</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;700;900&family=Archivo:wdth,wght@62..125,400;62..125,600;62..125,700;62..125,900&family=Familjen+Grotesk:wght@400;500;600;700&family=Martian+Mono:wght@400;500;700&family=Fragment+Mono&family=Spline+Sans+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#0a0a0a; --paper:#ffffff; --rule:#0a0a0a; --dim:#6b6b6b;
+    --amber:#e8930c; --cyan:#00a8c6;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{background:#f2f2f0; color:var(--ink); padding:32px; font-family:system-ui;}
+  h1{font:700 20px/1.2 system-ui; margin-bottom:4px; text-transform:uppercase; letter-spacing:.04em;}
+  .note{font:400 13px/1.5 system-ui; color:var(--dim); margin-bottom:28px; max-width:70ch;}
+  .candidate{background:var(--paper); border:2px solid var(--ink); margin-bottom:36px;}
+  .candidate-title{background:var(--ink); color:var(--paper); padding:10px 16px; font-size:14px; letter-spacing:.06em; display:flex; justify-content:space-between;}
+  .candidate-title .faces{opacity:.75; font-size:12px;}
+  .slice{display:grid; grid-template-columns: 1.1fr 1fr; gap:0;}
+  .bay{padding:24px 28px; border-right:1px solid var(--ink);}
+  .bay:last-child{border-right:none;}
+  .kicker{font-size:11px; letter-spacing:.14em; color:var(--dim); margin-bottom:14px; text-transform:uppercase;}
+  .decision-h{font-weight:700; font-size:22px; letter-spacing:.01em; margin-bottom:18px; text-transform:uppercase;}
+  .row{display:flex; justify-content:space-between; align-items:baseline; padding:7px 0; border-bottom:1px dotted #bbb;}
+  .row .lbl{font-size:12px; letter-spacing:.08em; text-transform:uppercase;}
+  .row .val{font-size:15px; font-variant-numeric:tabular-nums;}
+  .row .val small{font-size:11px; color:var(--dim); margin-left:6px;}
+  .chips{display:flex; gap:8px; margin:16px 0;}
+  .chip{border:1.5px solid var(--ink); padding:8px 16px; font-size:14px; font-variant-numeric:tabular-nums;}
+  .chip.active{background:var(--acc,#e8930c); border-color:var(--acc,#e8930c); color:#0a0a0a; font-weight:700;}
+  .btn{display:inline-block; border:2px solid var(--ink); outline:2px solid var(--acc,#e8930c); outline-offset:2px; background:var(--ink); color:var(--acc-text,#ffb84d); padding:13px 26px; font-size:15px; letter-spacing:.08em; font-weight:700; margin-top:18px; text-transform:uppercase;}
+  .btn.alt{background:var(--paper); color:var(--ink); outline:none; font-weight:400; margin-left:10px;}
+  .prose{font-size:13.5px; line-height:1.55; color:#333; margin-top:16px; max-width:44ch;}
+  .receipt{border:1px solid var(--ink); padding:14px 16px; margin-top:18px;}
+  .receipt .r-h{font-size:11px; letter-spacing:.14em; margin-bottom:10px; text-transform:uppercase;}
+  .receipt .row{border-bottom:none; padding:3px 0;}
+  .usd-switch{display:inline-flex; border:1.5px solid var(--ink); margin-left:12px; vertical-align:middle;}
+  .usd-switch span{padding:3px 10px; font-size:11px; letter-spacing:.08em;}
+  .usd-switch .on{background:var(--ink); color:var(--paper);}
+  .accent-compare{display:grid; grid-template-columns:1fr 1fr; background:var(--paper); border:2px solid var(--ink); margin-bottom:36px;}
+  .accent-cell{padding:24px 28px;}
+  .accent-cell:first-child{border-right:1px solid var(--ink);}
+  .accent-cell h3{font:700 13px/1 system-ui; letter-spacing:.1em; margin-bottom:16px; text-transform:uppercase;}
+  .steps{font-size:13px; line-height:2;}
+  .steps .done::before{content:"☑ ";}
+  .steps .todo::before{content:"☐ ";}
+  .steps .now{font-weight:700; color:var(--acc);}
+  .steps .now::before{content:"→ ";}
+  .navlink{font-size:12.5px; letter-spacing:.06em; margin-top:14px; display:inline-block; text-transform:uppercase; color:var(--ink); text-decoration:underline; text-underline-offset:3px;}
+
+  /* Pairing A: Schibsted Grotesk + Martian Mono */
+  .pair-a .decision-h, .pair-a .candidate-title, .pair-a .prose, .pair-a .btn {font-family:"Schibsted Grotesk",sans-serif;}
+  .pair-a .row .val, .pair-a .chip, .pair-a .kicker, .pair-a .row .lbl, .pair-a .receipt, .pair-a .steps, .pair-a .navlink, .pair-a .usd-switch span {font-family:"Martian Mono",monospace;}
+  .pair-a .row .val{font-size:14px;}
+
+  /* Pairing B: Archivo (wide for headings) + Fragment Mono */
+  .pair-b .decision-h, .pair-b .candidate-title, .pair-b .prose, .pair-b .btn {font-family:"Archivo",sans-serif;}
+  .pair-b .decision-h{font-variation-settings:"wdth" 118; font-weight:900;}
+  .pair-b .btn{font-variation-settings:"wdth" 110;}
+  .pair-b .row .val, .pair-b .chip, .pair-b .kicker, .pair-b .row .lbl, .pair-b .receipt, .pair-b .steps, .pair-b .navlink, .pair-b .usd-switch span {font-family:"Fragment Mono",monospace;}
+
+  /* Pairing C: Familjen Grotesk + Spline Sans Mono */
+  .pair-c .decision-h, .pair-c .candidate-title, .pair-c .prose, .pair-c .btn {font-family:"Familjen Grotesk",sans-serif;}
+  .pair-c .row .val, .pair-c .chip, .pair-c .kicker, .pair-c .row .lbl, .pair-c .receipt, .pair-c .steps, .pair-c .navlink, .pair-c .usd-switch span {font-family:"Spline Sans Mono",monospace;}
+</style>
+</head>
+<body>
+
+<h1>Two decisions, rendered</h1>
+<p class="note">The same Borrow decision slice in three typeface pairings (all open-license, self-hostable), then the single-accent comparison. USD/token switch shown in place. Everything else — three-bay geometry, hard rules, black/white ground — is the locked world.</p>
+
+<!-- ============ PAIRING A ============ -->
+<div class="candidate pair-a" style="--acc:#e8930c; --acc-text:#ffb84d;">
+  <div class="candidate-title"><span>PAIRING A</span><span class="faces">Schibsted Grotesk — nav &amp; decisions · Martian Mono — data &amp; receipts</span></div>
+  <div class="slice">
+    <div class="bay">
+      <div class="kicker">Borrow / Review</div>
+      <div class="decision-h">Borrow against Stream #8721</div>
+      <div class="row"><span class="lbl">You receive</span><span class="val">1.09725 wstETH<small>$4,312.18</small></span></div>
+      <div class="row"><span class="lbl">Fixed APR</span><span class="val">5.00%</span></div>
+      <div class="row"><span class="lbl">Stream repays</span><span class="val">1.24000 ovrfloWSTETH</span></div>
+      <div class="chips"><div class="chip">4.75%</div><div class="chip active">5.00%</div><div class="chip">5.25%</div></div>
+      <a class="btn">Approve Stream →</a><a class="btn alt">Back</a>
+      <p class="prose">The stream repays the loan over time. Anything left after the obligation is met returns to you.</p>
+    </div>
+    <div class="bay">
+      <div class="kicker">Amounts <span class="usd-switch"><span class="on">wstETH</span><span>USD</span></span></div>
+      <div class="receipt">
+        <div class="r-h">Permission receipt</div>
+        <div class="row"><span class="lbl">Asset</span><span class="val">STREAM #8721</span></div>
+        <div class="row"><span class="lbl">Spender</span><span class="val">OVRFLO Lending</span></div>
+        <div class="row"><span class="lbl">Permission</span><span class="val">SINGLE STREAM</span></div>
+      </div>
+      <div class="steps" style="margin-top:16px;">
+        <div class="done">STREAM</div><div class="done">AMOUNT</div><div class="now">APPROVE STREAM</div><div class="todo">BORROW</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ PAIRING B ============ -->
+<div class="candidate pair-b" style="--acc:#e8930c; --acc-text:#ffb84d;">
+  <div class="candidate-title"><span>PAIRING B</span><span class="faces">Archivo (wide cut) — nav &amp; decisions · Fragment Mono — data &amp; receipts</span></div>
+  <div class="slice">
+    <div class="bay">
+      <div class="kicker">Borrow / Review</div>
+      <div class="decision-h">Borrow against Stream #8721</div>
+      <div class="row"><span class="lbl">You receive</span><span class="val">1.09725 wstETH<small>$4,312.18</small></span></div>
+      <div class="row"><span class="lbl">Fixed APR</span><span class="val">5.00%</span></div>
+      <div class="row"><span class="lbl">Stream repays</span><span class="val">1.24000 ovrfloWSTETH</span></div>
+      <div class="chips"><div class="chip">4.75%</div><div class="chip active">5.00%</div><div class="chip">5.25%</div></div>
+      <a class="btn">Approve Stream →</a><a class="btn alt">Back</a>
+      <p class="prose">The stream repays the loan over time. Anything left after the obligation is met returns to you.</p>
+    </div>
+    <div class="bay">
+      <div class="kicker">Amounts <span class="usd-switch"><span class="on">wstETH</span><span>USD</span></span></div>
+      <div class="receipt">
+        <div class="r-h">Permission receipt</div>
+        <div class="row"><span class="lbl">Asset</span><span class="val">STREAM #8721</span></div>
+        <div class="row"><span class="lbl">Spender</span><span class="val">OVRFLO Lending</span></div>
+        <div class="row"><span class="lbl">Permission</span><span class="val">SINGLE STREAM</span></div>
+      </div>
+      <div class="steps" style="margin-top:16px;">
+        <div class="done">STREAM</div><div class="done">AMOUNT</div><div class="now">APPROVE STREAM</div><div class="todo">BORROW</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ PAIRING C ============ -->
+<div class="candidate pair-c" style="--acc:#e8930c; --acc-text:#ffb84d;">
+  <div class="candidate-title"><span>PAIRING C</span><span class="faces">Familjen Grotesk — nav &amp; decisions · Spline Sans Mono — data &amp; receipts</span></div>
+  <div class="slice">
+    <div class="bay">
+      <div class="kicker">Borrow / Review</div>
+      <div class="decision-h">Borrow against Stream #8721</div>
+      <div class="row"><span class="lbl">You receive</span><span class="val">1.09725 wstETH<small>$4,312.18</small></span></div>
+      <div class="row"><span class="lbl">Fixed APR</span><span class="val">5.00%</span></div>
+      <div class="row"><span class="lbl">Stream repays</span><span class="val">1.24000 ovrfloWSTETH</span></div>
+      <div class="chips"><div class="chip">4.75%</div><div class="chip active">5.00%</div><div class="chip">5.25%</div></div>
+      <a class="btn">Approve Stream →</a><a class="btn alt">Back</a>
+      <p class="prose">The stream repays the loan over time. Anything left after the obligation is met returns to you.</p>
+    </div>
+    <div class="bay">
+      <div class="kicker">Amounts <span class="usd-switch"><span class="on">wstETH</span><span>USD</span></span></div>
+      <div class="receipt">
+        <div class="r-h">Permission receipt</div>
+        <div class="row"><span class="lbl">Asset</span><span class="val">STREAM #8721</span></div>
+        <div class="row"><span class="lbl">Spender</span><span class="val">OVRFLO Lending</span></div>
+        <div class="row"><span class="lbl">Permission</span><span class="val">SINGLE STREAM</span></div>
+      </div>
+      <div class="steps" style="margin-top:16px;">
+        <div class="done">STREAM</div><div class="done">AMOUNT</div><div class="now">APPROVE STREAM</div><div class="todo">BORROW</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ ACCENT ============ -->
+<div class="accent-compare pair-a">
+  <div class="accent-cell" style="--acc:#e8930c; --acc-text:#ffb84d;">
+    <h3>Single accent: AMBER <span style="color:#e8930c">■</span> #E8930C</h3>
+    <div class="chips"><div class="chip">4.75%</div><div class="chip active">5.00%</div><div class="chip">5.25%</div></div>
+    <a class="btn">Approve Stream →</a>
+    <div class="steps" style="margin-top:16px;">
+      <div class="done">STREAM</div><div class="done">AMOUNT</div><div class="now">APPROVE STREAM</div><div class="todo">BORROW</div>
+    </div>
+    <a class="navlink">← Change stream</a>
+  </div>
+  <div class="accent-cell" style="--acc:#00a8c6; --acc-text:#6fe3f7;">
+    <h3>Single accent: CYAN <span style="color:#00a8c6">■</span> #00A8C6</h3>
+    <div class="chips"><div class="chip">4.75%</div><div class="chip active" style="color:#fff;">5.00%</div><div class="chip">5.25%</div></div>
+    <a class="btn">Approve Stream →</a>
+    <div class="steps" style="margin-top:16px;">
+      <div class="done">STREAM</div><div class="done">AMOUNT</div><div class="now">APPROVE STREAM</div><div class="todo">BORROW</div>
+    </div>
+    <a class="navlink">← Change stream</a>
+  </div>
+</div>
+
+<p class="note">Navigation links (“← Change stream”) drop to black underline in both schemes — the accent belongs to the active operation only. Confirmed/error transaction outcomes keep functional green/red as state, not decoration.</p>
+
+</body>
+</html>

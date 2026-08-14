@@ -1,0 +1,446 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OVRFLO Stream — ledger card specimen</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Martian+Mono:wght@400;700&family=Schibsted+Grotesk:wght@400;800;900&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --paper: #FDFDFC;
+    --ink: #0A0A0A;
+    --dim: #6B6B6B;
+    --halftone: #EFEFEC;
+    --gold: #E8930C;
+    --ok: #177245;
+    --hair: #CCCCCC;
+    --faint: #DDDDDD;
+    --space-xs: 8px;
+    --space-sm: 12px;
+    --space-md: 16px;
+    --space-lg: 22px;
+    --space-xl: 32px;
+    --font-display: "Martian Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    --font-title: "Schibsted Grotesk", ui-sans-serif, system-ui, sans-serif;
+    --font-body: "Schibsted Grotesk", ui-sans-serif, system-ui, sans-serif;
+    --font-label: "Martian Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--halftone);
+    color: var(--ink);
+    font-family: var(--font-body);
+    font-size: 15px;
+    line-height: 1.45;
+    letter-spacing: -0.02em;
+    padding: var(--space-xl) var(--space-lg);
+  }
+  .intro {
+    max-width: 36rem;
+    margin: 0 auto var(--space-xl);
+  }
+  .intro h1,
+  .section-kicker {
+    font-family: var(--font-label);
+    font-size: 11px;
+    font-weight: 400;
+    line-height: 1.3;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-bottom: var(--space-xs);
+  }
+  .intro p {
+    color: var(--dim);
+    max-width: 62ch;
+  }
+  .intro p + p { margin-top: var(--space-xs); }
+  .board {
+    display: grid;
+    gap: var(--space-xl);
+    max-width: 36rem;
+    margin: 0 auto;
+  }
+
+  .detail {
+    background: var(--paper);
+    border: 2px solid var(--ink);
+    padding: var(--space-lg);
+  }
+  .hero-kicker {
+    display: block;
+    font-family: var(--font-label);
+    font-size: 10.5px;
+    letter-spacing: 0.14em;
+    color: var(--dim);
+    margin-bottom: 6px;
+  }
+  .hero-value {
+    font-family: var(--font-display);
+    font-size: 36px;
+    font-weight: 700;
+    line-height: 1.1;
+    letter-spacing: -0.03em;
+    font-variant-numeric: tabular-nums;
+    min-height: 40px;
+  }
+  .hero-tail {
+    color: var(--gold);
+    font-weight: 400;
+  }
+  .motion-pin {
+    display: inline-block;
+    margin-bottom: var(--space-xs);
+    padding: 3px 8px;
+    border: 1px solid var(--gold);
+    color: var(--gold);
+    font-family: var(--font-label);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  .hero-meta {
+    font-family: var(--font-label);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--dim);
+    margin-top: 6px;
+  }
+  .split-note {
+    margin: var(--space-md) 0;
+    padding: var(--space-sm) 0;
+    border-top: 1px solid var(--faint);
+    border-bottom: 1px solid var(--faint);
+    font-family: var(--font-label);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--dim);
+  }
+  .facts {
+    margin-top: var(--space-md);
+  }
+  .fact {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--space-md);
+    padding: var(--space-xs) 0;
+    border-bottom: 1px solid var(--faint);
+    font-size: 15px;
+  }
+  .fact:last-child { border-bottom: 0; }
+  .fact dt {
+    font-family: var(--font-label);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--dim);
+  }
+  .fact dd {
+    font-family: var(--font-display);
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+  }
+
+  .card {
+    background: var(--paper);
+    color: var(--ink);
+    border: 2px solid var(--ink);
+    padding: var(--space-md) var(--space-lg);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-feature-settings: "tnum";
+  }
+  .detail .card {
+    margin-top: var(--space-sm);
+  }
+  .head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    padding-bottom: var(--space-sm);
+    border-bottom: 1px solid var(--ink);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  .status {
+    margin: var(--space-md) 0 var(--space-sm);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 20px;
+    font-weight: 900;
+    line-height: 1.2;
+    letter-spacing: -0.02em;
+    text-transform: uppercase;
+  }
+  .status.streaming { color: var(--gold); }
+  .status.settled { color: var(--ok); }
+  .status.depleted { color: var(--dim); }
+  .bar-meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--dim);
+    margin-bottom: var(--space-xs);
+  }
+  .bar-meta .pct {
+    color: var(--ink);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 15px;
+    letter-spacing: 0;
+  }
+  .bar {
+    display: grid;
+    grid-template-columns: repeat(24, 1fr);
+    gap: 3px;
+    margin-bottom: var(--space-md);
+    position: relative;
+  }
+  .bar-flow {
+    display: none;
+  }
+  .bar.is-live .bar-flow {
+    display: block;
+    position: absolute;
+    z-index: 1;
+    top: -1px;
+    bottom: -1px;
+    left: 0;
+    width: calc(9 / 24 * 100%);
+    overflow: hidden;
+    pointer-events: none;
+  }
+  .bar.is-live .bar-flow::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 42%;
+    background: linear-gradient(90deg, transparent, rgba(253, 253, 252, 0.72), transparent);
+    animation: bar-flow 4s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+  }
+  @keyframes bar-flow {
+    from { transform: translateX(-120%); }
+    to { transform: translateX(280%); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .bar.is-live .bar-flow::after { animation: none; }
+  }
+  .cell {
+    height: var(--space-md);
+    border: 1px solid var(--ink);
+    background: transparent;
+  }
+  .cell.on { background: var(--ink); }
+  .cell.gold { background: var(--gold); border-color: var(--gold); }
+  .rows { border-top: 1px solid var(--ink); }
+  .row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: var(--space-md);
+    padding: var(--space-xs) 0;
+    border-bottom: 1px solid var(--faint);
+    font-size: 15px;
+  }
+  .row:last-child { border-bottom: 1px solid var(--ink); }
+  .lbl {
+    color: var(--dim);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  .val {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+  .foot {
+    display: flex;
+    justify-content: space-between;
+    margin-top: var(--space-sm);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--dim);
+  }
+</style>
+</head>
+<body>
+  <div class="intro">
+    <h1>OVRFLO Stream ledger card</h1>
+    <p>
+      Two surfaces. Markets paints the ledger card in HTML: a light band runs on the filled bar.
+      A wallet <code>tokenURI</code> is the same card with no band.
+    </p>
+    <p>
+      The gold pin marks the only motion: a light band on the filled part of the progress bar (4s loop).
+      Vested counts from the local clock at seven decimals. The wallet snapshots below stay still.
+    </p>
+  </div>
+
+  <div class="board">
+    <p class="section-kicker">Watch detail — Markets chrome plus still card</p>
+    <section class="detail" aria-label="Stream 42 watch detail">
+      <span class="hero-kicker">Vested</span>
+      <div class="hero-value" id="vested" role="timer">
+        <span id="vested-head">1.87000</span><span class="hero-tail" id="vested-tail">00</span>
+      </div>
+      <div class="hero-meta">ovrfloWETH · local clock · 7 decimals · no RPC</div>
+
+      <p class="split-note">Markets card — band on the filled bar. Wallet image has no band.</p>
+
+      <article class="card" aria-label="Stream 42 streaming card">
+        <div class="head"><span>OVRFLO Streams</span><span>ID 42</span></div>
+        <div class="status streaming">Streaming</div>
+        <!-- MOTION: .bar.is-live > .bar-flow  (CSS keyframes, filled cells only) -->
+        <span class="motion-pin">Motion — filled bar</span>
+        <div class="bar-meta"><span>Progress</span><span class="pct">37.4%</span></div>
+        <div class="bar is-live" aria-hidden="true">
+          <span class="bar-flow"></span>
+          <span class="cell on"></span><span class="cell on"></span><span class="cell on"></span>
+          <span class="cell on"></span><span class="cell on"></span><span class="cell on"></span>
+          <span class="cell on"></span><span class="cell on"></span><span class="cell gold"></span>
+          <span class="cell"></span><span class="cell"></span><span class="cell"></span>
+          <span class="cell"></span><span class="cell"></span><span class="cell"></span>
+          <span class="cell"></span><span class="cell"></span><span class="cell"></span>
+          <span class="cell"></span><span class="cell"></span><span class="cell"></span>
+          <span class="cell"></span><span class="cell"></span><span class="cell"></span>
+        </div>
+        <div class="rows">
+          <div class="row"><span class="lbl">Streamed</span><span class="val">1.870 ovrfloWETH</span></div>
+          <div class="row"><span class="lbl">Remaining</span><span class="val">3.130 ovrfloWETH</span></div>
+          <div class="row"><span class="lbl">Rate</span><span class="val">0.0274 / day</span></div>
+          <div class="row"><span class="lbl">Days left</span><span class="val">114</span></div>
+          <div class="row"><span class="lbl">End</span><span class="val">15 DEC 2026</span></div>
+          <div class="row"><span class="lbl">Asset</span><span class="val">ovrfloWETH</span></div>
+        </div>
+        <div class="foot"><span>OVRFLO Stream</span><span>Linear lockup</span></div>
+      </article>
+
+      <dl class="facts">
+        <div class="fact"><dt>Released</dt><dd>1.870 ovrfloWETH</dd></div>
+        <div class="fact"><dt>Remaining</dt><dd>3.130 ovrfloWETH</dd></div>
+        <div class="fact"><dt>Maturity</dt><dd>15 DEC 2026</dd></div>
+        <div class="fact"><dt>Transferable</dt><dd>Yes</dd></div>
+      </dl>
+    </section>
+
+    <p class="section-kicker">Wallet snapshots — same still card, three statuses</p>
+
+    <article class="card" aria-label="Stream 42 streaming">
+      <div class="head"><span>OVRFLO Streams</span><span>ID 42</span></div>
+      <div class="status streaming">Streaming</div>
+      <div class="bar-meta"><span>Progress</span><span class="pct">37.4%</span></div>
+      <div class="bar" aria-hidden="true">
+        <span class="cell on"></span><span class="cell on"></span><span class="cell on"></span>
+        <span class="cell on"></span><span class="cell on"></span><span class="cell on"></span>
+        <span class="cell on"></span><span class="cell on"></span><span class="cell gold"></span>
+        <span class="cell"></span><span class="cell"></span><span class="cell"></span>
+        <span class="cell"></span><span class="cell"></span><span class="cell"></span>
+        <span class="cell"></span><span class="cell"></span><span class="cell"></span>
+        <span class="cell"></span><span class="cell"></span><span class="cell"></span>
+        <span class="cell"></span><span class="cell"></span><span class="cell"></span>
+      </div>
+      <div class="rows">
+        <div class="row"><span class="lbl">Streamed</span><span class="val">1.870 ovrfloWETH</span></div>
+        <div class="row"><span class="lbl">Remaining</span><span class="val">3.130 ovrfloWETH</span></div>
+        <div class="row"><span class="lbl">Rate</span><span class="val">0.0274 / day</span></div>
+        <div class="row"><span class="lbl">Days left</span><span class="val">114</span></div>
+        <div class="row"><span class="lbl">End</span><span class="val">15 DEC 2026</span></div>
+        <div class="row"><span class="lbl">Asset</span><span class="val">ovrfloWETH</span></div>
+      </div>
+      <div class="foot"><span>OVRFLO Stream</span><span>Linear lockup</span></div>
+    </article>
+
+    <article class="card" aria-label="Stream 42 settled">
+      <div class="head"><span>OVRFLO Streams</span><span>ID 42</span></div>
+      <div class="status settled">Settled</div>
+      <div class="bar-meta"><span>Progress</span><span class="pct">100%</span></div>
+      <div class="bar" aria-hidden="true">
+        <span class="cell on"></span><span class="cell on"></span><span class="cell on"></span>
+        <span class="cell on"></span><span class="cell on"></span><span class="cell on"></span>
+        <span class="cell on"></span><span class="cell on"></span><span class="cell on"></span>
+        <span class="cell on"></span><span class="cell on"></span><span class="cell on"></span>
+        <span class="cell on"></span><span class="cell on"></span><span class="cell on"></span>
+        <span class="cell on"></span><span class="cell on"></span><span class="cell on"></span>
+        <span class="cell on"></span><span class="cell on"></span><span class="cell on"></span>
+        <span class="cell on"></span><span class="cell on"></span><span class="cell on"></span>
+      </div>
+      <div class="rows">
+        <div class="row"><span class="lbl">Streamed</span><span class="val">5.000 ovrfloWETH</span></div>
+        <div class="row"><span class="lbl">Remaining</span><span class="val">0.000 ovrfloWETH</span></div>
+        <div class="row"><span class="lbl">Rate</span><span class="val">0 / day</span></div>
+        <div class="row"><span class="lbl">Days left</span><span class="val">0</span></div>
+        <div class="row"><span class="lbl">End</span><span class="val">15 DEC 2026</span></div>
+        <div class="row"><span class="lbl">Asset</span><span class="val">ovrfloWETH</span></div>
+      </div>
+      <div class="foot"><span>OVRFLO Stream</span><span>Linear lockup</span></div>
+    </article>
+
+    <article class="card" aria-label="Stream 42 depleted">
+      <div class="head"><span>OVRFLO Streams</span><span>ID 42</span></div>
+      <div class="status depleted">Depleted</div>
+      <div class="bar-meta"><span>Progress</span><span class="pct">100%</span></div>
+      <div class="bar" aria-hidden="true">
+        <span class="cell on"></span><span class="cell on"></span><span class="cell on"></span>
+        <span class="cell on"></span><span class="cell on"></span><span class="cell on"></span>
+        <span class="cell on"></span><span class="cell on"></span><span class="cell on"></span>
+        <span class="cell on"></span><span class="cell on"></span><span class="cell on"></span>
+        <span class="cell on"></span><span class="cell on"></span><span class="cell on"></span>
+        <span class="cell on"></span><span class="cell on"></span><span class="cell on"></span>
+        <span class="cell on"></span><span class="cell on"></span><span class="cell on"></span>
+        <span class="cell on"></span><span class="cell on"></span><span class="cell on"></span>
+      </div>
+      <div class="rows">
+        <div class="row"><span class="lbl">Streamed</span><span class="val">5.000 ovrfloWETH</span></div>
+        <div class="row"><span class="lbl">Remaining</span><span class="val">0.000 ovrfloWETH</span></div>
+        <div class="row"><span class="lbl">Withdrawn</span><span class="val">5.000 ovrfloWETH</span></div>
+        <div class="row"><span class="lbl">Rate</span><span class="val">0 / day</span></div>
+        <div class="row"><span class="lbl">End</span><span class="val">15 DEC 2026</span></div>
+        <div class="row"><span class="lbl">Asset</span><span class="val">ovrfloWETH</span></div>
+      </div>
+      <div class="foot"><span>OVRFLO Stream</span><span>Linear lockup</span></div>
+    </article>
+  </div>
+  <!--
+    MOTION
+    1. Progress bar band: .bar.is-live > .bar-flow  (@keyframes bar-flow, 4s)
+       Only the filled 9/24. Wallet snapshot bars have no .is-live.
+    2. Vested digits: #vested-head + #vested-tail  (local clock, 7 decimals)
+    Not used: SMIL, wallet snapshot cards, empty bar cells
+  -->
+  <script>
+    (function () {
+      var head = document.getElementById("vested-head");
+      var tail = document.getElementById("vested-tail");
+      if (!head || !tail) return;
+      var snapshot = 1.87;
+      var ratePerMs = 0.0274 / 86400000;
+      var t0 = Date.now();
+      var last = "";
+      var reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      function split(n) {
+        var text = n.toFixed(7);
+        return { head: text.slice(0, -2), tail: text.slice(-2) };
+      }
+      function paint() {
+        var n = snapshot + (Date.now() - t0) * ratePerMs;
+        if (n > 5) n = 5;
+        var parts = split(n);
+        var next = parts.head + parts.tail;
+        if (next === last) return;
+        last = next;
+        head.textContent = parts.head;
+        tail.textContent = parts.tail;
+      }
+      paint();
+      if (reduced) return;
+      window.setInterval(paint, 200);
+    })();
+  </script>
+</body>
+</html>
