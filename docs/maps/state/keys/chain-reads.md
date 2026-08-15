@@ -209,6 +209,8 @@ Hydrated held-stream facts from Enumerable discovery: `balanceOf`,
   - `web/components/watch/WatchApp.tsx` — R12 entry book + Streams lens
   - `web/components/watch/Wall.tsx` — Streams lens rows (render predicate)
   - `web/components/watch/StreamDetail.tsx` — detail from hydrated state (U9 paints card)
+  - `web/components/watch/StreamLedgerCard.tsx` — HTML ledger card figures (U9)
+  - `web/lib/ledger-card.ts` — snapshot percent / segments from hydrated schedule (U9)
   - `web/components/borrow/SelectStream.tsx` — eligible unpledged list
   - `web/lib/lending-math.ts` — eligibility mirror of `requireEligible`
 - **notes:** No projection candidate set. Drop any stream whose on-chain owner

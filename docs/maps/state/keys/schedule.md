@@ -77,6 +77,7 @@ Immutable interpolation inputs per stream: start, end, deposited
   - `web/lib/payoff.ts` — landing U5: vested / remaining / cover-date
   - `web/components/kit/Ribbon.tsx` — landing U4: origin → terminal geometry
   - `web/components/kit/RollingNumber.tsx` — landing U4: schedule × clock
+  - `web/lib/ledger-card.ts` — U9: HTML card snapshot from schedule × lastReadAt
 - **notes:** Not a second RPC. The interpolation slice of `chain.stream-truth`.
   Read once per entity; the values are immutable for the stream's life. Do not
   copy them into the query cache on every tick. Sablier three-bucket vocabulary
@@ -131,10 +132,12 @@ Stream vested amount on Streams-lens rows and the vested hero.
   - `web/components/kit/RollingNumber.tsx` — landing U4: vested hero
   - `web/components/watch/Wall.tsx` — landing U7: stream-row decisive number
   - `web/components/watch/StreamDetail.tsx` — landing U7: `UI-WATCH-HERO-VESTED`
+  - `web/lib/ledger-card.ts` — U9: card bar uses streamedAmountOf at lastReadAt only (not the live clock)
 - **notes:** Derived in render. Clamped at stream end. Does not authorise
   borrow — `UI-WATCH-BORROW-ROUTE` uses the borrow-route predicate on
   `chain.stream-truth`. Pledged streams link to their loan; they do not keep
-  interpolating as if unpledged collateral at risk.
+  interpolating as if unpledged collateral at risk. The ledger card bar does
+  **not** read this key for fill — it freezes at hydration `asOf`.
 
 ### `schedule.cover-date`
 

@@ -1,0 +1,87 @@
+# Scratch decision record — schema: docs/maps/SCHEMAS.md §4
+# U9 watch surface card — authored before first code write.
+
+summary_ref: "docs/plans/2026-08-13-001-feat-ovrflo-streams-plan.md#u9"
+
+goal: >
+  Paint the OVRFLO Stream ledger card in Markets HTML from already-hydrated
+  stream state, keep streams-lens rows as the dot-ribbon list, rewrite
+  degraded recovery copy off canonical Sablier, and gate U3 goldens with
+  DOMParser well-formedness.
+
+state_keys_touched:
+  - schedule.stream-params
+  - schedule.interpolated-vested
+  - schedule.freshness
+  - chain.stream-truth
+  - watch.selected-entity
+  - watch.narrow-nav
+
+writers_readers:
+  - writes: web/components/watch/StreamDetail.tsx (HTML ledger card from hydrated snapshot)
+  - writes: web/components/watch/StreamLedgerCard.tsx (new card chrome + meter)
+  - writes: web/lib/ledger-card.ts (pure bar/status/rate helpers + SC15 cache key)
+  - writes: web/components/watch/Wall.tsx (OVRFLOStream degraded recovery copy)
+  - writes: web/components/watch/WatchApp.tsx (stream-closed + narrow back focus)
+  - writes: web/components/watch/watch.css (24-segment bar + streaming band)
+  - writes: docs/maps/ui/watch.md (DETAIL-STREAM ledger card; STREAMS-DEGRADED copy)
+  - reads: web/hooks/useStreams.ts (HydratedStream; staging unchanged)
+  - reads: artifacts/goldens/ovrflo-stream-descriptor/* (DOMParser gate)
+
+trust_domains:
+  - fact: card bar percent and segment fill
+    domain: on-chain
+    moved_from: null
+  - fact: hero vested RollingNumber
+    domain: pure-client
+    moved_from: null
+  - fact: selected stream id in URL
+    domain: pure-client
+    moved_from: null
+  - fact: stream status label on card
+    domain: on-chain
+    moved_from: null
+
+rejected_alternatives:
+  - option: Paint the detail card from tokenURI or an img of the SVG
+    why_not: R14 / ticket — Markets paints HTML from hydrated state only.
+  - option: Drive bar percent from the local clock with RollingNumber
+    why_not: R14 snapshot rule — bar is last hydration; ticker alone uses the clock.
+  - option: Add streamedAmountOf to the useStreams batch for the card
+    why_not: Ticket forbids changing U8 discovery staging; streamedAmountOf(schedule, lastReadAt) is the equivalent field.
+  - option: Replace rows with a card grid or add paging/count
+    why_not: KTD4 — every live row, dot-ribbon unchanged.
+  - option: Fetch nftDescriptor() live for the cache key
+    why_not: SC15 allows a pinned version; avoids a new read and keeps U8 staging closed.
+
+invariants_held:
+  - invariant: Selected stream id stays bigint
+    how: WatchSelection.stream id remains bigint; tests assert 5n not 5.
+  - invariant: Empty and could-not-ask never share a representation
+    how: Degraded copy rewritten only; Wall still uses streamsDegraded kinds.
+  - invariant: Bar does not advance between hydrations
+    how: Segment count and percent from streamedAmountOf(schedule, lastReadAt); hero uses nowMs.
+  - invariant: Band motion only on streaming fill
+    how: .is-live + bar-flow only when status is STREAMING; CSS omits under prefers-reduced-motion.
+  - invariant: App is not a worse renderer after descriptor swap
+    how: Cache key includes OVRFLO_STREAM_DESCRIPTOR_PIN (SC15).
+
+risks:
+  - risk: Full npm run build needs a production artifact (U6 residual)
+    residual: Gate local next build + pretest/test/lint:maps/tsc; log immutable build if it fails.
+  - risk: Ceiling vs trunc segment math drifts from U3 SVG goldens
+    residual: Component tests lock 24 cells + gold frontier; DOMParser only checks well-formedness.
+  - risk: Stream-closed vs loading flash on deep link
+    residual: No detail while book LOADING with no last-known; closed only when book ready and id missing.
+
+diff_hints:
+  - path: web/components/watch/StreamLedgerCard.tsx
+    why: HTML card structure, meter a11y, streaming band.
+  - path: web/lib/ledger-card.ts
+    why: Snapshot percent/segments/status; SC15 cache key.
+  - path: web/components/watch/StreamDetail.tsx
+    why: Card beside hero/facts/CTA; lastReadAt snapshot.
+  - path: web/components/watch/Wall.tsx
+    why: Degraded copy no longer points at canonical Sablier.
+  - path: web/tests/watch/ledger-card.test.tsx
+    why: Structure, snapshot clock, band, goldens DOMParser.

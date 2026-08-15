@@ -243,6 +243,7 @@ describe("watch details", () => {
         symbol="ovrfloTEST"
         nowSeconds={NOW}
         nowMs={NOW_MS}
+        lastReadAt={NOW}
         freshness={synced}
         signingAllowed
         usdMode="token"
@@ -252,5 +253,6 @@ describe("watch details", () => {
     );
     expect(screen.getByRole("button", { name: "BORROW AGAINST THIS STREAM" })).toBeInTheDocument();
     expect(screen.getByRole("timer")).toBeInTheDocument();
+    expect(screen.getByRole("article", { name: /card/i })).toHaveAttribute("data-ui", "UI-WATCH-LEDGER-CARD");
   });
 });

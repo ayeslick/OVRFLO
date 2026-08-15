@@ -343,6 +343,8 @@ describe("streams degraded copy", () => {
     );
     expect(screen.getByText(/STREAM DISCOVERY IS UNAVAILABLE/)).toBeInTheDocument();
     expect(screen.getByText(/UNAFFECTED/)).toBeInTheDocument();
+    expect(screen.getByText(/OVRFLOSTREAM/i)).toBeInTheDocument();
+    expect(screen.queryByText(/0xAFb9/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/you hold no streams/i)).not.toBeInTheDocument();
   });
 });

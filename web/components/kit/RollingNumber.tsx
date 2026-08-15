@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { formatTokenFromWei, interpolateAmount } from "./formatDisplay";
+import { getReducedMotion, subscribeReducedMotion } from "./motion";
 import { subscribeRaf } from "./rafDriver";
 import "./kit.css";
 import "./hero-rolling.css";
@@ -37,6 +38,11 @@ export function RollingNumber({
   widthCh?: number;
 }) {
   const staticValue = value ?? schedule?.endAmount ?? 0n;
+  const reducedMotion = useSyncExternalStore(
+    subscribeReducedMotion,
+    getReducedMotion,
+    () => false,
+  );
 
   const formattedStatic = useMemo(
     () => formatTokenFromWei(staticValue, decimals, displayDecimals, locale),
@@ -55,6 +61,19 @@ export function RollingNumber({
       setText(formattedStatic);
       return;
     }
+    // Under reduced motion, still paint vested math once. Skip continuous RAF
+    // decorative updates when the parent does not pass nowMs.
+    if (reducedMotion) {
+      setText(
+        formatTokenFromWei(
+          interpolateAmount({ ...schedule, nowMs: Date.now() }),
+          decimals,
+          displayDecimals,
+          locale,
+        ),
+      );
+      return;
+    }
     let last = "";
     const paint = () => {
       const amount = interpolateAmount({ ...schedule, nowMs: Date.now() });
@@ -65,7 +84,7 @@ export function RollingNumber({
     };
     paint();
     return subscribeRaf(paint);
-  }, [decimals, displayDecimals, formattedStatic, locale, nowMs, schedule, ticking]);
+  }, [decimals, displayDecimals, formattedStatic, locale, nowMs, reducedMotion, schedule, ticking]);
 
   const capacity = useMemo(() => {
     if (widthCh !== undefined) return widthCh;
@@ -82,6 +101,7 @@ export function RollingNumber({
       className="kit-rolling"
       data-accent={accent}
       data-ticking={ticking ? "true" : "false"}
+      data-reduced-motion={reducedMotion ? "true" : "false"}
       role={ticking ? "timer" : undefined}
       style={{ width: `${capacity}ch`, fontVariantNumeric: "tabular-nums" }}
     >

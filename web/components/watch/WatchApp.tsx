@@ -34,7 +34,7 @@ import { sortBorrowedLoans } from "@/lib/watch-rows";
 import { inferredLens, writeWatchSearch, type WatchSelection } from "@/lib/watch-url";
 import { BorrowedDetail } from "./BorrowedDetail";
 import { ClosedLoanDetail } from "./ClosedLoanDetail";
-import { StreamDetail } from "./StreamDetail";
+import { StreamClosedDetail, StreamDetail } from "./StreamDetail";
 import { SuppliedDetail } from "./SuppliedDetail";
 import { useLoanStreams } from "./useLoanStreams";
 import { useNarrowViewport } from "./useNarrowViewport";
@@ -49,6 +49,7 @@ export function WatchApp() {
   const clock = useClockHydrationSafe();
   const nowSeconds = clock?.adjustedNow ?? 0n;
   const nowMs = clock ? Number(clock.adjustedNow) * 1000 : Date.now();
+  const watchBackRef = useRef<HTMLButtonElement>(null);
 
   const ovrflos = useOvrflos();
   const markets = useAllMarkets();
@@ -224,6 +225,14 @@ export function WatchApp() {
     stale: !lensFreshness.signingAllowed,
     signingAllowed: lensFreshness.signingAllowed,
   });
+  const streamBookReady = streamBook.status === "ready" || streamBook.status === "unavailable";
+  const showStreamClosed =
+    selectedStreamId !== null && !selectedStream && streamBookReady && Boolean(streamData || streamBook.status === "ready");
+
+  useEffect(() => {
+    if (!narrow || !detailOpen) return;
+    watchBackRef.current?.focus();
+  }, [narrow, detailOpen, url.selection]);
 
   return (
     <Shell
@@ -271,6 +280,7 @@ export function WatchApp() {
         <div className="watch-split" data-region="watch" data-narrow-detail={narrow && detailOpen ? "true" : "false"}>
           {narrow && detailOpen ? (
             <button
+              ref={watchBackRef}
               type="button"
               className="watch-back"
               aria-label={`Back to ${resolvedLens}`}
@@ -372,6 +382,7 @@ export function WatchApp() {
                 pledgedLoanId={pledgedByStream.get(selectedStream.streamId.toString())}
                 nowSeconds={nowSeconds}
                 nowMs={nowMs}
+                lastReadAt={lastReadAt}
                 freshness={lensFreshness.freshness}
                 signingAllowed={lensFreshness.signingAllowed}
                 usdMode={usdMode}
@@ -379,6 +390,9 @@ export function WatchApp() {
                 usdText={usdTextFor(selectedStream.withdrawable, usdQuote)}
                 onSelectLoan={(loanId) => onSelect({ kind: "loan", id: loanId })}
               />
+            ) : null}
+            {showStreamClosed && selectedStreamId !== null ? (
+              <StreamClosedDetail streamId={selectedStreamId} />
             ) : null}
             </div>
           </RegionErrorBoundary>
