@@ -7,8 +7,6 @@ const CURRENT_ABI_VERSION = 1;
 const ZERO_HASH = `0x${"00".repeat(32)}` as Hash;
 
 export const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as const;
-export const SABLIER_LOCKUP_ADDRESS =
-  "0xAFb979d9afAd1aD27C5eFf4E27226E3AB9e5dCC9" as const;
 
 /**
  * Chainlink mainnet stETH/USD (EACAggregatorProxy).
@@ -37,6 +35,7 @@ const env = {
   lending: process.env.NEXT_PUBLIC_OVRFLO_LENDING,
   lendingDeploymentBlock: process.env.NEXT_PUBLIC_LENDING_DEPLOYMENT_BLOCK,
   lendingDeploymentBlockHash: process.env.NEXT_PUBLIC_LENDING_DEPLOYMENT_BLOCK_HASH,
+  sablier: process.env.NEXT_PUBLIC_SABLIER_LOCKUP_ADDRESS,
   projectionSchemaVersion: process.env.NEXT_PUBLIC_PROJECTION_SCHEMA_VERSION,
   abiVersion: process.env.NEXT_PUBLIC_ABI_VERSION,
   rpcUrl: process.env.NEXT_PUBLIC_RPC_URL,
@@ -78,6 +77,20 @@ function parseProfile(): RuntimeProfile {
 function required(raw: string | undefined, name: string) {
   if (!raw) throw new Error(`${name} is required in the production profile`);
   return raw;
+}
+
+function requiredAlways(raw: string | undefined, name: string) {
+  if (!raw) throw new Error(`${name} is required`);
+  return raw;
+}
+
+function parseRequiredAddress(raw: string | undefined, name: string): Address {
+  const value = requiredAlways(raw, name);
+  if (!isAddress(value)) throw new Error(`${name} must be a valid address`);
+  if (value.toLowerCase() === ZERO_ADDRESS) {
+    throw new Error(`${name} must not be the zero address`);
+  }
+  return value;
 }
 
 function parseChainId(raw: string | undefined, profile: RuntimeProfile): typeof MAINNET_CHAIN_ID {
@@ -204,6 +217,10 @@ function parseReownProjectId(profile: RuntimeProfile) {
 
 export const runtimeProfile = parseProfile();
 export const chainId = parseChainId(env.chainId, runtimeProfile);
+export const SABLIER_LOCKUP_ADDRESS = parseRequiredAddress(
+  env.sablier,
+  "NEXT_PUBLIC_SABLIER_LOCKUP_ADDRESS",
+);
 export const factoryAddress = parseAddress(
   env.factory,
   "NEXT_PUBLIC_OVRFLO_FACTORY",

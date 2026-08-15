@@ -14,6 +14,9 @@ abstract contract VaultMockHelpers is Test {
     address internal constant SABLIER_LL = 0xAFb979d9afAd1aD27C5eFf4E27226E3AB9e5dCC9;
     uint32 internal constant TWAP_DURATION = 30 minutes;
 
+    /// @dev Unit-test stub so `vm.mockCall` has a target. This is empty code, not
+    ///      OVRFLOStream bytecode. Real fork bytecode is constructed only in seed
+    ///      and fork tests via `deployCode` / `cast send --create` (KTD1).
     function _stubLockup() internal {
         if (SABLIER_LL.code.length == 0) {
             vm.etch(SABLIER_LL, hex"00");

@@ -53,7 +53,8 @@ contract StreamHookProbe {
 ///
 ///      Defines no `setUp()` — it inherits `OVRFLOForkBase`'s, which is where the
 ///      `MAINNET_RPC_URL` skip gate lives. Overriding it without `super.setUp()` would
-///      silently drop that gate.
+///      silently drop that gate. Stream-layer bytecode is the committed OVRFLOStream
+///      artifact (`Covers AE4.` against real fork bytecode, not the mock).
 contract OVRFLOLendingMainnetForkTest is OVRFLOForkBase {
     address internal constant USER = address(0xB0B);
     address internal constant LENDER = address(0xCAFE);
@@ -70,7 +71,8 @@ contract OVRFLOLendingMainnetForkTest is OVRFLOForkBase {
     //////////////////////////////////////////////////////////////*/
 
     /// @notice No third party can withdraw from a stream escrowed by the book.
-    /// @dev The four negative cases below are the ported core of this suite. The first
+    /// @dev Covers AE4 against real OVRFLOStream bytecode. The four negative cases
+    ///      below are the ported core of this suite. The first
     ///      three all pass `to == caller`, which reverts under v1.1 AND under the later
     ///      ACL that made `to == recipient` permissionless — so on their own they cannot
     ///      tell the two versions apart. The fourth pushes a withdrawal TO the recipient

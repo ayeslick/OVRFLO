@@ -11,13 +11,41 @@ import {
 const FACTORY = "0x1234567890abcdef1234567890abcdef12345678";
 const OVRFLO = "0x2234567890abcdef1234567890abcdef12345678";
 const LENDING = "0x3234567890abcdef1234567890abcdef12345678";
+const STREAM = "0x4234567890abcdef1234567890abcdef12345678";
 const FACTORY_HASH = `0x${"ab".repeat(32)}`;
 const LENDING_HASH = `0x${"cd".repeat(32)}`;
 // keccak256("LendingRegistered(address,address)") — mirrors the constant recomputed in
 // tools/scripts/write-deployment-artifact.mjs after the factory rename from LendingDeployed.
 const LENDING_REGISTERED_TOPIC =
   "0x4fe43074b419acbe41e8428df134258612acf6435f32c53db0f6a4ba665b4e41";
+const SABLIER_LL_SELECTOR = "0x94cd301a";
+const SABLIER_SELECTOR = "0x482879aa";
 const temporaryDirectories: string[] = [];
+
+function paddedAddress(address: string) {
+  return `0x${address.slice(2).toLowerCase().padStart(64, "0")}`;
+}
+
+function streamAwareRequest(inner: (url: string, method: string, params: unknown[]) => Promise<unknown>) {
+  return async (url: string, method: string, params: unknown[]) => {
+    if (method === "eth_call") {
+      const [{ to, data }] = params as [{ to: string; data: string }];
+      const selector = data.toLowerCase();
+      if (to.toLowerCase() === OVRFLO.toLowerCase() && selector === SABLIER_LL_SELECTOR) {
+        return paddedAddress(STREAM);
+      }
+      if (to.toLowerCase() === LENDING.toLowerCase() && selector === SABLIER_SELECTOR) {
+        return paddedAddress(STREAM);
+      }
+      throw new Error(`unexpected eth_call ${to} ${data}`);
+    }
+    if (method === "eth_getCode") {
+      const [address] = params as [string, string];
+      if (address.toLowerCase() === STREAM.toLowerCase()) return "0x6000";
+    }
+    return inner(url, method, params);
+  };
+}
 
 afterEach(async () => {
   await Promise.all(temporaryDirectories.splice(0).map((path) => rm(path, { recursive: true })));
@@ -45,7 +73,8 @@ describe("deployment artifact generator", () => {
       }),
     );
 
-    const request = vi.fn(async (_url: string, method: string, params: unknown[]) => {
+    const request = streamAwareRequest(
+      vi.fn(async (_url: string, method: string, params: unknown[]) => {
       if (method === "eth_chainId") return "0x1";
       if (method === "eth_blockNumber") return "0x10";
       if (method === "eth_getCode") {
@@ -71,7 +100,8 @@ describe("deployment artifact generator", () => {
         ];
       }
       throw new Error(`unexpected ${method}`);
-    });
+    }),
+    );
 
     await verifyAndWriteDeploymentArtifact({
       artifactPath,
@@ -93,7 +123,66 @@ describe("deployment artifact generator", () => {
       // scenario pins.
       lendingDeploymentBlock: "9",
       lendingDeploymentBlockHash: LENDING_HASH,
+      stream: STREAM,
     });
+  });
+
+  it("rejects a supplied stream that does not match the vault and lending bindings", async () => {
+    const root = await mkdtemp(join(tmpdir(), "ovrflo-deployment-"));
+    temporaryDirectories.push(root);
+    const artifactPath = join(root, "local.json");
+    writeFileSync(
+      artifactPath,
+      JSON.stringify({
+        formatVersion: 1,
+        projectionSchemaVersion: 1,
+        abiVersion: 1,
+        freshGeneration: true,
+        chainId: 1,
+        factory: FACTORY,
+        ovrflo: OVRFLO,
+        lending: LENDING,
+        stream: "0x9999999999999999999999999999999999999999",
+      }),
+    );
+
+    const request = streamAwareRequest(
+      vi.fn(async (_url: string, method: string, params: unknown[]) => {
+        if (method === "eth_chainId") return "0x1";
+        if (method === "eth_blockNumber") return "0x10";
+        if (method === "eth_getCode") {
+          const [address, block] = params as [string, string];
+          const firstBlock = address.toLowerCase() === FACTORY.toLowerCase() ? 5n : 7n;
+          return BigInt(block) >= firstBlock ? "0x6000" : "0x";
+        }
+        if (method === "eth_getBlockByNumber") {
+          return { hash: BigInt(params[0] as string) === 5n ? FACTORY_HASH : LENDING_HASH };
+        }
+        if (method === "eth_getLogs") {
+          return [
+            {
+              address: FACTORY,
+              blockNumber: "0x9",
+              blockHash: LENDING_HASH,
+              topics: [
+                LENDING_REGISTERED_TOPIC,
+                `0x${OVRFLO.slice(2).padStart(64, "0")}`,
+                `0x${LENDING.slice(2).padStart(64, "0")}`,
+              ],
+            },
+          ];
+        }
+        throw new Error(`unexpected ${method}`);
+      }),
+    );
+
+    await expect(
+      verifyAndWriteDeploymentArtifact({
+        artifactPath,
+        rpcUrl: "https://redacted.example",
+        request,
+      }),
+    ).rejects.toThrow(/supplied stream/i);
   });
 
   it("rejects when the expected LendingRegistered event is missing at the anchored block", async () => {

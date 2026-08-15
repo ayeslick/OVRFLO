@@ -4,6 +4,88 @@ pragma solidity ^0.8.20;
 import {Script, console} from "forge-std/Script.sol";
 import {OVRFLOFactory} from "../src/OVRFLOFactory.sol";
 
+/// @notice Production factory deploy. This script deploys OVRFLOFactory only.
+///
+/// Operator runbook — Deploy sequence (binding). Production, local seed, and
+/// devnet use this order. After each deploy, read the named getters and stop
+/// on mismatch (SC23).
+///
+/// Anvil: `script/seed-local.sh` uses `forge create` + `cast send` for factory,
+/// vault, and lending. It deploys the three fork contracts with
+/// `cast send --create` from `artifacts/*.json`. Do not run this script with
+/// `--broadcast` against Anvil (foundry#11714 / critical pattern #2).
+/// Devnet (`bootstrap-devnet.sh`) may keep `forge script --broadcast`.
+///
+/// Do not pass the Safe or the deployer as `initialAdmin` on the lockup or the
+/// comptroller. Pass the factory.
+///
+/// 1. Deploy `OVRFLOFactory(safe, pendleOracle)` — this script.
+///    Read `owner() == safe` and `oracle() == pendleOracle`.
+/// 2. Deploy the comptroller — Solidity `SablierV2Comptroller(factory)` —
+///    from `artifacts/SablierV2Comptroller.json`. Fees stay 0.
+///    Read `admin() == factory`.
+/// 3. Deploy `OVRFLOStreamDescriptor()` from
+///    `artifacts/OVRFLOStreamDescriptor.json`. Read `code.length > 0`.
+///    The descriptor has no admin.
+/// 4. Deploy the lockup — Solidity `SablierV2LockupLinear(factory, comptroller,
+///    descriptor)`, deployed identity `OVRFLOStream` — from
+///    `artifacts/OVRFLOStream.json`. Read `admin() == factory`,
+///    `factory() == factory`, and `comptroller()` equals the deployed
+///    comptroller.
+/// 5. The Safe calls `setOvrfloStream(stream)`. Read
+///    `factory.ovrfloStream() == stream`. A second call reverts.
+/// 6. Deploy `OVRFLO`. Pass the factory as `admin`. Pass `stream` last.
+///    Read `factory()` and `sablierLL()` on the vault. Do not add
+///    `ovrfloStream()` on the vault.
+/// 7. The Safe calls `registerOvrflo(vault)`. On-chain:
+///    `vault.sablierLL() == factory.ovrfloStream()`. An address with treasury
+///    zero calling `create*` reverts.
+/// 8. Deploy `OVRFLOLending(factory, vault, stream)`. Read `owner() == factory`
+///    and the stream binding equals `vault.sablierLL()`.
+/// 9. The Safe calls `registerLending(lending)`. Do not re-check
+///    `stream.factory()`, `stream.admin()`, or `comptroller.admin()`.
+/// 10. The Safe calls `prepareOracle`, waits until the TWAP window is ready,
+///     then `addMarket`, then `setLendingTickSpacing`.
+/// 11. Write the deployment artifact. The writer derives the stream address
+///     from the vault and cross-checks lending (SC24). Frontend `required()`
+///     on `NEXT_PUBLIC_SABLIER_LOCKUP_ADDRESS` in both runtime profiles.
+///
+/// Fork artifact create (lockup example):
+/// ```
+/// BYTECODE=$(jq -r .bytecode.object artifacts/OVRFLOStream.json)
+/// ARGS=$(cast abi-encode "constructor(address,address,address)" \
+///   "$FACTORY" "$COMPTROLLER" "$DESCRIPTOR")
+/// cast send --rpc-url "$RPC" --private-key "$PK" --create "${BYTECODE}${ARGS#0x}"
+/// ```
+/// Comptroller: `constructor(address)` with the factory.
+/// Descriptor: no constructor arguments.
+///
+/// Verify fork contracts from the OVRFLO-Streams repo. This repo does not
+/// compile them. Pinned settings from artifact provenance:
+/// solc 0.8.23, optimizer true, runs 1000, via_ir false, EVM paris,
+/// `bytecode_hash = none`.
+/// ```
+/// forge verify-contract <addr> src/SablierV2LockupLinear.sol:SablierV2LockupLinear \
+///   --compiler-version 0.8.23 --optimizer-runs 1000 --chain-id 1 \
+///   --constructor-args $(cast abi-encode "constructor(address,address,address)" \
+///     "$FACTORY" "$COMPTROLLER" "$DESCRIPTOR") \
+///   --license GPL-3.0-or-later
+/// ```
+/// Comptroller: `src/SablierV2Comptroller.sol:SablierV2Comptroller`,
+/// `constructor(address)`. Descriptor:
+/// `src/OVRFLOStreamDescriptor.sol:OVRFLOStreamDescriptor`, no constructor args.
+/// Same compiler flags and `--license GPL-3.0-or-later`.
+///
+/// Production `NEXT_PUBLIC_*` list (write-env / verify-deployment-input):
+/// `NEXT_PUBLIC_RUNTIME_PROFILE`, `NEXT_PUBLIC_CHAIN_ID`,
+/// `NEXT_PUBLIC_OVRFLO_FACTORY`, `NEXT_PUBLIC_FACTORY_DEPLOYMENT_BLOCK`,
+/// `NEXT_PUBLIC_FACTORY_DEPLOYMENT_BLOCK_HASH`, `NEXT_PUBLIC_OVRFLO_ADDRESS`,
+/// `NEXT_PUBLIC_OVRFLO_LENDING`, `NEXT_PUBLIC_LENDING_DEPLOYMENT_BLOCK`,
+/// `NEXT_PUBLIC_LENDING_DEPLOYMENT_BLOCK_HASH`,
+/// `NEXT_PUBLIC_PROJECTION_SCHEMA_VERSION`, `NEXT_PUBLIC_ABI_VERSION`,
+/// `NEXT_PUBLIC_SABLIER_LOCKUP_ADDRESS`, `NEXT_PUBLIC_RPC_URL`,
+/// `NEXT_PUBLIC_RPC_FALLBACK_URLS`, `NEXT_PUBLIC_HISTORICAL_RPC_URL`,
+/// `NEXT_PUBLIC_REOWN_PROJECT_ID`.
 contract OVRFLOScript is Script {
     OVRFLOFactory public factory;
 
@@ -24,22 +106,10 @@ contract OVRFLOScript is Script {
 
         vm.stopBroadcast();
 
-        // This manifest is intentionally not deployable yet: the browser
-        // requires factory/lending block hashes and a verified LendingRegistered
-        // identity — the lending's identity anchors to the registerLending
-        // registration event's block/tx, not to the lending's own deployment
-        // transaction (the vault is deployed, then registerOvrflo'd; the
-        // lending is deployed, then registerLending'd — two transactions each).
-        // After the vault + lending deploy-then-register transactions complete
-        // — which includes the multisig calling factory.setLendingTickSpacing(
-        // lending, market, spacing) per market before supply/borrow become
-        // callable (KTD5; spacing is set-once, so onboarding must set it
-        // correctly the first time) — add their addresses (or let the verifier
-        // derive the single pair) and run:
-        // DEPLOYMENT_RPC_URL=... node tools/scripts/write-deployment-artifact.mjs \
-        //   deployments/production.json
-        // Runtime/build config rejects this partial file, so a factory address
-        // alone can never become an implicit discovery anchor.
+        // Partial manifest. The browser requires factory/lending block hashes
+        // and a verified LendingRegistered identity. After steps 2–10 complete,
+        // run write-deployment-artifact.mjs — it derives the stream address
+        // (SC24). Runtime/build config rejects this partial file.
         string memory objectKey = "ovrflo_production_deployment";
         vm.serializeUint(objectKey, "formatVersion", 1);
         vm.serializeUint(objectKey, "projectionSchemaVersion", 1);

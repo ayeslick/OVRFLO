@@ -1,17 +1,26 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.20;
 
+import {StdCheats} from "forge-std/StdCheats.sol";
+
 import {OVRFLO} from "../../src/OVRFLO.sol";
 import {OVRFLOFactory} from "../../src/OVRFLOFactory.sol";
 import {OVRFLOToken} from "../../src/OVRFLOToken.sol";
 import {IPendleOracle} from "../../interfaces/IPendleOracle.sol";
-import {MockSablier, MockSablierComptroller} from "../../test/fizz/mocks/MockSablier.sol";
+import {ISablierV2LockupLinear} from "../../interfaces/ISablierV2LockupLinear.sol";
+
+/// @dev Comptroller getters used only to verify a `vm.getCode` deploy (SC23).
+interface ISeedComptroller {
+    function admin() external view returns (address);
+    function flashFee() external view returns (uint256);
+    function protocolFees(address asset) external view returns (uint256);
+}
 
 /// @notice Shared mainnet-fork fixtures consumed by both Forge fork tests
-///         (test/fork/*) and Forge seed scripts (script/Seed*.s.sol). Pure
-///         data + cheatcode-free helpers so scripts can inherit without
-///         pulling forge-std/Test.
-abstract contract OVRFLOTestFixtures {
+///         (test/fork/*) and Forge seed scripts (script/Seed*.s.sol).
+///         Stream-layer bytecode comes from committed artifacts via
+///         `deployCode` / `vm.getCode` (KTD1). Never `vm.etch` that bytecode.
+abstract contract OVRFLOTestFixtures is StdCheats {
     address internal constant OWNER = address(0x123);
     address internal constant TREASURY = address(0x456);
 
@@ -32,30 +41,59 @@ abstract contract OVRFLOTestFixtures {
 
     IPendleOracle internal constant ORACLE = IPendleOracle(0x9a9Fa8338dd5E5B2188006f1Cd2Ef26d921650C2);
 
+    /// @dev Canonical Sablier v1.1. Seed and fork tests must not bind this address.
+    address internal constant CANONICAL_SABLIER = 0xAFb979d9afAd1aD27C5eFf4E27226E3AB9e5dCC9;
+
+    string internal constant COMPTROLLER_ARTIFACT = "artifacts/SablierV2Comptroller.json";
+    string internal constant DESCRIPTOR_ARTIFACT = "artifacts/OVRFLOStreamDescriptor.json";
+    string internal constant LOCKUP_ARTIFACT = "artifacts/OVRFLOStream.json";
+
+    /// @notice Deploy comptroller, descriptor, and lockup from committed artifacts.
+    /// @dev `initialAdmin` is the factory. Never the Safe. Never the deployer.
+    function _deployStreamLayer(address factory)
+        internal
+        returns (address comptroller, address descriptor, address stream)
+    {
+        comptroller = deployCode(COMPTROLLER_ARTIFACT, abi.encode(factory));
+        require(ISeedComptroller(comptroller).admin() == factory, "OVRFLOTestFixtures: comptroller admin");
+        require(ISeedComptroller(comptroller).flashFee() == 0, "OVRFLOTestFixtures: flash fee");
+        require(ISeedComptroller(comptroller).protocolFees(WSTETH) == 0, "OVRFLOTestFixtures: protocol fee");
+
+        descriptor = deployCode(DESCRIPTOR_ARTIFACT);
+        require(descriptor.code.length > 0, "OVRFLOTestFixtures: descriptor code");
+
+        stream = deployCode(LOCKUP_ARTIFACT, abi.encode(factory, comptroller, descriptor));
+        ISablierV2LockupLinear lockup = ISablierV2LockupLinear(stream);
+        require(lockup.admin() == factory, "OVRFLOTestFixtures: stream admin");
+        require(lockup.factory() == factory, "OVRFLOTestFixtures: stream factory");
+        require(lockup.comptroller() == comptroller, "OVRFLOTestFixtures: stream comptroller");
+        require(stream != CANONICAL_SABLIER, "OVRFLOTestFixtures: canonical sablier");
+    }
+
     /// @notice Deploy the factory + OVRFLO (which constructs its own token) against
     ///         wstETH, then register the vault. Caller must already hold the `owner`
     ///         role on the calling context (`vm.startPrank(owner)` in tests,
     ///         broadcast-as-owner in scripts) because `setOvrfloStream` and
-    ///         `registerOvrflo` are onlyOwner. Binds `MockSablier` as the canonical
-    ///         stream so registration succeeds. Ticket 06 replaces this with the
-    ///         committed fork artifacts.
+    ///         `registerOvrflo` are onlyOwner. Deploys OVRFLOStream from committed
+    ///         artifacts (KTD1).
     function _deployConfiguredSystemAs(address owner)
         internal
         returns (OVRFLOFactory factory, OVRFLO ovrflo, OVRFLOToken token)
     {
         factory = new OVRFLOFactory(owner, address(ORACLE));
-        MockSablierComptroller comptroller = new MockSablierComptroller(address(factory));
-        MockSablier stream = new MockSablier(address(factory), address(factory), address(comptroller));
-        factory.setOvrfloStream(address(stream));
+        require(factory.owner() == owner, "OVRFLOTestFixtures: factory owner");
+        require(factory.oracle() == address(ORACLE), "OVRFLOTestFixtures: factory oracle");
+
+        (,, address stream) = _deployStreamLayer(address(factory));
+        factory.setOvrfloStream(stream);
+        require(factory.ovrfloStream() == stream, "OVRFLOTestFixtures: ovrfloStream");
+
         ovrflo = new OVRFLO(
-            address(factory),
-            TREASURY,
-            WSTETH,
-            "OVRFLO Wrapped Staked Ether",
-            "ovrfloWSTETH",
-            address(ORACLE),
-            address(stream)
+            address(factory), TREASURY, WSTETH, "OVRFLO Wrapped Staked Ether", "ovrfloWSTETH", address(ORACLE), stream
         );
+        require(ovrflo.factory() == address(factory), "OVRFLOTestFixtures: vault factory");
+        require(address(ovrflo.sablierLL()) == stream, "OVRFLOTestFixtures: vault stream");
+
         factory.registerOvrflo(address(ovrflo));
         token = OVRFLOToken(ovrflo.ovrfloToken());
     }
