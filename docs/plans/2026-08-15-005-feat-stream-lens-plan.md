@@ -305,6 +305,48 @@ repeated. **The completeness critic has not run.**
 - Name the successor Vitest scenarios for `web/tests/hooks/useStreams.enumerable.test.ts`. Its cases
   exercise the `balanceOf` → `tokensOfOwnerIn` → hydration staging that ceases to exist. — *tests*
 
+## `previewBorrow` belongs here — measured, not assumed
+
+The borrow quote has the same shape of problem as stream hydration: `StreamPricing`'s `factor`,
+`grossPrice`, `obligation`, `obligationForFill`, and `fee` are `internal pure` and therefore
+uncallable, so `web/lib/lending-math.ts` reimplements all five in TypeScript. Its own comments say
+"mirrors StreamPricing.*". When the mirror drifts, the UI quotes a number the contract will not
+honour.
+
+`OVRFLOLending` is the natural home — it would share the computation with `borrow` and could not
+disagree with it. **It does not fit.** Measured on an isolated worktree, not in place:
+
+| Variant | Runtime | EIP-170 margin | vs the 24,064 canary |
+|---|---|---|---|
+| baseline | 23,837 | 739 | 227 under |
+| + `previewBorrow` | 24,536 | **40** | 472 **over** |
+| + `previewBorrow`, `StreamPricing` math externalised | 24,709 | **−133** | over the cap entirely |
+
+`previewBorrow` costs **699 bytes**. It clears EIP-170 by 40 bytes and blows the deliberate 512-byte
+reserve by 472. Forty bytes is not a shippable margin; the canary exists to prevent exactly that.
+
+**External library linking makes it worse, not better.** Converting the four pure-math functions to
+`public` — so the library deploys separately and is called by `DELEGATECALL` — *grew* the contract by
+173 bytes. Each call site gains ABI-encode, delegatecall, decode, and success-check code, and
+`StreamPricing`'s hot functions are a handful of arithmetic ops, so the stubs cost more than the
+inlined bodies. Library linking pays off for large externalised functions; these are not. Recorded so
+it is not re-attempted. (Converting all seven, including the struct-returning eligibility helpers,
+does not compile at all — stack too deep without `via_ir`.)
+
+**So `previewBorrow` goes on the lens.** The pricing math comes along for free and identically:
+`StreamPricing` is an `internal` library, so a lens calling `StreamPricing.obligation(...)` compiles
+the *same source*, in the same repo, in the same build. That is not a mirror.
+
+**The open design question, which must be settled before building it:** the fill logic is not in
+`StreamPricing`. Epoch selection, the `filled` counter, and the `TickTree` prefix sums live inside
+`OVRFLOLending`, and `_fillTick` is reachable only internally. A lens cannot reproduce `actualBorrow`
+from `tickDepths` alone. The fix is to expose what the lens needs as a small public getter on the
+market — cheap in bytecode — **not** to reimplement the fill in the lens, which would reintroduce the
+drift this exists to remove. Decide which getter, and confirm it fits the remaining 227 bytes,
+before committing to this scope.
+
+`web/lib/lending-math.ts`'s five mirrored functions and their tests are what this deletes.
+
 ## Out of scope
 
 - Any change to the lockup. The lens reads what exists.
