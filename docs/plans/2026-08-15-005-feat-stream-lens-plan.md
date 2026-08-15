@@ -354,6 +354,34 @@ point already exists and needs no new branch.
 situations, and a genuine slippage failure now tells the caller what was actually available — which
 is a real improvement to `classifyBorrowError`, not a side effect to tolerate.
 
+A dedicated `BorrowQuote(uint128,uint128,uint128)` error would read more cleanly, but it needs an
+explicit quote-mode branch — `if (minAcceptable == type(uint128).max)` — and bytecode is the entire
+reason this technique is on the table. Measure the enriched-error form first; it is the smallest.
+
+**Do not touch `FillOutcome`, `_fillTick`, or anything else on the borrow path.** The change is two
+hunks: the error declaration and the revert site. The measured +39 bytes assumes exactly that. An
+earlier probe widened `FillOutcome` to carry quote-only fields and cost 312 bytes; that approach is
+withdrawn and the struct stays as it is.
+
+### Denomination: wei out, UNITs only for coordinates
+
+**The rule:** return internal coordinates in UNITs only when the coordinate itself is the thing being
+exposed. Return economic and token amounts in wei.
+
+The three quoted fields are already wei by construction — `actualBorrow` comes back through
+`_toWei(fillUnits)`, and `feeAmount` and `obligation` are derived from it. No consumer multiplies by
+`UNIT`, and nothing needs converting.
+
+`Borrowed` already encodes this split: `uint64 fillStart` and `uint64 fillEnd` are tape coordinates
+in UNITs; `uint128 actualBorrow`, `feeAmount`, and `obligation` are wei. The enriched error takes
+exactly those three `uint128` fields, so **the quote and the receipt are the same shape** — one
+decoder, identical field semantics.
+
+That currently holds by coincidence. State it as a rule so a later change to the tree's granularity
+or compression scheme cannot leak the internal representation into the protocol interface.
+`tickDepths`' `availableUnits` staying in UNITs is correct and consistent: there, the compressed book
+coordinate *is* what is being exposed.
+
 ### Measured
 
 | Approach | Δ bytes | vs the 24,064 canary | Verified |
