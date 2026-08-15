@@ -11,6 +11,20 @@ Verified against `src/` on 2026-08-14. Treat every claim below as a hypothesis u
 
 ---
 
+## Before writing code
+
+Binding for every agent, every change. Do this before the first code write. Do not skip it because the ticket looks small.
+
+Solidity source: `docs/solutions/patterns/solidity-implementation-discipline.md` Sequence 6–9. Frontend source: `docs/maps/SCHEMAS.md` §4 (intent capsule). Template: `.scratch/decisions/template.yaml`.
+
+1. **Record intent first.** Write the assumptions, the predicted blast radius (files and callers), and the verification that will fail if the change is wrong. Post that record in the session. For a Markets change that reads or writes mapped state keys, also write `.scratch/decisions/YYYY-MM-DD-*.yaml`. Author the record *before* the code. Do not reconstruct the record later and present it as pre-authored intent. Missing intent stays missing. Do not invent it.
+2. **Log deviations.** If execution disagrees with the active plan, stop when the choice is unpinned and surface it. When a deviation is forced, write the deviation and the reason on the ticket or in the session. Do not edit the plan while implementing. Do not silently change the plan in code.
+3. **Review the actual diff.** Before calling the work done, run `git diff --stat` and compare the file list to the predicted blast radius. A miss is a `docs/solutions/` learning candidate. Scratch YAML `diff_hints` names where a reviewer looks first. `rejected_alternatives` names approaches that lost and why.
+
+Campaign tickets under `.scratch/` copy this sequence into the session prompt. Onboarding here is the standing rule when no ticket exists.
+
+---
+
 ## 0. How to read this repo
 
 This repository holds years of plans, audits, glossaries, and UI briefs. Many are true. Some are superseded. Some mix live state with a future name. Some contradict `src/` in one sentence.
@@ -29,7 +43,7 @@ This repository holds years of plans, audits, glossaries, and UI briefs. Many ar
 
 ### Conflict rule
 
-When two documents disagree, name both, open `src/`, and report the code. Do not average them. Do not pick the newer markdown by date alone — `CONCEPTS.md` and `PRODUCT.md` already speak in the destination vocabulary of `docs/plans/2026-08-13-001-feat-ovrflo-streams-plan.md` while `src/` still binds canonical Sablier.
+When two documents disagree, name both, open `src/`, and report the code. Do not average them. Do not pick the newer markdown by date alone — until ticket 07, `CONCEPTS.md` had a stale rebrand/`setMinter` paragraph; the streams plan (R1/R9/R2b) wins over any stale glossary.
 
 When this onboarding file disagrees with `src/`, `src/` wins. Patch this file or record the contradiction. Do not silently follow the briefing.
 
@@ -79,15 +93,15 @@ Six Solidity files in `src/`. Nothing else is a protocol contract.
 External bindings:
 
 - Pendle market, SY, PT, and the factory-wide Pendle TWAP oracle (`0x9a9Fa8338dd5E5B2188006f1Cd2Ef26d921650C2` in `script/OVRFLO.s.sol`).
-- Canonical Sablier V2 Lockup Linear **v1.1** at `0xAFb979d9afAd1aD27C5eFf4E27226E3AB9e5dCC9`, hardcoded on the vault as `sablierLL`. Lending takes a `sablier` constructor arg. `registerLending` requires those two addresses to match.
+- **OVRFLO Streams** lockup — fork of Sablier v2-core v1.1.2. Solidity contract `SablierV2LockupLinear`; deployed ERC721 identity `OVRFLOStream`. Vault getter name stays `sablierLL()` (constructor-bound). Factory storage is `ovrfloStream` (set once). Lending constructor arg stays `sablier`. **`sablierLL` no longer resolves to canonical `0xAFb979d9afAd1aD27C5eFf4E27226E3AB9e5dCC9`.** `registerOvrflo` / `registerLending` require the candidate binds `factory.ovrfloStream()`. `SablierMismatch` still proves vault and lending bind the same stream.
 
-Not in this repo today:
+Not in this repo's `src/` today:
 
-- `OVRFLOStream`. The streams fork is a planned GPL sister repo. See §8.
+- Fork source for OVRFLO Streams (lives in sibling GPL repo `OVRFLO-Streams`; this repo never compiles it).
 - Proxies. This protocol has never deployed a proxy.
 - A second principal-token protocol. Pendle-only.
 
-Interfaces live in `interfaces/`: `IFlashBorrower`, `IPPrincipalToken`, `IPendleMarket`, `IPendleOracle`, `ISablierV2LockupLinear`, `IStandardizedYield`.
+Interfaces live in `interfaces/`: `IFlashBorrower`, `IPPrincipalToken`, `IPendleMarket`, `IPendleOracle`, `ISablierV2LockupLinear` (name kept; members include fork additions), `IStandardizedYield`.
 
 ---
 
@@ -98,26 +112,27 @@ flowchart TD
   Safe["Timelocked Safe"] -->|owns| Factory["OVRFLOFactory"]
   Factory -->|"register + forward admin"| Vault["OVRFLO vault"]
   Factory -->|"register + owner"| Book["OVRFLOLending"]
+  Factory -->|"setOvrfloStream + setStreamNFTDescriptor"| Stream["OVRFLO Streams lockup"]
   Vault -->|constructs| Token["OVRFLOToken"]
   User["User EOA / wallet"] --> Vault
   User --> Book
-  User --> Sablier["Sablier v1.1 LockupLinear"]
-  Vault -->|createWithDurations| Sablier
-  Book -->|escrow NFT, withdraw as sender/operator| Sablier
+  User --> Stream
+  Vault -->|createWithDurations via sablierLL| Stream
+  Book -->|escrow NFT, withdraw as owner| Stream
   Vault --> Pendle["Pendle oracle + market"]
   Factory --> Pendle
 ```
 
 | Actor | Can call | Must not call |
 |---|---|---|
-| User | Vault `deposit` / `claim` / `wrap` / `unwrap` / `flashLoan`. Book `supply` / `withdraw` / `borrow` / `repay` / `close` / `claim` / `advanceEpochCursor`. Sablier as NFT owner. | Factory admin. Vault `onlyAdmin`. Book `onlyOwner`. |
-| Safe | Factory `onlyOwner` (register, addMarket, prepareOracle, sweeps, flash pause/fee, lending forwarders). | Vault, lending, or Sablier directly. Pattern #8. |
-| Factory | Vault admin and lending owner functions, after `_requireKnownOvrflo` / `_requireKnownLending`. | User money paths. |
+| User | Vault `deposit` / `claim` / `wrap` / `unwrap` / `flashLoan`. Book `supply` / `withdraw` / `borrow` / `repay` / `close` / `claim` / `advanceEpochCursor`. Stream lockup as NFT owner. | Factory admin. Vault `onlyAdmin`. Book `onlyOwner`. Lockup fee/admin setters. |
+| Safe | Factory `onlyOwner` (register, `setOvrfloStream`, `setStreamNFTDescriptor`, addMarket, prepareOracle, sweeps, flash pause/fee, lending forwarders). | Vault, lending, or lockup directly. Pattern #8. |
+| Factory | Vault admin and lending owner functions, after `_requireKnownOvrflo` / `_requireKnownLending`; lockup `setNFTDescriptor` via forwarder. | User money paths. Lockup `transferAdmin` / fee setters (no forwarder). |
 | Unregistered vault or lending | Its own bytecode, inert to the protocol. | Factory forwarders refuse unknown addresses. |
 
-Multisig verifies off-chain: creation code vs the audited artifact, token name/symbol prefixes, treasury and underlying intent. The factory re-checks constructor bindings on-chain (factory, oracle, owner, Sablier match, one vault per underlying). Do not duplicate the off-chain checklist as new `require`s.
+Multisig verifies off-chain: creation code vs the audited artifact, token name/symbol prefixes, treasury and underlying intent. The factory re-checks constructor bindings on-chain (factory, oracle, owner, `sablierLL`/`sablier` == `ovrfloStream`, one vault per underlying). Matching vault bytecode alone is not a safe stream-binding predicate after KTD6. Do not duplicate the off-chain checklist as new `require`s.
 
-Sablier v1.1 `withdraw` reverts unless the caller is the stream sender, the NFT owner, or an approved operator. The vault has no withdraw path. The lending market approves no operator. Newer Sablier Lockup docs describe a public withdraw-to-recipient path. That is a different version. Do not "fix" third-party withdrawal. See `docs/audit/rejected-findings-record.md` and `docs/audit/sablier-interface-contract.md`.
+The bound lockup preserves Sablier v1.1 `withdraw` ACL byte-for-byte (plan R3): reverts unless the caller is the stream sender, the NFT owner, or an approved operator. The vault has no withdraw path. The lending market approves no operator. Newer Sablier Lockup docs describe a public withdraw-to-recipient path. That is a different version. Do not "fix" third-party withdrawal. See `docs/audit/rejected-findings-record.md` and `docs/audit/sablier-interface-contract.md`.
 
 ---
 
@@ -127,19 +142,20 @@ Constructor: `OVRFLOFactory(address _owner, address _oracle)`.
 
 The factory embeds no child creation code (EIP-170). Any EOA can `new OVRFLO(...)` and `new OVRFLOLending(...)`. Those candidates are inert until the owner registers them.
 
-**`registerOvrflo`** checks, in order: nonzero, not already registered, `vault.factory() == this`, `vault.oracle() == factory.oracle`, no vault already mapped for that underlying. Then writes `ovrfloInfo`, `underlyingToOvrflo`, and the enumerable `ovrflos` list.
+**`registerOvrflo`** checks, in order: nonzero, not already registered, `factory.ovrfloStream()` set, `vault.sablierLL() == ovrfloStream`, `vault.factory() == this`, `vault.oracle() == factory.oracle`, no vault already mapped for that underlying. Then writes `ovrfloInfo`, `underlyingToOvrflo`, and the enumerable `ovrflos` list.
 
-**`registerLending`** checks: core is a known vault, no lending yet for that vault, `lending.factory() == this`, `lending.owner() == this`, `lending.sablier() == vault.sablierLL()`. The lending constructor already called `_transferOwnership(factory_)` and pulled treasury/underlying/ovrfloToken from `ovrfloInfo(core)`.
+**`registerLending`** checks: core is a known vault, no lending yet for that vault, `lending.factory() == this`, `lending.owner() == this`, `lending.sablier() == vault.sablierLL()`, `lending.sablier() == factory.ovrfloStream()`. The lending constructor already called `_transferOwnership(factory_)` and pulled treasury/underlying/ovrfloToken from `ovrfloInfo(core)`. Registration does not re-check `stream.factory()` / `stream.admin()` / `comptroller.admin()` — those live on `setOvrfloStream` only.
 
 Deploy order:
 
 1. `new OVRFLOFactory(multisig, pendleOracle)`
-2. `new OVRFLO(factory, treasury, underlying, name, symbol, oracle)` — vault constructs its token
-3. `registerOvrflo(vault)`
-4. `new OVRFLOLending(factory, vault, sablier)`
-5. `registerLending(lending)`
-6. `prepareOracle(market, twap)` then `addMarket(vault, market, twap, feeBps)`
-7. `setLendingTickSpacing(lending, market, spacing)` — **once per market**. No on-chain default. Supply and borrow revert `SpacingUnset` until this lands.
+2. Deploy OVRFLO Streams lockup + comptroller + descriptor (sibling repo artifacts); `setOvrfloStream(lockup)`
+3. `new OVRFLO(factory, treasury, underlying, name, symbol, oracle, stream)` — vault constructs its token; `stream` becomes `sablierLL`
+4. `registerOvrflo(vault)`
+5. `new OVRFLOLending(factory, vault, stream)`
+6. `registerLending(lending)`
+7. `prepareOracle(market, twap)` then `addMarket(vault, market, twap, feeBps)`
+8. `setLendingTickSpacing(lending, market, spacing)` — **once per market**. No on-chain default. Supply and borrow revert `SpacingUnset` until this lands.
 
 TWAP bounds: 15 minutes minimum, 30 minutes maximum. `prepareOracle` and `addMarket` share `_validateTwapBounds`. Deposit fee max is `FEE_MAX_BPS = 100` (1%) on the factory. Flash-loan fee max is `FLASH_FEE_MAX_BPS = 100` on the vault.
 
@@ -191,7 +207,7 @@ Pendle PT is always 18 decimals. No on-chain `decimals()` check (R-01).
 
 ## 6. Lending mechanics (v1-lite)
 
-Loan-only tick order book. Bound to one vault and one Sablier instance.
+Loan-only tick order book. Bound to one vault and one OVRFLO Streams lockup instance.
 
 Lenders `supply(market, aprBps, amount)`: escrow underlying, append a leaf on that tick's current epoch tape. Amounts are exact `UNIT` (1e12 wei) multiples and at least `MIN_LIQUIDITY_AMOUNT` (1e15). `withdraw` refunds the unfilled suffix only; filled coordinates never move.
 
@@ -250,6 +266,7 @@ Vault-side, keep all of:
 
 Do:
 
+- Record intent before the first code write; log plan deviations; compare the final diff to the prediction (§ Before writing code).
 - Keep admin as Safe → factory → child.
 - Keep Pendle-specific types and checks.
 - Keep Sablier v1.1 ACL semantics.
@@ -257,7 +274,7 @@ Do:
 - Keep wrap reserve separate from PT backing.
 - Keep wstETH as the vault underlying.
 - Add errors and events only from the closed catalog, or with a dated user decision (pattern #21).
-- Narrow through `SafeCast`. Use `Math.mulDiv` for overflow-prone math. No PRB-Math in this repo.
+- Narrow through `SafeCast`. Use `Math.mulDiv` for overflow-prone math. No PRB-Math in this repo's `src/` (fork exception).
 - Assert token balances for every party in money-movement tests (pattern #6).
 - Discover stream NFTs as candidates, then `ownerOf` / `getStream` as authority (pattern #1).
 - Run `forge build` then `forge test` after Solidity changes. Use `FOUNDRY_PROFILE=invariant` for a real invariant campaign.
@@ -275,18 +292,19 @@ Do not:
 - `forge script --broadcast` against local Anvil.
 - `git add -A` in a shared checkout (pattern #24).
 - Paraphrase working code into a plan. Cite `file:line` or point at the function.
+- Skip the Before writing code sequence: intent record, deviation log, final-diff comparison.
 
-### Mid term — OVRFLO Streams (planned, not shipped)
+### Mid term — OVRFLO Streams (partially shipped)
 
-Canonical plan: `docs/plans/2026-08-13-001-feat-ovrflo-streams-plan.md`.
+Canonical plan: `docs/plans/2026-08-13-001-feat-ovrflo-streams-plan.md`. Campaign tickets: `.scratch/ovrflo-streams/`. Every ticket posts the intent record before the first code write (this file, § Before writing code).
 
-Replace canonical Sablier with `OVRFLOStream`, a Linear-only GPL fork of Sablier v2-core **v1.1.2**. Three logic changes: ERC721Enumerable, on-chain ledger-card descriptor, `create*` gated by `ovrfloInfo(msg.sender)` (the caller is the vault). Withdraw ACL stays byte-for-byte v1.1. LockupDynamic stays in the fork tree and is never deployed. Own GPL repo; this repo stays MIT. Factory stores the stream address and checks it at register. Pre-launch swap; no migration tooling. Held-stream discovery becomes Enumerable; the log scan goes away.
+**Shipped in `src/` (U5):** vault/lending bind the fork by constructor; factory `ovrfloStream` / `setOvrfloStream` / `setStreamNFTDescriptor`; registration requires `factory.ovrfloStream()`. Solidity names stay upstream (`SablierV2LockupLinear`, `sablierLL`). Mint gate is `ovrfloInfo(msg.sender)` treasury != 0 — no `setMinter`. Fees immutable at zero by construction (SC13).
 
-`PRODUCT.md` and parts of `CONCEPTS.md` already use "OVRFLO Streams" as the product name. `src/` still uses `ISablierV2LockupLinear` and the hardcoded canonical address. An agent that "implements OVRFLO Streams" inside this repo first is doing the plan in the wrong order: fork repo first (U1–U4), then migrate.
+**Not shipped yet:** Markets Enumerable discovery (ticket 08 — log-scan is still live); seed/fork wiring (ticket 06); watch-surface ledger paint (ticket 09). Do not claim log-scan is already gone.
 
-Stop the streams work if the v1.1 withdraw ACL cannot be preserved, if Enumerable changes withdraw/transfer semantics, or if a fork deployable misses EIP-170.
+LockupDynamic stays in the fork tree unrenamed and is never deployed. Own GPL repo; this repo stays MIT. Stop the streams work if the v1.1 withdraw ACL cannot be preserved, if Enumerable changes withdraw/transfer semantics, or if a fork deployable misses EIP-170.
 
-Do not fork newer Sablier Lockup (public withdraw). Do not keep log-scan as a fallback after Enumerable ships. Do not put PRB-Math into *this* repo; the fork keeps `@prb/math` 4.0.2 as a scoped exception.
+Do not fork newer Sablier Lockup (public withdraw). Do not keep log-scan as a fallback after Enumerable ships (08). Do not put PRB-Math into *this* repo's `src/`; the fork keeps `@prb/math` 4.0.2 as a scoped exception.
 
 ### Long term — durable shape
 
@@ -343,10 +361,10 @@ Use this table when two sources collide. Re-verify the "Live" column if `src/` m
 
 | Topic | Stale / mixed claim | Live |
 |---|---|---|
-| Stream layer name | `PRODUCT.md` / `CONCEPTS.md` "OVRFLO Streams" / `OVRFLOStream` | Canonical Sablier v1.1 at `sablierLL`. Fork is a plan. |
-| Stream discovery | Enumerable holder lists | Browser log-scan candidates, then on-chain hydrate (`web/lib/discovery/`). |
+| Stream layer name | Stale CONCEPTS rebrand / `setMinter` paragraph (rewritten in U7) | Getter `sablierLL` / interface `ISablierV2LockupLinear` bind the OVRFLO Streams fork (`factory.ovrfloStream()`). Canonical `0xAFb979…` is not the bound address. |
+| Stream discovery | Enumerable holder lists (as if already live) | Browser log-scan candidates, then on-chain hydrate (`web/lib/discovery/`). Enumerable is ticket 08 — unbuilt. |
 | `flashLoan` reentrancy | `CONCEPTS.md` and the discipline doc: no `nonReentrant` | `nonReentrant` on `flashLoan`; deposit during callback still works. |
-| Factory constructor | Older seed snippets: `(sablier, owner)` | `(owner, oracle)`. Sablier lives on the vault constant and the lending arg. |
+| Factory constructor | Older seed snippets: `(sablier, owner)` | `(owner, oracle)`. Stream address is admitted via `setOvrfloStream`; vault/lending take it as a constructor arg. |
 | Lending shape | Sale listings, loan pools, `createBorrowerLoanPool` | `supply` / `withdraw` / `borrow` / `repay` / `close` / `claim`. |
 | Pattern #4, #10, #16 | Text still shows old guards | SUPERSEDED-BY-DESIGN. Blind fill has no ID array and no self-match. |
 | Pattern #7 vs named views | "all views return zeros" or "all views revert" | Auto-getters return zeros. `tickState` / `positionState` / `loanState` revert. |
@@ -366,7 +384,7 @@ Use this table when two sources collide. Re-verify the "Live" column if `src/` m
 4. If the task is a security finding: read the hydra list in `AGENTS.md` and `docs/audit/rejected-findings-record.md` before writing the finding.
 5. If the task is Solidity: read the discipline doc and coding standard, then the active plan if one exists.
 6. If the task is Markets UI: read `docs/maps/README.md` and the region brief for the surface.
-7. If the task is the stream layer: read the streams plan and treat `src/` Sablier bindings as the current world, not as a mistake to "fix" in-place.
+7. If the task is the stream layer: read the streams plan. Treat `sablierLL` / `ISablierV2LockupLinear` names as intentional (R9). The value is the fork (`factory.ovrfloStream()`), not canonical `0xAFb979…`. Do not invent a Solidity rename or `setMinter`.
 8. Grep before inventing: function names, error selectors, and dead names in §0.
 
 After that, the agent can advise. "I have not opened `src/`" is not a complete grasp.

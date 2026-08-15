@@ -6,21 +6,21 @@
 
 ## 1. Protocol Overview
 
-**What it does:** Wraps Pendle Principal Tokens into a liquid ERC20 plus a Sablier stream carrying the PT
+**What it does:** Wraps Pendle Principal Tokens into a liquid ERC20 plus an OVRFLO Stream carrying the PT
 discount, then runs a loan-only fixed-rate order book where lenders rest underlying at APR ticks and borrowers
 draw against those streams as collateral.
 
 - **Users**: PT holders wanting immediate liquidity; lenders wanting a fixed, known payout; borrowers monetizing
   a vesting stream without selling it outright.
-- **Core flow**: deposit PT → receive ovrfloToken + a Sablier stream → pledge that stream to borrow at a chosen
+- **Core flow**: deposit PT → receive ovrfloToken + an OVRFLO Stream → pledge that stream to borrow at a chosen
   APR tick → the stream self-repays the loan.
 - **Key mechanism**: a per-tick append-only coordinate tape. Borrows are *blind fills* that advance one
   cumulative `filled` counter; lender attribution is computed later as interval overlap rather than written per
   fill.
 - **Token model**: one `OVRFLOToken` (ERC20) per underlying, minted by the vault against PT deposits and 1:1
-  wraps; Sablier NFTs act as transferable collateral.
+  wraps; OVRFLO Stream NFTs (bound lockup: fork of Sablier v2-core v1.1.2; interface `ISablierV2LockupLinear`) act as transferable collateral.
 - **Admin model**: a timelocked multisig owns `OVRFLOFactory`, which is the sole admin of every vault and lending
-  market. No contract-level operational timelock — the delay lives entirely in the multisig.
+  market and is `initialAdmin` on the lockup/comptroller. No contract-level operational timelock — the delay lives entirely in the multisig. Stream protocol fees stay zero by construction (factory forwards only `setNFTDescriptor`).
 
 For a visual overview of the protocol's architecture, see the [architecture diagram](architecture.svg).
 
@@ -143,9 +143,12 @@ See [entry-points.md](entry-points.md) for the full permissionless entry point m
   (`OVRFLOLending.sol:421-429`) is the only path that can ever lower a stored value. Everything downstream of
   that clamp is arithmetic on frozen coordinates.
 
-- **Book ↔ Sablier** — collateral custody sits outside the protocol. The v1.1 ACL (withdraw restricted to
-  sender/owner/operator) is what makes escrow safe; the book approves no operator and uses plain `transferFrom`
-  throughout. Settled ground — see `docs/audit/rejected-findings-record.md` before re-raising.
+- **Book ↔ OVRFLO Streams** — collateral custody sits on the bound lockup (`ISablierV2LockupLinear`; fork of
+  Sablier v2-core v1.1.2). Vault getter `sablierLL` no longer resolves to canonical `0xAFb979…`. The v1.1 ACL
+  (withdraw restricted to sender/owner/operator) is preserved byte-for-byte (plan R3) and is what makes escrow
+  safe; the book approves no operator and uses plain `transferFrom` throughout. After KTD6, matching audited
+  vault bytecode is not a safe stream-binding predicate — `registerOvrflo` / `registerLending` require
+  `factory.ovrfloStream()`. Settled ground — see `docs/audit/rejected-findings-record.md` before re-raising.
 
 - **Vault ↔ Pendle oracle** — `_requireOracleFresh` (`OVRFLO.sol:344-347`) re-checks TWAP satisfaction at
   runtime rather than trusting onboarding-time validation alone.
@@ -203,7 +206,8 @@ See [entry-points.md](entry-points.md) for the full permissionless entry point m
 
 ### Composability & Dependency Risks
 
-> **Sablier V2 Lockup Linear** — via `OVRFLOLending.borrow/close/claim`, `OVRFLO.deposit`
+> **OVRFLO Streams (`ISablierV2LockupLinear`)** — via `OVRFLOLending.borrow/close/claim`, `OVRFLO.deposit`;
+> bound fork of Sablier v2-core v1.1.2; getter `sablierLL` / factory `ovrfloStream`
 > - Assumes: v1.1 withdraw ACL (sender / NFT owner / approved operator only); non-cancelable, no-cliff streams
 > - Validates: sender, asset, end time, cliff, cancelability, remaining (`StreamPricing.sol:205-211`)
 > - Mutability: immutable at the pinned address (the deliberate reason V2 is retained over V4)
@@ -341,8 +345,8 @@ manual diff.**
 |---------|------|----------|--------|-------|
 | openzeppelin-contracts | lib/openzeppelin-contracts | OpenZeppelin | Submodule (not internalized) | 318 files; mixed pragma ranges are upstream's own, not local edits |
 
-*`lib/prb-math` was removed as a submodule in `8727556`; the pricing core is OZ `Math`/`SafeCast` only. Root docs
-that still mention PRB-Math are stale (U8 owns that correction).*
+*`lib/prb-math` was removed as a submodule in `8727556`; this repo's `src/` pricing core is OZ `Math`/`SafeCast`
+only. The OVRFLO Streams fork (sibling GPL repo) keeps `@prb/math` as a scoped exception — see `AGENTS.md`.*
 
 ### Technical Debt Markers
 

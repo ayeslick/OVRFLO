@@ -139,10 +139,12 @@
   pattern #4 / `audit-2026-07-28 L-12` and NOT re-raised. v1-lite's blind-fill design has no
   offer/lender matching at borrow time to even self-match against; self-lending here is just
   paying a protocol fee to yourself, strictly worse than not doing it.
-- **Third-party Sablier withdrawal on an open loan's escrowed stream** — checked against `H-2`
-  / `audit-2026-07-28 H-1`, disproven twice (the deployed Sablier v1.1's `withdraw` reverts
-  unless the caller is the stream sender, NFT owner, or approved operator; the lending
-  contract approves no operator). Not re-raised.
+- **Third-party stream withdrawal on an open loan's escrowed stream** — checked against internal-review `H-2`
+  / `audit-2026-07-28 H-1`, disproven twice (bound lockup is OVRFLO Streams, fork of Sablier v2-core
+  v1.1.2; `sablierLL` no longer resolves to `0xAFb979…`; withdraw ACL preserved per plan R3 —
+  reverts unless the caller is the stream sender, NFT owner, or approved operator; the lending
+  contract approves no operator). Not re-raised. Properties that cite the stream field
+  (`GL-08`, `GL-31`, `SP-07`, `SP-15`) remain true against the fork.
 - **On-chain 18-decimal PT enforcement** — `R-01`, declined by design (Pendle PT is always
   18 decimals; multisig validates series onboarding). Not re-raised.
 - **ST-16** (`setTickSpacing` once-per-market) and **ST-17** (`setSeriesApproved` write-once)

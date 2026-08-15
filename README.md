@@ -2,7 +2,7 @@
 
 **OVRFLO enables Self-Repaying Loans.**
 
-A lending platform where lenders supply liquidity and borrowers borrow against deterministic collateral streams. No liquidations — the collateral repays the loan. OVRFLO's collateral streams are deterministic, non-cancelable Sablier streams created from Pendle PT deposits, which is why no liquidations are needed.
+A lending platform where lenders supply liquidity and borrowers borrow against deterministic collateral streams. No liquidations — the collateral repays the loan. OVRFLO's collateral streams are deterministic, non-cancelable OVRFLO Streams (a GPL fork of Sablier v2-core v1.1.2; Solidity identifiers stay Sablier-named) created from Pendle PT deposits, which is why no liquidations are needed.
 
 ## How It Works
 
@@ -10,7 +10,7 @@ OVRFLO operates in two layers:
 
 **Layer 1 — The Market (OVRFLOLending):** A loan-only, fixed-rate tick order book. Lenders rest liquidity at a chosen APR tick; borrowers pledge a collateral stream and draw from tick liquidity with a single blind fill — no position IDs, no collisions. The collateral repays the loan at maturity — no liquidations, no health factors, because the collateral cannot underperform.
 
-**Layer 2 — The Collateral (Core Vault):** OVRFLO's collateral is a deterministic, non-cancelable Sablier stream. It is created by depositing a Pendle PT — depositors receive ovrfloTokens (their principal at current market value) plus a stream vesting the remaining discount until PT maturity. The stream pays exactly what it promises, on schedule. That determinism is why no liquidations are needed.
+**Layer 2 — The Collateral (Core Vault):** OVRFLO's collateral is a deterministic, non-cancelable OVRFLO Stream. It is created by depositing a Pendle PT — depositors receive ovrfloTokens (their principal at current market value) plus a stream vesting the remaining discount until PT maturity. The stream pays exactly what it promises, on schedule. That determinism is why no liquidations are needed. Source identifiers in this repo stay Sablier-shaped (`sablierLL`, `ISablierV2LockupLinear`); the bound deployment is the OVRFLO Streams fork, not canonical Sablier at `0xAFb979…`.
 
 ### Example
 
@@ -31,12 +31,12 @@ OVRFLO operates in two layers:
 │   │  1. Query Pendle Oracle for TWAP     │                           │
 │   │  2. Split: 95 immediate / 5 stream   │                           │
 │   │  3. Mint ovrfloTokens                │                           │
-│   │  4. Create Sablier stream            │                           │
+│   │  4. Create OVRFLO Stream             │                           │
 │   └────────────────┬─────────────────────┘                           │
 │                    │                                                 │
 │         ┌──────────┴──────────┐                                      │
 │         ▼                     ▼                                      │
-│   95 ovrfloETH          Sablier Stream                               │
+│   95 ovrfloETH          OVRFLO Stream                                │
 │   (immediate)           5 ovrfloETH over remaining maturity          │
 │                          │                                           │
 │                          ▼                                           │
@@ -95,9 +95,9 @@ OVRFLO operates in two layers:
 │                                                                          │
 │   External:                                                              │
 │   ┌─────────────┐              ┌─────────────┐                           │
-│   │   Pendle    │              │   Sablier   │                           │
-│   │   Oracle    │              │   V2 LL     │                           │
-│   │ (TWAP rate) │              │ (streaming) │                           │
+│   │   Pendle    │              │ OVRFLO      │                           │
+│   │   Oracle    │              │ Streams     │                           │
+│   │ (TWAP rate) │              │ (fork LL)   │                           │
 │   └─────────────┘              └─────────────┘                           │
 │                                                                          │
 └──────────────────────────────────────────────────────────────────────────┘
@@ -107,14 +107,14 @@ OVRFLO operates in two layers:
 
 ### OVRFLOLending.sol
 
-Loan-only, fixed-rate tick order book for self-repaying loans. Lenders rest liquidity at a chosen APR tick; borrowers pledge a deterministic collateral stream and draw against tick liquidity with a single blind fill against a cumulative counter — no position IDs, no collisions, fill gas flat in the number of lender positions crossed. No liquidations — the collateral cannot underperform. Bound to one core vault and one Sablier V2 LL instance at deployment. Lender attribution is computed lazily from interval overlap against a `TickTree` packed prefix-sum tree rather than stored per fill. All pricing uses `StreamPricing` with a linear APR discount to series maturity. There is one lending primitive — loans — no sale listings; a full borrow is economically a sale (obligation caps at the stream's remaining face).
+Loan-only, fixed-rate tick order book for self-repaying loans. Lenders rest liquidity at a chosen APR tick; borrowers pledge a deterministic collateral stream and draw against tick liquidity with a single blind fill against a cumulative counter — no position IDs, no collisions, fill gas flat in the number of lender positions crossed. No liquidations — the collateral cannot underperform. Bound to one core vault and one OVRFLO Streams lockup instance at deployment (constructor arg; getter names stay `sablier` / `sablierLL`). Lender attribution is computed lazily from interval overlap against a `TickTree` packed prefix-sum tree rather than stored per fill. All pricing uses `StreamPricing` with a linear APR discount to series maturity. There is one lending primitive — loans — no sale listings; a full borrow is economically a sale (obligation caps at the stream's remaining face).
 
 | Function | Description |
 |----------|-------------|
-| `constructor(factory, core, sablier)` | Deploy lending market bound to one vault and Sablier instance; pulls treasury/underlying/ovrfloToken from factory |
+| `constructor(factory, core, sablier)` | Deploy lending market bound to one vault and OVRFLO Streams lockup; pulls treasury/underlying/ovrfloToken from factory |
 | `supply(market, aprBps, amount)` | Escrow underlying and append a lender position at an APR tick (exact `UNIT` multiples, `>= MIN_LIQUIDITY_AMOUNT`) |
 | `withdraw(positionId)` | Refund a position's entire unfilled suffix (lender-only, never market-gated) |
-| `borrow(market, aprBps, targetBorrow, streamId, minAcceptable)` | Pledge a Sablier stream and blind-fill from one tick's oldest live epoch; no position IDs |
+| `borrow(market, aprBps, targetBorrow, streamId, minAcceptable)` | Pledge an OVRFLO Stream and blind-fill from one tick's oldest live epoch; no position IDs |
 | `repay(loanId, amount)` | Repay ovrfloToken at face value against a loan's outstanding (permissionless — third-party repay is a donation) |
 | `close(loanId)` | Permissionless: once withdrawable covers outstanding, draw it and return the stream to the borrower |
 | `claim(loanId, positionId, amount)` | Lender claims a contributing position's pro-rata share of a loan's recovered value |
@@ -156,7 +156,9 @@ Registry and admin hub for externally deployed OVRFLO vaults and OVRFLOLending m
 |----------|-------------|
 | `constructor(owner, oracle)` | Deploy factory with multisig owner and Pendle oracle (both immutable) |
 | `registerOvrflo(ovrflo)` | Register an externally deployed OVRFLO vault: verifies `factory()`/`oracle()` immutables match this factory and that its `underlying` has no existing registered vault, then records it |
-| `registerLending(lending)` | Register an externally deployed OVRFLOLending: verifies its core vault is registered, `factory()`/`owner()` match this factory, and its Sablier binding matches the vault's, then records it (1:1 per vault) |
+| `registerLending(lending)` | Register an externally deployed OVRFLOLending: verifies its core vault is registered, `factory()`/`owner()` match this factory, stream binding equals `factory.ovrfloStream()` (and matches the vault's `sablierLL`), then records it (1:1 per vault) |
+| `setOvrfloStream(stream)` | Admit the canonical OVRFLO Streams lockup once (`onlyOwner`); checks lockup `factory()`/`admin()` and comptroller `admin()` |
+| `setStreamNFTDescriptor(descriptor)` | Forward `setNFTDescriptor` to the canonical lockup; only lockup admin forwarder (no `transferAdmin`) |
 | `addMarket(ovrflo, market, twapDuration, feeBps)` | Add a PT maturity; reads PT address and expiry from Pendle market; requires ready oracle and exact underlying match |
 | `prepareOracle(market, twapDuration)` | Increase oracle cardinality before `addMarket`; duration must be 15-30 min (separate transaction) |
 | `setMarketDepositLimit(ovrflo, market, limit)` | Set deposit cap for a market |
@@ -169,12 +171,12 @@ Registry and admin hub for externally deployed OVRFLO vaults and OVRFLOLending m
 
 ### OVRFLO.sol
 
-The core vault that creates collateral from Pendle PT deposits. Depositors receive immediate ovrfloTokens (principal at TWAP value) plus a Sablier stream vesting the remaining discount. After maturity, ovrfloTokens can be burned 1:1 to claim the underlying PT. Vault-level immutables: `underlying`, `ovrfloToken`, `oracle`, `TREASURY_ADDR`, `sablierLL` (hardcoded). Constant: `MIN_PT_AMOUNT`.
+The core vault that creates collateral from Pendle PT deposits. Depositors receive immediate ovrfloTokens (principal at TWAP value) plus an OVRFLO Stream vesting the remaining discount. After maturity, ovrfloTokens can be burned 1:1 to claim the underlying PT. Vault-level immutables: `underlying`, `ovrfloToken`, `oracle`, `TREASURY_ADDR`, `sablierLL` (constructor-bound lockup; name kept). Constant: `MIN_PT_AMOUNT`.
 
 | Function | Description |
 |----------|-------------|
 | `constructor(admin, treasury, underlying, name_, symbol_, oracle)` | Initialize vault with factory as admin, treasury, underlying, and Pendle oracle; constructs and permanently owns its own `OVRFLOToken` from `name_`/`symbol_` |
-| `deposit(market, ptAmount, minToUser)` | Deposit PT to receive ovrfloTokens + Sablier stream |
+| `deposit(market, ptAmount, minToUser)` | Deposit PT to receive ovrfloTokens + OVRFLO Stream |
 | `claim(ptToken, amount)` | Burn ovrfloTokens to claim PT after maturity (1:1) |
 | `wrap(amount)` | Wrap underlying 1:1 into ovrfloToken (permissionless, no fees) |
 | `unwrap(amount)` | Unwrap ovrfloToken 1:1 into underlying (permissionless, no fees) |
@@ -242,7 +244,7 @@ lending.claim(loanId, positionId, amount);
 1. **Approve** PT token for OVRFLO contract
 2. **Approve** underlying token for fee (if applicable)
 3. **Call** `deposit(market, ptAmount, minToUser)`
-4. **Receive** ovrfloTokens immediately + Sablier stream ID
+4. **Receive** ovrfloTokens immediately + OVRFLO Stream ID
 
 ```solidity
 // Example deposit
@@ -269,8 +271,8 @@ ovrflo.claim(ptToken, amount);
 
 #### Withdrawing from Stream
 
-Streams are managed by [Sablier V2](https://sablier.com). Users can:
-- View stream status on Sablier UI
+Streams are managed by **OVRFLO Streams** (fork of Sablier v2-core v1.1.2; ERC721 identity `OVRFLOStream`). Identifier names in code stay Sablier-shaped. Users can:
+- View stream status in Markets and in any wallet that reads `tokenURI`
 - Withdraw vested ovrfloTokens anytime (`withdraw` is `payable` — requires an ETH fee via `calculateMinFeeWei(streamId)`)
 - Transfer stream NFT to another address
 
@@ -289,17 +291,17 @@ ovrflo.unwrap(amount);
 
 ### What's Fixed Will OVRFLO
 
-The PT discount is fixed at deposit -- the oracle splits principal from yield deterministically. What's fixed will overflow: the yield portion vests through a Sablier stream, and the composition of deposit, lending (a max borrow against the stream, economically a sale), and unwrap or swap lets that fixed yield flow out of the PT and into extractable value. Every participant benefits:
+The PT discount is fixed at deposit -- the oracle splits principal from yield deterministically. What's fixed will overflow: the yield portion vests through an OVRFLO Stream, and the composition of deposit, lending (a max borrow against the stream, economically a sale), and unwrap or swap lets that fixed yield flow out of the PT and into extractable value. Every participant benefits:
 
 **With held PT:**
-1. **Deposit 100 PT** (pre-maturity, PT trading at 95% of face) -- receive 95 ovrfloToken + Sablier stream vesting 5 ovrfloToken
+1. **Deposit 100 PT** (pre-maturity, PT trading at 95% of face) -- receive 95 ovrfloToken + OVRFLO Stream vesting 5 ovrfloToken
 2. **Exit the 95 ovrfloToken** -- `unwrap()` for 95 underlying or swap on a DEX
 3. **Max-borrow against the stream on the lending market**, receive ~4.5 underlying
 
 **With zero capital (flash-loan underlying, available today):**
 1. **Flash-loan 95 underlying** from Aave, Balancer, etc.
 2. **Swap for 100 PT** on the Pendle AMM (at 0.95 rate)
-3. **Deposit 100 PT** -- receive 95 ovrfloToken + Sablier stream vesting 5 ovrfloToken
+3. **Deposit 100 PT** -- receive 95 ovrfloToken + OVRFLO Stream vesting 5 ovrfloToken
 4. **Exit the 95 ovrfloToken** -- `unwrap()` for 95 underlying or swap on a DEX
 5. **Max-borrow against the stream on the lending market** -- receive ~4.5 underlying
 6. **Repay the flash loan** -- return 95 underlying + fee
@@ -409,7 +411,7 @@ factory.setLendingTreasury(address(lendingMarket), treasury);
 factory.setLendingTickSpacing(address(lendingMarket), market, spacing);
 ```
 
-`registerLending` verifies the candidate's `factory()`/`owner()` immutables match this factory and its Sablier binding matches the vault's `sablierLL`, enforces 1:1 (one lending market per vault), and registers it in `ovrfloToLending`/`lendingToOvrflo`. APR bounds initialize to the launch APR (10%), which is also the only valid tick until the multisig widens the bounds. See `docs/plans/2026-08-11-001-fix-factory-mainnet-code-size-registry-plan.md` for the full design and security analysis of the register-don't-construct model.
+`registerLending` verifies the candidate's `factory()`/`owner()` immutables match this factory, its stream binding equals `factory.ovrfloStream()` and the vault's `sablierLL`, enforces 1:1 (one lending market per vault), and registers it in `ovrfloToLending`/`lendingToOvrflo`. Matching audited vault bytecode alone is not a safe stream-binding predicate after KTD6 — registration is. APR bounds initialize to the launch APR (10%), which is also the only valid tick until the multisig widens the bounds. See `docs/plans/2026-08-11-001-fix-factory-mainnet-code-size-registry-plan.md` for the full design and security analysis of the register-don't-construct model.
 
 ### Onboarding a New Market
 
@@ -439,14 +441,14 @@ Two separate fees operate at different layers:
 - **OVRFLOFactory**: Owned by timelocked multisig, serves as immutable `factory` (admin) for all deployed OVRFLOs
 - **OVRFLO**: Controlled by factory (admin functions gated by `onlyAdmin` modifier)
 - **OVRFLOToken**: Owned by OVRFLO (mint/burn restricted)
-- **OVRFLOLending**: Owned by `OVRFLOFactory`, bound to one vault and Sablier instance at construction, and administered through factory forwarders
+- **OVRFLOLending**: Owned by `OVRFLOFactory`, bound to one vault and OVRFLO Streams lockup at construction, and administered through factory forwarders
 
 ### Safeguards
 
 - **Multisig + Timelock**: All admin operations require multisig consensus and timelock delay
 - **APR ceiling**: Hardcoded at 100% (`APR_MAX_CEILING = 10_000` on `OVRFLOLending`) — cannot be raised past 100% even by the owner
 - **Fee ceilings**: Core deposit fee capped at 1% (`FEE_MAX_BPS = 100` on factory), lending protocol fee capped at 100% (`MAX_FEE_BPS = 10_000` on lending) — both hardcoded constants
-- **No liquidations**: Deterministic, non-cancelable Sablier streams cannot underperform — the stream itself repays the loan
+- **No liquidations**: Deterministic, non-cancelable OVRFLO Streams cannot underperform — the stream itself repays the loan
 - **StreamPricing math**: Floor/ceil rounding is directional and load-bearing. The invariant `obligation <= remaining` is proven and stress-tested (see `plans/streampricing-math-analysis.md`)
 - **Oracle**: TWAP pricing for PT valuation prevents manipulation; oracle is a vault immutable set at factory construction
 - **Slippage**: `minToUser` on deposits, `minAcceptable` on borrow fills
@@ -471,7 +473,7 @@ A single `OVRFLOToken` is shared by every PT market that resolves to the same un
 | Dependency | Address (Mainnet) | Purpose |
 |------------|-------------------|---------|
 | Pendle Oracle | `0x9a9Fa8338dd5E5B2188006f1Cd2Ef26d921650C2` | PT-to-SY TWAP rates (singleton, same on all chains) |
-| Sablier V2 LL | `0xAFb979d9afAd1aD27C5eFf4E27226E3AB9e5dCC9` | Token streaming |
+| OVRFLO Streams lockup | `factory.ovrfloStream()` (not canonical `0xAFb979…`) | Token streaming; fork of Sablier v2-core v1.1.2 |
 
 ## Deployments
 

@@ -1,8 +1,9 @@
 # Entry Point Map
 
-> OVRFLO | 38 entry points | 10 permissionless | 2 role-gated | 26 admin-only
+> OVRFLO | 40 entry points | 10 permissionless | 2 role-gated | 28 admin-only
 
-Regenerated 2026-08-10 at `f0661ab` (`codex/lending-v1-lite`) over the v1-lite lending rewrite. Counts exclude
+Regenerated 2026-08-10 at `f0661ab` (`codex/lending-v1-lite`) over the v1-lite lending rewrite; stream-admin
+rows (`setOvrfloStream`, `setStreamNFTDescriptor`) added 2026-08-15 with the OVRFLO Streams rebind. Counts exclude
 inherited OZ surfaces enumerated at the end (ERC20 transfer family, `Ownable2Step`, `Multicall`).
 
 ---
@@ -11,13 +12,16 @@ inherited OZ surfaces enumerated at the end (ERC20 transfer family, `Ownable2Ste
 
 ### Setup (Multisig → Factory)
 
-`new OVRFLO(...)` → `registerOvrflo()` → `new OVRFLOLending(...)` → `registerLending()` → `prepareOracle()` → `addMarket()` → `setLendingTickSpacing()`
+`new OVRFLOFactory(...)` → deploy OVRFLO Streams lockup+comptroller+descriptor → `setOvrfloStream()` →
+`new OVRFLO(..., stream)` → `registerOvrflo()` → `new OVRFLOLending(..., stream)` → `registerLending()` →
+`prepareOracle()` → `addMarket()` → `setLendingTickSpacing()`
                                                                                                      └─→ `setLendingAprBounds()` / `setLendingFee()` / `setLendingTreasury()`
+                                                                                                     └─→ `setStreamNFTDescriptor()` (art swap; only lockup admin forwarder)
 
 ### Vault user flow (depositor)
 
 `[setup above]` → `OVRFLO.deposit()` ◄── market approved, oracle fresh, pre-maturity
-                       ├─→ receives ovrfloToken + Sablier stream
+                       ├─→ receives ovrfloToken + OVRFLO Stream NFT (`ISablierV2LockupLinear.createWithDurations`)
                        ├─→ `OVRFLO.claim()` ◄── post-maturity only
                        └─→ [stream becomes lending collateral, below]
 
@@ -67,7 +71,7 @@ inherited OZ surfaces enumerated at the end (ERC20 transfer family, `Ownable2Ste
 | Parameters | `market` (user-controlled), `aprBps` (user-controlled), `targetBorrow` (user-controlled), `streamId` (user-controlled), `minAcceptable` (user-controlled) |
 | Call chain | `→ OVRFLOLending._fillTick() → StreamPricing.requireEligible() → ISablierV2LockupLinear.getStream()` then `→ StreamPricing.grossPrice() → StreamPricing.obligationForFill() → TickTree.root() → ISablierV2LockupLinear.transferFrom() → IERC20.safeTransfer()` |
 | State modified | `ticks[...].epochs[e].filled`, `.loanCount`, `tick.oldestLiveEpoch`, `loans`, `loanAt`, `borrowerLoanCount`, `borrowerLoanAt`, `nextLoanId` |
-| Value flow | in — Sablier NFT: borrower → lending; out — underlying: lending → borrower + treasury |
+| Value flow | in — OVRFLO Stream NFT: borrower → lending; out — underlying: lending → borrower + treasury |
 | Reentrancy guard | yes |
 
 ### `OVRFLOLending.repay()`
@@ -79,7 +83,7 @@ inherited OZ surfaces enumerated at the end (ERC20 transfer family, `Ownable2Ste
 | Parameters | `loanId` (user-controlled), `amount` (user-controlled) |
 | Call chain | `→ OVRFLOLending._liveLoan() → OVRFLOLending._outstanding() → IERC20.safeTransferFrom() → ISablierV2LockupLinear.transferFrom()` |
 | State modified | `loans[loanId].repaid`, `.closed`, `proceeds[loanId]` |
-| Value flow | in — ovrfloToken: caller → lending; out — Sablier NFT: lending → borrower (on full repay) |
+| Value flow | in — ovrfloToken: caller → lending; out — OVRFLO Stream NFT: lending → borrower (on full repay) |
 | Reentrancy guard | yes |
 
 ### `OVRFLOLending.close()`
@@ -91,7 +95,7 @@ inherited OZ surfaces enumerated at the end (ERC20 transfer family, `Ownable2Ste
 | Parameters | `loanId` (user-controlled) |
 | Call chain | `→ OVRFLOLending._liveLoan() → ISablierV2LockupLinear.withdrawableAmountOf() → ISablierV2LockupLinear.withdraw() → ISablierV2LockupLinear.transferFrom()` |
 | State modified | `loans[loanId].closed`, `.drawn`, `proceeds[loanId]` |
-| Value flow | in — ovrfloToken: Sablier → lending; out — Sablier NFT: lending → borrower |
+| Value flow | in — ovrfloToken: lockup → lending; out — OVRFLO Stream NFT: lending → borrower |
 | Reentrancy guard | yes |
 
 ### `OVRFLOLending.advanceEpochCursor()`
@@ -115,7 +119,7 @@ inherited OZ surfaces enumerated at the end (ERC20 transfer family, `Ownable2Ste
 | Parameters | `market` (user-controlled), `ptAmount` (user-controlled), `minToUser` (user-controlled) |
 | Call chain | `→ OVRFLO._approvedRate() → IPendleOracle.getOracleState() → IPendleOracle.getPtToSyRate()` then `→ IERC20.safeTransferFrom() → OVRFLOToken.mint() → ISablierV2LockupLinear.createWithDurations()` |
 | State modified | `marketTotalDeposited[market]` |
-| Value flow | in — PT + underlying fee; out — ovrfloToken mint + Sablier stream to depositor |
+| Value flow | in — PT + underlying fee; out — ovrfloToken mint + OVRFLO Stream to depositor |
 | Reentrancy guard | no |
 
 ### `OVRFLO.claim()`
@@ -205,8 +209,10 @@ vault functions). No operational timelock exists on the contracts themselves —
 
 | Contract | Function | Parameters | State Modified |
 |----------|----------|------------|----------------|
-| OVRFLOFactory | `registerOvrflo()` | ovrflo (externally deployed) | `ovrflos`, `ovrfloCount`, `ovrfloInfo`, `underlyingToOvrflo`; verifies `factory()`/`oracle()` bindings and duplicate-underlying before registering |
-| OVRFLOFactory | `registerLending()` | lending (externally deployed) | `ovrfloToLending`, `lendingToOvrflo`, `lendings`, `lendingCount`; verifies `factory()`/`owner()`/`sablier()` bindings and 1:1 vault mapping before registering |
+| OVRFLOFactory | `registerOvrflo()` | ovrflo (externally deployed) | `ovrflos`, `ovrfloCount`, `ovrfloInfo`, `underlyingToOvrflo`; verifies `factory()`/`oracle()`/`sablierLL()==ovrfloStream` and duplicate-underlying before registering |
+| OVRFLOFactory | `registerLending()` | lending (externally deployed) | `ovrfloToLending`, `lendingToOvrflo`, `lendings`, `lendingCount`; verifies `factory()`/`owner()`/`sablier()==ovrfloStream` (and vault match) and 1:1 vault mapping before registering |
+| OVRFLOFactory | `setOvrfloStream()` | stream (once) | `ovrfloStream`; checks lockup `factory()`/`admin()` and comptroller `admin()`; reverts on second call |
+| OVRFLOFactory | `setStreamNFTDescriptor()` | descriptor | forwards `setNFTDescriptor` to `ovrfloStream`; **only** lockup admin forwarder |
 | OVRFLOFactory | `addMarket()` | ovrflo, market, twapDuration, feeBps | `isMarketApproved`, `approvedMarketAt`, `approvedMarketCount`; forwards to `OVRFLO.setSeriesApproved` |
 | OVRFLOFactory | `setMarketDepositLimit()` | ovrflo, market, limit | forwards to vault |
 | OVRFLOFactory | `sweepExcessPt()` | ovrflo, ptToken, to | forwards to vault |
@@ -231,6 +237,17 @@ vault functions). No operational timelock exists on the contracts themselves —
 | OVRFLOToken | `transferOwnership()` | newOwner | `owner` (owner is the vault after deploy) |
 | OVRFLOToken | `mint()` | to, amount | balances, totalSupply |
 | OVRFLOToken | `burn()` | from, amount | balances, totalSupply |
+
+### Unreachable lockup / comptroller admin (intentional)
+
+The factory is `initialAdmin` on the lockup and comptroller. `Adminable` is one-step. The factory has **no**
+`transferAdmin` forwarder. Protocol fees are immutable at zero by construction (SC13). These `onlyAdmin` calls
+on the fork therefore cannot succeed for anyone through the factory, and cannot succeed for the Safe directly:
+
+- `setProtocolFee` / `setFlashFee` / `toggleFlashAsset` / `setComptroller` / `claimProtocolRevenues`
+- `transferAdmin` on the lockup or the comptroller (Safe is not admin; factory never forwards it)
+
+The live factory forwarder for stream admin is `setStreamNFTDescriptor` only.
 
 ---
 

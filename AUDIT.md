@@ -85,7 +85,7 @@ Retired with the sale/pool design (no successor block): A's `X-1`/`X-2`/`X-3` (u
 
 | Excluded | Why |
 |----------|-----|
-| Sablier V2 internals (beyond v1.1 ACL/withdrawability) | Bounded external dependency, trusted at v1.1; OVRFLO does not modify Sablier. Pinned address in scope snapshot. |
+| OVRFLO Streams lockup (fork of Sablier v2-core v1.1.2) | Bounded external; OVRFLO binds a fork it owns (separate GPL repo). Trusted at the preserved v1.1 ACL/withdrawability (plan R3). Identifier names stay Sablier-shaped (`sablierLL`). `sablierLL` no longer resolves to `0xAFb979d9afAd1aD27C5eFf4E27226E3AB9e5dCC9`. See `docs/audit/sablier-interface-contract.md`. |
 | Pendle YT / AMM mechanics | OVRFLO never trades YT or interacts with the Pendle AMM. |
 | `test/`, `script/`, `lib/`, `web/`, `tools/`, `interfaces/` | Test harness, deploy scripts, vendored libs, frontend, tooling, interface stubs — not in-scope production logic. |
 | Runnable audit harness (invariants-as-properties suite, one-command fork env, committed traces) | Deferred to a follow-up plan. This package is the doc/content layer. |

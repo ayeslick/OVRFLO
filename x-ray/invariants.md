@@ -97,7 +97,7 @@ Per-call preconditions. Heading IDs below (`G-N`) are anchor targets from x-ray.
 `if (toUser < minToUser) revert SlippageExceeded()` · `OVRFLO.sol:442` · Caller-supplied floor against an adverse TWAP move between simulation and execution.
 
 #### G-10
-`if (toStream == 0) revert NothingToStream()` · `OVRFLO.sol:404` · Sablier rejects zero-amount streams; failing here gives an interpretable error instead of a foreign revert.
+`if (toStream == 0) revert NothingToStream()` · `OVRFLO.sol:404` · The bound lockup rejects zero-amount streams; failing here gives an interpretable error instead of a foreign revert.
 
 #### G-11
 `if (!oldestObservationSatisfied) revert OracleNotReady()` · `OVRFLO.sol:395` · Runtime TWAP-freshness check; onboarding-time validation alone would let an oracle go stale post-approval.
@@ -370,8 +370,8 @@ value strands unclaimable in the contract beyond the documented rounding dust.
 
 > `ovrfloToken.balanceOf(lending) == Σ_loans proceeds[loanId]`, absent direct donations.
 
-**Derivation** — Δ-pair: ovrfloToken enters only via `repay`'s pull (`:585`) and `claim`/`close`'s Sablier
-harvest (`:684`, `:616`), each of which credits `proceeds` by the identical amount; it leaves only via `claim`'s
+**Derivation** — Δ-pair: ovrfloToken enters only via `repay`'s pull (`:585`) and `claim`/`close`'s lockup
+(`ISablierV2LockupLinear.withdraw`) harvest (`:684`, `:616`), each of which credits `proceeds` by the identical amount; it leaves only via `claim`'s
 payout (`:685`), which debits `proceeds` by the identical amount (`:681`).
 
 **If violated** — The pot accounting has desynced from real custody; claims would begin reverting on transfer
