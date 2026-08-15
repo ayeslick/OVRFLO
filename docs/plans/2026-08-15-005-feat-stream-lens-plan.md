@@ -4,7 +4,8 @@ Status: requirements recorded 2026-08-15. Not build-ready (no ignorance-lens swe
 Repository: `OVRFLO` (main). This is OVRFLO periphery, not a stream-protocol contract, so it does not
 go in the fork.
 Unblocks: the complete-set consumers named in `2026-08-15-001`. Removes one Sweep Contract rule from
-`2026-08-15-003`.
+`2026-08-15-003`. The borrow quote moved to `2026-08-15-007` on 2026-08-15 — it is a core
+`OVRFLOLending` change and has nothing to do with this contract.
 
 ## Problem
 
@@ -305,169 +306,17 @@ repeated. **The completeness critic has not run.**
 - Name the successor Vitest scenarios for `web/tests/hooks/useStreams.enumerable.test.ts`. Its cases
   exercise the `balanceOf` → `tokensOfOwnerIn` → hydration staging that ceases to exist. — *tests*
 
-## The borrow quote does not belong here — it belongs in `borrow`
+## The borrow quote is a separate plan
 
-An earlier revision of this plan put `previewBorrow` on the lens, and proposed exposing a new getter
-on `OVRFLOLending` so the lens could reproduce the fill. **Both are withdrawn.** A better seam
-already exists in the contract.
+`web/lib/lending-math.ts` mirrors `StreamPricing` in TypeScript, and that duplication has the same
+shape as the hydration fan-out this plan fixes. It is **not** solved here.
 
-### The problem
+`2026-08-15-007` solves it inside `borrow` itself, by enriching the existing `BelowMinAcceptable`
+error so an `eth_call` with `minAcceptable == type(uint128).max` returns the quote. Two hunks, +39
+bytes, no new contract.
 
-`StreamPricing`'s `factor`, `grossPrice`, `obligation`, `obligationForFill`, and `fee` are
-`internal pure` and therefore uncallable, so `web/lib/lending-math.ts` reimplements all five in
-TypeScript — its own comments say "mirrors StreamPricing.*". When the mirror drifts, the UI quotes a
-number the contract will not honour.
-
-### Quote by revert
-
-`borrow` already computes the exact quote through the real execution path, and the slippage check
-sits **after** the economics and **before** every write, the NFT transfer, and both payments:
-
-```
-_validateTick → _fillTick(_priceStream, _selectEpoch, TickTree, flooring, price cap, obligation, fee)
-     ↓
-minAcceptable check          ← the seam
-     ↓
-loan storage · sablier.transferFrom · _payUnderlying
-```
-
-So enrich the existing error to carry what was computed:
-
-```solidity
-error BelowMinAcceptable(uint128 actualBorrow, uint128 feeAmount, uint128 obligation);
-
-if (outcome.actualBorrow - outcome.feeAmount < minAcceptable) {
-    revert BelowMinAcceptable(outcome.actualBorrow, outcome.feeAmount, outcome.obligation);
-}
-```
-
-A quote is then `eth_call borrow(market, aprBps, targetBorrow, streamId, type(uint128).max)`. The
-sentinel deliberately fails the slippage check, so the contract runs the **real** tick validation,
-stream pricing, epoch selection, TickTree read, fill sizing, fee and obligation — and reverts
-carrying the result. The revert rolls back the `filled`, `loanCount`, and cursor writes.
-
-This is the Uniswap V3 Quoter pattern: execute the real path, revert after the economically relevant
-computation, decode the revert as the quote. OVRFLO's case is cleaner because the bounded revert
-point already exists and needs no new branch.
-
-**Do not add a dedicated quote branch.** The enriched error does the job under its own name in both
-situations, and a genuine slippage failure now tells the caller what was actually available — which
-is a real improvement to `classifyBorrowError`, not a side effect to tolerate.
-
-A dedicated `BorrowQuote(uint128,uint128,uint128)` error would read more cleanly, but it needs an
-explicit quote-mode branch — `if (minAcceptable == type(uint128).max)` — and bytecode is the entire
-reason this technique is on the table. Measure the enriched-error form first; it is the smallest.
-
-**Do not touch `FillOutcome`, `_fillTick`, or anything else on the borrow path.** The change is two
-hunks: the error declaration and the revert site. The measured +39 bytes assumes exactly that. An
-earlier probe widened `FillOutcome` to carry quote-only fields and cost 312 bytes; that approach is
-withdrawn and the struct stays as it is.
-
-### Denomination: wei out, UNITs only for coordinates
-
-**The rule:** return internal coordinates in UNITs only when the coordinate itself is the thing being
-exposed. Return economic and token amounts in wei.
-
-The three quoted fields are already wei by construction — `actualBorrow` comes back through
-`_toWei(fillUnits)`, and `feeAmount` and `obligation` are derived from it. No consumer multiplies by
-`UNIT`, and nothing needs converting.
-
-`Borrowed` already encodes this split: `uint64 fillStart` and `uint64 fillEnd` are tape coordinates
-in UNITs; `uint128 actualBorrow`, `feeAmount`, and `obligation` are wei. The enriched error takes
-exactly those three `uint128` fields, so **the quote and the receipt are the same shape** — one
-decoder, identical field semantics.
-
-That currently holds by coincidence. State it as a rule so a later change to the tree's granularity
-or compression scheme cannot leak the internal representation into the protocol interface.
-`tickDepths`' `availableUnits` staying in UNITs is correct and consistent: there, the compressed book
-coordinate *is* what is being exposed.
-
-### Measured
-
-| Approach | Δ bytes | vs the 24,064 canary | Verified |
-|---|---|---|---|
-| baseline | — | 227 under | 366 / 0 |
-| **quote by revert** | **+39** | **188 under** | equivalence proven |
-| `previewBorrow`, `bool commit` + block scoping | +312 | 85 over | correct, does not fit |
-| `previewBorrow`, view/write split | +403 | 176 over | — |
-| `StreamPricing` math externalised | +872 | over EIP-170 | — |
-
-**Equivalence is proven, not argued.** Snapshot, execute a real borrow, capture the `Borrowed`
-event, revert the snapshot, then quote with the sentinel and assert the revert encodes exactly those
-three values:
-
-```solidity
-vm.expectRevert(
-    abi.encodeWithSelector(OVRFLOLending.BelowMinAcceptable.selector, execBorrow, execFee, execObl)
-);
-lending.borrow(MARKET, APR, 10 ether, STREAM_ONE, type(uint128).max);
-```
-
-That is stronger than comparing two implementations. Quote and execution are two exits from one.
-
-### Why the sentinel is safe, and the test that pins it
-
-`fillUnits` is `uint64` and `_toWei` multiplies by `UNIT = 1e12`, so the largest representable
-`actualBorrow` is about 1.8 × 10^31 against `uint128.max` ≈ 3.4 × 10^38. `actualBorrow - feeAmount`
-can never reach the sentinel, so the MAX call always reaches the revert.
-
-**Pin that with a test.** A future widening of `fillUnits` or `UNIT` would silently break quoting.
-
-### Test accountability for the quote
-
-Three existing tests fail on the enriched error, all test-side decoding, none a contract defect:
-
-- `test_Borrow_ConcurrentTargets_SecondRevertsBelowMinAcceptable` and
-  `test_Borrow_MinAcceptableComparesNetOfFee` use `vm.expectRevert(…​.selector)`, which requires an
-  exact four-byte match. Use `vm.expectPartialRevert`, or encode the full expected error.
-- `testFuzz_Lending_WithdrawFrontRunningBorrowIsBenign` parses revert data by length and reports
-  `100 != 4`.
-
-The differential must cover, each asserting quote equals execution: partial tick fill,
-stream-price-capped fill, full stream sale, UNIT flooring, zero fee, non-zero fee, dust below
-`MIN_LIQUIDITY_AMOUNT`, dead-epoch skipping, the `CURSOR_CAP` boundary, `EpochBacklog`, and the
-maturity boundary.
-
-### What the quote does not prove
-
-It stops before `sablier.transferFrom`, so it does not establish that the caller owns the NFT, that
-the market is approved, or that the final transfers succeed. **That is a feature** — it lets the UI
-preview before asking for approval. The flow is:
-
-```
-quote by revert   → economic preview
-approve stream    → only if the user proceeds
-simulate the real borrow, real minAcceptable, real sender → transaction authority
-send
-```
-
-Which matches `2026-08-15-003`'s rule that simulation, not display, is transaction authority.
-
-### The whole change
-
-**Contract:** the two hunks above. Nothing else.
-
-**Frontend:** `eth_call borrow(..., type(uint128).max)`, decode `BelowMinAcceptable` with viem, and
-delete the five mirrored functions in `web/lib/lending-math.ts` and their tests. `classifyBorrowError`
-learns the new payload.
-
-**The lens computes no quote and gains no function for this.** There is no `previewBorrow`, no
-adapter contract, and no new getter on `OVRFLOLending`. If provider compatibility ever forces a
-normalising wrapper, that is a separate decision made against evidence, not scope carried in this
-plan.
-
-### If it ever stops fitting
-
-Ranked, so a future attempt does not restart from the worst option. **None of these is authorised
-work today** — quote by revert fits with 188 bytes to spare.
-
-1. Quote by revert inside the existing `borrow`.
-2. Evaluate whether a lower-value external view can be removed to make room — for example whether
-   the single-pair `contributionOf` still earns its bytes.
-3. A minimal canonical fill-state getter plus a lens using `StreamPricing`.
-4. **Not** externalising `StreamPricing`'s arithmetic. Measured: it grows the contract by 173 bytes,
-   because the call stubs cost more than the inlined bodies.
-
+**This lens computes no borrow quote and gains no function for it.** No `previewBorrow`, no adapter,
+no new getter on `OVRFLOLending`.
 
 ## Out of scope
 
