@@ -41,6 +41,8 @@ contract OVRFLO is ReentrancyGuard {
     error NotAdmin();
     /// @dev A required constructor or admin-call address argument was the zero address.
     error ZeroAddress();
+    /// @dev The stream constructor argument has no code.
+    error NoCode();
     /// @dev `setSeriesApproved` was called for a market that already has a configured series.
     error SeriesAlreadyConfigured();
     /// @dev `setSeriesApproved` was called for a PT already mapped to a different market.
@@ -78,6 +80,7 @@ contract OVRFLO is ReentrancyGuard {
     /// @dev The flash borrower's callback did not return the expected success value.
     error FlashCallbackFailed();
     /// @dev `feeBps` exceeds its configured maximum.
+    /// @dev A constructor address argument has no code.
     error FeeTooHigh();
     /// @dev The market has no configured series (`ptToken == address(0)`).
     error MarketNotApproved();
@@ -113,9 +116,8 @@ contract OVRFLO is ReentrancyGuard {
     /// @notice Whether flash loans are paused (circuit breaker, admin-controlled)
     bool public flashLoanPaused;
 
-    /// @notice Sablier V2 Lockup Linear contract for streaming
-    ISablierV2LockupLinear public immutable sablierLL =
-        ISablierV2LockupLinear(0xAFb979d9afAd1aD27C5eFf4E27226E3AB9e5dCC9);
+    /// @notice OVRFLO Stream lockup used for deposit streams. Getter name stays `sablierLL`.
+    ISablierV2LockupLinear public immutable sablierLL;
 
     /*//////////////////////////////////////////////////////////////
                                 STRUCTS
@@ -271,26 +273,32 @@ contract OVRFLO is ReentrancyGuard {
     /// @param _underlying The underlying asset address (constant per vault)
     /// @param name_ Full ERC20 name for the vault's ovrfloToken
     /// @param symbol_ Full ERC20 symbol for the vault's ovrfloToken
+    /// @param _oracle Pendle TWAP oracle
+    /// @param stream OVRFLO Stream lockup. Last argument. Getter stays `sablierLL()`.
     constructor(
         address admin,
         address treasury,
         address _underlying,
         string memory name_,
         string memory symbol_,
-        address _oracle
+        address _oracle,
+        address stream
     ) {
         if (admin == address(0)) revert ZeroAddress();
         if (treasury == address(0)) revert ZeroAddress();
         if (_underlying == address(0)) revert ZeroAddress();
         if (_oracle == address(0)) revert ZeroAddress();
+        if (stream == address(0)) revert ZeroAddress();
+        if (stream.code.length == 0) revert NoCode();
 
         factory = admin;
         TREASURY_ADDR = treasury;
         underlying = _underlying;
         ovrfloToken = address(new OVRFLOToken(name_, symbol_));
         oracle = _oracle;
+        sablierLL = ISablierV2LockupLinear(stream);
 
-        IERC20(ovrfloToken).approve(address(sablierLL), type(uint256).max);
+        IERC20(ovrfloToken).approve(stream, type(uint256).max);
     }
 
     /*//////////////////////////////////////////////////////////////

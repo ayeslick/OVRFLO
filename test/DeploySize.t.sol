@@ -17,9 +17,11 @@ contract DeploySizeTest is Test {
     uint256 internal constant EIP170_RUNTIME_CAP = 24_576;
     uint256 internal constant EIP3860_INITCODE_CAP = 49_152;
 
-    /// @dev deliberate-ceiling: 512 B EIP-170 headroom reserve for OVRFLOLending;
-    ///      revisit when this assertion fires — shrink the contract or bump the
-    ///      ceiling with a recorded reason, never silently.
+    /// @dev deliberate-ceiling: 512 B EIP-170 headroom reserve for OVRFLOLending
+    ///      (cap 24_576 − 512 = 24_064). Re-measured after R17: runtime 23_837 B,
+    ///      EIP-170 headroom 739 B, slack to this canary 227 B. R17 did not consume
+    ///      the full reserve. Revisit when this assertion fires — shrink the
+    ///      contract or bump the ceiling with a recorded reason, never silently.
     uint256 internal constant LENDING_RUNTIME_CANARY = 24_064;
 
     function _artifacts() internal pure returns (string[4] memory a) {

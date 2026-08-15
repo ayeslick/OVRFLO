@@ -16,7 +16,7 @@ import {OVRFLOToken} from "../../src/OVRFLOToken.sol";
 import {OVRFLOLending} from "../../src/OVRFLOLending.sol";
 import {OVRFLOFactory} from "../../src/OVRFLOFactory.sol";
 import {OVRFLOLendingHarness} from "./harness/OVRFLOLendingHarness.sol";
-import {MockSablier} from "./mocks/MockSablier.sol";
+import {MockSablier, MockSablierComptroller} from "./mocks/MockSablier.sol";
 import {MockPendleOracle} from "./mocks/MockPendleOracle.sol";
 import {MockPendleMarket} from "./mocks/MockPendleMarket.sol";
 import {MockStandardizedYield} from "./mocks/MockStandardizedYield.sol";
@@ -158,10 +158,12 @@ abstract contract Base is StringUtils, Clamp, Deployer, Math {
 
     // ―――――――――――――――――― Lending entity tracking ―――――――――――――――――
     // Collateral streams created by OVRFLO deposits, keyed by the depositing actor.
-    // Sablier exposes no per-owner enumeration, so this mirror is the only way a
-    // borrow handler can pick a stream it actually owns.
+    // The mock lockup enumerates per owner (`balanceOf` / `tokensOfOwnerIn`). The
+    // mirror is a handler convenience, not a second source of truth — SC10 checks it
+    // against the mock's enumeration.
     uint256[] internal streamIds;
     mapping(address => uint256[]) internal actorStreams;
+    mapping(uint256 => bool) internal burnedStreams;
 
     // Every lender position / loan ever created, for handlers that don't need
     // ownership scoping (repay and close are permissionless).
@@ -213,20 +215,27 @@ abstract contract Base is StringUtils, Clamp, Deployer, Math {
         mockSY = new MockStandardizedYield(address(underlying));
         mockMarket =
             new MockPendleMarket(block.timestamp + 1000 * 365 days, address(mockSY), address(ptToken), address(0));
-        mockSablier = new MockSablier();
         market = address(mockMarket);
 
-        // 3. Place mock Sablier at the hardcoded address OVRFLO/OVRFLOLending expect
-        vm.etch(SABLIER_ADDR, address(mockSablier).code);
-
-        // 4. Deploy factory (admin = address(this))
+        // 3. Deploy factory first so the mock lockup can bake factory as admin, then
+        //    etch the mock at SABLIER_ADDR (immutables live in the runtime bytecode).
         factory = new OVRFLOFactory(address(this), address(mockOracle));
+        MockSablierComptroller mockComptroller = new MockSablierComptroller(address(factory));
+        mockSablier = new MockSablier(address(factory), address(factory), address(mockComptroller));
+        vm.etch(SABLIER_ADDR, address(mockSablier).code);
+        factory.setOvrfloStream(SABLIER_ADDR);
 
-        // 5. Deploy the vault externally (it constructs its own token) and register it.
+        // 4. Deploy the vault externally (it constructs its own token) and register it.
         treasury = address(this);
         vm.label(treasury, "Treasury");
         vault = new OVRFLO(
-            address(factory), treasury, address(underlying), "OVRFLO TEST", "ovrfloTST", address(mockOracle)
+            address(factory),
+            treasury,
+            address(underlying),
+            "OVRFLO TEST",
+            "ovrfloTST",
+            address(mockOracle),
+            SABLIER_ADDR
         );
         factory.registerOvrflo(address(vault));
         address vaultAddr = address(vault);
@@ -381,6 +390,9 @@ abstract contract Base is StringUtils, Clamp, Deployer, Math {
                 ghost_everClosed[loanId] = true;
                 ghost_drawnAtClose[loanId] = loan.drawn;
                 ghosts.frozenRecovered += uint256(loan.drawn) + uint256(loan.repaid);
+                if (_ownerOfOrZero(loan.streamId) == address(0)) {
+                    _pruneBurnedActorStream(loan.borrower, loan.streamId);
+                }
                 openLoanIds[i] = openLoanIds[n - 1];
                 openLoanIds.pop();
                 n -= 1;
@@ -536,12 +548,42 @@ abstract contract Base is StringUtils, Clamp, Deployer, Math {
     }
 
     /// @dev Picks a stream id the actor currently owns (i.e. not already pledged to an
-    ///      open loan) from the tracked deposit-stream mirror.
+    ///      open loan) from the tracked deposit-stream mirror. Skips burned ids so
+    ///      `ownerOf` never reverts after R17.
     function _actorStream(address who, uint256 seed) internal view returns (uint256 streamId, bool found) {
         uint256[] storage list = actorStreams[who];
         if (list.length == 0) return (0, false);
         streamId = list[seed % list.length];
-        found = MockSablier(SABLIER_ADDR).ownerOf(streamId) == who;
+        if (burnedStreams[streamId]) return (0, false);
+        address owner = _ownerOfOrZero(streamId);
+        found = owner == who;
+    }
+
+    function _ownerOfOrZero(uint256 streamId) internal view returns (address owner) {
+        try MockSablier(SABLIER_ADDR).ownerOf(streamId) returns (address o) {
+            return o;
+        } catch {
+            return address(0);
+        }
+    }
+
+    /// @dev After close or a completing repay the NFT is either owned by the borrower
+    ///      or burned. Both are a successful disposal.
+    function _streamDisposedToBorrower(uint256 streamId, address borrower) internal view returns (bool) {
+        address owner = _ownerOfOrZero(streamId);
+        return owner == address(0) || owner == borrower;
+    }
+
+    function _pruneBurnedActorStream(address who, uint256 streamId) internal {
+        burnedStreams[streamId] = true;
+        uint256[] storage list = actorStreams[who];
+        for (uint256 i; i < list.length; ++i) {
+            if (list[i] == streamId) {
+                list[i] = list[list.length - 1];
+                list.pop();
+                return;
+            }
+        }
     }
 
     /// @dev Picks a lender position actually owned by `who`, read live from the lending

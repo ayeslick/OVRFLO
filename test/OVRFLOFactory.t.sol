@@ -3,12 +3,27 @@ pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {OVRFLO} from "../src/OVRFLO.sol";
 import {OVRFLOFactory} from "../src/OVRFLOFactory.sol";
 import {OVRFLOToken} from "../src/OVRFLOToken.sol";
 import {OVRFLOLending} from "../src/OVRFLOLending.sol";
 import {IPPrincipalToken} from "../interfaces/IPPrincipalToken.sol";
 import {IPendleMarket} from "../interfaces/IPendleMarket.sol";
+import {ISablierV2LockupLinear} from "../interfaces/ISablierV2LockupLinear.sol";
+import {FactoryStreamBind} from "./helpers/FactoryStreamBind.sol";
+import {MockSablier, MockSablierComptroller} from "./fizz/mocks/MockSablier.sol";
+import {IOVRFLOFactoryRegistry} from "../src/StreamPricing.sol";
+
+/// @notice Hand-written copy of the fork's `IOVRFLOFactoryRegistry.ovrfloInfo`
+///         (`OVRFLO-Streams-u4/src/interfaces/IOVRFLOFactoryRegistry.sol`).
+///         Field order must stay `treasury`, `underlying`, `ovrfloToken`.
+interface IForkOvrfloInfoCopy {
+    function ovrfloInfo(address ovrflo)
+        external
+        view
+        returns (address treasury, address underlying, address ovrfloToken);
+}
 
 contract MockERC20Metadata is ERC20 {
     uint8 private immutable CUSTOM_DECIMALS;
@@ -126,7 +141,7 @@ contract MockLendingLookalike {
     }
 }
 
-contract OVRFLOFactoryTest is Test {
+contract OVRFLOFactoryTest is Test, FactoryStreamBind {
     address internal constant OWNER = address(0x123);
     address internal constant TREASURY = address(0x456);
     address internal constant STRANGER = address(0x789);
@@ -161,13 +176,17 @@ contract OVRFLOFactoryTest is Test {
     );
     event MarketDepositLimitSet(address indexed market, uint256 limit);
     event ExcessSwept(address indexed ptToken, address indexed to, uint256 amount);
+    event OvrfloStreamSet(address indexed stream);
+    event StreamNFTDescriptorSet(address indexed descriptor);
 
     OVRFLOFactory internal factory;
     MockERC20Metadata internal underlying;
+    address internal stream;
 
     function setUp() public {
         factory = new OVRFLOFactory(OWNER, PENDLE_ORACLE);
         underlying = new MockERC20Metadata("Wrapped Ether", "WETH", 18);
+        stream = _bindCanonicalStream(factory);
     }
 
     /* ---------- Constructor ---------- */
@@ -225,8 +244,9 @@ contract OVRFLOFactoryTest is Test {
     }
 
     function test_RegisterOvrflo_RevertsForFactoryMismatch() public {
-        OVRFLO rogue =
-            new OVRFLO(STRANGER, TREASURY, address(underlying), "OVRFLO Wrapped Ether", "ovrfloWETH", PENDLE_ORACLE);
+        OVRFLO rogue = new OVRFLO(
+            STRANGER, TREASURY, address(underlying), "OVRFLO Wrapped Ether", "ovrfloWETH", PENDLE_ORACLE, stream
+        );
 
         vm.prank(OWNER);
         vm.expectRevert(OVRFLOFactory.FactoryMismatch.selector);
@@ -235,7 +255,13 @@ contract OVRFLOFactoryTest is Test {
 
     function test_RegisterOvrflo_RevertsForOracleMismatch() public {
         OVRFLO wrongOracle = new OVRFLO(
-            address(factory), TREASURY, address(underlying), "OVRFLO Wrapped Ether", "ovrfloWETH", address(0xBAD)
+            address(factory),
+            TREASURY,
+            address(underlying),
+            "OVRFLO Wrapped Ether",
+            "ovrfloWETH",
+            address(0xBAD),
+            stream
         );
 
         vm.prank(OWNER);
@@ -280,8 +306,9 @@ contract OVRFLOFactoryTest is Test {
         (OVRFLO ovrflo1,) = _deployConfiguredSystem();
 
         MockERC20Metadata dai = new MockERC20Metadata("Dai", "DAI", 18);
-        OVRFLO ovrflo2 =
-            new OVRFLO(address(factory), TREASURY, address(dai), "OVRFLO Dai Stablecoin", "ovrfloDAI", PENDLE_ORACLE);
+        OVRFLO ovrflo2 = new OVRFLO(
+            address(factory), TREASURY, address(dai), "OVRFLO Dai Stablecoin", "ovrfloDAI", PENDLE_ORACLE, stream
+        );
 
         vm.prank(OWNER);
         factory.registerOvrflo(address(ovrflo2));
@@ -487,8 +514,9 @@ contract OVRFLOFactoryTest is Test {
 
     function test_TransferOwnership_TwoStepHandoffUpdatesOwnerAndAllowsNewOwnerActions() public {
         MockERC20Metadata dai = new MockERC20Metadata("Dai", "DAI", 18);
-        OVRFLO candidate =
-            new OVRFLO(address(factory), TREASURY, address(dai), "OVRFLO Dai Stablecoin", "ovrfloDAI", PENDLE_ORACLE);
+        OVRFLO candidate = new OVRFLO(
+            address(factory), TREASURY, address(dai), "OVRFLO Dai Stablecoin", "ovrfloDAI", PENDLE_ORACLE, stream
+        );
 
         vm.expectEmit(true, true, false, false, address(factory));
         emit OwnershipTransferStarted(OWNER, NEW_OWNER);
@@ -943,8 +971,9 @@ contract OVRFLOFactoryTest is Test {
         (OVRFLO ovrflo1,) = _deployConfiguredSystem();
 
         MockERC20Metadata dai = new MockERC20Metadata("Dai", "DAI", 18);
-        OVRFLO ovrflo2 =
-            new OVRFLO(address(factory), TREASURY, address(dai), "OVRFLO Dai Stablecoin", "ovrfloDAI", PENDLE_ORACLE);
+        OVRFLO ovrflo2 = new OVRFLO(
+            address(factory), TREASURY, address(dai), "OVRFLO Dai Stablecoin", "ovrfloDAI", PENDLE_ORACLE, stream
+        );
         vm.prank(OWNER);
         factory.registerOvrflo(address(ovrflo2));
 
@@ -958,13 +987,193 @@ contract OVRFLOFactoryTest is Test {
         assertEq(factory.lendingToOvrflo(address(lending2)), address(ovrflo2));
     }
 
+    /* ---------- OVRFLO Stream admission ---------- */
+
+    function test_SetOvrfloStream_RevertsOnSecondCall() public {
+        vm.prank(OWNER);
+        vm.expectRevert(OVRFLOFactory.OvrfloStreamAlreadySet.selector);
+        factory.setOvrfloStream(stream);
+    }
+
+    function test_SetOvrfloStream_RevertsForZeroAddress() public {
+        OVRFLOFactory fresh = new OVRFLOFactory(OWNER, PENDLE_ORACLE);
+        vm.prank(OWNER);
+        vm.expectRevert(OVRFLOFactory.ZeroAddress.selector);
+        fresh.setOvrfloStream(address(0));
+    }
+
+    function test_SetOvrfloStream_RevertsForNoCode() public {
+        OVRFLOFactory fresh = new OVRFLOFactory(OWNER, PENDLE_ORACLE);
+        vm.prank(OWNER);
+        vm.expectRevert(OVRFLOFactory.NoCode.selector);
+        fresh.setOvrfloStream(address(0xBEEF));
+    }
+
+    function test_SetOvrfloStream_RevertsForFactoryMismatch() public {
+        OVRFLOFactory fresh = new OVRFLOFactory(OWNER, PENDLE_ORACLE);
+        MockSablierComptroller c = new MockSablierComptroller(address(fresh));
+        MockSablier s = new MockSablier(STRANGER, address(fresh), address(c));
+        vm.prank(OWNER);
+        vm.expectRevert(OVRFLOFactory.StreamFactoryMismatch.selector);
+        fresh.setOvrfloStream(address(s));
+    }
+
+    function test_SetOvrfloStream_RevertsForAdminMismatch() public {
+        OVRFLOFactory fresh = new OVRFLOFactory(OWNER, PENDLE_ORACLE);
+        MockSablierComptroller c = new MockSablierComptroller(address(fresh));
+        MockSablier s = new MockSablier(address(fresh), STRANGER, address(c));
+        vm.prank(OWNER);
+        vm.expectRevert(OVRFLOFactory.StreamAdminMismatch.selector);
+        fresh.setOvrfloStream(address(s));
+    }
+
+    function test_SetOvrfloStream_RevertsForComptrollerAdminMismatch() public {
+        OVRFLOFactory fresh = new OVRFLOFactory(OWNER, PENDLE_ORACLE);
+        MockSablierComptroller c = new MockSablierComptroller(STRANGER);
+        MockSablier s = new MockSablier(address(fresh), address(fresh), address(c));
+        vm.prank(OWNER);
+        vm.expectRevert(OVRFLOFactory.ComptrollerAdminMismatch.selector);
+        fresh.setOvrfloStream(address(s));
+    }
+
+    function test_RegisterOvrflo_RevertsWhenStreamUnset() public {
+        OVRFLOFactory fresh = new OVRFLOFactory(OWNER, PENDLE_ORACLE);
+        OVRFLO vault = new OVRFLO(
+            address(fresh), TREASURY, address(underlying), "OVRFLO Wrapped Ether", "ovrfloWETH", PENDLE_ORACLE, stream
+        );
+        vm.prank(OWNER);
+        vm.expectRevert(OVRFLOFactory.OvrfloStreamUnset.selector);
+        fresh.registerOvrflo(address(vault));
+    }
+
+    function test_RegisterOvrflo_RevertsWhenStreamNotCanonical() public {
+        MockSablierComptroller c = new MockSablierComptroller(address(factory));
+        MockSablier other = new MockSablier(address(factory), address(factory), address(c));
+        OVRFLO vault = new OVRFLO(
+            address(factory),
+            TREASURY,
+            address(underlying),
+            "OVRFLO Wrapped Ether",
+            "ovrfloWETH",
+            PENDLE_ORACLE,
+            address(other)
+        );
+        vm.prank(OWNER);
+        vm.expectRevert(OVRFLOFactory.StreamNotCanonical.selector);
+        factory.registerOvrflo(address(vault));
+    }
+
+    function test_RegisterLending_RevertsWhenStreamNotCanonical() public {
+        (OVRFLO ovrflo,) = _deployConfiguredSystem();
+        vm.mockCall(address(ovrflo), abi.encodeWithSignature("sablierLL()"), abi.encode(address(0xCAFE)));
+        MockLendingLookalike lookalike =
+            new MockLendingLookalike(address(ovrflo), address(factory), address(factory), address(0xCAFE));
+
+        vm.prank(OWNER);
+        vm.expectRevert(OVRFLOFactory.StreamNotCanonical.selector);
+        factory.registerLending(address(lookalike));
+    }
+
+    function test_RegisterLending_DoesNotRecheckStreamFactoryAdmin() public {
+        canonicalComptroller.setAdmin(STRANGER);
+        (OVRFLO ovrflo,) = _deployConfiguredSystem();
+        OVRFLOLending lending = _newLending(ovrflo);
+        vm.prank(OWNER);
+        factory.registerLending(address(lending));
+        assertEq(factory.ovrfloToLending(address(ovrflo)), address(lending));
+    }
+
+    function test_OvrfloInfo_SelectorAndTreasuryFirstAcrossThreeCopies() public {
+        (OVRFLO ovrflo, OVRFLOToken token) = _deployConfiguredSystem();
+        bytes4 expected = IOVRFLOFactoryRegistry.ovrfloInfo.selector;
+        assertEq(expected, bytes4(keccak256("ovrfloInfo(address)")));
+        assertEq(factory.ovrfloInfo.selector, expected);
+        assertEq(IForkOvrfloInfoCopy.ovrfloInfo.selector, expected);
+
+        (address treasury, address und, address tok) = factory.ovrfloInfo(address(ovrflo));
+        assertEq(treasury, TREASURY);
+        assertEq(und, address(underlying));
+        assertEq(tok, address(token));
+
+        (bool ok, bytes memory data) = address(factory).staticcall(abi.encodeWithSelector(expected, address(ovrflo)));
+        assertTrue(ok);
+        (address decodedTreasury, address decodedUnd, address decodedTok) =
+            abi.decode(data, (address, address, address));
+        assertEq(decodedTreasury, TREASURY);
+        assertEq(decodedUnd, address(underlying));
+        assertEq(decodedTok, address(token));
+    }
+
+    function test_FactoryAbi_HasNoTransferAdminOrFeeForwarders() public {
+        bytes memory empty;
+        _assertEmptyRevert(address(factory), abi.encodeWithSignature("transferAdmin(address)", OWNER), empty);
+        _assertEmptyRevert(address(factory), abi.encodeWithSignature("setComptroller(address)", OWNER), empty);
+        _assertEmptyRevert(address(factory), abi.encodeWithSignature("claimProtocolRevenues(address)", OWNER), empty);
+        _assertEmptyRevert(
+            address(factory), abi.encodeWithSignature("setProtocolFee(address,uint256)", OWNER, uint256(0)), empty
+        );
+        _assertEmptyRevert(address(factory), abi.encodeWithSignature("setFlashFee(uint256)", uint256(0)), empty);
+        _assertEmptyRevert(address(factory), abi.encodeWithSignature("toggleFlashAsset(address)", OWNER), empty);
+        _assertEmptyRevert(address(factory), abi.encodeWithSignature("execute(address,bytes)", OWNER, bytes("")), empty);
+    }
+
+    function test_SetStreamNFTDescriptor_OwnerUpdatesAndDirectOwnerCallReverts() public {
+        vm.expectEmit(true, false, false, true, address(factory));
+        emit StreamNFTDescriptorSet(address(underlying));
+        vm.prank(OWNER);
+        factory.setStreamNFTDescriptor(address(underlying));
+        assertEq(canonicalStream.nftDescriptor(), address(underlying));
+
+        vm.prank(OWNER);
+        vm.expectRevert(bytes("not admin"));
+        canonicalStream.setNFTDescriptor(address(underlying));
+
+        vm.prank(OWNER);
+        vm.expectRevert(OVRFLOFactory.ZeroAddress.selector);
+        factory.setStreamNFTDescriptor(address(0));
+
+        vm.prank(OWNER);
+        vm.expectRevert(OVRFLOFactory.NoCode.selector);
+        factory.setStreamNFTDescriptor(address(0xBEEF));
+    }
+
+    function test_CreateWithDurations_RegisteredVaultMintsUnregisteredReverts() public {
+        (OVRFLO ovrflo, OVRFLOToken token) = _deployConfiguredSystem();
+        ISablierV2LockupLinear.CreateWithDurations memory params = ISablierV2LockupLinear.CreateWithDurations({
+            sender: address(ovrflo),
+            recipient: STRANGER,
+            totalAmount: 1 ether,
+            asset: IERC20(address(token)),
+            cancelable: false,
+            transferable: true,
+            durations: ISablierV2LockupLinear.Durations({cliff: 0, total: 30 days}),
+            broker: ISablierV2LockupLinear.Broker({account: address(0), fee: 0})
+        });
+
+        vm.prank(STRANGER);
+        vm.expectRevert(bytes("not registered vault"));
+        canonicalStream.createWithDurations(params);
+
+        vm.prank(address(ovrflo));
+        token.mint(address(ovrflo), 1 ether);
+        vm.prank(address(ovrflo));
+        uint256 streamId = canonicalStream.createWithDurations(params);
+        assertEq(streamId, 1);
+        assertEq(canonicalStream.ownerOf(streamId), STRANGER);
+    }
+
+    function _assertEmptyRevert(address target, bytes memory callData, bytes memory empty) internal {
+        (bool ok, bytes memory data) = target.call(callData);
+        assertFalse(ok);
+        assertEq(data, empty);
+    }
+
     /* ---------- Helpers ---------- */
 
     function _newVault(address treasuryAddr, address underlyingAddr) internal returns (OVRFLO) {
-        return
-            new OVRFLO(
-                address(factory), treasuryAddr, underlyingAddr, "OVRFLO Wrapped Ether", "ovrfloWETH", PENDLE_ORACLE
-            );
+        return new OVRFLO(
+            address(factory), treasuryAddr, underlyingAddr, "OVRFLO Wrapped Ether", "ovrfloWETH", PENDLE_ORACLE, stream
+        );
     }
 
     function _newLending(OVRFLO ovrflo) internal returns (OVRFLOLending) {

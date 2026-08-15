@@ -78,22 +78,40 @@ contract OVRFLOProtocolTest is VaultMockHelpers {
         ptOne = new MockERC20Metadata("PT One", "PT1", 18);
         ptTwo = new MockERC20Metadata("PT Two", "PT2", 18);
 
-        ovrflo = new OVRFLO(ADMIN, TREASURY, address(underlying), "OVRFLO Underlying", "ovrUND", PENDLE_ORACLE);
+        _stubLockup();
+        ovrflo =
+            new OVRFLO(ADMIN, TREASURY, address(underlying), "OVRFLO Underlying", "ovrUND", PENDLE_ORACLE, SABLIER_LL);
         ovrfloToken = OVRFLOToken(ovrflo.ovrfloToken());
     }
 
     function test_Constructor_RevertsForZeroAddresses() public {
         vm.expectRevert(OVRFLO.ZeroAddress.selector);
-        new OVRFLO(address(0), TREASURY, address(underlying), "OVRFLO Underlying", "ovrUND", PENDLE_ORACLE);
+        new OVRFLO(address(0), TREASURY, address(underlying), "OVRFLO Underlying", "ovrUND", PENDLE_ORACLE, SABLIER_LL);
 
         vm.expectRevert(OVRFLO.ZeroAddress.selector);
-        new OVRFLO(ADMIN, address(0), address(underlying), "OVRFLO Underlying", "ovrUND", PENDLE_ORACLE);
+        new OVRFLO(ADMIN, address(0), address(underlying), "OVRFLO Underlying", "ovrUND", PENDLE_ORACLE, SABLIER_LL);
 
         vm.expectRevert(OVRFLO.ZeroAddress.selector);
-        new OVRFLO(ADMIN, TREASURY, address(0), "OVRFLO Underlying", "ovrUND", PENDLE_ORACLE);
+        new OVRFLO(ADMIN, TREASURY, address(0), "OVRFLO Underlying", "ovrUND", PENDLE_ORACLE, SABLIER_LL);
 
         vm.expectRevert(OVRFLO.ZeroAddress.selector);
-        new OVRFLO(ADMIN, TREASURY, address(underlying), "OVRFLO Underlying", "ovrUND", address(0));
+        new OVRFLO(ADMIN, TREASURY, address(underlying), "OVRFLO Underlying", "ovrUND", address(0), SABLIER_LL);
+
+        vm.expectRevert(OVRFLO.ZeroAddress.selector);
+        new OVRFLO(ADMIN, TREASURY, address(underlying), "OVRFLO Underlying", "ovrUND", PENDLE_ORACLE, address(0));
+
+        vm.expectRevert(OVRFLO.NoCode.selector);
+        new OVRFLO(ADMIN, TREASURY, address(underlying), "OVRFLO Underlying", "ovrUND", PENDLE_ORACLE, address(0xBEEF));
+    }
+
+    function test_Constructor_BindsStreamLastAndKeepsSablierLLGetter() public view {
+        assertEq(address(ovrflo.sablierLL()), SABLIER_LL);
+    }
+
+    function test_VaultAbi_HasNoOvrfloStreamGetter() public {
+        (bool ok, bytes memory data) = address(ovrflo).staticcall(abi.encodeWithSignature("ovrfloStream()"));
+        assertFalse(ok);
+        assertEq(data, "");
     }
 
     function test_SetSeriesApproved_SetsStateApprovesSablierAndEmitsEvent() public {

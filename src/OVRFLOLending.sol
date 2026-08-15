@@ -295,6 +295,11 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
     ///      once per loan, on BOTH closure paths: the permissionless `close` draw and a
     ///      full `repay` (which emits `Repaid(…, 0)` first and leaves `drawn` untouched).
     event Closed(uint256 indexed loanId, uint128 drawn);
+    /// @notice Emitted when settlement disposes of the pledged stream NFT.
+    /// @dev Fires on `close` and on `repay` when remaining is zero, on both the burn
+    ///      branch and the return branch. A burn `Transfer` to `address(0)` does not
+    ///      carry the borrower; this event does. Does not fire on `claim`.
+    event StreamDisposed(uint256 indexed loanId, address indexed borrower, uint256 streamId, bool burned);
     /// @notice Emitted when a contributing position is paid its pro-rata share.
     /// @dev `receivedTotal` is the absolute cumulative payout for the pair.
     event Claimed(uint256 indexed loanId, uint256 indexed positionId, uint128 amount, uint128 receivedTotal);
@@ -582,15 +587,16 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
     /// @dev Never market-gated: a matured series winds down through this path (KTD7).
     ///      Repayment is at face by design — an early repayment hands lenders their
     ///      promised fixed amount sooner, never a discounted one. Anyone may repay:
-    ///      the funds come from `msg.sender` while the released stream always returns
-    ///      to `loan.borrower`, so a third-party repayment is a donation with no
-    ///      lender-side or borrower-side downside, and the error catalog carries no
-    ///      caller check for this path. The `amount == outstanding` closure test
-    ///      cannot brick: `outstanding` is always an exact integer wei and
-    ///      ovrfloToken has 18-decimal granularity (see
+    ///      the funds come from `msg.sender` while a completing repay disposes of the
+    ///      stream (burn if depleted, else return to `loan.borrower`), so a third-party
+    ///      repayment is a donation with no lender-side or borrower-side downside, and
+    ///      the error catalog carries no caller check for this path. The
+    ///      `amount == outstanding` closure test cannot brick: `outstanding` is always
+    ///      an exact integer wei and ovrfloToken has 18-decimal granularity (see
     ///      `docs/solutions/security-issues/repayloan-equality-rounding-no-brick-OVRFLOBook-20260624.md`).
     ///      A full repayment emits `Repaid(…, 0)` and then `Closed(loanId, drawn)`, so
-    ///      one terminal signal covers both closure paths.
+    ///      one terminal signal covers both closure paths. `StreamDisposed` fires on
+    ///      the completing path as well.
     /// @param loanId The loan to repay.
     /// @param amount ovrfloToken to repay; must not exceed the outstanding.
     function repay(uint256 loanId, uint128 amount) external nonReentrant {
@@ -606,7 +612,7 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
         proceeds[loanId] += amount;
 
         _pullExact(IERC20(ovrfloToken), msg.sender, address(this), amount);
-        if (remaining == 0) sablier.transferFrom(address(this), loan.borrower, loan.streamId);
+        if (remaining == 0) _disposeStream(loanId, loan.borrower, loan.streamId);
 
         emit Repaid(loanId, amount, remaining);
         // `Closed` fires exactly once per loan, on whichever path ends it. Repay does
@@ -614,14 +620,16 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
         if (remaining == 0) emit Closed(loanId, loan.drawn);
     }
 
-    /// @notice Settles a covered loan from its stream and returns the stream NFT.
+    /// @notice Settles a covered loan from its stream and disposes of the stream NFT.
     /// @dev Permissionless and never market-gated (KTD7): once the stream's
     ///      withdrawable covers the outstanding, anyone may make the lenders whole.
     ///      Reverts `NotCovered` while the accrual is short of the outstanding, and
     ///      `LoanClosed` on a second call. Also reclaims an already-satisfied stream
-    ///      (`outstanding == 0`), which draws nothing. The NFT moves with plain
-    ///      `transferFrom` — never `safeTransferFrom` — leaving no
-    ///      `onERC721Received` callback surface (plan risk #6).
+    ///      (`outstanding == 0`), which draws nothing. After money movement, an empty
+    ///      stream is burned and a residual stream returns to the borrower. The NFT
+    ///      moves with plain `transferFrom` — never `safeTransferFrom` — leaving no
+    ///      `onERC721Received` callback surface (plan risk #6). Burn revert falls
+    ///      through to return. The branch is `isDepleted`, never a zero withdrawable.
     /// @param loanId The loan to close.
     function close(uint256 loanId) external nonReentrant {
         Loan storage loan = _liveLoan(loanId);
@@ -638,7 +646,7 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
             proceeds[loanId] += outstanding;
             sablier.withdraw(streamId, address(this), outstanding);
         }
-        sablier.transferFrom(address(this), loan.borrower, streamId);
+        _disposeStream(loanId, loan.borrower, streamId);
 
         emit Closed(loanId, drawn);
     }
@@ -1185,5 +1193,22 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
         token.safeTransferFrom(from, to, amount);
         uint256 balanceAfter = token.balanceOf(to);
         if (balanceAfter - balanceBefore != amount) revert TransferMismatch();
+    }
+
+    /// @dev Dispose of a pledged stream after money movement. Burn a depleted NFT;
+    ///      otherwise return it. A reverting burn falls through to return so settlement
+    ///      money movement never depends on disposal. Uses plain `transferFrom`.
+    function _disposeStream(uint256 loanId, address borrower, uint256 streamId) internal {
+        bool burned;
+        if (sablier.isDepleted(streamId)) {
+            try sablier.burn(streamId) {
+                burned = true;
+            } catch {
+                sablier.transferFrom(address(this), borrower, streamId);
+            }
+        } else {
+            sablier.transferFrom(address(this), borrower, streamId);
+        }
+        emit StreamDisposed(loanId, borrower, streamId, burned);
     }
 }

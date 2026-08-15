@@ -9,6 +9,7 @@ import {OVRFLOFactory} from "../src/OVRFLOFactory.sol";
 import {IPendleOracle} from "../interfaces/IPendleOracle.sol";
 import {ISablierV2LockupLinear} from "../interfaces/ISablierV2LockupLinear.sol";
 import {VaultMockHelpers} from "./helpers/VaultMockHelpers.sol";
+import {FactoryStreamBind} from "./helpers/FactoryStreamBind.sol";
 import {IFlashBorrower} from "../interfaces/IFlashBorrower.sol";
 
 contract MockERC20 is ERC20 {
@@ -128,7 +129,7 @@ contract FlashBorrower is IFlashBorrower {
     }
 }
 
-contract OVRFLOFlashLoanTest is VaultMockHelpers {
+contract OVRFLOFlashLoanTest is VaultMockHelpers, FactoryStreamBind {
     event FlashLoaned(address indexed borrower, address indexed ptToken, uint256 amount, uint256 fee);
     event FlashFeeBpsSet(uint16 feeBps);
     event FlashLoanPausedSet(bool paused);
@@ -156,7 +157,8 @@ contract OVRFLOFlashLoanTest is VaultMockHelpers {
         underlying = new MockERC20("Underlying", "UND");
         pt = new MockERC20("PT Token", "PT");
 
-        ovrflo = new OVRFLO(ADMIN, TREASURY, address(underlying), "OVRFLO UND", "ovrfloUND", PENDLE_ORACLE);
+        _stubLockup();
+        ovrflo = new OVRFLO(ADMIN, TREASURY, address(underlying), "OVRFLO UND", "ovrfloUND", PENDLE_ORACLE, SABLIER_LL);
         ovrfloToken = OVRFLOToken(ovrflo.ovrfloToken());
 
         user = makeAddr("user");
@@ -438,8 +440,10 @@ contract OVRFLOFlashLoanTest is VaultMockHelpers {
     function test_Defaults() public {
         // Fresh vault
         MockERC20 freshUnderlying = new MockERC20("Fresh", "FR");
-        OVRFLO freshOvrflo =
-            new OVRFLO(ADMIN, TREASURY, address(freshUnderlying), "OVRFLO Fresh", "ovrfloFR", PENDLE_ORACLE);
+        _stubLockup();
+        OVRFLO freshOvrflo = new OVRFLO(
+            ADMIN, TREASURY, address(freshUnderlying), "OVRFLO Fresh", "ovrfloFR", PENDLE_ORACLE, SABLIER_LL
+        );
 
         assertEq(freshOvrflo.flashFeeBps(), 0, "Default fee should be 0");
         assertFalse(freshOvrflo.flashLoanPaused(), "Default pause should be false");
@@ -763,8 +767,12 @@ contract OVRFLOFlashLoanTest is VaultMockHelpers {
     /// @return vault The OVRFLO vault registered with the factory
     function _deployViaFactory() internal returns (OVRFLOFactory factory, OVRFLO vault) {
         factory = new OVRFLOFactory(FACTORY_OWNER, PENDLE_ORACLE);
-
-        vault = new OVRFLO(address(factory), TREASURY, address(underlying), "OVRFLO UND", "ovrfloUND", PENDLE_ORACLE);
+        vm.prank(FACTORY_OWNER);
+        address stream = _bindCanonicalStream(factory);
+        _stubLockup();
+        vault = new OVRFLO(
+            address(factory), TREASURY, address(underlying), "OVRFLO UND", "ovrfloUND", PENDLE_ORACLE, stream
+        );
 
         vm.prank(FACTORY_OWNER);
         factory.registerOvrflo(address(vault));

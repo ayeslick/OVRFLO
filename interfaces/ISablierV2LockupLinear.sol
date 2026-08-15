@@ -82,5 +82,27 @@ interface ISablierV2LockupLinear {
     function transferFrom(address from, address to, uint256 tokenId) external;
 
     function ownerOf(uint256 tokenId) external view returns (address owner);
+
+    /// @notice Burns a depleted OVRFLO Stream NFT. Reverts unless the stream is depleted
+    ///         and the caller is the NFT owner or an approved operator.
+    function burn(uint256 streamId) external;
+
+    /// @notice Whether the stream has been marked depleted. Latches on a withdrawing
+    ///         draw that empties remaining face; it is not derived from a zero
+    ///         withdrawable read.
+    function isDepleted(uint256 streamId) external view returns (bool result);
+
+    /// @notice Immutable factory recorded at lockup construction (`initialAdmin`).
+    function factory() external view returns (address);
+
+    /// @notice Current lockup admin. Production sets this to the OVRFLO factory.
+    function admin() external view returns (address);
+
+    /// @notice Comptroller bound to this lockup.
+    function comptroller() external view returns (address);
+
+    /// @notice Sets the NFT descriptor. `onlyAdmin` on the lockup; the factory
+    ///         forwards via `setStreamNFTDescriptor`.
+    function setNFTDescriptor(address descriptor) external;
 }
 

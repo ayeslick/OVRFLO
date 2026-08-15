@@ -14,6 +14,12 @@ abstract contract VaultMockHelpers is Test {
     address internal constant SABLIER_LL = 0xAFb979d9afAd1aD27C5eFf4E27226E3AB9e5dCC9;
     uint32 internal constant TWAP_DURATION = 30 minutes;
 
+    function _stubLockup() internal {
+        if (SABLIER_LL.code.length == 0) {
+            vm.etch(SABLIER_LL, hex"00");
+        }
+    }
+
     function _mockRate(address market, uint256 rateE18) internal {
         vm.mockCall(
             PENDLE_ORACLE, abi.encodeCall(IPendleOracle.getPtToSyRate, (market, TWAP_DURATION)), abi.encode(rateE18)

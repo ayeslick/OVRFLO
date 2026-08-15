@@ -5,6 +5,7 @@ import {OVRFLO} from "../../src/OVRFLO.sol";
 import {OVRFLOFactory} from "../../src/OVRFLOFactory.sol";
 import {OVRFLOToken} from "../../src/OVRFLOToken.sol";
 import {IPendleOracle} from "../../interfaces/IPendleOracle.sol";
+import {MockSablier, MockSablierComptroller} from "../../test/fizz/mocks/MockSablier.sol";
 
 /// @notice Shared mainnet-fork fixtures consumed by both Forge fork tests
 ///         (test/fork/*) and Forge seed scripts (script/Seed*.s.sol). Pure
@@ -34,14 +35,26 @@ abstract contract OVRFLOTestFixtures {
     /// @notice Deploy the factory + OVRFLO (which constructs its own token) against
     ///         wstETH, then register the vault. Caller must already hold the `owner`
     ///         role on the calling context (`vm.startPrank(owner)` in tests,
-    ///         broadcast-as-owner in scripts) because `registerOvrflo` is onlyOwner.
+    ///         broadcast-as-owner in scripts) because `setOvrfloStream` and
+    ///         `registerOvrflo` are onlyOwner. Binds `MockSablier` as the canonical
+    ///         stream so registration succeeds. Ticket 06 replaces this with the
+    ///         committed fork artifacts.
     function _deployConfiguredSystemAs(address owner)
         internal
         returns (OVRFLOFactory factory, OVRFLO ovrflo, OVRFLOToken token)
     {
         factory = new OVRFLOFactory(owner, address(ORACLE));
+        MockSablierComptroller comptroller = new MockSablierComptroller(address(factory));
+        MockSablier stream = new MockSablier(address(factory), address(factory), address(comptroller));
+        factory.setOvrfloStream(address(stream));
         ovrflo = new OVRFLO(
-            address(factory), TREASURY, WSTETH, "OVRFLO Wrapped Staked Ether", "ovrfloWSTETH", address(ORACLE)
+            address(factory),
+            TREASURY,
+            WSTETH,
+            "OVRFLO Wrapped Staked Ether",
+            "ovrfloWSTETH",
+            address(ORACLE),
+            address(stream)
         );
         factory.registerOvrflo(address(ovrflo));
         token = OVRFLOToken(ovrflo.ovrfloToken());

@@ -494,11 +494,7 @@ abstract contract OVRFLOLendingHandler is Properties {
         if (!instrumented) return;
         property_repay_faceValue_timeIndependent(loanId, outstandingBefore, amount); // SP-11
         property_repay_postconditions(
-            loanId,
-            repaidBefore,
-            amount,
-            outstandingBefore,
-            MockSablier(SABLIER_ADDR).ownerOf(pledgedStreamId) == borrowerBefore
+            loanId, repaidBefore, amount, outstandingBefore, _streamDisposedToBorrower(pledgedStreamId, borrowerBefore)
         ); // SP-16
     }
 
@@ -519,7 +515,7 @@ abstract contract OVRFLOLendingHandler is Properties {
 
         if (!instrumented) return;
         property_close_zeroOutstanding(
-            loanId, outstandingBefore, drawnBefore, MockSablier(SABLIER_ADDR).ownerOf(pledgedStreamId) == borrowerBefore
+            loanId, outstandingBefore, drawnBefore, _streamDisposedToBorrower(pledgedStreamId, borrowerBefore)
         ); // SP-15
     }
 

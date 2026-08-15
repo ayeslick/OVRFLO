@@ -8,6 +8,12 @@ import {OVRFLOLending} from "./OVRFLOLending.sol";
 import {IPendleMarket} from "../interfaces/IPendleMarket.sol";
 import {IPendleOracle} from "../interfaces/IPendleOracle.sol";
 import {IStandardizedYield} from "../interfaces/IStandardizedYield.sol";
+import {ISablierV2LockupLinear} from "../interfaces/ISablierV2LockupLinear.sol";
+
+/// @dev Comptroller `admin()` read used only by `setOvrfloStream`. Not a new named protocol contract.
+interface IStreamComptrollerAdmin {
+    function admin() external view returns (address);
+}
 
 /// @title OVRFLOFactory
 /// @notice Registry and admin hub for externally deployed OVRFLO systems
@@ -63,7 +69,26 @@ contract OVRFLOFactory is Ownable2Step {
     error TwapTooShort();
     /// @dev `twapDuration` exceeds `MAX_TWAP_DURATION`.
     error TwapTooLong();
+    /// @dev Canonical OVRFLO Stream is not set yet.
+    error OvrfloStreamUnset();
+    /// @dev `setOvrfloStream` was already called.
+    error OvrfloStreamAlreadySet();
+    /// @dev The candidate binds a stream other than `ovrfloStream`.
+    error StreamNotCanonical();
+    /// @dev `stream.factory()` is not this factory.
+    error StreamFactoryMismatch();
+    /// @dev `stream.admin()` is not this factory.
+    error StreamAdminMismatch();
+    /// @dev `stream.comptroller().admin()` is not this factory.
+    error ComptrollerAdminMismatch();
+    /// @dev The supplied address has no code.
+    error NoCode();
 
+    /// @notice Registry row for one OVRFLO vault.
+    /// @dev Field 0 is `treasury` and stays field 0. The off-repo OVRFLO Stream mint
+    ///      gate (`IOVRFLOFactoryRegistry.ovrfloInfo`) reads this tuple positionally.
+    ///      `src/StreamPricing.sol` holds a third hand-written copy of the same order.
+    ///      A field reorder would keep the mint gate passing while reading `underlying`.
     struct OvrfloInfo {
         address treasury;
         address underlying;
@@ -96,6 +121,9 @@ contract OVRFLOFactory is Ownable2Step {
     /// @notice Pendle TWAP oracle address (singleton, same for all markets)
     address public immutable oracle;
 
+    /// @notice Canonical OVRFLO Stream lockup. Set once via `setOvrfloStream`.
+    address public ovrfloStream;
+
     /*//////////////////////////////////////////////////////////////
                                 EVENTS
     //////////////////////////////////////////////////////////////*/
@@ -108,6 +136,8 @@ contract OVRFLOFactory is Ownable2Step {
     event LendingFeeSet(address indexed lending, uint16 feeBps);
     event LendingTreasurySet(address indexed lending, address indexed treasury);
     event LendingTickSpacingSet(address indexed lending, address indexed market, uint16 spacing);
+    event OvrfloStreamSet(address indexed stream);
+    event StreamNFTDescriptorSet(address indexed descriptor);
 
     /*//////////////////////////////////////////////////////////////
                               CONSTRUCTOR
@@ -141,6 +171,8 @@ contract OVRFLOFactory is Ownable2Step {
         if (ovrfloInfo[ovrflo].treasury != address(0)) revert AlreadyRegistered();
 
         OVRFLO vault = OVRFLO(ovrflo);
+        if (ovrfloStream == address(0)) revert OvrfloStreamUnset();
+        if (address(vault.sablierLL()) != ovrfloStream) revert StreamNotCanonical();
         if (vault.factory() != address(this)) revert FactoryMismatch();
         if (vault.oracle() != oracle) revert OracleMismatch();
 
@@ -164,6 +196,10 @@ contract OVRFLOFactory is Ownable2Step {
     ///      factory's registry (it reverts unless its core is registered here), so only the
     ///      factory, owner, and Sablier bindings need verification. The factory must be the
     ///      lending's owner so all admin calls flow through the factory forwarders.
+    ///      `SablierMismatch` still means vault and lending bind different streams.
+    ///      `StreamNotCanonical` means the bound stream is not `ovrfloStream`. This
+    ///      function does not re-check `stream.factory()`, `stream.admin()`, or
+    ///      `comptroller.admin()` — `setOvrfloStream` already did.
     /// @param lending The externally deployed OVRFLOLending address
     function registerLending(address lending) external onlyOwner {
         if (lending == address(0)) revert ZeroAddress();
@@ -175,6 +211,8 @@ contract OVRFLOFactory is Ownable2Step {
         if (address(lendingMarket.factory()) != address(this)) revert FactoryMismatch();
         if (lendingMarket.owner() != address(this)) revert OwnerMismatch();
         if (address(lendingMarket.sablier()) != address(OVRFLO(ovrflo).sablierLL())) revert SablierMismatch();
+        if (ovrfloStream == address(0)) revert OvrfloStreamUnset();
+        if (address(lendingMarket.sablier()) != ovrfloStream) revert StreamNotCanonical();
 
         ovrfloToLending[ovrflo] = lending;
         lendingToOvrflo[lending] = ovrflo;
@@ -317,6 +355,41 @@ contract OVRFLOFactory is Ownable2Step {
         _requireKnownLending(lending);
         OVRFLOLending(lending).setTickSpacing(market, spacing);
         emit LendingTickSpacingSet(lending, market, spacing);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                     OVRFLO STREAM (FACTORY-FORWARDED)
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Admit the canonical OVRFLO Stream lockup. Callable once.
+    /// @dev The factory is deployed before the lockup, so this cannot be a constructor
+    ///      argument. Production and seed pass the factory as `initialAdmin` on the
+    ///      lockup and the comptroller — never the Safe, never the deployer.
+    /// @param stream Lockup address (`SablierV2LockupLinear`, identity OVRFLOStream).
+    function setOvrfloStream(address stream) external onlyOwner {
+        if (ovrfloStream != address(0)) revert OvrfloStreamAlreadySet();
+        if (stream == address(0)) revert ZeroAddress();
+        if (stream.code.length == 0) revert NoCode();
+
+        ISablierV2LockupLinear lockup = ISablierV2LockupLinear(stream);
+        if (lockup.factory() != address(this)) revert StreamFactoryMismatch();
+        if (lockup.admin() != address(this)) revert StreamAdminMismatch();
+        if (IStreamComptrollerAdmin(lockup.comptroller()).admin() != address(this)) revert ComptrollerAdminMismatch();
+
+        ovrfloStream = stream;
+        emit OvrfloStreamSet(stream);
+    }
+
+    /// @notice Forward `setNFTDescriptor` to the canonical lockup. No vault argument.
+    /// @dev One lockup serves every registered vault. A vault parameter would select
+    ///      nothing while looking vault-scoped.
+    /// @param descriptor OVRFLOStreamDescriptor (or any ISablierV2NFTDescriptor).
+    function setStreamNFTDescriptor(address descriptor) external onlyOwner {
+        if (ovrfloStream == address(0)) revert OvrfloStreamUnset();
+        if (descriptor == address(0)) revert ZeroAddress();
+        if (descriptor.code.length == 0) revert NoCode();
+        ISablierV2LockupLinear(ovrfloStream).setNFTDescriptor(descriptor);
+        emit StreamNFTDescriptorSet(descriptor);
     }
 
     /*//////////////////////////////////////////////////////////////

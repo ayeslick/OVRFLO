@@ -161,9 +161,29 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
         );
     }
 
-    /// @notice GL-08: every open loan's pledged stream is owned by the lending market,
-    ///         and no two simultaneously open loans share a stream. The run-id marker
-    ///         keeps the duplicate scan O(n) without a clearing pass.
+    /// @notice SC10: for every actor, mock `balanceOf` equals the ownership-filtered
+    ///         mirror and `tokensOfOwnerIn(actor, 0, balanceOf)` is exactly that id set.
+    function property_actorStreamEnumeration() public {
+        for (uint256 a; a < actors.length; ++a) {
+            address who = actors[a];
+            uint256[] storage mirror = actorStreams[who];
+            uint256 live;
+            for (uint256 i; i < mirror.length; ++i) {
+                if (burnedStreams[mirror[i]]) continue;
+                if (_ownerOfOrZero(mirror[i]) == who) live += 1;
+            }
+            MockSablier sablierMock = MockSablier(SABLIER_ADDR);
+            uint256 bal = sablierMock.balanceOf(who);
+            eq(bal, live, "SC10: balanceOf != ownership-filtered mirror");
+            uint256[] memory ids = sablierMock.tokensOfOwnerIn(who, 0, bal == 0 ? 1 : bal);
+            eq(ids.length, live, "SC10: tokensOfOwnerIn length != live mirror");
+            for (uint256 j; j < ids.length; ++j) {
+                t(_ownerOfOrZero(ids[j]) == who, "SC10: enumerated id is not owned by the actor");
+                t(!burnedStreams[ids[j]], "SC10: enumerated a burned id");
+            }
+        }
+    }
+
     function property_openLoan_streamCustody() public {
         ghosts.runId += 1;
         uint256 runId = ghosts.runId;
@@ -875,7 +895,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     ) internal {
         (bool closed,,,, uint128 drawn,) = _sp_loanFields(loanId);
         t(closed, "SP-15: close returned without latching closed");
-        t(streamReturnedToBorrower, "SP-15: close did not return the stream to the borrower");
+        t(streamReturnedToBorrower, "SP-15: close did not dispose the stream to the borrower");
         if (outstandingBefore == 0) {
             eq(drawn, drawnBefore, "SP-15: close of a zero-outstanding loan changed drawn");
         } else {
@@ -896,7 +916,7 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
         eq(repaid, uint256(repaidBefore) + amount, "SP-16: repay moved repaid by other than the amount");
         if (amount == outstandingBefore) {
             t(closed, "SP-16: full repay did not latch closed");
-            t(streamOwnedByBorrower, "SP-16: full repay did not return the stream to the borrower");
+            t(streamOwnedByBorrower, "SP-16: full repay did not dispose the stream to the borrower");
         } else {
             t(!closed, "SP-16: partial repay latched closed");
         }

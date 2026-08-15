@@ -226,6 +226,7 @@ contract LendingInvariantHandler is Test {
     uint256[] public positionIds;
     uint256[] public loanIds;
     uint256[] public streamIds;
+    mapping(uint256 => bool) public burnedStreams;
 
     /// @dev apr => epoch => position ids appended to that tape, in leaf order.
     mapping(uint16 => mapping(uint32 => uint256[])) internal epochPositions;
@@ -697,8 +698,9 @@ contract LendingInvariantHandler is Test {
         for (uint256 i = 0; i < streamIds.length; ++i) {
             uint256 streamId = streamIds[_offsetIndex(seed, i, streamIds.length)];
             if (!streamWasPledged[streamId]) continue;
-            address owner = sablier.ownerOf(streamId);
-            if (owner == address(lending)) continue;
+            if (burnedStreams[streamId]) continue;
+            address owner = _ownerOfOrZero(streamId);
+            if (owner == address(0) || owner == address(lending)) continue;
             if (sablier.getDepositedAmount(streamId) <= sablier.getWithdrawnAmount(streamId)) continue;
 
             uint16 aprBps = _tick(seed);
@@ -1101,6 +1103,15 @@ contract LendingInvariantHandler is Test {
         if (g.closedSeen) return;
         g.closedSeen = true;
         g.withdrawnAtClose = sablier.getWithdrawnAmount(g.streamId);
+        if (_ownerOfOrZero(g.streamId) == address(0)) burnedStreams[g.streamId] = true;
+    }
+
+    function _ownerOfOrZero(uint256 streamId) internal view returns (address owner) {
+        try sablier.ownerOf(streamId) returns (address o) {
+            return o;
+        } catch {
+            return address(0);
+        }
     }
 
     function _tallyOverVested() internal {
@@ -1193,7 +1204,8 @@ contract LendingInvariantHandler is Test {
     function _freeStreamOf(address actor) internal view returns (uint256) {
         for (uint256 i = 0; i < streamIds.length; ++i) {
             uint256 streamId = streamIds[i];
-            if (sablier.ownerOf(streamId) != actor) continue;
+            if (burnedStreams[streamId]) continue;
+            if (_ownerOfOrZero(streamId) != actor) continue;
             if (sablier.getDepositedAmount(streamId) <= sablier.getWithdrawnAmount(streamId)) continue;
             return streamId;
         }

@@ -4,6 +4,20 @@ pragma solidity ^0.8.20;
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ISablierV2LockupLinear} from "../../../interfaces/ISablierV2LockupLinear.sol";
+import {IOVRFLOFactoryRegistry} from "../../../src/StreamPricing.sol";
+
+/// @notice Comptroller stub whose `admin()` `setOvrfloStream` reads.
+contract MockSablierComptroller {
+    address public admin;
+
+    constructor(address admin_) {
+        admin = admin_;
+    }
+
+    function setAdmin(address admin_) external {
+        admin = admin_;
+    }
+}
 
 contract MockSablier is ISablierV2LockupLinear {
     using SafeERC20 for IERC20;
@@ -19,15 +33,44 @@ contract MockSablier is ISablierV2LockupLinear {
         uint128 withdrawnAmount;
         bool cancelable;
         bool transferable;
+        bool depleted;
     }
+
+    address public immutable override factory;
+    address public immutable override admin;
+    address public immutable override comptroller;
+
+    address public nftDescriptor;
+    bool public burnReverts;
 
     mapping(uint256 => StreamData) private streams;
     mapping(uint256 => address) private owners;
     mapping(uint256 => address) public getApproved;
     mapping(address => mapping(address => bool)) public isApprovedForAll;
+    mapping(address => uint256[]) private ownedTokens;
+    mapping(uint256 => uint256) private ownedIndexPlusOne;
     uint256 public nextStreamId; // starts at 0, pre-increment gives ID 1 first
 
+    constructor(address factory_, address admin_, address comptroller_) {
+        factory = factory_;
+        admin = admin_;
+        comptroller = comptroller_;
+    }
+
+    function setNFTDescriptor(address descriptor) external override {
+        require(msg.sender == admin, "not admin");
+        nftDescriptor = descriptor;
+    }
+
+    function setBurnReverts(bool v) external {
+        burnReverts = v;
+    }
+
     function createWithDurations(CreateWithDurations calldata params) external returns (uint256 streamId) {
+        if (factory != address(0)) {
+            (address treasury,,) = IOVRFLOFactoryRegistry(factory).ovrfloInfo(msg.sender);
+            require(treasury != address(0), "not registered vault");
+        }
         streamId = ++nextStreamId;
         uint40 start = uint40(block.timestamp);
         streams[streamId] = StreamData({
@@ -40,9 +83,10 @@ contract MockSablier is ISablierV2LockupLinear {
             depositedAmount: params.totalAmount,
             withdrawnAmount: 0,
             cancelable: params.cancelable,
-            transferable: params.transferable
+            transferable: params.transferable,
+            depleted: false
         });
-        owners[streamId] = params.recipient;
+        _addOwned(params.recipient, streamId);
         params.asset.safeTransferFrom(params.sender, address(this), params.totalAmount);
     }
 
@@ -78,6 +122,10 @@ contract MockSablier is ISablierV2LockupLinear {
         return streams[streamId].withdrawnAmount;
     }
 
+    function isDepleted(uint256 streamId) public view returns (bool) {
+        return streams[streamId].depleted;
+    }
+
     function getStream(uint256 streamId) external view returns (Stream memory) {
         StreamData memory s = streams[streamId];
         return Stream({
@@ -88,7 +136,7 @@ contract MockSablier is ISablierV2LockupLinear {
             wasCanceled: false,
             asset: s.asset,
             endTime: s.endTime,
-            isDepleted: s.depositedAmount <= s.withdrawnAmount,
+            isDepleted: s.depleted,
             isStream: s.depositedAmount > 0,
             isTransferable: s.transferable,
             amounts: Amounts({deposited: s.depositedAmount, withdrawn: s.withdrawnAmount, refunded: 0})
@@ -122,6 +170,10 @@ contract MockSablier is ISablierV2LockupLinear {
         }
         require(withdrawableAmountOf(streamId) >= amount, "insufficient");
         streams[streamId].withdrawnAmount += amount;
+        if (streams[streamId].withdrawnAmount >= streams[streamId].depositedAmount) {
+            streams[streamId].depleted = true;
+            streams[streamId].cancelable = false;
+        }
         streams[streamId].asset.safeTransfer(to, amount);
     }
 
@@ -129,6 +181,20 @@ contract MockSablier is ISablierV2LockupLinear {
         for (uint256 i; i < streamIds.length; i++) {
             withdraw(streamIds[i], to, amounts[i]);
         }
+    }
+
+    function burn(uint256 streamId) external {
+        require(!burnReverts, "burn revert");
+        require(streams[streamId].depleted, "not depleted");
+        address owner = owners[streamId];
+        require(owner != address(0), "ERC721: invalid token ID");
+        require(
+            msg.sender == owner || getApproved[streamId] == msg.sender || isApprovedForAll[owner][msg.sender],
+            "not approved"
+        );
+        _removeOwned(owner, streamId);
+        delete owners[streamId];
+        delete getApproved[streamId];
     }
 
     function approve(address to, uint256 streamId) external {
@@ -147,12 +213,48 @@ contract MockSablier is ISablierV2LockupLinear {
             msg.sender == from || getApproved[tokenId] == msg.sender || isApprovedForAll[from][msg.sender],
             "not approved"
         );
-        owners[tokenId] = to;
+        _removeOwned(from, tokenId);
+        _addOwned(to, tokenId);
         delete getApproved[tokenId];
     }
 
     function ownerOf(uint256 tokenId) external view returns (address owner) {
         owner = owners[tokenId];
         require(owner != address(0), "ERC721: invalid token ID");
+    }
+
+    function balanceOf(address owner) public view returns (uint256) {
+        return ownedTokens[owner].length;
+    }
+
+    function tokensOfOwnerIn(address owner, uint256 start, uint256 stop) external view returns (uint256[] memory ids) {
+        require(start < stop, "invalid range");
+        uint256 bal = ownedTokens[owner].length;
+        if (bal == 0 || start >= bal) return new uint256[](0);
+        uint256 exclusiveEnd = stop > bal ? bal : stop;
+        ids = new uint256[](exclusiveEnd - start);
+        for (uint256 i = start; i < exclusiveEnd; ++i) {
+            ids[i - start] = ownedTokens[owner][i];
+        }
+    }
+
+    function _addOwned(address to, uint256 tokenId) private {
+        owners[tokenId] = to;
+        ownedTokens[to].push(tokenId);
+        ownedIndexPlusOne[tokenId] = ownedTokens[to].length;
+    }
+
+    function _removeOwned(address from, uint256 tokenId) private {
+        uint256 idx = ownedIndexPlusOne[tokenId];
+        require(idx != 0, "not owned");
+        uint256 last = ownedTokens[from].length - 1;
+        uint256 swapped = ownedTokens[from][last];
+        if (idx - 1 != last) {
+            ownedTokens[from][idx - 1] = swapped;
+            ownedIndexPlusOne[swapped] = idx;
+        }
+        ownedTokens[from].pop();
+        delete ownedIndexPlusOne[tokenId];
+        delete owners[tokenId];
     }
 }

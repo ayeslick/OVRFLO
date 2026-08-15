@@ -252,7 +252,10 @@ contract OVRFLOInvariantTest is Test {
         underlying = new TestERC20("Underlying", "UND");
         pt = new TestERC20("PT", "PT");
         admin = new MockOvrfloAdmin(address(0), address(0), address(0));
-        ovrflo = new OVRFLO(address(admin), TREASURY, address(underlying), "OVRFLO Underlying", "ovrfloUND", ORACLE);
+        if (SABLIER_LL.code.length == 0) vm.etch(SABLIER_LL, hex"00");
+        ovrflo = new OVRFLO(
+            address(admin), TREASURY, address(underlying), "OVRFLO Underlying", "ovrfloUND", ORACLE, SABLIER_LL
+        );
         ovrfloToken = OVRFLOToken(ovrflo.ovrfloToken());
 
         admin.setInfo(TREASURY, address(underlying), address(ovrfloToken));

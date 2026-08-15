@@ -146,6 +146,8 @@ contract MockLendingSablier {
     mapping(uint256 => address) internal owners;
     mapping(uint256 => address) public getApproved;
     mapping(address => mapping(address => bool)) public isApprovedForAll;
+    mapping(uint256 => bool) internal depleted;
+    bool public burnReverts;
 
     function setStream(
         uint256 streamId,
@@ -271,7 +273,7 @@ contract MockLendingSablier {
             wasCanceled: false,
             asset: s.asset,
             endTime: s.endTime,
-            isDepleted: s.deposited <= s.withdrawn,
+            isDepleted: depleted[streamId],
             isStream: s.deposited > 0,
             isTransferable: true,
             amounts: AmountsView({deposited: s.deposited, withdrawn: s.withdrawn, refunded: 0})
@@ -284,12 +286,40 @@ contract MockLendingSablier {
         return stream.withdrawable < remaining ? stream.withdrawable : remaining;
     }
 
+    function setBurnReverts(bool v) external {
+        burnReverts = v;
+    }
+
+    function setDepleted(uint256 streamId, bool v) external {
+        depleted[streamId] = v;
+    }
+
+    function isDepleted(uint256 streamId) external view returns (bool) {
+        return depleted[streamId];
+    }
+
+    function burn(uint256 streamId) external {
+        require(!burnReverts, "burn revert");
+        require(depleted[streamId], "not depleted");
+        address owner = owners[streamId];
+        require(owner != address(0), "ERC721: invalid token ID");
+        require(
+            msg.sender == owner || getApproved[streamId] == msg.sender || isApprovedForAll[owner][msg.sender],
+            "not approved"
+        );
+        delete owners[streamId];
+        delete getApproved[streamId];
+    }
+
     function withdraw(uint256 streamId, address to, uint128 amount) external {
         require(amount > 0, "amount zero");
         uint128 withdrawable = this.withdrawableAmountOf(streamId);
         require(amount <= withdrawable, "amount too high");
         streams[streamId].withdrawn += amount;
         streams[streamId].withdrawable = withdrawable - amount;
+        if (streams[streamId].withdrawn >= streams[streamId].deposited) {
+            depleted[streamId] = true;
+        }
         TestERC20(address(streams[streamId].asset)).mint(to, amount);
     }
 }

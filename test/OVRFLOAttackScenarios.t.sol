@@ -126,7 +126,8 @@ contract OVRFLOAttackScenariosTest is VaultMockHelpers {
         ptA = new TestERC20("PT-A", "PTA");
         ptB = new TestERC20("PT-B", "PTB");
 
-        ovrflo = new OVRFLO(ADMIN, TREASURY, address(underlying), "OVRFLO UND", "ovrfloUND", PENDLE_ORACLE);
+        _stubLockup();
+        ovrflo = new OVRFLO(ADMIN, TREASURY, address(underlying), "OVRFLO UND", "ovrfloUND", PENDLE_ORACLE, SABLIER_LL);
         ovrfloToken = OVRFLOToken(ovrflo.ovrfloToken());
 
         // Approve market A

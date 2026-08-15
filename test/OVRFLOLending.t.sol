@@ -104,6 +104,7 @@ contract OVRFLOLendingTest is Test {
     );
     event Repaid(uint256 indexed loanId, uint128 amount, uint128 outstanding);
     event Closed(uint256 indexed loanId, uint128 drawn);
+    event StreamDisposed(uint256 indexed loanId, address indexed borrower, uint256 streamId, bool burned);
     event Claimed(uint256 indexed loanId, uint256 indexed positionId, uint128 amount, uint128 receivedTotal);
     event EpochOpened(address indexed market, uint16 aprBps, uint32 epoch);
     event EpochCursorAdvanced(address indexed market, uint16 aprBps, uint32 fromEpoch, uint32 toEpoch);
@@ -1300,6 +1301,8 @@ contract OVRFLOLendingTest is Test {
         // Both terminal events fire, in order: `Repaid(…, outstanding = 0)` then
         // `Closed(loanId, drawn)`. `Closed` fires exactly once per loan on whichever
         // path ends it, and repay draws nothing, so the absolute `drawn` is still 0.
+        vm.expectEmit(true, true, false, true, address(lending));
+        emit StreamDisposed(loanId, BORROWER, STREAM_ONE, false);
         vm.expectEmit(true, false, false, true, address(lending));
         emit Repaid(loanId, 3.08 ether, 0);
         vm.expectEmit(true, false, false, true, address(lending));
@@ -1390,6 +1393,8 @@ contract OVRFLOLendingTest is Test {
         lending.close(loanId);
 
         sablier.setWithdrawable(STREAM_ONE, 5.1 ether);
+        vm.expectEmit(true, true, false, true, address(lending));
+        emit StreamDisposed(loanId, BORROWER, STREAM_ONE, false);
         vm.expectEmit(true, false, false, true, address(lending));
         emit Closed(loanId, 5.1 ether);
         vm.prank(STRANGER);
@@ -1450,6 +1455,8 @@ contract OVRFLOLendingTest is Test {
 
         // Permissionless close draws NOTHING and returns the NFT.
         assertEq(sablier.withdrawableAmountOf(STREAM_ONE), 0);
+        vm.expectEmit(true, true, false, true, address(lending));
+        emit StreamDisposed(loanId, BORROWER, STREAM_ONE, true);
         vm.expectEmit(true, false, false, true, address(lending));
         emit Closed(loanId, 10.2 ether);
         vm.prank(STRANGER);
@@ -1458,7 +1465,8 @@ contract OVRFLOLendingTest is Test {
         assertTrue(_loan(loanId).closed);
         assertEq(_loan(loanId).drawn, 10.2 ether);
         assertEq(sablier.getWithdrawnAmount(STREAM_ONE), 10.2 ether);
-        assertEq(sablier.ownerOf(STREAM_ONE), BORROWER);
+        vm.expectRevert(bytes("ERC721: invalid token ID"));
+        sablier.ownerOf(STREAM_ONE);
         assertEq(lending.proceeds(loanId), 0);
         assertEq(ovrfloToken.balanceOf(address(lending)), 0);
     }
@@ -1477,6 +1485,77 @@ contract OVRFLOLendingTest is Test {
 
         assertTrue(_loan(loanId).closed);
         assertEq(sablier.ownerOf(STREAM_ONE), BORROWER);
+    }
+
+    /// Completing `repay` after `claim` emptied the stream burns and emits
+    /// `StreamDisposed` with `burned = true`. Claim can latch `isDepleted` while
+    /// outstanding remains; the completing repay must not return that NFT.
+    function test_Repay_AfterClaimEmptiedStreamBurnsAndEmitsDisposed() public {
+        vm.prank(address(factory));
+        lending.setTickSpacing(MARKET, SPACING);
+        uint256 positionId = _supply(LENDER, 10 ether, APR);
+        _createStream(STREAM_ONE, BORROWER, 10.2 ether);
+        uint256 loanId = _borrow(BORROWER, 10 ether, STREAM_ONE, 10 ether);
+
+        sablier.setWithdrawable(STREAM_ONE, 1 ether);
+        vm.prank(LENDER);
+        lending.claim(loanId, positionId, 1 ether);
+        assertFalse(_loan(loanId).closed);
+        sablier.setDepleted(STREAM_ONE, true);
+        assertTrue(sablier.isDepleted(STREAM_ONE));
+
+        uint128 outstanding = 10.2 ether - 1 ether;
+        _fundOvrflo(BORROWER, outstanding);
+        vm.expectEmit(true, true, false, true, address(lending));
+        emit StreamDisposed(loanId, BORROWER, STREAM_ONE, true);
+        vm.prank(BORROWER);
+        lending.repay(loanId, outstanding);
+
+        assertTrue(_loan(loanId).closed);
+        vm.expectRevert(bytes("ERC721: invalid token ID"));
+        sablier.ownerOf(STREAM_ONE);
+    }
+
+    /// Completing `repay` on a residual transfers the NFT back (`burned = false`).
+    function test_Repay_CompletingOnResidualReturnsStream() public {
+        vm.prank(address(factory));
+        lending.setTickSpacing(MARKET, SPACING);
+        _supply(LENDER, 10 ether, APR);
+        _createStream(STREAM_ONE, BORROWER, 10.2 ether);
+        uint256 loanId = _borrow(BORROWER, 4 ether, STREAM_ONE, 4 ether);
+        _fundOvrflo(BORROWER, 4.08 ether);
+
+        vm.expectEmit(true, true, false, true, address(lending));
+        emit StreamDisposed(loanId, BORROWER, STREAM_ONE, false);
+        vm.prank(BORROWER);
+        lending.repay(loanId, 4.08 ether);
+
+        assertEq(sablier.ownerOf(STREAM_ONE), BORROWER);
+        assertFalse(sablier.isDepleted(STREAM_ONE));
+    }
+
+    /// Burn that reverts still completes money movement and returns the stream.
+    function test_Close_BurnRevertStillReturnsStream() public {
+        vm.prank(address(factory));
+        lending.setTickSpacing(MARKET, SPACING);
+        uint256 positionId = _supply(LENDER, 10 ether, APR);
+        _createStream(STREAM_ONE, BORROWER, 10.2 ether);
+        uint256 loanId = _borrow(BORROWER, 10 ether, STREAM_ONE, 10 ether);
+
+        vm.warp(expiry + 1);
+        sablier.setWithdrawable(STREAM_ONE, 10.2 ether);
+        vm.prank(LENDER);
+        lending.claim(loanId, positionId, type(uint128).max);
+        sablier.setBurnReverts(true);
+
+        uint256 proceedsBefore = lending.proceeds(loanId);
+        vm.expectEmit(true, true, false, true, address(lending));
+        emit StreamDisposed(loanId, BORROWER, STREAM_ONE, false);
+        lending.close(loanId);
+
+        assertTrue(_loan(loanId).closed);
+        assertEq(sablier.ownerOf(STREAM_ONE), BORROWER);
+        assertEq(lending.proceeds(loanId), proceedsBefore);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -1554,7 +1633,8 @@ contract OVRFLOLendingTest is Test {
 
         sablier.setWithdrawable(STREAM_ONE, 10.2 ether);
         lending.close(loanId);
-        assertEq(sablier.ownerOf(STREAM_ONE), BORROWER);
+        vm.expectRevert(bytes("ERC721: invalid token ID"));
+        sablier.ownerOf(STREAM_ONE);
         assertEq(_loan(loanId).drawn, 10.2 ether);
         assertEq(lending.proceeds(loanId), 9.2 ether);
 

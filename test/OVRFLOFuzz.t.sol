@@ -59,7 +59,8 @@ contract OVRFLOFuzzTest is VaultMockHelpers {
         underlying = new FuzzMockERC20("Underlying", "UND");
         pt = new FuzzMockERC20("PT", "PT");
 
-        ovrflo = new OVRFLO(ADMIN, TREASURY, address(underlying), "OVRFLO UND", "ovrfloUND", PENDLE_ORACLE);
+        _stubLockup();
+        ovrflo = new OVRFLO(ADMIN, TREASURY, address(underlying), "OVRFLO UND", "ovrfloUND", PENDLE_ORACLE, SABLIER_LL);
         ovrfloToken = OVRFLOToken(ovrflo.ovrfloToken());
 
         vm.prank(ADMIN);
