@@ -316,14 +316,23 @@ honour.
 `OVRFLOLending` is the natural home — it would share the computation with `borrow` and could not
 disagree with it. **It does not fit.** Measured on an isolated worktree, not in place:
 
-| Variant | Runtime | EIP-170 margin | vs the 24,064 canary |
-|---|---|---|---|
-| baseline | 23,837 | 739 | 227 under |
-| + `previewBorrow` | 24,536 | **40** | 472 **over** |
-| + `previewBorrow`, `StreamPricing` math externalised | 24,709 | **−133** | over the cap entirely |
+| Variant | Runtime | Δ | EIP-170 margin | vs the 24,064 canary |
+|---|---|---|---|---|
+| baseline | 23,837 | — | 739 | 227 under |
+| **view/write split only, no preview** | 23,858 | **+21** | 718 | 206 under |
+| + `previewBorrow`, 3 returns | 24,240 | +403 | 336 | **176 over** |
+| + `previewBorrow`, 6 returns and extra reads | 24,536 | +699 | 40 | 472 over |
+| + `previewBorrow`, `StreamPricing` math externalised | 24,709 | +872 | **−133** | over the cap entirely |
 
-`previewBorrow` costs **699 bytes**. It clears EIP-170 by 40 bytes and blows the deliberate 512-byte
-reserve by 472. Forty bytes is not a shippable margin; the canary exists to prevent exactly that.
+**Splitting the internals into a view half and a write half costs 21 bytes.** Wrapping the existing
+logic and making the writes conditional is essentially free — the shared-computation design works.
+The cost is the **external entry point**: 382 bytes for three returns, 678 for six plus the extra
+`_priceStream` and `_findEpoch` reads.
+
+So the honest position is narrower than "it does not fit". The minimal three-return form leaves
+**336 bytes of real EIP-170 margin** and overruns the deliberate 512-byte reserve by 176. Whether to
+spend part of that reserve is a judgment call the owner makes, not a hard constraint — but it is a
+one-way door on a contract that cannot be redeployed without migrating the book.
 
 **External library linking makes it worse, not better.** Converting the four pure-math functions to
 `public` — so the library deploys separately and is called by `DELEGATECALL` — *grew* the contract by

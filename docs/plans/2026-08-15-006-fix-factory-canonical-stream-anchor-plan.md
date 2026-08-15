@@ -1,99 +1,192 @@
-# Factory as the canonical stream anchor
+# Factory as the bootstrap anchor
 
 Status: requirements recorded 2026-08-15. Not build-ready (no ignorance-lens sweep).
 Independent of `2026-08-15-001` through `-005`. Ships in any order.
 
-## Problem
+## The invariant
 
-The protocol already decided which stream lockup is canonical, and the browser does not ask it.
+> The factory anchor must always be resolved before application startup. Protocol addresses
+> discovered from that anchor must remain **loading** until positively resolved, and must never be
+> represented by zero-address sentinels that can collapse into an empty protocol state.
 
-`OVRFLOFactory.ovrfloStream` is set once and never again, and registration refuses any vault or
-lending market bound to a different lockup — `registerOvrflo` and `registerLending` both revert
-`SablierMismatch`. So after the factory is configured, **the factory is the single authority on
-which stream contract is real**, and the chain enforces it.
+Everything below serves that sentence.
 
-The frontend takes a different route. `NEXT_PUBLIC_SABLIER_LOCKUP_ADDRESS` carries the address as
-its own environment variable, and the production build gate derives it independently — 
-`tools/scripts/write-deployment-artifact.mjs` reads `vault.sablierLL()` and `lending.sablier()` and
-requires the two to agree.
+## Two kinds of truth, and the app conflates them
 
-That check is not wrong, but it is checking the wrong thing. It confirms two registered children
-agree with each other, when both were already forced to agree with the factory at registration
-time. The one contract that *declares* canon is the one nobody reads.
+```
+STATIC BOOTSTRAP TRUTH — configuration. Absent = configuration failure.
+    chainId
+    factory address
+    RPC endpoints
 
-**Three sources of the same truth**: the factory's `ovrfloStream`, the vault's `sablierLL`, and an
-environment variable. Only the first is authoritative, and it is the only one the frontend does not
-consult.
+DISCOVERED PROTOCOL TRUTH — read from the chain. Unresolved = loading.
+    factory.ovrfloStream()
+    factory.ovrflos(...) / ovrfloInfo(...) / ovrfloToLending(...)
+    factory.approvedMarketAt(...)
+        ↓
+    vault.series(...) · lending state · stream state
+```
+
+You cannot bootstrap a registry without knowing where the registry is. The factory address is the
+one unavoidable static anchor, and it is not duplicated derived truth — it is the root identifier
+that lets you enter the graph. Everything reachable *from* it is discovered.
+
+An earlier draft of this plan got that backwards: it proposed resolving the stream address from the
+factory and treating an unresolved anchor as a loading state. **The factory address itself is never
+loading.** If it is absent, that is a misconfigured build, not a protocol in flight.
+
+## The collapse this prevents, verified
+
+The two rules are currently inverted — the derived address is required and the root is nullable:
+
+- `web/lib/config.ts:221` — `SABLIER_LOCKUP_ADDRESS = parseRequiredAddress(...)`. Throws on absent
+  or zero, in every profile.
+- `web/lib/config.ts:225` — `factoryAddress = parseAddress(...)`, which at `:110` degrades a missing
+  value to `ZERO_ADDRESS` outside production.
+
+And the degradation is not inert. In `web/hooks/useOvrflos.ts`:
+
+```ts
+query: { enabled: isConfiguredAddress(factory) },   // :16  — disabled when factory is zero
+const count = countRead.data ?? 0n;                 // :19  — a disabled query has no data
+```
+
+A missing factory disables the read, the read has no data, `count` becomes `0n`, and the app reports
+**zero vaults**. "Cannot ask" has become "the protocol is empty" — the same class of failure this
+codebase already fixed for streams, sitting one level further up, at the root.
 
 ## Product contract
 
-- The frontend resolves the stream lockup from `factory.ovrfloStream()`. One source.
-- `NEXT_PUBLIC_SABLIER_LOCKUP_ADDRESS` is removed, not merely deprecated. A variable that still
-  exists is a variable something still reads.
-- A factory whose `ovrfloStream` is unset fails closed — the app does not fall back to a
-  configured address, because falling back is what allows the two to disagree.
-- No behaviour change to any contract. This is a read-path change only.
+- The factory address is **required and non-zero in every profile**, including local and test.
+  `ZERO_ADDRESS` is not a legitimate runtime state for the protocol root.
+- Every address derived from the factory is **discovered**, not configured. Remove
+  `NEXT_PUBLIC_SABLIER_LOCKUP_ADDRESS`, `NEXT_PUBLIC_OVRFLO_ADDRESS`, and
+  `NEXT_PUBLIC_OVRFLO_LENDING` from runtime configuration.
+- Discovery is a discriminated union. No zero-address sentinel and no empty array stands in for an
+  unresolved read.
+- `[]` means empty **only** in the `ready` state.
+- Local and test environments get a real factory address from the bootstrap tooling. A test that
+  needs a different one injects it explicitly rather than relying on a zero fallback.
 
-## Approach
+## The shape
 
-Read the anchor from the factory, which the frontend already has as
-`NEXT_PUBLIC_OVRFLO_FACTORY`, and delete the separate variable.
+```ts
+type ProtocolBootstrap =
+  | { status: "loading" }
+  | { status: "ready"; factory: Address; stream: Address; vaults: readonly Vault[] }
+  | { status: "unavailable"; failures: readonly ReadFailure[] };
+```
 
-The build-time gate changes shape rather than disappearing. Today it derives the stream address from
-the vault and checks it against an env var. It should derive from `factory.ovrfloStream()` and check
-that the registered vault and lending market agree — the same comparison, anchored at the contract
-that enforces it. That keeps the immutable-build guarantee while removing the duplicated truth.
+Never `{ stream: ZERO_ADDRESS, vaults: [] }` while reads are outstanding.
+
+```
+factory known (static)
+        ↓
+   read the canonical graph
+        ├── still reading → LOADING
+        ├── RPC failure   → UNAVAILABLE
+        └── success       → READY
+                              │
+                           [] vaults
+                              ↑
+                    only here does [] mean empty
+```
+
+## The build gate changes anchor, not strictness
+
+Today `tools/scripts/write-deployment-artifact.mjs` derives the stream address from `vault.sablierLL()`
+and `lending.sablier()` and requires the two to agree. That check compares **two derived facts
+against each other**, when registration already forced both to agree with the factory —
+`registerOvrflo` and `registerLending` revert `SablierMismatch` otherwise.
+
+Anchor it where the authority is:
+
+```
+DEPLOYMENT ARTIFACT
+        ↓
+factory anchor
+        ├── does code exist at the address?
+        ├── is the deployment block and hash correct?
+        ├── does the registry contain vault X?
+        ├── does the factory map X → lending Y?
+        ├── is the canonical stream S?
+        └── do registered markets match the expected deployment?
+
+then, as integrity checks on the children:
+        vault.factory()   == factory
+        lending.factory() == factory
+        lending.core()    == vault
+        vault.sablierLL() == factory.ovrfloStream()
+        lending.sablier() == factory.ovrfloStream()
+```
+
+The separation this produces is the point:
+
+| | owns |
+|---|---|
+| factory registry | registry truth |
+| child immutables | integrity verification |
+| deployment artifact | historical and provenance record |
+| frontend env | bootstrap transport and configuration |
+
+**Removing a fact from browser configuration does not remove it from deployment verification.** The
+artifact should still know the vault, lending, stream, and deployment blocks. Only the browser stops
+being told them.
+
+## What the runtime environment becomes
+
+```
+NEXT_PUBLIC_CHAIN_ID
+NEXT_PUBLIC_OVRFLO_FACTORY
+NEXT_PUBLIC_RPC_URL
+NEXT_PUBLIC_RPC_FALLBACK_URLS
+```
+
+Plus build and origin metadata. Not `OVRFLO_ADDRESS`, `OVRFLO_LENDING`, `SABLIER_LOCKUP_ADDRESS`, or
+the per-contract deployment blocks and hashes, as *protocol* inputs.
+
+This also settles the permanent interface. A static HTML build carrying
+`const CHAIN_ID = 1; const FACTORY = "0x…";` is acceptable, and is about as small as the anchor gets.
+Making the factory itself discoverable — through ENS or a permanent registry — does not remove the
+anchor, it moves it one level up. Do not do that without a concrete need.
 
 ## What this touches
 
-The address crosses the same five-stage pipeline every other address does, and a change missing from
-any stage leaves the contract deployed and the browser blind:
+The address pipeline is five stages and a change missing from any one leaves the browser blind:
 
-- `web/lib/config.ts` — `SABLIER_LOCKUP_ADDRESS` is currently the **only** address using
-  `parseRequiredAddress`, so removing it changes the module-load failure surface. Confirm nothing
-  else depends on that throw.
-- `tools/scripts/write-deployment-artifact.mjs` — derive from the factory rather than the vault.
-- `web/scripts/verify-deployment-input.mjs` — the `FIELD_BINDINGS` entry.
-- `tools/scripts/write-env.sh` — both the `jq -e` assertion and the fixed `echo "NEXT_PUBLIC_..."`
-  list. A variable removed from the artifact but left in the echo list writes an empty value.
-- `script/seed-local.sh` and `deployments/local.json` — the artifact key.
-- `web/.env.example`, `web/.env.local` — regeneration required.
+- `web/lib/config.ts` — factory to `parseRequiredAddress`; delete the three derived address parsers.
+- `web/hooks/useOvrflos.ts` — the `?? 0n` collapse at `:19`, and the `enabled` gate at `:16`.
+- `tools/scripts/write-deployment-artifact.mjs` — re-anchor derivation on the factory.
+- `web/scripts/verify-deployment-input.mjs` — `FIELD_BINDINGS` loses the derived entries and gains
+  the registry checks.
+- `tools/scripts/write-env.sh` — both the `jq -e` assertion **and** the fixed
+  `echo "NEXT_PUBLIC_..."` list. A variable removed from the artifact but left in the echo list
+  writes an empty value.
+- `script/seed-local.sh`, `deployments/local.json`, `web/.env.example`, `web/.env.local`.
 
-Every consumer of `SABLIER_LOCKUP_ADDRESS` moves to the resolved value. `web/hooks/useStreams.ts` and
-`web/lib/invalidate.ts` are the notable ones — invalidation matches stream reads by finding the
-lockup address inside the serialised query key, so the resolved address must be the one that lands
-there. Check that before changing anything, or post-write refresh stops matching.
-
-## The ordering problem this creates
-
-Reading the anchor from a contract makes it **asynchronous**, where an environment variable is
-available at module load. `SABLIER_LOCKUP_ADDRESS` is imported synchronously today.
-
-That is the whole difficulty of this change, and it must be decided before building:
-
-- Resolve it once at app boot and hold it, so consumers stay synchronous.
-- Or make it a normal read and let every consumer handle a loading state.
-
-The first preserves today's shape and is almost certainly right, but it needs a stated answer for
-what the app renders while the resolution is in flight — and that answer must not be "treat it as
-unconfigured", because `isConfiguredAddress` gates reads and an unconfigured lockup renders a
-populated wallet as empty. That is the same failure mode plan `005` records for its own address.
+**Check before changing:** `web/lib/invalidate.ts` matches stream reads by finding the lockup address
+inside the serialised query key. The discovered address must be the one that lands there, or
+post-write refresh silently stops matching.
 
 ## Test accountability
 
-- **A factory with an unset `ovrfloStream` fails closed.** Assert the app reports unavailable rather
-  than falling back to any address or rendering an empty wall.
-- **Resolution in flight is loading, not empty.** Assert no book reports `ready` with zero rows
-  while the anchor is unresolved.
-- **The build gate rejects a mismatched registration.** Point the factory at one lockup and a
-  registered vault at another; assert `verify-deployment-input.mjs` fails the build. This is the
-  test that proves the gate still guards after moving its anchor.
-- **Post-write invalidation still matches.** Perform a write and assert the stream book refetches —
-  the resolved address must be the one in the query key.
+- **A zero or absent factory fails the build**, in every profile including local. Assert the module
+  throws rather than degrading.
+- **Unresolved discovery is loading, never empty.** Assert `useOvrflos` reports loading — not zero
+  vaults — while the factory read is outstanding. This is the `?? 0n` collapse; it is the reason the
+  plan exists.
+- **`[]` means empty only when ready.** Assert a successful read of a registry with no vaults is
+  `ready` with an empty list, and is distinguishable from both other states.
+- **The build gate rejects a registration the factory does not know.** Point a vault at a different
+  lockup than `factory.ovrfloStream()` and assert `verify-deployment-input.mjs` fails. This proves
+  the gate still guards after moving its anchor.
+- **Post-write invalidation still matches** once the lockup address is discovered rather than
+  configured.
 
 ## Out of scope
 
 - Any contract change. `ovrfloStream`, `SablierMismatch`, and the registration checks already exist
   and are correct.
-- The other four addresses. Factory, vault, lending, and token keep their current derivation.
-- The lens address from `2026-08-15-005`, which has no on-chain binding and is a separate decision.
+- Making the factory address itself discoverable.
+- The lens address from `2026-08-15-005`. It has no on-chain binding and is a separate decision —
+  though this plan's rule applies to it: it is configuration, so it is required, not nullable.
