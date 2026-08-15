@@ -188,5 +188,5 @@ post-write refresh silently stops matching.
 - Any contract change. `ovrfloStream`, `SablierMismatch`, and the registration checks already exist
   and are correct.
 - Making the factory address itself discoverable.
-- The lens address from `2026-08-15-005`. It has no on-chain binding and is a separate decision —
-  though this plan's rule applies to it: it is configuration, so it is required, not nullable.
+- The lens from `2026-08-15-005`. It ships deployless (bytecode in the frontend bundle), so no lens
+  address exists and nothing from it enters the bootstrap config this plan governs.

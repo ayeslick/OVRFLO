@@ -31,7 +31,8 @@ hydration on `readQuery` still stamps a coherent-looking `{blockNumber, blockHas
 - One call returns an owner's streams, hydrated. No fan-out, no multicall chunking.
 - A per-stream read that reverts degrades that one row, never the whole call. This must not regress
   from today's `allowFailure: true`.
-- The lens holds no state, has no admin, and owns nothing. It can be redeployed or replaced at will.
+- The lens holds no state, has no admin, and owns nothing. It ships deployless — bytecode in the
+  frontend bundle, no on-chain address — so replacing it is a frontend release.
 - It reads. It never writes, never holds tokens, and is never in a transaction path.
 - The complete-set consumers get the complete set in one call, with no paging loop and no budget.
 
@@ -85,8 +86,8 @@ from the same `getStream` return the lens replaces — `useStreams.ts:326-328` c
 `remaining = deposited - withdrawn - refunded` and filters on `isDepleted`, `useStreams.ts:315-318`
 passes `cliffTime` and `isCancelable` into the schedule, and `refunded` reaches `payoff.ts`,
 `ledger-card.ts`, and `BorrowFlow.tsx`. A trimmed struct forces a second `getStream` per stream,
-restoring the fan-out the lens exists to remove — and fixing it means a redeploy and an address
-rotation.
+restoring the fan-out the lens exists to remove — and fixing it means a struct change and a
+frontend release.
 
 **Empty owner:** `streamsOfOwner` returns an empty array when `balanceOf` is zero, and otherwise
 delegates. It cannot delegate unconditionally — `tokensOfOwnerIn` reverts
@@ -136,33 +137,38 @@ errors (`Errors.SablierV2Lockup_Null`), which `catch Error(string memory)` does 
 variant would let one bad stream revert the whole call, the exact regression this design exists to
 prevent.
 
-## Deployed, not deployless
+## Deployless, not deployed
 
-Both work. The decision is about machinery, not capability.
+Decision reversed 2026-08-15 (user, execution-router review). Both work; the decision is about
+machinery, and the machinery tally favors deployless.
 
 A **deployless** call ships the lens bytecode in the frontend bundle and sends it as `eth_call` data
-with no `to`. I verified this end to end: a constructor-return probe returned correctly against both
+with no `to`. Verified end to end: a constructor-return probe returned correctly against both
 the seeded local Anvil 1.5.1 fork and the configured mainnet provider, and viem supports it
 first-class — `call({ code, data })` at
 `web/node_modules/viem/_esm/actions/public/call.js:49-56`, with `code` typed at
 `_types/actions/public/call.d.ts:34`. Reports that this fails on Anvil are stale.
 
-**Deploy it anyway.** The address pipeline already exists — `NEXT_PUBLIC_*` addresses, deployment
-artifacts, `script/seed-local.sh`. Deployless would need new machinery this repo does not have:
-embedding compiled bytecode into the web bundle plus a drift gate to keep it honest, which is
-exactly the apparatus `artifacts/OVRFLOStream.json` and `check-ovrflo-stream-bytecode.mjs` provide
-for the fork and which does not exist for main-repo contracts.
+**What deployless deletes.** Deploying would make the lens the **first main-repo contract to be
+explorer-verified** — `foundry.toml` carries one `[etherscan]` entry (a Tenderly virtual testnet),
+no mainnet key, and no main-repo verification recipe exists. It would also thread a new address
+through the whole pipeline (`seed-local.sh` → `deployments/local.json` → `write-env.sh` →
+`config.ts`), force every existing `.env.local` to be reseeded, and turn every lens change into a
+redeploy plus a config migration. Deployless deletes all of it: no address, no deploy script, no
+verification recipe, no version skew — the lens and the frontend that expects its ABI ship in the
+same bundle, atomically, and work on any chain including a fresh Anvil with zero setup.
 
-An earlier draft also claimed explorer verification comes "for free". **It does not, and that claim
-is struck** — it was inflating one side of a decision that stands without it. `foundry.toml` carries
-one `[etherscan]` entry, for a Tenderly virtual testnet; there is no mainnet key, and no main-repo
-contract has a verification recipe. The only `forge verify-contract` recipe in the tree is scoped to
-the fork. **The lens would be the first main-repo contract to be explorer-verified**, so the deploy
-step adds a mainnet `[etherscan]` entry and a recipe with `--compiler-version` and
-`--optimizer-runs` pinned, in the style of the fork recipe.
+**What deployless costs.** The bundle carries the initcode (a few KB per page call as calldata),
+the lens cannot join a multicall3 batch (so `balanceOf` and the page read are two pinned calls,
+which `2026-08-15-003` requires to share a `blockHash` anyway), and the repo needs one new piece of
+machinery: the compiled bytecode embedded into the web bundle plus a **drift gate** so the embedded
+copy cannot go stale against `src/OVRFLOStreamLens.sol` — the exact apparatus
+`artifacts/OVRFLOStream.json` and `check-ovrflo-stream-bytecode.mjs` already provide for the fork,
+copied for a main-repo contract.
 
-Recorded so it is not re-litigated: **deployless is a tested fallback, not a rejected idea.** If
-deploy coordination ever becomes the bottleneck, it works today and the switch is a frontend change.
+Recorded so it is not re-litigated: **deployed is the tested fallback, not a rejected idea.** The
+same compiled bytecode deploys unchanged if a third party ever wants the lens on-chain; the switch
+back is a deploy plus a frontend call-site change.
 
 ## What this deletes
 
@@ -207,12 +213,11 @@ of `test/DeploySize.t.sol`'s `deliberate-ceiling` comments — **not** by editin
 
 - `src/OVRFLOStreamLens.sol` — new
 - `test/OVRFLOStreamLens.t.sol` — new
-- `script/` — a deploy script following the existing pattern
-- `web/lib/config.ts`, `web/.env.example` — the lens address
-- `web/wagmi.config.ts` / `web/lib/generated.ts` — the ABI
-- `web/hooks/useStreams.ts` — hydration becomes one read
+- `web/wagmi.config.ts` / `web/lib/generated.ts` — the ABI **and the embedded bytecode**
+- `web/scripts/check-lens-bytecode.mjs` — new drift gate, patterned on
+  `check-ovrflo-stream-bytecode.mjs`
+- `web/hooks/useStreams.ts` — hydration becomes one deployless read
 - `web/lib/claim-all.ts`, `web/components/borrow/BorrowFlow.tsx` — complete-set reads
-- `script/seed-local.sh`, `deployments/local.json` — local deploy
 - Maps, gated: `docs/maps/state/keys/chain-reads.md`, regenerated
   `docs/maps/state/functions/INDEX.md`
 
@@ -250,8 +255,8 @@ repeated. **The completeness critic has not run.**
 
 - **`useStreams` keeps its own `balanceOf` read.** Ready-empty stays gated on `balance === 0n`
   (`useStreams.ts:236-239`), and a lens array shorter than `balanceOf` is `unavailable` with an
-  `incomplete` failure. Without this, a lens returning empty for *any* reason — wrong address, stale
-  ABI after a regen — is indistinguishable from a wallet with no streams, and `watch-entry.ts:49`
+  `incomplete` failure. Without this, a lens returning empty for *any* reason — stale embedded
+  bytecode, a mis-regenerated ABI — is indistinguishable from a wallet with no streams, and `watch-entry.ts:49`
   sends a holder to first-run. That is the defect plan `001` records as why the last attempt was
   abandoned. — *useStreams*
 - Carry `useStreams.ts:374-381` forward unchanged: a book where **every** row is `ok: false` is
@@ -268,7 +273,8 @@ repeated. **The completeness critic has not run.**
   commit. — *lens, invalidate*
 - **Delete the four-call hydration path; do not keep it as a fallback.** A path that runs only when
   the lens is missing is a second, untested implementation of the ready-empty and `ok` rules. The
-  local seed deploys the lens and the E2E bootstrap fails loudly if the address is unset. — *useStreams*
+  lens is deployless, so it cannot be "missing" at runtime — the drift gate is what keeps the
+  embedded copy honest. — *useStreams*
 - `STREAM_PAGE_SIZE = 25` is justified in its own comment by the four-reads-per-id arithmetic this
   plan removes. Re-derive it from measured per-stream lens gas against a conservative `eth_call` cap,
   and rewrite the rationale comment in the same commit. Plan `004` injects this constant into an E2E
@@ -276,22 +282,23 @@ repeated. **The completeness critic has not run.**
 - `useLoanStreams` stays on its two-call batch and out of the lens; answer `003`'s snapshot question
   there separately. — *useLoanStreams*
 
-**Deployment pipeline — five files, three gates**
+**Deployless shipping — bytecode in the bundle, one gate**
 
-- The address crosses `seed-local.sh` → `deployments/local.json` → `write-env.sh` → `config.ts` →
-  `wagmi.config.ts`/`abis.ts`. **`write-env.sh` has both a `jq -e` allow-list assertion and a fixed
-  list of `echo "NEXT_PUBLIC_..."` lines** — a variable missing from that echo list never reaches the
-  browser regardless of what the artifact holds. The E2E suite does **not** pick the lens up
-  automatically. — *ops*
-- Use `parseRequiredAddress`, matching `NEXT_PUBLIC_SABLIER_LOCKUP_ADDRESS`. A zero lens address
-  under `parseAddress` would render a populated wallet as empty, which streams-plan R16 forbids.
-  Accept that every existing `.env.local` must be reseeded. — *config*
-- Add `lens` to the deployment artifact and to `verify-deployment-input.mjs`'s `FIELD_BINDINGS`,
-  verified by a non-empty `eth_getCode` check at the pinned block. Every other address is derived
-  from on-chain bindings; **a stateless lens has nothing to derive from**, so a code check is the
-  deliberate substitute. Without a binding, a wrong lens address ships to production silently. — *ops*
-- `test/DeploySize.t.sol` gates deployables through a fixed `string[4]` array referenced in three
-  places. Widen it to `string[5]`. — *tests*
+*(This block replaced the deployed-path pipeline contracts when the decision reversed. The address
+pipeline, `parseRequiredAddress`, and `FIELD_BINDINGS` items died with the address itself.)*
+
+- The lens bytecode is embedded in the web bundle from the foundry build output, beside the ABI that
+  `web/wagmi.config.ts` already generates. **A drift gate** (precedent:
+  `web/scripts/check-ovrflo-stream-bytecode.mjs` — fail the gate, do not warn) rebuilds
+  `src/OVRFLOStreamLens.sol` and compares against the embedded copy, so a lens edit that skips the
+  regeneration step cannot ship a stale lens silently. This is the deployless analogue of the
+  "wrong address ships silently" failure the deployed path guarded with `eth_getCode`. — *ops*
+- No entry in `deployments/local.json`, no `NEXT_PUBLIC_*` variable, no `write-env.sh` line, no
+  `seed-local.sh` step. E2E and local dev use the same deployless call as production; there is no
+  lens bootstrap to fail. — *ops*
+- `test/DeploySize.t.sol`'s `string[4]` deployables array **does not widen** — the lens is never
+  deployed, so EIP-170 does not apply. The binding limit is EIP-3860 initcode size (49,152 bytes);
+  assert it in the lens's own test with a `deliberate-ceiling` comment. — *tests*
 - `NEXT_PUBLIC_ABI_VERSION` **stays at 1**. It tracks breaking changes to ABIs the frontend already
   consumes, not additions. Recorded so it is not re-litigated; a wrong bump breaks every environment
   at once. — *config*

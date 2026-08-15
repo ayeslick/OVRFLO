@@ -25,9 +25,9 @@ The old rule exists to stop a silent truncated list. The old paging attempt died
 Do not hand-roll a pager. The tree already has the two battle-tested pieces.
 
 1. **On-chain page.** `tokensOfOwnerIn(owner, start, stop)`, already on the lockup. One call returns one window of ids. `start` and `stop` are **the owner's enumeration indices, not token ids** — the fork builds on OpenZeppelin `ERC721Enumerable` and loops `tokenOfOwnerByIndex`, and it clamps `stop` to `balanceOf(owner)` (OVRFLO-Streams `src/abstracts/SablierV2Lockup.sol:127-153`). The name matches ERC721AQueryable; the behavior does not. Do not write a global-token-id cursor.
-2. **Client page.** wagmi `useInfiniteReadContracts` (docs: https://wagmi.sh/react/api/hooks/useInfiniteReadContracts). Markets already depends on `wagmi@3.7.3` and `@tanstack/react-query@5.90.12`. That hook is TanStack `useInfiniteQuery` with multicall. The wall uses `fetchNextPage` / `hasNextPage` / `isFetchingNextPage`. `MAX_ENUMERATION_IDS` (500) is the **page size** in `getNextPageParam`, not a refusal.
+2. **Client page.** wagmi `useInfiniteReadContracts` (docs: https://wagmi.sh/react/api/hooks/useInfiniteReadContracts). Markets already depends on `wagmi@3.7.3` and `@tanstack/react-query@5.90.12`. That hook is TanStack `useInfiniteQuery` with multicall. The wall uses `fetchNextPage` / `hasNextPage` / `isFetchingNextPage`. The page size is `STREAM_PAGE_SIZE` (25, `web/lib/lending-math.ts`), owned by `2026-08-15-004`. `MAX_ENUMERATION_IDS` (500) is today's refusal threshold, not a page size; it is retired when this plan lands.
 
-Streams: `useReadContract` `balanceOf`, then `useInfiniteReadContracts` whose `contracts(pageParam)` builds the hydration batch for `tokensOfOwnerIn` ids in `[pageParam, pageParam + pageSize)`. `getNextPageParam` returns the next start index while `start + pageSize < balanceOf`, else `undefined`.
+Streams: `useReadContract` `balanceOf`, then `useInfiniteReadContracts` whose `contracts(pageParam)` is **one lens call per page** — `streamsOfOwnerIn(lockup, owner, pageParam, pageParam + STREAM_PAGE_SIZE)` on the lens from `2026-08-15-005`, which returns ids and row data together in one pinned read. Do not build a per-id hydration batch (`ownerOf` / `getStream` / `withdrawableAmountOf` / `statusOf` fan-out); the lens exists to delete that shape. `getNextPageParam` returns the next start index while `start + pageSize < balanceOf`, else `undefined`.
 
 Borrowed / Supplied: the same hook over `borrowerLoanAt` / position index windows. Same `LOAD MORE` wired to `fetchNextPage`.
 
@@ -79,6 +79,12 @@ they operate on the loaded window:**
 
 **The rule:** a consumer that acts on the set needs the complete set. A consumer that renders rows
 needs only the window. Every call site above states which, in the code, at the point of use.
+
+**The complete-set mechanism** is the lens (`2026-08-15-005`): `streamsOfOwner` in one call, with the
+whale fallback of merging `streamsOfOwnerIn` windows at one pinned block. Complete-set consumers do
+not page the wall's infinite query.
+
+## Out of scope
 
 - Changing lockup mint, transfer, or burn.
 - Raising or removing the per-page multicall budget.
