@@ -42,6 +42,40 @@ first storage write is two lines later.
 - `web/lib/lending-math.ts`'s five mirrored functions are deleted, not left as a fallback.
 - A genuine slippage failure reports what was actually available.
 - No new contract, no new getter, no new external function.
+- **The quote becomes asynchronous.** The borrow screen must stay usable while it is in flight, and
+  must never show a figure the contract did not produce.
+
+## The quote stops being free — decide the interaction shape
+
+This is the one consequence that is not a contract concern, and it is the thing an implementer will
+otherwise settle silently at the keyboard.
+
+Today `BorrowFlow.tsx:241` computes the quote **synchronously during render**:
+
+```ts
+const quote: BorrowQuote | null =
+  selectedStream && selectedAprBps !== null && lendingConfig
+    ? quoteBorrow({ remaining, aprBps: selectedAprBps, … })
+```
+
+Pure arithmetic, recomputed on every keystroke, free. After this change each recompute is an
+`eth_call`. Three decisions follow, and the plan settles them rather than leaving them to taste:
+
+**Debounce the amount input, not the tick selection.** Typing an amount produces a keystroke per
+character; choosing an APR tick is one discrete act. Debounce the former, quote the latter
+immediately.
+
+**An in-flight quote shows the previous figures, marked stale — never zero and never blank.** The
+figures on this screen are money. A field that empties while the user types reads as "you get
+nothing", which is the same class of collapse `2026-08-15-006` removes from the bootstrap path.
+
+**`quoteDrift` and `snapshotQuote` keep their job, and it gets easier.** They exist to compare a
+frozen quote against a live one. "Live" stops being a local recomputation and becomes the contract's
+own answer, which is what the comparison always wanted. State whether drift is re-checked on an
+interval or only at the review step; do not leave both plausible.
+
+The write boundary is unchanged: the quote is display, and the real `borrow` simulation with the
+user's actual `minAcceptable` remains transaction authority (`2026-08-15-003`).
 
 ## The change
 
@@ -146,12 +180,34 @@ Which matches `2026-08-15-003`'s rule that simulation, not display, is transacti
 
 - `src/OVRFLOLending.sol` — the two hunks
 - `test/OVRFLOLending.t.sol` — the differential, the sentinel pin, and the three repairs below
-- `web/lib/lending-math.ts` — delete `factor`, `grossPrice`, `obligation`, `obligationForFill`, `fee`
+- `web/lib/lending-math.ts` — delete `factor`, `factorWad`, `grossPrice`, `obligation`,
+  `obligationForFill`, `fee`, `netToBorrower`
 - `web/tests/lib/lending-math.test.ts` — delete their tests
+- `web/components/borrow/quote.ts` — **edited, not deleted** (below)
+- `web/components/borrow/BorrowFlow.tsx` — the render-time call becomes an async read
 - `web/lib/borrow.ts` — `classifyBorrowError` learns the payload
 - `web/lib/generated.ts` — regenerated; the error signature changed
 - Maps, gated: `docs/maps/state/keys/chain-reads.md` and the regenerated
   `docs/maps/state/functions/INDEX.md`
+
+### `quote.ts` is a mixed module
+
+Verified: the five mirrored functions have **exactly one consumer in the whole frontend** —
+`web/components/borrow/quote.ts`. Nothing in `lib/`, `hooks/`, or `app/` touches them, and
+`payoff.ts` imports `streamBuckets` rather than any pricing function, so loan interpolation and
+cover-date projection are unaffected.
+
+But `quote.ts` is 181 lines and only **two** of its exports are pricing — `quoteBorrow` and
+`streamDerivedCap`. The other nine are presentation concerns that stay: `snapshotQuote`,
+`quoteDrift`, `tickDepthWei`, `liveRungs`, `liveTickCopy`, `ttmSeconds`, `loanCover`,
+`fullRepayCoverPreview`, `weiToAmountInput`, `poolFractions`. Five components import from it —
+`BorrowFlow`, `Facts`, `PoolBand`, `ReviewHandoff`, `RateStep`.
+
+Replace the two pricing exports. Leave the rest.
+
+**Two of the deletions are already dead code.** `factor` / `factorWad` and `netToBorrower` have zero
+consumers today, before this change. Removing them is not deferred cleanup riding along; they are
+unreachable now.
 
 ## Test accountability
 
@@ -174,6 +230,11 @@ New cases required:
   identical before and after the MAX call.
 - **Frontend decode.** A Vitest case asserting the decoded quote equals what a subsequent borrow
   produces, replacing the deleted mirrored-function tests.
+- **An in-flight quote never shows zero.** Assert the borrow figures hold their previous values,
+  marked stale, while a new quote is outstanding — the failure this guards is a money field reading
+  as "you get nothing" mid-keystroke.
+- **Debounce holds under fast input.** Assert that typing an amount issues one quote rather than one
+  per character, and that changing the APR tick quotes immediately.
 
 ## Out of scope
 
