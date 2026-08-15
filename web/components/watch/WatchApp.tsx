@@ -88,43 +88,9 @@ export function WatchApp() {
     return map;
   }, [loans]);
 
-  const wallStreams = useMemo(() => {
-    const merged: HydratedStream[] = [...ownedStreams];
-    const seen = new Set(ownedStreams.map((row) => row.streamId.toString()));
-    for (const loan of loans) {
-      if (loan.closed || loan.outstanding === 0n) continue;
-      const key = loan.streamId.toString();
-      if (seen.has(key)) continue;
-      const truth = loanStreams.get(key);
-      if (!truth) continue;
-      const market = markets.markets[0];
-      merged.push({
-        streamId: loan.streamId,
-        owner: lending ?? account!,
-        sender: market?.vault ?? (lending ?? account!),
-        asset: market?.ovrfloToken ?? (lending ?? account!),
-        schedule: {
-          ...truth.schedule,
-          cliffTime: truth.schedule.start,
-          isCancelable: false,
-        },
-        withdrawable: truth.withdrawable,
-        remaining:
-          truth.schedule.deposited - truth.schedule.withdrawn - truth.schedule.refunded,
-        status: 1,
-        renderEligible: true,
-        borrowRouteEligible: false,
-        vault: market?.vault ?? null,
-        market: market?.market ?? null,
-      });
-      seen.add(key);
-    }
-    return merged;
-  }, [account, lending, loanStreams, loans, markets.markets, ownedStreams]);
-
   const positionBook = toBook(lender, positions.length);
   const loanBook = toBook(borrower, loans.length);
-  const streamBook = toBook(streams, wallStreams.length);
+  const streamBook = toBook(streams, ownedStreams.length);
   const entry = classifyEntry({
     connected,
     positions: positionBook,
@@ -202,10 +168,30 @@ export function WatchApp() {
     ? markets.markets.find((row) => row.market.toLowerCase() === selectedPosition.market.toLowerCase()) ??
       null
     : null;
-  const selectedLoan =
+  const selectedLoanFromUrl =
     selectedLoanId !== null ? loans.find((row) => row.id === selectedLoanId) : undefined;
   const selectedStream =
-    selectedStreamId !== null ? wallStreams.find((row) => row.streamId === selectedStreamId) : undefined;
+    selectedStreamId !== null
+      ? ownedStreams.find((row) => row.streamId === selectedStreamId)
+      : undefined;
+  const lastSelectedStreamRef = useRef<HydratedStream | undefined>(undefined);
+  if (selectedStream) lastSelectedStreamRef.current = selectedStream;
+
+  const matchingOpenLoan =
+    selectedStreamId !== null
+      ? loans.find(
+          (loan) =>
+            !loan.closed && loan.outstanding > 0n && loan.streamId === selectedStreamId,
+        )
+      : undefined;
+  const selectedLoan = selectedLoanFromUrl ?? matchingOpenLoan;
+
+  const streamStamp = streams.metadata.dataUpdatedAt ?? 0;
+  const borrowerStamp = borrower.metadata.dataUpdatedAt ?? 0;
+  const borrowerCaughtUp =
+    borrower.status === "ready" && (borrowerStamp >= streamStamp || streamStamp === 0);
+
+  const matchingOpenLoanId = matchingOpenLoan?.id;
 
   const showWatch = entry === "watch" || entry === "watch-streams-degraded";
   const detailOpen = url.selection.kind !== "none";
@@ -227,7 +213,25 @@ export function WatchApp() {
   });
   const streamBookReady = streamBook.status === "ready" || streamBook.status === "unavailable";
   const showStreamClosed =
-    selectedStreamId !== null && !selectedStream && streamBookReady && Boolean(streamData || streamBook.status === "ready");
+    selectedStreamId !== null &&
+    !selectedStream &&
+    !matchingOpenLoan &&
+    streamBookReady &&
+    Boolean(streamData || streamBook.status === "ready") &&
+    (lastSelectedStreamRef.current === undefined || borrowerCaughtUp);
+  const stickyStream =
+    !selectedStream && !showStreamClosed && !matchingOpenLoan
+      ? lastSelectedStreamRef.current
+      : undefined;
+  const streamForDetail = selectedStream ?? stickyStream;
+
+  useEffect(() => {
+    if (matchingOpenLoanId === undefined || selectedStreamId === null) return;
+    writeWatchSearch(
+      { lens: "borrowed", selection: { kind: "loan", id: matchingOpenLoanId } },
+      "replace",
+    );
+  }, [matchingOpenLoanId, selectedStreamId]);
 
   useEffect(() => {
     if (!narrow || !detailOpen) return;
@@ -307,7 +311,7 @@ export function WatchApp() {
               onSelectLens={onSelectLens}
               positions={wallSurface === "LOADING" ? [] : positions}
               loans={wallSurface === "LOADING" ? [] : loans}
-              streams={wallSurface === "LOADING" ? [] : wallStreams}
+              streams={wallSurface === "LOADING" ? [] : ownedStreams}
               panelStatus={wallSurface === "LOADING" ? "loading" : wallSurface === "EMPTY" ? "empty" : "ready"}
               pledgedByStream={pledgedByStream}
               loanStreams={loanStreams}
@@ -348,6 +352,7 @@ export function WatchApp() {
                 loan={selectedLoan}
                 symbol={tokenLabel}
                 freshness={lensFreshness.freshness}
+                streamPresent={loanStreams.has(selectedLoan.streamId.toString())}
                 onSelectStream={(streamId) => onSelect({ kind: "stream", id: streamId })}
               />
             ) : null}
@@ -375,11 +380,11 @@ export function WatchApp() {
                 onSelectStream={(streamId) => onSelect({ kind: "stream", id: streamId })}
               />
             ) : null}
-            {selectedStream ? (
+            {streamForDetail ? (
               <StreamDetail
-                stream={selectedStream}
-                symbol={symbolFor(symbols, selectedStream.asset)}
-                pledgedLoanId={pledgedByStream.get(selectedStream.streamId.toString())}
+                stream={streamForDetail}
+                symbol={symbolFor(symbols, streamForDetail.asset)}
+                pledgedLoanId={pledgedByStream.get(streamForDetail.streamId.toString())}
                 nowSeconds={nowSeconds}
                 nowMs={nowMs}
                 lastReadAt={lastReadAt}
@@ -387,7 +392,7 @@ export function WatchApp() {
                 signingAllowed={lensFreshness.signingAllowed}
                 usdMode={usdMode}
                 usdAvailable={usdAvailable}
-                usdText={usdTextFor(selectedStream.withdrawable, usdQuote)}
+                usdText={usdTextFor(streamForDetail.withdrawable, usdQuote)}
                 onSelectLoan={(loanId) => onSelect({ kind: "loan", id: loanId })}
               />
             ) : null}

@@ -18,10 +18,11 @@ let countReturn: {
   isError: boolean;
   isSuccess: boolean;
   error: unknown;
+  dataUpdatedAt?: number;
 };
 let lendingConfigReturn: { data?: unknown[]; isLoading: boolean; error: unknown };
 let depthReturn: { data?: unknown[]; isLoading: boolean; error: unknown };
-const emptyBatch = { data: [] as unknown[], isLoading: false, error: null };
+const emptyBatch = { data: [] as unknown[], isLoading: false, error: null, dataUpdatedAt: 0 };
 
 vi.mock("wagmi", () => ({
   usePublicClient: () => null,
@@ -53,6 +54,34 @@ describe("book hooks", () => {
     expect(result.current.status).toBe("ready");
     if (result.current.status !== "ready") throw new Error("expected ready");
     expect(result.current.data.loans).toEqual([]);
+  });
+
+  it("stamps wagmi dataUpdatedAt on a ready borrower book", () => {
+    countReturn = {
+      data: 0n,
+      isLoading: false,
+      isError: false,
+      isSuccess: true,
+      error: null,
+      dataUpdatedAt: 1_700_000_000_000,
+    };
+    const { result } = renderHook(() => useBorrowerBook(LENDING, USER), { wrapper });
+    expect(result.current.status).toBe("ready");
+    expect(result.current.metadata.dataUpdatedAt).toBe(1_700_000_000_000);
+  });
+
+  it("stamps wagmi dataUpdatedAt on a ready lender book", () => {
+    countReturn = {
+      data: 0n,
+      isLoading: false,
+      isError: false,
+      isSuccess: true,
+      error: null,
+      dataUpdatedAt: 1_700_000_000_500,
+    };
+    const { result } = renderHook(() => useLenderBook(LENDING, USER), { wrapper });
+    expect(result.current.status).toBe("ready");
+    expect(result.current.metadata.dataUpdatedAt).toBe(1_700_000_000_500);
   });
 
   it("lender book classifies a failed count as unavailable, never zero (AE1)", () => {

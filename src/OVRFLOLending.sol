@@ -288,9 +288,10 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
     );
     /// @notice Emitted when ovrfloToken is repaid at face against a loan.
     /// @dev `outstanding` is the absolute post-repay remainder; zero means the loan
-    ///      closed in this call and the stream went back to the borrower.
+    ///      closed in this call. Completing repay disposes the pledged stream: a
+    ///      depleted NFT burns, a residual NFT returns to the borrower.
     event Repaid(uint256 indexed loanId, uint128 amount, uint128 outstanding);
-    /// @notice Emitted when a loan is settled and its stream NFT returned.
+    /// @notice Emitted when a loan is settled and the pledged stream is disposed.
     /// @dev `drawn` is the absolute lifetime draw, not this call's delta. Fires exactly
     ///      once per loan, on BOTH closure paths: the permissionless `close` draw and a
     ///      full `repay` (which emits `Repaid(…, 0)` first and leaves `drawn` untouched).

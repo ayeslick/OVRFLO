@@ -262,15 +262,17 @@ Both hooks cap enumeration at `MAX_ENUMERATION_IDS` (500). Over-budget is the *t
 
 Historical name for an off-chain indexer the frontend once queried for held-stream discovery and a borrow-demand ladder. It is not a live authority.
 
-Discovery today is a browser verified-log projection under `web/lib/discovery/`: Transfer logs yield a candidate set; every displayed or actionable fact is re-read from the stream contract. Candidates never gate. See Stream discovery.
+Discovery today is Enumerable holder lists on the bound lockup. See Stream discovery.
 
 ### Stream discovery
 
-Finding which streams a connected wallet may hold. Browser-side on-chain discovery answers this one question and nothing else; every value the app then displays or acts on is read from the stream contract directly.
+Finding which streams a connected wallet holds. Markets reads the lockup holder list onchain: `balanceOf`, then `tokensOfOwnerIn`, then hydrates each id with `ownerOf`, `getStream`, `withdrawableAmountOf`, and `statusOf`. Every displayed or actionable fact is a contract read. A stream whose owner is not the connected address is dropped.
 
-The split is a trust boundary, not an optimisation. A discovery projection naming a stream id is a candidate set, not a claim of ownership — a stream whose on-chain owner is not the connected address is dropped rather than rendered, and the fields that decide whether a stream is eligible for an action are always re-read from chain. Discovery results are also three-valued: streams, no streams, and *unavailable*. The third must never be presented as the second, since "you hold nothing" and "this list cannot be trusted" call for opposite user responses. Partial or stale projections stay unavailable/preparing, never ready-empty or actionable. A previously-discovered set may be served past a discovery failure only within a bounded staleness window, after which it is discarded rather than shown behind a warning.
+Results are three-valued: streams, no streams, and unavailable. Unavailable must never paint as empty. Zero `balanceOf` is confirmed-empty. A positive balance with no ids, an over-budget list, or a failed read is unavailable.
 
-Shipped discovery is still this two-step candidate/truth log scan. Enumerable holder lists (`balanceOf` + `tokensOfOwnerIn`) are owned by campaign ticket 08 and are not live yet. Do not claim log-scan discovery is already gone.
+A pledged stream leaves this list when the market owns the NFT. It appears on Borrowed as a loan. Streams does not copy open loans back onto the wall.
+
+Shipped discovery is Enumerable. Log-scan is not live. There is no log-scan fallback.
 
 ### Position groups
 

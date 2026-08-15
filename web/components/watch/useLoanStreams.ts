@@ -62,7 +62,11 @@ export function useLoanStreams(streamIds: readonly bigint[]): ReadonlyMap<string
     for (const [index, streamId] of unique.entries()) {
       const streamResult = rows[index * 2];
       const withdrawableResult = rows[index * 2 + 1];
-      if (streamResult?.status !== "success" || withdrawableResult?.status !== "success") continue;
+      if (streamResult?.status !== "success" || withdrawableResult?.status !== "success") {
+        // Burn / nonexistent: drop lastKnown so settled copy can say GONE.
+        next.delete(streamId.toString());
+        continue;
+      }
       const stream = streamResult.result as {
         startTime: number;
         endTime: number;

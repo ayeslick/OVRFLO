@@ -6,7 +6,6 @@ import {
   advanceSeconds,
   advanceToUnitAlignedGrossPrice,
   borrowAgainstStream,
-  claimStreamMax,
   closeLoan,
   depositPtForStream,
   lenderSupplyLiquidity,
@@ -18,10 +17,10 @@ import {
   readSecondaryPt,
   readStreamGrossPrice,
   readStreamLockup,
-  streamIsDepleted,
   streamOwnerOf,
   waitForHeldStream,
 } from "../fixtures/chain";
+import { requireStreamBurnedAfterClose } from "./stream-dispose";
 import { floorToUnit, MIN_LIQUIDITY_AMOUNT } from "@/lib/lending-math";
 import { DEV_WALLET_ADDRESS } from "../fixtures/mock-wallet";
 import { ui } from "./locators";
@@ -31,8 +30,6 @@ let trackedLoanId: bigint | null = null;
 let depositedStreamIds: bigint[] = [];
 let disposedFullValueStreamId: bigint | null = null;
 let returnedResidualStreamId: bigint | null = null;
-let ae6BurnAligned = false;
-let ae6PostSettleDeplete = false;
 
 function streamRow(page: import("@playwright/test").Page, streamId: bigint) {
   return ui(page, "UI-WATCH-WALL").getByRole("button", {
@@ -108,7 +105,6 @@ Given("a full-value loan has settled and disposed its stream", async () => {
     streamId,
     aprBps: aprMinBps,
   });
-  ae6BurnAligned = targetBorrow !== null;
   if (targetBorrow === null) {
     targetBorrow = await readStreamGrossPrice({
       lending: deployment.lending,
@@ -134,19 +130,7 @@ Given("a full-value loan has settled and disposed its stream", async () => {
   await closeLoan({ account: DEV_WALLET_ADDRESS, lending: deployment.lending, loanId });
 
   const owner = await streamOwnerOf(streamId);
-  if (owner === null) {
-    ae6PostSettleDeplete = false;
-    return;
-  }
-  const depleted = await streamIsDepleted(streamId);
-  if (depleted) {
-    ae6PostSettleDeplete = false;
-    return;
-  }
-  // Residual after a non-UNIT-aligned max fill: empty the returned NFT so the
-  // lens filter (remaining <= 0 / isDepleted) drops the row. Log on the ticket.
-  await claimStreamMax(streamId);
-  ae6PostSettleDeplete = true;
+  requireStreamBurnedAfterClose(owner, streamId);
 });
 
 Given("a partial loan has settled and returned its stream", async () => {
@@ -236,12 +220,11 @@ Then("I see a stream row for the tracked stream", async ({ page }) => {
   await expect(streamRow(page, trackedStreamId)).toBeVisible({ timeout: 15_000 });
 });
 
-Then("the tracked stream row is pledged", async ({ page }) => {
+Then("the tracked stream row is absent from Streams", async ({ page }) => {
   if (trackedStreamId === null) throw new Error("no tracked stream");
-  const row = streamRow(page, trackedStreamId);
-  await expect(row).toBeVisible({ timeout: 15_000 });
-  await expect(row).toHaveAttribute("data-state", "pledged");
-  await expect(row.getByText(/PLEDGED TO LOAN #/)).toBeVisible();
+  const tab = ui(page, "UI-WATCH-LENS").getByRole("tab", { name: "STREAMS", exact: true });
+  if ((await tab.count()) === 0) return;
+  await expect(streamRow(page, trackedStreamId)).toHaveCount(0);
 });
 
 Then("I see a loan row for the tracked stream", async ({ page }) => {
@@ -298,8 +281,3 @@ Then("I do not see empty-lens streams copy", async ({ page }) => {
   await expect(page.getByText(/no streams yet/i)).toHaveCount(0);
   await expect(ui(page, "UI-FIRST-RUN-SURFACE")).toHaveCount(0);
 });
-
-/** Test-only export for ticket deviation logging after the run. */
-export function ae6ArrangeNotes() {
-  return { ae6BurnAligned, ae6PostSettleDeplete };
-}

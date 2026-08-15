@@ -1,0 +1,89 @@
+# Scratch decision record — schema: docs/maps/SCHEMAS.md §4
+# U5 review fixes — authored before first code write.
+
+summary_ref: "feat/u5-main-repo-rebind review fixes (orchestrator-decided)"
+
+goal: >
+  Apply decided review fixes on feat/u5-main-repo-rebind: stamp borrower/lender
+  dataUpdatedAt so Borrowed/Supplied keep signingAllowed; stop STREAM CLOSED
+  during pledge hydration; drop the pledged Streams overlay (AE2/KTD2);
+  fail-closed when balance>0 yields no ids; branch settled copy on burn vs
+  return; require AE6 full-value burn; rewrite discovery docs to Enumerable.
+
+state_keys_touched:
+  - chain.stream-truth
+  - chain.loan-truth
+  - chain.position-truth
+  - schedule.freshness
+  - watch.selected-entity
+
+writers_readers:
+  - writes: web/hooks/useBorrowerBook.ts (metadata.dataUpdatedAt)
+  - writes: web/hooks/useLenderBook.ts (metadata.dataUpdatedAt)
+  - writes: web/hooks/useStreams.ts (balance>0 empty ids → unavailable)
+  - writes: web/components/watch/WatchApp.tsx (ownedStreams only; STREAM CLOSED gate; loan switch)
+  - writes: web/lib/watch-rows.ts (settled copy burn vs return)
+  - writes: web/components/watch/ClosedLoanDetail.tsx (same settled copy)
+  - writes: web/components/watch/useLoanStreams.ts (drop lastKnown on getStream failure)
+  - writes: src/OVRFLOLending.sol (Closed @notice, Repaid @dev only)
+  - writes: CONCEPTS.md, docs/agents/onboarding.md
+  - writes: web/tests/e2e/streams.feature, web/tests/e2e/steps/streams.ts
+  - reads: web/hooks/useFreshness.ts (consumes dataUpdatedAt; clock fallback kept)
+
+trust_domains:
+  - fact: held stream id list
+    domain: on-chain
+    moved_from: null
+  - fact: EVENTS AS OF / signingAllowed for Borrowed and Supplied
+    domain: on-chain
+    moved_from: null
+  - fact: STREAM CLOSED vs open loan for a selected stream id
+    domain: on-chain
+    moved_from: null
+  - fact: settled row copy (returned vs gone)
+    domain: on-chain
+    moved_from: null
+
+rejected_alternatives:
+  - option: Keep wallStreams pledged overlay on Streams
+    why_not: Binding AE2/KTD2 — pledged streams appear only as loans on Borrowed.
+  - option: Drop the clock-only freshness fallback
+    why_not: Finding #4 keeps the fallback and proves it is not enough without a wagmi stamp.
+  - option: Finding #12 (501 incoming transfers flip unavailable)
+    why_not: Orchestrator excluded it; R16/KTD4 by design.
+  - option: Change _disposeStream burn/return behavior
+    why_not: Finding #5/#13 is copy and NatSpec only.
+
+invariants_held:
+  - invariant: Ready-empty streams only when balanceOf is zero
+    how: tokensOfOwnerIn empty with balance>0 returns unavailableOutcome.
+  - invariant: Pledged streams do not double-list on Streams and Borrowed
+    how: Wall receives ownedStreams; useStreams drops market-owned ids.
+  - invariant: STREAM CLOSED is not the pledge hydration gap
+    how: Open loan for the selected stream id switches to that loan; sticky card until borrower stamp catches up.
+  - invariant: signingAllowed survives healthy polls past FRESHNESS_MAX_AGE_MS
+    how: borrower/lender readyOutcome carries wagmi dataUpdatedAt.
+  - invariant: _disposeStream still burns depleted and returns residual
+    how: Solidity body unchanged; NatSpec matches both branches.
+
+risks:
+  - risk: AE6 E2E arrange fails when UNIT alignment cannot burn
+    residual: Arrange throws if ownerOf is non-null; E2E is follow-up without a seeded fork.
+  - risk: Sticky stream card lingers if borrower dataUpdatedAt never advances
+    residual: Deep-link to an absent id with no sticky still paints STREAM CLOSED.
+  - risk: Settled GONE copy flashes before residual getStream succeeds
+    residual: Returned NFT hydrates on the next poll; lastKnown is cleared only on getStream failure.
+
+diff_hints:
+  - path: web/hooks/useBorrowerBook.ts
+    why: dataUpdatedAt on ready/unavailable.
+  - path: web/hooks/useLenderBook.ts
+    why: dataUpdatedAt on ready/unavailable including loansOf pages.
+  - path: web/components/watch/WatchApp.tsx
+    why: ownedStreams; STREAM CLOSED vs open loan.
+  - path: web/lib/watch-rows.ts
+    why: settled copy branches on streamPresent.
+  - path: src/OVRFLOLending.sol
+    why: Closed event @notice and Repaid event @dev only.
+  - path: web/tests/e2e/steps/streams.ts
+    why: AE6 require burn; AE2 no pledged Streams row.

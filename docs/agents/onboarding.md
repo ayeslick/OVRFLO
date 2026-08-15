@@ -300,11 +300,11 @@ Canonical plan: `docs/plans/2026-08-13-001-feat-ovrflo-streams-plan.md`. Campaig
 
 **Shipped in `src/` (U5):** vault/lending bind the fork by constructor; factory `ovrfloStream` / `setOvrfloStream` / `setStreamNFTDescriptor`; registration requires `factory.ovrfloStream()`. Solidity names stay upstream (`SablierV2LockupLinear`, `sablierLL`). Mint gate is `ovrfloInfo(msg.sender)` treasury != 0 — no `setMinter`. Fees immutable at zero by construction (SC13).
 
-**Not shipped yet:** Markets Enumerable discovery (ticket 08 — log-scan is still live); seed/fork wiring (ticket 06); watch-surface ledger paint (ticket 09). Do not claim log-scan is already gone.
+**Shipped in Markets:** Enumerable held-stream discovery (`useStreams`: `balanceOf` → `tokensOfOwnerIn` → hydrate). Watch-surface ledger paint. Seed/fork wiring binds `factory.ovrfloStream()`. Log-scan is not live and is not a fallback.
 
 LockupDynamic stays in the fork tree unrenamed and is never deployed. Own GPL repo; this repo stays MIT. Stop the streams work if the v1.1 withdraw ACL cannot be preserved, if Enumerable changes withdraw/transfer semantics, or if a fork deployable misses EIP-170.
 
-Do not fork newer Sablier Lockup (public withdraw). Do not keep log-scan as a fallback after Enumerable ships (08). Do not put PRB-Math into *this* repo's `src/`; the fork keeps `@prb/math` 4.0.2 as a scoped exception.
+Do not fork newer Sablier Lockup (public withdraw). Do not keep log-scan as a fallback. Do not put PRB-Math into *this* repo's `src/`; the fork keeps `@prb/math` 4.0.2 as a scoped exception.
 
 ### Long term — durable shape
 
@@ -362,7 +362,7 @@ Use this table when two sources collide. Re-verify the "Live" column if `src/` m
 | Topic | Stale / mixed claim | Live |
 |---|---|---|
 | Stream layer name | Stale CONCEPTS rebrand / `setMinter` paragraph (rewritten in U7) | Getter `sablierLL` / interface `ISablierV2LockupLinear` bind the OVRFLO Streams fork (`factory.ovrfloStream()`). Canonical `0xAFb979…` is not the bound address. |
-| Stream discovery | Enumerable holder lists (as if already live) | Browser log-scan candidates, then on-chain hydrate (`web/lib/discovery/`). Enumerable is ticket 08 — unbuilt. |
+| Stream discovery | Browser log-scan candidates, then on-chain hydrate (`web/lib/discovery/`). Enumerable is ticket 08 — unbuilt. | Enumerable holder lists in `useStreams` (`balanceOf` + `tokensOfOwnerIn`). Log-scan is not live. |
 | `flashLoan` reentrancy | `CONCEPTS.md` and the discipline doc: no `nonReentrant` | `nonReentrant` on `flashLoan`; deposit during callback still works. |
 | Factory constructor | Older seed snippets: `(sablier, owner)` | `(owner, oracle)`. Stream address is admitted via `setOvrfloStream`; vault/lending take it as a constructor arg. |
 | Lending shape | Sale listings, loan pools, `createBorrowerLoanPool` | `supply` / `withdraw` / `borrow` / `repay` / `close` / `claim`. |
@@ -371,7 +371,7 @@ Use this table when two sources collide. Re-verify the "Live" column if `src/` m
 | `ovrfloInfo` | "is the stream" | Three fields: treasury, underlying, ovrfloToken. The stream contract is not in this mapping. After the streams plan, `create*` *reads* `ovrfloInfo(msg.sender)` to prove the caller is a registered vault. |
 | Factory "deploys" lending | Comments still say "deployed by this factory" | External deploy + `registerLending`. |
 | UI visual world | Clearing Ledger | Watch surface / three-bay workbench. Clearing Ledger is a retired name. |
-| Ponder | Off-chain indexer | Deleted. Discovery is in-browser. |
+| Ponder | Off-chain indexer | Deleted. Discovery is Enumerable holder lists. |
 | Claim-all | Global CLAIM ALL | Per-position `claim` on the supplied detail. |
 
 ---

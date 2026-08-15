@@ -255,7 +255,44 @@ describe("watch wall", () => {
     expect(rows[1]).toHaveTextContent("LOAN #3");
     expect(rows[1]).toHaveAttribute("data-state", "settled");
     expect(rows[1]).toHaveTextContent("SETTLED");
-    expect(rows[1]).toHaveTextContent("RETURNED STREAM #441");
+    expect(rows[1]).toHaveTextContent("STREAM #441 GONE");
+  });
+
+  it("names a residual NFT as returned on a settled loan", () => {
+    render(
+      <Wall
+        tabs={visibleLensTabs({
+          positions: { status: "ready", count: 0 },
+          loans: { status: "ready", count: 1 },
+          streams: { status: "ready", count: 0 },
+        })}
+        lens="borrowed"
+        onSelectLens={() => undefined}
+        positions={[]}
+        loans={[loan({ id: 3n, closed: true, outstanding: 0n, streamId: 441n })]}
+        streams={[]}
+        pledgedByStream={new Map()}
+        loanStreams={
+          new Map([
+            [
+              "441",
+              {
+                streamId: 441n,
+                withdrawable: 0n,
+                schedule,
+              },
+            ],
+          ])
+        }
+        nowSeconds={NOW}
+        nowMs={Number(NOW) * 1000}
+        lastReadAt={NOW}
+        selection={{ kind: "none" }}
+        onSelect={() => undefined}
+        streamsDegraded={null}
+      />,
+    );
+    expect(screen.getByRole("button", { name: /LOAN #3/ })).toHaveTextContent("RETURNED STREAM #441");
   });
 
   it("renders the same resting row at 360px without motion", () => {

@@ -191,6 +191,13 @@ describe("useStreams Enumerable discovery", () => {
     expect(result.current.data.streams).toEqual([]);
   });
 
+  it("flips unavailable when balance is nonzero and tokensOfOwnerIn yields no ids", () => {
+    balanceReturn.data = 2n;
+    idsReturn.data = [];
+    const { result } = renderHook(() => useStreams(input));
+    expect(result.current.status).toBe("unavailable");
+  });
+
   it("does not fire reads when the wallet is disconnected", () => {
     const { result } = renderHook(() =>
       useStreams({ ...input, account: null }),

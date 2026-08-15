@@ -88,38 +88,57 @@ export function useBorrowerBook(
     query: { ...readQuery, enabled: stateEnabled },
   });
 
+  const dataUpdatedAt = Math.max(
+    countRead.dataUpdatedAt ?? 0,
+    idReads.dataUpdatedAt ?? 0,
+    stateReads.dataUpdatedAt ?? 0,
+  );
+
   return useMemo(() => {
-    if (!configured) return loadingOutcome<BorrowerBook>();
+    const meta = dataUpdatedAt > 0 ? { dataUpdatedAt } : {};
+    if (!configured) return loadingOutcome<BorrowerBook>(undefined, meta);
     if (countRead.isLoading && countRead.data === undefined) {
-      return loadingOutcome<BorrowerBook>();
+      return loadingOutcome<BorrowerBook>(undefined, meta);
     }
     if (countRead.isError) {
-      return unavailableOutcome<BorrowerBook>([
-        readFailure("useBorrowerBook", "transport", countRead.error ?? "borrowerLoanCount failed"),
-      ]);
+      return unavailableOutcome<BorrowerBook>(
+        [readFailure("useBorrowerBook", "transport", countRead.error ?? "borrowerLoanCount failed")],
+        meta,
+      );
     }
     if (overBudget) {
-      return unavailableOutcome<BorrowerBook>([
-        readFailure("useBorrowerBook", "incomplete", "Borrower enumeration exceeds the fail-closed budget"),
-      ]);
+      return unavailableOutcome<BorrowerBook>(
+        [
+          readFailure(
+            "useBorrowerBook",
+            "incomplete",
+            "Borrower enumeration exceeds the fail-closed budget",
+          ),
+        ],
+        meta,
+      );
     }
     if (count === 0n) {
-      return readyOutcome({ loans: [] });
+      return readyOutcome({ loans: [] }, meta);
     }
-    if (idReads.isLoading && !idReads.data) return loadingOutcome<BorrowerBook>();
+    if (idReads.isLoading && !idReads.data) return loadingOutcome<BorrowerBook>(undefined, meta);
     if (!idsComplete) {
-      return unavailableOutcome<BorrowerBook>([
-        readFailure("useBorrowerBook", "subcall", "borrowerLoanAt batch is incomplete"),
-      ]);
+      return unavailableOutcome<BorrowerBook>(
+        [readFailure("useBorrowerBook", "subcall", "borrowerLoanAt batch is incomplete")],
+        meta,
+      );
     }
-    if (stateReads.isLoading && !stateReads.data) return loadingOutcome<BorrowerBook>();
+    if (stateReads.isLoading && !stateReads.data) {
+      return loadingOutcome<BorrowerBook>(undefined, meta);
+    }
     const stateComplete =
       stateReads.data?.length === stateContracts.length &&
       stateReads.data.every((result) => result.status === "success");
     if (!stateComplete) {
-      return unavailableOutcome<BorrowerBook>([
-        readFailure("useBorrowerBook", "subcall", "loanState batch is incomplete"),
-      ]);
+      return unavailableOutcome<BorrowerBook>(
+        [readFailure("useBorrowerBook", "subcall", "loanState batch is incomplete")],
+        meta,
+      );
     }
     const loans: BorrowerLoanRow[] = [];
     for (const [index, id] of ids.entries()) {
@@ -138,21 +157,25 @@ export function useBorrowerBook(
       };
       loans.push(loan);
     }
-    return readyOutcome({ loans });
+    return readyOutcome({ loans }, meta);
   }, [
     configured,
     count,
     countRead.data,
+    countRead.dataUpdatedAt,
     countRead.error,
     countRead.isError,
     countRead.isLoading,
+    dataUpdatedAt,
     idReads.data,
+    idReads.dataUpdatedAt,
     idReads.isLoading,
     ids,
     idsComplete,
     overBudget,
     stateContracts.length,
     stateReads.data,
+    stateReads.dataUpdatedAt,
     stateReads.isLoading,
   ]);
 }

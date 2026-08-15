@@ -10,11 +10,13 @@ export function ClosedLoanDetail({
   loan,
   symbol,
   freshness,
+  streamPresent = true,
   onSelectStream,
 }: {
   loan: BorrowerLoanRow;
   symbol: string;
   freshness: Freshness;
+  streamPresent?: boolean;
   onSelectStream: (streamId: bigint) => void;
 }) {
   return (
@@ -28,7 +30,9 @@ export function ClosedLoanDetail({
         className="watch-back"
         onClick={() => onSelectStream(loan.streamId)}
       >
-        RETURNED STREAM #{loan.streamId.toString()}
+        {streamPresent
+          ? `RETURNED STREAM #${loan.streamId.toString()}`
+          : `STREAM #${loan.streamId.toString()} GONE`}
       </button>
       <dl className="watch-facts">
         <Fact label="OBLIGATION" value={`${formatTruncatedDecimal(loan.obligation, 18, 5)} ${symbol}`} />

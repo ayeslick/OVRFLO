@@ -53,7 +53,7 @@ describe("watch rows", () => {
     );
   });
 
-  it("keeps closed loans settled and names the returned stream", () => {
+  it("keeps closed loans settled and names a returned stream", () => {
     const loan = {
       closed: true,
       obligation: SCALE,
@@ -62,7 +62,15 @@ describe("watch rows", () => {
       outstanding: 0n,
     };
     expect(borrowedRowState({ loan })).toBe("settled");
-    expect(borrowedStateLine({ state: "settled", streamId: 441n })).toBe("RETURNED STREAM #441");
+    expect(borrowedStateLine({ state: "settled", streamId: 441n, streamPresent: true })).toBe(
+      "RETURNED STREAM #441",
+    );
+  });
+
+  it("names a burned or absent NFT as gone, not returned", () => {
+    expect(borrowedStateLine({ state: "settled", streamId: 441n, streamPresent: false })).toBe(
+      "STREAM #441 GONE",
+    );
   });
 
   it("sums claimable pairs and filled interval", () => {

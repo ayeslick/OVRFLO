@@ -1,9 +1,10 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Address } from "viem";
 import { WatchApp } from "@/components/watch/WatchApp";
 import type { LenderPositionRow } from "@/hooks/useLenderBook";
 import type { BorrowerLoanRow } from "@/hooks/useBorrowerBook";
+import type { HydratedStream } from "@/hooks/useStreams";
 import { loadingOutcome, readFailure, readyOutcome, unavailableOutcome } from "@/lib/read-outcome";
 import { writeWatchSearch } from "@/lib/watch-url";
 
@@ -22,9 +23,11 @@ const fx = vi.hoisted(() => ({
   streamStatus: "ready" as "ready" | "loading" | "unavailable",
   positions: [] as LenderPositionRow[],
   loans: [] as BorrowerLoanRow[],
-  streams: [] as { streamId: bigint }[],
+  streams: [] as HydratedStream[],
   signingAllowed: true,
   freshnessKind: "synced" as "synced" | "degraded" | "unavailable",
+  streamUpdatedAt: 0,
+  borrowerUpdatedAt: 0,
 }));
 
 vi.mock("wagmi", () => ({
@@ -105,24 +108,26 @@ vi.mock("@/hooks/useLenderBook", () => ({
 
 vi.mock("@/hooks/useBorrowerBook", () => ({
   useBorrowerBook: () => {
-    if (fx.borrowerStatus === "loading") return loadingOutcome();
+    const meta = fx.borrowerUpdatedAt > 0 ? { dataUpdatedAt: fx.borrowerUpdatedAt } : {};
+    if (fx.borrowerStatus === "loading") return loadingOutcome(undefined, meta);
     if (fx.borrowerStatus === "unavailable") {
-      return unavailableOutcome([readFailure("useBorrowerBook", "transport", "down")]);
+      return unavailableOutcome([readFailure("useBorrowerBook", "transport", "down")], meta);
     }
-    return readyOutcome({ loans: fx.loans });
+    return readyOutcome({ loans: fx.loans }, meta);
   },
 }));
 
 vi.mock("@/hooks/useStreams", () => ({
   useStreams: () => {
+    const meta = fx.streamUpdatedAt > 0 ? { dataUpdatedAt: fx.streamUpdatedAt } : {};
     if (fx.streamStatus === "loading") {
-      return loadingOutcome({ streams: [] as typeof fx.streams });
+      return loadingOutcome({ streams: [] as typeof fx.streams }, meta);
     }
     if (fx.streamStatus === "unavailable") {
       const failure = [readFailure("useStreams", "transport", "could-not-ask")];
-      return unavailableOutcome(failure);
+      return unavailableOutcome(failure, meta);
     }
-    return readyOutcome({ streams: fx.streams });
+    return readyOutcome({ streams: fx.streams }, meta);
   },
 }));
 
@@ -171,6 +176,8 @@ function resetFx() {
   fx.streams = [];
   fx.signingAllowed = true;
   fx.freshnessKind = "synced";
+  fx.streamUpdatedAt = 0;
+  fx.borrowerUpdatedAt = 0;
   writeWatchSearch({ lens: null, selection: { kind: "none" } }, "replace");
 }
 
@@ -268,5 +275,120 @@ describe("watch shell + entry", () => {
   it("does not mark a nav item current on home", () => {
     render(<WatchApp />);
     expect(screen.getByRole("link", { name: "BORROW" })).not.toHaveAttribute("aria-current");
+  });
+
+  it("does not paint STREAM CLOSED when an open loan exists for the selected stream", async () => {
+    fx.connected = true;
+    fx.loans = [
+      {
+        id: 12n,
+        borrower: ACCOUNT,
+        streamId: 5n,
+        obligation: SCALE,
+        drawn: 0n,
+        repaid: 0n,
+        closed: false,
+        outstanding: SCALE,
+      },
+    ];
+    writeWatchSearch({ lens: "streams", selection: { kind: "stream", id: 5n } }, "replace");
+    render(<WatchApp />);
+    expect(screen.queryByText("STREAM CLOSED")).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(window.location.search).toMatch(/loan=12/);
+    });
+    expect(screen.getByRole("article")).toHaveAttribute("data-region", "borrowed-detail");
+  });
+
+  it("paints STREAM CLOSED for a missing stream with no open loan", () => {
+    fx.connected = true;
+    fx.positions = [
+      {
+        id: 26n,
+        lender: ACCOUNT,
+        market: MARKET,
+        aprBps: 500,
+        availableLiquidity: 5n * SCALE,
+        intervalStart: 0n,
+        intervalEnd: 0n,
+        pairs: [],
+        pairsTruncated: false,
+      },
+    ];
+    writeWatchSearch({ lens: "streams", selection: { kind: "stream", id: 5n } }, "replace");
+    render(<WatchApp />);
+    expect(screen.getByText("STREAM CLOSED")).toBeInTheDocument();
+  });
+
+  it("keeps the prior stream card until the borrower book catches up after a pledge drop", () => {
+    fx.connected = true;
+    fx.streamUpdatedAt = 2_000;
+    fx.borrowerUpdatedAt = 1_000;
+    fx.positions = [
+      {
+        id: 26n,
+        lender: ACCOUNT,
+        market: MARKET,
+        aprBps: 500,
+        availableLiquidity: 5n * SCALE,
+        intervalStart: 0n,
+        intervalEnd: 0n,
+        pairs: [],
+        pairsTruncated: false,
+      },
+    ];
+    fx.streams = [
+      {
+        streamId: 5n,
+        owner: ACCOUNT,
+        sender: VAULT,
+        asset: TOKEN,
+        schedule: {
+          start: NOW - 10n * 86_400n,
+          end: NOW + 80n * 86_400n,
+          deposited: SCALE,
+          withdrawn: 0n,
+          refunded: 0n,
+          cliffTime: NOW - 10n * 86_400n,
+          isCancelable: false,
+        },
+        withdrawable: SCALE / 10n,
+        remaining: SCALE,
+        status: 1,
+        renderEligible: true,
+        borrowRouteEligible: true,
+        vault: VAULT,
+        market: MARKET,
+      },
+    ];
+    writeWatchSearch({ lens: "streams", selection: { kind: "stream", id: 5n } }, "replace");
+    const { rerender } = render(<WatchApp />);
+    expect(document.querySelector("[data-region='stream-detail']")).not.toBeNull();
+
+    fx.streams = [];
+    rerender(<WatchApp />);
+    expect(screen.queryByText("STREAM CLOSED")).not.toBeInTheDocument();
+    expect(document.querySelector("[data-region='stream-detail']")).not.toBeNull();
+  });
+
+  it("does not copy an open loan onto the Streams wall", () => {
+    fx.connected = true;
+    fx.loans = [
+      {
+        id: 12n,
+        borrower: ACCOUNT,
+        streamId: 5n,
+        obligation: SCALE,
+        drawn: 0n,
+        repaid: 0n,
+        closed: false,
+        outstanding: SCALE,
+      },
+    ];
+    writeWatchSearch({ lens: "borrowed", selection: { kind: "none" } }, "replace");
+    render(<WatchApp />);
+    expect(screen.getByRole("button", { name: /LOAN #12/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /STREAM #5/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "STREAMS" })).not.toBeInTheDocument();
   });
 });

@@ -26,7 +26,7 @@ Feature: Streams lens on the watch surface
     When I pledge the tracked stream via borrow
     And the frontend re-syncs with chain state
     When I select the "STREAMS" lens
-    Then the tracked stream row is pledged
+    Then the tracked stream row is absent from Streams
     When I select the "BORROWED" lens
     Then I see a loan row for the tracked stream
     And the tracked stream is not double-listed

@@ -182,48 +182,70 @@ export function useLenderBook(
     })),
   });
 
+  const dataUpdatedAt = Math.max(
+    countRead.dataUpdatedAt ?? 0,
+    idReads.dataUpdatedAt ?? 0,
+    stateReads.dataUpdatedAt ?? 0,
+    ...pairQueries.map((query) => query.dataUpdatedAt ?? 0),
+  );
+
   return useMemo(() => {
-    if (!configured) return loadingOutcome<LenderBook>();
+    const meta = dataUpdatedAt > 0 ? { dataUpdatedAt } : {};
+    if (!configured) return loadingOutcome<LenderBook>(undefined, meta);
     if (countRead.isLoading && countRead.data === undefined) {
-      return loadingOutcome<LenderBook>();
+      return loadingOutcome<LenderBook>(undefined, meta);
     }
     if (countRead.isError) {
-      return unavailableOutcome<LenderBook>([
-        readFailure("useLenderBook", "transport", countRead.error ?? "lenderPositionCount failed"),
-      ]);
+      return unavailableOutcome<LenderBook>(
+        [readFailure("useLenderBook", "transport", countRead.error ?? "lenderPositionCount failed")],
+        meta,
+      );
     }
     if (overBudget) {
-      return unavailableOutcome<LenderBook>([
-        readFailure("useLenderBook", "incomplete", "Lender enumeration exceeds the fail-closed budget"),
-      ]);
+      return unavailableOutcome<LenderBook>(
+        [
+          readFailure(
+            "useLenderBook",
+            "incomplete",
+            "Lender enumeration exceeds the fail-closed budget",
+          ),
+        ],
+        meta,
+      );
     }
     if (count === 0n) {
-      return readyOutcome({ positions: [] });
+      return readyOutcome({ positions: [] }, meta);
     }
-    if (idReads.isLoading && !idReads.data) return loadingOutcome<LenderBook>();
+    if (idReads.isLoading && !idReads.data) return loadingOutcome<LenderBook>(undefined, meta);
     if (!idsComplete) {
-      return unavailableOutcome<LenderBook>([
-        readFailure("useLenderBook", "subcall", "lenderPositionAt batch is incomplete"),
-      ]);
+      return unavailableOutcome<LenderBook>(
+        [readFailure("useLenderBook", "subcall", "lenderPositionAt batch is incomplete")],
+        meta,
+      );
     }
-    if (stateReads.isLoading && !stateReads.data) return loadingOutcome<LenderBook>();
+    if (stateReads.isLoading && !stateReads.data) {
+      return loadingOutcome<LenderBook>(undefined, meta);
+    }
     const stateComplete =
       stateReads.data?.length === stateContracts.length &&
       stateReads.data.every((result) => result.status === "success");
     if (!stateComplete) {
-      return unavailableOutcome<LenderBook>([
-        readFailure("useLenderBook", "subcall", "positionState batch is incomplete"),
-      ]);
+      return unavailableOutcome<LenderBook>(
+        [readFailure("useLenderBook", "subcall", "positionState batch is incomplete")],
+        meta,
+      );
     }
     if (pairQueries.some((query) => query.isLoading && query.data === undefined)) {
-      return loadingOutcome<LenderBook>({
-        positions: positions.map((row) => ({ ...row })),
-      });
+      return loadingOutcome<LenderBook>(
+        { positions: positions.map((row) => ({ ...row })) },
+        meta,
+      );
     }
     if (pairQueries.some((query) => query.isError)) {
-      return unavailableOutcome<LenderBook>([
-        readFailure("useLenderBook", "transport", "loansOf pagination failed"),
-      ]);
+      return unavailableOutcome<LenderBook>(
+        [readFailure("useLenderBook", "transport", "loansOf pagination failed")],
+        meta,
+      );
     }
     const hydrated = positions.map((row, index) => {
       const page = pairQueries[index]?.data;
@@ -233,15 +255,18 @@ export function useLenderBook(
         pairsTruncated: page?.truncated ?? false,
       };
     });
-    return readyOutcome({ positions: hydrated });
+    return readyOutcome({ positions: hydrated }, meta);
   }, [
     configured,
     count,
     countRead.data,
+    countRead.dataUpdatedAt,
     countRead.error,
     countRead.isError,
     countRead.isLoading,
+    dataUpdatedAt,
     idReads.data,
+    idReads.dataUpdatedAt,
     idReads.isLoading,
     idsComplete,
     overBudget,
@@ -249,6 +274,7 @@ export function useLenderBook(
     positions,
     stateContracts.length,
     stateReads.data,
+    stateReads.dataUpdatedAt,
     stateReads.isLoading,
   ]);
 }

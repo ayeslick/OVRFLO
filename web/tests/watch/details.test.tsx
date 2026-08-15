@@ -206,12 +206,27 @@ describe("watch details", () => {
         loan={{ ...activeLoan, id: 3n, closed: true, outstanding: 0n, streamId: 441n }}
         symbol="ovrfloTEST"
         freshness={synced}
+        streamPresent
         onSelectStream={onSelectStream}
       />,
     );
     expect(screen.getByText("SETTLED")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /RETURNED STREAM #441/ }));
     expect(onSelectStream).toHaveBeenCalledWith(441n);
+  });
+
+  it("renders settled detail with gone copy when the NFT is absent", () => {
+    render(
+      <ClosedLoanDetail
+        loan={{ ...activeLoan, id: 3n, closed: true, outstanding: 0n, streamId: 441n }}
+        symbol="ovrfloTEST"
+        freshness={synced}
+        streamPresent={false}
+        onSelectStream={() => undefined}
+      />,
+    );
+    expect(screen.getByRole("button", { name: /STREAM #441 GONE/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /RETURNED STREAM #441/ })).not.toBeInTheDocument();
   });
 
   it("offers borrow against an eligible stream", () => {

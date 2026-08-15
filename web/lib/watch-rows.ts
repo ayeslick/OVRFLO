@@ -63,8 +63,14 @@ export function borrowedStateLine(args: {
   streamId: bigint;
   coverAt?: bigint;
   scheduleHydrated?: boolean;
+  /** False when settle burned the NFT or the NFT is otherwise absent. */
+  streamPresent?: boolean;
 }): string {
-  if (args.state === "settled") return `RETURNED STREAM #${args.streamId.toString()}`;
+  if (args.state === "settled") {
+    return args.streamPresent === false
+      ? `STREAM #${args.streamId.toString()} GONE`
+      : `RETURNED STREAM #${args.streamId.toString()}`;
+  }
   if (args.state === "close-ready") return "COVERED · CLOSE FROM STREAM";
   if (args.scheduleHydrated === false) return "CHECKING… · STREAM REPAYING";
   if (args.coverAt !== undefined) {

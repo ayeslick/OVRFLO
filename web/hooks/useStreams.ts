@@ -260,7 +260,18 @@ export function useStreams(input: {
     }
     if (ids.length === 0) {
       fixedCache.current.clear();
-      return readyOutcome({ streams: [] }, meta);
+      // Ready-empty is only a zero balance. A positive balance with no ids is
+      // incomplete enumeration, never confirmed-empty.
+      return unavailableOutcome<StreamBook>(
+        [
+          readFailure(
+            "useStreams",
+            "incomplete",
+            "tokensOfOwnerIn returned no ids while balanceOf is nonzero",
+          ),
+        ],
+        meta,
+      );
     }
     if (stateReads.isLoading && !stateReads.data) {
       return loadingOutcome<StreamBook>(undefined, meta);

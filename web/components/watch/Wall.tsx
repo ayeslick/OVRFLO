@@ -178,6 +178,7 @@ function BorrowedRow({
         streamId: loan.streamId,
         coverAt,
         scheduleHydrated: Boolean(truth),
+        streamPresent: Boolean(truth),
       })}
       decisive={
         state === "settled" ? (
