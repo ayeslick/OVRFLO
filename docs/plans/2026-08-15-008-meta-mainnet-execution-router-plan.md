@@ -29,7 +29,10 @@ by accident.
 - `002` in the fork (`/Users/jay/OVRFLO-Streams-u4`, `feat/u4-fork-deploy`): delete
   `ERC721Enumerable`, land the owner-only index. `tokensOfOwnerIn`'s signature and clamp semantics
   do not change.
-- `007` in OVRFLO core: `QuoteBorrow` error plus guarded revert in `borrow`.
+- `007` in OVRFLO core: enrich the existing `BelowMinAcceptable` error with
+  `(actualBorrow, feeAmount, obligation)`; the quote is `eth_call borrow(..., type(uint128).max)`.
+  **No dedicated quote branch and no `QuoteBorrow` error** — `007` rejects that by measurement
+  (the sentinel-check branch is the byte cost the design exists to avoid).
 - `005` in OVRFLO: the stream lens. It reads the lockup through its external interface, which `002`
   does not change, so it does not wait for `002`.
 
@@ -68,18 +71,21 @@ building the frontend twice.
 - **Reorg fault injection (004):** anvil can simulate reorgs (snapshot/revert, `anvil_reorg`). One
   scenario: reorg the pinned block, assert pinned pages fail closed under `requireCanonical`, the
   book goes `unavailable`, and a re-pin recovers.
-- **`007`'s `QuoteBorrow` error fields and the `type(uint128).max` sentinel are public ABI** once
-  deployed. Documented as interface, not implementation.
+- **`007`'s enriched `BelowMinAcceptable` fields and the `type(uint128).max` sentinel are public
+  ABI** once deployed. Documented as interface, not implementation.
 - **`002`'s outward-facing break:** `supportsInterface(0x780e9d63)` goes false; explorers and
   marketplaces see vanilla ERC721. Deliberate. One line in the fork README deviation table.
 - **Size budget:** after `007`, `OVRFLOLending` has ~188 bytes under the canary. That is the repair
   budget for audit findings. Re-measure `forge build --sizes` after any core change.
-- **Wave 3 builds below React (adopted from the rewrite brief).** The pager loop, the pin
-  lifecycle, the complete-set window merge, and the deployless lens call are written as plain async
-  functions taking a viem `PublicClient` and returning the book's outcome shape; the wagmi/TanStack
-  hooks become thin wrappers. None of that logic is React-shaped, it becomes unit-testable without
-  rendering, and the eventual framework migration becomes deletion instead of rewrite. This changes
-  where wave 3's code lives, not what `001`/`003` specify.
+- **Wave 3 builds below React (adopted from the rewrite brief) — with a precise boundary.** The
+  protocol client owns the *page operation* and the *complete-set operation*: `loadStreamPage(client,
+  owner, start, stop, pin)`, `loadCompleteStreams(client, owner, pin)` (which may loop windows), lens
+  result decoding, and outcome normalization — plain async functions over a viem `PublicClient`,
+  unit-testable without rendering. TanStack keeps the wall's interactive infinite-query state
+  machine: `pageParams`, `hasNextPage`, `fetchNextPage`, cache, dedup, and in-flight ownership —
+  per `001`'s "do not hand-roll a pager" rule, which stands. The complete-set path is a bounded
+  produce-the-set operation, not the UI pager, so its plain async window loop does not violate that
+  rule. This changes where wave 3's code lives, not what `001`/`003` specify.
 - **Every successful protocol read is stamped with `fetchedAtMs`, `blockNumber`, and `blockHash`**
   in those protocol-client functions. This is `003`'s pin identity and the brief's neutral metadata
   as one field — do not also keep a framework-specific timestamp like `dataUpdatedAt` as truth.

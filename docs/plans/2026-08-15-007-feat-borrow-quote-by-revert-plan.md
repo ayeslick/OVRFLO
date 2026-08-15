@@ -21,7 +21,10 @@ quotes a borrow.
 ## The seam that already exists
 
 `borrow` computes the exact quote through the real execution path, and the slippage check sits
-**after** the economics and **before** every write, the NFT transfer, and both payments:
+**after** the economics and **before** the loan write, the NFT transfer, and both payments.
+`_fillTick`'s own tick writes (`filled`, `loanCount`, the cursor) have already executed by the seam;
+the revert rolls them back. The guarantee is **no persistent state change**, not "no writes
+executed":
 
 ```
 _validateTick → _fillTick(_priceStream, _selectEpoch, TickTree, flooring, price cap, obligation, fee)
@@ -32,13 +35,14 @@ loan storage · sablier.transferFrom · _payUnderlying
 ```
 
 Verified at `src/OVRFLOLending.sol`: the revert is the first statement after `_fillTick`, and the
-first storage write is two lines later.
+first post-seam storage write (the loan) is two lines later.
 
 ## Product contract
 
 - One implementation of the fill. The quote is the execution with its writes rolled back, not a
   second copy of the arithmetic.
-- The quote reverts before any state change, any NFT transfer, and any payment.
+- The quote leaves no persistent state change — `_fillTick`'s writes are rolled back by the
+  revert — and never reaches the NFT transfer or a payment.
 - `web/lib/lending-math.ts`'s five mirrored functions are deleted, not left as a fallback.
 - A genuine slippage failure reports what was actually available.
 - No new contract, no new getter, no new external function.
@@ -163,7 +167,9 @@ being exposed.
 ## What the quote does not prove
 
 It stops before `sablier.transferFrom`, so it does not establish that the caller owns the NFT, that
-the market is approved, or that the final transfers succeed.
+the stream NFT is approved for transfer, or that the post-seam transfers succeed. Market approval
+**is** established: the quote runs the existing validation path before the fill, so an unapproved
+market fails the quote with its own error rather than returning numbers.
 
 **That is a feature** — it lets the UI preview before asking for approval:
 

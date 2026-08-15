@@ -34,7 +34,10 @@ hydration on `readQuery` still stamps a coherent-looking `{blockNumber, blockHas
 - The lens holds no state, has no admin, and owns nothing. It ships deployless — bytecode in the
   frontend bundle, no on-chain address — so replacing it is a frontend release.
 - It reads. It never writes, never holds tokens, and is never in a transaction path.
-- The complete-set consumers get the complete set in one call, with no paging loop and no budget.
+- The complete-set consumers get the complete set at one block: try `streamsOfOwner` once, and past
+  the provider's `eth_call` ceiling (roughly 2,000–2,500 streams — sized below) merge
+  `streamsOfOwnerIn` windows all pinned to one block. Either path yields the whole set; neither is a
+  refusal threshold.
 
 ## Prior art
 
@@ -223,9 +226,13 @@ of `test/DeploySize.t.sol`'s `deliberate-ceiling` comments — **not** by editin
 
 ## Test accountability
 
-- **A reverting stream degrades one row.** Burn a stream between the id read and hydration; assert
-  the lens returns `ok: false` for it and correct data for its neighbours. This is the assertion
-  that stops the lens regressing from `allowFailure: true`.
+- **A reverting stream degrades one row — testable only through `streamsByIds`.** The owner-scoped
+  forms cannot produce an `ok: false` row via a burn: ids and hydration happen in one atomic call at
+  one block, and a burned id leaves the owner's enumeration in that same block (per the `ok`
+  discussion above — "do not write a test that pretends to exercise it through a burn"). If
+  `streamsByIds` ships, assert a burned or unknown id in the caller-supplied array yields
+  `ok: false` with correct neighbours; if `streamsByIds` is deferred, this test defers with it and
+  `ok` stands as documented insurance.
 - **`streamsOfOwner` equals the concatenation of its windows.** Assert the unbounded form returns the
   same set as paging `streamsOfOwnerIn` across the whole range at one block.
 - **The lens agrees with direct reads.** For one stream, assert every `StreamView` field equals what
