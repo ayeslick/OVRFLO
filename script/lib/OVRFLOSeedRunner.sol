@@ -12,11 +12,14 @@ import {OVRFLOToken} from "../../src/OVRFLOToken.sol";
 import {OVRFLOTestFixtures} from "./OVRFLOTestFixtures.sol";
 
 /// @notice Shared deployment + market-approval + dev-wallet seeding flow
-///         used by both {SeedLocal} (anvil fork of mainnet) and
-///         {SeedDevnet} (Tenderly Virtual Testnet). Inherits
+///         used by {SeedDevnet} (Tenderly Virtual Testnet). Inherits
 ///         {OVRFLOTestFixtures} for protocol constants and {StdCheats}
 ///         for the `deal` cheatcode used to populate Pendle PT balances
-///         on the dev wallet.
+///         on the dev wallet. Stream-layer contracts come from committed
+///         artifacts via `_deployConfiguredSystemAs`.
+///
+///         Anvil (local fork) is driven by `script/seed-local.sh`, which
+///         sidesteps the `eth_getAccountInfo` regression in foundry#11714.
 ///
 ///         Subclasses call {_runSeed} from inside
 ///         `vm.startBroadcast(ownerPk)` so every onlyOwner factory call
@@ -76,8 +79,7 @@ abstract contract OVRFLOSeedRunner is Script, StdCheats, OVRFLOTestFixtures {
         _prepareOracleAs(factory, SECONDARY_MARKET);
         factory.addMarket(address(ovrflo), PRIMARY_MARKET, MIN_TWAP_DURATION, 25);
         factory.addMarket(address(ovrflo), SECONDARY_MARKET, MIN_TWAP_DURATION, 10);
-        OVRFLOLending lending = new OVRFLOLending(address(factory), address(ovrflo), address(ovrflo.sablierLL()));
-        factory.registerLending(address(lending));
+        OVRFLOLending lending = _deployAndRegisterLending(factory, ovrflo);
 
         deal(PRIMARY_PT, devWallet, PT_SEED_AMOUNT);
         deal(SECONDARY_PT, devWallet, PT_SEED_AMOUNT);
@@ -96,6 +98,17 @@ abstract contract OVRFLOSeedRunner is Script, StdCheats, OVRFLOTestFixtures {
 
         _writeDeployments(networkKey, factory, ovrflo, token, lending, devWallet);
         _logSummary(networkKey, owner, devWallet, factory, ovrflo, token, lending);
+    }
+
+    function _deployAndRegisterLending(OVRFLOFactory factory, OVRFLO ovrflo) private returns (OVRFLOLending lending) {
+        address stream = address(ovrflo.sablierLL());
+        lending = new OVRFLOLending(address(factory), address(ovrflo), stream);
+        require(lending.owner() == address(factory), "OVRFLOSeedRunner: lending owner");
+        require(address(lending.sablier()) == stream, "OVRFLOSeedRunner: lending stream");
+        factory.registerLending(address(lending));
+        require(factory.ovrfloToLending(address(ovrflo)) == address(lending), "OVRFLOSeedRunner: registerLending");
+        factory.setLendingTickSpacing(address(lending), PRIMARY_MARKET, 25);
+        factory.setLendingTickSpacing(address(lending), SECONDARY_MARKET, 25);
     }
 
     function _writeDeployments(

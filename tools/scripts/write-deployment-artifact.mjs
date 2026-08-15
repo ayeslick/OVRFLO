@@ -8,6 +8,9 @@ import { pathToFileURL } from "node:url";
 const LENDING_REGISTERED_TOPIC =
   "0x4fe43074b419acbe41e8428df134258612acf6435f32c53db0f6a4ba665b4e41";
 const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
+// cast sig "sablierLL()" / cast sig "sablier()"
+const SABLIER_LL_SELECTOR = "0x94cd301a";
+const SABLIER_SELECTOR = "0x482879aa";
 
 export async function verifyDeploymentArtifactInput({
   artifactPath,
@@ -102,6 +105,13 @@ export async function verifyDeploymentArtifactInput({
     throw new Error("lending is not derived from a verified factory LendingRegistered event");
   }
 
+  const stream = await deriveStreamAddress({
+    ovrflo,
+    lending,
+    supplied: current.stream,
+    request: rpcRequest,
+  });
+
   const verified = {
     ...current,
     formatVersion: 1,
@@ -116,6 +126,7 @@ export async function verifyDeploymentArtifactInput({
     lending,
     lendingDeploymentBlock: lendingDeploymentBlock.toString(),
     lendingDeploymentBlockHash: lendingBlock.hash,
+    stream,
   };
   if (requireExistingIdentity) {
     for (const field of [
@@ -126,6 +137,7 @@ export async function verifyDeploymentArtifactInput({
       "lending",
       "lendingDeploymentBlock",
       "lendingDeploymentBlockHash",
+      "stream",
     ]) {
       if (!sameHexOrValue(current[field], verified[field])) {
         throw new Error(`${field} does not match the chain-verified deployment identity`);
@@ -142,6 +154,35 @@ export async function verifyAndWriteDeploymentArtifact(options) {
   writeFileSync(temporaryPath, `${JSON.stringify(verified, null, 2)}\n`, { mode: 0o600 });
   renameSync(temporaryPath, absolutePath);
   return verified;
+}
+
+async function deriveStreamAddress({ ovrflo, lending, supplied, request }) {
+  const vaultStream = decodeReturnedAddress(
+    await request("eth_call", [{ to: ovrflo, data: SABLIER_LL_SELECTOR }, "latest"]),
+    "vault.sablierLL()",
+  );
+  const lendingStream = decodeReturnedAddress(
+    await request("eth_call", [{ to: lending, data: SABLIER_SELECTOR }, "latest"]),
+    "lending.sablier()",
+  );
+  if (!sameHex(vaultStream, lendingStream)) {
+    throw new Error("vault.sablierLL() does not match lending.sablier()");
+  }
+  const code = await request("eth_getCode", [vaultStream, "latest"]);
+  if (!code || code === "0x") {
+    throw new Error("derived stream has no code");
+  }
+  if (supplied !== undefined && !sameHex(String(supplied), vaultStream)) {
+    throw new Error("supplied stream does not match the vault and lending bindings");
+  }
+  return vaultStream;
+}
+
+function decodeReturnedAddress(result, name) {
+  if (typeof result !== "string" || !/^0x[0-9a-fA-F]{64}$/.test(result)) {
+    throw new Error(`${name} did not return an address`);
+  }
+  return requiredAddress(`0x${result.slice(-40)}`, name);
 }
 
 export async function findDeploymentBlock({ address, latest, request }) {

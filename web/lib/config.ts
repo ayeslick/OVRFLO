@@ -79,6 +79,20 @@ function required(raw: string | undefined, name: string) {
   return raw;
 }
 
+function requiredAlways(raw: string | undefined, name: string) {
+  if (!raw) throw new Error(`${name} is required`);
+  return raw;
+}
+
+function parseRequiredAddress(raw: string | undefined, name: string): Address {
+  const value = requiredAlways(raw, name);
+  if (!isAddress(value)) throw new Error(`${name} must be a valid address`);
+  if (value.toLowerCase() === ZERO_ADDRESS) {
+    throw new Error(`${name} must not be the zero address`);
+  }
+  return value;
+}
+
 function parseChainId(raw: string | undefined, profile: RuntimeProfile): typeof MAINNET_CHAIN_ID {
   const value = profile === "production" ? required(raw, "NEXT_PUBLIC_CHAIN_ID") : (raw ?? "1");
   if (value !== "1") {
@@ -203,6 +217,11 @@ function parseReownProjectId(profile: RuntimeProfile) {
 
 export const runtimeProfile = parseProfile();
 export const chainId = parseChainId(env.chainId, runtimeProfile);
+/** Stream-layer address (OVRFLOStream). Name kept per R9. Required in both profiles. */
+export const SABLIER_LOCKUP_ADDRESS = parseRequiredAddress(
+  env.sablierLockup,
+  "NEXT_PUBLIC_SABLIER_LOCKUP_ADDRESS",
+);
 export const factoryAddress = parseAddress(
   env.factory,
   "NEXT_PUBLIC_OVRFLO_FACTORY",
@@ -257,13 +276,6 @@ export const historicalRpcUrl = parseUrl(
   runtimeProfile,
 );
 export const reownProjectId = parseReownProjectId(runtimeProfile);
-
-/** Stream-layer address (OVRFLOStream). Name kept per R9; value from env (U6). */
-export const SABLIER_LOCKUP_ADDRESS = parseAddress(
-  env.sablierLockup,
-  "NEXT_PUBLIC_SABLIER_LOCKUP_ADDRESS",
-  runtimeProfile,
-);
 
 export function isConfiguredAddress(address: Address | null | undefined) {
   return Boolean(address && address.toLowerCase() !== ZERO_ADDRESS);

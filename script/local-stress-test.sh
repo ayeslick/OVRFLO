@@ -55,8 +55,12 @@ PRIMARY_PT=$(cast call --rpc-url "$RPC" "$OVRFLO" 'series(address)(uint32,uint16
 # Secondary market (index 1) — used for multi-market strip testing.
 SECONDARY_MARKET=$(cast call --rpc-url "$RPC" "$FACTORY" 'approvedMarketAt(address,uint256)(address)' "$OVRFLO" 1 2>/dev/null | awk '{print $1}' || echo "")
 SECONDARY_PT=$(cast call --rpc-url "$RPC" "$OVRFLO" 'series(address)(uint32,uint16,uint256,address,address,address)' "$SECONDARY_MARKET" 2>/dev/null | sed -n '4p' | awk '{print $1}' || echo "")
-# Sablier V2 Lockup Linear on mainnet (verified in web/lib/config.ts).
-SABLIER=0xAFb979d9afAd1aD27C5eFf4E27226E3AB9e5dCC9
+# SABLIER= keeps its name. The value is the seeded lockup.
+SABLIER=$(jq -r '.stream' "$DEPLOY")
+if [ -z "$SABLIER" ] || [ "$SABLIER" = "null" ]; then
+  echo "ERROR: $DEPLOY is missing stream. Re-run seed-local.sh." >&2
+  exit 1
+fi
 WSTETH=0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0
 
 # ─── helpers ──────────────────────────────────────────────────────────────────

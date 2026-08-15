@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const REAL_ADDRESS = "0x1234567890abcdef1234567890abcdef12345678" as const;
 const OVRFLO_ADDRESS = "0x2234567890abcdef1234567890abcdef12345678" as const;
 const LENDING_ADDRESS = "0x3234567890abcdef1234567890abcdef12345678" as const;
+const STREAM_ADDRESS = "0x4234567890abcdef1234567890abcdef12345678" as const;
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as const;
 const BLOCK_HASH = `0x${"ab".repeat(32)}` as const;
 const LENDING_BLOCK_HASH = `0x${"cd".repeat(32)}` as const;
@@ -35,13 +36,13 @@ const ENV_KEYS = [
   "NEXT_PUBLIC_OVRFLO_LENDING",
   "NEXT_PUBLIC_LENDING_DEPLOYMENT_BLOCK",
   "NEXT_PUBLIC_LENDING_DEPLOYMENT_BLOCK_HASH",
+  "NEXT_PUBLIC_SABLIER_LOCKUP_ADDRESS",
   "NEXT_PUBLIC_PROJECTION_SCHEMA_VERSION",
   "NEXT_PUBLIC_ABI_VERSION",
   "NEXT_PUBLIC_RPC_URL",
   "NEXT_PUBLIC_RPC_FALLBACK_URLS",
   "NEXT_PUBLIC_HISTORICAL_RPC_URL",
   "NEXT_PUBLIC_REOWN_PROJECT_ID",
-  "NEXT_PUBLIC_SABLIER_LOCKUP_ADDRESS",
   "VERCEL_ENV",
   "OVRFLO_DEPLOYABLE_BUILD",
 ] as const;
@@ -63,6 +64,7 @@ function stubValidProduction() {
   vi.stubEnv("NEXT_PUBLIC_OVRFLO_LENDING", LENDING_ADDRESS);
   vi.stubEnv("NEXT_PUBLIC_LENDING_DEPLOYMENT_BLOCK", "123460");
   vi.stubEnv("NEXT_PUBLIC_LENDING_DEPLOYMENT_BLOCK_HASH", LENDING_BLOCK_HASH);
+  vi.stubEnv("NEXT_PUBLIC_SABLIER_LOCKUP_ADDRESS", STREAM_ADDRESS);
   vi.stubEnv("NEXT_PUBLIC_PROJECTION_SCHEMA_VERSION", "1");
   vi.stubEnv("NEXT_PUBLIC_ABI_VERSION", "1");
   vi.stubEnv("NEXT_PUBLIC_RPC_URL", "https://eth-mainnet.g.alchemy.com/v2/public-browser-key");
@@ -72,12 +74,12 @@ function stubValidProduction() {
   );
   vi.stubEnv("NEXT_PUBLIC_HISTORICAL_RPC_URL", "https://history.example.com");
   vi.stubEnv("NEXT_PUBLIC_REOWN_PROJECT_ID", "1234567890abcdef1234567890abcdef");
-  vi.stubEnv("NEXT_PUBLIC_SABLIER_LOCKUP_ADDRESS", REAL_ADDRESS);
 }
 
 describe("isConfiguredAddress", () => {
   it("is false for null, undefined, and the zero address; true otherwise", async () => {
     vi.stubEnv("NEXT_PUBLIC_RUNTIME_PROFILE", "local");
+    vi.stubEnv("NEXT_PUBLIC_SABLIER_LOCKUP_ADDRESS", STREAM_ADDRESS);
     const mod = await loadConfig();
     expect(mod.isConfiguredAddress(null)).toBe(false);
     expect(mod.isConfiguredAddress(undefined)).toBe(false);
@@ -230,9 +232,40 @@ describe("reownProjectId", () => {
   );
 });
 
+describe("stream address parsing", () => {
+  it("rejects a missing stream address in the production profile", async () => {
+    stubValidProduction();
+    vi.stubEnv("NEXT_PUBLIC_SABLIER_LOCKUP_ADDRESS", undefined);
+    await expect(loadConfig()).rejects.toThrow(/NEXT_PUBLIC_SABLIER_LOCKUP_ADDRESS.*required/i);
+  });
+
+  it("rejects a missing stream address in the local profile", async () => {
+    vi.stubEnv("NEXT_PUBLIC_RUNTIME_PROFILE", "local");
+    vi.stubEnv("NEXT_PUBLIC_SABLIER_LOCKUP_ADDRESS", undefined);
+    await expect(loadConfig()).rejects.toThrow(/NEXT_PUBLIC_SABLIER_LOCKUP_ADDRESS.*required/i);
+  });
+
+  it("rejects a zero stream address in both profiles", async () => {
+    stubValidProduction();
+    vi.stubEnv("NEXT_PUBLIC_SABLIER_LOCKUP_ADDRESS", ZERO_ADDRESS);
+    await expect(loadConfig()).rejects.toThrow(/must not be the zero address/i);
+
+    vi.stubEnv("NEXT_PUBLIC_RUNTIME_PROFILE", "local");
+    vi.stubEnv("NEXT_PUBLIC_SABLIER_LOCKUP_ADDRESS", ZERO_ADDRESS);
+    await expect(loadConfig()).rejects.toThrow(/must not be the zero address/i);
+  });
+
+  it("exports the configured lockup address", async () => {
+    stubValidProduction();
+    const mod = await loadConfig();
+    expect(mod.SABLIER_LOCKUP_ADDRESS).toBe(STREAM_ADDRESS);
+  });
+});
+
 describe("local-only profile", () => {
   it("allows explicit local defaults outside a production deployment", async () => {
     vi.stubEnv("NEXT_PUBLIC_RUNTIME_PROFILE", "local");
+    vi.stubEnv("NEXT_PUBLIC_SABLIER_LOCKUP_ADDRESS", STREAM_ADDRESS);
     const mod = await loadConfig();
     expect(mod.chainId).toBe(1);
     expect(mod.factoryAddress).toBe(ZERO_ADDRESS);

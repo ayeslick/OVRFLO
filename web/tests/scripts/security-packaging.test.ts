@@ -63,6 +63,7 @@ describe("deployment build input", () => {
     lending: "0x3234567890abcdef1234567890abcdef12345678",
     lendingDeploymentBlock: "105",
     lendingDeploymentBlockHash: `0x${"cd".repeat(32)}`,
+    stream: "0x4234567890abcdef1234567890abcdef12345678",
     projectionSchemaVersion: 1,
     abiVersion: 1,
   };
@@ -77,6 +78,7 @@ describe("deployment build input", () => {
     NEXT_PUBLIC_OVRFLO_LENDING: verified.lending,
     NEXT_PUBLIC_LENDING_DEPLOYMENT_BLOCK: verified.lendingDeploymentBlock,
     NEXT_PUBLIC_LENDING_DEPLOYMENT_BLOCK_HASH: verified.lendingDeploymentBlockHash,
+    NEXT_PUBLIC_SABLIER_LOCKUP_ADDRESS: verified.stream,
     NEXT_PUBLIC_PROJECTION_SCHEMA_VERSION: "1",
     NEXT_PUBLIC_ABI_VERSION: "1",
   };

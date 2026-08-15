@@ -2,8 +2,8 @@
 # write-env.sh — render web/.env.local (or .env.devnet) from a deployment artifact.
 #
 # The seed scripts (script/seed-local.sh, script/SeedDevnet.s.sol) drop a
-# deployments/<network>.json with { chainId, factory, ovrflo, token, devWallet }.
-# This helper reads that artifact, composes the seven NEXT_PUBLIC_* knobs
+# deployments/<network>.json with { chainId, factory, ovrflo, token, lending, stream }.
+# This helper reads that artifact, composes the NEXT_PUBLIC_* knobs
 # the web app needs, and writes them to web/.env.local (local) or
 # web/.env.devnet (devnet), overwriting atomically via a temp file.
 #
@@ -51,7 +51,9 @@ if ! jq -e '
   (.factoryDeploymentBlockHash | type == "string" and test("^0x[0-9a-fA-F]{64}$")) and
   (.lending | type == "string" and test("^0x[0-9a-fA-F]{40}$")) and
   (.lendingDeploymentBlock | tostring | test("^(0|[1-9][0-9]*)$")) and
-  (.lendingDeploymentBlockHash | type == "string" and test("^0x[0-9a-fA-F]{64}$"))
+  (.lendingDeploymentBlockHash | type == "string" and test("^0x[0-9a-fA-F]{64}$")) and
+  (.stream | type == "string" and test("^0x[0-9a-fA-F]{40}$")) and
+  (.stream != "0x0000000000000000000000000000000000000000")
 ' "$DEPLOYMENTS_JSON" >/dev/null; then
   echo "write-env: $DEPLOYMENTS_JSON is not a verified fresh-generation v1 artifact." >&2
   echo "write-env: regenerate it with write-deployment-artifact.mjs before building the UI." >&2
@@ -66,6 +68,7 @@ OVRFLO=$(jq -r '.ovrflo' "$DEPLOYMENTS_JSON")
 LENDING=$(jq -r '.lending' "$DEPLOYMENTS_JSON")
 LENDING_BLOCK=$(jq -r '.lendingDeploymentBlock' "$DEPLOYMENTS_JSON")
 LENDING_BLOCK_HASH=$(jq -r '.lendingDeploymentBlockHash' "$DEPLOYMENTS_JSON")
+STREAM=$(jq -r '.stream' "$DEPLOYMENTS_JSON")
 PROJECTION_SCHEMA_VERSION=$(jq -r '.projectionSchemaVersion' "$DEPLOYMENTS_JSON")
 ABI_VERSION=$(jq -r '.abiVersion' "$DEPLOYMENTS_JSON")
 
@@ -118,6 +121,7 @@ trap 'rm -f "$TMP"' EXIT
   echo "NEXT_PUBLIC_OVRFLO_LENDING=$LENDING"
   echo "NEXT_PUBLIC_LENDING_DEPLOYMENT_BLOCK=$LENDING_BLOCK"
   echo "NEXT_PUBLIC_LENDING_DEPLOYMENT_BLOCK_HASH=$LENDING_BLOCK_HASH"
+  echo "NEXT_PUBLIC_SABLIER_LOCKUP_ADDRESS=$STREAM"
   echo "NEXT_PUBLIC_PROJECTION_SCHEMA_VERSION=$PROJECTION_SCHEMA_VERSION"
   echo "NEXT_PUBLIC_ABI_VERSION=$ABI_VERSION"
   if [ -n "$RPC_URL" ]; then
@@ -141,4 +145,4 @@ mv "$TMP" "$OUT"
 trap - EXIT
 
 echo "write-env: wrote $OUT"
-echo "           factory=$FACTORY@$FACTORY_BLOCK  rpc=${RPC_URL:-<unset>}"
+echo "           factory=$FACTORY@$FACTORY_BLOCK  stream=$STREAM  rpc=${RPC_URL:-<unset>}"

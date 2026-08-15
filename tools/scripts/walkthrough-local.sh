@@ -15,7 +15,12 @@ MARKET=$(jq -r .primaryMarket "$DEPLOYMENT")
 PT=$(jq -r .primaryPt "$DEPLOYMENT")
 TOKEN=$(jq -r .token "$DEPLOYMENT")
 WSTETH=0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0
-SABLIER=0xAFb979d9afAd1aD27C5eFf4E27226E3AB9e5dCC9
+# SABLIER= keeps its name. The value is the seeded lockup, derived on the artifact.
+SABLIER=$(jq -r .stream "$DEPLOYMENT")
+if [ -z "$SABLIER" ] || [ "$SABLIER" = "null" ]; then
+  echo "walkthrough-local: deployments/local.json is missing stream. Re-run seed-local.sh." >&2
+  exit 1
+fi
 OWNER_PK=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
 DEV_PK=0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d
 LENDER_PK=0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a

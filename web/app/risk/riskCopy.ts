@@ -48,7 +48,7 @@ export const RISK_SECTIONS: readonly RiskSection[] = [
     heading: "DEPENDENCIES",
     paragraphs: [
       "Pendle: approved PT series and the factory TWAP oracle. OVRFLO does not trade YT or the Pendle AMM. A rotten or unverified Pendle URL is never load-bearing.",
-      "Sablier: linear streams use the immutable V2 Lockup Linear v1.1 deployment at 0xAFb979d9afAd1aD27C5eFf4E27226E3AB9e5dCC9. Newer Sablier Lockup docs describe a different version.",
+      "Sablier: linear streams use OVRFLO Streams, a GPL fork of Sablier V2 Lockup Linear v1.1.2. Newer Sablier Lockup docs describe a different version.",
       "Chainlink: the stETH/USD feed is display-only. It never enters receipts or transaction parameters. A missing or stale feed disables USD display; it does not invent a dollar figure.",
     ],
   },

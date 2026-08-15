@@ -10,6 +10,7 @@ const FIELD_BINDINGS = [
   ["lending", "NEXT_PUBLIC_OVRFLO_LENDING"],
   ["lendingDeploymentBlock", "NEXT_PUBLIC_LENDING_DEPLOYMENT_BLOCK"],
   ["lendingDeploymentBlockHash", "NEXT_PUBLIC_LENDING_DEPLOYMENT_BLOCK_HASH"],
+  ["stream", "NEXT_PUBLIC_SABLIER_LOCKUP_ADDRESS"],
   ["projectionSchemaVersion", "NEXT_PUBLIC_PROJECTION_SCHEMA_VERSION"],
   ["abiVersion", "NEXT_PUBLIC_ABI_VERSION"],
 ];
