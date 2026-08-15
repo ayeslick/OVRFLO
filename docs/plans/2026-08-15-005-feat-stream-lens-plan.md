@@ -316,35 +316,61 @@ honour.
 `OVRFLOLending` is the natural home — it would share the computation with `borrow` and could not
 disagree with it. **It does not fit.** Measured on an isolated worktree, not in place:
 
-| Variant | Runtime | Δ vs baseline | Δ vs previous row | vs the 24,064 canary |
-|---|---|---|---|---|
-| baseline | 23,837 | — | — | 227 under |
-| `_selectEpoch` split only | 23,858 | +21 | +21 | 206 under |
-| **both splits, no preview** | 24,024 | **+187** | **+166** | 40 under |
-| + `previewBorrow`, 3 returns | 24,240 | +403 | **+216** | **176 over** |
-| + `previewBorrow`, 6 returns and extra reads | 24,536 | +699 | +296 | 472 over |
-| + `StreamPricing` math externalised | 24,709 | +872 | +173 | over EIP-170 entirely |
-| one function, `bool commit` flag | — | — | — | **does not compile** |
+| Variant | Runtime | Δ | vs the 24,064 canary | Compiles | Tests |
+|---|---|---|---|---|---|
+| baseline | 23,837 | — | 227 under | yes | 366 / 0 |
+| `_selectEpoch` split only | 23,858 | +21 | 206 under | yes | — |
+| both splits, no preview | 24,024 | +187 | 40 under | yes | — |
+| split + `previewBorrow`, 3 returns | 24,240 | +403 | **176 over** | yes | — |
+| split + `previewBorrow`, 6 returns | 24,536 | +699 | 472 over | yes | — |
+| `StreamPricing` math externalised | 24,709 | +872 | over EIP-170 | yes | — |
+| `bool commit` flag, no scoping | — | — | — | **no — stack too deep** | — |
+| **`bool commit` + block scoping** | **23,887** | **+50** | **177 under** | **yes** | **366 / 0** |
 
-**The cost is roughly half structural, half entry point.** Splitting `_selectEpoch` and `_fillTick`
-into view halves costs **187 bytes** — `_quoteFill` is reached from two call sites, so the compiler
-keeps a real frame rather than inlining it away. The external `previewBorrow` adds **216** on top of
-that for three returns.
+**`previewBorrow` fits, at 50 bytes.** The last row is the answer; every row above it was measuring
+the wrong approach.
 
-An earlier revision of this table recorded only the `_selectEpoch` split, called the refactor
-"essentially free" at 21 bytes, and attributed the remaining 382 to the entry point. **That
-attribution was never measured and was wrong.** The `_fillTick` split alone is 166 bytes.
+Do not split `_fillTick` into view and writing halves. Keep **one** function, add a `bool commit`
+parameter, and guard the two writes with it. `borrow` passes `true`, `previewBorrow` passes `false`.
+One implementation, no second frame, and the quote cannot drift from the execution because it *is*
+the execution with the writes turned off.
 
-**Making the writes conditional instead of splitting does not work.** Adding a single `bool commit`
-parameter to `_fillTick` and guarding the writes — one function, no second frame, which should have
-been cheaper — **fails to compile**: stack too deep, without `via_ir`. `_fillTick` is already at the
-non-IR stack limit, and one more parameter exceeds it. Recorded so it is not re-attempted.
+That shape does not compile on its own — one extra parameter exceeds the non-IR stack limit. **Block
+scoping fixes it.** Wrapping the fill-units computation in a bare `{ … }` lets `targetUnits` and
+`fillUnits` leave the stack at the end of the block:
 
-The conclusion is unchanged and the reasoning behind it is now correct. The minimal three-return
-form costs 403 bytes against 227 available, leaving **336 bytes of real EIP-170 margin** and
-overrunning the deliberate 512-byte reserve by 176. Whether to spend part of that reserve is a
-judgment call the owner makes — on a one-way door, for a contract that cannot be redeployed without
-migrating the book.
+```solidity
+{
+    uint256 targetUnits = uint256(targetBorrow) / UNIT;
+    uint64 fillUnits = SafeCast.toUint64(targetUnits < availableUnits ? targetUnits : availableUnits);
+    outcome.actualBorrow = _toWei(fillUnits);
+    if (outcome.actualBorrow > grossPrice) {
+        fillUnits = _toUnits(grossPrice);
+        outcome.actualBorrow = _toWei(fillUnits);
+    }
+    if (outcome.actualBorrow < MIN_LIQUIDITY_AMOUNT) revert BelowMinimum();
+    outcome.fillEnd = outcome.fillStart + fillUnits;
+}
+```
+
+The full suite passes unchanged at 366 / 0 / 6 skipped, so this is behaviour-preserving, not merely
+smaller.
+
+**The one real cost: `previewBorrow` is not `view`.** It calls a state-mutating function, even
+though it writes nothing when `commit` is false, so Solidity types it `nonpayable`. Consequences:
+
+- `wagmi`'s `useReadContract` requires `view` or `pure` and cannot call it. Use `simulateContract`,
+  which the frontend already does in `useWriteFlow`.
+- Making it genuinely `view` means the split, which costs 403 bytes and does not fit.
+
+That is the trade: 50 bytes and a simulate-shaped call, or 403 bytes it has no room for.
+
+**Earlier revisions of this table were wrong twice**, recorded so the reasoning is not repeated. The
+first attributed the whole cost to the external entry point without isolating the splits. The second
+reported the `bool commit` shape as impossible after one failed compile, without consulting the
+standard remedy for stack-too-deep. `AGENTS.md` mandates checking `ethskills` before Solidity work;
+that reference has 23 skills and none covers compiler-level issues, so the answer came from the
+general Solidity literature instead.
 
 **External library linking makes it worse, not better.** Converting the four pure-math functions to
 `public` — so the library deploys separately and is called by `DELEGATECALL` — *grew* the contract by
