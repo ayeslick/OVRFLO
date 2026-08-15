@@ -1,3 +1,5 @@
+"use client";
+
 import type { ReactNode } from "react";
 import { notFound } from "next/navigation";
 import { ActionButton } from "@/components/kit/ActionButton";

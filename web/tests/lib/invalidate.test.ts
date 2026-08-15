@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
 import type { Address } from "viem";
 import { SABLIER_LOCKUP_ADDRESS } from "@/lib/config";
@@ -7,67 +7,19 @@ import {
   invalidateOnChainReads,
   invalidateTouchedResources,
   marketContracts,
-  scheduleHeldStreamsRetry,
 } from "@/lib/invalidate";
-import { borrowerBookKeys, lenderBookKeys, streamKeys } from "@/lib/query-keys";
+import { borrowerBookKeys, lenderBookKeys } from "@/lib/query-keys";
 
 const user = "0x0000000000000000000000000000000000000a11" as Address;
 
 describe("invalidateAllOnChainReads", () => {
-  it("invalidates exactly the two wagmi roots and the held-streams key", () => {
+  it("invalidates exactly the two wagmi roots", () => {
     const queryClient = new QueryClient();
     const spy = vi.spyOn(queryClient, "invalidateQueries");
     invalidateAllOnChainReads(queryClient, user);
-    expect(spy).toHaveBeenCalledTimes(3);
+    expect(spy).toHaveBeenCalledTimes(2);
     expect(spy).toHaveBeenCalledWith({ queryKey: ["readContract"] });
     expect(spy).toHaveBeenCalledWith({ queryKey: ["readContracts"] });
-    expect(spy).toHaveBeenCalledWith({ queryKey: streamKeys.held(user) });
-  });
-
-  it("still invalidates the held-streams key (with an undefined user) when no wallet is connected", () => {
-    const queryClient = new QueryClient();
-    const spy = vi.spyOn(queryClient, "invalidateQueries");
-    invalidateAllOnChainReads(queryClient, undefined);
-    expect(spy).toHaveBeenCalledTimes(3);
-    expect(spy).toHaveBeenCalledWith({ queryKey: streamKeys.held(undefined) });
-  });
-});
-
-describe("scheduleHeldStreamsRetry", () => {
-  beforeEach(() => vi.useFakeTimers());
-  afterEach(() => vi.useRealTimers());
-
-  it("re-invalidates the held key at 2s and 5s while the result set is unchanged", () => {
-    const queryClient = new QueryClient();
-    queryClient.setQueryData(streamKeys.held(user), [{ streamId: 1n }]);
-    const spy = vi.spyOn(queryClient, "invalidateQueries");
-    scheduleHeldStreamsRetry(queryClient, user);
-    expect(spy).not.toHaveBeenCalled();
-    vi.advanceTimersByTime(2000);
-    expect(spy).toHaveBeenCalledTimes(1);
-    vi.advanceTimersByTime(3000);
-    expect(spy).toHaveBeenCalledTimes(2);
-    vi.advanceTimersByTime(60_000);
-    expect(spy).toHaveBeenCalledTimes(2);
-  });
-
-  it("stops early once the result set changes", () => {
-    const queryClient = new QueryClient();
-    queryClient.setQueryData(streamKeys.held(user), [{ streamId: 1n }]);
-    const spy = vi.spyOn(queryClient, "invalidateQueries");
-    scheduleHeldStreamsRetry(queryClient, user);
-    queryClient.setQueryData(streamKeys.held(user), [{ streamId: 1n }, { streamId: 2n }]);
-    vi.advanceTimersByTime(10_000);
-    expect(spy).not.toHaveBeenCalled();
-  });
-
-  it("returns a cleanup that cancels pending retries", () => {
-    const queryClient = new QueryClient();
-    const spy = vi.spyOn(queryClient, "invalidateQueries");
-    const cancel = scheduleHeldStreamsRetry(queryClient, user);
-    cancel();
-    vi.advanceTimersByTime(10_000);
-    expect(spy).not.toHaveBeenCalled();
   });
 });
 
@@ -96,7 +48,6 @@ describe("invalidateOnChainReads (R39)", () => {
   });
 
   it("leaves an unrelated market's reads alone", () => {
-    // The behaviour the whole requirement is about.
     const client = new QueryClient();
     const spy = vi.spyOn(client, "invalidateQueries");
     invalidateOnChainReads(client, { contracts: [MARKET_A] });
@@ -111,8 +62,6 @@ describe("invalidateOnChainReads (R39)", () => {
   });
 
   it("invalidates a batched read containing any touched contract", () => {
-    // useReadContracts puts several addresses under one key; splitting the batch
-    // to be more precise would cost more than the occasional extra refetch.
     const client = new QueryClient();
     const spy = vi.spyOn(client, "invalidateQueries");
     invalidateOnChainReads(client, { contracts: [MARKET_A] });
@@ -130,32 +79,24 @@ describe("invalidateOnChainReads (R39)", () => {
   });
 
   it("matches nothing when no contract was recorded, rather than everything", () => {
-    // Failing open here would silently restore the old coarse behaviour — which
-    // is exactly the bug a missed edit introduced while building this.
     const client = new QueryClient();
     const spy = vi.spyOn(client, "invalidateQueries");
     invalidateOnChainReads(client, { contracts: [] });
     expect(matchesAny(predicatesFrom(spy), ["readContract", { address: MARKET_A }])).toBe(false);
   });
 
-  it("only touches the held-streams key when the write could move a stream", () => {
+  it("adds the stream lockup when streams:true so held reads refresh", () => {
     const client = new QueryClient();
     const spy = vi.spyOn(client, "invalidateQueries");
-
-    invalidateOnChainReads(client, { contracts: [MARKET_A], user });
-    expect(spy.mock.calls.map((call) => call[0] as unknown)).not.toContainEqual({ queryKey: streamKeys.held(user) });
-
     invalidateOnChainReads(client, { contracts: [MARKET_A], user, streams: true });
-    expect(spy.mock.calls.map((call) => call[0] as unknown)).toContainEqual({ queryKey: streamKeys.held(user) });
+    expect(
+      matchesAny(predicatesFrom(spy), ["readContract", { address: SABLIER_LOCKUP_ADDRESS }]),
+    ).toBe(true);
   });
 });
 
 describe("marketContracts", () => {
   it("names the tokens a write moves, not just the contract it is addressed to", () => {
-    // `supplyLiquidity` goes to the lending market and pulls the underlying;
-    // `deposit` goes to the vault and pulls PT. Those balance and allowance
-    // reads are keyed by token address, so scoping to the transaction's `to`
-    // alone left them stale behind an open modal.
     const market = {
       vault: "0x0000000000000000000000000000000000000001" as Address,
       lending: "0x0000000000000000000000000000000000000002" as Address,
@@ -174,8 +115,6 @@ describe("marketContracts", () => {
   });
 
   it("drops a market with no lending deployment rather than emitting a null", () => {
-    // A null in the scope would serialise into the predicate match and could
-    // widen it; `lending` is legitimately absent before the market is paired.
     const contracts = marketContracts({
       vault: "0x0000000000000000000000000000000000000001" as Address,
       lending: null,
@@ -192,6 +131,14 @@ describe("invalidateTouchedResources", () => {
   const lending = "0x00000000000000000000000000000000000000aa" as Address;
   const vault = "0x00000000000000000000000000000000000000bb" as Address;
   const identity = { account: user, chainId: 1 };
+
+  type Predicate = (q: { queryKey: unknown[] }) => boolean;
+  function predicatesFrom(spy: { mock: { calls: unknown[][] } }): Predicate[] {
+    return spy.mock.calls
+      .map((call) => (call[0] as { predicate?: Predicate }).predicate)
+      .filter((p): p is Predicate => typeof p === "function");
+  }
+  const matchesAny = (preds: Predicate[], queryKey: unknown[]) => preds.some((p) => p({ queryKey }));
 
   it("invalidates lender-book keys after supply/withdraw (market-depth / liquidity-position)", () => {
     const client = new QueryClient();
@@ -211,7 +158,7 @@ describe("invalidateTouchedResources", () => {
     expect(spy).toHaveBeenCalledWith({ queryKey: lenderBookKeys.all });
   });
 
-  it("invalidates stream candidate/truth keys after borrow/close stream resources", () => {
+  it("invalidates wagmi reads naming the stream lockup after stream resources", () => {
     const client = new QueryClient();
     const spy = vi.spyOn(client, "invalidateQueries");
     invalidateTouchedResources(
@@ -219,12 +166,12 @@ describe("invalidateTouchedResources", () => {
       [{ kind: "stream", sablier: SABLIER_LOCKUP_ADDRESS, id: 9n }],
       identity,
     );
-    expect(spy).toHaveBeenCalledWith({ queryKey: streamKeys.held(user) });
-    expect(spy).toHaveBeenCalledWith({ queryKey: streamKeys.candidates(1, user) });
-    expect(spy).toHaveBeenCalledWith({ queryKey: streamKeys.truth(1, user) });
+    expect(
+      matchesAny(predicatesFrom(spy), ["readContract", { address: SABLIER_LOCKUP_ADDRESS }]),
+    ).toBe(true);
   });
 
-  it("does not invalidate stream factories for a supply that never touched a stream", () => {
+  it("does not widen to the stream lockup for a supply that never touched a stream", () => {
     const client = new QueryClient();
     const spy = vi.spyOn(client, "invalidateQueries");
     invalidateTouchedResources(
@@ -232,8 +179,8 @@ describe("invalidateTouchedResources", () => {
       [{ kind: "token-balance", token: vault, account: user }],
       identity,
     );
-    expect(spy.mock.calls.map((call) => call[0])).not.toContainEqual({
-      queryKey: streamKeys.held(user),
-    });
+    expect(
+      matchesAny(predicatesFrom(spy), ["readContract", { address: SABLIER_LOCKUP_ADDRESS }]),
+    ).toBe(false);
   });
 });

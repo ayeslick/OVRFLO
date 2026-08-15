@@ -17,7 +17,7 @@
     "lint:state-index": "cd .. && node tools/scripts/generate-state-function-index.mjs --check",
     "lint:maps": "npm run lint:maps-presence && npm run lint:state-index",
     "lint:security": "npm run lint && npm run lint:banned-patterns",
-    "pretest": "npm run typegen && bash scripts/check-banned-patterns.sh && npm run lint:deps",
+    "pretest": "npm run typegen && bash scripts/check-banned-patterns.sh && npm run lint:deps && node scripts/check-ovrflo-stream-bytecode.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "npm run pretest && bddgen && playwright test",

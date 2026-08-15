@@ -2,7 +2,7 @@ import type { QueryClient } from "@tanstack/react-query";
 import type { Address } from "viem";
 import type { ActionIdentity, TouchedResource } from "./actions/types";
 import { SABLIER_LOCKUP_ADDRESS } from "./config";
-import { borrowerBookKeys, lenderBookKeys, streamKeys } from "./query-keys";
+import { borrowerBookKeys, lenderBookKeys } from "./query-keys";
 import type { MarketInfo } from "./types";
 
 // wagmi v3 roots useReadContract / useReadContracts keys at these string
@@ -37,7 +37,14 @@ export function invalidateOnChainReads(
   }
 
   if (options.streams) {
-    queryClient.invalidateQueries({ queryKey: streamKeys.held(options.user) });
+    // Held streams are wagmi reads on SABLIER_LOCKUP_ADDRESS — covered when
+    // that address is in `contracts`. No custom streamKeys remain after U8.
+    touched.add(SABLIER_LOCKUP_ADDRESS.toLowerCase());
+    for (const root of WAGMI_READ_ROOTS) {
+      queryClient.invalidateQueries({
+        predicate: (query) => query.queryKey[0] === root && keyMentionsAny(query.queryKey, touched),
+      });
+    }
   }
 }
 
@@ -106,13 +113,14 @@ function resourceContracts(resource: TouchedResource): Address[] {
 /**
  * After a write receipt, invalidate exactly the declared `touchedResources`.
  * Broadest sensible level: wagmi reads whose keys mention a touched contract,
- * plus the book/stream query factories those resources correspond to.
+ * plus the book query factories those resources correspond to.
  */
 export function invalidateTouchedResources(
   queryClient: QueryClient,
   resources: readonly TouchedResource[],
   identity?: ActionIdentity,
 ) {
+  void identity;
   const contracts = new Set(resources.flatMap(resourceContracts).map((address) => address.toLowerCase()));
   for (const root of WAGMI_READ_ROOTS) {
     queryClient.invalidateQueries({
@@ -127,11 +135,8 @@ export function invalidateTouchedResources(
     queryClient.invalidateQueries({ queryKey: borrowerBookKeys.all });
     queryClient.invalidateQueries({ queryKey: lenderBookKeys.all });
   }
-  if ((kinds.has("stream") || kinds.has("nft-approval")) && identity) {
-    queryClient.invalidateQueries({ queryKey: streamKeys.held(identity.account) });
-    queryClient.invalidateQueries({ queryKey: streamKeys.candidates(identity.chainId, identity.account) });
-    queryClient.invalidateQueries({ queryKey: streamKeys.truth(identity.chainId, identity.account) });
-  }
+  // stream / nft-approval: wagmi keys already mention SABLIER_LOCKUP_ADDRESS
+  // via resourceContracts — no custom streamKeys to invalidate.
 }
 
 /**
@@ -145,10 +150,10 @@ export function invalidateTouchedResources(
  * is named for it.
  */
 export function invalidateAllOnChainReads(queryClient: QueryClient, user?: Address) {
+  void user;
   for (const root of WAGMI_READ_ROOTS) {
     queryClient.invalidateQueries({ queryKey: [root] });
   }
-  queryClient.invalidateQueries({ queryKey: streamKeys.held(user) });
 }
 
 /**
@@ -182,25 +187,3 @@ export function queryTouchesIdentity(
 }
 
 const bigintSafe = (_key: string, value: unknown) => (typeof value === "bigint" ? value.toString() : value);
-
-// The held-streams list is indexer-backed, so the instant invalidation above
-// races the indexer (2s polling + indexing time). Re-invalidate on a short
-// schedule, stopping early once the result set changes; 3 attempts total
-// including the immediate one so a persistently stale indexer never loops.
-// Returns a cleanup that cancels pending timers.
-export function scheduleHeldStreamsRetry(
-  queryClient: QueryClient,
-  user: Address | undefined,
-  delaysMs: readonly number[] = [2000, 5000],
-) {
-  const queryKey = streamKeys.held(user);
-  const initial = JSON.stringify(queryClient.getQueryData(queryKey) ?? null, bigintSafe);
-  const timers = delaysMs.map((delay) =>
-    setTimeout(() => {
-      const current = JSON.stringify(queryClient.getQueryData(queryKey) ?? null, bigintSafe);
-      if (current !== initial) return;
-      queryClient.invalidateQueries({ queryKey });
-    }, delay),
-  );
-  return () => timers.forEach((timer) => clearTimeout(timer));
-}

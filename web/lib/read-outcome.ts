@@ -23,6 +23,8 @@ export type ReadOutcomeMetadata = {
   scopeKey?: string;
   blockNumber?: bigint;
   blockHash?: `0x${string}`;
+  /** TanStack / wagmi success timestamp (ms). Threads into freshness asOf. */
+  dataUpdatedAt?: number;
 };
 
 type OutcomeBase = {

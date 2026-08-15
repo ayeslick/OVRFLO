@@ -257,6 +257,11 @@ export function useWriteFlow(
                 });
                 return;
               case "stream":
+                // Deposit marks the stream contract without a known id (U8). Skip
+                // the per-id probe; invalidate still refreshes the held-stream book.
+                if (resource.id === undefined) {
+                  return;
+                }
                 await publicClient.readContract({
                   address: resource.sablier,
                   abi: sablierLockupAbi,

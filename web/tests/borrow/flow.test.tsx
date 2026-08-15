@@ -41,6 +41,7 @@ function stream(id = 441n, remaining = 10n * ETHER): HydratedStream {
     },
     withdrawable: 0n,
     remaining,
+    status: 1,
     renderEligible: true,
     borrowRouteEligible: true,
     vault: VAULT,

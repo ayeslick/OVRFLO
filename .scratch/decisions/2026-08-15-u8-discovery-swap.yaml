@@ -1,0 +1,89 @@
+# Scratch decision record — schema: docs/maps/SCHEMAS.md §4
+# U8 discovery swap — authored before first code write.
+
+summary_ref: "docs/adr/0002-held-stream-truth-on-chain.md"
+
+goal: >
+  Replace log-scan held-stream discovery with staged Enumerable reads
+  (balanceOf → tokensOfOwnerIn → ownerOf+getStream+withdrawable+statusOf),
+  delete projection.stream machinery, thread per-lens dataUpdatedAt freshness,
+  and gate pretest with SC11 bytecode compare.
+
+state_keys_touched:
+  - chain.stream-truth
+  - schedule.stream-params
+  - projection.stream
+  - query.streams.candidates
+  - query.streams.truth
+  - persist.scan-checkpoint
+  - chain.vault-registry
+
+writers_readers:
+  - writes: web/hooks/useStreams.ts (chain.stream-truth, schedule.stream-params; no longer projection.stream)
+  - deletes: web/lib/discovery/stream-discovery.ts
+  - deletes: web/lib/discovery/log-scanner.ts
+  - writes: web/lib/query-keys.ts (remove candidates/truth/held factories)
+  - writes: web/lib/invalidate.ts (drop scheduleHeldStreamsRetry and dead keys)
+  - writes: web/lib/read-outcome.ts (dataUpdatedAt on metadata)
+  - writes: web/lib/freshness.ts / web/hooks/useFreshness.ts (maxAgeMs, per-lens, no clock advance on error)
+  - reads: web/components/watch/WatchApp.tsx, BorrowFlow.tsx (new useStreams shape)
+  - reads: web/app/page.tsx, Wall.tsx, StreamDetail.tsx, SelectStream.tsx (stop deleted keys)
+  - writes: web/lib/actions/convert.ts (deposit gains kind:stream)
+  - writes: docs/maps/state/keys/projection.md, chain-reads.md, schedule.md, view-state.md
+  - writes: docs/maps/ui/watch.md, borrow.md
+  - writes: docs/adr/0002-held-stream-truth-on-chain.md
+
+trust_domains:
+  - fact: held stream id list and hydrated stream state
+    domain: on-chain
+    moved_from: projection
+  - fact: EVENTS AS OF / signingAllowed for streams lens
+    domain: on-chain
+    moved_from: null
+  - fact: stream schedule fixed fields after first successful getStream
+    domain: on-chain
+    moved_from: null
+
+rejected_alternatives:
+  - option: Keep log-scan as fallback beside Enumerable
+    why_not: Ticket and R12 forbid any reachable log-scan path.
+  - option: Viewport-stage hydration of stream state
+    why_not: Entry gate treats ids-ready/zero-hydrated as confirmed-empty (KTD2).
+  - option: Partial list when balanceOf > MAX_ENUMERATION_IDS
+    why_not: R16 — unavailable, never partial, never empty.
+  - option: Rename SABLIER_LOCKUP_ADDRESS or drop TouchedResource.stream.sablier
+    why_not: R9 — rebind value only; keep the field and writers.
+  - option: Defer freshness / ADR to a later ticket
+    why_not: Ticket binds freshness into U8; plan notes the scope creep.
+
+invariants_held:
+  - invariant: Empty and could-not-ask never share a representation
+    how: balanceOf zero → ready-empty; RPC/id-batch failure → unavailable; ceiling → unavailable.
+  - invariant: Pledged streams do not double-list in Streams and Borrowed
+    how: ownerOf gate drops ids not owned by the account; market-owned ids leave held enum.
+  - invariant: Eligibility predicates stay shared
+    how: retain and re-export renderEligibleStream / borrowRouteEligibleStream.
+  - invariant: Stream ids stay bigint end-to-end
+    how: no Number() on id args into wagmi read contracts.
+  - invariant: Failed reads use {status:failure} in results arrays
+    how: allowFailure batches; tests use useLending.test.ts:8 shape.
+
+risks:
+  - risk: SC11 fork rebuild slows pretest or fails when OVRFLO-Streams is absent
+    residual: Script resolves sibling path / OVRFLO_STREAMS_PATH; fails loud with provenance stamp.
+  - risk: U6 not merged — env address missing in production boot
+    residual: required() loud fail; unit tests mock NEXT_PUBLIC_SABLIER_LOCKUP_ADDRESS.
+  - risk: Fixed-field client cache drifts if getStream shape changes
+    residual: Mutable fields still polled at READ_INTERVAL_MS; cache only immutable schedule fields.
+
+diff_hints:
+  - path: web/hooks/useStreams.ts
+    why: Staging rewrite; return shape drops candidates.
+  - path: web/hooks/useFreshness.ts
+    why: dataUpdatedAt / maxAgeMs; lastSuccessAt must not advance on error.
+  - path: web/scripts/check-ovrflo-stream-bytecode.mjs
+    why: SC11 pretest compare.
+  - path: docs/adr/0002-held-stream-truth-on-chain.md
+    why: Trust-domain move projection → on-chain.
+  - path: web/lib/actions/convert.ts
+    why: deposit touchedResources gains kind:stream.

@@ -22,17 +22,7 @@ function id(value: bigint | number | string): string {
 
 // Only real useQuery keys live here. wagmi read hooks own their keys (rooted at
 // ["readContract"] / ["readContracts"]); post-write invalidation is coarse (KTD5).
-// Every custom factory key includes chainId and address; entity IDs are strings
-// only (bigint crashes hashKey; mixed 5n/"5" breaks structural matching).
-export const streamKeys = {
-  all: ["streams"] as const,
-  held: (user?: Address | null) => [...streamKeys.all, "held", user] as const,
-  candidates: (chainId: number, account?: Address | null) =>
-    ["streams", "candidates", chainId, addr(account)] as const,
-  truth: (chainId: number, account?: Address | null) =>
-    ["streams", "truth", chainId, addr(account)] as const,
-};
-
+// Held-stream discovery is wagmi-only after U8 — no custom streamKeys factories.
 export const demandKeys = {
   all: ["demand"] as const,
   market: (market?: Address | null) => [...demandKeys.all, "market", market] as const,

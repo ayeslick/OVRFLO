@@ -89,19 +89,14 @@ vi.mock("@/hooks/useBorrowerBook", () => ({
 
 vi.mock("@/hooks/useStreams", () => ({
   useStreams: () => {
-    const empty = { ids: [] as bigint[] };
-    const truth = { candidates: [] as bigint[], streams: fx.streams };
     if (fx.streamStatus === "loading") {
-      return { candidates: loadingOutcome(empty), truth: loadingOutcome(truth) };
+      return loadingOutcome({ streams: [] as typeof fx.streams });
     }
     if (fx.streamStatus === "unavailable") {
       const failure = [readFailure("useStreams", "transport", "could-not-ask")];
-      return {
-        candidates: unavailableOutcome(failure),
-        truth: unavailableOutcome(failure),
-      };
+      return unavailableOutcome(failure);
     }
-    return { candidates: readyOutcome(empty), truth: readyOutcome(truth) };
+    return readyOutcome({ streams: fx.streams });
   },
 }));
 

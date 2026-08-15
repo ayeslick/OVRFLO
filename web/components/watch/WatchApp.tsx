@@ -67,7 +67,7 @@ export function WatchApp() {
 
   const lenderData = useLastKnown(lender);
   const borrowerData = useLastKnown(borrower);
-  const streamData = useLastKnown(streams.truth);
+  const streamData = useLastKnown(streams);
 
   const positions = lenderData?.positions ?? [];
   const loans = sortBorrowedLoans(borrowerData?.loans ?? []);
@@ -110,6 +110,7 @@ export function WatchApp() {
         withdrawable: truth.withdrawable,
         remaining:
           truth.schedule.deposited - truth.schedule.withdrawn - truth.schedule.refunded,
+        status: 1,
         renderEligible: true,
         borrowRouteEligible: false,
         vault: market?.vault ?? null,
@@ -122,7 +123,7 @@ export function WatchApp() {
 
   const positionBook = toBook(lender, positions.length);
   const loanBook = toBook(borrower, loans.length);
-  const streamBook = toStreamBook(streams.candidates, wallStreams.length);
+  const streamBook = toBook(streams, wallStreams.length);
   const entry = classifyEntry({
     connected,
     positions: positionBook,
@@ -132,11 +133,10 @@ export function WatchApp() {
   const streamsDegraded = streamsDegradedKind(streamBook);
 
   const usd = useUsdPrice();
-  const freshness = useFreshness([
-    sourceFromOutcome(lender),
-    sourceFromOutcome(borrower),
-    sourceFromOutcome(streams.truth),
-  ]);
+  // Caption and signingAllowed are per lens — not a merge of every source.
+  const streamsFreshness = useFreshness([sourceFromOutcome(streams)]);
+  const borrowedFreshness = useFreshness([sourceFromOutcome(borrower)]);
+  const suppliedFreshness = useFreshness([sourceFromOutcome(lender)]);
 
   const url = useWatchUrl();
   const narrow = useNarrowViewport();
@@ -160,6 +160,12 @@ export function WatchApp() {
   });
   const visibleIds = tabs.filter((tab) => tab.visible).map((tab) => tab.id);
   const resolvedLens = resolveLens(url.lens, memoryLens, visibleIds, url.selection);
+  const lensFreshness =
+    resolvedLens === "streams"
+      ? streamsFreshness
+      : resolvedLens === "borrowed"
+        ? borrowedFreshness
+        : suppliedFreshness;
 
   useEffect(() => {
     if (entry !== "watch" && entry !== "watch-streams-degraded") return;
@@ -167,14 +173,14 @@ export function WatchApp() {
     writeWatchSearch({ lens: resolvedLens, selection: url.selection }, "replace");
   }, [entry, resolvedLens, url.lens, url.selection]);
 
-  const lastReadAt = freshness.freshness.asOf ?? nowSeconds;
+  const lastReadAt = lensFreshness.freshness.asOf ?? nowSeconds;
   const usdQuote: Usd8 | null =
     usd.status === "ready" && usd.data.status === "available" ? usd.data.usd8 : null;
   const usdAvailable = usdQuote !== null;
   const tokenLabel = markets.markets[0]
     ? symbolFor(symbols, markets.markets[0].underlying)
     : "TOKEN";
-  const asOf = formatStatusTime(freshness.freshness);
+  const asOf = formatStatusTime(lensFreshness.freshness);
 
   function onSelectLens(id: WatchLens) {
     if (account) storageSet(lensKey(chainId, account), id);
@@ -215,8 +221,8 @@ export function WatchApp() {
             : "ready",
     hasLastKnown:
       Boolean(lenderData) || Boolean(borrowerData) || Boolean(streamData) || wallBook.status !== "loading",
-    stale: !freshness.signingAllowed,
-    signingAllowed: freshness.signingAllowed,
+    stale: !lensFreshness.signingAllowed,
+    signingAllowed: lensFreshness.signingAllowed,
   });
 
   return (
@@ -227,7 +233,7 @@ export function WatchApp() {
         <div className="watch-status-row">
           {connected ? (
             <StatusLine
-              status={freshness.freshness.kind}
+              status={lensFreshness.freshness.kind}
               asOf={asOf}
               usdUnavailable={!usdAvailable}
             />
@@ -320,8 +326,8 @@ export function WatchApp() {
                 market={selectedPositionMarket}
                 lending={lending}
                 nowMs={nowMs}
-                freshness={freshness.freshness}
-                signingAllowed={freshness.signingAllowed}
+                freshness={lensFreshness.freshness}
+                signingAllowed={lensFreshness.signingAllowed}
                 usdMode={usdMode}
                 usdAvailable={usdAvailable}
                 usdText={usdTextFor(positionClaimableSafe(selectedPosition), usdQuote)}
@@ -331,7 +337,7 @@ export function WatchApp() {
               <ClosedLoanDetail
                 loan={selectedLoan}
                 symbol={tokenLabel}
-                freshness={freshness.freshness}
+                freshness={lensFreshness.freshness}
                 onSelectStream={(streamId) => onSelect({ kind: "stream", id: streamId })}
               />
             ) : null}
@@ -351,8 +357,8 @@ export function WatchApp() {
                 lastReadAt={lastReadAt}
                 schedule={loanStreams.get(selectedLoan.streamId.toString())?.schedule}
                 withdrawable={loanStreams.get(selectedLoan.streamId.toString())?.withdrawable}
-                freshness={freshness.freshness}
-                signingAllowed={freshness.signingAllowed}
+                freshness={lensFreshness.freshness}
+                signingAllowed={lensFreshness.signingAllowed}
                 usdMode={usdMode}
                 usdAvailable={usdAvailable}
                 usdText={usdTextFor(selectedLoan.outstanding, usdQuote)}
@@ -366,8 +372,8 @@ export function WatchApp() {
                 pledgedLoanId={pledgedByStream.get(selectedStream.streamId.toString())}
                 nowSeconds={nowSeconds}
                 nowMs={nowMs}
-                freshness={freshness.freshness}
-                signingAllowed={freshness.signingAllowed}
+                freshness={lensFreshness.freshness}
+                signingAllowed={lensFreshness.signingAllowed}
                 usdMode={usdMode}
                 usdAvailable={usdAvailable}
                 usdText={usdTextFor(selectedStream.withdrawable, usdQuote)}
@@ -414,15 +420,6 @@ function toBook(outcome: ReadOutcome<unknown>, count: number): EntryBook {
   if (outcome.status === "loading") return { status: "loading", count };
   if (outcome.status === "unavailable") return { status: "unavailable", count };
   return { status: "ready", count };
-}
-
-function toStreamBook(
-  candidates: ReadOutcome<{ ids: readonly bigint[] }>,
-  hydratedCount: number,
-): EntryBook {
-  if (candidates.status === "loading") return { status: "loading", count: hydratedCount };
-  if (candidates.status === "unavailable") return { status: "unavailable", count: hydratedCount };
-  return { status: "ready", count: hydratedCount };
 }
 
 function useLastKnown<T>(outcome: ReadOutcome<T>): T | undefined {
