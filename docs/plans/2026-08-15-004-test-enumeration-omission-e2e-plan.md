@@ -105,30 +105,47 @@ With page size 2 over 3 streams: page 1 covers indices 0–1. Removing index 0 m
 index 2 into slot 0. Page 2 covers index 1 onward. The moved stream is behind the boundary. That
 reproduces the trace at three deposits instead of 501.
 
-## The control arm — not optional
+## Proving the fixture without a broken test
 
 The pinned assertion above **passes even if the fixture never moves anything**. A scenario that sets
-up wrongly and asserts "all streams present" is green for the wrong reason, and looks like coverage
-forever.
+up wrongly and asserts "all streams present" is green for the wrong reason and looks like coverage
+forever. That has to be closed.
 
-So the same feature carries its negative:
+An earlier draft of this plan closed it with a second scenario that disabled pinning and asserted
+the stream goes missing. **That was wrong on two counts** and is recorded here so it is not
+reintroduced:
+
+- It requires a production kill-switch that turns off the correctness mechanism. A flag that can
+  disable pinning is a flag that can be left off.
+- It is a permanent test asserting broken behavior. The suite would carry a scenario whose whole
+  purpose is to confirm the bug still reproduces — which stops being true the moment the contract's
+  removal semantics change, and then fails for a reason nobody can interpret.
+
+**Verify the fixture by observing the chain instead.** The step that moves the stream asserts its
+own effect through a direct contract read, before the second page is fetched:
 
 ```gherkin
-Scenario: Omission control — the same sequence loses a stream when unpinned
+Scenario: Omission — a stream that moves behind a fetched page still appears
   Given the wallet holds 3 streams
   And the stream page size is 2
-  And enumeration pinning is disabled
   When I read the first page of streams
   And the stream at index 0 leaves the wallet
-  And I read the next page of streams
-  Then one held stream is missing from the wall
+  Then owner index 0 holds the stream that was at index 2
+  When I read the next page of streams
+  Then I see all remaining held streams on the wall
+  And the wall shows no duplicate stream row
 ```
 
-This requires a test-only switch that reads pages at `latest` instead of at the pin. It proves the
-fixture reproduces the bug before the positive assertion is trusted.
+The third line is the guard. It reads `tokensOfOwnerIn(owner, 0, 1)` against the lockup and asserts
+the moved id is now there. If the fixture failed to reproduce the swap, that step fails and says
+exactly why — no interpretation needed, no kill-switch, no test that exists to be red.
 
-**If the control arm cannot be made to fail, the positive scenario is not evidence.** Treat a green
-control as a broken fixture, not as good news.
+The negative half is already covered, at the layer that owns it:
+`test_Remove_MovesTokenBackwardAcrossAPageBoundary` in
+`test/enumerable/OwnerIndexInvariants.t.sol` (fork commit `1a563c33`) proves at the contract level
+that a token moves behind a fetched boundary and is returned by neither page while `ownerOf` still
+names the owner. The E2E scenario does not need to re-prove that; it needs to show the app survives
+it.
 
 ## How the stream leaves mid-enumeration
 
@@ -153,11 +170,13 @@ the identical removal branch, so one scenario covers both.
 
 ## Verification (when built)
 
-1. The control scenario **fails** — one stream missing — with pinning disabled.
-2. The positive scenario **passes** with pinning enabled, same fixture.
-3. Flipping the pin off turns the positive scenario red. If it stays green, the pin is not reaching
-   every read in the enumeration and `003`'s hydration rule is not satisfied.
-4. `npm --prefix web run test:e2e` green overall against a seeded local fork.
+1. The scenario passes end to end against a seeded local fork.
+2. The fixture guard — "owner index 0 holds the stream that was at index 2" — fails if the transfer
+   step is removed. Check this once by deleting that step locally; it proves the guard guards.
+3. Temporarily reverting the pin in a scratch branch turns the scenario red. If it stays green, the
+   pin is not reaching every read in the enumeration and `003`'s hydration rule is not satisfied.
+   This is a one-off check during development, not a committed scenario and not a runtime flag.
+4. `npm --prefix web run test:e2e` green overall.
 
 ## Out of scope
 

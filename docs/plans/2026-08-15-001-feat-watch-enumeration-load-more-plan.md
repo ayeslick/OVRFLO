@@ -42,7 +42,43 @@ Do not treat `hasNextPage` as confirmed-empty. Incomplete is `ready` plus `hasNe
 
 The only OVRFLO glue: if page 1 hydrates to zero render-eligible rows and `hasNextPage` is true, call `fetchNextPage` (TanStack's own race rule: only when `!isFetching`). That is product policy on top of the hook, not a second pager.
 
-## Out of scope
+## Every consumer must declare complete-set or loaded-window
+
+Paging changes what the streams array *means*. Today it is the wallet's complete holdings; after
+this plan it is whichever pages have been fetched. Six call sites read it, and none of them says
+which it needs. Two produce a wrong action rather than a wrong display.
+
+**Correctness-critical — these must force complete enumeration before acting, or say plainly that
+they operate on the loaded window:**
+
+- **`web/lib/claim-all.ts:79`** builds the claim queue from `input.streams` filtered on
+  `withdrawable > 0n`. On a partial list, CLAIM ALL claims the loaded pages, reports success, and
+  silently leaves the rest unclaimed. The user is told everything is claimed. This is money.
+- **`web/components/borrow/BorrowFlow.tsx:760`** returns the `"empty"` stage when
+  `streams.data.streams.filter((row) => row.borrowRouteEligible).length === 0`. A wallet whose only
+  eligible stream sits on page 3 is told it has none and cannot borrow at all. The same filter at
+  `:106` feeds the selectable list, so those streams are also unpickable.
+
+**Count semantics — `count` must stay the on-chain `balanceOf`, never the number of loaded rows:**
+
+- **`web/lib/watch-entry.ts:49`** returns `"first-run"` on `streams.status === "ready" && count === 0`.
+  If `count` becomes loaded rows, a holder whose first page is entirely ineligible lands on the
+  first-run screen. That is the failure this plan already records as why the previous attempt was
+  abandoned.
+- **`web/components/watch/WatchApp.tsx:206`** derives the `"empty"` surface state from
+  `wallBook.count === 0`. Same requirement.
+
+**Restate for per-page semantics:**
+
+- **`web/hooks/useStreams.ts:375`** fails closed on `anyFailure && streams.length === 0 && ids.length > 0`.
+  Under paging this is a per-page condition, and the plan must say whether one bad page makes the
+  whole book unavailable or only that page.
+- **`web/components/watch/Wall.tsx:268`** builds the lens tab from the streams array. The product
+  contract already forbids a count badge, so confirm the tab derives visibility from `count`, not
+  from `streams.length`.
+
+**The rule:** a consumer that acts on the set needs the complete set. A consumer that renders rows
+needs only the window. Every call site above states which, in the code, at the point of use.
 
 - Changing lockup mint, transfer, or burn.
 - Raising or removing the per-page multicall budget.

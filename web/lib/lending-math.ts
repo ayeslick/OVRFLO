@@ -6,6 +6,17 @@ export const WAD = 10n ** 18n;
 export const BPS = 10_000n;
 export const YEAR_SECONDS = 31_536_000n;
 export const APR_STEP_BPS = 100;
+/// How many ids one enumeration page fetches. Hydration costs four reads per id and viem chunks
+/// multicall calldata at 1,024 bytes, so 25 ids paint the first page in roughly four requests
+/// against seventy-two at 500. Lazy by design: later pages are fetched only when the reader asks
+/// for them.
+export const STREAM_PAGE_SIZE = 25n;
+
+/// Fail-closed refusal threshold, NOT a page size. Above this, the books report unavailable rather
+/// than showing a truncated list. It is deleted when the pager lands
+/// (docs/plans/2026-08-15-001-feat-watch-enumeration-load-more-plan.md) and STREAM_PAGE_SIZE takes
+/// over. Do not lower it before then: it gates `overBudget` in all three books, so a smaller value
+/// blanks the wall for any wallet holding more than that many streams.
 export const MAX_ENUMERATION_IDS = 500n;
 export { MAX_UINT128 };
 
