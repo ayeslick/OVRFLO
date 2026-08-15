@@ -316,23 +316,35 @@ honour.
 `OVRFLOLending` is the natural home — it would share the computation with `borrow` and could not
 disagree with it. **It does not fit.** Measured on an isolated worktree, not in place:
 
-| Variant | Runtime | Δ | EIP-170 margin | vs the 24,064 canary |
+| Variant | Runtime | Δ vs baseline | Δ vs previous row | vs the 24,064 canary |
 |---|---|---|---|---|
-| baseline | 23,837 | — | 739 | 227 under |
-| **view/write split only, no preview** | 23,858 | **+21** | 718 | 206 under |
-| + `previewBorrow`, 3 returns | 24,240 | +403 | 336 | **176 over** |
-| + `previewBorrow`, 6 returns and extra reads | 24,536 | +699 | 40 | 472 over |
-| + `previewBorrow`, `StreamPricing` math externalised | 24,709 | +872 | **−133** | over the cap entirely |
+| baseline | 23,837 | — | — | 227 under |
+| `_selectEpoch` split only | 23,858 | +21 | +21 | 206 under |
+| **both splits, no preview** | 24,024 | **+187** | **+166** | 40 under |
+| + `previewBorrow`, 3 returns | 24,240 | +403 | **+216** | **176 over** |
+| + `previewBorrow`, 6 returns and extra reads | 24,536 | +699 | +296 | 472 over |
+| + `StreamPricing` math externalised | 24,709 | +872 | +173 | over EIP-170 entirely |
+| one function, `bool commit` flag | — | — | — | **does not compile** |
 
-**Splitting the internals into a view half and a write half costs 21 bytes.** Wrapping the existing
-logic and making the writes conditional is essentially free — the shared-computation design works.
-The cost is the **external entry point**: 382 bytes for three returns, 678 for six plus the extra
-`_priceStream` and `_findEpoch` reads.
+**The cost is roughly half structural, half entry point.** Splitting `_selectEpoch` and `_fillTick`
+into view halves costs **187 bytes** — `_quoteFill` is reached from two call sites, so the compiler
+keeps a real frame rather than inlining it away. The external `previewBorrow` adds **216** on top of
+that for three returns.
 
-So the honest position is narrower than "it does not fit". The minimal three-return form leaves
-**336 bytes of real EIP-170 margin** and overruns the deliberate 512-byte reserve by 176. Whether to
-spend part of that reserve is a judgment call the owner makes, not a hard constraint — but it is a
-one-way door on a contract that cannot be redeployed without migrating the book.
+An earlier revision of this table recorded only the `_selectEpoch` split, called the refactor
+"essentially free" at 21 bytes, and attributed the remaining 382 to the entry point. **That
+attribution was never measured and was wrong.** The `_fillTick` split alone is 166 bytes.
+
+**Making the writes conditional instead of splitting does not work.** Adding a single `bool commit`
+parameter to `_fillTick` and guarding the writes — one function, no second frame, which should have
+been cheaper — **fails to compile**: stack too deep, without `via_ir`. `_fillTick` is already at the
+non-IR stack limit, and one more parameter exceeds it. Recorded so it is not re-attempted.
+
+The conclusion is unchanged and the reasoning behind it is now correct. The minimal three-return
+form costs 403 bytes against 227 available, leaving **336 bytes of real EIP-170 margin** and
+overrunning the deliberate 512-byte reserve by 176. Whether to spend part of that reserve is a
+judgment call the owner makes — on a one-way door, for a contract that cannot be redeployed without
+migrating the book.
 
 **External library linking makes it worse, not better.** Converting the four pure-math functions to
 `public` — so the library deploys separately and is called by `DELEGATECALL` — *grew* the contract by
