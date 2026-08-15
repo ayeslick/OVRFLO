@@ -35,7 +35,11 @@ Full disproofs and evidence: `docs/audit/rejected-findings-record.md`. Sablier A
 
 ### Planning
 
-Before any implementation-ready plan is declared build-ready, run the **ignorance-lens sweep** per `docs/solutions/patterns/ignorance-lens-sweep.md`: *assume the implementer doesn't understand X; ask what the plan does not address but should; rotate X until dry* — parallel lens-agents with verified-only findings, point-fix wrong plan text, fold the rest into a `### Sweep Contracts` section, finish with a completeness critic and stop at its diminishing-returns verdict. A plan that has not been swept is not build-ready, regardless of review verdicts. Two binding authorship rules from the same pattern doc: never paraphrase working code into a plan (cite its contract with a `file:line` anchor instead), and a test-accountability entry names the specific successor scenario, never just a unit.
+Before any implementation-ready plan is declared build-ready, run the **ignorance-lens sweep** per `docs/solutions/patterns/ignorance-lens-sweep.md`: *walk the plan as the implementer will; find every decision it leaves underdetermined; ask whether two competent onboarded agents would decide the same way; rotate lenses until dry* — parallel lens-agents with verified-only findings, point-fix wrong plan text, fold the rest into a `### Sweep Contracts` section, finish with a completeness critic and stop at its diminishing-returns verdict. A plan that has not been swept is not build-ready, regardless of review verdicts.
+
+The implementer is an onboarded agent, not a naive one: it has read the standards and can read the code. It cannot recover a decision settled in a session the plan does not record, and when the plan is silent it decides — invisibly, because a reasonable choice looks exactly like an instructed one. The threshold is in the pattern doc: every decision must be stated by the plan, stated by a standing rule, genuinely interchangeable, or covered by a stated rule for deciding (including when to stop and ask). Over-specifying what the style guide already decides is also a defect. Facts on the ground will differ; name the differences that must **stop** the work rather than be absorbed by a judgment call.
+
+Two binding authorship rules from the same pattern doc: never paraphrase working code into a plan (cite its contract with a `file:line` anchor instead), and a test-accountability entry names the specific successor scenario, never just a unit.
 
 ### Git commits
 
