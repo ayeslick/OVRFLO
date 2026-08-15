@@ -217,7 +217,11 @@ When("stream lockup RPC reads are interrupted", async ({ page }) => {
     });
   });
   // useStreams polls on READ_INTERVAL_MS (15s). Wait for the degraded panel.
-  await expect(ui(page, "UI-WATCH-STREAMS-DEGRADED")).toBeVisible({ timeout: 25_000 });
+  try {
+    await expect(ui(page, "UI-WATCH-STREAMS-DEGRADED")).toBeVisible({ timeout: 25_000 });
+  } finally {
+    await page.unrouteAll({ behavior: "ignoreErrors" });
+  }
 });
 
 Then("I see the two deposited streams under Streams", async ({ page }) => {
