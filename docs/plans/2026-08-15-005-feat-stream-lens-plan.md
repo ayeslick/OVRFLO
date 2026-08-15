@@ -443,26 +443,23 @@ send
 
 Which matches `2026-08-15-003`'s rule that simulation, not display, is transaction authority.
 
-### What this leaves for the lens
+### The whole change
 
-Almost nothing. The lens does **not** compute the quote. At most it becomes a thin adapter that
-calls `borrow` with the sentinel, catches the expected error, returns a struct, and bubbles every
-other revert unchanged — `InvalidTick`, `BelowMinimum`, `EpochBacklog`, and the `StreamPricing`
-eligibility errors all stay canonical.
+**Contract:** the two hunks above. Nothing else.
 
-The rich frontend can decode the custom error with viem directly and skip the adapter entirely.
-**Build in this order, and stop as soon as it is enough:**
+**Frontend:** `eth_call borrow(..., type(uint128).max)`, decode `BelowMinAcceptable` with viem, and
+delete the five mirrored functions in `web/lib/lending-math.ts` and their tests. `classifyBorrowError`
+learns the new payload.
 
-1. Enrich the error in `OVRFLOLending`.
-2. Decode it in `web/`, deleting the five mirrored functions in `web/lib/lending-math.ts`.
-3. Test behaviour through the injected provider.
-4. Add the normalising adapter **only** if provider compatibility demands it.
-
-Do not deploy another contract unless it earns its existence.
+**The lens computes no quote and gains no function for this.** There is no `previewBorrow`, no
+adapter contract, and no new getter on `OVRFLOLending`. If provider compatibility ever forces a
+normalising wrapper, that is a separate decision made against evidence, not scope carried in this
+plan.
 
 ### If it ever stops fitting
 
-Ranked, so the next attempt does not restart from the worst option:
+Ranked, so a future attempt does not restart from the worst option. **None of these is authorised
+work today** — quote by revert fits with 188 bytes to spare.
 
 1. Quote by revert inside the existing `borrow`.
 2. Evaluate whether a lower-value external view can be removed to make room — for example whether
@@ -470,8 +467,6 @@ Ranked, so the next attempt does not restart from the worst option:
 3. A minimal canonical fill-state getter plus a lens using `StreamPricing`.
 4. **Not** externalising `StreamPricing`'s arithmetic. Measured: it grows the contract by 173 bytes,
    because the call stubs cost more than the inlined bodies.
-
-`web/lib/lending-math.ts`'s five mirrored functions and their tests are what this deletes.
 
 
 ## Out of scope
