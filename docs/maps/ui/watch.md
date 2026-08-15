@@ -185,8 +185,9 @@ or could-not-ask while on-chain books read zero → this region with
 - **Visible when.** Viewport width is below 1024px and an entity is selected.
 - **States.** `list` (no entity param), `detail` (entity param set).
 - **Action.** `←` clears the entity param (deselect) and returns to the wall. Browser
-  Back does the same. URL still carries `?lens=` and the entity param at every
-  width, so a deep link opened on a phone lands on detail.
+  Back does the same. On enter to detail, focus moves to the back control. URL still
+  carries `?lens=` and the entity param at every width, so a deep link opened on a
+  phone lands on detail.
 - **Copy rules.** Return control accessible name `Back to <lens>`. Not `Close`, not
   `Cancel` — nothing is being aborted.
 - **Data authority.** `pure-client` — viewport and URL.
@@ -229,19 +230,41 @@ or could-not-ask while on-chain books read zero → this region with
 ## `UI-WATCH-DETAIL-STREAM`
 
 - **ID.** `UI-WATCH-DETAIL-STREAM`
-- **Purpose.** Show one vault-created stream's schedule and its route into Borrow,
-  or its link to the pledged loan.
-- **Visible when.** A stream is selected that passed the eligibility mirror.
-- **States.** `eligible`, `pledged`, `stale` (schedule interpolation continues;
-  event facts as-of).
-- **Action.** None itself. Children: `UI-WATCH-HERO-VESTED`,
+- **Purpose.** Show one vault-created stream's schedule, the HTML ledger card from
+  hydrated state, and its route into Borrow or its link to the pledged loan.
+- **Visible when.** A stream is selected that passed the eligibility mirror. When the
+  selected id is missing after a ready book (burned or transferred), render the
+  terminal `closed` state instead. While the book is LOADING with no last-known
+  row, render no stream detail.
+- **States.** `eligible`, `pledged`, `vesting`, `stale` (schedule interpolation
+  continues; event facts as-of; card bar stays last hydration snapshot), `closed`
+  (selected id gone). While a refetch is in flight, keep the prior card — never an
+  empty shell.
+- **Action.** None itself. Children: `UI-WATCH-HERO-VESTED`, `UI-WATCH-LEDGER-CARD`,
   `UI-WATCH-BORROW-ROUTE` (eligible only), `UI-WATCH-RIBBON`, `UI-WATCH-FRESHNESS`.
   Pledged state links to the loan via `UI-WATCH-SELECT` (`?loan=`).
 - **Copy rules.** Source series, released, remaining, maturity, transferability,
-  pledged or not. No Sablier `withdrawMax` control on this surface — v1 watch
-  treats streams as collateral inventory (R4); lender harvest is `UI-WATCH-CLAIM`.
-- **Data authority.** `on-chain` for `getStream` / `withdrawableAmountOf` / owner.
-  `projection` only as the candidate that led here.
+  pledged or not. Ledger card shows status, 24-segment bar, streamed/remaining,
+  rate, days left (Withdrawn on depleted), end, asset, id. Never paint from
+  `tokenURI`. No Sablier `withdrawMax` control on this surface — v1 watch treats
+  streams as collateral inventory (R4); lender harvest is `UI-WATCH-CLAIM`.
+- **Data authority.** `on-chain` for `getStream` / `withdrawableAmountOf` /
+  `statusOf` / owner. Card bar percent from last-hydrated streamed snapshot
+  (`streamedAmountOf` at read time). Hero vested is `pure-client` local-clock math.
+
+## `UI-WATCH-LEDGER-CARD`
+
+- **ID.** `UI-WATCH-LEDGER-CARD`
+- **Purpose.** Paint the OVRFLO Stream ledger card in HTML beside the watch hero.
+- **Visible when.** `UI-WATCH-DETAIL-STREAM` has a hydrated stream.
+- **States.** `streaming` (gold frontier + CSS light band on fill), `settled`,
+  `depleted` (Withdrawn row; no band), `pending`, `canceled`, `unknown`. Band off
+  under `prefers-reduced-motion: reduce`.
+- **Action.** None. Meter is informative only.
+- **Copy rules.** Match U3 structure. HTML uses app font tokens. Never sandbox as
+  an `<img>` of `tokenURI`.
+- **Data authority.** `on-chain` snapshot fields. Cache key includes the pinned
+  descriptor version (SC15).
 
 ## `UI-WATCH-DETAIL-SETTLED`
 
@@ -449,13 +472,14 @@ or could-not-ask while on-chain books read zero → this region with
   (R12) — first-run must not render. When books are nonzero, it replaces stream
   rows inside the Streams lens only.
 - **States.** `pending` (`CHECKING STREAMS…`), `could-not-ask` (unavailable copy plus
-  the direct Sablier recovery route: lockup address and "using your stream id").
-  Pending and could-not-ask stay distinct from each other and from empty.
-- **Action.** None. Recovery is outside this app (Sablier, stream id). Retry is the
-  query layer.
+  OVRFLOStream recovery guidance on the bound lockup — never the canonical Sablier
+  address). Pending and could-not-ask stay distinct from each other and from empty.
+- **Action.** None. Recovery is outside this app (bound lockup, stream id). Retry is
+  the query layer.
 - **Copy rules.** Must state that stream reads are unavailable, that streams are
-  unaffected, and the direct route. Never "you hold no streams". Never an empty
-  wall. Never first-run teaching copy.
+  unaffected, and the direct OVRFLOStream route. Never "you hold no streams". Never
+  an empty wall. Never first-run teaching copy. Never point at
+  `0xAFb979d9afAd1aD27C5eFf4E27226E3AB9e5dCC9`.
 - **Data authority.** `chain.stream-truth` — this state reports on-chain book
   incompleteness (ADR-0002). Positions and loans continue to render from their
   `on-chain` books.

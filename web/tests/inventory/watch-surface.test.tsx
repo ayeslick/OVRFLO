@@ -213,7 +213,10 @@ describe("inventory — entry, lenses, watch index, first-run, degraded, narrow 
     fx.streams = [eligibleStream()];
     writeWatchSearch({ lens: "streams", selection: { kind: "stream", id: 441n } }, "replace");
     render(<WatchApp />);
-    expect(screen.getByRole("article")).toHaveAttribute("data-region", "stream-detail");
+    expect(screen.getByRole("article", { name: /^Stream 441 Streaming$/ })).toHaveAttribute(
+      "data-region",
+      "stream-detail",
+    );
     expect(screen.getByRole("button", { name: "BORROW AGAINST THIS STREAM" })).toBeInTheDocument();
   });
 

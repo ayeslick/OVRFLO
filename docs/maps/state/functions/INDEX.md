@@ -24,7 +24,7 @@ on-chain contract state. This index does not cover, replace, or summarise it.
 |---|---|
 | Key files | 6 |
 | Keys | 62 |
-| Modules | 87 |
+| Modules | 89 |
 | `on-chain` keys | 23 |
 | `projection` keys | 0 |
 | `pure-client` keys | 39 |
@@ -80,6 +80,7 @@ a `projection` count is a module where a fail-closed mistake can happen.
 | `web/components/watch/BorrowedDetail.tsx` | 1 | 0 | 6 |
 | `web/components/watch/ClosedLoanDetail.tsx` | 1 | 0 | 1 |
 | `web/components/watch/StreamDetail.tsx` | 1 | 0 | 3 |
+| `web/components/watch/StreamLedgerCard.tsx` | 1 | 0 | 0 |
 | `web/components/watch/SuppliedDetail.tsx` | 3 | 0 | 5 |
 | `web/components/watch/Wall.tsx` | 5 | 0 | 7 |
 | `web/components/watch/WatchApp.tsx` | 1 | 0 | 1 |
@@ -113,6 +114,7 @@ a `projection` count is a module where a fail-closed mistake can happen.
 | `web/lib/freshness.ts` | 0 | 0 | 1 |
 | `web/lib/invalidate.ts` | 5 | 0 | 0 |
 | `web/lib/ladder.ts` | 2 | 0 | 1 |
+| `web/lib/ledger-card.ts` | 2 | 0 | 1 |
 | `web/lib/lending-math.ts` | 1 | 0 | 0 |
 | `web/lib/parse.ts` | 0 | 0 | 2 |
 | `web/lib/payoff.ts` | 2 | 0 | 7 |
@@ -462,6 +464,12 @@ a `projection` count is a module where a fail-closed mistake can happen.
 | reads | `schedule.interpolated-vested` | `pure-client` | landing U7: `UI-WATCH-HERO-VESTED` |
 | reads | `watch.selected-entity` | `pure-client` | landing U7: mounted when kind is `stream` |
 
+### `web/components/watch/StreamLedgerCard.tsx`
+
+| Direction | Key | Trust domain | Role |
+|---|---|---|---|
+| reads | `chain.stream-truth` | `on-chain` | HTML ledger card figures (U9) |
+
 ### `web/components/watch/SuppliedDetail.tsx`
 
 | Direction | Key | Trust domain | Role |
@@ -738,6 +746,14 @@ a `projection` count is a module where a fail-closed mistake can happen.
 | reads | `chain.lending-config` | `on-chain` | landing U5: window derivation, stepper clamps |
 | reads | `chain.tick-depths` | `on-chain` | landing U5: three-tick window, neighbor hints, clamps |
 
+### `web/lib/ledger-card.ts`
+
+| Direction | Key | Trust domain | Role |
+|---|---|---|---|
+| reads | `chain.stream-truth` | `on-chain` | snapshot percent / segments from hydrated schedule (U9) |
+| reads | `schedule.interpolated-vested` | `pure-client` | U9: card bar uses streamedAmountOf at lastReadAt only (not the live clock) |
+| reads | `schedule.stream-params` | `on-chain` | U9: HTML card snapshot from schedule × lastReadAt |
+
 ### `web/lib/lending-math.ts`
 
 | Direction | Key | Trust domain | Role |
@@ -843,7 +859,7 @@ full entry, including fail-closed guidance on `projection` keys.
 | `chain.market-symbols` | `on-chain` | `web/hooks/useMarketSymbols.ts` | `web/components/kit/Amount.tsx`<br>`web/components/watch/Wall.tsx`<br>`web/components/supply/AmountStep.tsx`<br>`web/components/borrow/AmountStep.tsx` | `docs/maps/state/keys/chain-reads.md` |
 | `chain.markets` | `on-chain` | `web/hooks/useAllMarkets.ts` | `web/app/page.tsx`<br>`web/components/supply/SelectMarket.tsx`<br>`web/components/assets/StreamSelectMarket.tsx`<br>`web/hooks/useMarketSymbols.ts` | `docs/maps/state/keys/chain-reads.md` |
 | `chain.nft-operator` | `on-chain` | `web/hooks/useApprovalWriteFlows.ts` | `web/components/borrow/ReviewHandoff.tsx`<br>`web/components/kit/Receipt.tsx` | `docs/maps/state/keys/chain-reads.md` |
-| `chain.stream-truth` | `on-chain` | `web/hooks/useStreams.ts` | `web/components/watch/WatchApp.tsx`<br>`web/components/watch/Wall.tsx`<br>`web/components/watch/StreamDetail.tsx`<br>`web/components/borrow/SelectStream.tsx`<br>`web/lib/lending-math.ts` | `docs/maps/state/keys/chain-reads.md` |
+| `chain.stream-truth` | `on-chain` | `web/hooks/useStreams.ts` | `web/components/watch/WatchApp.tsx`<br>`web/components/watch/Wall.tsx`<br>`web/components/watch/StreamDetail.tsx`<br>`web/components/watch/StreamLedgerCard.tsx`<br>`web/lib/ledger-card.ts`<br>`web/components/borrow/SelectStream.tsx`<br>`web/lib/lending-math.ts` | `docs/maps/state/keys/chain-reads.md` |
 | `chain.tick-depths` | `on-chain` | `web/hooks/useLadder.ts` | `web/lib/ladder.ts`<br>`web/components/kit/RateWindow.tsx`<br>`web/components/rates/Workspace.tsx`<br>`web/components/borrow/PoolBand.tsx`<br>`web/components/supply/QueueBand.tsx` | `docs/maps/state/keys/chain-reads.md` |
 | `chain.vault-registry` | `on-chain` | `web/hooks/useOvrflos.ts` | `web/hooks/useAllMarkets.ts`<br>`web/hooks/useStreams.ts` | `docs/maps/state/keys/chain-reads.md` |
 | `chain.wagmi-reads` | `on-chain` | `web/hooks/useOvrflos.ts`<br>`web/hooks/useAllMarkets.ts`<br>`web/hooks/useMarketSymbols.ts`<br>`web/hooks/useLending.ts`<br>`web/lib/invalidate.ts`<br>`web/lib/query-resource-registry.ts` | `web/lib/invalidate.ts`<br>`web/lib/query-resource-registry.ts`<br>`web/hooks/useWriteFlow.ts` | `docs/maps/state/keys/chain-reads.md` |
@@ -871,10 +887,10 @@ full entry, including fail-closed guidance on `projection` keys.
 | `schedule.freshness` | `pure-client` | `web/lib/freshness.ts`<br>`web/hooks/useFreshness.ts` | `web/components/kit/StatusLine.tsx`<br>`web/components/watch/SuppliedDetail.tsx`<br>`web/components/watch/BorrowedDetail.tsx`<br>`web/hooks/useWriteFlow.ts` | `docs/maps/state/keys/schedule.md` |
 | `schedule.interpolated-earnings` | `pure-client` | `web/lib/payoff.ts` | `web/components/kit/RollingNumber.tsx`<br>`web/components/watch/Wall.tsx`<br>`web/components/watch/SuppliedDetail.tsx` | `docs/maps/state/keys/schedule.md` |
 | `schedule.interpolated-outstanding` | `pure-client` | `web/lib/payoff.ts` | `web/components/kit/RollingNumber.tsx`<br>`web/components/watch/Wall.tsx`<br>`web/components/watch/BorrowedDetail.tsx` | `docs/maps/state/keys/schedule.md` |
-| `schedule.interpolated-vested` | `pure-client` | `web/lib/payoff.ts` | `web/components/kit/RollingNumber.tsx`<br>`web/components/watch/Wall.tsx`<br>`web/components/watch/StreamDetail.tsx` | `docs/maps/state/keys/schedule.md` |
+| `schedule.interpolated-vested` | `pure-client` | `web/lib/payoff.ts` | `web/components/kit/RollingNumber.tsx`<br>`web/components/watch/Wall.tsx`<br>`web/components/watch/StreamDetail.tsx`<br>`web/lib/ledger-card.ts` | `docs/maps/state/keys/schedule.md` |
 | `schedule.repay-preview` | `pure-client` | `web/lib/payoff.ts` | `web/components/kit/Receipt.tsx`<br>`web/components/watch/BorrowedDetail.tsx` | `docs/maps/state/keys/schedule.md` |
 | `schedule.skew-offset` | `pure-client` | `web/lib/payoff.ts`<br>`web/hooks/useClock.ts` | `web/hooks/useClock.ts`<br>`web/lib/payoff.ts` | `docs/maps/state/keys/schedule.md` |
-| `schedule.stream-params` | `on-chain` | `web/hooks/useStreams.ts` | `web/lib/payoff.ts`<br>`web/components/kit/Ribbon.tsx`<br>`web/components/kit/RollingNumber.tsx` | `docs/maps/state/keys/schedule.md` |
+| `schedule.stream-params` | `on-chain` | `web/hooks/useStreams.ts` | `web/lib/payoff.ts`<br>`web/components/kit/Ribbon.tsx`<br>`web/components/kit/RollingNumber.tsx`<br>`web/lib/ledger-card.ts` | `docs/maps/state/keys/schedule.md` |
 | `tx.replaced` | `pure-client` | `web/hooks/useTxQueue.ts`<br>`web/hooks/useTransactionExecutor.ts` | `web/hooks/useWriteFlow.ts`<br>`web/components/kit/ActionButton.tsx` | `docs/maps/state/keys/execution-state.md` |
 | `usd.mode` | `pure-client` | `web/components/kit/TokenUsdSwitch.tsx` | `web/components/kit/Amount.tsx`<br>`web/components/kit/Receipt.tsx`<br>`web/components/watch/SuppliedDetail.tsx` | `docs/maps/state/keys/view-state.md` |
 | `usd.price` | `on-chain` | `web/hooks/useUsdPrice.ts`<br>`web/lib/usd.ts` | `web/components/kit/Amount.tsx`<br>`web/components/kit/TokenUsdSwitch.tsx`<br>`web/components/watch/SuppliedDetail.tsx` | `docs/maps/state/keys/chain-reads.md` |

@@ -249,7 +249,8 @@ export function StreamsDegraded({ kind }: { kind: "pending" | "could-not-ask" })
     <div className="watch-degraded" data-ui="UI-WATCH-STREAMS-DEGRADED" data-region="streams-degraded" data-state="could-not-ask">
       <p>STREAM DISCOVERY IS UNAVAILABLE. YOUR STREAMS ARE UNAFFECTED.</p>
       <p>
-        RECOVER DIRECTLY ON SABLIER AT 0xAFb9…dCC9 USING YOUR STREAM ID.
+        RECOVER WITH YOUR OVRFLOSTREAM ID ON THE BOUND LOCKUP. MARKETS LISTS HELD
+        STREAMS VIA ENUMERABLE WHEN READS SUCCEED.
       </p>
     </div>
   );

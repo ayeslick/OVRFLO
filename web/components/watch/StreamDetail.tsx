@@ -7,8 +7,10 @@ import { RollingNumber } from "@/components/kit/RollingNumber";
 import type { HydratedStream } from "@/hooks/useStreams";
 import { formatMaturityDate, formatTruncatedDecimal } from "@/lib/format";
 import type { Freshness } from "@/lib/freshness";
+import { buildLedgerCardSnapshot } from "@/lib/ledger-card";
 import { interpolateStreamed } from "@/lib/payoff";
 import { streamRowState } from "@/lib/watch-rows";
+import { StreamLedgerCard } from "./StreamLedgerCard";
 import { freshnessCaption } from "./SuppliedDetail";
 import "./watch.css";
 
@@ -18,6 +20,7 @@ export function StreamDetail({
   pledgedLoanId,
   nowSeconds,
   nowMs,
+  lastReadAt,
   freshness,
   signingAllowed,
   usdMode,
@@ -30,6 +33,8 @@ export function StreamDetail({
   pledgedLoanId?: bigint;
   nowSeconds: bigint;
   nowMs: number;
+  /** Last successful hydration time — card bar snapshot only (R14). */
+  lastReadAt: bigint;
   freshness: Freshness;
   signingAllowed: boolean;
   usdMode: "token" | "usd";
@@ -44,9 +49,20 @@ export function StreamDetail({
   const stale = !signingAllowed;
   const startMs = Number(stream.schedule.start) * 1000;
   const endMs = Number(stream.schedule.end) * 1000;
+  const snapshot = buildLedgerCardSnapshot({
+    streamId: stream.streamId,
+    statusCode: stream.status,
+    schedule: stream.schedule,
+    asOf: lastReadAt,
+  });
 
   return (
-    <article data-ui="UI-WATCH-STREAM-DETAIL" data-region="stream-detail" data-state={state}>
+    <article
+      data-ui="UI-WATCH-STREAM-DETAIL"
+      data-region="stream-detail"
+      data-state={state}
+      aria-label={`Stream ${stream.streamId.toString()} ${snapshot.statusLabel}`}
+    >
       <div className="kit-hero">
         <span className="kit-hero-kicker">VESTED</span>
         <RollingNumber
@@ -96,6 +112,14 @@ export function StreamDetail({
         ) : null}
       </div>
 
+      <StreamLedgerCard
+        key={snapshot.cacheKey}
+        streamId={stream.streamId}
+        symbol={symbol}
+        endTime={stream.schedule.end}
+        snapshot={snapshot}
+      />
+
       <Ribbon
         state={stale ? "degraded" : "edge"}
         startMs={startMs}
@@ -114,6 +138,22 @@ export function StreamDetail({
         <Fact label="PLEDGED" value={pledged ? "YES" : "NO"} />
       </dl>
       <p className="watch-freshness">{freshnessCaption(freshness)}</p>
+    </article>
+  );
+}
+
+export function StreamClosedDetail({ streamId }: { streamId: bigint }) {
+  return (
+    <article
+      data-ui="UI-WATCH-STREAM-DETAIL"
+      data-region="stream-detail"
+      data-state="closed"
+      aria-label={`Stream ${streamId.toString()} closed`}
+    >
+      <p className="watch-kicker">STREAM CLOSED</p>
+      <p className="watch-degraded">
+        Stream #{streamId.toString()} is no longer held. The NFT was burned or left this wallet.
+      </p>
     </article>
   );
 }
