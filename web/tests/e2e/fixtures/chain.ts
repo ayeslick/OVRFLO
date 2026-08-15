@@ -24,9 +24,8 @@ import {
   type Log,
 } from "viem";
 import { erc20Abi, ovrfloAbi, ovrfloFactoryAbi, ovrfloLendingAbi, sablierLockupAbi } from "@/lib/abis";
-import { SABLIER_LOCKUP_ADDRESS } from "@/lib/config";
 import { formatMaturityDate } from "@/lib/format";
-import { floorToUnit, grossPrice } from "@/lib/lending-math";
+import { UNIT, floorToUnit, grossPrice as priceGross, MIN_LIQUIDITY_AMOUNT } from "@/lib/lending-math";
 import { DEV_WALLET_ADDRESS, LENDER_WALLET_ADDRESS } from "./mock-wallet";
 import { RPC_URL, rpcCall } from "./rpc";
 
@@ -61,6 +60,7 @@ type Deployment = {
   ovrflo: Address;
   token: Address;
   lending: Address;
+  stream?: Address;
   primaryMarket: Address;
   primaryPt: Address;
   primaryExpiry: number;
@@ -114,6 +114,16 @@ export function readSecondaryPt(): Address {
 }
 export function readSecondaryExpiry(): bigint {
   return BigInt(readDeployment().secondaryExpiry);
+}
+
+export function readStreamLockup(): Address {
+  const fromEnv = process.env.NEXT_PUBLIC_SABLIER_LOCKUP_ADDRESS;
+  if (fromEnv && /^0x[0-9a-fA-F]{40}$/.test(fromEnv)) return fromEnv as Address;
+  const stream = readDeployment().stream;
+  if (stream) return stream;
+  throw new Error(
+    "stream lockup address missing — set NEXT_PUBLIC_SABLIER_LOCKUP_ADDRESS or deployments/local.json stream",
+  );
 }
 
 // Reuses the app's own formatter (rather than reimplementing the Intl call)
@@ -331,7 +341,7 @@ export async function lenderSupplyLiquidity(params: { lending: Address; market: 
 // entirely) as the recipient — fixture-direct "already claimed elsewhere".
 export async function claimStreamMax(streamId: bigint) {
   const hash = await devClient.writeContract({
-    address: SABLIER_LOCKUP_ADDRESS,
+    address: readStreamLockup(),
     abi: sablierLockupAbi,
     functionName: "withdrawMax",
     args: [streamId, DEV_WALLET_ADDRESS],
@@ -418,7 +428,7 @@ export async function waitForHeldStream(recipient: Address, streamId: bigint, ti
   while (Date.now() < deadline) {
     try {
       const owner = await publicClient.readContract({
-        address: SABLIER_LOCKUP_ADDRESS,
+        address: readStreamLockup(),
         abi: sablierLockupAbi,
         functionName: "ownerOf",
         args: [streamId],
@@ -436,27 +446,25 @@ export async function waitForHeldStream(recipient: Address, streamId: bigint, ti
   );
 }
 
-// Arrangement helper: UNIT-floored present value of remaining stream face.
-export async function readStreamGrossPrice(params: {
-  lending: Address;
-  market: Address;
+// Arrangement helper: remaining face + raw / UNIT-floored gross price.
+export async function readStreamPricing(params: {
   streamId: bigint;
   aprBps: number;
 }) {
   const deposited = await publicClient.readContract({
-    address: SABLIER_LOCKUP_ADDRESS,
+    address: readStreamLockup(),
     abi: sablierLockupAbi,
     functionName: "getDepositedAmount",
     args: [params.streamId],
   });
   const withdrawn = await publicClient.readContract({
-    address: SABLIER_LOCKUP_ADDRESS,
+    address: readStreamLockup(),
     abi: sablierLockupAbi,
     functionName: "getWithdrawnAmount",
     args: [params.streamId],
   });
   const endTime = await publicClient.readContract({
-    address: SABLIER_LOCKUP_ADDRESS,
+    address: readStreamLockup(),
     abi: sablierLockupAbi,
     functionName: "getEndTime",
     args: [params.streamId],
@@ -465,7 +473,104 @@ export async function readStreamGrossPrice(params: {
   const latest = await publicClient.getBlock();
   const end = BigInt(endTime);
   const ttm = end > latest.timestamp ? end - latest.timestamp : 0n;
-  return floorToUnit(grossPrice(remaining, params.aprBps, ttm));
+  const rawGross = priceGross(remaining, params.aprBps, ttm);
+  return {
+    remaining,
+    endTime: end,
+    ttm,
+    rawGross,
+    flooredGross: floorToUnit(rawGross),
+  };
+}
+
+// Arrangement helper: UNIT-floored present value of remaining stream face.
+export async function readStreamGrossPrice(params: {
+  lending: Address;
+  market: Address;
+  streamId: bigint;
+  aprBps: number;
+}) {
+  const priced = await readStreamPricing({ streamId: params.streamId, aprBps: params.aprBps });
+  return priced.flooredGross;
+}
+
+/**
+ * Advance chain time until raw grossPrice is UNIT-aligned so a max borrow
+ * takes obligation == remaining (StreamPricing.obligationForFill fast path).
+ * Returns the exact borrow target, or null when no alignment is found.
+ */
+export async function advanceToUnitAlignedGrossPrice(params: {
+  streamId: bigint;
+  aprBps: number;
+  maxAdvanceSeconds?: number;
+}) {
+  const maxAdvance = params.maxAdvanceSeconds ?? 2_000_000;
+  const deposited = await publicClient.readContract({
+    address: readStreamLockup(),
+    abi: sablierLockupAbi,
+    functionName: "getDepositedAmount",
+    args: [params.streamId],
+  });
+  const withdrawn = await publicClient.readContract({
+    address: readStreamLockup(),
+    abi: sablierLockupAbi,
+    functionName: "getWithdrawnAmount",
+    args: [params.streamId],
+  });
+  const endTime = await publicClient.readContract({
+    address: readStreamLockup(),
+    abi: sablierLockupAbi,
+    functionName: "getEndTime",
+    args: [params.streamId],
+  });
+  const remaining = deposited - withdrawn;
+  const latest = await publicClient.getBlock();
+  const end = BigInt(endTime);
+  let ttm = end > latest.timestamp ? end - latest.timestamp : 0n;
+  let advance = 0;
+  while (advance <= maxAdvance && ttm > 0n) {
+    const raw = priceGross(remaining, params.aprBps, ttm);
+    if (raw >= MIN_LIQUIDITY_AMOUNT && raw % UNIT === 0n) {
+      if (advance > 0) await advanceSeconds(advance);
+      return raw;
+    }
+    ttm -= 1n;
+    advance += 1;
+  }
+  return null;
+}
+
+export async function closeLoan(params: { account: Address; lending: Address; loanId: bigint }) {
+  const client = walletFor(params.account);
+  const hash = await client.writeContract({
+    address: params.lending,
+    abi: ovrfloLendingAbi,
+    functionName: "close",
+    args: [params.loanId],
+  });
+  await mineAndGetReceipt(hash);
+}
+
+export async function streamOwnerOf(streamId: bigint): Promise<Address | null> {
+  try {
+    return await publicClient.readContract({
+      address: readStreamLockup(),
+      abi: sablierLockupAbi,
+      functionName: "ownerOf",
+      args: [streamId],
+    });
+  } catch {
+    return null;
+  }
+}
+
+export async function streamIsDepleted(streamId: bigint): Promise<boolean> {
+  return publicClient.readContract({
+    address: readStreamLockup(),
+    abi: sablierLockupAbi,
+    functionName: "isDepleted",
+    args: [streamId],
+  });
 }
 
 // Full borrow as `account` — arrangement for repay-close.feature.
@@ -479,14 +584,14 @@ export async function borrowAgainstStream(params: {
 }) {
   const client = walletFor(params.account);
   const alreadyApproved = await publicClient.readContract({
-    address: SABLIER_LOCKUP_ADDRESS,
+    address: readStreamLockup(),
     abi: sablierLockupAbi,
     functionName: "getApproved",
     args: [params.streamId],
   });
   if (alreadyApproved.toLowerCase() !== params.lending.toLowerCase()) {
     const approveHash = await client.writeContract({
-      address: SABLIER_LOCKUP_ADDRESS,
+      address: readStreamLockup(),
       abi: sablierLockupAbi,
       functionName: "approve",
       args: [params.lending, params.streamId],
