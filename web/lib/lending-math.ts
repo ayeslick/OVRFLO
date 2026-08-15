@@ -12,11 +12,16 @@ export const APR_STEP_BPS = 100;
 /// for them.
 export const STREAM_PAGE_SIZE = 25n;
 
-/// Fail-closed refusal threshold, NOT a page size. Above this, the books report unavailable rather
-/// than showing a truncated list. It is deleted when the pager lands
-/// (docs/plans/2026-08-15-001-feat-watch-enumeration-load-more-plan.md) and STREAM_PAGE_SIZE takes
-/// over. Do not lower it before then: it gates `overBudget` in all three books, so a smaller value
-/// blanks the wall for any wallet holding more than that many streams.
+/// Fail-closed refusal threshold, NOT a page size. It exists only because `useStreams` fetches every
+/// id and hydrates all of them in one shot, so refusing is the only alternative to a truncated list.
+///
+/// Slated for deletion, not adjustment. The pager
+/// (docs/plans/2026-08-15-001-feat-watch-enumeration-load-more-plan.md) bounds the display path, and
+/// the lens (docs/plans/2026-08-15-005-feat-stream-lens-plan.md) serves the consumers that need the
+/// complete set. After both, nothing reads unboundedly and this has no job.
+///
+/// Do not lower it before then: it gates `overBudget` in all three books, so a smaller value blanks
+/// the wall for any wallet holding more than that many streams.
 export const MAX_ENUMERATION_IDS = 500n;
 export { MAX_UINT128 };
 
