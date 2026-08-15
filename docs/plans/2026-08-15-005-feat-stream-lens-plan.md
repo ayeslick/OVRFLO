@@ -81,6 +81,11 @@ function streamsOfOwner(ILensSource lockup, address owner)
 /// Windowed. Serves the wall's pager, and the degradation path for a wallet too large for one call.
 function streamsOfOwnerIn(ILensSource lockup, address owner, uint256 start, uint256 stop)
     external view returns (StreamView[] memory);
+
+/// Known ids, no enumeration. Serves claim-all retry over a known queue and single-row refresh
+/// after a write. The only surface where an `ok: false` row is reachable today (burned/unknown id).
+function streamsByIds(ILensSource lockup, uint256[] calldata ids)
+    external view returns (StreamView[] memory);
 ```
 
 **The struct is the full `LockupLinear.Stream` surface plus `owner`, `withdrawable`, `status`, and
@@ -115,10 +120,13 @@ Keep `ok` anyway — it is one bool and it is the difference between a degraded 
 page if any future lockup change makes a read fallible. But state it as insurance, and do not write
 a test that pretends to exercise it through a burn.
 
-**Decide before building: does `streamsByIds(ILensSource, uint256[])` ship alongside?** With a
-caller-supplied id array, a burned or unknown id genuinely reverts, which makes `ok` live and its
-test writable — and it is what a claim-all retry over a known id set would want. It is either in
-this plan or explicitly deferred; do not leave it to the implementer.
+**Decided 2026-08-15: `streamsByIds(ILensSource, uint256[])` ships alongside.** With a
+caller-supplied id array, a burned or unknown id genuinely reverts hydration (`ownerOf` on a burned
+NFT), which makes `ok` live and its test writable — and it is what a claim-all retry over a known id
+set wants, plus single-row refresh after a write. The cost is a loop over the same per-stream
+hydration internals the owner forms already need, and shipping it later would mean a second
+bundle/ABI regeneration for ten lines. An `ok: false` row keeps the all-zero rule: `owner` is
+unreadable for a burned id, so the row carries no trustworthy field.
 
 ### try/catch — one call, one catch
 
@@ -226,13 +234,15 @@ of `test/DeploySize.t.sol`'s `deliberate-ceiling` comments — **not** by editin
 
 ## Test accountability
 
-- **A reverting stream degrades one row — testable only through `streamsByIds`.** The owner-scoped
-  forms cannot produce an `ok: false` row via a burn: ids and hydration happen in one atomic call at
-  one block, and a burned id leaves the owner's enumeration in that same block (per the `ok`
-  discussion above — "do not write a test that pretends to exercise it through a burn"). If
-  `streamsByIds` ships, assert a burned or unknown id in the caller-supplied array yields
-  `ok: false` with correct neighbours; if `streamsByIds` is deferred, this test defers with it and
-  `ok` stands as documented insurance.
+- **A reverting stream degrades one row — tested through `streamsByIds`.** The owner-scoped forms
+  cannot produce an `ok: false` row via a burn: ids and hydration happen in one atomic call at one
+  block, and a burned id leaves the owner's enumeration in that same block (per the `ok` discussion
+  above — "do not write a test that pretends to exercise it through a burn"). Assert a burned id and
+  a never-minted id in the caller-supplied array each yield `ok: false` (all other fields zero) with
+  correct data for their neighbours.
+- **`streamsByIds` agrees with enumeration.** Feed it the exact id list `tokensOfOwnerIn` returns
+  for an owner at one block and assert the rows equal `streamsOfOwner`'s. Guards the two hydration
+  paths drifting apart.
 - **`streamsOfOwner` equals the concatenation of its windows.** Assert the unbounded form returns the
   same set as paging `streamsOfOwnerIn` across the whole range at one block.
 - **The lens agrees with direct reads.** For one stream, assert every `StreamView` field equals what
