@@ -10,6 +10,10 @@ export type Freshness = {
 export type FreshnessInput = {
   lastSuccessAt: bigint | null;
   status: ReadQueryStatus;
+  /** Wall-clock ms used with maxAgeMs to discard an aged success. */
+  now?: number;
+  /** Past this age a prior success is discarded (not shown behind a warning). */
+  maxAgeMs?: number;
 };
 
 /**
@@ -18,23 +22,38 @@ export type FreshnessInput = {
  * USD unavailability is `usd.staleness`, not this key.
  */
 export function classifyFreshness(input: FreshnessInput): Freshness {
-  const asOf = input.lastSuccessAt;
-  if (input.status === "success" && asOf !== null) {
+  let asOf = input.lastSuccessAt;
+  let status = input.status;
+
+  if (
+    asOf !== null &&
+    input.maxAgeMs !== undefined &&
+    input.now !== undefined &&
+    input.now - Number(asOf) * 1000 > input.maxAgeMs
+  ) {
+    // Past the bound: discard. Do not keep a warning caption over stale figures.
+    asOf = null;
+    if (status === "success" || status === "pending" || status === "error") {
+      status = "idle";
+    }
+  }
+
+  if (status === "success" && asOf !== null) {
     return { kind: "synced", asOf };
   }
-  if (input.status === "pending" && asOf !== null) {
+  if (status === "pending" && asOf !== null) {
     return { kind: "reconnecting", asOf };
   }
-  if (input.status === "error" && asOf !== null) {
+  if (status === "error" && asOf !== null) {
     return { kind: "degraded", asOf };
   }
-  if ((input.status === "error" || input.status === "idle") && asOf === null) {
+  if ((status === "error" || status === "idle") && asOf === null) {
     return { kind: "unavailable", asOf: null };
   }
-  if (input.status === "pending" && asOf === null) {
+  if (status === "pending" && asOf === null) {
     return { kind: "unavailable", asOf: null };
   }
-  if (input.status === "success" && asOf === null) {
+  if (status === "success" && asOf === null) {
     return { kind: "unavailable", asOf: null };
   }
   return { kind: "unavailable", asOf };

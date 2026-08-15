@@ -137,9 +137,10 @@ or could-not-ask while on-chain books read zero → this region with
 - **Copy rules.** Amounts in the market's ovrflo token from live `symbol()`. Never
   describe the stream as collateral at risk of liquidation. Never list a stream the
   eligibility mirror would reject.
-- **Data authority.** `projection` for the candidate set (bounded logs). `on-chain`
-  for `ownerOf`, `getStream` (sender, asset, schedule, remaining), and pledged
-  status via loan reads. A candidate is never shown on projection alone. Eligibility
+- **Data authority.** `on-chain` for held-stream Enumerable reads (`ownerOf`,
+  `getStream` sender/asset/schedule/remaining, `withdrawableAmountOf`,
+  `statusOf`) and pledged status via loan reads. No projection candidate set
+  (ADR-0002). Eligibility
   that later gates Borrow is re-read from chain at that gate.
 
 ## `UI-WATCH-ROW-SETTLED`
@@ -441,9 +442,9 @@ or could-not-ask while on-chain books read zero → this region with
 ## `UI-WATCH-STREAMS-DEGRADED`
 
 - **ID.** `UI-WATCH-STREAMS-DEGRADED`
-- **Purpose.** Say stream discovery could not complete, without asserting emptiness
+- **Purpose.** Say held-stream enumeration could not complete, without asserting emptiness
   and without sending the user into first-run.
-- **Visible when.** Stream discovery is pending or classifies could-not-ask. When
+- **Visible when.** Stream book is pending or classifies could-not-ask. When
   on-chain books (positions and loans) are also zero, this state **is** the home
   (R12) — first-run must not render. When books are nonzero, it replaces stream
   rows inside the Streams lens only.
@@ -452,12 +453,12 @@ or could-not-ask while on-chain books read zero → this region with
   Pending and could-not-ask stay distinct from each other and from empty.
 - **Action.** None. Recovery is outside this app (Sablier, stream id). Retry is the
   query layer.
-- **Copy rules.** Must state that discovery is unavailable, that streams are
+- **Copy rules.** Must state that stream reads are unavailable, that streams are
   unaffected, and the direct route. Never "you hold no streams". Never an empty
   wall. Never first-run teaching copy.
-- **Data authority.** `projection` — this state *is* the projection reporting its
-  own incompleteness. It reports nothing about chain state and must never be read
-  as one. Positions and loans continue to render from `on-chain` books.
+- **Data authority.** `chain.stream-truth` — this state reports on-chain book
+  incompleteness (ADR-0002). Positions and loans continue to render from their
+  `on-chain` books.
 
 ## `UI-WATCH-MILESTONE`
 

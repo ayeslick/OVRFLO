@@ -41,6 +41,7 @@ const ENV_KEYS = [
   "NEXT_PUBLIC_RPC_FALLBACK_URLS",
   "NEXT_PUBLIC_HISTORICAL_RPC_URL",
   "NEXT_PUBLIC_REOWN_PROJECT_ID",
+  "NEXT_PUBLIC_SABLIER_LOCKUP_ADDRESS",
   "VERCEL_ENV",
   "OVRFLO_DEPLOYABLE_BUILD",
 ] as const;
@@ -71,6 +72,7 @@ function stubValidProduction() {
   );
   vi.stubEnv("NEXT_PUBLIC_HISTORICAL_RPC_URL", "https://history.example.com");
   vi.stubEnv("NEXT_PUBLIC_REOWN_PROJECT_ID", "1234567890abcdef1234567890abcdef");
+  vi.stubEnv("NEXT_PUBLIC_SABLIER_LOCKUP_ADDRESS", REAL_ADDRESS);
 }
 
 describe("isConfiguredAddress", () => {

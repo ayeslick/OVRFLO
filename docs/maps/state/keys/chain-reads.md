@@ -198,27 +198,27 @@ will batch.
 
 ### `chain.stream-truth`
 
-Hydrated Sablier facts for each surviving candidate: `ownerOf`, `getStream`,
-`withdrawableAmountOf`.
+Hydrated held-stream facts from Enumerable discovery: `balanceOf`,
+`tokensOfOwnerIn`, then per id `ownerOf`, `getStream`, `withdrawableAmountOf`,
+`statusOf` (U8 / ADR-0002).
 
 - **trust_domain:** `on-chain`
 - **writers:**
-  - `web/hooks/useStreams.ts` — landing U6: truth step after `projection.stream`
+  - `web/hooks/useStreams.ts` — staged Enumerable reads; results live in wagmi Query cache only
 - **readers:**
-  - `web/app/page.tsx` — R12 emptiness: hydrated streams, not candidates
-  - `web/components/watch/Wall.tsx` — landing U7: Streams lens rows (render predicate)
-  - `web/components/watch/StreamDetail.tsx` — landing U7: vested hero, borrow route
-  - `web/components/borrow/SelectStream.tsx` — landing U9: eligible unpledged list
-  - `web/lib/lending-math.ts` — landing U5: eligibility mirror of `requireEligible`
-- **notes:** Discovery names IDs; this key is the authority. Drop any stream
-  whose on-chain owner is not the connected address. Two distinct predicates:
-  the *render* predicate (sender is a registered vault AND asset is that
-  market's ovrflo token — `StreamPricing` identity checks) decides what appears
-  under Streams; the *borrow-route* predicate (full `requireEligible` including
-  `SeriesMatured` plus `MIN_STREAM_AMOUNT`) decides whether `UI-WATCH-BORROW-ROUTE`
-  is offered. A matured market must not make fully-vested streams vanish from
-  the wall. Gates always re-read these fields. Interpolation inputs are the
-  immutable slice in `schedule.stream-params`, not a second RPC.
+  - `web/components/watch/WatchApp.tsx` — R12 entry book + Streams lens
+  - `web/components/watch/Wall.tsx` — Streams lens rows (render predicate)
+  - `web/components/watch/StreamDetail.tsx` — detail from hydrated state (U9 paints card)
+  - `web/components/borrow/SelectStream.tsx` — eligible unpledged list
+  - `web/lib/lending-math.ts` — eligibility mirror of `requireEligible`
+- **notes:** No projection candidate set. Drop any stream whose on-chain owner
+  is not the connected address. Hide empty / depleted streams. `balanceOf` above
+  `MAX_ENUMERATION_IDS` (`500n`) is unavailable, never partial. Two predicates:
+  *render* (vault sender + ovrflo asset) and *borrow-route* (full
+  `requireEligible`). Freshness: `dataUpdatedAt` on the outcome; past
+  `maxAgeMs` the set is discarded, not shown behind a warning (moved from
+  retired `projection.stream`). Pledged-stream companion `useLoanStreams`
+  shares `READ_INTERVAL_MS`.
 
 ### `chain.balances`
 
@@ -394,20 +394,11 @@ Declared TanStack query key for `tickDepths(market)`.
   - `web/lib/invalidate.ts` — re-quote at every checkpoint and after supply / borrow
 - **notes:** One key per market, not per tick — the view returns every rung.
 
-### `query.streams.truth`
+### `query.streams.truth` — retired
 
-Declared TanStack query key for hydrated stream truth (not candidates).
-
-- **trust_domain:** `on-chain`
-- **writers:**
-  - `web/lib/query-keys.ts` — landing U6: `streamKeys.truth` factory
-- **readers:**
-  - `web/hooks/useStreams.ts` — landing U6: registers the hydration query
-  - `web/lib/invalidate.ts` — loan and stream writes refresh truth
-- **notes:** Distinct from `query.streams.candidates` (`projection.md`).
-  Invalidating truth does not re-run the log scan; invalidating candidates does
-  not authorise. The incumbent `streamKeys.held` declaration is superseded by
-  this split.
+Custom TanStack key for hydrated stream truth. **Removed in U8.** Held-stream
+reads are wagmi `readContract` / `readContracts` keys scoped to
+`SABLIER_LOCKUP_ADDRESS`. See `chain.stream-truth` and ADR-0002.
 
 ### `query.usd.price`
 

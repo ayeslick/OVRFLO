@@ -72,7 +72,7 @@ Immutable interpolation inputs per stream: start, end, deposited
 
 - **trust_domain:** `on-chain`
 - **writers:**
-  - `web/hooks/useStreams.ts` — landing U6: slice of `getStream` from `chain.stream-truth`
+  - `web/hooks/useStreams.ts` — Enumerable hydration; fixed fields cached after first successful `getStream` (KTD9)
 - **readers:**
   - `web/lib/payoff.ts` — landing U5: vested / remaining / cover-date
   - `web/components/kit/Ribbon.tsx` — landing U4: origin → terminal geometry
@@ -81,6 +81,7 @@ Immutable interpolation inputs per stream: start, end, deposited
   Read once per entity; the values are immutable for the stream's life. Do not
   copy them into the query cache on every tick. Sablier three-bucket vocabulary
   (remaining / claimable / locked) lives in `web/lib/lending-math.ts` (U5).
+  Poll cadence for mutable fields is `READ_INTERVAL_MS`; the ticker is local clock.
 
 ### `schedule.interpolated-earnings`
 

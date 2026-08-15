@@ -102,9 +102,9 @@ export function BorrowFlow() {
   });
 
   const eligible = useMemo(() => {
-    if (streams.truth.status !== "ready") return [];
-    return streams.truth.data.streams.filter((row) => row.borrowRouteEligible);
-  }, [streams.truth]);
+    if (streams.status !== "ready") return [];
+    return streams.data.streams.filter((row) => row.borrowRouteEligible);
+  }, [streams]);
 
   const selectedStream = eligible.find((row) => row.streamId === selectedStreamId) ?? null;
   const market = useMemo(
@@ -117,10 +117,8 @@ export function BorrowFlow() {
   const lending = market?.lending ?? null;
   const ladderOutcome = useLadder(lending, market?.market);
   const { approveTx, actionTx } = useApprovalWriteFlows(account, market ?? []);
-  const { freshness, signingAllowed } = useFreshness([
-    sourceFromOutcome(streams.truth),
-    sourceFromOutcome(ladderOutcome),
-  ]);
+  // Borrow signing uses the streams lens truth; ladder is a separate gate in continue.
+  const { freshness, signingAllowed } = useFreshness([sourceFromOutcome(streams)]);
   const stale = useStaleRecovery(actionTx.error, classifyBorrowError, queryClient, account);
 
   const { decision, go: goDecision } = useFlowDecisionHistory({
@@ -751,24 +749,15 @@ function streamSelectStatus(
   vaultsLoading: boolean,
   streams: ReturnType<typeof useStreams>,
 ): "loading" | "ready" | "empty" | "unavailable" {
-  if (
-    marketsStatus === "unavailable" ||
-    streams.candidates.status === "unavailable" ||
-    streams.truth.status === "unavailable"
-  ) {
+  if (marketsStatus === "unavailable" || streams.status === "unavailable") {
     return "unavailable";
   }
-  if (
-    marketsStatus === "loading" ||
-    vaultsLoading ||
-    streams.candidates.status === "loading" ||
-    streams.truth.status === "loading"
-  ) {
+  if (marketsStatus === "loading" || vaultsLoading || streams.status === "loading") {
     return "loading";
   }
   if (
-    streams.truth.status === "ready" &&
-    streams.truth.data.streams.filter((row) => row.borrowRouteEligible).length === 0
+    streams.status === "ready" &&
+    streams.data.streams.filter((row) => row.borrowRouteEligible).length === 0
   ) {
     return "empty";
   }

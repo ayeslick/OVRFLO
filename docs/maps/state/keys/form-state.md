@@ -58,7 +58,7 @@ The Sablier stream the borrower intends to pledge.
   - `web/components/borrow/StreamContext.tsx` — landing U9: `UI-BORROW-STREAM-CONTEXT`
   - `web/lib/actions/borrow.ts` — landing U6: stream id argument of the loan call
 - **notes:** An ID is a **pointer, not a claim of ownership or eligibility**.
-  The candidate list comes from `projection.stream`; whether this stream is
+  The eligible list comes from `chain.stream-truth`; whether this stream is
   owned, matches the series, and passes `requireEligible` is decided by
   `chain.stream-truth`. Selecting an ID must never widen what the user can do.
   Continue does not authorise the borrow.

@@ -1,32 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { usePublicClient, useReadContracts } from "wagmi";
+import { useMemo, useRef } from "react";
+import { useReadContract, useReadContracts } from "wagmi";
 import { isAddressEqual, type Address } from "viem";
 import { sablierLockupAbi } from "@/lib/abis";
-import {
-  chainId,
-  factoryDeployment,
-  isConfiguredAddress,
-  runtimeProfile,
-  SABLIER_LOCKUP_ADDRESS,
-} from "@/lib/config";
-import {
-  captureHeadSnapshot,
-  createViemDiscoveryClient,
-  scanLogs,
-} from "@/lib/discovery/log-scanner";
-import {
-  decodeDepositedOrigin,
-  decodeRecipientTransfer,
-  depositedTopics,
-  discoverStreamCandidates,
-  recipientTransferTopics,
-} from "@/lib/discovery/stream-discovery";
-import { canStartBrowserDiscovery } from "@/lib/browser-runtime";
-import { MIN_STREAM_AMOUNT } from "@/lib/lending-math";
-import { readQuery, streamKeys } from "@/lib/query-keys";
+import { isConfiguredAddress, SABLIER_LOCKUP_ADDRESS } from "@/lib/config";
+import { MAX_ENUMERATION_IDS, MIN_STREAM_AMOUNT } from "@/lib/lending-math";
+import { readQuery } from "@/lib/query-keys";
 import {
   loadingOutcome,
   readFailure,
@@ -34,17 +14,7 @@ import {
   unavailableOutcome,
   type ReadOutcome,
 } from "@/lib/read-outcome";
-import {
-  readCheckpoint,
-  scanCheckpointKey,
-  streamCandidatesKey,
-  writeCandidateIdsUnion,
-  writeCheckpointMax,
-} from "@/lib/storage";
 import type { MarketInfo, VaultInfo } from "@/lib/types";
-
-const SCAN_RANGE = 2_000n;
-const CANDIDATE_LIMIT = 256;
 
 export type StreamScheduleParams = {
   start: bigint;
@@ -64,6 +34,8 @@ export type HydratedStream = {
   schedule: StreamScheduleParams;
   withdrawable: bigint;
   remaining: bigint;
+  /** Lockup.Status enum from statusOf — U9 paints from this. */
+  status: number;
   /** Streams lens: vault sender + ovrflo asset. Matured markets stay visible. */
   renderEligible: boolean;
   /** Borrow route: full requireEligible including SeriesMatured + MIN_STREAM_AMOUNT. */
@@ -73,7 +45,6 @@ export type HydratedStream = {
 };
 
 export type StreamBook = {
-  candidates: readonly bigint[];
   streams: readonly HydratedStream[];
 };
 
@@ -81,6 +52,29 @@ export type StreamMarket = Pick<
   MarketInfo,
   "vault" | "market" | "ovrfloToken" | "expiryCached"
 >;
+
+type FixedStreamFields = {
+  sender: Address;
+  asset: Address;
+  start: bigint;
+  end: bigint;
+  cliffTime: bigint;
+  deposited: bigint;
+  isCancelable: boolean;
+};
+
+type LockupStreamResult = {
+  sender: Address;
+  startTime: number;
+  cliffTime: number;
+  isCancelable: boolean;
+  asset: Address;
+  endTime: number;
+  isDepleted: boolean;
+  amounts: { deposited: bigint; withdrawn: bigint; refunded: bigint };
+};
+
+const STATE_CALLS_PER_ID = 4;
 
 export function renderEligibleStream(input: {
   sender: Address;
@@ -124,124 +118,57 @@ export function borrowRouteEligibleStream(input: {
     : { eligible: false, market: null };
 }
 
+/**
+ * Held-stream discovery via Enumerable staging (KTD2):
+ * balanceOf → tokensOfOwnerIn → ownerOf+getStream+withdrawable+statusOf.
+ */
 export function useStreams(input: {
   account: Address | null | undefined;
   vaults: readonly Pick<VaultInfo, "vault" | "ovrfloToken">[];
   markets: readonly StreamMarket[];
   registryComplete: boolean;
   now: bigint;
-}): {
-  candidates: ReadOutcome<{ ids: readonly bigint[] }>;
-  truth: ReadOutcome<StreamBook>;
-} {
+}): ReadOutcome<StreamBook> {
   const account = input.account;
-  const configured = isConfiguredAddress(account ?? null);
-  const publicClient = usePublicClient({ chainId });
-  const checkpointStorageKey = configured && account ? scanCheckpointKey(chainId, account) : null;
-  const [checkpointReady, setCheckpointReady] = useState(false);
-  const [checkpoint, setCheckpoint] = useState<ReturnType<typeof readCheckpoint>>(null);
+  const lockupConfigured = isConfiguredAddress(SABLIER_LOCKUP_ADDRESS);
+  const configured =
+    isConfiguredAddress(account ?? null) && lockupConfigured && input.registryComplete;
 
-  useEffect(() => {
-    if (!checkpointStorageKey) {
-      setCheckpoint(null);
-      setCheckpointReady(true);
-      return;
-    }
-    setCheckpoint(readCheckpoint(checkpointStorageKey));
-    setCheckpointReady(true);
-  }, [checkpointStorageKey]);
+  const fixedCache = useRef(new Map<string, FixedStreamFields>());
 
-  const persistCheckpoint = useCallback(
-    (next: { number: bigint; hash: `0x${string}` }) => {
-      if (!checkpointStorageKey) return;
-      const stored = writeCheckpointMax(checkpointStorageKey, next);
-      setCheckpoint(stored);
-    },
-    [checkpointStorageKey],
-  );
-
-  const vaultAddresses = useMemo(
-    () => input.vaults.map((vault) => vault.vault).filter((address) => isConfiguredAddress(address)),
-    [input.vaults],
-  );
-
-  const candidatesQuery = useQuery({
-    queryKey: streamKeys.candidates(chainId, account),
-    queryFn: async () => {
-      if (!publicClient || !account) throw new Error("Public client is unavailable");
-      if (!canStartBrowserDiscovery()) {
-        throw new Error("Stream discovery cannot start during prerender");
-      }
-      const client = createViemDiscoveryClient(publicClient);
-      const live = await captureHeadSnapshot(client);
-      // Production scans through finalized so a 1-2 block reorg cannot orphan
-      // events the checkpoint already advanced past. Anvil forks report mainnet
-      // finality (~64 blocks behind latest), so local seed and arrange
-      // transactions sit in that window and stay invisible unless the cap is
-      // latest.
-      const cap = runtimeProfile === "local" ? live.latest : live.finalized;
-      const snapshot = { finalized: cap, latest: cap };
-      const fromBlock = checkpoint?.number ?? factoryDeployment.blockNumber;
-      const originScan = await scanLogs(client, {
-        address: vaultAddresses,
-        topics: depositedTopics(),
-        fromBlock: fromBlock > 0n ? fromBlock : factoryDeployment.blockNumber,
-        rangeSize: SCAN_RANGE,
-        snapshot,
-        previousCheckpoint: checkpoint ?? undefined,
-        decode: decodeDepositedOrigin,
-      });
-      const transferScan = await scanLogs(client, {
-        address: SABLIER_LOCKUP_ADDRESS,
-        topics: recipientTransferTopics(account),
-        fromBlock: fromBlock > 0n ? fromBlock : factoryDeployment.blockNumber,
-        rangeSize: SCAN_RANGE,
-        snapshot,
-        previousCheckpoint: checkpoint ?? undefined,
-        decode: decodeRecipientTransfer,
-      });
-      const failed = [originScan, transferScan].find((result) => result.status === "failed");
-      if (failed && failed.status === "failed") {
-        if (failed.failure.kind === "reorg") {
-          if (checkpointStorageKey) {
-            persistCheckpoint(failed.snapshot.finalized);
-          }
-        }
-        throw new Error(failed.failure.message);
-      }
-      if (originScan.status !== "complete" || transferScan.status !== "complete") {
-        throw new Error("Stream candidate scan did not complete");
-      }
-      const discovered = discoverStreamCandidates({
-        vaultRegistry: { status: "complete", vaults: vaultAddresses },
-        origins: originScan.logs.map((log) => log.decoded),
-        recipientTransfers: transferScan.logs.map((log) => log.decoded),
-        recipient: account,
-        candidateLimit: CANDIDATE_LIMIT,
-      });
-      persistCheckpoint(originScan.snapshot.finalized);
-      const ids = writeCandidateIdsUnion(
-        streamCandidatesKey(chainId, account),
-        discovered.candidateIds,
-      ).slice(0, CANDIDATE_LIMIT);
-      return {
-        ids,
-        status: discovered.status,
-      };
-    },
-    ...readQuery,
-    enabled:
-      configured &&
-      checkpointReady &&
-      input.registryComplete &&
-      vaultAddresses.length > 0 &&
-      Boolean(publicClient),
+  const balanceRead = useReadContract({
+    address: SABLIER_LOCKUP_ADDRESS,
+    abi: sablierLockupAbi,
+    functionName: "balanceOf",
+    args: account ? [account] : undefined,
+    query: { ...readQuery, enabled: configured },
   });
 
-  const candidateIds = candidatesQuery.data?.ids ?? [];
-  const truthContracts = useMemo(() => {
-    if (!candidateIds.length) return [];
-    return candidateIds.flatMap((streamId) => [
+  const balance = (balanceRead.data as bigint | undefined) ?? 0n;
+  const balanceOk = balanceRead.isSuccess;
+  const overBudget = balanceOk && balance > MAX_ENUMERATION_IDS;
+  const idEnabled = configured && balanceOk && balance > 0n && !overBudget;
+
+  const idRead = useReadContract({
+    address: SABLIER_LOCKUP_ADDRESS,
+    abi: sablierLockupAbi,
+    functionName: "tokensOfOwnerIn",
+    args: account && idEnabled ? [account, 0n, balance] : undefined,
+    query: { ...readQuery, enabled: idEnabled },
+  });
+
+  const idsComplete = !idEnabled || idRead.isSuccess;
+  const ids = useMemo(() => {
+    if (!idsComplete || !idEnabled) return [] as bigint[];
+    const raw = idRead.data as readonly bigint[] | undefined;
+    if (!raw) return [];
+    return raw.filter((value) => value > 0n);
+  }, [idEnabled, idRead.data, idsComplete]);
+
+  const stateEnabled = configured && idsComplete && ids.length > 0;
+  const stateContracts = useMemo(() => {
+    if (!stateEnabled) return [];
+    return ids.flatMap((streamId) => [
       {
         address: SABLIER_LOCKUP_ADDRESS,
         abi: sablierLockupAbi,
@@ -260,98 +187,153 @@ export function useStreams(input: {
         functionName: "withdrawableAmountOf" as const,
         args: [streamId] as const,
       },
+      {
+        address: SABLIER_LOCKUP_ADDRESS,
+        abi: sablierLockupAbi,
+        functionName: "statusOf" as const,
+        args: [streamId] as const,
+      },
     ]);
-  }, [candidateIds]);
+  }, [ids, stateEnabled]);
 
-  const truthReads = useReadContracts({
+  const stateReads = useReadContracts({
     allowFailure: true,
-    contracts: truthContracts,
-    query: {
-      ...readQuery,
-      enabled: configured && candidateIds.length > 0,
-    },
+    contracts: stateContracts,
+    query: { ...readQuery, enabled: stateEnabled },
   });
 
-  const candidates: ReadOutcome<{ ids: readonly bigint[] }> = useMemo(() => {
-    if (!configured || !input.registryComplete) return loadingOutcome();
-    if (candidatesQuery.isPending && !candidatesQuery.data) return loadingOutcome();
-    if (candidatesQuery.isError) {
-      return unavailableOutcome([
-        readFailure("useStreams", "transport", candidatesQuery.error ?? "candidate scan failed"),
-      ]);
-    }
-    return readyOutcome({ ids: candidateIds });
-  }, [
-    candidateIds,
-    candidatesQuery.data,
-    candidatesQuery.error,
-    candidatesQuery.isError,
-    candidatesQuery.isPending,
-    configured,
-    input.registryComplete,
-  ]);
+  const dataUpdatedAt = Math.max(
+    balanceRead.dataUpdatedAt ?? 0,
+    idRead.dataUpdatedAt ?? 0,
+    stateReads.dataUpdatedAt ?? 0,
+  );
 
-  const truth: ReadOutcome<StreamBook> = useMemo(() => {
-    if (candidates.status === "unavailable") {
-      return unavailableOutcome(candidates.failures);
+  return useMemo(() => {
+    const meta = dataUpdatedAt > 0 ? { dataUpdatedAt } : {};
+
+    if (!configured) return loadingOutcome<StreamBook>(undefined, meta);
+    if (balanceRead.isLoading && balanceRead.data === undefined) {
+      return loadingOutcome<StreamBook>(undefined, meta);
     }
-    if (candidates.status !== "ready") {
-      return loadingOutcome();
+    if (balanceRead.isError) {
+      return unavailableOutcome<StreamBook>(
+        [readFailure("useStreams", "transport", balanceRead.error ?? "balanceOf failed")],
+        meta,
+      );
     }
-    if (candidateIds.length === 0) {
-      return readyOutcome({ candidates: [], streams: [] });
+    if (overBudget) {
+      return unavailableOutcome<StreamBook>(
+        [
+          readFailure(
+            "useStreams",
+            "incomplete",
+            "Held-stream enumeration exceeds the fail-closed budget",
+          ),
+        ],
+        meta,
+      );
     }
-    if (truthReads.isLoading && !truthReads.data) return loadingOutcome();
-    const rows = truthReads.data;
-    const expected = candidateIds.length * 3;
+    if (balance === 0n) {
+      fixedCache.current.clear();
+      return readyOutcome({ streams: [] }, meta);
+    }
+    if (idRead.isLoading && idRead.data === undefined) {
+      return loadingOutcome<StreamBook>(undefined, meta);
+    }
+    if (idRead.isError) {
+      return unavailableOutcome<StreamBook>(
+        [
+          readFailure(
+            "useStreams",
+            "transport",
+            idRead.error ?? "tokensOfOwnerIn failed",
+          ),
+        ],
+        meta,
+      );
+    }
+    if (!idsComplete) {
+      return unavailableOutcome<StreamBook>(
+        [readFailure("useStreams", "subcall", "tokensOfOwnerIn batch is incomplete")],
+        meta,
+      );
+    }
+    if (ids.length === 0) {
+      fixedCache.current.clear();
+      return readyOutcome({ streams: [] }, meta);
+    }
+    if (stateReads.isLoading && !stateReads.data) {
+      return loadingOutcome<StreamBook>(undefined, meta);
+    }
+    const rows = stateReads.data;
+    const expected = ids.length * STATE_CALLS_PER_ID;
     if (!rows || rows.length !== expected) {
-      return unavailableOutcome([
-        readFailure("useStreams", "incomplete", "Stream truth batch is incomplete"),
-      ]);
+      return unavailableOutcome<StreamBook>(
+        [readFailure("useStreams", "incomplete", "Stream state batch is incomplete")],
+        meta,
+      );
     }
+
     const streams: HydratedStream[] = [];
-    for (const [index, streamId] of candidateIds.entries()) {
-      const ownerResult = rows[index * 3];
-      const streamResult = rows[index * 3 + 1];
-      const withdrawableResult = rows[index * 3 + 2];
+    const seenKeys = new Set<string>();
+    for (const [index, streamId] of ids.entries()) {
+      const base = index * STATE_CALLS_PER_ID;
+      const ownerResult = rows[base];
+      const streamResult = rows[base + 1];
+      const withdrawableResult = rows[base + 2];
+      const statusResult = rows[base + 3];
+      // Benign per-id failure (burned / notNull / shrink): drop the row, keep the book.
       if (
         ownerResult?.status !== "success" ||
         streamResult?.status !== "success" ||
-        withdrawableResult?.status !== "success"
+        withdrawableResult?.status !== "success" ||
+        statusResult?.status !== "success"
       ) {
         continue;
       }
       const owner = ownerResult.result as Address;
       if (!account || !isAddressEqual(owner, account)) continue;
-      const stream = streamResult.result as {
-        sender: Address;
-        startTime: number;
-        cliffTime: number;
-        isCancelable: boolean;
-        asset: Address;
-        endTime: number;
-        amounts: { deposited: bigint; withdrawn: bigint; refunded: bigint };
-      };
-      const withdrawable = withdrawableResult.result as bigint;
-      const remaining = stream.amounts.deposited - stream.amounts.withdrawn - stream.amounts.refunded;
+
+      const raw = streamResult.result as LockupStreamResult;
+      const key = streamId.toString();
+      seenKeys.add(key);
+      let fixed = fixedCache.current.get(key);
+      if (!fixed) {
+        fixed = {
+          sender: raw.sender,
+          asset: raw.asset,
+          start: BigInt(raw.startTime),
+          end: BigInt(raw.endTime),
+          cliffTime: BigInt(raw.cliffTime),
+          deposited: raw.amounts.deposited,
+          isCancelable: raw.isCancelable,
+        };
+        fixedCache.current.set(key, fixed);
+      }
+
+      const withdrawn = raw.amounts.withdrawn;
+      const refunded = raw.amounts.refunded;
+      const remaining = fixed.deposited - withdrawn - refunded;
+      if (remaining <= 0n || raw.isDepleted) continue;
+
       const schedule: StreamScheduleParams = {
-        start: BigInt(stream.startTime),
-        end: BigInt(stream.endTime),
-        deposited: stream.amounts.deposited,
-        withdrawn: stream.amounts.withdrawn,
-        refunded: stream.amounts.refunded,
-        cliffTime: BigInt(stream.cliffTime),
-        isCancelable: stream.isCancelable,
+        start: fixed.start,
+        end: fixed.end,
+        deposited: fixed.deposited,
+        withdrawn,
+        refunded,
+        cliffTime: fixed.cliffTime,
+        isCancelable: fixed.isCancelable,
       };
       const render = renderEligibleStream({
-        sender: stream.sender,
-        asset: stream.asset,
+        sender: fixed.sender,
+        asset: fixed.asset,
         vaults: input.vaults,
       });
       if (!render.eligible) continue;
       const borrow = borrowRouteEligibleStream({
-        sender: stream.sender,
-        asset: stream.asset,
+        sender: fixed.sender,
+        asset: fixed.asset,
         schedule,
         remaining,
         now: input.now,
@@ -361,34 +343,56 @@ export function useStreams(input: {
       streams.push({
         streamId,
         owner,
-        sender: stream.sender,
-        asset: stream.asset,
+        sender: fixed.sender,
+        asset: fixed.asset,
         schedule,
-        withdrawable,
-        remaining: remaining < 0n ? 0n : remaining,
+        withdrawable: withdrawableResult.result as bigint,
+        remaining,
+        status: Number(statusResult.result),
         renderEligible: true,
         borrowRouteEligible: borrow.eligible,
         vault: render.vault,
         market: borrow.market,
       });
     }
-    const anyFailure = rows.some((result) => result.status !== "success");
-    if (anyFailure && streams.length === 0) {
-      return unavailableOutcome([
-        readFailure("useStreams", "subcall", "Stream truth reads failed"),
-      ]);
+
+    for (const key of [...fixedCache.current.keys()]) {
+      if (!seenKeys.has(key)) fixedCache.current.delete(key);
     }
-    return readyOutcome({ candidates: candidateIds, streams });
+
+    const anyFailure = rows.some((result) => result.status !== "success");
+    if (anyFailure && streams.length === 0 && ids.length > 0) {
+      // Every enumerated id failed — treat as unavailable, not confirmed-empty.
+      return unavailableOutcome<StreamBook>(
+        [readFailure("useStreams", "subcall", "Stream state reads failed")],
+        meta,
+      );
+    }
+
+    return readyOutcome({ streams }, meta);
   }, [
     account,
-    candidateIds,
-    candidates,
+    balance,
+    balanceRead.data,
+    balanceRead.dataUpdatedAt,
+    balanceRead.error,
+    balanceRead.isError,
+    balanceRead.isLoading,
+    configured,
+    dataUpdatedAt,
+    idRead.data,
+    idRead.dataUpdatedAt,
+    idRead.error,
+    idRead.isError,
+    idRead.isLoading,
+    ids,
+    idsComplete,
     input.markets,
     input.now,
     input.vaults,
-    truthReads.data,
-    truthReads.isLoading,
+    overBudget,
+    stateReads.data,
+    stateReads.dataUpdatedAt,
+    stateReads.isLoading,
   ]);
-
-  return { candidates, truth };
 }

@@ -1,0 +1,3 @@
+# Generated / binary artifacts — suppress huge hex lines in diffs.
+artifacts/*.json linguist-generated=true
+artifacts/goldens/** linguist-generated=true

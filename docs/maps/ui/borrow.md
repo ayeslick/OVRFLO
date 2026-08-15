@@ -41,8 +41,9 @@ SIGN → PENDING → CONFIRMED`.
   token"). Never list a stream that fails the eligibility mirror (sender is a
   registered vault and asset is that market's ovrflo token) or that is already
   pledged.
-- **Data authority.** `projection` for the candidate set. `on-chain` for `ownerOf`,
-  `getStream`, remaining, and pledged status. Continue does not authorise the borrow;
+- **Data authority.** `on-chain` Enumerable held-stream book (`chain.stream-truth`).
+  Eligibility is re-read; empty streams are hidden. A candidate projection set
+  no longer exists (ADR-0002). Continue does not authorise the borrow;
   `requireEligible` is re-read at review/sign.
 
 ## `UI-BORROW-NO-STREAM`

@@ -301,7 +301,7 @@ export type TouchedResource =
   | { kind: "market-depth"; lending: Address; market: Address; aprBps?: number }
   | { kind: "liquidity-position"; lending: Address; id: bigint }
   | { kind: "loan"; lending: Address; id: bigint }
-  | { kind: "stream"; sablier: Address; id: bigint }
+  | { kind: "stream"; sablier: Address; id?: bigint }
   | {
       kind: "nft-approval";
       token: Address;

@@ -177,18 +177,7 @@ The eight-state grammar class for the current topology (`LOADING` … `ERROR`).
   LOADING. Write-lifecycle states outrank data states. Confirmed-empty requires
   a ready read with count zero.
 
-### `persist.scan-checkpoint`
+### `persist.scan-checkpoint` — retired
 
-Per-wallet last-scanned-block for stream-candidate discovery.
-
-- **trust_domain:** `pure-client`
-- **writers:**
-  - `web/hooks/useStreams.ts` — landing U6: `max(existing, new)` so a stale tab cannot regress a fresher tab
-- **readers:**
-  - `web/hooks/useStreams.ts` — landing U6: incremental scan from checkpoint; cold scan from deployment block once per wallet+device
-  - `web/lib/discovery/log-scanner.ts` — range start
-- **notes:** Not a projection value and not an authority. A missing or throwing
-  store falls back to cold-scan, never errors (Safari private mode). Does not
-  gate. If history growth ever outpaces incremental scan, that is the recorded
-  trigger to revisit the no-indexer decision — a `ponytail:` ceiling on the
-  scanner, not a new key.
+Per-wallet last-scanned-block for stream-candidate discovery. **Removed in U8**
+with log-scan. Enumerable discovery needs no checkpoint.

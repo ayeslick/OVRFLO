@@ -1,5 +1,6 @@
 import { isFreshReady } from "../read-outcome";
 import { bufferedFeeApproveAmount, depositCapStatus } from "../convert";
+import { SABLIER_LOCKUP_ADDRESS } from "../config";
 import {
   actionError,
   erc20Authorization,
@@ -79,6 +80,7 @@ export const depositDefinition: ActionDefinition<"deposit"> = {
       call,
       touchedResources: [
         { kind: "market", vault: snapshot.market.vault, market: snapshot.market.market },
+        { kind: "stream", sablier: SABLIER_LOCKUP_ADDRESS },
         { kind: "token-balance", token: snapshot.market.ptToken, account: snapshot.identity.account },
         { kind: "token-balance", token: snapshot.market.underlying, account: snapshot.identity.account },
         { kind: "token-balance", token: snapshot.market.ovrfloToken, account: snapshot.identity.account },

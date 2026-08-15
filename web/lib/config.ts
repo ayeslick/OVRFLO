@@ -7,8 +7,6 @@ const CURRENT_ABI_VERSION = 1;
 const ZERO_HASH = `0x${"00".repeat(32)}` as Hash;
 
 export const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as const;
-export const SABLIER_LOCKUP_ADDRESS =
-  "0xAFb979d9afAd1aD27C5eFf4E27226E3AB9e5dCC9" as const;
 
 /**
  * Chainlink mainnet stETH/USD (EACAggregatorProxy).
@@ -43,6 +41,7 @@ const env = {
   rpcFallbackUrls: process.env.NEXT_PUBLIC_RPC_FALLBACK_URLS,
   historicalRpcUrl: process.env.NEXT_PUBLIC_HISTORICAL_RPC_URL,
   reownProjectId: process.env.NEXT_PUBLIC_REOWN_PROJECT_ID,
+  sablierLockup: process.env.NEXT_PUBLIC_SABLIER_LOCKUP_ADDRESS,
   vercelEnv: process.env.VERCEL_ENV,
   nodeEnv: process.env.NODE_ENV,
   deployableBuild: process.env.OVRFLO_DEPLOYABLE_BUILD,
@@ -258,6 +257,13 @@ export const historicalRpcUrl = parseUrl(
   runtimeProfile,
 );
 export const reownProjectId = parseReownProjectId(runtimeProfile);
+
+/** Stream-layer address (OVRFLOStream). Name kept per R9; value from env (U6). */
+export const SABLIER_LOCKUP_ADDRESS = parseAddress(
+  env.sablierLockup,
+  "NEXT_PUBLIC_SABLIER_LOCKUP_ADDRESS",
+  runtimeProfile,
+);
 
 export function isConfiguredAddress(address: Address | null | undefined) {
   return Boolean(address && address.toLowerCase() !== ZERO_ADDRESS);

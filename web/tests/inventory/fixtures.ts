@@ -158,6 +158,7 @@ export function eligibleStream(id = 441n): HydratedStream {
     },
     withdrawable: SCALE / 10n,
     remaining: SCALE,
+    status: 1,
     renderEligible: true,
     borrowRouteEligible: true,
     vault: VAULT,
