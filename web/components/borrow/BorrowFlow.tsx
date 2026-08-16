@@ -37,6 +37,7 @@ import { decodeContractError, isUserRejection } from "@/lib/errors";
 import { formatAprBps, formatUsd } from "@/lib/format";
 import { bestDepthTick, stepWindow, tickWindow, type LadderModel } from "@/lib/ladder";
 import { MIN_LIQUIDITY_AMOUNT, MIN_STREAM_AMOUNT } from "@/lib/lending-math";
+import { borrowKeys } from "@/lib/query-keys";
 import { parseDecimalInput, parseEntityId } from "@/lib/parse";
 import { classifySurfaceState } from "@/lib/surface-state";
 import { writeReceipt } from "@/lib/receipts";
@@ -53,15 +54,13 @@ import {
   fullRepayCoverPreview,
   liveTickCopy,
   loanCover,
-  quoteBorrow,
   quoteDrift,
   snapshotQuote,
-  streamDerivedCap,
   tickDepthWei,
-  ttmSeconds,
+  useBorrowPreview,
   weiToAmountInput,
   type BorrowQuote,
-  type QuoteSnapshot,
+  type BorrowQuoteSnapshot,
 } from "./quote";
 import "./borrow.css";
 
@@ -92,7 +91,7 @@ export function BorrowFlow() {
   const [selectedAprBps, setSelectedAprBps] = useState<number | null>(null);
   const [allRatesOpen, setAllRatesOpen] = useState(false);
   const [feeOpen, setFeeOpen] = useState(false);
-  const [frozen, setFrozen] = useState<QuoteSnapshot | null>(null);
+  const [frozen, setFrozen] = useState<BorrowQuoteSnapshot | null>(null);
   const [draftReady, setDraftReady] = useState(false);
   const [bodyKey, setBodyKey] = useState(0);
 
@@ -236,27 +235,24 @@ export function BorrowFlow() {
   const depth = tickDepthWei(ladder, selectedAprBps, lendingConfig?.minLiquidityAmount);
   const parsedAmount = parseDecimalInput(amountRaw);
   const remaining = selectedStream?.remaining ?? 0n;
-  const ttm = selectedStream ? ttmSeconds(selectedStream.schedule.end, now) : 0n;
-  const cap =
-    selectedStream && selectedAprBps !== null
-      ? streamDerivedCap(remaining, selectedAprBps, ttm, lendingConfig?.unit)
-      : 0n;
-  const target = parsedAmount.ok ? parsedAmount.value : 0n;
-  const quote: BorrowQuote | null =
-    selectedStream && selectedAprBps !== null && lendingConfig
-      ? quoteBorrow({
-          remaining,
-          aprBps: selectedAprBps,
-          ttmSeconds: ttm,
-          feeBps: lendingConfig.feeBps,
-          target,
-          depth,
-          unit: lendingConfig.unit,
-          minLiquidity: lendingConfig.minLiquidityAmount,
-        })
-      : null;
-
-  const amountError = amountFieldError(amountRaw, parsedAmount, cap, lendingConfig?.minLiquidityAmount);
+  const preview = useBorrowPreview({
+    lending,
+    market: market?.market ?? null,
+    streamId: selectedStreamId,
+    aprBps: selectedAprBps,
+    amountRaw,
+    streamRemaining: remaining,
+    depth,
+    minLiquidity: lendingConfig?.minLiquidityAmount ?? MIN_LIQUIDITY_AMOUNT,
+  });
+  const quote = preview.quote;
+  const cap = preview.cap;
+  const amountError = amountFieldError(
+    amountRaw,
+    parsedAmount,
+    cap,
+    lendingConfig?.minLiquidityAmount,
+  );
   const windowState =
     !market || ladderOutcome.status === "loading"
       ? "loading"
@@ -266,7 +262,7 @@ export function BorrowFlow() {
           ? "empty"
           : "ready";
   const selectedRung = ladder?.rungs.find((rung) => rung.aprBps === selectedAprBps);
-  const emptyTick = Boolean(quote?.emptyTick || selectedRung?.kind === "empty");
+  const emptyTick = Boolean(preview.emptyTick || quote?.emptyTick || selectedRung?.kind === "empty");
   const liveCopy = ladder ? liveTickCopy(ladder) : "NO LIVE TICKS HAVE RESTING LIQUIDITY";
   const emptyTickCopy =
     emptyTick && selectedAprBps !== null && windowState === "ready"
@@ -313,6 +309,12 @@ export function BorrowFlow() {
   const ackTrace = useAcknowledgeRiskTrace(borrowTrace(checkpoint, streamApproved, true));
 
   useEffect(() => {
+    if (actionTx.isConfirmed) {
+      void queryClient.invalidateQueries({ queryKey: borrowKeys.all });
+    }
+  }, [actionTx.isConfirmed, queryClient]);
+
+  useEffect(() => {
     if (!actionTx.hash) return;
     if (!actionTx.isConfirming && !actionTx.isConfirmed) return;
     writeReceipt(factoryAddress, {
@@ -325,16 +327,6 @@ export function BorrowFlow() {
   }, [actionTx.hash, actionTx.isConfirmed, actionTx.isConfirming, receipt?.loanId]);
 
   function onSelectStream(id: bigint) {
-    const next = eligible.find((row) => row.streamId === id);
-    if (next && parsedAmount.ok) {
-      const nextCap = streamDerivedCap(
-        next.remaining,
-        selectedAprBps ?? 0,
-        ttmSeconds(next.schedule.end, now),
-        lendingConfig?.unit,
-      );
-      if (parsedAmount.value > nextCap) setAmountRaw("");
-    }
     setSelectedStreamId(id);
     setFrozen(null);
     stale.setStaleRecovery(false);
@@ -346,18 +338,18 @@ export function BorrowFlow() {
   }
 
   function onMax() {
-    if (cap > 0n) setAmountRaw(weiToAmountInput(cap));
+    if (cap !== undefined && cap > 0n) setAmountRaw(weiToAmountInput(cap));
   }
 
   function onReview() {
-    if (!quote || emptyTick || amountError || quote.fill <= 0n) return;
-    setFrozen(snapshotQuote(quote, selectedAprBps ?? 0));
+    if (!quote || emptyTick || amountError || preview.isStale || quote.fill <= 0n) return;
+    setFrozen(snapshotQuote(quote));
     setStage("review");
   }
 
   function onRelatch() {
     if (!quote) return;
-    setFrozen(snapshotQuote(quote, selectedAprBps ?? 0));
+    setFrozen(snapshotQuote(quote));
     stale.setStaleRecovery(false);
   }
 
@@ -377,7 +369,7 @@ export function BorrowFlow() {
       address: lending,
       abi: ovrfloLendingAbi,
       functionName: "borrow",
-      args: [market.market, selectedAprBps as number, frozen.fill, selectedStream.streamId, frozen.minAcceptable],
+      args: [market.market, selectedAprBps as number, frozen.actualBorrow, selectedStream.streamId, frozen.minAcceptable],
     });
   }
 
@@ -402,6 +394,7 @@ export function BorrowFlow() {
     Boolean(quote) &&
     !amountError &&
     !emptyTick &&
+    !preview.isStale &&
     windowState === "ready" &&
     quote !== null &&
     quote.fill >= (lendingConfig?.minLiquidityAmount ?? MIN_LIQUIDITY_AMOUNT);
@@ -424,7 +417,7 @@ export function BorrowFlow() {
             ? "unavailable"
             : "ready",
     hasLastKnown: streamSelectState === "ready" || Boolean(selectedStream),
-    stale: !signingAllowed || stale.staleRecovery || drifted,
+    stale: !signingAllowed || stale.staleRecovery || drifted || preview.isStale,
     signingAllowed,
     isSigning: actionTx.isSigning || approveTx.isSigning,
     isConfirming: actionTx.isConfirming,
@@ -509,6 +502,8 @@ export function BorrowFlow() {
               ladder={ladder}
               emptyTickCopy={emptyTickCopy}
               quote={quote}
+              quoteStale={preview.isStale}
+              quoteDashes={preview.showDashes}
               cover={cover}
               feeOpen={feeOpen}
               draw={parsedAmount.ok ? parsedAmount.value : 0n}
@@ -614,6 +609,8 @@ function AmountRateBody({
   ladder,
   emptyTickCopy,
   quote,
+  quoteStale,
+  quoteDashes,
   cover,
   feeOpen,
   draw,
@@ -645,6 +642,8 @@ function AmountRateBody({
   ladder: LadderModel | null;
   emptyTickCopy?: string;
   quote: BorrowQuote | null;
+  quoteStale: boolean;
+  quoteDashes: boolean;
   cover: ReturnType<typeof loanCover>;
   feeOpen: boolean;
   draw: bigint;
@@ -703,9 +702,11 @@ function AmountRateBody({
       {quote && amountRaw ? (
         <PoolBand draw={draw} depth={depth} unit={underlyingSymbol} state={poolState} />
       ) : null}
-      {quote && quote.fill > 0n && !amountError ? (
+      {quoteDashes || (quote && (quote.fill > 0n || quoteStale) && !amountError) ? (
         <BorrowFacts
           quote={quote}
+          stale={quoteStale}
+          dashes={quoteDashes}
           underlyingSymbol={underlyingSymbol}
           ovrfloSymbol={ovrfloSymbol}
           cover={cover}
@@ -718,7 +719,7 @@ function AmountRateBody({
           REVIEW BORROW
         </ActionButton>
       ) : (
-        <ActionButton disabled disabledReason={continueReason(windowState, emptyTickCopy, amountError)}>
+        <ActionButton disabled disabledReason={continueReason(windowState, emptyTickCopy, amountError, quoteStale)}>
           REVIEW BORROW
         </ActionButton>
       )}
@@ -729,17 +730,23 @@ function AmountRateBody({
 function amountFieldError(
   raw: string,
   parsed: ReturnType<typeof parseDecimalInput>,
-  cap: bigint,
+  cap: bigint | undefined,
   minLiquidity = MIN_LIQUIDITY_AMOUNT,
 ): string | undefined {
   if (raw.trim() === "") return undefined;
   if (!parsed.ok) return amountErrorCopy("malformed");
   if (parsed.value < minLiquidity) return amountErrorCopy("fill-floor");
-  if (cap > 0n && parsed.value > cap) return amountErrorCopy("above-cap");
+  if (cap !== undefined && cap > 0n && parsed.value > cap) return amountErrorCopy("above-cap");
   return undefined;
 }
 
-function continueReason(windowState: string, emptyTickCopy?: string, amountError?: string): string {
+function continueReason(
+  windowState: string,
+  emptyTickCopy?: string,
+  amountError?: string,
+  quoteStale?: boolean,
+): string {
+  if (quoteStale) return "UPDATING QUOTE";
   if (amountError) return amountError;
   if (emptyTickCopy) return emptyTickCopy;
   if (windowState === "empty") return "NO LIQUIDITY POSTED AT ANY RATE";

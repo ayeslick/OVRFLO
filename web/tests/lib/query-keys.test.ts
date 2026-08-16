@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  borrowKeys,
   borrowerBookKeys,
   demandKeys,
   freshnessKeys,
@@ -89,5 +90,14 @@ describe("watch-surface query factories", () => {
     expect(borrowerBookKeys.account(1, USER_A, USER_B)[0]).toBe("borrower-book");
     expect(usdKeys.price(1, USER_A, USER_B)[0]).toBe("usd");
     expect(freshnessKeys.scope(1, USER_A)[0]).toBe("freshness");
+  });
+});
+
+describe("borrowKeys", () => {
+  it("tuples quote identity with addr and id normalization", () => {
+    const key = borrowKeys.quote(1, USER_A, USER_B, 31n, 1000, 4n);
+    expect(key).toEqual(["borrow", "quote", 1, USER_A, USER_B, "31", 1000, "4"]);
+    expect(key[0]).toBe(borrowKeys.all[0]);
+    expect(borrowKeys.quote(1, USER_A.toUpperCase() as typeof USER_A, USER_B, 31n, 1000, 4n)[3]).toBe(USER_A);
   });
 });

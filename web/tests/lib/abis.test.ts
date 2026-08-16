@@ -51,6 +51,29 @@ describe("ABI drift checks", () => {
     expect(local).toBeTruthy();
   });
 
+  it("adds previewBorrow without changing BelowMinAcceptable", () => {
+    const preview = ovrfloLendingAbi.find(
+      (entry) => entry.type === "function" && entry.name === "previewBorrow",
+    ) as { inputs?: { type: string }[]; outputs?: { name: string }[] } | undefined;
+    expect(preview).toBeTruthy();
+    expect(preview?.inputs?.map((input) => input.type)).toEqual([
+      "address",
+      "uint16",
+      "uint128",
+      "uint256",
+    ]);
+    expect(preview?.outputs?.map((output) => output.name)).toEqual([
+      "actualBorrow",
+      "feeAmount",
+      "obligation",
+    ]);
+    const below = ovrfloLendingAbi.find(
+      (entry) => entry.type === "error" && entry.name === "BelowMinAcceptable",
+    ) as { inputs?: unknown[] } | undefined;
+    expect(below).toBeTruthy();
+    expect(below?.inputs).toEqual([]);
+  });
+
   it("includes generated supply and borrow events", () => {
     const eventNames = ovrfloLendingAbi
       .filter((entry) => entry.type === "event")

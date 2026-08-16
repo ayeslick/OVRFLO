@@ -25,6 +25,7 @@ import type {
 import { actionError } from "./actions/types";
 import { applySlippageDown } from "./modal-logic";
 import { ZERO_ADDRESS } from "./config";
+import { readPreviewBorrow, type PreviewBorrowClient } from "@/components/borrow/quote";
 import type { ReadyProtocolBootstrap } from "./protocol-bootstrap";
 import { readyOutcome } from "./read-outcome";
 import type { LiquidityPosition, Loan, MarketInfo } from "./types";
@@ -50,7 +51,7 @@ export type LiveWriteArgs = {
   value?: bigint;
 };
 
-export type LiveClient = Pick<PublicClient, "getBlock" | "readContract">;
+export type LiveClient = Pick<PublicClient, "getBlock" | "readContract" | "simulateContract">;
 export type LiveBlockSnapshot = {
   number: bigint;
   hash: Hex;
@@ -725,17 +726,29 @@ async function loadSnapshot(
         ),
         hydration: readyOutcome({ positions: [] }, metadata),
         quote: readyOutcome(
-          {
-            market: scope.market,
-            streamId,
-            aprBps,
-            amount: target,
-            grossPrice: 0n,
-            obligation: 0n,
-            netToBorrower: 0n,
-            residual: 0n,
-            minAcceptable: reviewedMin,
-          },
+          await (async () => {
+            const preview = await readPreviewBorrow({
+              client: client as PreviewBorrowClient,
+              lending,
+              market: scope.market,
+              aprBps,
+              targetBorrow: target,
+              streamId,
+              blockNumber,
+            });
+            return {
+              market: scope.market,
+              streamId,
+              aprBps,
+              amount: target,
+              actualBorrow: preview.actualBorrow,
+              feeAmount: preview.feeAmount,
+              obligation: preview.obligation,
+              // snapshot-derived: ticket 11 streamsByIds is not in this worktree
+              residual: 0n,
+              minAcceptable: reviewedMin,
+            };
+          })(),
           metadata,
         ),
       };

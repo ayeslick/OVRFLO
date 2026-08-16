@@ -2,7 +2,9 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { AmountStep as BorrowAmount } from "@/components/borrow/AmountStep";
 import { ReviewHandoff as BorrowReview } from "@/components/borrow/ReviewHandoff";
-import { quoteBorrow, snapshotQuote } from "@/components/borrow/quote";
+import { presentQuote, snapshotQuote } from "@/components/borrow/quote";
+import { MIN_LIQUIDITY_AMOUNT } from "@/lib/lending-math";
+import type { Hex } from "viem";
 import { AmountStep as SupplyAmount } from "@/components/supply/AmountStep";
 import { ReviewHandoff as SupplyReview } from "@/components/supply/ReviewHandoff";
 import type { SupplySnapshot } from "@/components/supply/helpers";
@@ -20,20 +22,27 @@ const FROZEN: SupplySnapshot = {
   aprMaxBps: 800,
   spacing: 100,
 };
-const QUOTE = quoteBorrow({
-  remaining: 10n * ETHER,
-  aprBps: 500,
-  ttmSeconds: YEAR_SECONDS,
-  feeBps: 40,
+const QUOTE = presentQuote({
+  preview: {
+    emptyTick: false,
+    actualBorrow: 4n * ETHER,
+    feeAmount: (4n * ETHER * 40n) / 10_000n,
+    obligation: 5n * ETHER,
+    block: { N: 1n, H: `0x${"11".repeat(32)}` as Hex },
+  },
   target: 4n * ETHER,
+  cap: 10n * ETHER,
   depth: 12n * ETHER,
+  aprBps: 500,
+  streamRemaining: 10n * ETHER,
+  minLiquidity: MIN_LIQUIDITY_AMOUNT,
 });
 const COVER = coverDate(
   { start: NOW, end: NOW + YEAR_SECONDS, deposited: 10n * ETHER, withdrawn: 0n, refunded: 0n },
   QUOTE.obligation,
   NOW,
 );
-const BORROW_FROZEN = snapshotQuote(QUOTE, 500);
+const BORROW_FROZEN = snapshotQuote(QUOTE);
 const noopSupply = {
   onAcknowledge: noop,
   onApprove: noop,

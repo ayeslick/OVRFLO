@@ -23,6 +23,28 @@ function id(value: bigint | number | string): string {
 // Only real useQuery keys live here. wagmi read hooks own their keys (rooted at
 // ["readContract"] / ["readContracts"]); post-write invalidation is coarse (KTD5).
 // Held-stream discovery is wagmi-only after U8 — no custom streamKeys factories.
+export const borrowKeys = {
+  all: ["borrow"] as const,
+  quote: (
+    chainId: number,
+    lending?: Address | null,
+    market?: Address | null,
+    streamId?: bigint | null,
+    aprBps?: number | null,
+    targetBorrow?: bigint | null,
+  ) =>
+    [
+      ...borrowKeys.all,
+      "quote",
+      chainId,
+      addr(lending),
+      addr(market),
+      streamId == null ? null : id(streamId),
+      aprBps ?? null,
+      targetBorrow == null ? null : id(targetBorrow),
+    ] as const,
+};
+
 export const demandKeys = {
   all: ["demand"] as const,
   market: (market?: Address | null) => [...demandKeys.all, "market", market] as const,

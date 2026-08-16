@@ -6,10 +6,11 @@ import { StreamContext } from "@/components/borrow/StreamContext";
 import { RateStep } from "@/components/borrow/RateStep";
 import { PoolBand } from "@/components/borrow/PoolBand";
 import { ReviewHandoff } from "@/components/borrow/ReviewHandoff";
-import { quoteBorrow, snapshotQuote } from "@/components/borrow/quote";
+import { presentQuote, snapshotQuote } from "@/components/borrow/quote";
 import { tickWindow, shapeLadder } from "@/lib/ladder";
-import { YEAR_SECONDS } from "@/lib/lending-math";
+import { MIN_LIQUIDITY_AMOUNT, YEAR_SECONDS } from "@/lib/lending-math";
 import { coverDate } from "@/lib/payoff";
+import type { Hex } from "viem";
 import {
   eligibleStream,
   LENDING,
@@ -24,20 +25,27 @@ import {
 const ETHER = SCALE;
 const NOW = 1_700_000_000n;
 const END = NOW + YEAR_SECONDS;
-const QUOTE = quoteBorrow({
-  remaining: 10n * ETHER,
-  aprBps: 500,
-  ttmSeconds: YEAR_SECONDS,
-  feeBps: 40,
+const QUOTE = presentQuote({
+  preview: {
+    emptyTick: false,
+    actualBorrow: 4n * ETHER,
+    feeAmount: (4n * ETHER * 40n) / 10_000n,
+    obligation: 5n * ETHER,
+    block: { N: 1n, H: `0x${"11".repeat(32)}` as Hex },
+  },
   target: 4n * ETHER,
+  cap: 10n * ETHER,
   depth: 12n * ETHER,
+  aprBps: 500,
+  streamRemaining: 10n * ETHER,
+  minLiquidity: MIN_LIQUIDITY_AMOUNT,
 });
 const COVER = coverDate(
   { start: NOW, end: END, deposited: 10n * ETHER, withdrawn: 0n, refunded: 0n },
   QUOTE.obligation,
   NOW,
 );
-const FROZEN = snapshotQuote(QUOTE, 500);
+const FROZEN = snapshotQuote(QUOTE);
 
 const noopWrite = {
   onAcknowledge: noop,

@@ -3,12 +3,8 @@ import {
   aprChoices,
   BPS,
   enumerateIds,
-  factor,
-  factorWad,
-  fee,
   floorToUnit,
   formatBpsPct,
-  grossPrice,
   isLoanOpen,
   lenderReturnBps,
   liquidityExists,
@@ -17,9 +13,6 @@ import {
   MAX_ENUMERATION_IDS,
   MAX_UINT128,
   mulDiv,
-  netToBorrower,
-  obligation,
-  obligationForFill,
   ratioBps,
   recoveredForClaimable,
   streamBuckets,
@@ -90,12 +83,6 @@ describe("lending math", () => {
     expect(loanExists({ borrower: ZERO_ADDRESS })).toBe(false);
   });
 
-  it("mirrors the contract's linear accrual factor on a golden vector", () => {
-    // f = WAD + ttm * apr * WAD / (YEAR * BPS); 10% APR over half a year -> 1.05 WAD
-    expect(factorWad(1000, YEAR_SECONDS / 2n)).toBe(1_050_000_000_000_000_000n);
-    expect(factorWad(1000, 0n)).toBe(WAD);
-  });
-
   it("computes upfront bps on the golden vector, net of fee", () => {
     // gross = WAD * BPS / 1.05e18 = 9523.80… -> floor 9523
     expect(upfrontBps(1000, YEAR_SECONDS / 2n, 0)).toBe(9523n);
@@ -106,22 +93,6 @@ describe("lending math", () => {
   it("returns full value at zero time to maturity", () => {
     expect(upfrontBps(1000, 0n, 0)).toBe(10_000n);
     expect(upfrontBps(1000, 0n, 40)).toBe(9960n);
-  });
-
-  it("agrees with the contract grossPrice path within one bps unit", () => {
-    // upfrontBps ≈ grossPrice * BPS / remaining for a full borrow
-    const aprBps = 1000;
-    const ttm = YEAR_SECONDS / 2n;
-    const remaining = 123_456_789_012_345_678_901n;
-    const grossPrice = (remaining * WAD) / factorWad(aprBps, ttm);
-    const expected = (grossPrice * BPS) / remaining;
-    const actual = upfrontBps(aprBps, ttm, 0);
-    expect(actual - expected <= 1n && expected - actual <= 1n).toBe(true);
-
-    const feeBps = 40;
-    const expectedNet = (expected * (BPS - BigInt(feeBps))) / BPS;
-    const actualNet = upfrontBps(aprBps, ttm, feeBps);
-    expect(actualNet - expectedNet <= 1n && expectedNet - actualNet <= 1n).toBe(true);
   });
 
   it("computes simple-interest lender return over the remaining period", () => {
@@ -140,43 +111,6 @@ describe("lending math", () => {
 
   it("pins MAX_UINT128 to the real uint128 max (the claim max-amount sentinel)", () => {
     expect(MAX_UINT128).toBe(340_282_366_920_938_463_463_374_607_431_768_211_455n);
-  });
-
-  it("agrees with StreamPricing.math fixture values for factor, gross, obligation, and fee", () => {
-    const ether = 10n ** 18n;
-    const halfYearExact = 182n * 86_400n + 12n * 3_600n;
-    expect(factor(1000, YEAR_SECONDS)).toBe(1_100_000_000_000_000_000n);
-    expect(factor(2500, halfYearExact)).toBe(1_125_000_000_000_000_000n);
-    expect(factor(0, YEAR_SECONDS)).toBe(WAD);
-    expect(factor(1000, 0n)).toBe(WAD);
-    expect(grossPrice(110n * ether, 1000, YEAR_SECONDS)).toBe(100n * ether);
-    expect(grossPrice(100n * ether, 0, YEAR_SECONDS)).toBe(100n * ether);
-    expect(grossPrice(100n * ether, 1000, 0n)).toBe(100n * ether);
-    expect(grossPrice(1n, 65_535, 10n * YEAR_SECONDS)).toBe(0n);
-    expect(obligation(100n * ether, 1000, YEAR_SECONDS)).toBe(110n * ether);
-    expect(obligation(50n * ether, 0, YEAR_SECONDS)).toBe(50n * ether);
-    expect(obligation(50n * ether, 1000, 0n)).toBe(50n * ether);
-    expect(fee(99n, 0)).toBe(0n);
-    expect(fee(99n, 100)).toBe(0n);
-    expect(fee(100n, 100)).toBe(1n);
-    expect(netToBorrower(100n * ether, 40)).toBe(100n * ether - fee(100n * ether, 40));
-  });
-
-  it("reverts obligation when the ceil exceeds uint128", () => {
-    expect(() => obligation(MAX_UINT128, 1000, 50n * YEAR_SECONDS)).toThrow(/uint128/);
-  });
-
-  it("ceils obligation by at most one wei when mulmod != 0", () => {
-    const borrowAmount = 97n * 10n ** 18n + 1n;
-    const f = factor(1000, YEAR_SECONDS);
-    const floored = (borrowAmount * f) / WAD;
-    expect(obligation(borrowAmount, 1000, YEAR_SECONDS)).toBe(floored + 1n);
-  });
-
-  it("fast-paths obligationForFill when borrowAmount equals grossPrice", () => {
-    const remaining = 110n * 10n ** 18n;
-    const price = grossPrice(remaining, 1000, YEAR_SECONDS);
-    expect(obligationForFill(price, price, remaining, 1000, YEAR_SECONDS)).toBe(remaining);
   });
 
   it("uses Sablier remaining / claimable / locked buckets", () => {

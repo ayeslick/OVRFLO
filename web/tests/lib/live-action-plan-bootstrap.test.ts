@@ -49,6 +49,7 @@ const vaultOnlyBootstrap: ReadyProtocolBootstrap = {
 const client = {
   getBlock: vi.fn(),
   readContract: vi.fn(),
+  simulateContract: vi.fn(),
 };
 
 const scope = {
