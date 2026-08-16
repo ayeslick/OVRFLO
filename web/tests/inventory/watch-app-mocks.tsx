@@ -1,6 +1,6 @@
 import { vi } from "vitest";
-import { loadingOutcome, readFailure, readyOutcome, unavailableOutcome } from "@/lib/read-outcome";
-import { ACCOUNT, LENDING, MARKET, NOW, TOKEN, VAULT } from "./fixtures";
+import { readFailure, unavailableOutcome } from "@/lib/read-outcome";
+import { ACCOUNT, LENDING, MARKET, NOW, TOKEN, VAULT, mockBookOutcome } from "./fixtures";
 import { fx } from "./watch-fx";
 
 vi.mock("wagmi", () => ({
@@ -82,36 +82,23 @@ vi.mock("@/hooks/useMarketSymbols", () => ({
 }));
 
 vi.mock("@/hooks/useLenderBook", () => ({
-  useLenderBook: () => {
-    if (fx.lenderStatus === "loading") return loadingOutcome();
-    if (fx.lenderStatus === "unavailable") {
-      return unavailableOutcome([readFailure("useLenderBook", "transport", "down")]);
-    }
-    return readyOutcome({ positions: fx.positions });
-  },
+  useLenderBook: () => mockBookOutcome(fx.lenderStatus, { positions: fx.positions }),
 }));
 
 vi.mock("@/hooks/useBorrowerBook", () => ({
-  useBorrowerBook: () => {
-    if (fx.borrowerStatus === "loading") return loadingOutcome();
-    if (fx.borrowerStatus === "unavailable") {
-      return unavailableOutcome([readFailure("useBorrowerBook", "transport", "down")]);
-    }
-    return readyOutcome({ loans: fx.loans });
-  },
+  useBorrowerBook: () => mockBookOutcome(fx.borrowerStatus, { loans: fx.loans }),
 }));
 
 vi.mock("@/hooks/useStreams", () => ({
-  useStreams: () => {
-    if (fx.streamStatus === "loading") {
-      return loadingOutcome({ streams: [] as typeof fx.streams });
-    }
-    if (fx.streamStatus === "unavailable") {
-      const failure = [readFailure("useStreams", "transport", "could-not-ask")];
-      return unavailableOutcome(failure);
-    }
-    return readyOutcome({ streams: fx.streams });
-  },
+  useStreams: () => ({
+    ...mockBookOutcome(
+      fx.streamStatus,
+      { streams: fx.streams },
+      {},
+      "could-not-ask",
+    ),
+    advancePin: async () => undefined,
+  }),
 }));
 
 vi.mock("@/hooks/useUsdPrice", () => ({

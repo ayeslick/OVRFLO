@@ -1,13 +1,30 @@
 "use client";
 
-import { useMemo, useRef } from "react";
-import { useReadContract, useReadContracts } from "wagmi";
-import { isAddressEqual, type Address } from "viem";
-import { sablierLockupAbi } from "@/lib/abis";
-import { isConfiguredAddress, ZERO_ADDRESS } from "@/lib/config";
+import { useEffect, useRef } from "react";
+import { useInfiniteQuery } from "@tanstack/react-query";
+import { usePublicClient } from "wagmi";
+import {
+  decodeFunctionResult,
+  encodeFunctionData,
+  isAddressEqual,
+  type Address,
+} from "viem";
 import { useProtocolBootstrap } from "./useProtocolBootstrap";
-import { MAX_ENUMERATION_IDS, MIN_STREAM_AMOUNT } from "@/lib/lending-math";
-import { readQuery } from "@/lib/query-keys";
+import { useEnumerationPin } from "./useEnumerationPin";
+import { chainId, isConfiguredAddress, ZERO_ADDRESS } from "@/lib/config";
+import { MIN_STREAM_AMOUNT, STREAM_PAGE_SIZE } from "@/lib/lending-math";
+import { classifyRpcFailure } from "@/lib/rpc";
+import { pinnedQuery, QUERY_RETRY, streamBookKeys } from "@/lib/query-keys";
+import {
+  AUTO_INELIGIBLE_PAGE_CAP,
+  bookFields,
+  duplicateStreamFailure,
+  foldStreamIds,
+  nextPageParam,
+  windowStop,
+} from "@/lib/stream-book";
+import { loadStreamPage, type StreamView } from "@/lib/protocol/streams";
+import { callPin, verifyPinHash, type BlockPin } from "@/lib/protocol/pin";
 import {
   loadingOutcome,
   readFailure,
@@ -47,35 +64,51 @@ export type HydratedStream = {
 
 export type StreamBook = {
   streams: readonly HydratedStream[];
+  sourceCount: bigint;
+  renderCount: number;
+  complete: boolean;
+  confirmedEmpty: boolean;
 };
+
+export type BookPager = {
+  hasNextPage: boolean;
+  isFetchingNextPage: boolean;
+  fetchNextPage: () => void;
+};
+
+export type StreamBookResult = ReadOutcome<StreamBook> &
+  BookPager & {
+    advancePin: () => Promise<void>;
+  };
+
+const balanceOfAbi = [
+  {
+    type: "function",
+    name: "balanceOf",
+    stateMutability: "view",
+    inputs: [{ name: "owner", type: "address" }],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+] as const;
+
+function throwIfUnknownBlock(error: unknown): void {
+  if (classifyRpcFailure(error) === "unknown_block") {
+    throw error instanceof Error ? error : new Error("unknown block");
+  }
+}
+
+function throwIfUnknownBlockFailures(
+  failures: readonly { message: string }[],
+): void {
+  for (const failure of failures) {
+    throwIfUnknownBlock(failure.message);
+  }
+}
 
 export type StreamMarket = Pick<
   MarketInfo,
   "vault" | "market" | "ovrfloToken" | "expiryCached"
 >;
-
-type FixedStreamFields = {
-  sender: Address;
-  asset: Address;
-  start: bigint;
-  end: bigint;
-  cliffTime: bigint;
-  deposited: bigint;
-  isCancelable: boolean;
-};
-
-type LockupStreamResult = {
-  sender: Address;
-  startTime: number;
-  cliffTime: number;
-  isCancelable: boolean;
-  asset: Address;
-  endTime: number;
-  isDepleted: boolean;
-  amounts: { deposited: bigint; withdrawn: bigint; refunded: bigint };
-};
-
-const STATE_CALLS_PER_ID = 4;
 
 export function renderEligibleStream(input: {
   sender: Address;
@@ -119,9 +152,70 @@ export function borrowRouteEligibleStream(input: {
     : { eligible: false, market: null };
 }
 
+export function hydrateStreamView(
+  view: StreamView,
+  input: {
+    vaults: readonly Pick<VaultInfo, "vault" | "ovrfloToken">[];
+    markets: readonly StreamMarket[];
+    now: bigint;
+  },
+): HydratedStream | null {
+  if (!view.ok) return null;
+  const remaining = view.deposited - view.withdrawn - view.refunded;
+  if (remaining <= 0n || view.isDepleted) return null;
+  const schedule: StreamScheduleParams = {
+    start: BigInt(view.startTime),
+    end: BigInt(view.endTime),
+    deposited: view.deposited,
+    withdrawn: view.withdrawn,
+    refunded: view.refunded,
+    cliffTime: BigInt(view.cliffTime),
+    isCancelable: view.isCancelable,
+  };
+  const render = renderEligibleStream({
+    sender: view.sender,
+    asset: view.asset,
+    vaults: input.vaults,
+  });
+  if (!render.eligible) return null;
+  const borrow = borrowRouteEligibleStream({
+    sender: view.sender,
+    asset: view.asset,
+    schedule,
+    remaining,
+    now: input.now,
+    vaults: input.vaults,
+    markets: input.markets,
+  });
+  return {
+    streamId: view.streamId,
+    owner: view.owner,
+    sender: view.sender,
+    asset: view.asset,
+    schedule,
+    withdrawable: view.withdrawableAmount,
+    remaining,
+    status: view.status,
+    renderEligible: true,
+    borrowRouteEligible: borrow.eligible,
+    vault: render.vault,
+    market: borrow.market,
+  };
+}
+
+const idlePager: BookPager = {
+  hasNextPage: false,
+  isFetchingNextPage: false,
+  fetchNextPage: () => undefined,
+};
+
+const idleAdvance = {
+  advancePin: async () => undefined,
+};
+
 /**
- * Held-stream discovery via Enumerable staging (KTD2):
- * balanceOf → tokensOfOwnerIn → ownerOf+getStream+withdrawable+statusOf.
+ * Held-stream wall pager. TanStack owns pageParams. The protocol client owns
+ * the page operation. Complete-set consumers must use useCompleteStreams.
  */
 export function useStreams(input: {
   account: Address | null | undefined;
@@ -131,298 +225,294 @@ export function useStreams(input: {
   now: bigint;
   /** Present only when factory bootstrap is ready — never a null sentinel. */
   stream?: Address;
-}): ReadOutcome<StreamBook> {
+}): StreamBookResult {
   const bootstrap = useProtocolBootstrap();
-  if (bootstrap.status === "loading" && input.stream === undefined) {
-    return loadingOutcome();
-  }
-  if (bootstrap.status === "unavailable" && input.stream === undefined) {
-    return unavailableOutcome(
-      bootstrap.failures.map((failure) =>
-        readFailure("useStreams", "transport", failure.message),
-      ),
-    );
-  }
+  const pinState = useEnumerationPin();
+  const publicClient = usePublicClient({ chainId });
   const discovered =
-    input.stream ??
-    (bootstrap.status === "ready" ? bootstrap.stream : undefined);
+    input.stream ?? (bootstrap.status === "ready" ? bootstrap.stream : undefined);
   const account = input.account;
+  const pin = pinState.pin;
   const lockupConfigured = isConfiguredAddress(discovered ?? null);
   const configured =
-    isConfiguredAddress(account ?? null) && lockupConfigured && input.registryComplete;
+    isConfiguredAddress(account ?? null) &&
+    lockupConfigured &&
+    input.registryComplete &&
+    pin !== null &&
+    publicClient !== undefined;
 
-  const fixedCache = useRef(new Map<string, FixedStreamFields>());
-
-  const balanceRead = useReadContract({
-    address: (discovered ?? ZERO_ADDRESS),
-    abi: sablierLockupAbi,
-    functionName: "balanceOf",
-    args: account ? [account] : undefined,
-    query: { ...readQuery, enabled: configured },
-  });
-
-  const balance = (balanceRead.data as bigint | undefined) ?? 0n;
-  const balanceOk = balanceRead.isSuccess;
-  const overBudget = balanceOk && balance > MAX_ENUMERATION_IDS;
-  const idEnabled = configured && balanceOk && balance > 0n && !overBudget;
-
-  const idRead = useReadContract({
-    address: (discovered ?? ZERO_ADDRESS),
-    abi: sablierLockupAbi,
-    functionName: "tokensOfOwnerIn",
-    args: account && idEnabled ? [account, 0n, balance] : undefined,
-    query: { ...readQuery, enabled: idEnabled },
-  });
-
-  const idsComplete = !idEnabled || idRead.isSuccess;
-  const ids = useMemo(() => {
-    if (!idsComplete || !idEnabled) return [] as bigint[];
-    const raw = idRead.data as readonly bigint[] | undefined;
-    if (!raw) return [];
-    return raw.filter((value) => value > 0n);
-  }, [idEnabled, idRead.data, idsComplete]);
-
-  const stateEnabled = configured && idsComplete && ids.length > 0;
-  const stateContracts = useMemo(() => {
-    if (!stateEnabled) return [];
-    return ids.flatMap((streamId) => [
-      {
-        address: (discovered ?? ZERO_ADDRESS),
-        abi: sablierLockupAbi,
-        functionName: "ownerOf" as const,
-        args: [streamId] as const,
-      },
-      {
-        address: (discovered ?? ZERO_ADDRESS),
-        abi: sablierLockupAbi,
-        functionName: "getStream" as const,
-        args: [streamId] as const,
-      },
-      {
-        address: (discovered ?? ZERO_ADDRESS),
-        abi: sablierLockupAbi,
-        functionName: "withdrawableAmountOf" as const,
-        args: [streamId] as const,
-      },
-      {
-        address: (discovered ?? ZERO_ADDRESS),
-        abi: sablierLockupAbi,
-        functionName: "statusOf" as const,
-        args: [streamId] as const,
-      },
-    ]);
-  }, [discovered, ids, stateEnabled]);
-
-  const stateReads = useReadContracts({
-    allowFailure: true,
-    contracts: stateContracts,
-    query: { ...readQuery, enabled: stateEnabled },
-  });
-
-  const dataUpdatedAt = Math.max(
-    balanceRead.dataUpdatedAt ?? 0,
-    idRead.dataUpdatedAt ?? 0,
-    stateReads.dataUpdatedAt ?? 0,
-  );
-
-  return useMemo(() => {
-    const meta = dataUpdatedAt > 0 ? { dataUpdatedAt } : {};
-
-    if (!configured) return loadingOutcome<StreamBook>(undefined, meta);
-    if (balanceRead.isLoading && balanceRead.data === undefined) {
-      return loadingOutcome<StreamBook>(undefined, meta);
-    }
-    if (balanceRead.isError) {
-      return unavailableOutcome<StreamBook>(
-        [readFailure("useStreams", "transport", balanceRead.error ?? "balanceOf failed")],
-        meta,
-      );
-    }
-    if (overBudget) {
-      return unavailableOutcome<StreamBook>(
-        [
-          readFailure(
-            "useStreams",
-            "incomplete",
-            "Held-stream enumeration exceeds the fail-closed budget",
-          ),
-        ],
-        meta,
-      );
-    }
-    if (balance === 0n) {
-      fixedCache.current.clear();
-      return readyOutcome({ streams: [] }, meta);
-    }
-    if (idRead.isLoading && idRead.data === undefined) {
-      return loadingOutcome<StreamBook>(undefined, meta);
-    }
-    if (idRead.isError) {
-      return unavailableOutcome<StreamBook>(
-        [
-          readFailure(
-            "useStreams",
-            "transport",
-            idRead.error ?? "tokensOfOwnerIn failed",
-          ),
-        ],
-        meta,
-      );
-    }
-    if (!idsComplete) {
-      return unavailableOutcome<StreamBook>(
-        [readFailure("useStreams", "subcall", "tokensOfOwnerIn batch is incomplete")],
-        meta,
-      );
-    }
-    if (ids.length === 0) {
-      fixedCache.current.clear();
-      // Ready-empty is only a zero balance. A positive balance with no ids is
-      // incomplete enumeration, never confirmed-empty.
-      return unavailableOutcome<StreamBook>(
-        [
-          readFailure(
-            "useStreams",
-            "incomplete",
-            "tokensOfOwnerIn returned no ids while balanceOf is nonzero",
-          ),
-        ],
-        meta,
-      );
-    }
-    if (stateReads.isLoading && !stateReads.data) {
-      return loadingOutcome<StreamBook>(undefined, meta);
-    }
-    const rows = stateReads.data;
-    const expected = ids.length * STATE_CALLS_PER_ID;
-    if (!rows || rows.length !== expected) {
-      return unavailableOutcome<StreamBook>(
-        [readFailure("useStreams", "incomplete", "Stream state batch is incomplete")],
-        meta,
-      );
-    }
-
-    const streams: HydratedStream[] = [];
-    const seenKeys = new Set<string>();
-    for (const [index, streamId] of ids.entries()) {
-      const base = index * STATE_CALLS_PER_ID;
-      const ownerResult = rows[base];
-      const streamResult = rows[base + 1];
-      const withdrawableResult = rows[base + 2];
-      const statusResult = rows[base + 3];
-      // Benign per-id failure (burned / notNull / shrink): drop the row, keep the book.
-      if (
-        ownerResult?.status !== "success" ||
-        streamResult?.status !== "success" ||
-        withdrawableResult?.status !== "success" ||
-        statusResult?.status !== "success"
-      ) {
-        continue;
+  const query = useInfiniteQuery({
+    queryKey: streamBookKeys.wall(
+      chainId,
+      discovered ?? ZERO_ADDRESS,
+      account ?? ZERO_ADDRESS,
+      pin?.blockHash ?? null,
+    ),
+    queryFn: async ({ pageParam, signal }) => {
+      if (!publicClient || !discovered || !account || !pin) {
+        throw new Error("stream page query ran without a pin");
       }
-      const owner = ownerResult.result as Address;
-      if (!account || !isAddressEqual(owner, account)) continue;
-
-      const raw = streamResult.result as LockupStreamResult;
-      const key = streamId.toString();
-      seenKeys.add(key);
-      let fixed = fixedCache.current.get(key);
-      if (!fixed) {
-        fixed = {
-          sender: raw.sender,
-          asset: raw.asset,
-          start: BigInt(raw.startTime),
-          end: BigInt(raw.endTime),
-          cliffTime: BigInt(raw.cliffTime),
-          deposited: raw.amounts.deposited,
-          isCancelable: raw.isCancelable,
+      const start = pageParam;
+      const countedCall = await publicClient.call({
+        to: discovered,
+        data: encodeFunctionData({
+          abi: balanceOfAbi,
+          functionName: "balanceOf",
+          args: [account],
+        }),
+        ...callPin(pin, pinState.mode),
+        ...(signal ? { requestOptions: { signal } } : {}),
+      });
+      if (!countedCall.data || countedCall.data === "0x") {
+        throw new Error("balanceOf returned empty data");
+      }
+      const counted = decodeFunctionResult({
+        abi: balanceOfAbi,
+        functionName: "balanceOf",
+        data: countedCall.data,
+      });
+      if (counted === 0n || start >= counted) {
+        return {
+          start,
+          stop: start,
+          sourceCount: counted,
+          views: [] as StreamView[],
+          failures: [] as ReturnType<typeof readFailure>[],
+          transportFailed: false,
         };
-        fixedCache.current.set(key, fixed);
       }
-
-      const withdrawn = raw.amounts.withdrawn;
-      const refunded = raw.amounts.refunded;
-      const remaining = fixed.deposited - withdrawn - refunded;
-      if (remaining <= 0n || raw.isDepleted) continue;
-
-      const schedule: StreamScheduleParams = {
-        start: fixed.start,
-        end: fixed.end,
-        deposited: fixed.deposited,
-        withdrawn,
-        refunded,
-        cliffTime: fixed.cliffTime,
-        isCancelable: fixed.isCancelable,
-      };
-      const render = renderEligibleStream({
-        sender: fixed.sender,
-        asset: fixed.asset,
-        vaults: input.vaults,
-      });
-      if (!render.eligible) continue;
-      const borrow = borrowRouteEligibleStream({
-        sender: fixed.sender,
-        asset: fixed.asset,
-        schedule,
-        remaining,
-        now: input.now,
-        vaults: input.vaults,
-        markets: input.markets,
-      });
-      streams.push({
-        streamId,
-        owner,
-        sender: fixed.sender,
-        asset: fixed.asset,
-        schedule,
-        withdrawable: withdrawableResult.result as bigint,
-        remaining,
-        status: Number(statusResult.result),
-        renderEligible: true,
-        borrowRouteEligible: borrow.eligible,
-        vault: render.vault,
-        market: borrow.market,
-      });
-    }
-
-    for (const key of [...fixedCache.current.keys()]) {
-      if (!seenKeys.has(key)) fixedCache.current.delete(key);
-    }
-
-    const anyFailure = rows.some((result) => result.status !== "success");
-    if (anyFailure && streams.length === 0 && ids.length > 0) {
-      // Every enumerated id failed — treat as unavailable, not confirmed-empty.
-      return unavailableOutcome<StreamBook>(
-        [readFailure("useStreams", "subcall", "Stream state reads failed")],
-        meta,
+      const stop = windowStop(start, counted, STREAM_PAGE_SIZE);
+      const outcome = await loadStreamPage(
+        publicClient,
+        discovered,
+        account,
+        start,
+        stop,
+        pin,
+        { signal, pinMode: pinState.mode },
       );
-    }
+      if (pinState.mode === "number" && outcome.status !== "unavailable") {
+        const verified = await verifyPinHash(publicClient, pin);
+        if (!verified.ok) {
+          return {
+            start,
+            stop,
+            sourceCount: counted,
+            views: [] as StreamView[],
+            failures: [
+              readFailure("stream-book", verified.code === "transport" ? "transport" : "invalid", verified.message),
+            ],
+            transportFailed: verified.code === "transport",
+          };
+        }
+      }
+      if (outcome.status === "unavailable") {
+        throwIfUnknownBlockFailures(outcome.failures);
+        return {
+          start,
+          stop,
+          sourceCount: counted,
+          views: outcome.data?.streams ?? [],
+          failures: [...outcome.failures],
+          transportFailed: outcome.failures.some((failure) => failure.code === "transport"),
+        };
+      }
+      if (outcome.status !== "ready" && outcome.status !== "partial") {
+        return {
+          start,
+          stop,
+          sourceCount: counted,
+          views: [],
+          failures: [readFailure("stream-book", "incomplete", "stream page did not resolve")],
+          transportFailed: false,
+        };
+      }
+      return {
+        start,
+        stop,
+        sourceCount: counted,
+        views: [...outcome.data.streams],
+        failures: outcome.status === "partial" ? [...outcome.failures] : [],
+        transportFailed: false,
+      };
+    },
+    initialPageParam: 0n,
+    getNextPageParam: (lastPage, _pages, lastPageParam) =>
+      nextPageParam(lastPageParam, lastPage.sourceCount, STREAM_PAGE_SIZE),
+    enabled: configured,
+    ...pinnedQuery,
+    retry: (failureCount, error) =>
+      classifyRpcFailure(error) !== "unknown_block" && failureCount < QUERY_RETRY,
+  });
 
-    return readyOutcome({ streams }, meta);
+  const wantedDepth = useRef(1);
+  const autoPages = useRef(0);
+  const lastPin = useRef<string | null>(null);
+  const pinHash = pin?.blockHash.toLowerCase() ?? null;
+  if (lastPin.current !== pinHash) {
+    lastPin.current = pinHash;
+    autoPages.current = 0;
+  }
+  if (query.data && !query.isPlaceholderData) {
+    wantedDepth.current = Math.max(wantedDepth.current, query.data.pages.length);
+  }
+
+  useEffect(() => {
+    if (!configured || query.isFetching || query.isFetchingNextPage) return;
+    if (!query.hasNextPage) return;
+    const pages = query.data?.pages ?? [];
+    if (query.isPlaceholderData) return;
+    if (pages.length < wantedDepth.current) {
+      void query.fetchNextPage();
+      return;
+    }
+    const renderCount = pages.reduce((sum, page) => {
+      return (
+        sum +
+        page.views.filter((view) => hydrateStreamView(view, input) !== null).length
+      );
+    }, 0);
+    if (renderCount === 0 && autoPages.current < AUTO_INELIGIBLE_PAGE_CAP) {
+      autoPages.current += 1;
+      void query.fetchNextPage();
+    }
   }, [
-    account,
-    balance,
-    balanceRead.data,
-    balanceRead.dataUpdatedAt,
-    balanceRead.error,
-    balanceRead.isError,
-    balanceRead.isLoading,
     configured,
-    dataUpdatedAt,
-    idRead.data,
-    idRead.dataUpdatedAt,
-    idRead.error,
-    idRead.isError,
-    idRead.isLoading,
-    ids,
-    idsComplete,
-    bootstrap,
-    input.markets,
-    input.now,
-    input.stream,
-    input.vaults,
-    overBudget,
-    stateReads.data,
-    stateReads.dataUpdatedAt,
-    stateReads.isLoading,
+    input,
+    query.data,
+    query.fetchNextPage,
+    query.hasNextPage,
+    query.isFetching,
+    query.isFetchingNextPage,
+    query.isPlaceholderData,
   ]);
+
+  useEffect(() => {
+    if (!query.isError || !query.error) return;
+    if (classifyRpcFailure(query.error) === "unknown_block") {
+      void pinState.advancePin();
+    }
+  }, [pinState.advancePin, query.error, query.isError]);
+
+  useEffect(() => {
+    if (query.isPlaceholderData || !query.data) return;
+    pinState.markFresh();
+  }, [pinState.markFresh, query.data, query.isPlaceholderData]);
+
+  const pager: BookPager = {
+    hasNextPage: Boolean(query.hasNextPage),
+    isFetchingNextPage: query.isFetchingNextPage,
+    fetchNextPage: () => {
+      void query.fetchNextPage();
+    },
+  };
+
+  const pageStamp = useRef<{ pin: BlockPin; blockTimestamp: bigint | null } | null>(null);
+  if (pin && query.data && !query.isPlaceholderData) {
+    pageStamp.current = { pin, blockTimestamp: pinState.blockTimestamp };
+  }
+  const stamp = query.isPlaceholderData ? pageStamp.current : pin
+    ? { pin, blockTimestamp: pinState.blockTimestamp }
+    : null;
+  const meta = {
+    dataUpdatedAt: pinState.headUpdatedAt || query.dataUpdatedAt,
+    blockNumber: stamp?.pin.blockNumber,
+    blockHash: stamp?.pin.blockHash,
+    blockTimestamp: stamp?.blockTimestamp ?? undefined,
+  };
+  const pinControls = { advancePin: pinState.advancePin };
+
+  if (bootstrap.status === "unavailable" && input.stream === undefined) {
+    return {
+      ...unavailableOutcome(
+        bootstrap.failures.map((failure) =>
+          readFailure("useStreams", "transport", failure.message),
+        ),
+        meta,
+      ),
+      ...idlePager,
+      ...idleAdvance,
+    };
+  }
+  if (!configured) {
+    return { ...loadingOutcome<StreamBook>(undefined, meta), ...idlePager, ...idleAdvance };
+  }
+  if (query.isError && !query.data) {
+    const message = query.error instanceof Error ? query.error.message : "stream page failed";
+    return {
+      ...unavailableOutcome([readFailure("useStreams", "transport", message)], meta),
+      ...pager,
+      ...pinControls,
+    };
+  }
+  if (!query.data) {
+    return { ...loadingOutcome<StreamBook>(undefined, meta), ...pager, ...pinControls };
+  }
+
+  const pages = query.data.pages;
+  const sourceCount = pages[0]?.sourceCount ?? 0n;
+  const folded = foldStreamIds(pages.map((page) => ({ streams: page.views })));
+  const pageFailures = pages.flatMap((page) => page.failures);
+  const transportFailed = pages.some((page) => page.transportFailed) || query.isError;
+  const okFalse = pages.some((page) => page.views.some((view) => !view.ok));
+  const complete = !query.hasNextPage && !query.isFetching && !transportFailed;
+  const streams: HydratedStream[] = [];
+  for (const page of pages) {
+    for (const view of page.views) {
+      const hydrated = hydrateStreamView(view, input);
+      if (hydrated) streams.push(hydrated);
+    }
+  }
+  const fields = bookFields({
+    sourceCount,
+    renderCount: streams.length,
+    complete,
+    unresolvedFailures: pageFailures.length > 0 || folded.duplicate !== null || okFalse || transportFailed,
+  });
+  const book: StreamBook = { streams, ...fields };
+  // An unavailable outcome only carries a book when it has rows; a defined
+  // empty book would otherwise replace the caller's last-known rows.
+  const bookForUnavailable = streams.length > 0 ? book : undefined;
+
+  if (folded.duplicate !== null) {
+    return {
+      ...unavailableOutcome([duplicateStreamFailure(folded.duplicate)], meta, bookForUnavailable),
+      ...pager,
+      ...pinControls,
+    };
+  }
+  if (transportFailed) {
+    return {
+      ...unavailableOutcome(
+        pageFailures.length > 0
+          ? pageFailures
+          : [readFailure("useStreams", "transport", query.error ?? "stream page failed")],
+        meta,
+        bookForUnavailable,
+      ),
+      ...pager,
+      ...pinControls,
+    };
+  }
+  if (sourceCount === 0n && complete) {
+    return { ...readyOutcome(book, meta), ...pager, ...pinControls };
+  }
+  if (!complete && streams.length === 0 && !query.isPlaceholderData) {
+    return { ...loadingOutcome(book, meta), ...pager, ...pinControls };
+  }
+  if ((pageFailures.length > 0 || okFalse) && streams.length === 0 && complete) {
+    return {
+      ...unavailableOutcome(
+        pageFailures.length > 0
+          ? pageFailures
+          : [readFailure("useStreams", "subcall", "stream rows failed hydration")],
+        meta,
+        bookForUnavailable,
+      ),
+      ...pager,
+      ...pinControls,
+    };
+  }
+  const freshness = query.isPlaceholderData || pinState.stale ? "stale" : "fresh";
+  return { ...readyOutcome(book, meta, freshness), ...pager, ...pinControls };
 }

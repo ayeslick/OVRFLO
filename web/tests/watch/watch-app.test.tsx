@@ -7,12 +7,16 @@ import type { BorrowerLoanRow } from "@/hooks/useBorrowerBook";
 import type { HydratedStream } from "@/hooks/useStreams";
 import { loadingOutcome, readFailure, readyOutcome, unavailableOutcome } from "@/lib/read-outcome";
 import { writeWatchSearch } from "@/lib/watch-url";
+import { idlePager } from "../inventory/fixtures";
 
 const ACCOUNT = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8" as Address;
 const MARKET = "0x1111111111111111111111111111111111111111" as Address;
 const TOKEN = "0x3333333333333333333333333333333333333333" as Address;
 const VAULT = "0x2222222222222222222222222222222222222222" as Address;
 const LENDING = "0x4444444444444444444444444444444444444444" as Address;
+const LENDING_B = "0x5555555555555555555555555555555555555555" as Address;
+const MARKET_B = "0x6666666666666666666666666666666666666666" as Address;
+const TOKEN_B = "0x7777777777777777777777777777777777777777" as Address;
 const NOW = 1_800_000_000n;
 const SCALE = 10n ** 18n;
 
@@ -30,6 +34,20 @@ const fx = vi.hoisted(() => ({
   borrowerUpdatedAt: 0,
   ovrflosStatus: "ready" as "ready" | "loading" | "unavailable",
   marketsStatus: "ready" as "ready" | "loading" | "unavailable",
+  markets: [] as {
+    vault: Address;
+    treasury: Address;
+    underlying: Address;
+    ovrfloToken: Address;
+    lending: Address;
+    market: Address;
+    twapDurationFixed: number;
+    feeBps: number;
+    expiryCached: bigint;
+    ptToken: Address;
+    oracle: Address;
+  }[],
+  advancePin: async () => undefined as void,
 }));
 
 vi.mock("wagmi", () => ({
@@ -108,21 +126,23 @@ vi.mock("@/hooks/useOvrflos", () => ({
 
 vi.mock("@/hooks/useAllMarkets", () => ({
   useAllMarkets: () => ({
-    markets: [
-      {
-        vault: VAULT,
-        treasury: VAULT,
-        underlying: TOKEN,
-        ovrfloToken: TOKEN,
-        lending: LENDING,
-        market: MARKET,
-        twapDurationFixed: 900,
-        feeBps: 50,
-        expiryCached: NOW + 150n * 86_400n,
-        ptToken: TOKEN,
-        oracle: TOKEN,
-      },
-    ],
+    markets: fx.markets.length > 0
+      ? fx.markets
+      : [
+          {
+            vault: VAULT,
+            treasury: VAULT,
+            underlying: TOKEN,
+            ovrfloToken: TOKEN,
+            lending: LENDING,
+            market: MARKET,
+            twapDurationFixed: 900,
+            feeBps: 50,
+            expiryCached: NOW + 150n * 86_400n,
+            ptToken: TOKEN,
+            oracle: TOKEN,
+          },
+        ],
     status: fx.marketsStatus,
     isLoading: fx.marketsStatus === "loading",
     error: fx.marketsStatus === "unavailable" ? new Error("markets down") : null,
@@ -137,36 +157,84 @@ vi.mock("@/hooks/useMarketSymbols", () => ({
 
 vi.mock("@/hooks/useLenderBook", () => ({
   useLenderBook: () => {
-    if (fx.lenderStatus === "loading") return loadingOutcome();
+    const rows = { positions: fx.positions };
+    const renderCount = fx.positions.length;
+    const fields = {
+      sourceCount: BigInt(renderCount),
+      renderCount,
+      complete: fx.lenderStatus === "ready",
+      confirmedEmpty: fx.lenderStatus === "ready" && renderCount === 0,
+    };
+    if (fx.lenderStatus === "loading") return { ...loadingOutcome({ ...rows, ...fields }), ...idlePager };
     if (fx.lenderStatus === "unavailable") {
-      return unavailableOutcome([readFailure("useLenderBook", "transport", "down")]);
+      return {
+        ...unavailableOutcome([readFailure("useLenderBook", "transport", "down")], {}, { ...rows, ...fields }),
+        ...idlePager,
+      };
     }
-    return readyOutcome({ positions: fx.positions });
+    return { ...readyOutcome({ ...rows, ...fields }), ...idlePager };
   },
 }));
 
 vi.mock("@/hooks/useBorrowerBook", () => ({
   useBorrowerBook: () => {
     const meta = fx.borrowerUpdatedAt > 0 ? { dataUpdatedAt: fx.borrowerUpdatedAt } : {};
-    if (fx.borrowerStatus === "loading") return loadingOutcome(undefined, meta);
-    if (fx.borrowerStatus === "unavailable") {
-      return unavailableOutcome([readFailure("useBorrowerBook", "transport", "down")], meta);
+    const rows = { loans: fx.loans };
+    const renderCount = fx.loans.length;
+    const fields = {
+      sourceCount: BigInt(renderCount),
+      renderCount,
+      complete: fx.borrowerStatus === "ready",
+      confirmedEmpty: fx.borrowerStatus === "ready" && renderCount === 0,
+    };
+    if (fx.borrowerStatus === "loading") {
+      return { ...loadingOutcome({ ...rows, ...fields }, meta), ...idlePager };
     }
-    return readyOutcome({ loans: fx.loans }, meta);
+    if (fx.borrowerStatus === "unavailable") {
+      return {
+        ...unavailableOutcome(
+          [readFailure("useBorrowerBook", "transport", "down")],
+          meta,
+          { ...rows, ...fields },
+        ),
+        ...idlePager,
+      };
+    }
+    return { ...readyOutcome({ ...rows, ...fields }, meta), ...idlePager };
   },
 }));
 
 vi.mock("@/hooks/useStreams", () => ({
   useStreams: () => {
     const meta = fx.streamUpdatedAt > 0 ? { dataUpdatedAt: fx.streamUpdatedAt } : {};
+    const rows = { streams: fx.streams };
+    const renderCount = fx.streams.length;
+    const fields = {
+      sourceCount: BigInt(renderCount),
+      renderCount,
+      complete: fx.streamStatus === "ready",
+      confirmedEmpty: fx.streamStatus === "ready" && renderCount === 0,
+    };
     if (fx.streamStatus === "loading") {
-      return loadingOutcome({ streams: [] as typeof fx.streams }, meta);
+      return {
+        ...loadingOutcome({ ...rows, ...fields }, meta),
+        ...idlePager,
+        advancePin: () => fx.advancePin(),
+      };
     }
     if (fx.streamStatus === "unavailable") {
       const failure = [readFailure("useStreams", "transport", "could-not-ask")];
-      return unavailableOutcome(failure, meta);
+      return {
+        ...unavailableOutcome(failure, meta, { ...rows, ...fields }),
+        ...idlePager,
+        advancePin: () => fx.advancePin(),
+      };
     }
-    return readyOutcome({ streams: fx.streams }, meta);
+    return {
+      ...readyOutcome({ ...rows, ...fields }, meta),
+      ...idlePager,
+      advancePin: () => fx.advancePin(),
+    };
   },
 }));
 
@@ -219,6 +287,8 @@ function resetFx() {
   fx.freshnessKind = "synced";
   fx.streamUpdatedAt = 0;
   fx.borrowerUpdatedAt = 0;
+  fx.markets = [];
+  fx.advancePin = async () => undefined;
   writeWatchSearch({ lens: null, selection: { kind: "none" } }, "replace");
 }
 
@@ -279,6 +349,7 @@ describe("watch shell + entry", () => {
     fx.positions = [
       {
         id: 26n,
+        lending: LENDING,
         lender: ACCOUNT,
         market: MARKET,
         aprBps: 500,
@@ -300,6 +371,7 @@ describe("watch shell + entry", () => {
     fx.positions = [
       {
         id: 26n,
+        lending: LENDING,
         lender: ACCOUNT,
         market: MARKET,
         aprBps: 500,
@@ -318,7 +390,7 @@ describe("watch shell + entry", () => {
     wide.unmount();
 
     stubViewport(360);
-    writeWatchSearch({ lens: "supplied", selection: { kind: "position", id: 26n } }, "replace");
+    writeWatchSearch({ lens: "supplied", selection: { kind: "position", lending: LENDING, id: 26n } }, "replace");
     render(<WatchApp />);
     expect(screen.getByRole("button", { name: "Back to supplied" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Back to supplied" }));
@@ -336,6 +408,8 @@ describe("watch shell + entry", () => {
     fx.loans = [
       {
         id: 12n,
+        lending: LENDING,
+        market: MARKET,
         borrower: ACCOUNT,
         streamId: 5n,
         obligation: SCALE,
@@ -359,6 +433,7 @@ describe("watch shell + entry", () => {
     fx.positions = [
       {
         id: 26n,
+        lending: LENDING,
         lender: ACCOUNT,
         market: MARKET,
         aprBps: 500,
@@ -374,13 +449,13 @@ describe("watch shell + entry", () => {
     expect(screen.getByText("STREAM CLOSED")).toBeInTheDocument();
   });
 
-  it("keeps the prior stream card until the borrower book catches up after a pledge drop", () => {
+  it("paints STREAM CLOSED when a complete stream book drops the selected stream", () => {
     fx.connected = true;
-    fx.streamUpdatedAt = 2_000;
-    fx.borrowerUpdatedAt = 1_000;
+    fx.streamStatus = "ready";
     fx.positions = [
       {
         id: 26n,
+        lending: LENDING,
         lender: ACCOUNT,
         market: MARKET,
         aprBps: 500,
@@ -421,8 +496,170 @@ describe("watch shell + entry", () => {
 
     fx.streams = [];
     rerender(<WatchApp />);
-    expect(screen.queryByText("STREAM CLOSED")).not.toBeInTheDocument();
-    expect(document.querySelector("[data-region='stream-detail']")).not.toBeNull();
+    expect(screen.getByText("STREAM CLOSED")).toBeInTheDocument();
+  });
+
+  it("opens the second market when two lendings share position id 1", () => {
+    fx.connected = true;
+    fx.markets = [
+      {
+        vault: VAULT,
+        treasury: VAULT,
+        underlying: TOKEN,
+        ovrfloToken: TOKEN,
+        lending: LENDING,
+        market: MARKET,
+        twapDurationFixed: 900,
+        feeBps: 50,
+        expiryCached: NOW + 150n * 86_400n,
+        ptToken: TOKEN,
+        oracle: TOKEN,
+      },
+      {
+        vault: VAULT,
+        treasury: VAULT,
+        underlying: TOKEN_B,
+        ovrfloToken: TOKEN_B,
+        lending: LENDING_B,
+        market: MARKET_B,
+        twapDurationFixed: 900,
+        feeBps: 50,
+        expiryCached: NOW + 150n * 86_400n,
+        ptToken: TOKEN_B,
+        oracle: TOKEN_B,
+      },
+    ];
+    fx.positions = [
+      {
+        id: 1n,
+        lending: LENDING,
+        lender: ACCOUNT,
+        market: MARKET,
+        aprBps: 500,
+        availableLiquidity: 5n * SCALE,
+        intervalStart: 0n,
+        intervalEnd: 0n,
+        pairs: [],
+        pairsTruncated: false,
+      },
+      {
+        id: 1n,
+        lending: LENDING_B,
+        lender: ACCOUNT,
+        market: MARKET_B,
+        aprBps: 800,
+        availableLiquidity: 2n * SCALE,
+        intervalStart: 0n,
+        intervalEnd: 0n,
+        pairs: [],
+        pairsTruncated: false,
+      },
+    ];
+    render(<WatchApp />);
+    const rows = screen.getAllByRole("button", { name: /SUPPLY #1/ });
+    expect(rows).toHaveLength(2);
+    fireEvent.click(rows[1]!);
+    expect(window.location.search).toMatch(new RegExp(`lending=${LENDING_B}`, "i"));
+    expect(window.location.search).toMatch(/position=1/);
+    expect(rows[0]).toHaveAttribute("data-selected", "false");
+    expect(rows[1]).toHaveAttribute("data-selected", "true");
+    expect(screen.getByRole("article")).toHaveAttribute("data-region", "supplied-detail");
+    expect(screen.getByRole("article")).toHaveAttribute("data-state", "resting");
+  });
+
+  it("keeps last-known stream rows visible under the degraded caption", () => {
+    fx.connected = true;
+    fx.streamStatus = "unavailable";
+    fx.streams = [
+      {
+        streamId: 5n,
+        owner: ACCOUNT,
+        sender: VAULT,
+        asset: TOKEN,
+        schedule: {
+          start: NOW - 10n * 86_400n,
+          end: NOW + 80n * 86_400n,
+          deposited: SCALE,
+          withdrawn: 0n,
+          refunded: 0n,
+          cliffTime: NOW - 10n * 86_400n,
+          isCancelable: false,
+        },
+        withdrawable: SCALE / 10n,
+        remaining: SCALE,
+        status: 1,
+        renderEligible: true,
+        borrowRouteEligible: true,
+        vault: VAULT,
+        market: MARKET,
+      },
+    ];
+    writeWatchSearch({ lens: "streams", selection: { kind: "none" } }, "replace");
+    render(<WatchApp />);
+    expect(screen.getByText(/STREAM DISCOVERY IS UNAVAILABLE/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /STREAM #5/ })).toBeInTheDocument();
+  });
+
+  it("keeps last-ready stream rows when a failure arrives with an empty book", () => {
+    fx.connected = true;
+    fx.streams = [
+      {
+        streamId: 5n,
+        owner: ACCOUNT,
+        sender: VAULT,
+        asset: TOKEN,
+        schedule: {
+          start: NOW - 10n * 86_400n,
+          end: NOW + 80n * 86_400n,
+          deposited: SCALE,
+          withdrawn: 0n,
+          refunded: 0n,
+          cliffTime: NOW - 10n * 86_400n,
+          isCancelable: false,
+        },
+        withdrawable: SCALE / 10n,
+        remaining: SCALE,
+        status: 1,
+        renderEligible: true,
+        borrowRouteEligible: true,
+        vault: VAULT,
+        market: MARKET,
+      },
+    ];
+    writeWatchSearch({ lens: "streams", selection: { kind: "none" } }, "replace");
+    const { rerender } = render(<WatchApp />);
+    expect(screen.getByRole("button", { name: /STREAM #5/ })).toBeInTheDocument();
+
+    fx.streamStatus = "unavailable";
+    fx.streams = [];
+    rerender(<WatchApp />);
+    expect(screen.getByText(/STREAM DISCOVERY IS UNAVAILABLE/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /STREAM #5/ })).toBeInTheDocument();
+  });
+
+  it("STALE REFRESH advances the pin and does not only invalidate stream-book", async () => {
+    const advancePin = vi.fn(async () => undefined);
+    fx.connected = true;
+    fx.signingAllowed = false;
+    fx.freshnessKind = "degraded";
+    fx.advancePin = advancePin;
+    fx.positions = [
+      {
+        id: 26n,
+        lending: LENDING,
+        lender: ACCOUNT,
+        market: MARKET,
+        aprBps: 500,
+        availableLiquidity: 5n * SCALE,
+        intervalStart: 0n,
+        intervalEnd: 0n,
+        pairs: [],
+        pairsTruncated: false,
+      },
+    ];
+    render(<WatchApp />);
+    fireEvent.click(screen.getByRole("button", { name: "REFRESH" }));
+    expect(advancePin).toHaveBeenCalled();
   });
 
   it("does not copy an open loan onto the Streams wall", () => {
@@ -430,6 +667,8 @@ describe("watch shell + entry", () => {
     fx.loans = [
       {
         id: 12n,
+        lending: LENDING,
+        market: MARKET,
         borrower: ACCOUNT,
         streamId: 5n,
         obligation: SCALE,

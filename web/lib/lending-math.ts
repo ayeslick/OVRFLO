@@ -6,22 +6,13 @@ export const WAD = 10n ** 18n;
 export const BPS = 10_000n;
 export const YEAR_SECONDS = 31_536_000n;
 export const APR_STEP_BPS = 100;
-/// How many ids one enumeration page fetches. Hydration costs four reads per id and viem chunks
-/// multicall calldata at 1,024 bytes, so 25 ids paint the first page in roughly four requests
-/// against seventy-two at 500. Lazy by design: later pages are fetched only when the reader asks
-/// for them.
+/// How many ids one enumeration page fetches. The lens hydrates one window per
+/// call. Later pages load when the reader asks, or when an all-ineligible
+/// window auto-advances.
 export const STREAM_PAGE_SIZE = 25n;
 
-/// Fail-closed refusal threshold, NOT a page size. It exists only because `useStreams` fetches every
-/// id and hydrates all of them in one shot, so refusing is the only alternative to a truncated list.
-///
-/// Slated for deletion, not adjustment. The pager
-/// (docs/plans/2026-08-15-001-feat-watch-enumeration-load-more-plan.md) bounds the display path, and
-/// the lens (docs/plans/2026-08-15-005-feat-stream-lens-plan.md) serves the consumers that need the
-/// complete set. After both, nothing reads unboundedly and this has no job.
-///
-/// Do not lower it before then: it gates `overBudget` in all three books, so a smaller value blanks
-/// the wall for any wallet holding more than that many streams.
+/// Historical complete-set helper default. The wall pager no longer refuses at
+/// this bound. Do not restore it as a Watch overBudget gate.
 export const MAX_ENUMERATION_IDS = 500n;
 export { MAX_UINT128 };
 

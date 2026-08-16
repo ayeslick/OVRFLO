@@ -38,6 +38,7 @@ const market: MarketInfo = {
 
 const position: LenderPositionRow = {
   id: 26n,
+  lending: LENDING,
   lender: ACCOUNT,
   market: MARKET,
   aprBps: 500,
@@ -50,6 +51,8 @@ const position: LenderPositionRow = {
 
 const activeLoan: BorrowerLoanRow = {
   id: 12n,
+  lending: LENDING,
+  market: MARKET,
   borrower: ACCOUNT,
   streamId: 440n,
   obligation: 2n * SCALE,

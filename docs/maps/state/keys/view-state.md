@@ -31,11 +31,12 @@ Which role lens is active: `supplied` · `borrowed` · `streams`.
 
 ### `watch.selected-entity`
 
-The entity whose detail is open: `{ kind: position | loan | stream, id }` or none.
+The entity whose detail is open: `{ kind: position | loan, lending, id }`,
+`{ kind: stream, id }`, or none.
 
 - **trust_domain:** `pure-client`
 - **writers:**
-  - `web/components/watch/Wall.tsx` — landing U7: `UI-WATCH-SELECT` writes `?position=` / `?loan=` / `?stream=`
+  - `web/components/watch/Wall.tsx` — landing U7: `UI-WATCH-SELECT` writes `?lending=` plus `?position=` / `?loan=` / `?stream=`
   - `web/app/page.tsx` — hydrates from the URL; clears on disconnect
 - **readers:**
   - `web/components/watch/SuppliedDetail.tsx` — landing U7: mounted when kind is `position`
@@ -44,9 +45,11 @@ The entity whose detail is open: `{ kind: position | loan | stream, id }` or non
   - `web/components/watch/ClosedLoanDetail.tsx` — landing U7: mounted when kind is `loan` (SETTLED)
   - `web/components/watch/Wall.tsx` — landing U7: which row reads as selected
 - **notes:** URL carries selection at every width so deep links and Back work
-  (KTD13). Wide: detail in place. Narrow (<1024px): `watch.narrow-nav` list→detail.
-  Selecting does not authorise; it only scopes which on-chain entity is shown.
-  Account change clears this key.
+  (KTD13). Position and loan match `(lending, id)` — each market starts ids at
+  1. A `?position=` / `?loan=` without `?lending=` is none. Stream ids are
+  lockup-wide. Wide: detail in place. Narrow (<1024px): `watch.narrow-nav`
+  list→detail. Selecting does not authorise; it only scopes which on-chain
+  entity is shown. Account change clears this key.
 
 ### `watch.narrow-nav`
 

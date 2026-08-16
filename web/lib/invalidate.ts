@@ -2,7 +2,7 @@ import type { QueryClient } from "@tanstack/react-query";
 import type { Address } from "viem";
 import type { ActionIdentity, TouchedResource } from "./actions/types";
 import { factoryAddress } from "./config";
-import { borrowerBookKeys, lenderBookKeys, protocolBootstrapKeys } from "./query-keys";
+import { borrowerBookKeys, lenderBookKeys, protocolBootstrapKeys, streamBookKeys } from "./query-keys";
 import type { MarketInfo } from "./types";
 
 // wagmi v3 roots useReadContract / useReadContracts keys at these string
@@ -42,14 +42,16 @@ export function invalidateOnChainReads(
   }
 
   if (options.streams && options.stream) {
-    // Held streams are wagmi reads on the discovered lockup — covered when
-    // that address is in `contracts`. No custom streamKeys remain after U8.
     touched.add(options.stream.toLowerCase());
     for (const root of WAGMI_READ_ROOTS) {
       queryClient.invalidateQueries({
         predicate: (query) => query.queryKey[0] === root && keyMentionsAny(query.queryKey, touched),
       });
     }
+    queryClient.invalidateQueries({
+      predicate: (query) =>
+        query.queryKey[0] === streamBookKeys.all[0] && keyMentionsAny(query.queryKey, touched),
+    });
   }
 }
 
@@ -143,6 +145,9 @@ export function invalidateTouchedResources(
     queryClient.invalidateQueries({ queryKey: borrowerBookKeys.all });
     queryClient.invalidateQueries({ queryKey: lenderBookKeys.all });
   }
+  if (kinds.has("stream") || kinds.has("nft-approval")) {
+    queryClient.invalidateQueries({ queryKey: streamBookKeys.all });
+  }
   // Append-only factory registry: refresh discovery after a registration write.
   if (contracts.has(factoryAddress.toLowerCase())) {
     queryClient.invalidateQueries({ queryKey: protocolBootstrapKeys.all });
@@ -165,6 +170,9 @@ export function invalidateAllOnChainReads(queryClient: QueryClient, user?: Addre
     queryClient.invalidateQueries({ queryKey: [root] });
   }
   queryClient.invalidateQueries({ queryKey: protocolBootstrapKeys.all });
+  queryClient.invalidateQueries({ queryKey: streamBookKeys.all });
+  queryClient.invalidateQueries({ queryKey: lenderBookKeys.all });
+  queryClient.invalidateQueries({ queryKey: borrowerBookKeys.all });
 }
 
 /**

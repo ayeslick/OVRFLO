@@ -38,6 +38,22 @@ export type ClaimAllInput = {
   streams: { streamId: bigint; withdrawable: bigint; asset: Address }[];
 };
 
+export function claimAllStreamsFromCompleteSet(
+  streams: readonly { streamId: bigint; withdrawable: bigint; asset: Address }[],
+  complete: boolean,
+): ClaimAllInput["streams"] {
+  if (!complete) {
+    throw new Error("claim-all requires loadCompleteStreams, not the wall pager");
+  }
+  return streams
+    .filter((row) => row.withdrawable > 0n)
+    .map((row) => ({
+      streamId: row.streamId,
+      withdrawable: row.withdrawable,
+      asset: row.asset,
+    }));
+}
+
 export function planClaimAll(input: ClaimAllInput): QueuedTx[] {
   const byLending = new Map<
     string,

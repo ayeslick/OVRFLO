@@ -1,15 +1,17 @@
 "use client";
 
+import type { Address } from "viem";
 import { EntityRow } from "@/components/kit/EntityRow";
 import { LensTabs, type LensId, type LensTab } from "@/components/kit/LensTabs";
 import { RollingNumber } from "@/components/kit/RollingNumber";
 import type { BorrowerLoanRow } from "@/hooks/useBorrowerBook";
 import type { LenderPositionRow } from "@/hooks/useLenderBook";
-import type { HydratedStream } from "@/hooks/useStreams";
-import { formatTruncatedDecimal } from "@/lib/format";
+import type { BookPager, HydratedStream } from "@/hooks/useStreams";
+import { formatAddress, formatTruncatedDecimal } from "@/lib/format";
 import type { StreamSchedule } from "@/lib/payoff";
 import type { WatchLens } from "@/lib/parse";
-import type { WatchSelection } from "@/lib/watch-url";
+import type { EntryBook } from "@/lib/watch-entry";
+import { selectionMatchesRow, type WatchSelection } from "@/lib/watch-url";
 import {
   borrowedRowState,
   borrowedStateLine,
@@ -43,6 +45,7 @@ export function Wall({
   onSelect,
   streamsDegraded,
   panelStatus = "ready",
+  pager,
 }: {
   tabs: readonly WallTab[];
   lens: LensId;
@@ -50,7 +53,7 @@ export function Wall({
   positions: readonly LenderPositionRow[];
   loans: readonly BorrowerLoanRow[];
   streams: readonly HydratedStream[];
-  pledgedByStream: ReadonlyMap<string, bigint>;
+  pledgedByStream: ReadonlyMap<string, { lending: Address; id: bigint }>;
   loanStreams: ReadonlyMap<string, { withdrawable: bigint; schedule: StreamSchedule }>;
   nowSeconds: bigint;
   nowMs: number;
@@ -59,6 +62,7 @@ export function Wall({
   onSelect: (selection: WatchSelection) => void;
   streamsDegraded: "pending" | "could-not-ask" | null;
   panelStatus?: "loading" | "empty" | "ready";
+  pager?: BookPager;
 }) {
   return (
     <section className="watch-wall" data-ui="UI-WATCH-WALL" data-region="watch-wall" data-lens={lens}>
@@ -67,42 +71,50 @@ export function Wall({
         {panelStatus === "ready" && lens === "supplied"
           ? positions.map((position) => (
               <SuppliedRow
-                key={position.id.toString()}
+                key={`${position.lending}-${position.id.toString()}`}
                 position={position}
-                selected={selection.kind === "position" && selection.id === position.id}
-                onSelect={() => onSelect({ kind: "position", id: position.id })}
+                selected={selectionMatchesRow(selection, "position", position)}
+                onSelect={() =>
+                  onSelect({ kind: "position", lending: position.lending, id: position.id })
+                }
               />
             ))
           : null}
         {panelStatus === "ready" && lens === "borrowed"
           ? loans.map((loan) => (
               <BorrowedRow
-                key={loan.id.toString()}
+                key={`${loan.lending}-${loan.id.toString()}`}
                 loan={loan}
                 truth={loanStreams.get(loan.streamId.toString())}
                 nowSeconds={nowSeconds}
                 nowMs={nowMs}
                 lastReadAt={lastReadAt}
-                selected={selection.kind === "loan" && selection.id === loan.id}
-                onSelect={() => onSelect({ kind: "loan", id: loan.id })}
+                selected={selectionMatchesRow(selection, "loan", loan)}
+                onSelect={() => onSelect({ kind: "loan", lending: loan.lending, id: loan.id })}
               />
             ))
           : null}
         {lens === "streams" && streamsDegraded ? (
           <StreamsDegraded kind={streamsDegraded} />
         ) : null}
-        {panelStatus === "ready" && lens === "streams" && !streamsDegraded
+        {panelStatus === "ready" && lens === "streams" && (streams.length > 0 || !streamsDegraded)
           ? streams.map((stream) => (
               <StreamRow
                 key={stream.streamId.toString()}
                 stream={stream}
-                pledgedLoanId={pledgedByStream.get(stream.streamId.toString())}
+                pledgedLoanId={pledgedByStream.get(stream.streamId.toString())?.id}
                 nowMs={nowMs}
                 selected={selection.kind === "stream" && selection.id === stream.streamId}
                 onSelect={() => onSelect({ kind: "stream", id: stream.streamId })}
               />
             ))
           : null}
+        {pager?.hasNextPage || pager?.isFetchingNextPage ? (
+          <LoadMore
+            fetching={Boolean(pager.isFetchingNextPage)}
+            onLoadMore={() => pager.fetchNextPage()}
+          />
+        ) : null}
       </div>
     </section>
   );
@@ -133,7 +145,7 @@ function SuppliedRow({
   return (
     <EntityRow
       state={match}
-      identity={`SUPPLY #${position.id.toString()}`}
+      identity={`SUPPLY #${position.id.toString()} · ${formatAddress(position.market)}`}
       stateLine={suppliedStateLine({ match, filled, unfilled, aprBps: position.aprBps })}
       decisive={decisive}
       selected={selected}
@@ -172,7 +184,7 @@ function BorrowedRow({
   return (
     <EntityRow
       state={state}
-      identity={`LOAN #${loan.id.toString()}`}
+      identity={`LOAN #${loan.id.toString()} · ${formatAddress(loan.market)}`}
       stateLine={borrowedStateLine({
         state,
         streamId: loan.streamId,
@@ -258,9 +270,9 @@ export function StreamsDegraded({ kind }: { kind: "pending" | "could-not-ask" })
 }
 
 export function visibleLensTabs(args: {
-  positions: { status: "loading" | "ready" | "unavailable"; count: number };
-  loans: { status: "loading" | "ready" | "unavailable"; count: number };
-  streams: { status: "loading" | "ready" | "unavailable"; count: number };
+  positions: EntryBook;
+  loans: EntryBook;
+  streams: EntryBook;
 }): WallTab[] {
   return [
     lensTab("supplied", "SUPPLIED", args.positions),
@@ -269,19 +281,34 @@ export function visibleLensTabs(args: {
   ];
 }
 
-function lensTab(
-  id: WatchLens,
-  label: string,
-  book: { status: "loading" | "ready" | "unavailable"; count: number },
-): WallTab {
+function lensTab(id: WatchLens, label: string, book: EntryBook): WallTab {
   if (book.status === "loading") {
     return { id, label, visible: true, state: "loading" };
   }
   if (book.status === "unavailable") {
     return { id, label, visible: true, state: "unavailable" };
   }
-  if (book.count === 0) {
+  if (book.confirmedEmpty) {
     return { id, label, visible: false, state: "ready" };
   }
   return { id, label, visible: true, state: "ready" };
+}
+
+function LoadMore({ fetching, onLoadMore }: { fetching: boolean; onLoadMore: () => void }) {
+  return (
+    <div className="watch-load-more">
+      <button
+        type="button"
+        className="watch-load-more-button"
+        data-ui="UI-WATCH-LOAD-MORE"
+        disabled={fetching}
+        onClick={onLoadMore}
+      >
+        LOAD MORE
+      </button>
+      <span className="watch-load-more-live" aria-live="polite">
+        {fetching ? "LOADING MORE" : ""}
+      </span>
+    </div>
+  );
 }

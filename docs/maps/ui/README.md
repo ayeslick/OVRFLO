@@ -102,7 +102,7 @@ gaps. U14's harness mounts these same rows.
 | Risk surface | `first-run.md` `UI-FIRST-RUN-RISK` |
 | Acknowledgment step | `review.md` `UI-REVIEW-ACKNOWLEDGE-RISK` (inserted into `UI-REVIEW-SETTLEMENT-TRACE`) |
 | Both claim-confirmed variants | `review.md` `UI-REVIEW-CLAIM-CONFIRMED` (`unwrap-enabled` and `reserve-insufficient`) — same as A.19–20 |
-| Narrow-viewport watch navigation | `watch.md` `UI-WATCH-NARROW-NAV` · `UI-WATCH-SELECT` (`?lens=` `?position=` `?loan=` `?stream=`) |
+| Narrow-viewport watch navigation | `watch.md` `UI-WATCH-NARROW-NAV` · `UI-WATCH-SELECT` (`?lens=` `?lending=` `?position=` `?loan=` `?stream=`) |
 | `ALL RATES` expert workspace | `rates.md` entire brief; opened from `UI-BORROW-ALL-RATES` / `UI-SUPPLY-ALL-RATES` |
 | `ENTRY.SYNCING` | `shell.md` `UI-SHELL-ENTRY-SYNCING` |
 

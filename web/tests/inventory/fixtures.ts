@@ -3,6 +3,7 @@ import type { Address } from "viem";
 import type { BorrowerLoanRow } from "@/hooks/useBorrowerBook";
 import type { LenderPositionRow } from "@/hooks/useLenderBook";
 import type { HydratedStream } from "@/hooks/useStreams";
+import { loadingOutcome, readFailure, readyOutcome, unavailableOutcome } from "@/lib/read-outcome";
 import type { MarketInfo } from "@/lib/types";
 
 /** Flow-spec render inventory: docs/plans/2026-08-11-markets-frontend-flow-spec.md */
@@ -103,6 +104,7 @@ export function mockCanvas() {
 export function filledPosition(id = 26n): LenderPositionRow {
   return {
     id,
+    lending: LENDING,
     lender: ACCOUNT,
     market: MARKET,
     aprBps: 500,
@@ -117,6 +119,7 @@ export function filledPosition(id = 26n): LenderPositionRow {
 export function restingPosition(id = 41n): LenderPositionRow {
   return {
     id,
+    lending: LENDING,
     lender: ACCOUNT,
     market: MARKET,
     aprBps: 500,
@@ -131,6 +134,8 @@ export function restingPosition(id = 41n): LenderPositionRow {
 export function activeLoan(id = 12n): BorrowerLoanRow {
   return {
     id,
+    lending: LENDING,
+    market: MARKET,
     borrower: ACCOUNT,
     streamId: 440n,
     obligation: 2n * SCALE,
@@ -181,3 +186,39 @@ export function loanStreamTruth(streamId = 440n) {
 }
 
 export const noop = () => undefined;
+
+export const idlePager = {
+  hasNextPage: false,
+  isFetchingNextPage: false,
+  fetchNextPage: () => undefined,
+  advancePin: async () => undefined,
+};
+
+export function mockBookOutcome<T extends object>(
+  status: "ready" | "loading" | "unavailable",
+  rows: T & { positions?: unknown[]; loans?: unknown[]; streams?: unknown[] },
+  meta: { dataUpdatedAt?: number } = {},
+  failureMessage = "down",
+) {
+  const list = rows.positions ?? rows.loans ?? rows.streams ?? [];
+  const renderCount = Array.isArray(list) ? list.length : 0;
+  const data = {
+    ...rows,
+    sourceCount: BigInt(renderCount),
+    renderCount,
+    complete: status === "ready",
+    confirmedEmpty: status === "ready" && renderCount === 0,
+  };
+  if (status === "loading") return { ...loadingOutcome(data, meta), ...idlePager };
+  if (status === "unavailable") {
+    return {
+      ...unavailableOutcome(
+        [readFailure("book", "transport", failureMessage)],
+        meta,
+        data,
+      ),
+      ...idlePager,
+    };
+  }
+  return { ...readyOutcome(data, meta), ...idlePager };
+}

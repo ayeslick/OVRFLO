@@ -72,7 +72,7 @@ Walk this ladder before `useState`. Stop at the first home that fits. MUST.
 "Choosing the State Structure" / "Sharing State"; ponytail-fullstack-web3
 `frontend-state`; WIG: URL reflects state.)
 
-1. the URL (`?lens=`, `?position=`, `?loan=`, `?stream=`);
+1. the URL (`?lens=`, `?lending=`, `?position=`, `?loan=`, `?stream=`);
 2. browser/platform state (focus, `matchMedia`, native `<dialog>` / `<details>`);
 3. server or chain state — read it, don't copy it (KTD9: TanStack Query is the
    only chain-state store);

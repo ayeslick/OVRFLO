@@ -24,7 +24,7 @@ on-chain contract state. This index does not cover, replace, or summarise it.
 |---|---|
 | Key files | 6 |
 | Keys | 62 |
-| Modules | 89 |
+| Modules | 94 |
 | `on-chain` keys | 23 |
 | `projection` keys | 0 |
 | `pure-client` keys | 39 |
@@ -45,7 +45,7 @@ a `projection` count is a module where a fail-closed mistake can happen.
 | `web/components/assets/Converter.tsx` | 2 | 0 | 0 |
 | `web/components/assets/StreamSelectMarket.tsx` | 1 | 0 | 1 |
 | `web/components/borrow/AmountStep.tsx` | 2 | 0 | 1 |
-| `web/components/borrow/BorrowFlow.tsx` | 0 | 0 | 4 |
+| `web/components/borrow/BorrowFlow.tsx` | 1 | 0 | 4 |
 | `web/components/borrow/PoolBand.tsx` | 1 | 0 | 0 |
 | `web/components/borrow/RateStep.tsx` | 0 | 0 | 2 |
 | `web/components/borrow/ReviewHandoff.tsx` | 1 | 0 | 0 |
@@ -91,6 +91,8 @@ a `projection` count is a module where a fail-closed mistake can happen.
 | `web/hooks/useChainGuard.ts` | 1 | 0 | 0 |
 | `web/hooks/useClearOnConfirm.ts` | 0 | 0 | 1 |
 | `web/hooks/useClock.ts` | 1 | 0 | 2 |
+| `web/hooks/useCompleteStreams.ts` | 1 | 0 | 0 |
+| `web/hooks/useEnumerationPin.ts` | 1 | 0 | 0 |
 | `web/hooks/useFlowDecisionHistory.ts` | 0 | 0 | 1 |
 | `web/hooks/useFreshness.ts` | 0 | 0 | 1 |
 | `web/hooks/useIdentityQueryReset.ts` | 0 | 0 | 1 |
@@ -110,6 +112,7 @@ a `projection` count is a module where a fail-closed mistake can happen.
 | `web/hooks/useZeroFirstApprove.ts` | 0 | 0 | 2 |
 | `web/lib/actions/borrow.ts` | 0 | 0 | 1 |
 | `web/lib/actions/claim.ts` | 1 | 0 | 1 |
+| `web/lib/claim-all.ts` | 1 | 0 | 0 |
 | `web/lib/flow-history.ts` | 0 | 0 | 1 |
 | `web/lib/freshness.ts` | 0 | 0 | 1 |
 | `web/lib/invalidate.ts` | 5 | 0 | 0 |
@@ -118,11 +121,13 @@ a `projection` count is a module where a fail-closed mistake can happen.
 | `web/lib/lending-math.ts` | 1 | 0 | 0 |
 | `web/lib/parse.ts` | 0 | 0 | 2 |
 | `web/lib/payoff.ts` | 2 | 0 | 7 |
+| `web/lib/protocol/streams.ts` | 1 | 0 | 0 |
 | `web/lib/query-keys.ts` | 4 | 0 | 0 |
 | `web/lib/query-resource-registry.ts` | 1 | 0 | 0 |
 | `web/lib/receipts.ts` | 0 | 0 | 1 |
 | `web/lib/refetch-notice.ts` | 0 | 0 | 1 |
 | `web/lib/storage.ts` | 0 | 0 | 1 |
+| `web/lib/stream-book.ts` | 1 | 0 | 0 |
 | `web/lib/surface-state.ts` | 0 | 0 | 1 |
 | `web/lib/usd.ts` | 2 | 0 | 0 |
 
@@ -204,6 +209,7 @@ a `projection` count is a module where a fail-closed mistake can happen.
 |---|---|---|---|
 | writes | `persist.receipts` | `pure-client` | landing U12: persist on pending / confirmed borrow |
 | reads | `action.flow-step` | `pure-client` | landing U12: Back moves one decision |
+| reads | `chain.stream-truth` | `on-chain` | complete-set eligibility, not the wall pager |
 | reads | `chrome.surface-state` | `pure-client` | landing U12: borrow topology |
 | reads | `persist.drafts` | `pure-client` | landing U12: restore selections on return |
 
@@ -488,12 +494,12 @@ a `projection` count is a module where a fail-closed mistake can happen.
 | Direction | Key | Trust domain | Role |
 |---|---|---|---|
 | writes | `watch.narrow-nav` | `pure-client` | landing U7: list vs detail from viewport + `watch.selected-entity` |
-| writes | `watch.selected-entity` | `pure-client` | landing U7: `UI-WATCH-SELECT` writes `?position=` / `?loan=` / `?stream=` |
+| writes | `watch.selected-entity` | `pure-client` | landing U7: `UI-WATCH-SELECT` writes `?lending=` plus `?position=` / `?loan=` / `?stream=` |
 | reads | `chain.borrower-loans` | `on-chain` | landing U7: borrowed lens, SETTLED rows after active |
 | reads | `chain.connection` | `on-chain` | landing U7: scopes the wall to the connected account |
 | reads | `chain.lender-positions` | `on-chain` | landing U7: supplied lens rows |
 | reads | `chain.market-symbols` | `on-chain` | landing U7: row labels |
-| reads | `chain.stream-truth` | `on-chain` | Streams lens rows (render predicate) |
+| reads | `chain.stream-truth` | `on-chain` | Streams lens rows + `UI-WATCH-LOAD-MORE` |
 | reads | `schedule.cover-date` | `pure-client` | landing U7: borrowed-row state line |
 | reads | `schedule.interpolated-earnings` | `pure-client` | landing U7: supplied-row decisive number |
 | reads | `schedule.interpolated-outstanding` | `pure-client` | landing U7: borrowed-row decisive number |
@@ -506,7 +512,7 @@ a `projection` count is a module where a fail-closed mistake can happen.
 
 | Direction | Key | Trust domain | Role |
 |---|---|---|---|
-| reads | `chain.stream-truth` | `on-chain` | R12 entry book + Streams lens |
+| reads | `chain.stream-truth` | `on-chain` | R12 entry book + Streams lens (factory-wide lendings) |
 | reads | `chrome.surface-state` | `pure-client` | landing U12: watch wall |
 
 ### `web/hooks/useAcknowledgment.ts`
@@ -564,6 +570,18 @@ a `projection` count is a module where a fail-closed mistake can happen.
 | writes | `schedule.skew-offset` | `pure-client` | landing U6: applies the offset to the store |
 | reads | `chain.block-timestamp` | `on-chain` | landing U6: writes `schedule.skew-offset` |
 | reads | `schedule.skew-offset` | `pure-client` | landing U6: skew-adjusted tick |
+
+### `web/hooks/useCompleteStreams.ts`
+
+| Direction | Key | Trust domain | Role |
+|---|---|---|---|
+| writes | `chain.stream-truth` | `on-chain` | complete held-stream set at the same pin |
+
+### `web/hooks/useEnumerationPin.ts`
+
+| Direction | Key | Trust domain | Role |
+|---|---|---|---|
+| writes | `chain.stream-truth` | `on-chain` | snapshot clock (reuses `useBlock`) |
 
 ### `web/hooks/useFlowDecisionHistory.ts`
 
@@ -639,7 +657,7 @@ a `projection` count is a module where a fail-closed mistake can happen.
 
 | Direction | Key | Trust domain | Role |
 |---|---|---|---|
-| writes | `chain.stream-truth` | `on-chain` | staged Enumerable reads; results live in wagmi Query cache only |
+| writes | `chain.stream-truth` | `on-chain` | wall pager; pin hash is in the query key |
 | writes | `schedule.stream-params` | `on-chain` | Enumerable hydration; fixed fields cached after first successful `getStream` (KTD9) |
 | reads | `chain.vault-registry` | `on-chain` | landing U6: vault set that stream discovery is scoped to, and the readiness precondition for starting it |
 
@@ -715,6 +733,12 @@ a `projection` count is a module where a fail-closed mistake can happen.
 | reads | `chain.loans-of-position` | `on-chain` | landing U6: Multicall batch of this position only |
 | reads | `queue.rows` | `pure-client` | landing U6: "claim remaining" continuation when the pair cap splits a position |
 
+### `web/lib/claim-all.ts`
+
+| Direction | Key | Trust domain | Role |
+|---|---|---|---|
+| reads | `chain.stream-truth` | `on-chain` | complete-set stream claims |
+
 ### `web/lib/flow-history.ts`
 
 | Direction | Key | Trust domain | Role |
@@ -782,6 +806,12 @@ a `projection` count is a module where a fail-closed mistake can happen.
 | reads | `schedule.skew-offset` | `pure-client` | landing U5: clamp interpolations to the deterministic formula |
 | reads | `schedule.stream-params` | `on-chain` | landing U5: vested / remaining / cover-date |
 
+### `web/lib/protocol/streams.ts`
+
+| Direction | Key | Trust domain | Role |
+|---|---|---|---|
+| writes | `chain.stream-truth` | `on-chain` | `loadStreamPage` / `loadCompleteStreams` |
+
 ### `web/lib/query-keys.ts`
 
 | Direction | Key | Trust domain | Role |
@@ -816,6 +846,12 @@ a `projection` count is a module where a fail-closed mistake can happen.
 | Direction | Key | Trust domain | Role |
 |---|---|---|---|
 | writes | `persist.drafts` | `pure-client` | landing U12: throw-tolerant `ovrflo:draft:{kind}:{factory}:{chainId}:{account}` |
+
+### `web/lib/stream-book.ts`
+
+| Direction | Key | Trust domain | Role |
+|---|---|---|---|
+| reads | `chain.stream-truth` | `on-chain` | source cursor, duplicate fail-closed, four book fields |
 
 ### `web/lib/surface-state.ts`
 
@@ -859,7 +895,7 @@ full entry, including fail-closed guidance on `projection` keys.
 | `chain.market-symbols` | `on-chain` | `web/hooks/useMarketSymbols.ts` | `web/components/kit/Amount.tsx`<br>`web/components/watch/Wall.tsx`<br>`web/components/supply/AmountStep.tsx`<br>`web/components/borrow/AmountStep.tsx` | `docs/maps/state/keys/chain-reads.md` |
 | `chain.markets` | `on-chain` | `web/hooks/useAllMarkets.ts` | `web/app/page.tsx`<br>`web/components/supply/SelectMarket.tsx`<br>`web/components/assets/StreamSelectMarket.tsx`<br>`web/hooks/useMarketSymbols.ts` | `docs/maps/state/keys/chain-reads.md` |
 | `chain.nft-operator` | `on-chain` | `web/hooks/useApprovalWriteFlows.ts` | `web/components/borrow/ReviewHandoff.tsx`<br>`web/components/kit/Receipt.tsx` | `docs/maps/state/keys/chain-reads.md` |
-| `chain.stream-truth` | `on-chain` | `web/hooks/useStreams.ts` | `web/components/watch/WatchApp.tsx`<br>`web/components/watch/Wall.tsx`<br>`web/components/watch/StreamDetail.tsx`<br>`web/components/watch/StreamLedgerCard.tsx`<br>`web/lib/ledger-card.ts`<br>`web/components/borrow/SelectStream.tsx`<br>`web/lib/lending-math.ts` | `docs/maps/state/keys/chain-reads.md` |
+| `chain.stream-truth` | `on-chain` | `web/hooks/useStreams.ts`<br>`web/hooks/useCompleteStreams.ts`<br>`web/hooks/useEnumerationPin.ts`<br>`web/lib/protocol/streams.ts` | `web/components/watch/WatchApp.tsx`<br>`web/components/watch/Wall.tsx`<br>`web/components/watch/StreamDetail.tsx`<br>`web/components/watch/StreamLedgerCard.tsx`<br>`web/lib/ledger-card.ts`<br>`web/components/borrow/SelectStream.tsx`<br>`web/components/borrow/BorrowFlow.tsx`<br>`web/lib/claim-all.ts`<br>`web/lib/lending-math.ts`<br>`web/lib/stream-book.ts` | `docs/maps/state/keys/chain-reads.md` |
 | `chain.tick-depths` | `on-chain` | `web/hooks/useLadder.ts` | `web/lib/ladder.ts`<br>`web/components/kit/RateWindow.tsx`<br>`web/components/rates/Workspace.tsx`<br>`web/components/borrow/PoolBand.tsx`<br>`web/components/supply/QueueBand.tsx` | `docs/maps/state/keys/chain-reads.md` |
 | `chain.vault-registry` | `on-chain` | `web/hooks/useOvrflos.ts` | `web/hooks/useAllMarkets.ts`<br>`web/hooks/useStreams.ts` | `docs/maps/state/keys/chain-reads.md` |
 | `chain.wagmi-reads` | `on-chain` | `web/hooks/useOvrflos.ts`<br>`web/hooks/useAllMarkets.ts`<br>`web/hooks/useMarketSymbols.ts`<br>`web/hooks/useLending.ts`<br>`web/lib/invalidate.ts`<br>`web/lib/query-resource-registry.ts` | `web/lib/invalidate.ts`<br>`web/lib/query-resource-registry.ts`<br>`web/hooks/useWriteFlow.ts` | `docs/maps/state/keys/chain-reads.md` |

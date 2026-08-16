@@ -41,10 +41,13 @@ SIGN → PENDING → CONFIRMED`.
   token"). Never list a stream that fails the eligibility mirror (sender is a
   registered vault and asset is that market's ovrflo token) or that is already
   pledged.
-- **Data authority.** `on-chain` Enumerable held-stream book (`chain.stream-truth`).
-  Eligibility is re-read; empty streams are hidden. A candidate projection set
-  no longer exists (ADR-0002). Continue does not authorise the borrow;
-  `requireEligible` is re-read at review/sign.
+- **Data authority.** `on-chain` complete held-stream set (`chain.stream-truth` via
+  `useCompleteStreams` / `loadCompleteStreams`). The Watch wall pager is not this
+  list: an eligible stream on a later wall page must still appear here. Eligibility
+  is re-read; empty streams are hidden. A candidate projection set no longer exists
+  (ADR-0002). Continue does not authorise the borrow; `requireEligible` is re-read
+  at review/sign. Empty is allowed only when the complete set is fetched and zero
+  rows are borrow-route eligible.
 
 ## `UI-BORROW-NO-STREAM`
 

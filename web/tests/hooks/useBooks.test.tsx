@@ -1,32 +1,29 @@
-import { describe, expect, it, vi } from "vitest";
-import { renderHook } from "@testing-library/react";
+import { describe, expect, it, vi, beforeEach } from "vitest";
+import { renderHook, waitFor } from "@testing-library/react";
 import type { Address } from "viem";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { useLenderBook } from "@/hooks/useLenderBook";
 import { useBorrowerBook } from "@/hooks/useBorrowerBook";
 import { useLadder } from "@/hooks/useLadder";
+import { readyOutcome } from "@/lib/read-outcome";
 
 const LENDING = "0x0000000000000000000000000000000000000a11" as Address;
 const MARKET = "0x0000000000000000000000000000000000000b22" as Address;
 const USER = "0x0000000000000000000000000000000000000c33" as Address;
 const success = (result: unknown) => ({ status: "success" as const, result });
 
-let countReturn: {
-  data?: bigint;
-  isLoading: boolean;
-  isError: boolean;
-  isSuccess: boolean;
-  error: unknown;
-  dataUpdatedAt?: number;
-};
 let lendingConfigReturn: { data?: unknown[]; isLoading: boolean; error: unknown };
 let depthReturn: { data?: unknown[]; isLoading: boolean; error: unknown };
 const emptyBatch = { data: [] as unknown[], isLoading: false, error: null, dataUpdatedAt: 0 };
 
+const { loadFactoryLenderPage, loadFactoryBorrowerPage } = vi.hoisted(() => ({
+  loadFactoryLenderPage: vi.fn(),
+  loadFactoryBorrowerPage: vi.fn(),
+}));
+
 vi.mock("wagmi", () => ({
-  usePublicClient: () => null,
-  useReadContract: () => countReturn,
+  usePublicClient: () => ({ readContract: vi.fn() }),
   useReadContracts: (config: { contracts?: { functionName?: string }[] }) => {
     const name = config.contracts?.[0]?.functionName;
     if (name === "UNIT") return lendingConfigReturn;
@@ -35,66 +32,81 @@ vi.mock("wagmi", () => ({
   },
 }));
 
+vi.mock("@/lib/protocol/lending", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/protocol/lending")>();
+  return { ...actual, loadFactoryLenderPage, loadFactoryBorrowerPage };
+});
+
 function wrapper({ children }: { children: ReactNode }) {
-  return <QueryClientProvider client={new QueryClient()}>{children}</QueryClientProvider>;
+  const [client] = useState(
+    () =>
+      new QueryClient({
+        defaultOptions: { queries: { retry: false, retryDelay: 0, gcTime: 0 } },
+      }),
+  );
+  return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
 }
 
 describe("book hooks", () => {
-  it("lender book at zero entities is confirmed-empty, not unavailable", () => {
-    countReturn = { data: 0n, isLoading: false, isError: false, isSuccess: true, error: null };
+  beforeEach(() => {
+    loadFactoryLenderPage.mockReset();
+    loadFactoryBorrowerPage.mockReset();
+    loadFactoryLenderPage.mockResolvedValue(readyOutcome({ positions: [], sourceCount: 0n }));
+    loadFactoryBorrowerPage.mockResolvedValue(readyOutcome({ loans: [], sourceCount: 0n }));
+  });
+
+  it("lender book at zero entities is confirmed-empty, not unavailable", async () => {
     const { result } = renderHook(() => useLenderBook(LENDING, USER), { wrapper });
-    expect(result.current.status).toBe("ready");
+    await waitFor(() => {
+      expect(result.current.status).toBe("ready");
+    });
     if (result.current.status !== "ready") throw new Error("expected ready");
     expect(result.current.data.positions).toEqual([]);
+    expect(result.current.data.confirmedEmpty).toBe(true);
+    expect(result.current.data.complete).toBe(true);
   });
 
-  it("borrower book at zero entities is confirmed-empty, not unavailable", () => {
-    countReturn = { data: 0n, isLoading: false, isError: false, isSuccess: true, error: null };
+  it("borrower book at zero entities is confirmed-empty, not unavailable", async () => {
     const { result } = renderHook(() => useBorrowerBook(LENDING, USER), { wrapper });
-    expect(result.current.status).toBe("ready");
+    await waitFor(() => {
+      expect(result.current.status).toBe("ready");
+    });
     if (result.current.status !== "ready") throw new Error("expected ready");
     expect(result.current.data.loans).toEqual([]);
+    expect(result.current.data.confirmedEmpty).toBe(true);
   });
 
-  it("stamps wagmi dataUpdatedAt on a ready borrower book", () => {
-    countReturn = {
-      data: 0n,
-      isLoading: false,
-      isError: false,
-      isSuccess: true,
-      error: null,
-      dataUpdatedAt: 1_700_000_000_000,
-    };
+  it("stamps TanStack dataUpdatedAt on a ready borrower book", async () => {
     const { result } = renderHook(() => useBorrowerBook(LENDING, USER), { wrapper });
-    expect(result.current.status).toBe("ready");
-    expect(result.current.metadata.dataUpdatedAt).toBe(1_700_000_000_000);
+    await waitFor(() => {
+      expect(result.current.status).toBe("ready");
+    });
+    expect(result.current.metadata.dataUpdatedAt).toBeGreaterThan(0);
   });
 
-  it("stamps wagmi dataUpdatedAt on a ready lender book", () => {
-    countReturn = {
-      data: 0n,
-      isLoading: false,
-      isError: false,
-      isSuccess: true,
-      error: null,
-      dataUpdatedAt: 1_700_000_000_500,
-    };
+  it("stamps TanStack dataUpdatedAt on a ready lender book", async () => {
     const { result } = renderHook(() => useLenderBook(LENDING, USER), { wrapper });
-    expect(result.current.status).toBe("ready");
-    expect(result.current.metadata.dataUpdatedAt).toBe(1_700_000_000_500);
+    await waitFor(() => {
+      expect(result.current.status).toBe("ready");
+    });
+    expect(result.current.metadata.dataUpdatedAt).toBeGreaterThan(0);
   });
 
-  it("lender book classifies a failed count as unavailable, never zero (AE1)", () => {
-    countReturn = {
-      data: undefined,
-      isLoading: false,
-      isError: true,
-      isSuccess: false,
-      error: new Error("rpc down"),
-    };
+  it("lender book classifies a failed count as unavailable, never zero (AE1)", async () => {
+    loadFactoryLenderPage.mockRejectedValue(new Error("rpc down"));
     const { result } = renderHook(() => useLenderBook(LENDING, USER), { wrapper });
-    expect(result.current.status).toBe("unavailable");
+    await waitFor(
+      () => {
+        expect(result.current.status).toBe("unavailable");
+      },
+      { timeout: 5_000 },
+    );
     expect(result.current.data).toBeUndefined();
+  });
+
+  it("does not treat an empty lending list as a first-run zero while markets load", () => {
+    const { result } = renderHook(() => useLenderBook([], USER, { enabled: false }), { wrapper });
+    expect(result.current.status).toBe("loading");
   });
 });
 

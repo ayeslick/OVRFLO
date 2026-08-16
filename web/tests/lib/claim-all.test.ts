@@ -3,6 +3,7 @@ import type { Address } from "viem";
 import {
   claimAllPoolCandidate,
   claimAllStreamCandidate,
+  claimAllStreamsFromCompleteSet,
   evaluateClaimAllPreflight,
   mergeClaimAllPreflightCache,
   planClaimAll,
@@ -73,6 +74,24 @@ describe("planClaimAll", () => {
 
   it("returns an empty plan for empty input", () => {
     expect(planClaimAll({ pools: [], streams: [] })).toEqual([]);
+  });
+
+  it("refuses stream claims from an incomplete wall pager", () => {
+    expect(() =>
+      claimAllStreamsFromCompleteSet(
+        [{ streamId: 1n, withdrawable: 4n, asset: assetA }],
+        false,
+      ),
+    ).toThrow(/loadCompleteStreams/);
+    expect(
+      claimAllStreamsFromCompleteSet(
+        [
+          { streamId: 1n, withdrawable: 4n, asset: assetA },
+          { streamId: 2n, withdrawable: 0n, asset: assetA },
+        ],
+        true,
+      ),
+    ).toEqual([{ streamId: 1n, withdrawable: 4n, asset: assetA }]);
   });
 
   it("groups pools for the same lending address into one batch regardless of casing", () => {

@@ -4,10 +4,12 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { WatchApp } from "@/components/watch/WatchApp";
 import { Wall, visibleLensTabs } from "@/components/watch/Wall";
 import { writeWatchSearch } from "@/lib/watch-url";
+import { entryBook } from "@/lib/watch-entry";
 import {
   activeLoan,
   eligibleStream,
   filledPosition,
+  LENDING,
   loanStreamTruth,
   mockCanvas,
   restingPosition,
@@ -77,15 +79,15 @@ describe("inventory — entry, lenses, watch index, first-run, degraded, narrow 
 
   it("A three lens renders — SUPPLIED / BORROWED / STREAMS labels; zero-count hidden", () => {
     const tabs = visibleLensTabs({
-      positions: { status: "ready", count: 1 },
-      loans: { status: "ready", count: 1 },
-      streams: { status: "ready", count: 1 },
+      positions: entryBook("ready", 1),
+      loans: entryBook("ready", 1),
+      streams: entryBook("ready", 1),
     });
     expect(tabs.map((tab) => tab.label)).toEqual(["SUPPLIED", "BORROWED", "STREAMS"]);
     const hidden = visibleLensTabs({
-      positions: { status: "ready", count: 1 },
-      loans: { status: "ready", count: 0 },
-      streams: { status: "ready", count: 0 },
+      positions: entryBook("ready", 1),
+      loans: entryBook("ready", 0),
+      streams: entryBook("ready", 0),
     });
     expect(hidden.find((tab) => tab.id === "borrowed")?.visible).toBe(false);
     expect(hidden.find((tab) => tab.id === "streams")?.visible).toBe(false);
@@ -115,9 +117,9 @@ describe("inventory — entry, lenses, watch index, first-run, degraded, narrow 
 
   it("A borrowed and streams lenses show role rows and hide CLAIM ALL", () => {
     const tabs = visibleLensTabs({
-      positions: { status: "ready", count: 1 },
-      loans: { status: "ready", count: 1 },
-      streams: { status: "ready", count: 1 },
+      positions: entryBook("ready", 1),
+      loans: entryBook("ready", 1),
+      streams: entryBook("ready", 1),
     });
     const { rerender } = render(
       <Wall
@@ -164,7 +166,7 @@ describe("inventory — entry, lenses, watch index, first-run, degraded, narrow 
   it("15 POSITIONS.INDEX + SUPPLY_DETAIL — CLAIM visible when claimable, WITHDRAW when unfilled", () => {
     fx.connected = true;
     fx.positions = [filledPosition()];
-    writeWatchSearch({ lens: "supplied", selection: { kind: "position", id: 26n } }, "replace");
+    writeWatchSearch({ lens: "supplied", selection: { kind: "position", lending: LENDING, id: 26n } }, "replace");
     render(<WatchApp />);
     expect(screen.getByRole("article")).toHaveAttribute("data-region", "supplied-detail");
     expect(screen.getByText("YOUR EARNINGS")).toBeInTheDocument();
@@ -176,7 +178,7 @@ describe("inventory — entry, lenses, watch index, first-run, degraded, narrow 
   it("15 resting supplied detail removes CLAIM and names inert match state", () => {
     fx.connected = true;
     fx.positions = [restingPosition()];
-    writeWatchSearch({ lens: "supplied", selection: { kind: "position", id: 41n } }, "replace");
+    writeWatchSearch({ lens: "supplied", selection: { kind: "position", lending: LENDING, id: 41n } }, "replace");
     render(<WatchApp />);
     expect(screen.getByRole("article")).toHaveAttribute("data-state", "resting");
     expect(screen.queryByRole("button", { name: /CLAIM / })).not.toBeInTheDocument();
@@ -188,7 +190,7 @@ describe("inventory — entry, lenses, watch index, first-run, degraded, narrow 
     fx.connected = true;
     fx.loans = [activeLoan()];
     fx.loanStreams = new Map([["440", loanStreamTruth(440n)]]);
-    writeWatchSearch({ lens: "borrowed", selection: { kind: "loan", id: 12n } }, "replace");
+    writeWatchSearch({ lens: "borrowed", selection: { kind: "loan", lending: LENDING, id: 12n } }, "replace");
     render(<WatchApp />);
     expect(screen.getByRole("article")).toHaveAttribute("data-region", "borrowed-detail");
     expect(screen.getByRole("button", { name: "REPAY" })).toBeInTheDocument();
@@ -202,7 +204,7 @@ describe("inventory — entry, lenses, watch index, first-run, degraded, narrow 
     fx.connected = true;
     fx.loans = [activeLoan()];
     fx.loanStreams = new Map();
-    writeWatchSearch({ lens: "borrowed", selection: { kind: "loan", id: 12n } }, "replace");
+    writeWatchSearch({ lens: "borrowed", selection: { kind: "loan", lending: LENDING, id: 12n } }, "replace");
     render(<WatchApp />);
     expect(screen.getByText("DONE DATE")).toBeInTheDocument();
     expect(screen.getByText("CHECKING…")).toBeInTheDocument();
@@ -231,7 +233,7 @@ describe("inventory — entry, lenses, watch index, first-run, degraded, narrow 
     wide.unmount();
 
     stubViewport(360);
-    writeWatchSearch({ lens: "supplied", selection: { kind: "position", id: 26n } }, "replace");
+    writeWatchSearch({ lens: "supplied", selection: { kind: "position", lending: LENDING, id: 26n } }, "replace");
     render(<WatchApp />);
     expect(screen.getByRole("button", { name: "Back to supplied" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Back to supplied" }));

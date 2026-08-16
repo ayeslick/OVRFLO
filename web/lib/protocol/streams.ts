@@ -10,7 +10,7 @@ import {
   LENS_CREATION_BYTECODE,
   ovrfloStreamLensAbi,
 } from "@/lib/generated/lens-bytecode";
-import { hashPin, type BlockPin } from "./pin";
+import { callPin, type BlockPin, type PinMode } from "./pin";
 import {
   protocolPartial,
   protocolReady,
@@ -68,6 +68,11 @@ export type StreamPage = {
 
 type LensBatchName = "streamsOfOwner" | "streamsOfOwnerIn";
 
+export type StreamReadOptions = {
+  signal?: AbortSignal;
+  pinMode?: PinMode;
+};
+
 function transportFailure(source: string, error: unknown): ReadFailure {
   return readFailure(source, "transport", error);
 }
@@ -85,6 +90,7 @@ async function lensCall(
   pin: BlockPin,
   functionName: LensBatchName,
   args: readonly unknown[],
+  options?: StreamReadOptions,
 ): Promise<{ rows: StreamView[] } | { failure: ReadFailure }> {
   let data: Hex | undefined;
   try {
@@ -96,7 +102,8 @@ async function lensCall(
     const result = await client.call({
       code: LENS_CREATION_BYTECODE,
       data: encoded,
-      ...hashPin(pin),
+      ...callPin(pin, options?.pinMode ?? "hash"),
+      ...(options?.signal ? { requestOptions: { signal: options.signal } } : {}),
     });
     data = result.data;
   } catch (error) {
@@ -180,8 +187,15 @@ export async function loadStreamPage(
   start: bigint,
   stop: bigint,
   pin: BlockPin,
+  options?: StreamReadOptions,
 ): Promise<ReadOutcome<StreamPage>> {
-  const called = await lensCall(client, pin, "streamsOfOwnerIn", [lockup, owner, start, stop]);
+  const called = await lensCall(
+    client,
+    pin,
+    "streamsOfOwnerIn",
+    [lockup, owner, start, stop],
+    options,
+  );
   if ("failure" in called) {
     return protocolUnavailable([called.failure]);
   }
@@ -193,6 +207,7 @@ async function readBalance(
   lockup: Address,
   owner: Address,
   pin: BlockPin,
+  options?: StreamReadOptions,
 ): Promise<{ balance: bigint } | { failure: ReadFailure }> {
   try {
     const balance = await client.readContract({
@@ -200,7 +215,7 @@ async function readBalance(
       abi: lockupBalanceAbi,
       functionName: "balanceOf",
       args: [owner],
-      ...hashPin(pin),
+      ...callPin(pin, options?.pinMode ?? "hash"),
     });
     return { balance };
   } catch (error) {
@@ -218,8 +233,9 @@ export async function loadCompleteStreams(
   lockup: Address,
   owner: Address,
   pin: BlockPin,
+  options?: StreamReadOptions,
 ): Promise<ReadOutcome<StreamPage>> {
-  const counted = await readBalance(client, lockup, owner, pin);
+  const counted = await readBalance(client, lockup, owner, pin, options);
   if ("failure" in counted) {
     return protocolUnavailable([counted.failure]);
   }
@@ -230,7 +246,7 @@ export async function loadCompleteStreams(
   }
 
   if (balance <= COMPLETE_SET_UNBOUNDED_MAX) {
-    const called = await lensCall(client, pin, "streamsOfOwner", [lockup, owner]);
+    const called = await lensCall(client, pin, "streamsOfOwner", [lockup, owner], options);
     if ("failure" in called) {
       return protocolUnavailable([called.failure]);
     }
@@ -256,7 +272,7 @@ export async function loadCompleteStreams(
     const windowStop = start + COMPLETE_SET_WINDOW;
     const stop = windowStop > balance ? balance : windowStop;
     const expected = stop - start;
-    const page = await loadStreamPage(client, lockup, owner, start, stop, pin);
+    const page = await loadStreamPage(client, lockup, owner, start, stop, pin, options);
     if (page.status === "unavailable") {
       return page;
     }

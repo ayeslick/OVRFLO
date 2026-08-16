@@ -192,4 +192,77 @@ describe("borrow quote query", () => {
     expect(result.current.isStale).toBe(true);
     expect(result.current.showDashes).toBe(false);
   });
+
+  it("does not pair a new tick fill with the previous tick cap", async () => {
+    let releaseCap: (() => void) | undefined;
+    simulateContract.mockImplementation(async (args: { args?: readonly unknown[] }) => {
+      const apr = args.args?.[1];
+      const target = args.args?.[2];
+      const isMax = target === (1n << 128n) - 1n;
+      if (apr === 1100 && isMax) {
+        await new Promise<void>((resolve) => {
+          releaseCap = resolve;
+        });
+        return previewResult(8n * ETHER);
+      }
+      if (apr === 1100) return previewResult(6n * ETHER);
+      if (isMax) return previewResult(20n * ETHER);
+      return previewResult(4n * ETHER);
+    });
+
+    const { result, rerender } = renderHook(
+      ({ aprBps }: { aprBps: number }) =>
+        useBorrowPreview({
+          lending: LENDING,
+          market: MARKET,
+          streamId: 31n,
+          aprBps,
+          amountRaw: "4",
+          streamRemaining: 110n * ETHER,
+          depth: 50n * ETHER,
+          minLiquidity: 10n ** 15n,
+        }),
+      { wrapper, initialProps: { aprBps: 1000 } },
+    );
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(QUOTE_DEBOUNCE_MS);
+    });
+    await vi.waitFor(() => {
+      expect(result.current.isStale).toBe(false);
+      expect(result.current.cap).toBe(20n * ETHER);
+      expect(result.current.quote?.actualBorrow).toBe(4n * ETHER);
+      expect(result.current.quote?.cap).toBe(20n * ETHER);
+    });
+
+    act(() => {
+      rerender({ aprBps: 1100 });
+    });
+    await vi.waitFor(() => {
+      expect(result.current.isStale).toBe(true);
+    });
+
+    const usedCap = result.current.cap;
+    const shown = result.current.quote;
+    const hybrid = shown?.actualBorrow === 6n * ETHER && shown.cap === 20n * ETHER;
+    expect(hybrid).toBe(false);
+    expect(usedCap === undefined || usedCap === 20n * ETHER).toBe(true);
+    if (usedCap === 20n * ETHER) {
+      expect(shown?.actualBorrow).toBe(4n * ETHER);
+      expect(shown?.cap).toBe(20n * ETHER);
+    }
+    if (shown?.actualBorrow === 6n * ETHER) {
+      expect(shown.cap).not.toBe(20n * ETHER);
+    }
+
+    await act(async () => {
+      releaseCap?.();
+    });
+    await vi.waitFor(() => {
+      expect(result.current.isStale).toBe(false);
+      expect(result.current.cap).toBe(8n * ETHER);
+    });
+    expect(result.current.quote?.cap).toBe(8n * ETHER);
+    expect(result.current.quote?.actualBorrow).toBe(6n * ETHER);
+  });
 });

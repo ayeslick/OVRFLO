@@ -52,10 +52,11 @@ The factory's vault set and each vault's underlying, ovrfloToken, and lending ad
 - **notes:** Fails closed in two directions. A partial hydration returns an empty
   vault list **plus** an explicit incompleteness error rather than a short list
   that reads as complete; a registry larger than the enumeration cap sets
-  `tooLarge` rather than silently truncating. `useStreams` refuses to start
-  discovery unless the registry is loaded, error-free, and within the cap, and
-  marks itself unavailable otherwise. Truncation surfaces through
-  `UI-SHELL-TRUNCATION`.
+  `tooLarge` rather than silently truncating. `useStreams` starts the pinned
+  pager only after the registry is ready (`registryComplete`). The wall no
+  longer refuses over `MAX_ENUMERATION_IDS`; complete-set consumers use
+  `useCompleteStreams`. Truncation of the vault list itself still surfaces
+  through `UI-SHELL-TRUNCATION`.
 
 ### `chain.markets`
 
@@ -198,29 +199,48 @@ will batch.
 
 ### `chain.stream-truth`
 
-Hydrated held-stream facts from Enumerable discovery: `balanceOf`,
-`tokensOfOwnerIn`, then per id `ownerOf`, `getStream`, `withdrawableAmountOf`,
-`statusOf` (U8 / ADR-0002).
+Hydrated held-stream facts from the OVRFLO Stream lens at one snapshot pin.
+The Watch wall uses TanStack `useInfiniteQuery` whose `queryFn` is
+`loadStreamPage` (`streamsOfOwnerIn` at `{blockHash, requireCanonical}` on
+loopback, else `{blockNumber}` plus `verifyPinHash`). Complete-set consumers
+(BorrowFlow eligibility, claim-all) use `loadCompleteStreams` /
+`useCompleteStreams`, never the wall window.
 
 - **trust_domain:** `on-chain`
 - **writers:**
-  - `web/hooks/useStreams.ts` — staged Enumerable reads; results live in wagmi Query cache only
+  - `web/hooks/useStreams.ts` — wall pager; pin hash is in the query key
+  - `web/hooks/useCompleteStreams.ts` — complete held-stream set at the same pin
+  - `web/hooks/useEnumerationPin.ts` — snapshot clock (reuses `useBlock`)
+  - `web/lib/protocol/streams.ts` — `loadStreamPage` / `loadCompleteStreams`
 - **readers:**
-  - `web/components/watch/WatchApp.tsx` — R12 entry book + Streams lens
-  - `web/components/watch/Wall.tsx` — Streams lens rows (render predicate)
+  - `web/components/watch/WatchApp.tsx` — R12 entry book + Streams lens (factory-wide lendings)
+  - `web/components/watch/Wall.tsx` — Streams lens rows + `UI-WATCH-LOAD-MORE`
   - `web/components/watch/StreamDetail.tsx` — detail from hydrated state (U9 paints card)
   - `web/components/watch/StreamLedgerCard.tsx` — HTML ledger card figures (U9)
   - `web/lib/ledger-card.ts` — snapshot percent / segments from hydrated schedule (U9)
   - `web/components/borrow/SelectStream.tsx` — eligible unpledged list
+  - `web/components/borrow/BorrowFlow.tsx` — complete-set eligibility, not the wall pager
+  - `web/lib/claim-all.ts` — complete-set stream claims
   - `web/lib/lending-math.ts` — eligibility mirror of `requireEligible`
+  - `web/lib/stream-book.ts` — source cursor, duplicate fail-closed, four book fields
 - **notes:** No projection candidate set. Drop any stream whose on-chain owner
-  is not the connected address. Hide empty / depleted streams. `balanceOf` above
-  `MAX_ENUMERATION_IDS` (`500n`) is unavailable, never partial. Two predicates:
-  *render* (vault sender + ovrflo asset) and *borrow-route* (full
-  `requireEligible`). Freshness: `dataUpdatedAt` on the outcome; past
-  `maxAgeMs` the set is discarded, not shown behind a warning (moved from
-  retired `projection.stream`). Pledged-stream companion `useLoanStreams`
-  shares `READ_INTERVAL_MS`.
+  is not the connected address. Hide empty / depleted streams. `MAX_ENUMERATION_IDS`
+  is not a wall refusal. Pagination advances by source index even when a window
+  yields zero render-eligible rows. A duplicate id in one snapshot is
+  `unavailable`, not a Set merge. Query keys include `chainId`, lockup, account,
+  and lowercased `pin.blockHash` so `keyMentionsAny` still invalidates.
+  Freshness: a held pin is success. The head poll refreshes `dataUpdatedAt`
+  (`headUpdatedAt`) every interval whether or not the pin hash changes, so
+  `FRESHNESS_MAX_AGE_MS` does not disable signing on a current snapshot.
+  `blockTimestamp` on the outcome is the pinned block time. An `unknown_block`
+  pin miss captures a new `{blockNumber, blockHash}` and puts the new hash in
+  the query key. Placeholder pages under a new hash stay stale and keep the
+  page pin until page one of the new snapshot arrives. STALE REFRESH advances
+  the pin; it does not refetch the old hash. Writes still simulate against
+  latest. Pledged-stream companion `useLoanStreams` shares `READ_INTERVAL_MS`.
+  Watch lender/borrower books aggregate every lending from factory discovery;
+  `markets[0].lending` is not the Watch scope. Selection and writes bind
+  `(lending, id)`.
 
 ### `chain.balances`
 

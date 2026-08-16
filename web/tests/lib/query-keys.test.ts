@@ -7,6 +7,7 @@ import {
   ladderKeys,
   lenderBookKeys,
   projectionKeys,
+  streamBookKeys,
   usdKeys,
 } from "@/lib/query-keys";
 
@@ -90,6 +91,15 @@ describe("watch-surface query factories", () => {
     expect(borrowerBookKeys.account(1, USER_A, USER_B)[0]).toBe("borrower-book");
     expect(usdKeys.price(1, USER_A, USER_B)[0]).toBe("usd");
     expect(freshnessKeys.scope(1, USER_A)[0]).toBe("freshness");
+  });
+
+  it("lowercases the pin hash on stream book keys so invalidation can match", () => {
+    const mixed = `0x${"AB".repeat(32)}`;
+    const wall = streamBookKeys.wall(1, USER_A, USER_B, mixed);
+    const complete = streamBookKeys.complete(1, USER_A, USER_B, mixed);
+    expect(wall[wall.length - 1]).toBe(mixed.toLowerCase());
+    expect(complete[complete.length - 1]).toBe(mixed.toLowerCase());
+    expect(wall[0]).toBe(streamBookKeys.all[0]);
   });
 });
 

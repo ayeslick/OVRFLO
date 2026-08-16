@@ -371,3 +371,31 @@
     display: none;
   }
 }
+
+.watch-load-more {
+  margin-top: 16px;
+}
+
+.watch-load-more-button {
+  background: transparent;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  min-height: 24px;
+  padding: 0;
+}
+
+.watch-load-more-button:disabled {
+  cursor: default;
+  color: var(--dim);
+}
+
+.watch-load-more-live {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
