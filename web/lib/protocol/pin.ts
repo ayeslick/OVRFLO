@@ -17,8 +17,17 @@ export function sameBlockHash(left: string, right: string) {
 }
 
 /**
- * After a pinned read, confirm the node still serves `pin.blockHash` at
- * `pin.blockNumber`. A replacement block at the same height is discarded.
+ * Primary EIP-1898 selector. Never pair with `blockNumber` on the same call.
+ * Omitting `requireCanonical` lets a node serve a reorged-out block.
+ */
+export function hashPin(pin: BlockPin) {
+  return { blockHash: pin.blockHash, requireCanonical: true as const };
+}
+
+/**
+ * Number-pin fallback after the 008 probe. Confirm the node still serves
+ * `pin.blockHash` at `pin.blockNumber`. The hash-pin happy path does not
+ * call this — a replacement block at the same height is discarded.
  */
 export async function verifyPinHash(
   client: PinClient,

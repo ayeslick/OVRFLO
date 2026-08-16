@@ -10,7 +10,7 @@ import {
   LENS_CREATION_BYTECODE,
   ovrfloStreamLensAbi,
 } from "@/lib/generated/lens-bytecode";
-import { type BlockPin, verifyPinHash } from "./pin";
+import { hashPin, type BlockPin } from "./pin";
 import {
   protocolPartial,
   protocolReady,
@@ -41,7 +41,7 @@ const lockupBalanceAbi = [
   },
 ] as const;
 
-export type StreamReadClient = Pick<PublicClient, "call" | "readContract" | "getBlock">;
+export type StreamReadClient = Pick<PublicClient, "call" | "readContract">;
 
 export type StreamView = {
   streamId: bigint;
@@ -80,23 +80,6 @@ function incompleteFailure(source: string, message: string, entityId?: string): 
   return readFailure(source, "incomplete", message, { retryable: false, entityId });
 }
 
-async function stampAfterPin(
-  client: StreamReadClient,
-  pin: BlockPin,
-  source: string,
-): Promise<{ stamp: ProtocolStamp } | { failure: ReadFailure }> {
-  const verified = await verifyPinHash(client, pin);
-  if (!verified.ok) {
-    return {
-      failure:
-        verified.code === "transport"
-          ? transportFailure(source, verified.message)
-          : invalidFailure(source, verified.message),
-    };
-  }
-  return { stamp: protocolStamp(pin) };
-}
-
 async function lensCall(
   client: StreamReadClient,
   pin: BlockPin,
@@ -113,7 +96,7 @@ async function lensCall(
     const result = await client.call({
       code: LENS_CREATION_BYTECODE,
       data: encoded,
-      blockNumber: pin.blockNumber,
+      ...hashPin(pin),
     });
     data = result.data;
   } catch (error) {
@@ -202,11 +185,7 @@ export async function loadStreamPage(
   if ("failure" in called) {
     return protocolUnavailable([called.failure]);
   }
-  const stamped = await stampAfterPin(client, pin, "pin");
-  if ("failure" in stamped) {
-    return protocolUnavailable([stamped.failure]);
-  }
-  return finalizePage(called.rows, owner, stamped.stamp, "page");
+  return finalizePage(called.rows, owner, protocolStamp(pin), "page");
 }
 
 async function readBalance(
@@ -221,7 +200,7 @@ async function readBalance(
       abi: lockupBalanceAbi,
       functionName: "balanceOf",
       args: [owner],
-      blockNumber: pin.blockNumber,
+      ...hashPin(pin),
     });
     return { balance };
   } catch (error) {
@@ -247,11 +226,7 @@ export async function loadCompleteStreams(
   const { balance } = counted;
 
   if (balance === 0n) {
-    const stamped = await stampAfterPin(client, pin, "pin");
-    if ("failure" in stamped) {
-      return protocolUnavailable([stamped.failure]);
-    }
-    return protocolReady({ streams: [] }, stamped.stamp);
+    return protocolReady({ streams: [] }, protocolStamp(pin));
   }
 
   if (balance <= COMPLETE_SET_UNBOUNDED_MAX) {
@@ -259,10 +234,7 @@ export async function loadCompleteStreams(
     if ("failure" in called) {
       return protocolUnavailable([called.failure]);
     }
-    const stamped = await stampAfterPin(client, pin, "pin");
-    if ("failure" in stamped) {
-      return protocolUnavailable([stamped.failure]);
-    }
+    const stamped = protocolStamp(pin);
     if (BigInt(called.rows.length) !== balance) {
       return protocolUnavailable(
         [
@@ -271,11 +243,11 @@ export async function loadCompleteStreams(
             `streamsOfOwner length ${called.rows.length.toString()} !== balanceOf ${balance.toString()}`,
           ),
         ],
-        stamped.stamp,
+        stamped,
         { streams: called.rows },
       );
     }
-    return finalizePage(called.rows, owner, stamped.stamp, "complete");
+    return finalizePage(called.rows, owner, stamped, "complete");
   }
 
   const merged: StreamView[] = [];

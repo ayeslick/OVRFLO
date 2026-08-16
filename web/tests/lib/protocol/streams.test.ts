@@ -5,7 +5,7 @@ import {
   type Address,
   type Hex,
 } from "viem";
-import { ovrfloStreamLensAbi } from "@/lib/generated/lens-bytecode";
+import { LENS_CREATION_BYTECODE, ovrfloStreamLensAbi } from "@/lib/generated/lens-bytecode";
 import type { BlockPin } from "@/lib/protocol/pin";
 import {
   COMPLETE_SET_UNBOUNDED_MAX,
@@ -78,8 +78,16 @@ function encodeLens(
 type CallArgs = {
   code: Hex;
   data: Hex;
+  to?: Hex;
   blockNumber?: bigint;
   blockHash?: Hex;
+  requireCanonical?: boolean;
+};
+
+type ReadArgs = {
+  blockNumber?: bigint;
+  blockHash?: Hex;
+  requireCanonical?: boolean;
 };
 
 function decodeLens(data: Hex) {
@@ -91,14 +99,15 @@ function makeClient(input: {
   page?: (args: { start: bigint; stop: bigint }) => StreamView[];
   complete?: StreamView[];
   callError?: unknown;
-  servedHash?: Hex | null;
-  getBlockError?: unknown;
-}): { client: StreamReadClient; calls: CallArgs[] } {
+  emptyData?: boolean;
+}): { client: StreamReadClient; calls: CallArgs[]; reads: ReadArgs[] } {
   const calls: CallArgs[] = [];
+  const reads: ReadArgs[] = [];
   const client = {
     async call(args: CallArgs) {
       calls.push(args);
       if (input.callError) throw input.callError;
+      if (input.emptyData) return { data: "0x" as Hex };
       const decoded = decodeLens(args.data);
       if (decoded.functionName === "streamsOfOwner") {
         return { data: encodeLens("streamsOfOwner", input.complete ?? []) };
@@ -111,15 +120,25 @@ function makeClient(input: {
       }
       throw new Error(`unexpected lens function ${decoded.functionName}`);
     },
-    async readContract() {
+    async readContract(args: ReadArgs) {
+      reads.push(args);
       return input.balance ?? 0n;
     },
-    async getBlock() {
-      if (input.getBlockError) throw input.getBlockError;
-      return { hash: input.servedHash === undefined ? PIN.blockHash : input.servedHash, number: PIN.blockNumber };
-    },
   } as unknown as StreamReadClient;
-  return { client, calls };
+  return { client, calls, reads };
+}
+
+function expectHashPin(args: { blockHash?: Hex; requireCanonical?: boolean; blockNumber?: bigint }) {
+  expect(args.blockHash).toBe(PIN.blockHash);
+  expect(args.requireCanonical).toBe(true);
+  expect(args.blockNumber).toBeUndefined();
+}
+
+function expectDeploylessLensCall(args: CallArgs | undefined) {
+  expect(args).toBeDefined();
+  expect(args!.code).toBe(LENS_CREATION_BYTECODE);
+  expect(args!.to).toBeUndefined();
+  expectHashPin(args!);
 }
 
 describe("loadStreamPage", () => {
@@ -136,8 +155,7 @@ describe("loadStreamPage", () => {
     expect(outcome.metadata.blockHash).toBe(PIN.blockHash);
     expect("fetchedAtMs" in outcome.metadata).toBe(true);
     expect(typeof (outcome.metadata as { fetchedAtMs: number }).fetchedAtMs).toBe("number");
-    expect(calls[0]?.blockNumber).toBe(PIN.blockNumber);
-    expect(calls[0]?.blockHash).toBeUndefined();
+    expectDeploylessLensCall(calls[0]);
     expect(decodeLens(calls[0]!.data).functionName).toBe("streamsOfOwnerIn");
   });
 
@@ -172,16 +190,22 @@ describe("loadStreamPage", () => {
     expect(outcome.data).toBeUndefined();
   });
 
-  it("discards the page when the node serves a different block hash", async () => {
-    const { client } = makeClient({
-      page: () => [view({ streamId: 1n })],
-      servedHash: `0x${"cd".repeat(32)}`,
-    });
+  it("treats a reorged or missing hash pin as unavailable", async () => {
+    const { client } = makeClient({ callError: new Error("block not found") });
+    const outcome = await loadStreamPage(client, LOCKUP, OWNER, 0n, 1n, PIN);
+    expect(outcome.status).toBe("unavailable");
+    if (outcome.status !== "unavailable") throw new Error("expected unavailable");
+    expect(outcome.failures[0]?.code).toBe("transport");
+    expect(outcome.failures[0]?.message).toMatch(/block not found/i);
+  });
+
+  it("treats empty lens data as unavailable", async () => {
+    const { client } = makeClient({ emptyData: true });
     const outcome = await loadStreamPage(client, LOCKUP, OWNER, 0n, 1n, PIN);
     expect(outcome.status).toBe("unavailable");
     if (outcome.status !== "unavailable") throw new Error("expected unavailable");
     expect(outcome.failures[0]?.code).toBe("invalid");
-    expect(outcome.failures[0]?.message).toMatch(/pin hash mismatch/);
+    expect(outcome.failures[0]?.message).toMatch(/empty data/);
   });
 
   it("allows wasCanceled and isDepleted together on an ok row", async () => {
@@ -197,7 +221,7 @@ describe("loadCompleteStreams", () => {
     const rows = Array.from({ length: Number(COMPLETE_SET_UNBOUNDED_MAX) }, (_, index) =>
       view({ streamId: BigInt(index + 1) }),
     );
-    const { client, calls } = makeClient({
+    const { client, calls, reads } = makeClient({
       balance: COMPLETE_SET_UNBOUNDED_MAX,
       complete: rows,
     });
@@ -207,6 +231,9 @@ describe("loadCompleteStreams", () => {
     expect(outcome.data.streams).toHaveLength(Number(COMPLETE_SET_UNBOUNDED_MAX));
     expect(calls).toHaveLength(1);
     expect(decodeLens(calls[0]!.data).functionName).toBe("streamsOfOwner");
+    expectDeploylessLensCall(calls[0]);
+    expect(reads).toHaveLength(1);
+    expectHashPin(reads[0]!);
   });
 
   it("merges streamsOfOwnerIn windows above 1500 and does not call streamsOfOwner", async () => {
@@ -245,6 +272,18 @@ describe("loadCompleteStreams", () => {
     const { client } = makeClient({ balance: 2n, complete: rows });
     const outcome = await loadCompleteStreams(client, LOCKUP, OWNER, PIN);
     expect(outcome.status).toBe("unavailable");
+  });
+
+  it("marks the complete set unavailable when lens length differs from balanceOf", async () => {
+    const { client } = makeClient({
+      balance: 2n,
+      complete: [view({ streamId: 1n })],
+    });
+    const outcome = await loadCompleteStreams(client, LOCKUP, OWNER, PIN);
+    expect(outcome.status).toBe("unavailable");
+    if (outcome.status !== "unavailable") throw new Error("expected unavailable");
+    expect(outcome.failures[0]?.code).toBe("incomplete");
+    expect(outcome.failures[0]?.message).toMatch(/length 1 !== balanceOf 2/);
   });
 
   it("returns ready empty when balanceOf is zero without a lens call", async () => {
