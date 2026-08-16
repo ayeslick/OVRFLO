@@ -9,6 +9,9 @@ fs_permissions = [
     { access = "read-write", path = "./deployments" },
     { access = "read", path = "./artifacts" }
 ]
+# Pinned: every size measurement (EIP-170 margins, the 24,064 canary, quote-by-revert byte
+# accounting, lens drift gate) is stable only under an exact compiler version.
+solc = "0.8.36"
 optimizer = true
 optimizer_runs = 200
 via_ir = false
