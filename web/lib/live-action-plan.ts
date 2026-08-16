@@ -25,7 +25,7 @@ import type {
 import { actionError } from "./actions/types";
 import { applySlippageDown } from "./modal-logic";
 import { ZERO_ADDRESS } from "./config";
-import { readPreviewBorrow, type PreviewBorrowClient } from "@/components/borrow/quote";
+import { readPreviewBorrow } from "@/components/borrow/quote";
 import type { ReadyProtocolBootstrap } from "./protocol-bootstrap";
 import { readyOutcome } from "./read-outcome";
 import type { LiquidityPosition, Loan, MarketInfo } from "./types";
@@ -728,7 +728,7 @@ async function loadSnapshot(
         quote: readyOutcome(
           await (async () => {
             const preview = await readPreviewBorrow({
-              client: client as PreviewBorrowClient,
+              client,
               lending,
               market: scope.market,
               aprBps,

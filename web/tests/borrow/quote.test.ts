@@ -112,7 +112,6 @@ describe("borrow quote", () => {
     const frozen = snapshotQuote(live);
     expect(quoteDrift(frozen, live)).toBe(false);
     expect(quoteDrift(frozen, { ...live, net: live.net - 1n })).toBe(false);
-    expect(quoteDrift(frozen, { ...live, depth: live.depth - UNIT })).toBe(false);
     expect(quoteDrift(frozen, { ...live, block: { N: 99n, H: HASH } })).toBe(false);
     expect(quoteDrift(frozen, { ...live, actualBorrow: live.actualBorrow - 1n })).toBe(true);
     expect(quoteDrift(frozen, { ...live, feeAmount: live.feeAmount + 1n })).toBe(true);

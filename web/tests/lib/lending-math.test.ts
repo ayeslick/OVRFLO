@@ -18,7 +18,6 @@ import {
   streamBuckets,
   UNIT,
   upfrontBps,
-  WAD,
   YEAR_SECONDS,
 } from "@/lib/lending-math";
 import { ZERO_ADDRESS } from "@/lib/config";

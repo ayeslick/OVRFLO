@@ -348,7 +348,7 @@ export function BorrowFlow() {
   }
 
   function onRelatch() {
-    if (!quote) return;
+    if (!quote || preview.isStale) return;
     setFrozen(snapshotQuote(quote));
     stale.setStaleRecovery(false);
   }
@@ -364,7 +364,7 @@ export function BorrowFlow() {
   }
 
   function onBorrow() {
-    if (!lending || !market || !selectedStream || !quote || !frozen || drifted || chainGuard.wrongChain || !signingAllowed) return;
+    if (!lending || !market || !selectedStream || !quote || !frozen || drifted || preview.isStale || chainGuard.wrongChain || !signingAllowed) return;
     actionTx.writeContract({
       address: lending,
       abi: ovrfloLendingAbi,

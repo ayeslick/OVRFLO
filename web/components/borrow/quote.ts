@@ -9,6 +9,7 @@ import {
   decodeErrorResult,
   type Address,
   type Hex,
+  type PublicClient,
 } from "viem";
 import { poolAvailableWei, type LadderModel, type ShapedRung } from "@/lib/ladder";
 import { MAX_UINT128 } from "@/lib/lending-math";
@@ -51,17 +52,7 @@ export type BorrowQuote = BorrowQuoteSnapshot & {
   saleEquivalent: boolean;
 };
 
-export type PreviewBorrowClient = {
-  getBlock: (args: {
-    blockNumber?: bigint;
-    blockTag?: "latest";
-  }) => Promise<{ number: bigint; hash: Hex | null }>;
-  simulateContract: (args: Record<string, unknown>) => Promise<{
-    result:
-      | readonly [bigint, bigint, bigint]
-      | { actualBorrow: bigint; feeAmount: bigint; obligation: bigint };
-  }>;
-};
+export type PreviewBorrowClient = Pick<PublicClient, "getBlock" | "simulateContract">;
 
 export type PreviewBorrowOutcome = {
   emptyTick: boolean;
@@ -76,10 +67,14 @@ function previewTuple(
     | readonly [bigint, bigint, bigint]
     | { actualBorrow: bigint; feeAmount: bigint; obligation: bigint },
 ): { actualBorrow: bigint; feeAmount: bigint; obligation: bigint } {
-  if (Array.isArray(result)) {
-    return { actualBorrow: result[0], feeAmount: result[1], obligation: result[2] };
+  if (typeof result === "object" && result !== null && "actualBorrow" in result) {
+    return {
+      actualBorrow: result.actualBorrow,
+      feeAmount: result.feeAmount,
+      obligation: result.obligation,
+    };
   }
-  return result;
+  return { actualBorrow: result[0], feeAmount: result[1], obligation: result[2] };
 }
 
 function revertHex(error: unknown): Hex | null {
@@ -154,7 +149,7 @@ export async function readPreviewBorrow(input: {
       functionName: "previewBorrow",
       args: [input.market, input.aprBps, input.targetBorrow, input.streamId],
       blockNumber: block.number,
-    } as Record<string, unknown>);
+    });
     const tuple = previewTuple(simulated.result);
     return {
       emptyTick: false,
@@ -277,6 +272,7 @@ export function useBorrowPreview(input: {
   quote: BorrowQuote | null;
   cap: bigint | undefined;
   isStale: boolean;
+  quoteFailed: boolean;
   showDashes: boolean;
   isDebouncing: boolean;
   emptyTick: boolean;
@@ -287,9 +283,9 @@ export function useBorrowPreview(input: {
   const parsed = parseDecimalInput(debouncedRaw);
   const target = parsed.ok ? parsed.value : 0n;
   const selected =
-    Boolean(publicClient) &&
-    Boolean(input.lending) &&
-    Boolean(input.market) &&
+    publicClient !== undefined &&
+    input.lending !== null &&
+    input.market !== null &&
     input.streamId !== null &&
     input.aprBps !== null;
   const quoteEnabled = selected && target > 0n;
@@ -304,15 +300,25 @@ export function useBorrowPreview(input: {
       input.aprBps,
       PREVIEW_MAX_TARGET,
     ),
-    queryFn: () =>
-      readPreviewBorrow({
-        client: publicClient as PreviewBorrowClient,
-        lending: input.lending as Address,
-        market: input.market as Address,
-        aprBps: input.aprBps as number,
+    queryFn: () => {
+      if (
+        publicClient === undefined ||
+        input.lending === null ||
+        input.market === null ||
+        input.aprBps === null ||
+        input.streamId === null
+      ) {
+        throw new Error("previewBorrow cap query ran without a selected market");
+      }
+      return readPreviewBorrow({
+        client: publicClient,
+        lending: input.lending,
+        market: input.market,
+        aprBps: input.aprBps,
         targetBorrow: PREVIEW_MAX_TARGET,
-        streamId: input.streamId as bigint,
-      }),
+        streamId: input.streamId,
+      });
+    },
     enabled: capEnabled,
     ...readQuery,
     placeholderData: keepPreviousData,
@@ -327,18 +333,27 @@ export function useBorrowPreview(input: {
       input.aprBps,
       target,
     ),
-    queryFn: () =>
-      readPreviewBorrow({
-        client: publicClient as PreviewBorrowClient,
-        lending: input.lending as Address,
-        market: input.market as Address,
-        aprBps: input.aprBps as number,
+    queryFn: () => {
+      if (
+        publicClient === undefined ||
+        input.lending === null ||
+        input.market === null ||
+        input.aprBps === null ||
+        input.streamId === null
+      ) {
+        throw new Error("previewBorrow quote query ran without a selected market");
+      }
+      return readPreviewBorrow({
+        client: publicClient,
+        lending: input.lending,
+        market: input.market,
+        aprBps: input.aprBps,
         targetBorrow: target,
-        streamId: input.streamId as bigint,
-      }),
+        streamId: input.streamId,
+      });
+    },
     enabled: quoteEnabled,
     ...readQuery,
-    placeholderData: keepPreviousData,
   });
 
   const cap = capQuery.data
@@ -346,7 +361,8 @@ export function useBorrowPreview(input: {
       ? 0n
       : capQuery.data.actualBorrow
     : undefined;
-  const preview = quoteQuery.data;
+  const preview =
+    quoteQuery.data !== undefined && !quoteQuery.isPlaceholderData ? quoteQuery.data : undefined;
   const presented = useMemo(() => {
     if (!preview || input.aprBps === null) return null;
     return presentQuote({
@@ -363,12 +379,14 @@ export function useBorrowPreview(input: {
   const lastQuoteRef = useRef<BorrowQuote | null>(null);
   if (presented) lastQuoteRef.current = presented;
   const quote = presented ?? lastQuoteRef.current;
-  const isStale = quoteQuery.isFetching || isDebouncing;
+  const quoteFailed = quoteQuery.isError;
+  const isStale = quoteQuery.isFetching || isDebouncing || quoteFailed;
   const emptyTick = Boolean(presented?.emptyTick || capQuery.data?.emptyTick);
   return {
     quote,
     cap,
     isStale,
+    quoteFailed,
     showDashes: quote === null,
     isDebouncing,
     emptyTick,
