@@ -71,7 +71,7 @@ env-var removals, their tests.
 
 - Initial: `6fde2b57c54b9c1007253e3c5bdc7ace6b6e6eb6` —
   `feat(web): Discover protocol from factory only`
-- Review fixes: `ceada0fd26f51e4b53359015d3a5a9fd0ad24bd6` —
+- Review fixes: `8d834b36d6dec396000f959d2d3301f0e4b439fd` —
   `fix(web): Surface bootstrap failures at Watch`
 
 Web suite after review fixes: **107** files / **825** tests passed; `tsc --noEmit` clean.
