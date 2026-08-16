@@ -152,13 +152,15 @@ export type BorrowHydrationState = {
   positions: readonly LiquidityPosition[];
 };
 
+export type { BorrowQuoteSnapshot } from "@/components/borrow/quote";
+
 export type BorrowQuoteState = {
   market: Address;
   streamId: bigint;
   aprBps: number;
   amount: bigint;
-  grossPrice: bigint;
-  netToBorrower: bigint;
+  actualBorrow: bigint;
+  feeAmount: bigint;
   obligation: bigint;
   residual: bigint;
   minAcceptable: bigint;

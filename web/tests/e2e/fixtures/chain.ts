@@ -25,7 +25,7 @@ import {
 } from "viem";
 import { erc20Abi, ovrfloAbi, ovrfloFactoryAbi, ovrfloLendingAbi, sablierLockupAbi } from "@/lib/abis";
 import { formatMaturityDate } from "@/lib/format";
-import { UNIT, floorToUnit, grossPrice as priceGross, MIN_LIQUIDITY_AMOUNT } from "@/lib/lending-math";
+import { UNIT, floorToUnit, MIN_LIQUIDITY_AMOUNT, WAD, BPS, YEAR_SECONDS } from "@/lib/lending-math";
 import { DEV_WALLET_ADDRESS, LENDER_WALLET_ADDRESS } from "./mock-wallet";
 import { RPC_URL, rpcCall } from "./rpc";
 
@@ -444,6 +444,13 @@ export async function waitForHeldStream(recipient: Address, streamId: bigint, ti
   throw new Error(
     `waitForHeldStream: ownerOf did not show stream ${streamId} for ${recipient} within ${timeoutMs}ms`,
   );
+}
+
+
+/** Local StreamPricing.grossPrice for UNIT-alignment search only. Quotes use previewBorrow. */
+function priceGross(remaining: bigint, aprBps: number, ttmSeconds: bigint): bigint {
+  const factor = WAD + (ttmSeconds * BigInt(aprBps) * WAD) / (YEAR_SECONDS * BPS);
+  return (remaining * WAD) / factor;
 }
 
 // Arrangement helper: remaining face + raw / UNIT-floored gross price.

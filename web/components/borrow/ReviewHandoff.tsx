@@ -9,7 +9,7 @@ import { AcknowledgeRiskStep } from "@/components/first-run/AcknowledgeRiskStep"
 import { formatAddress, formatAprBps, formatCoverDate, formatId, formatTokenAmount } from "@/lib/format";
 import type { CoverDate } from "@/lib/payoff";
 import { BorrowFacts, coverLabel } from "./Facts";
-import type { BorrowQuote, QuoteSnapshot } from "./quote";
+import type { BorrowQuote, BorrowQuoteSnapshot } from "./quote";
 import "./borrow.css";
 
 export type BorrowCheckpoint =
@@ -53,7 +53,7 @@ export function ReviewHandoff({
   onViewLoan,
 }: {
   quote: BorrowQuote;
-  frozen: QuoteSnapshot;
+  frozen: BorrowQuoteSnapshot;
   drifted: boolean;
   checkpoint: BorrowCheckpoint;
   steps?: readonly TraceStep[];
@@ -130,10 +130,9 @@ export function ReviewHandoff({
           <div className="borrow-notice" data-kind="updated" data-ui="UI-BORROW-QUOTE-UPDATED">
             <p>QUOTE UPDATED</p>
             <div className="borrow-diff">
-              <span>GROSS {formatTokenAmount(frozen.gross, underlyingSymbol)} → {formatTokenAmount(quote.gross, underlyingSymbol)}</span>
+              <span>GROSS {formatTokenAmount(frozen.actualBorrow, underlyingSymbol)} → {formatTokenAmount(quote.actualBorrow, underlyingSymbol)}</span>
               <span>FEE {formatTokenAmount(frozen.feeAmount, underlyingSymbol)} → {formatTokenAmount(quote.feeAmount, underlyingSymbol)}</span>
-              <span>NET {formatTokenAmount(frozen.net, underlyingSymbol)} → {formatTokenAmount(quote.net, underlyingSymbol)}</span>
-              <span>DEPTH {formatTokenAmount(frozen.depth, underlyingSymbol)} → {formatTokenAmount(quote.depth, underlyingSymbol)}</span>
+              <span>OBLIGATION {formatTokenAmount(frozen.obligation, ovrfloSymbol)} → {formatTokenAmount(quote.obligation, ovrfloSymbol)}</span>
             </div>
             <ActionButton onClick={onRelatch}>REVIEW AGAIN</ActionButton>
           </div>

@@ -202,8 +202,8 @@ const cases: Array<{ intent: ActionIntent; snapshot: ActionSnapshot }> = [
         streamId: 31n,
         aprBps: 1_000,
         amount: 4n * WAD,
-        grossPrice: 5n * WAD,
-        netToBorrower: (4n * WAD * 9_975n) / 10_000n,
+        actualBorrow: 4n * WAD,
+        feeAmount: (4n * WAD * 25n) / 10_000n,
         obligation: 5n * WAD,
         residual: WAD,
         minAcceptable: (4n * WAD * 9_925n) / 10_000n,
@@ -403,8 +403,8 @@ describe("Borrow projected-route definitions", () => {
         quote: fresh({
           ...borrow.snapshot.quote.data!,
           amount: 10n * WAD,
-          grossPrice: 11n * WAD,
-          netToBorrower: 9_975_000_000_000_000_000n,
+          actualBorrow: 10n * WAD,
+          feeAmount: 25_000_000_000_000_000n,
           obligation: 11n * WAD,
           residual: WAD,
           minAcceptable: 9_925_000_000_000_000_000n,
@@ -547,7 +547,7 @@ describe("frozen review revalidation (AE6)", () => {
 
     const economicsChanged = expectReady(borrow.intent, {
       ...borrow.snapshot,
-      quote: fresh({ ...borrow.snapshot.quote.data!, netToBorrower: 3_980_000_000_000_000_000n }),
+      quote: fresh({ ...borrow.snapshot.quote.data!, actualBorrow: 3_980_000_000_000_000_000n }),
     });
     expect(revalidateReview(reviewed.review, economicsChanged.review)).toMatchObject({ status: "needs-review" });
 

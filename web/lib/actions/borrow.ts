@@ -137,13 +137,14 @@ export const borrowDefinition: ActionDefinition<"borrow"> = {
         actionError("snapshot-resource-mismatch", "Quote state does not match the reviewed borrow"),
       );
     }
+    const net = quote.actualBorrow - quote.feeAmount;
     if (
-      quote.grossPrice < parsed.amount ||
-      quote.netToBorrower <= 0n ||
+      quote.actualBorrow <= 0n ||
+      quote.feeAmount > quote.actualBorrow ||
       quote.obligation <= 0n ||
       quote.residual < 0n ||
       quote.minAcceptable <= 0n ||
-      quote.minAcceptable > quote.netToBorrower
+      quote.minAcceptable > net
     ) {
       return invalidAction(actionError("quote-invalid", "Fresh borrow quote is invalid"));
     }
@@ -208,8 +209,8 @@ export const borrowDefinition: ActionDefinition<"borrow"> = {
       },
       economics: {
         amount: parsed.amount,
-        grossPrice: quote.grossPrice,
-        netToBorrower: quote.netToBorrower,
+        actualBorrow: quote.actualBorrow,
+        feeAmount: quote.feeAmount,
         obligation: quote.obligation,
         residual: quote.residual,
         minAcceptable: quote.minAcceptable,

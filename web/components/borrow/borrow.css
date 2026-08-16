@@ -200,3 +200,9 @@
   color: var(--dim);
   margin: 0;
 }
+
+.borrow-facts[data-stale="true"],
+.borrow-you-receive[data-stale="true"],
+[data-ui="UI-BORROW-FACTS"][data-stale="true"] {
+  opacity: 0.55;
+}

@@ -1502,6 +1502,22 @@ export const ovrfloLendingAbi = [
   },
   {
     type: 'function',
+    inputs: [
+      { name: 'market', internalType: 'address', type: 'address' },
+      { name: 'aprBps', internalType: 'uint16', type: 'uint16' },
+      { name: 'targetBorrow', internalType: 'uint128', type: 'uint128' },
+      { name: 'streamId', internalType: 'uint256', type: 'uint256' },
+    ],
+    name: 'previewBorrow',
+    outputs: [
+      { name: 'actualBorrow', internalType: 'uint128', type: 'uint128' },
+      { name: 'feeAmount', internalType: 'uint128', type: 'uint128' },
+      { name: 'obligation', internalType: 'uint128', type: 'uint128' },
+    ],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
     inputs: [{ name: 'loanId', internalType: 'uint256', type: 'uint256' }],
     name: 'proceeds',
     outputs: [{ name: 'amount', internalType: 'uint128', type: 'uint128' }],

@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import type { Address } from "viem";
+import type { Address, Hex } from "viem";
 import { NoStream, SelectStream } from "@/components/borrow/SelectStream";
 import { StreamContext } from "@/components/borrow/StreamContext";
 import { AmountStep } from "@/components/borrow/AmountStep";
@@ -8,10 +8,10 @@ import { PoolBand } from "@/components/borrow/PoolBand";
 import { RateStep } from "@/components/borrow/RateStep";
 import { BorrowFacts } from "@/components/borrow/Facts";
 import { ReviewHandoff } from "@/components/borrow/ReviewHandoff";
-import { quoteBorrow, snapshotQuote, streamDerivedCap } from "@/components/borrow/quote";
+import { presentQuote, snapshotQuote } from "@/components/borrow/quote";
 import type { HydratedStream } from "@/hooks/useStreams";
 import { tickWindow, shapeLadder } from "@/lib/ladder";
-import { YEAR_SECONDS } from "@/lib/lending-math";
+import { MIN_LIQUIDITY_AMOUNT, YEAR_SECONDS } from "@/lib/lending-math";
 import { belowMinimumCopy } from "@/lib/errors";
 import { coverDate } from "@/lib/payoff";
 
@@ -49,14 +49,39 @@ function stream(id = 441n, remaining = 10n * ETHER): HydratedStream {
   };
 }
 
-const QUOTE = quoteBorrow({
-  remaining: 10n * ETHER,
-  aprBps: 500,
-  ttmSeconds: YEAR_SECONDS,
-  feeBps: 40,
-  target: 4n * ETHER,
-  depth: 12n * ETHER,
-});
+const BLOCK = { N: 1n, H: `0x${"11".repeat(32)}` as Hex };
+
+function makeQuote(overrides: {
+  remaining?: bigint;
+  actualBorrow?: bigint;
+  feeAmount?: bigint;
+  obligation?: bigint;
+  target?: bigint;
+  depth?: bigint;
+  emptyTick?: boolean;
+} = {}) {
+  const actualBorrow = overrides.actualBorrow ?? 4n * ETHER;
+  const feeAmount = overrides.feeAmount ?? (actualBorrow * 40n) / 10_000n;
+  const remaining = overrides.remaining ?? 10n * ETHER;
+  const obligation = overrides.obligation ?? 5n * ETHER;
+  return presentQuote({
+    preview: {
+      emptyTick: overrides.emptyTick ?? false,
+      actualBorrow,
+      feeAmount,
+      obligation,
+      block: BLOCK,
+    },
+    target: overrides.target ?? actualBorrow,
+    cap: 10n * ETHER,
+    depth: overrides.depth ?? 12n * ETHER,
+    aprBps: 500,
+    streamRemaining: remaining,
+    minLiquidity: MIN_LIQUIDITY_AMOUNT,
+  });
+}
+
+const QUOTE = makeQuote();
 
 const COVER = coverDate(
   { start: NOW, end: END, deposited: 10n * ETHER, withdrawn: 0n, refunded: 0n },
@@ -191,12 +216,11 @@ describe("Facts and review", () => {
 
   it("does not claim sale equivalence for a UNIT-clamped max that leaves residual", () => {
     const remaining = 123_456_789_012_345_678_901n;
-    const clamped = quoteBorrow({
+    const clamped = makeQuote({
       remaining,
-      aprBps: 1000,
-      ttmSeconds: YEAR_SECONDS,
-      feeBps: 40,
-      target: streamDerivedCap(remaining, 1000, YEAR_SECONDS),
+      actualBorrow: 100n * ETHER,
+      obligation: remaining - 1n,
+      target: 100n * ETHER,
       depth: 10n ** 30n,
     });
     expect(clamped.saleEquivalent).toBe(false);
@@ -215,7 +239,7 @@ describe("Facts and review", () => {
   });
 
   it("freezes signing on quote drift with a visible diff", () => {
-    const frozen = snapshotQuote(QUOTE, 500);
+    const frozen = snapshotQuote(QUOTE);
     const live = { ...QUOTE, net: QUOTE.net - ETHER, depth: QUOTE.depth - ETHER };
     render(
       <ReviewHandoff
@@ -251,7 +275,7 @@ describe("Facts and review", () => {
     render(
       <ReviewHandoff
         quote={QUOTE}
-        frozen={snapshotQuote(QUOTE, 500)}
+        frozen={snapshotQuote(QUOTE)}
         drifted={false}
         checkpoint="approve"
         underlyingSymbol="wstETH"
@@ -285,7 +309,7 @@ describe("Facts and review", () => {
     render(
       <ReviewHandoff
         quote={QUOTE}
-        frozen={snapshotQuote(QUOTE, 500)}
+        frozen={snapshotQuote(QUOTE)}
         drifted={false}
         checkpoint="sign"
         underlyingSymbol="wstETH"
@@ -317,7 +341,7 @@ describe("Facts and review", () => {
     render(
       <ReviewHandoff
         quote={QUOTE}
-        frozen={snapshotQuote(QUOTE, 500)}
+        frozen={snapshotQuote(QUOTE)}
         drifted={false}
         checkpoint="confirmed"
         underlyingSymbol="wstETH"
@@ -357,7 +381,7 @@ describe("Facts and review", () => {
     render(
       <ReviewHandoff
         quote={QUOTE}
-        frozen={snapshotQuote(QUOTE, 500)}
+        frozen={snapshotQuote(QUOTE)}
         drifted={false}
         checkpoint="sign"
         underlyingSymbol="wstETH"

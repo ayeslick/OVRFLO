@@ -47,55 +47,9 @@ export function mulDivUp(a: bigint, b: bigint, den: bigint): bigint {
   return prod % den === 0n ? floor : floor + 1n;
 }
 
-/** `f = WAD + ttm * apr * WAD / (YEAR * BPS)`, mirrors StreamPricing.factor. */
-export function factor(aprBps: number, ttmSeconds: bigint): bigint {
-  return WAD + mulDiv(ttmSeconds, BigInt(aprBps) * WAD, YEAR_SECONDS * BPS);
-}
-
-export function factorWad(aprBps: number, ttmSeconds: bigint): bigint {
-  return factor(aprBps, ttmSeconds);
-}
-
-/** Floor: discounted present value of `remaining`. Mirrors StreamPricing.grossPrice. */
-export function grossPrice(remaining: bigint, aprBps: number, ttmSeconds: bigint): bigint {
-  return mulDiv(remaining, WAD, factor(aprBps, ttmSeconds));
-}
-
-/**
- * Ceil: future value of `borrowAmount`. Mirrors StreamPricing.obligation.
- * Throws when the result exceeds uint128 (SafeCast analogue).
- */
-export function obligation(borrowAmount: bigint, aprBps: number, ttmSeconds: bigint): bigint {
-  const value = mulDivUp(borrowAmount, factor(aprBps, ttmSeconds), WAD);
-  if (value > MAX_UINT128) {
-    throw new Error("obligation overflows uint128");
-  }
-  return value;
-}
-
-export function obligationForFill(
-  borrowAmount: bigint,
-  grossPrice_: bigint,
-  remaining: bigint,
-  aprBps: number,
-  ttmSeconds: bigint,
-): bigint {
-  if (borrowAmount === grossPrice_) return remaining;
-  return obligation(borrowAmount, aprBps, ttmSeconds);
-}
-
-/** Floor: `amount * feeBps / BPS`. Mirrors StreamPricing.fee. */
-export function fee(borrowAmount: bigint, feeBps: number): bigint {
-  if (feeBps === 0) return 0n;
-  return mulDiv(borrowAmount, BigInt(feeBps), BPS);
-}
-
-export function netToBorrower(borrowAmount: bigint, feeBps: number): bigint {
-  return borrowAmount - fee(borrowAmount, feeBps);
-}
-
 export function upfrontBps(aprBps: number, ttmSeconds: bigint, feeBps: number): bigint {
-  const grossBps = (WAD * BPS) / factor(aprBps, ttmSeconds);
+  const factor = WAD + mulDiv(ttmSeconds, BigInt(aprBps) * WAD, YEAR_SECONDS * BPS);
+  const grossBps = (WAD * BPS) / factor;
   return (grossBps * (BPS - BigInt(feeBps))) / BPS;
 }
 

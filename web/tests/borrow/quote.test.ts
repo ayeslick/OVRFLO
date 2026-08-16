@@ -1,127 +1,125 @@
 import { describe, expect, it } from "vitest";
+import type { Hex } from "viem";
 import { shapeLadder } from "@/lib/ladder";
-import {
-  BPS,
-  MIN_LIQUIDITY_AMOUNT,
-  UNIT,
-  YEAR_SECONDS,
-  floorToUnit,
-  grossPrice,
-} from "@/lib/lending-math";
+import { MIN_LIQUIDITY_AMOUNT, UNIT } from "@/lib/lending-math";
 import { applySlippageDown } from "@/lib/modal-logic";
 import {
+  PREVIEW_MAX_TARGET,
   liveTickCopy,
   poolFractions,
-  quoteBorrow,
+  presentQuote,
   quoteDrift,
   snapshotQuote,
-  streamDerivedCap,
   tickDepthWei,
   weiToAmountInput,
+  type PreviewBorrowOutcome,
 } from "@/components/borrow/quote";
 
 const ETHER = 10n ** 18n;
 const REMAINING = 110n * ETHER;
 const APR = 1000;
-const TTM = YEAR_SECONDS;
 const FEE = 40;
+const HASH = `0x${"ab".repeat(32)}` as Hex;
+const BLOCK = { N: 10n, H: HASH };
+
+function preview(overrides: Partial<PreviewBorrowOutcome> = {}): PreviewBorrowOutcome {
+  return {
+    emptyTick: false,
+    actualBorrow: 10n * ETHER,
+    feeAmount: (10n * ETHER * BigInt(FEE)) / 10_000n,
+    obligation: 11n * ETHER,
+    block: BLOCK,
+    ...overrides,
+  };
+}
+
+function quoteFromPreview(
+  outcome: PreviewBorrowOutcome,
+  extras: { target?: bigint; cap?: bigint; depth?: bigint; remaining?: bigint } = {},
+) {
+  return presentQuote({
+    preview: outcome,
+    target: extras.target ?? outcome.actualBorrow,
+    cap: extras.cap ?? outcome.actualBorrow,
+    depth: extras.depth ?? 50n * ETHER,
+    aprBps: APR,
+    streamRemaining: extras.remaining ?? REMAINING,
+    minLiquidity: MIN_LIQUIDITY_AMOUNT,
+  });
+}
 
 describe("borrow quote", () => {
-  it("MAX cap is UNIT-floored grossPrice, not a wallet balance", () => {
-    const gross = grossPrice(REMAINING, APR, TTM);
-    const cap = streamDerivedCap(REMAINING, APR, TTM);
-    expect(cap).toBe(floorToUnit(gross));
-    expect(cap % UNIT).toBe(0n);
-    expect(cap < gross || cap === gross).toBe(true);
+  it("MAX cap is previewBorrow actualBorrow at uint128.max, not a wallet balance", () => {
+    expect(PREVIEW_MAX_TARGET).toBe((1n << 128n) - 1n);
+    const capPreview = preview({ actualBorrow: 100n * ETHER, feeAmount: 0n, obligation: REMAINING });
+    const quote = quoteFromPreview(capPreview, {
+      target: PREVIEW_MAX_TARGET,
+      cap: capPreview.actualBorrow,
+    });
+    expect(quote.cap).toBe(100n * ETHER);
+    expect(quote.cap % UNIT).toBe(0n);
+    expect(quote.fill).toBe(capPreview.actualBorrow);
   });
 
   it("states sale equivalence only when obligation equals remaining", () => {
-    const remaining = 123_456_789_012_345_678_901n;
-    const exact = quoteBorrow({
-      remaining,
-      aprBps: APR,
-      ttmSeconds: TTM,
-      feeBps: FEE,
-      target: grossPrice(remaining, APR, TTM),
-      depth: 10n ** 30n,
-      unit: 1n,
-    });
+    const exact = quoteFromPreview(
+      preview({ actualBorrow: 10n * ETHER, obligation: REMAINING, feeAmount: 0n }),
+      { remaining: REMAINING },
+    );
     expect(exact.saleEquivalent).toBe(true);
-    expect(exact.obligation).toBe(remaining);
+    expect(exact.obligation).toBe(REMAINING);
     expect(exact.residual).toBe(0n);
 
-    const clamped = quoteBorrow({
-      remaining,
-      aprBps: APR,
-      ttmSeconds: TTM,
-      feeBps: FEE,
-      target: streamDerivedCap(remaining, APR, TTM),
-      depth: 10n ** 30n,
-    });
-    expect(clamped.fill).toBe(streamDerivedCap(remaining, APR, TTM));
-    expect(clamped.fill < grossPrice(remaining, APR, TTM)).toBe(true);
+    const clamped = quoteFromPreview(
+      preview({ actualBorrow: 99n * ETHER, obligation: REMAINING - 1n, feeAmount: 0n }),
+      { remaining: REMAINING, cap: 99n * ETHER },
+    );
     expect(clamped.saleEquivalent).toBe(false);
     expect(clamped.residual).toBeGreaterThan(0n);
   });
 
   it("derives minAcceptable from reviewed net", () => {
-    const quote = quoteBorrow({
-      remaining: REMAINING,
-      aprBps: APR,
-      ttmSeconds: TTM,
-      feeBps: FEE,
-      target: 10n * ETHER,
-      depth: 50n * ETHER,
-    });
+    const quote = quoteFromPreview(preview({ actualBorrow: 10n * ETHER }));
     expect(quote.minAcceptable).toBe(applySlippageDown(quote.net));
     expect(quote.minAcceptable <= quote.net).toBe(true);
-    expect(quote.feeAmount).toBe((quote.fill * BigInt(FEE)) / BPS);
+    expect(quote.feeAmount).toBe((quote.fill * BigInt(FEE)) / 10_000n);
+    expect(quote.net).toBe(quote.actualBorrow - quote.feeAmount);
   });
 
-  it("flags a partial fill when draw exceeds depth", () => {
-    const quote = quoteBorrow({
-      remaining: REMAINING,
-      aprBps: APR,
-      ttmSeconds: TTM,
-      feeBps: FEE,
+  it("flags a partial fill when the preview fill is below target", () => {
+    const quote = quoteFromPreview(preview({ actualBorrow: 5n * ETHER, feeAmount: 0n }), {
       target: 20n * ETHER,
       depth: 5n * ETHER,
     });
     expect(quote.partial).toBe(true);
-    expect(quote.fill).toBe(floorToUnit(5n * ETHER));
+    expect(quote.fill).toBe(5n * ETHER);
     expect(quote.emptyTick).toBe(false);
   });
 
-  it("marks an empty tick below the fill floor", () => {
-    const quote = quoteBorrow({
-      remaining: REMAINING,
-      aprBps: APR,
-      ttmSeconds: TTM,
-      feeBps: FEE,
-      target: 5n * ETHER,
-      depth: MIN_LIQUIDITY_AMOUNT - 1n,
-    });
+  it("maps EmptyTick zeros without marking a partial fill", () => {
+    const quote = quoteFromPreview(
+      preview({ emptyTick: true, actualBorrow: 0n, feeAmount: 0n, obligation: 0n }),
+      { target: 5n * ETHER, depth: MIN_LIQUIDITY_AMOUNT - 1n },
+    );
     expect(quote.emptyTick).toBe(true);
     expect(quote.partial).toBe(false);
+    expect(quote.fill).toBe(0n);
+    expect(quote.net).toBe(0n);
   });
 
-  it("detects quote drift on gross, fee, net, or depth", () => {
-    const live = quoteBorrow({
-      remaining: REMAINING,
-      aprBps: APR,
-      ttmSeconds: TTM,
-      feeBps: FEE,
-      target: 10n * ETHER,
-      depth: 50n * ETHER,
-    });
-    const frozen = snapshotQuote(live, APR);
+  it("detects quote drift on actualBorrow, feeAmount, or obligation only", () => {
+    const live = quoteFromPreview(preview({ actualBorrow: 10n * ETHER }));
+    const frozen = snapshotQuote(live);
     expect(quoteDrift(frozen, live)).toBe(false);
-    expect(quoteDrift(frozen, { ...live, net: live.net - 1n })).toBe(true);
-    expect(quoteDrift(frozen, { ...live, depth: live.depth - UNIT })).toBe(true);
+    expect(quoteDrift(frozen, { ...live, net: live.net - 1n })).toBe(false);
+    expect(quoteDrift(frozen, { ...live, block: { N: 99n, H: HASH } })).toBe(false);
+    expect(quoteDrift(frozen, { ...live, actualBorrow: live.actualBorrow - 1n })).toBe(true);
+    expect(quoteDrift(frozen, { ...live, feeAmount: live.feeAmount + 1n })).toBe(true);
+    expect(quoteDrift(frozen, { ...live, obligation: live.obligation + 1n })).toBe(true);
   });
 
   it("round-trips MAX through the amount input", () => {
-    const cap = streamDerivedCap(REMAINING, APR, TTM);
+    const cap = 100n * ETHER;
     const raw = weiToAmountInput(cap);
     expect(raw.includes(".") ? raw.split(".")[1]?.length ?? 0 : 0).toBeLessThanOrEqual(18);
     const [whole, frac = ""] = raw.split(".");
