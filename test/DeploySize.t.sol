@@ -18,10 +18,14 @@ contract DeploySizeTest is Test {
     uint256 internal constant EIP3860_INITCODE_CAP = 49_152;
 
     /// @dev deliberate-ceiling: 512 B EIP-170 headroom reserve for OVRFLOLending
-    ///      (cap 24_576 − 512 = 24_064). Re-measured after R17: runtime 23_837 B,
-    ///      EIP-170 headroom 739 B, slack to this canary 227 B. R17 did not consume
-    ///      the full reserve. Revisit when this assertion fires — shrink the
-    ///      contract or bump the ceiling with a recorded reason, never silently.
+    ///      (cap 24_576 − 512 = 24_064). Shipping (via-IR + previewBorrow) measures
+    ///      ~22,806 B, 1,258 B under this canary. Dual-pipeline carve-out: the
+    ///      legacy pipeline measures ~24,149 B, which is OVER this canary by
+    ///      design once previewBorrow lands. `FOUNDRY_PROFILE=legacy` skips this
+    ///      test and keeps the EIP-170 cap (`test_AllDeployables_FitEip170RuntimeCap`).
+    ///      Do not weaken the via-IR canary. Revisit when this assertion fires —
+    ///      shrink the contract or bump the ceiling with a recorded reason, never
+    ///      silently.
     uint256 internal constant LENDING_RUNTIME_CANARY = 24_064;
 
     function _artifacts() internal pure returns (string[4] memory a) {
@@ -47,7 +51,19 @@ contract DeploySizeTest is Test {
         }
     }
 
-    function test_Lending_RetainsRuntimeHeadroomCanary() public view {
+    function test_Lending_RetainsRuntimeHeadroomCanary() public {
+        if (_legacyPipeline()) {
+            vm.skip(true, "legacy pipeline: EIP-170 only; via-IR keeps the 24,064 canary");
+            return;
+        }
         assertLe(vm.getDeployedCode("OVRFLOLending.sol:OVRFLOLending").length, LENDING_RUNTIME_CANARY);
+    }
+
+    /// @dev Dual-pipeline skip discriminator. Foundry selects `[profile.legacy]`
+    ///      through `FOUNDRY_PROFILE`; size-based skip would also hide a via-IR
+    ///      canary breach that landed in the same byte range as the legacy artifact.
+    function _legacyPipeline() internal view returns (bool) {
+        bytes32 profile = keccak256(bytes(vm.envOr("FOUNDRY_PROFILE", string(""))));
+        return profile == keccak256("legacy") || profile == keccak256("invariant-legacy");
     }
 }

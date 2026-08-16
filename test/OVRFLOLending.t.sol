@@ -2127,6 +2127,250 @@ contract OVRFLOLendingTest is Test {
     }
 
     /*//////////////////////////////////////////////////////////////
+                             PREVIEW BORROW
+    //////////////////////////////////////////////////////////////*/
+
+    function test_PreviewBorrow_PartialTickFill_MatchesBorrowedEvent() public {
+        vm.prank(address(factory));
+        lending.setTickSpacing(MARKET, SPACING);
+        _supply(LENDER, 20 ether, APR);
+        _createStream(STREAM_ONE, BORROWER, 10.2 ether);
+
+        (uint128 actualBorrow, uint128 feeAmount, uint128 obligation) =
+            _assertPreviewMatchesSubsequentBorrow(BORROWER, APR, 5 ether, STREAM_ONE, 5 ether);
+        assertEq(actualBorrow, 5 ether);
+        assertEq(feeAmount, 0);
+        assertEq(obligation, 5.1 ether);
+    }
+
+    function test_PreviewBorrow_StreamPriceCappedFill_MatchesBorrowedEvent() public {
+        vm.prank(address(factory));
+        lending.setTickSpacing(MARKET, SPACING);
+        _supply(LENDER, 20 ether, APR);
+        _createStream(STREAM_ONE, BORROWER, 10.2 ether);
+
+        // Target 15 ether exceeds the 10 ether gross price; fill clamps to the cap.
+        (uint128 actualBorrow, uint128 feeAmount, uint128 obligation) =
+            _assertPreviewMatchesSubsequentBorrow(BORROWER, APR, 15 ether, STREAM_ONE, 10 ether);
+        assertEq(actualBorrow, 10 ether);
+        assertEq(feeAmount, 0);
+        assertEq(obligation, 10.2 ether);
+    }
+
+    function test_PreviewBorrow_FullStreamSale_MatchesBorrowedEvent() public {
+        vm.prank(address(factory));
+        lending.setTickSpacing(MARKET, SPACING);
+        _supply(LENDER, 20 ether, APR);
+        _createStream(STREAM_ONE, BORROWER, 10.2 ether);
+
+        (uint128 actualBorrow, uint128 feeAmount, uint128 obligation) =
+            _assertPreviewMatchesSubsequentBorrow(BORROWER, APR, type(uint128).max, STREAM_ONE, 10 ether);
+        assertEq(actualBorrow, 10 ether);
+        assertEq(feeAmount, 0);
+        assertEq(obligation, 10.2 ether);
+    }
+
+    function test_PreviewBorrow_UnitFlooring_MatchesBorrowedEvent() public {
+        vm.prank(address(factory));
+        lending.setTickSpacing(MARKET, SPACING);
+        _supply(LENDER, 20 ether, APR);
+        _createStream(STREAM_ONE, BORROWER, 15.3 ether);
+
+        (uint128 actualBorrow, uint128 feeAmount, uint128 obligation) =
+            _assertPreviewMatchesSubsequentBorrow(BORROWER, APR, 5 ether + (1e12 - 1), STREAM_ONE, 0);
+        assertEq(actualBorrow, 5 ether);
+        assertEq(feeAmount, 0);
+        assertEq(obligation, 5.1 ether);
+    }
+
+    function test_PreviewBorrow_ZeroFee_MatchesBorrowedEvent() public {
+        vm.prank(address(factory));
+        lending.setTickSpacing(MARKET, SPACING);
+        assertEq(lending.feeBps(), 0);
+        _supply(LENDER, 20 ether, APR);
+        _createStream(STREAM_ONE, BORROWER, 10.2 ether);
+
+        (uint128 actualBorrow, uint128 feeAmount,) =
+            _assertPreviewMatchesSubsequentBorrow(BORROWER, APR, 5 ether, STREAM_ONE, 5 ether);
+        assertEq(actualBorrow, 5 ether);
+        assertEq(feeAmount, 0);
+    }
+
+    function test_PreviewBorrow_NonZeroFee_MatchesBorrowedEvent() public {
+        vm.prank(address(factory));
+        lending.setTickSpacing(MARKET, SPACING);
+        vm.prank(address(factory));
+        lending.setFee(100);
+        _supply(LENDER, 10 ether, APR);
+        _createStream(STREAM_ONE, BORROWER, 10.2 ether);
+
+        (uint128 actualBorrow, uint128 feeAmount, uint128 obligation) =
+            _assertPreviewMatchesSubsequentBorrow(BORROWER, APR, 10 ether, STREAM_ONE, 9.9 ether);
+        assertEq(actualBorrow, 10 ether);
+        assertEq(feeAmount, 0.1 ether);
+        assertEq(obligation, 10.2 ether);
+    }
+
+    function test_PreviewBorrow_DustBelowMinLiquidity_RevertsBelowMinimum() public {
+        vm.prank(address(factory));
+        lending.setTickSpacing(MARKET, SPACING);
+        _supply(LENDER, 2 ether, APR);
+        _createStream(STREAM_ONE, BORROWER, 15.3 ether);
+
+        vm.expectRevert(OVRFLOLending.BelowMinimum.selector);
+        lending.previewBorrow(MARKET, APR, 0.5e15, STREAM_ONE);
+
+        vm.prank(BORROWER);
+        vm.expectRevert(OVRFLOLending.BelowMinimum.selector);
+        lending.borrow(MARKET, APR, 0.5e15, STREAM_ONE, 0);
+    }
+
+    function test_PreviewBorrow_DeadEpochSkip_MatchesBorrowedEvent() public {
+        vm.prank(address(factory));
+        lending.setTickSpacing(MARKET, SPACING);
+        _supply(LENDER, 2e15, APR);
+        _createStream(STREAM_ONE, BORROWER, 15.3 ether);
+        _borrow(BORROWER, 1.5e15, STREAM_ONE, 0); // residual 0.5e15 < the 1e15 minimum
+
+        lending.exposed_setCapacityOverride(1);
+        _supply(SECOND_LENDER, 50 ether, APR); // epoch 1
+        lending.exposed_setCapacityOverride(0);
+
+        _createStream(STREAM_TWO, SECOND_BORROWER, 15.3 ether);
+        (uint32 oldestBefore,,) = lending.tickState(MARKET, APR);
+        assertEq(oldestBefore, 0);
+
+        (uint128 actualBorrow, uint128 feeAmount, uint128 obligation) =
+            lending.previewBorrow(MARKET, APR, 10 ether, STREAM_TWO);
+        (uint32 oldestAfterPreview,,) = lending.tickState(MARKET, APR);
+        assertEq(oldestAfterPreview, oldestBefore, "preview must not advance the cursor");
+
+        vm.recordLogs();
+        uint256 loanId = _borrow(SECOND_BORROWER, 10 ether, STREAM_TWO, 0);
+        (uint128 borrowedActual, uint128 borrowedFee, uint128 borrowedObligation) =
+            _decodeBorrowed(vm.getRecordedLogs());
+        assertEq(actualBorrow, borrowedActual);
+        assertEq(feeAmount, borrowedFee);
+        assertEq(obligation, borrowedObligation);
+        assertEq(actualBorrow, 10 ether);
+        assertEq(_loan(loanId).epoch, 1);
+        (uint32 oldestAfterBorrow,,) = lending.tickState(MARKET, APR);
+        assertEq(oldestAfterBorrow, 1);
+    }
+
+    function test_PreviewBorrow_CursorCapBoundary_MatchesBorrowedEvent() public {
+        vm.prank(address(factory));
+        lending.setTickSpacing(MARKET, SPACING);
+        lending.exposed_setEpochs(MARKET, APR, 0, 32);
+        _supply(LENDER, 10 ether, APR);
+        _createStream(STREAM_ONE, BORROWER, 15.3 ether);
+
+        (uint128 actualBorrow, uint128 feeAmount, uint128 obligation) =
+            _assertPreviewMatchesSubsequentBorrow(BORROWER, APR, 10 ether, STREAM_ONE, 0);
+        assertEq(actualBorrow, 10 ether);
+        assertEq(feeAmount, 0);
+        assertEq(obligation, 10.2 ether);
+        assertEq(_loan(1).epoch, 32);
+    }
+
+    function test_PreviewBorrow_EpochBacklog_RevertsEpochBacklog() public {
+        vm.prank(address(factory));
+        lending.setTickSpacing(MARKET, SPACING);
+        lending.exposed_setEpochs(MARKET, APR, 0, 33);
+        _supply(LENDER, 10 ether, APR);
+        _createStream(STREAM_ONE, BORROWER, 15.3 ether);
+
+        vm.expectRevert(OVRFLOLending.EpochBacklog.selector);
+        lending.previewBorrow(MARKET, APR, 10 ether, STREAM_ONE);
+
+        vm.prank(BORROWER);
+        vm.expectRevert(OVRFLOLending.EpochBacklog.selector);
+        lending.borrow(MARKET, APR, 10 ether, STREAM_ONE, 0);
+    }
+
+    function test_PreviewBorrow_MaturityBoundary_MatchesThenReverts() public {
+        vm.prank(address(factory));
+        lending.setTickSpacing(MARKET, SPACING);
+        _supply(LENDER, 20 ether, APR);
+        _createStream(STREAM_ONE, BORROWER, 15.3 ether);
+        _createStream(STREAM_TWO, SECOND_BORROWER, 15.3 ether);
+
+        vm.warp(expiry - 1);
+        (uint128 actualBorrow, uint128 feeAmount, uint128 obligation) =
+            _assertPreviewMatchesSubsequentBorrow(BORROWER, APR, 1 ether, STREAM_ONE, 0);
+        assertEq(actualBorrow, 1 ether);
+        assertEq(feeAmount, 0);
+        assertGt(obligation, actualBorrow);
+
+        vm.warp(expiry);
+        vm.expectRevert(StreamPricing.SeriesMatured.selector);
+        lending.previewBorrow(MARKET, APR, 1 ether, STREAM_TWO);
+        vm.prank(SECOND_BORROWER);
+        vm.expectRevert(StreamPricing.SeriesMatured.selector);
+        lending.borrow(MARKET, APR, 1 ether, STREAM_TWO, 0);
+    }
+
+    function test_PreviewBorrow_PackedSlotUnchangedThenBorrowMutates() public {
+        vm.prank(address(factory));
+        lending.setTickSpacing(MARKET, SPACING);
+        _supply(LENDER, 20 ether, APR);
+        _createStream(STREAM_ONE, BORROWER, 10.2 ether);
+        _assertPackedSlotPreviewThenBorrow(_epochPackedSlot(MARKET, APR, 0));
+    }
+
+    function test_PreviewBorrow_ThenBorrowSameBlock_Agree() public {
+        vm.prank(address(factory));
+        lending.setTickSpacing(MARKET, SPACING);
+        _supply(LENDER, 20 ether, APR);
+        _createStream(STREAM_ONE, BORROWER, 10.2 ether);
+
+        uint256 blockBefore = block.number;
+        (uint128 actualBorrow, uint128 feeAmount, uint128 obligation) =
+            _assertPreviewMatchesSubsequentBorrow(BORROWER, APR, 5 ether, STREAM_ONE, 5 ether);
+        assertEq(block.number, blockBefore, "preview then borrow must share one block");
+        assertEq(actualBorrow, 5 ether);
+        assertEq(feeAmount, 0);
+        assertEq(obligation, 5.1 ether);
+    }
+
+    function test_PreviewBorrow_ZeroTarget_Reverts() public {
+        vm.prank(address(factory));
+        lending.setTickSpacing(MARKET, SPACING);
+        vm.expectRevert(OVRFLOLending.ZeroTarget.selector);
+        lending.previewBorrow(MARKET, APR, 0, STREAM_ONE);
+    }
+
+    function test_PreviewBorrow_InvalidTick_Reverts() public {
+        vm.prank(address(factory));
+        lending.setTickSpacing(MARKET, SPACING);
+        vm.expectRevert(OVRFLOLending.InvalidTick.selector);
+        lending.previewBorrow(MARKET, 1025, 1 ether, STREAM_ONE);
+    }
+
+    function test_PreviewBorrow_EmptyTick_Reverts() public {
+        vm.prank(address(factory));
+        lending.setTickSpacing(MARKET, SPACING);
+        _createStream(STREAM_ONE, BORROWER, 15.3 ether);
+        vm.expectRevert(OVRFLOLending.EmptyTick.selector);
+        lending.previewBorrow(MARKET, APR, 1 ether, STREAM_ONE);
+    }
+
+    function testFuzz_PreviewBorrow_MatchesSubsequentBorrow(uint128 targetSeed, uint16 feeSeed) public {
+        vm.prank(address(factory));
+        lending.setTickSpacing(MARKET, SPACING);
+        uint16 fee = uint16(bound(feeSeed, 0, uint256(lending.MAX_FEE_BPS())));
+        vm.prank(address(factory));
+        lending.setFee(fee);
+
+        uint128 depth = 20 ether;
+        _supply(LENDER, depth, APR);
+        _createStream(STREAM_ONE, BORROWER, 15.3 ether);
+
+        uint128 target = uint128(bound(uint256(targetSeed), uint256(lending.MIN_LIQUIDITY_AMOUNT()), uint256(depth)));
+        _assertPreviewMatchesSubsequentBorrow(BORROWER, APR, target, STREAM_ONE, 0);
+    }
+
+    /*//////////////////////////////////////////////////////////////
                                 HELPERS
     //////////////////////////////////////////////////////////////*/
 
@@ -2185,5 +2429,93 @@ contract OVRFLOLendingTest is Test {
         ovrfloToken.mint(payer, amount);
         vm.prank(payer);
         ovrfloToken.approve(address(lending), type(uint256).max);
+    }
+
+    /// @dev Packed Epoch slot: `_ticks[market][aprBps].epochs[epoch]` then +2 past
+    ///      `TickTree.Tree` (`leaves`/`height` at +0, `nodes` mapping at +1).
+    ///      `filled` and `loanCount` share that word.
+    function _epochPackedSlot(address market, uint16 aprBps, uint32 epoch) internal pure returns (bytes32) {
+        bytes32 tickSlot = keccak256(abi.encode(uint256(aprBps), keccak256(abi.encode(market, TICKS_SLOT))));
+        bytes32 epochBase = keccak256(abi.encode(uint256(epoch), bytes32(uint256(tickSlot) + 1)));
+        return bytes32(uint256(epochBase) + 2);
+    }
+
+    function _decodeBorrowed(Vm.Log[] memory logs)
+        internal
+        pure
+        returns (uint128 actualBorrow, uint128 feeAmount, uint128 obligation)
+    {
+        bytes32 topic = keccak256(
+            "Borrowed(uint256,address,address,uint16,uint32,uint64,uint64,uint64,uint128,uint128,uint128,uint256)"
+        );
+        for (uint256 i; i < logs.length; ++i) {
+            if (logs[i].topics[0] == topic) {
+                (,,,,, actualBorrow, feeAmount, obligation,) = abi.decode(
+                    logs[i].data, (uint16, uint32, uint64, uint64, uint64, uint128, uint128, uint128, uint256)
+                );
+                return (actualBorrow, feeAmount, obligation);
+            }
+        }
+        revert("Borrowed event missing");
+    }
+
+    function _assertPackedSlotPreviewThenBorrow(bytes32 packedSlot) internal {
+        bytes32 packedBefore = vm.load(address(lending), packedSlot);
+        uint64 filledBefore;
+        uint32 oldestBefore;
+        {
+            uint64 rootBefore;
+            (rootBefore, filledBefore,, oldestBefore,) = lending.exposed_epochState(MARKET, APR, 0);
+            rootBefore;
+        }
+        uint64 loanCountBefore = lending.exposed_loanCount(MARKET, APR, 0);
+        uint256 nextLoanBefore = lending.nextLoanId();
+
+        (uint128 actualBorrow, uint128 feeAmount, uint128 obligation) =
+            lending.previewBorrow(MARKET, APR, 5 ether, STREAM_ONE);
+
+        assertEq(vm.load(address(lending), packedSlot), packedBefore);
+        {
+            (uint64 rootAfter, uint64 filledAfter,, uint32 oldestAfter,) = lending.exposed_epochState(MARKET, APR, 0);
+            assertEq(filledAfter, filledBefore);
+            assertEq(oldestAfter, oldestBefore);
+            assertEq(rootAfter, 20_000_000);
+        }
+        assertEq(lending.exposed_loanCount(MARKET, APR, 0), loanCountBefore);
+        assertEq(lending.nextLoanId(), nextLoanBefore);
+        assertEq(sablier.ownerOf(STREAM_ONE), BORROWER);
+
+        vm.recordLogs();
+        _borrow(BORROWER, 5 ether, STREAM_ONE, 5 ether);
+        (uint128 borrowedActual, uint128 borrowedFee, uint128 borrowedObligation) =
+            _decodeBorrowed(vm.getRecordedLogs());
+        assertEq(actualBorrow, borrowedActual);
+        assertEq(feeAmount, borrowedFee);
+        assertEq(obligation, borrowedObligation);
+
+        bytes32 packedAfterBorrow = vm.load(address(lending), packedSlot);
+        assertNotEq(packedAfterBorrow, packedBefore, "real borrow must mutate the packed epoch slot");
+        uint256 packed = uint256(packedAfterBorrow);
+        assertEq(uint64(packed), 5_000_000);
+        assertEq(uint64(packed >> 64), 1);
+        assertEq(packed >> 128, 0);
+    }
+
+    function _assertPreviewMatchesSubsequentBorrow(
+        address borrower,
+        uint16 aprBps,
+        uint128 target,
+        uint256 streamId,
+        uint128 minAcceptable
+    ) internal returns (uint128 actualBorrow, uint128 feeAmount, uint128 obligation) {
+        (actualBorrow, feeAmount, obligation) = lending.previewBorrow(MARKET, aprBps, target, streamId);
+        vm.recordLogs();
+        vm.prank(borrower);
+        lending.borrow(MARKET, aprBps, target, streamId, minAcceptable);
+        (uint128 borrowedActual, uint128 borrowedFee, uint128 borrowedObligation) =
+            _decodeBorrowed(vm.getRecordedLogs());
+        assertEq(actualBorrow, borrowedActual, "preview actualBorrow != Borrowed");
+        assertEq(feeAmount, borrowedFee, "preview feeAmount != Borrowed");
+        assertEq(obligation, borrowedObligation, "preview obligation != Borrowed");
     }
 }

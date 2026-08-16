@@ -495,7 +495,7 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
         if (targetBorrow == 0) revert ZeroTarget();
         _validateTick(market, aprBps);
 
-        FillOutcome memory outcome = _fillTick(market, aprBps, targetBorrow, streamId);
+        FillOutcome memory outcome = _fillTick(market, aprBps, targetBorrow, streamId, true);
         if (outcome.actualBorrow - outcome.feeAmount < minAcceptable) revert BelowMinAcceptable();
 
         loanId = nextLoanId++;
@@ -536,6 +536,31 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
             outcome.obligation,
             streamId
         );
+    }
+
+    /// @notice Quotes a borrow through the real fill path without consuming liquidity.
+    /// @dev Deliberately non-view: `_fillTick` and `_selectEpoch` stay non-view
+    ///      because the commit branch writes, and a view/write split was measured
+    ///      as wasted bytes. `eth_call` executes this function with no writes when
+    ///      `commit` is false. Does not take `minAcceptable`, so this path cannot
+    ///      revert `BelowMinAcceptable`. The three returns are wei, matching
+    ///      `Borrowed`. Stops before `sablier.transferFrom`, so ownership,
+    ///      approval, and post-seam transfers are not proven.
+    /// @param market Pendle market identifying the collateral series.
+    /// @param aprBps APR tick in basis points to fill from.
+    /// @param targetBorrow Desired principal in wei; floored to UNIT, filled up to depth.
+    /// @param streamId Sablier stream whose price caps the fill.
+    /// @return actualBorrow Principal the fill would advance, in wei.
+    /// @return feeAmount Protocol fee on `actualBorrow`, in wei.
+    /// @return obligation ovrfloToken owed at maturity for `actualBorrow`.
+    function previewBorrow(address market, uint16 aprBps, uint128 targetBorrow, uint256 streamId)
+        external
+        returns (uint128 actualBorrow, uint128 feeAmount, uint128 obligation)
+    {
+        if (targetBorrow == 0) revert ZeroTarget();
+        _validateTick(market, aprBps);
+        FillOutcome memory outcome = _fillTick(market, aprBps, targetBorrow, streamId, false);
+        return (outcome.actualBorrow, outcome.feeAmount, outcome.obligation);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -957,11 +982,13 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
     /// @dev Selects the epoch a borrow fills from: starts at the cursor and skips
     ///      epochs that can no longer host a minimum fill — one predicate covers
     ///      both fully-drained epochs and dust residuals, which become
-    ///      withdraw-only. Advancement persists on success. The cap bounds a
-    ///      single borrow's scan so inflated epoch counts can never gas-starve a
-    ///      legitimate borrow (risk #4); `advanceEpochCursor` is the permissionless
-    ///      recovery valve past the cap. Never passes `currentEpoch`.
-    function _selectEpoch(Tick storage tick) internal returns (uint32 epoch, uint64 availableUnits) {
+    ///      withdraw-only. Advancement persists on success when `commit` is true.
+    ///      Selection logic and the `EpochBacklog` revert at `CURSOR_CAP` are
+    ///      identical either way. The cap bounds a single borrow's scan so
+    ///      inflated epoch counts can never gas-starve a legitimate borrow
+    ///      (risk #4); `advanceEpochCursor` is the permissionless recovery valve
+    ///      past the cap. Never passes `currentEpoch`.
+    function _selectEpoch(Tick storage tick, bool commit) internal returns (uint32 epoch, uint64 availableUnits) {
         epoch = tick.oldestLiveEpoch;
         Epoch storage epochState = tick.epochs[epoch];
         availableUnits = epochState.tree.root() - epochState.filled;
@@ -977,7 +1004,7 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
             epochState = tick.epochs[epoch];
             availableUnits = epochState.tree.root() - epochState.filled;
         }
-        if (epoch != tick.oldestLiveEpoch) tick.oldestLiveEpoch = epoch;
+        if (commit && epoch != tick.oldestLiveEpoch) tick.oldestLiveEpoch = epoch;
     }
 
     /// @dev The tick-epoch loan list entry for the position's own tape.
@@ -1098,24 +1125,37 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
     ///      increment riding the same slot). The fill is `min(target, available)`
     ///      capped at the stream's gross price; the price-cap narrowing cannot
     ///      revert because in that branch `grossPrice / UNIT` is below the already
-    ///      uint64-bounded fill.
-    function _fillTick(address market, uint16 aprBps, uint128 targetBorrow, uint256 streamId)
+    ///      uint64-bounded fill. Packed-slot writes execute only when `commit` is
+    ///      true; `previewBorrow` passes false so the quote cannot consume depth.
+    function _fillTick(address market, uint16 aprBps, uint128 targetBorrow, uint256 streamId, bool commit)
         internal
         returns (FillOutcome memory outcome)
     {
-        (StreamPricing.Eligibility memory eligibility, uint256 grossPrice, uint256 timeToMaturity) =
-            _priceStream(market, streamId, aprBps);
+        // Legacy codegen hits stack-too-deep with `commit` live across this frame.
+        // Inner scopes drop `Eligibility` and `targetUnits` before `obligationForFill`.
+        // Call order is unchanged: price, select, size, then optional commit writes.
+        uint128 remaining;
+        uint256 grossPrice;
+        uint256 timeToMaturity;
+        {
+            StreamPricing.Eligibility memory eligibility;
+            (eligibility, grossPrice, timeToMaturity) = _priceStream(market, streamId, aprBps);
+            remaining = eligibility.remaining;
+        }
 
         Tick storage tick = _ticks[market][aprBps];
         uint64 availableUnits;
-        (outcome.epoch, availableUnits) = _selectEpoch(tick);
+        (outcome.epoch, availableUnits) = _selectEpoch(tick, commit);
         Epoch storage epochState = tick.epochs[outcome.epoch];
 
         outcome.fillStart = epochState.filled;
         if (availableUnits == 0) revert EmptyTick();
 
-        uint256 targetUnits = uint256(targetBorrow) / UNIT;
-        uint64 fillUnits = SafeCast.toUint64(targetUnits < availableUnits ? targetUnits : availableUnits);
+        uint64 fillUnits;
+        {
+            uint256 targetUnits = uint256(targetBorrow) / UNIT;
+            fillUnits = SafeCast.toUint64(targetUnits < availableUnits ? targetUnits : availableUnits);
+        }
         outcome.actualBorrow = _toWei(fillUnits);
         if (outcome.actualBorrow > grossPrice) {
             fillUnits = _toUnits(grossPrice);
@@ -1123,17 +1163,18 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
         }
         if (outcome.actualBorrow < MIN_LIQUIDITY_AMOUNT) revert BelowMinimum();
 
-        outcome.obligation = StreamPricing.obligationForFill(
-            outcome.actualBorrow, grossPrice, eligibility.remaining, aprBps, timeToMaturity
-        );
+        outcome.obligation =
+            StreamPricing.obligationForFill(outcome.actualBorrow, grossPrice, remaining, aprBps, timeToMaturity);
         outcome.feeAmount = SafeCast.toUint128(StreamPricing.fee(outcome.actualBorrow, feeBps));
 
         outcome.fillEnd = outcome.fillStart + fillUnits;
         outcome.seq = epochState.loanCount;
         // Consumption: `filled` and `loanCount` share one packed storage slot, so
         // the entire fill is a single slot write regardless of positions crossed.
-        epochState.filled = outcome.fillEnd;
-        epochState.loanCount = outcome.seq + 1;
+        if (commit) {
+            epochState.filled = outcome.fillEnd;
+            epochState.loanCount = outcome.seq + 1;
+        }
     }
 
     /// @dev Validates spacing, current APR bounds, and tick alignment.
