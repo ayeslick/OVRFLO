@@ -913,7 +913,9 @@ contract LendingInvariantHandler is Test {
         uint128 withdrawnBefore = sablier.getWithdrawnAmount(streamId);
         uint256 borrowerBefore = underlying.balanceOf(actor);
         uint256 treasuryBefore = underlying.balanceOf(treasury);
-        uint256 timeToMaturity = expiry - block.timestamp;
+        // Saturating: warpAndVest can cross maturity, and a post-maturity borrow attempt must reach
+        // the contract's own gate (caught below) instead of underflowing here in the handler.
+        uint256 timeToMaturity = block.timestamp < expiry ? expiry - block.timestamp : 0;
 
         vm.prank(actor);
         try lending.borrow(market, aprBps, target, streamId, 0) returns (uint256 loanId) {
