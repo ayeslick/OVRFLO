@@ -86,14 +86,35 @@ decides whether a transaction is valid, regardless of how old the display is.
 
 ## Approach
 
-### Pin by block hash — and set three things, not one
+### Pin by block hash — simplified 2026-08-15 for the protocol client
 
 Verified 2026-08-15 against the configured mainnet provider: `eth_call` with an EIP-1898
 `{"blockHash": …}` state parameter returns state correctly.
 
-**Set `blockHash`, `requireCanonical: true`, and `blockNumber` together.** Each closes a hole the
-other two leave open. Setting only `blockHash` — the obvious reading — is unsafe in two separate
-ways, both verified in the installed stack.
+**Superseding note (2026-08-15).** The original rule below — set `blockHash`,
+`requireCanonical: true`, *and* `blockNumber` together — was verified engineering against the
+wagmi hook path, whose fallback strips `blockHash` (still documented below because the evidence
+matters). That machinery is gone: `008` moves the pinned read into the protocol client
+(`loadStreamPage` / `loadCompleteStreams`), which formats its own EIP-1898 block selector. Per the
+spec the selector is *either* `{blockHash, requireCanonical}` *or* `{blockNumber}`, never both. The
+rule becomes:
+
+- **Primary:** send `{blockHash, requireCanonical: true}`. Reorged pin → error → discard and
+  re-pin.
+- **Compatibility fallback (per provider, decided by the `008` capability probe):** send
+  `{blockNumber: N}`, and before accepting the completed snapshot verify block `N` still has hash
+  `H`. Coherence plus verification, not selector maximalism.
+- **Provider affinity:** one snapshot, one provider. Capture `{N, H}` from provider P and run every
+  page of that snapshot through P. If P fails, discard the whole snapshot and restart from page one
+  on the next provider. Request-level transport fallback must never put page 1 on provider A and
+  page 2 on provider B — two providers can disagree on heads and on EIP-1898 handling, producing a
+  snapshot that is "pinned" but not to one worldview.
+- **Unchanged:** assert the block identity on every returned outcome; never treat the pin as
+  structurally guaranteed.
+
+**The original three-together rule, kept for the record.** Each setting closed a hole the other two
+left open. Setting only `blockHash` — the obvious reading — was unsafe in two separate ways, both
+verified in the installed stack.
 
 **`requireCanonical` is not implied.** viem emits the flag only when it is set:
 `if (blockHash) return requireCanonical ? { blockHash, requireCanonical } : { blockHash };`
@@ -128,14 +149,21 @@ Verified anchors:
   (`web/node_modules/wagmi/dist/types/hooks/useInfiniteReadContracts.d.ts:8`), so a caller can pass
   it through the React hook.
 
-`blockHash` is a **top-level** option on that type, not per-page. That is the shape the correctness
-argument needs: one pin governs the whole enumeration by construction, and an implementer cannot
-pin two pages differently by accident.
+`blockHash` is a **top-level** option on that type, not per-page. *(Superseded 2026-08-15 with the
+rest of the wagmi-path rules: the read now goes through the protocol client, so the
+one-pin-per-enumeration property is owned there instead — `loadStreamPage` takes the pin as a
+required argument supplied once per enumeration, and the TanStack query key carries `{blockHash}`
+so two pages cannot be pinned differently without producing two distinct queries. The invariant is
+unchanged; its enforcement point moved.)*
 
 Pin by hash rather than number. A block that is reorged out makes the call error instead of silently
 serving the replacement block's state, which is the fail-closed behavior this codebase already uses.
 
-**Fallback risk to close during the sweep.** `web/lib/wagmi.ts:32` builds an ordered transport over
+**Fallback risk — closed 2026-08-15 by provider affinity (see the superseding note above).**
+Snapshots are provider-affine: the whole snapshot runs on one provider, and a provider failure
+discards the snapshot rather than failing over mid-enumeration. The per-provider pin mode
+(hash+`requireCanonical`, or number+verify-hash) is chosen by `008`'s capability probe. The
+original finding, kept for the record: `web/lib/wagmi.ts:32` builds an ordered transport over
 `rpcUrls`, so reads can land on a fallback provider. EIP-1898 support is provider-dependent. Either
 confirm every configured fallback serves a block-hash state parameter, or pin by `blockNumber` and
 verify the recorded `blockHash` still matches after the last page — which gives the same guarantee
@@ -227,8 +255,9 @@ the ignorance-lens sweep; every rule cites verified evidence.
 
 **Pin plumbing**
 
-- Send `blockHash`, `requireCanonical: true`, **and** `blockNumber` on every pinned read. `blockHash`
-  alone is neither reorg-safe nor fallback-safe (see "Pin by block hash"). — *pin*
+- Pin per the superseding note in "Pin by block hash": `{blockHash, requireCanonical: true}`
+  primary, `{blockNumber}`-plus-hash-verification as the per-provider fallback, **provider affinity
+  for the whole snapshot**. The old send-all-three rule is retired with the wagmi read path. — *pin*
 - Assert the block identity on the returned outcome. Never treat the pin as structurally guaranteed. — *pin*
 - `classifyRpcFailure` (`web/lib/rpc.ts:28`) gains an unknown-block kind that
   `createOrderedReadTransport`'s `shouldThrow` treats as terminal. Today an unknown-block error

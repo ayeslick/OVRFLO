@@ -34,10 +34,11 @@ hydration on `readQuery` still stamps a coherent-looking `{blockNumber, blockHas
 - The lens holds no state, has no admin, and owns nothing. It ships deployless — bytecode in the
   frontend bundle, no on-chain address — so replacing it is a frontend release.
 - It reads. It never writes, never holds tokens, and is never in a transaction path.
-- The complete-set consumers get the complete set at one block: try `streamsOfOwner` once, and past
-  the provider's `eth_call` ceiling (roughly 2,000–2,500 streams — sized below) merge
-  `streamsOfOwnerIn` windows all pinned to one block. Either path yields the whole set; neither is a
-  refusal threshold.
+- The complete-set consumers get the complete set at one block, routed by the already-known
+  `balanceOf`: below a mutable frontend threshold, one `streamsOfOwner` call; above it, go directly
+  to merging `streamsOfOwnerIn` windows all pinned to one block — do not issue a call known to
+  exceed the provider ceiling (roughly 2,000–2,500 streams — sized below) just to watch it fail.
+  Either path yields the whole set; neither is a refusal threshold. (`008` owns this routing rule.)
 
 ## Prior art
 
@@ -89,7 +90,12 @@ function streamsByIds(ILensSource lockup, uint256[] calldata ids)
 ```
 
 **The struct is the full `LockupLinear.Stream` surface plus `owner`, `withdrawable`, `status`, and
-`ok`.** Do not trim it. `refunded`, `cliffTime`, `isCancelable`, and `isDepleted` are all read today
+`ok`.** Do not trim it. **The dropped booleans are encoded, not lost** (specified 2026-08-15, not
+merely asserted): `isDepleted ⇔ status == DEPLETED` and `wasCanceled ⇔ status == CANCELED` in the
+fork's `Lockup.Status` enum — `useStreams`'s `isDepleted` filter reads `status` after this plan, and
+the frontend mapping is one comparison. `isStream` needs no field: an id that is not a stream fails
+hydration and surfaces as `ok: false`. `isTransferable` stays dropped as unused.
+`refunded`, `cliffTime`, `isCancelable`, and `isDepleted` are all read today
 from the same `getStream` return the lens replaces — `useStreams.ts:326-328` computes
 `remaining = deposited - withdrawn - refunded` and filters on `isDepleted`, `useStreams.ts:315-318`
 passes `cliffTime` and `isCancelable` into the schedule, and `refunded` reaches `payoff.ts`,
@@ -224,9 +230,11 @@ of `test/DeploySize.t.sol`'s `deliberate-ceiling` comments — **not** by editin
 
 - `src/OVRFLOStreamLens.sol` — new
 - `test/OVRFLOStreamLens.t.sol` — new
-- `web/wagmi.config.ts` / `web/lib/generated.ts` — the ABI **and the embedded bytecode**
-- `web/scripts/check-lens-bytecode.mjs` — new drift gate, patterned on
-  `check-ovrflo-stream-bytecode.mjs`
+- `web/wagmi.config.ts` / `web/lib/generated.ts` — the ABI (wagmi codegen emits no bytecode)
+- `web/lib/generated/lens-bytecode.ts` — new: creation bytecode (`bytecode.object`) via a dedicated
+  generation step
+- `web/scripts/check-lens-bytecode.mjs` — new drift gate on creation bytecode, patterned on
+  `check-ovrflo-stream-bytecode.mjs`'s fail-do-not-warn shape
 - `web/hooks/useStreams.ts` — hydration becomes one deployless read
 - `web/lib/claim-all.ts`, `web/components/borrow/BorrowFlow.tsx` — complete-set reads
 - Maps, gated: `docs/maps/state/keys/chain-reads.md`, regenerated
@@ -278,6 +286,11 @@ repeated. **The completeness critic has not run.**
   abandoned. — *useStreams*
 - Carry `useStreams.ts:374-381` forward unchanged: a book where **every** row is `ok: false` is
   `unavailable` with a `subcall` failure, never ready-empty. The plan specifies row behavior only. — *useStreams*
+- **The ownership invariant survives consolidation.** Today `useStreams` verifies
+  `ownerOf(id) == requested account` before accepting a row; the lens returning `owner` does not
+  retire that check, it relocates it: an `ok` row whose `owner` differs from the requested owner is
+  an invariant failure — the book is `unavailable` with an `incomplete` failure, never a rendered
+  row. — *useStreams*
 - **Eligibility stays in TypeScript.** `borrowRouteEligible` is computed at `useStreams.ts:95-119`
   from the factory registry, which the lens cannot see. Give `useStreams` a `mode` selecting
   `streamsOfOwner` or `streamsOfOwnerIn`; `BorrowFlow.tsx:96` passes complete-set mode. **The lens
@@ -304,12 +317,19 @@ repeated. **The completeness critic has not run.**
 *(This block replaced the deployed-path pipeline contracts when the decision reversed. The address
 pipeline, `parseRequiredAddress`, and `FIELD_BINDINGS` items died with the address itself.)*
 
-- The lens bytecode is embedded in the web bundle from the foundry build output, beside the ABI that
-  `web/wagmi.config.ts` already generates. **A drift gate** (precedent:
-  `web/scripts/check-ovrflo-stream-bytecode.mjs` — fail the gate, do not warn) rebuilds
-  `src/OVRFLOStreamLens.sol` and compares against the embedded copy, so a lens edit that skips the
-  regeneration step cannot ship a stale lens silently. This is the deployless analogue of the
-  "wrong address ships silently" failure the deployed path guarded with `eth_getCode`. — *ops*
+- **A dedicated bytecode generation step — wagmi codegen cannot do this** (corrected 2026-08-15).
+  The wagmi Foundry plugin emits contract *configuration* (ABI, addresses, names), not bytecode. And
+  viem's deployless mechanism counterfactually **deploys** the supplied contract before calling it,
+  so what must be embedded is the **creation bytecode** (`bytecode.object` in the foundry artifact),
+  not `deployedBytecode`. Pipeline: foundry artifact → `bytecode.object` →
+  `web/lib/generated/lens-bytecode.ts` → drift gate. The ABI still comes through
+  `web/wagmi.config.ts` as usual. — *ops*
+- **The drift gate compares creation bytecode** (precedent for shape:
+  `web/scripts/check-ovrflo-stream-bytecode.mjs`, which compares `deployedBytecode` — copy the
+  fail-do-not-warn pattern, not the field). It rebuilds `src/OVRFLOStreamLens.sol` and compares
+  `bytecode.object` against the embedded copy, so a lens edit that skips regeneration cannot ship a
+  stale lens silently. This is the deployless analogue of the "wrong address ships silently"
+  failure the deployed path guarded with `eth_getCode`. — *ops*
 - No entry in `deployments/local.json`, no `NEXT_PUBLIC_*` variable, no `write-env.sh` line, no
   `seed-local.sh` step. E2E and local dev use the same deployless call as production; there is no
   lens bootstrap to fail. — *ops*

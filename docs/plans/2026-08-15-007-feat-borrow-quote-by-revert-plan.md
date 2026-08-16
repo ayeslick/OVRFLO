@@ -78,6 +78,29 @@ frozen quote against a live one. "Live" stops being a local recomputation and be
 own answer, which is what the comparison always wanted. State whether drift is re-checked on an
 interval or only at the review step; do not leave both plausible.
 
+**MAX means "max borrowable right now" (decided 2026-08-15).** `streamDerivedCap`'s deletion is not
+free: `actualBorrow = min(requested target, epoch liquidity, stream price cap)`, so no single quote
+reveals the stream-only cap when liquidity binds — and the old MAX/amount-validation behavior fed
+on that cap. The decision is a deliberate UX change, not a workaround: MAX is obtained canonically
+by quoting with a huge `targetBorrow` (`type(uint128).max` target, same sentinel `minAcceptable`),
+whose `actualBorrow` **is** the maximum borrowable at current liquidity. One extra `eth_call`, zero
+new Solidity, zero bytes. The stream-only theoretical cap is a number the user cannot act on when
+liquidity binds, and it is shown nowhere.
+
+**The quote composes only with same-block state (added 2026-08-15).** BorrowFlow derives figures
+like `residual = selectedStream.remaining - obligation` from the already-loaded stream object,
+which under `2026-08-15-003` may be an older display snapshot — a withdrawal between the two reads
+yields a live quote beside stale remaining, an internally inconsistent display. Rule: any figure
+composed from the quote plus stream state hydrates the selected stream at quote time —
+`streamsByIds([streamId])` from the `2026-08-15-005` lens is the natural fit — or is explicitly
+labeled as snapshot-derived. Never present mixed-block arithmetic as the live quote.
+
+**Latest request wins (added 2026-08-15).** Quotes are async and can return out of order; a stale
+response must not overwrite a newer one. Make the quote a TanStack **query** keyed on the inputs
+that determine it — `{chainId, lending, market, streamId, aprBps, targetBorrow}` — not an
+imperative fetch; key-scoped caching and in-flight ownership then discard stale results by
+construction. When the identity changes, the old result is dead, not "previous".
+
 The write boundary is unchanged: the quote is display, and the real `borrow` simulation with the
 user's actual `minAcceptable` remains transaction authority (`2026-08-15-003`).
 
@@ -193,6 +216,11 @@ Which matches `2026-08-15-003`'s rule that simulation, not display, is transacti
 - `web/components/borrow/BorrowFlow.tsx` — the render-time call becomes an async read
 - `web/lib/borrow.ts` — `classifyBorrowError` learns the payload
 - `web/lib/generated.ts` — regenerated; the error signature changed
+- **`ABI_VERSION` bumps 1 → 2** (`web/lib/deployment.ts`, `web/lib/config.ts`
+  `CURRENT_ABI_VERSION`, the deployment artifact, every `.env`). `2026-08-15-005`'s sweep records
+  the definition — "breaking changes to ABIs the frontend already consumes" — and changing the
+  signature and selector of `BelowMinAcceptable`, an error the frontend decodes, is exactly that.
+  The lens addition did not qualify; this does.
 - Maps, gated: `docs/maps/state/keys/chain-reads.md` and the regenerated
   `docs/maps/state/functions/INDEX.md`
 
@@ -209,7 +237,9 @@ But `quote.ts` is 181 lines and only **two** of its exports are pricing — `quo
 `fullRepayCoverPreview`, `weiToAmountInput`, `poolFractions`. Five components import from it —
 `BorrowFlow`, `Facts`, `PoolBand`, `ReviewHandoff`, `RateStep`.
 
-Replace the two pricing exports. Leave the rest.
+Replace the two pricing exports. Leave the rest. `quoteBorrow`'s successor is the quote-by-revert
+read; `streamDerivedCap`'s successor is the MAX quote (huge `targetBorrow`, decided above) — it has
+no TypeScript successor and no canonical-cap read replaces it.
 
 **Two of the deletions are already dead code.** `factor` / `factorWad` and `netToBorrower` have zero
 consumers today, before this change. Removing them is not deferred cleanup riding along; they are

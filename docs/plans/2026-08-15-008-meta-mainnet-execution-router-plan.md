@@ -24,17 +24,29 @@ The historical RPC URL stays available to the fork's mainnet-fork tests; this is
 deletion only. Dead code encoding a retired contract model is what a future implementer resurrects
 by accident.
 
-**Wave 1 — contracts, parallel (independent files and repos):**
+**Wave 1A — Solidity and Foundry tests only (no `web/`), parallel (independent files and repos):**
 
 - `002` in the fork (`/Users/jay/OVRFLO-Streams-u4`, `feat/u4-fork-deploy`): delete
-  `ERC721Enumerable`, land the owner-only index. `tokensOfOwnerIn`'s signature and clamp semantics
-  do not change.
+  `ERC721Enumerable`, land the owner-only index **inline in `SablierV2Lockup.sol`, declared before
+  `nextStreamId`** (the plan body's Key Decision; its older sweep bullet proposing a separate base
+  contract is marked superseded in place). `tokensOfOwnerIn`'s signature and clamp semantics do not
+  change. Carry OpenZeppelin's MIT notice as a full third-party notice (version and source), not
+  only the source comment.
 - `007` in OVRFLO core: enrich the existing `BelowMinAcceptable` error with
   `(actualBorrow, feeAmount, obligation)`; the quote is `eth_call borrow(..., type(uint128).max)`.
   **No dedicated quote branch and no `QuoteBorrow` error** — `007` rejects that by measurement
   (the sentinel-check branch is the byte cost the design exists to avoid).
-- `005` in OVRFLO: the stream lens. It reads the lockup through its external interface, which `002`
-  does not change, so it does not wait for `002`.
+- `005` in OVRFLO: the stream lens (Solidity and Foundry tests). It reads the lockup through its
+  external interface, which `002` does not change, so it does not wait for `002`.
+
+**Wave 1B — generated interfaces and protocol adapters (the `web/` halves of 1A, after 1A lands):**
+
+- Lens creation-bytecode generation (`bytecode.object` → `web/lib/generated/lens-bytecode.ts`) and
+  its drift gate (`005`).
+- Quote decoder, `classifyBorrowError` payload, regenerated ABI, and the `ABI_VERSION` 1 → 2 bump
+  (`007`).
+- Protocol-client functions (`loadStreamPage`, `loadCompleteStreams`, quote read) — the layer wave 3
+  consumes. No product UI changes in this wave.
 
 **Wave 2 — deploy plumbing:** `006` (factory-only bootstrap). The lens is deployless, so no lens
 address enters the config pipeline; `006` is fully independent and can run any time after its sweep.
@@ -43,7 +55,11 @@ address enters the config pipeline; `006` is fully independent and can run any t
 lens call. Lens before pager is binding: building the pager against per-id hydration first means
 building the frontend twice.
 
-**Wave 4 — test:** `004`, including the reorg fault-injection scenario below.
+**Wave 4 — test:** `004`, including the reorg fault-injection scenario below. `004` gets a
+reconciliation pass at its re-sweep first — it still derives the page size from the four-reads
+model `005` deletes, and its reorg-coverage language predates this router's fault-injection
+requirement. The E2E fixture injects a tiny page size (2) to create page boundaries cheaply; the
+production `STREAM_PAGE_SIZE` is re-derived separately from measured lens cost (`005`'s sweep).
 
 ## Binding cross-plan decisions
 
@@ -55,17 +71,33 @@ building the frontend twice.
   Deploying the same bytecode later for third parties remains open.
 - **Page size is `STREAM_PAGE_SIZE` (25), owned by `004`.** `MAX_ENUMERATION_IDS` (500) is retired
   when the pager lands. Any plan text calling 500 a page size is stale.
-- **Complete-set mechanism:** `streamsOfOwner` in one call. Past the RPC provider's `eth_call`
-  ceiling, the fallback is merging `streamsOfOwnerIn` windows at one pinned block — complete by
-  construction, bounded per call. `005` adds this fallback as a sweep item; `claim-all` and
-  BorrowFlow eligibility use this mechanism, never the wall's paged query.
+- **Complete-set mechanism:** routed by the already-known `balanceOf` (refined 2026-08-15). Below a
+  frontend threshold constant, one `streamsOfOwner` call; above it, go directly to merging
+  `streamsOfOwnerIn` windows at one pinned block — do not issue an unbounded call that is known to
+  exceed the provider ceiling (~2,000–2,500 streams per `005`'s sizing) just to watch it fail.
+  Either path is complete by construction and bounded per call. The threshold is mutable frontend
+  policy, never a Solidity constant. `claim-all` and BorrowFlow eligibility use this mechanism,
+  never the wall's paged query.
+- **Work rate is bounded, ownership is not** (added 2026-08-15). Removing the 500-id refusal must
+  not turn whale wallets into recurring RPC storms: page loads are sequential and cancellable,
+  obsolete loads are cancelled on re-pin, refresh cadence backs off for huge books, and complete
+  sets are rebuilt only when a consumer needs one — not on every poll. Writes still simulate at
+  latest.
 - **Re-pin policy (003):** when a pinned call fails with a block-not-found class error (pruned or
   reorged pin), re-pin to a fresh block and restart enumeration from page one. A stale tab must
   recover, not die.
-- **Provider capability (003):** block-hash pinning is EIP-1898 and unevenly implemented. One-time
-  runtime probe (pinned call against a known block, verify the result) or a documented list of
-  supported providers. A provider that silently ignores the pin degrades to exactly the unpinned
-  behavior `003` exists to prevent, and no local test catches it.
+- **Provider capability (003):** block-hash pinning is EIP-1898 and unevenly implemented. The
+  runtime probe must exercise the **production primitive, not a proxy** (upgraded 2026-08-15): a
+  deployless call (`code` + calldata) pinned to a known past block, returning a block-dependent
+  value — a tiny probe returning `block.number` is the clean shape, since a provider that silently
+  ignored the pin returns the latest height instead of the pinned one. A pinned probe whose return
+  is block-independent can pass on a non-compliant provider. Per-provider result feeds the pin
+  fallback choice in `003`.
+- **Snapshots are provider-affine (added 2026-08-15, supersedes request-level fallback inside
+  snapshots):** capture `{blockNumber, blockHash}` from provider P and run every call of that
+  logical snapshot through P. If P fails, discard the snapshot and restart from page one on the
+  next provider. The ordered fallback transport stays for ordinary single reads; it must never
+  split one snapshot across providers with different heads or different EIP-1898 behavior.
 - **`003`'s "hydration batch carries the same pin" rule is satisfied by construction** once the
   lens lands (one call carries ids and data). `005` already documents this kill.
 - **Reorg fault injection (004):** anvil can simulate reorgs (snapshot/revert, `anvil_reorg`). One
@@ -89,11 +121,23 @@ building the frontend twice.
 - **Every successful protocol read is stamped with `fetchedAtMs`, `blockNumber`, and `blockHash`**
   in those protocol-client functions. This is `003`'s pin identity and the brief's neutral metadata
   as one field — do not also keep a framework-specific timestamp like `dataUpdatedAt` as truth.
-- **Read classification (adopted from the rewrite brief):** reads are classed static (factory
-  identity, stream binding, vault registry, token identity — read once), slow-changing (APR bounds,
-  tick spacing, fees), or dynamic (tick depth, streams, withdrawable, books, allowances —
-  block-driven or modest polling, refreshed after relevant receipts). Visual interpolation never
-  generates RPC calls. Recorded in `docs/maps/state/keys/chain-reads.md` when wave 3 lands.
+- **Read classification (corrected 2026-08-15 — the registries are not static):**
+  **STATIC** (read once): factory address, chain identity, the canonical stream binding once bound,
+  the immutable identity of a discovered child.
+  **APPEND-ONLY / SLOW DYNAMIC** (periodic or event-driven refresh — a long-lived tab must not
+  permanently miss a later registration): the vault registry (`ovrfloCount` grows on
+  `registerOvrflo`), the lending registry (`registerLending`), approved markets (`addMarket`), and
+  the vault→lending binding until established (`ovrfloToLending` can start zero and populate later).
+  **DYNAMIC** (block-driven or modest polling, refreshed after relevant receipts): tick depth,
+  streams, withdrawable amounts, loans, positions, allowances.
+  Visual interpolation never generates RPC calls. Recorded in
+  `docs/maps/state/keys/chain-reads.md` when wave 3 lands.
+- **Watch is factory-wide (decided 2026-08-15).** Multiple OVRFLOs/lendings will exist, so Watch
+  aggregates its Borrowed and Supplied books across **all distinct lending contracts discovered
+  from the factory**, not one. "First lending in the array" must not ship as implicit protocol
+  semantics — once `006` removes the configured lending address, `markets[0].lending` is a silent
+  wrong-scope bug. The book state model and query keys carry the lending address per row so
+  aggregation is explicit.
 
 ## Integration gate (after 002 merges in the fork)
 
@@ -127,8 +171,9 @@ Skipping this ships the old `ERC721Enumerable` lockup from a green pipeline.
   `forge build --sizes`, the specific new tests green. "Should work" is not a status.
 - The plan's Verification section is the definition of done, bullet by bullet, with evidence per
   bullet.
-- Do-not-touch applies per wave: wave 1 does not touch `web/`; `002` does not change
-  `tokensOfOwnerIn` semantics or `_afterTokenTransfer`.
+- Do-not-touch applies per wave: wave 1A does not touch `web/`; wave 1B touches only generated
+  output and protocol-client code, never product UI; `002` does not change `tokensOfOwnerIn`
+  semantics or `_afterTokenTransfer`.
 - Swept plans end with their Sweep Contracts list, each item marked satisfied-with-evidence or
   not-applicable-with-reason.
 - Tests move with behavior. Dependency or code reduction never pays for itself by deleting

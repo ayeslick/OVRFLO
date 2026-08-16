@@ -376,8 +376,15 @@ and 121. That function is deleted, so those six assertions must be rewritten aga
 Review-blocking. Recorded 2026-08-15 from the ignorance-lens sweep; every rule cites verified
 evidence. Point-fixes are already applied above and are not repeated here.
 
-- **Declare the two mappings as a separate abstract contract occupying `ERC721Enumerable`'s exact
-  position in the inheritance list** (`src/abstracts/SablierV2Lockup.sol:24`, last base). That keeps
+- **SUPERSEDED 2026-08-15 by the body's Key Decision ("Where the code lives") — do not implement
+  this bullet.** It predates the measurement showing that *inline, declared before `nextStreamId`*
+  reproduces the separate-base layout (mappings at slots 9–10, `_nftDescriptor` 12) at 20,702 bytes
+  versus the separate base's 20,903. This bullet's warning ("inline puts `_nftDescriptor` at 10")
+  is true only for the inline-*after*-descriptor variant, which the Key Decision also rejects. One
+  answer stands: **inline in `SablierV2Lockup.sol`, immediately before `nextStreamId`.** The
+  original text follows for the record: declare the two mappings as a separate abstract contract
+  occupying `ERC721Enumerable`'s exact position in the inheritance list
+  (`src/abstracts/SablierV2Lockup.sol:24`, last base). That keeps
   them at slots 9–10 and yields `_nftDescriptor` 12. Declaring them inside `SablierV2Lockup`'s own
   storage section instead puts `_nftDescriptor` at **10**. Both are correct code and the plan's
   stated 12 is only true for the first. **Derive the constant from `forge inspect`, never copy it.** — *layout*

@@ -25,11 +25,28 @@ The old rule exists to stop a silent truncated list. The old paging attempt died
 Do not hand-roll a pager. The tree already has the two battle-tested pieces.
 
 1. **On-chain page.** `tokensOfOwnerIn(owner, start, stop)`, already on the lockup. One call returns one window of ids. `start` and `stop` are **the owner's enumeration indices, not token ids** — the fork builds on OpenZeppelin `ERC721Enumerable` and loops `tokenOfOwnerByIndex`, and it clamps `stop` to `balanceOf(owner)` (OVRFLO-Streams `src/abstracts/SablierV2Lockup.sol:127-153`). The name matches ERC721AQueryable; the behavior does not. Do not write a global-token-id cursor.
-2. **Client page.** wagmi `useInfiniteReadContracts` (docs: https://wagmi.sh/react/api/hooks/useInfiniteReadContracts). Markets already depends on `wagmi@3.7.3` and `@tanstack/react-query@5.90.12`. That hook is TanStack `useInfiniteQuery` with multicall. The wall uses `fetchNextPage` / `hasNextPage` / `isFetchingNextPage`. The page size is `STREAM_PAGE_SIZE` (25, `web/lib/lending-math.ts`), owned by `2026-08-15-004`. `MAX_ENUMERATION_IDS` (500) is today's refusal threshold, not a page size; it is retired when this plan lands.
+2. **Client page.** TanStack `useInfiniteQuery` directly (`@tanstack/react-query@5.90.12`, already a
+dependency). The wall uses `fetchNextPage` / `hasNextPage` / `isFetchingNextPage`. The page size is
+`STREAM_PAGE_SIZE` (25, `web/lib/lending-math.ts`), owned by `2026-08-15-004`. `MAX_ENUMERATION_IDS`
+(500) is today's refusal threshold, not a page size; it is retired when this plan lands.
+**Not wagmi `useInfiniteReadContracts`** (corrected 2026-08-15): that hook takes addressed contract
+descriptors and executes them through `readContracts`/multicall, which cannot represent a deployless
+`{code, data}` call — and the lens from `2026-08-15-005` is deployless. The split from `008`:
+TanStack owns `pageParams`, `hasNextPage`, `fetchNextPage`, cache, and in-flight state; the
+`queryFn` is the protocol client's `loadStreamPage(client, owner, start, stop, pin)`, which makes
+the viem `call({ code, data })` and decodes the result.
 
-Streams: `useReadContract` `balanceOf`, then `useInfiniteReadContracts` whose `contracts(pageParam)` is **one lens call per page** — `streamsOfOwnerIn(lockup, owner, pageParam, pageParam + STREAM_PAGE_SIZE)` on the lens from `2026-08-15-005`, which returns ids and row data together in one pinned read. Do not build a per-id hydration batch (`ownerOf` / `getStream` / `withdrawableAmountOf` / `statusOf` fan-out); the lens exists to delete that shape. `getNextPageParam` returns the next start index while `start + pageSize < balanceOf`, else `undefined`.
+Streams: `useReadContract` `balanceOf`, then `useInfiniteQuery` whose `queryFn` is **one lens call
+per page** — `loadStreamPage` calling `streamsOfOwnerIn(lockup, owner, pageParam, pageParam +
+STREAM_PAGE_SIZE)`, which returns ids and row data together in one pinned read. Do not build a
+per-id hydration batch (`ownerOf` / `getStream` / `withdrawableAmountOf` / `statusOf` fan-out); the
+lens exists to delete that shape. `getNextPageParam` returns the next start index while
+`start + pageSize < balanceOf`, else `undefined`.
 
-Borrowed / Supplied: the same hook over `borrowerLoanAt` / position index windows. Same `LOAD MORE` wired to `fetchNextPage`.
+Borrowed / Supplied: the same pattern over `borrowerLoanAt` / position index windows. Those are
+addressed contract reads (not deployless), so wagmi's `useInfiniteReadContracts` remains legal
+there — but use the same `useInfiniteQuery`-plus-protocol-client shape for symmetry. Same
+`LOAD MORE` wired to `fetchNextPage`.
 
 Do not add Alchemy, The Graph, or another indexer. Stream discovery stays on-chain (streams-plan R12).
 Do not add `@tanstack/react-virtual` or an intersection observer. A wall `LOAD MORE` control is enough.
@@ -59,7 +76,19 @@ they operate on the loaded window:**
   eligible stream sits on page 3 is told it has none and cannot borrow at all. The same filter at
   `:106` feeds the selectable list, so those streams are also unpickable.
 
-**Count semantics — `count` must stay the on-chain `balanceOf`, never the number of loaded rows:**
+**Count semantics — one field cannot carry both meanings (corrected 2026-08-15).** A wallet holding
+20 NFTs, all render-ineligible, with every page exhausted, is *confirmed empty* while `balanceOf`
+is 20 — so "count stays `balanceOf`" and "confirmed-empty after exhaustion" cannot share one field.
+The book state model separates them explicitly:
+
+- `sourceCount` — the on-chain `balanceOf` (or loan/position count). Protects against false-empty
+  while enumeration is incomplete.
+- `renderCount` — render-eligible rows loaded so far. Display only, never an emptiness signal.
+- `complete` — every page fetched (`hasNextPage` false and no page failed).
+- `confirmedEmpty` — `sourceCount == 0`, **or** `complete && renderCount == 0`. This, and only
+  this, may send a holder to first-run or hide the lens.
+
+**`sourceCount` must stay the on-chain `balanceOf`, never the number of loaded rows:**
 
 - **`web/lib/watch-entry.ts:49`** returns `"first-run"` on `streams.status === "ready" && count === 0`.
   If `count` becomes loaded rows, a holder whose first page is entirely ineligible lands on the
