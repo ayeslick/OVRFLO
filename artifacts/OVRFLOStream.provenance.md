@@ -13,19 +13,34 @@ Those MIT sources are not a derivative of this object code.
 
 - Repository: OVRFLO-Streams (fork of sablier-labs/v2-core `v1.1.2`)
 - Upstream tag: `v1.1.2`
-- Fork commit: `98a198d64bb21b2633fcfdeb58a82613189f718e`
+- Fork commit: `0f77e638e7c7a9251463f35099bc8af5651bdb7e`
 
 ## Compiler
 
 Stamped from the fork default Foundry profile (`bytecode_hash = "none"`).
-`FOUNDRY_PROFILE=optimized` (via-IR) failed to compile this commit
-(Yul stack-too-deep in the descriptor). Ticket 08 compares rebuilds against
-this stamp.
+`FOUNDRY_PROFILE=optimized` (via-IR) is not the shipping stamp for this
+artifact. Ticket 08 compares rebuilds against this stamp.
 
-- solc 0.8.23
-- optimizer: true, runs 1000
-- via_ir: false
-- EVM: paris (fork `foundry.toml` `emv_version` typo is unused; solc default)
+- solc: `0.8.23+commit.f704f362`
+- optimizer: enabled, runs `1000`
+- via_ir: `false`
+- EVM: `shanghai`
+- bytecode_hash: `none`
+- Foundry profile: `default`
+
+## Provenance hashes
+
+Recomputed by `web/scripts/check-ovrflo-stream-bytecode.mjs` from
+`artifacts/OVRFLOStream.json`. A mismatch fails the gate.
+
+- Artifact sha256: `5de326865e0ebfbdfc71fb425012a644fe44d8398be3cc10106e26dae7606767`
+- ABI sha256: `7220bf29735eddbf496a2ffaf940a018e3885f7b84998b2a623dab9f1c02e169`
+- Creation-bytecode sha256: `d1a4100bca52ca6ccf50b28b9b8ba6a2293e43d5176439bb1e6fe59361d93e8f`
+- Runtime-bytecode sha256: `8dd5070c4deb8ed5c3ac249fcd14b26c9a5907beb671fa49d1da3012b181a972`
+
+ABI hash is SHA-256 of `JSON.stringify(abi)` (no whitespace) over the
+artifact's `abi` array. Bytecode hashes are SHA-256 of the hex-decoded
+`bytecode.object` / `deployedBytecode.object` (0x prefix stripped).
 
 ## Constructor arguments
 
