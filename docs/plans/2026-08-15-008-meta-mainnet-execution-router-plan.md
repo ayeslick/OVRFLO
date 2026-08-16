@@ -148,7 +148,11 @@ artifact against the commit stamped in `artifacts/OVRFLOStream.provenance.md` �
 forgotten bump. So, in order, as an explicit gate:
 
 1. Rebuild the fork at the new commit; replace `artifacts/OVRFLOStream.json`.
-2. Update the `Fork commit:` stamp in `artifacts/OVRFLOStream.provenance.md`.
+2. Update the `Fork commit:` stamp in `artifacts/OVRFLOStream.provenance.md` — and (strengthened
+   2026-08-15, zFi `check-create2-artifacts` discipline) record the exact compiler settings, the
+   creation-bytecode hash, and the ABI hash alongside it, so the gate proves the whole chain
+   *source commit → compiler settings → bytecode → ABI → vendored artifact*, not just "an artifact
+   matching some stamp exists".
 3. Re-run `check-ovrflo-stream-bytecode.mjs` — must pass against the new stamp.
 4. Regenerate the frontend ABI (wagmi codegen) and redeploy local anvil.
 
@@ -242,6 +246,20 @@ The open items, each owned by a plan:
 - **Cross-source disappearance (`004`).** A pledged stream leaves owner enumeration and reappears
   via the borrower book. Test the composed failure: owner book ready + borrower book failed must
   render as a degraded Borrowed lens, never as the stream vanishing from existence.
+- **`previewBorrow` compiler sweep (`007`, disposable probe, from the zFi review).** Bytecode size
+  is non-monotonic in compiler settings, so run one throwaway sweep of the direct
+  `previewBorrow` variant (`optimizer_runs` 1/20/50/100/200, selected `via_ir` probes) before the
+  quote design ships immutable. Direct preview wins **only if all four hold**: under the 24,064
+  canary *with real reserve*; no borrow-path execution-gas regression (lower runs shrink bytecode
+  by taxing runtime — a permanent cost on every real borrow is a veto); no second build profile
+  (OVRFLO ships from one; per-contract profiles are zFi complexity we do not carry); full suite
+  green under the chosen settings. Any miss → stop immediately, quote-by-revert stands at +39.
+  Note the drift argument does not distinguish them — both are one-implementation designs — so
+  this is purely a bytecode question, which is exactly what probes settle.
+- **Lens flip trigger (`005`, decided).** Deployless stands. If this router's capability probe
+  finds deployless-plus-pin unsupported or unreliable on target providers, flip to the
+  deterministic deployed-CREATE2 fallback pre-specified in `005` — no re-litigation, the recipe is
+  written.
 
 ## Campaign two — the frontend rewrite brief
 

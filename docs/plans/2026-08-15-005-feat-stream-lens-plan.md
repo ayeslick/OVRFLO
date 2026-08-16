@@ -183,9 +183,17 @@ copy cannot go stale against `src/OVRFLOStreamLens.sol` — the exact apparatus
 `artifacts/OVRFLOStream.json` and `check-ovrflo-stream-bytecode.mjs` already provide for the fork,
 copied for a main-repo contract.
 
-Recorded so it is not re-litigated: **deployed is the tested fallback, not a rejected idea.** The
-same compiled bytecode deploys unchanged if a third party ever wants the lens on-chain; the switch
-back is a deploy plus a frontend call-site change.
+Recorded so it is not re-litigated: **deployed is the tested fallback, not a rejected idea — and
+its shape is pre-specified** (enriched 2026-08-15 from the zFi review). The fallback is a
+**deterministic CREATE2 deployment**: canonical compiler settings → creation bytecode → fixed salt
+→ derived address emitted as a generated constant the frontend imports. No environment variable, no
+factory registry entry, no deployment-artifact plumbing — the address is reproducible client
+capability, not protocol truth (zFi's `SwapboardView` pattern, verified by its
+`check-create2-artifacts` discipline). The drift gate and creation-bytecode generation this plan
+already requires serve both modes unchanged. **The flip trigger is concrete:** if the `008`
+capability probe finds deployless-plus-pin unsupported or unreliable on the target providers, flip
+to deployed-CREATE2 without re-opening the debate; the switch is one deploy per network, a
+`seed-local.sh` step, and the call site swapping `code` for the generated address.
 
 ## What this deletes
 

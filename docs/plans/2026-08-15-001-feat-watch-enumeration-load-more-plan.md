@@ -55,6 +55,13 @@ Do not treat `hasNextPage` as confirmed-empty. Incomplete is `ready` plus `hasNe
 
 **Pin every page of one enumeration to one block.** Owner enumeration indices are not stable. `ERC721Enumerable` swaps the owner's last token into a vacated slot when a token is burned or transferred away, so ids after the removed one shift index. Streams burn on depletion, so this happens in normal use. Pages are separate requests, so an id can move *behind* a page already fetched and be returned by no page at all — a silently missing stream, not a duplicate. Deduplication cannot repair that, and neither can `ownerOf` verification, because the client never receives the id. The correctness mechanism is a pinned block identity across all pages, specified in `2026-08-15-003-feat-snapshot-pinned-enumeration-plan.md`. Build that before or with this plan.
 
+**Pagination progress is defined by the source coordinate, never by the number of usable rows
+returned** (adopted 2026-08-15 from the zFi review). The cursor advances by the enumeration window
+inspected, even when a window yields zero render-eligible rows. Two regression cases pin it: a
+window with more eligible rows than the display consumes must resume at the first unconsumed source
+index (or entries disappear forever), and an all-ineligible window must still advance the cursor
+(or pagination stalls). `2026-08-15-004` tests both.
+
 **Treat a duplicate id as an invariant violation, not a merge.** Under a pinned snapshot the index cannot move, so a duplicate means the pin failed or the index is corrupt. Return `unavailable` with an `incomplete` failure. Do not silently keep the first occurrence.
 
 The only OVRFLO glue: if page 1 hydrates to zero render-eligible rows and `hasNextPage` is true, call `fetchNextPage` (TanStack's own race rule: only when `!isFetching`). That is product policy on top of the hook, not a second pager.

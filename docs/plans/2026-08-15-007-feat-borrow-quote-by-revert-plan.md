@@ -93,7 +93,11 @@ which under `2026-08-15-003` may be an older display snapshot — a withdrawal b
 yields a live quote beside stale remaining, an internally inconsistent display. Rule: any figure
 composed from the quote plus stream state hydrates the selected stream at quote time —
 `streamsByIds([streamId])` from the `2026-08-15-005` lens is the natural fit — or is explicitly
-labeled as snapshot-derived. Never present mixed-block arithmetic as the live quote.
+labeled as snapshot-derived. Never present mixed-block arithmetic as the live quote. The protocol
+client makes this structural by producing one named artifact,
+`BorrowQuoteSnapshot { block: {N, H}, actualBorrow, fee, obligation, streamRemaining, residual }`,
+where every constituent read is from block `N` — a consumer cannot compose mixed-block figures
+because the mixed figures never coexist in one object.
 
 **Latest request wins (added 2026-08-15).** Quotes are async and can return out of order; a stale
 response must not overwrite a newer one. Make the quote a TanStack **query** keyed on the inputs
