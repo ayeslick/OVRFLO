@@ -600,6 +600,43 @@ describe("watch shell + entry", () => {
     expect(screen.getByRole("button", { name: /STREAM #5/ })).toBeInTheDocument();
   });
 
+  it("keeps last-ready stream rows when a failure arrives with an empty book", () => {
+    fx.connected = true;
+    fx.streams = [
+      {
+        streamId: 5n,
+        owner: ACCOUNT,
+        sender: VAULT,
+        asset: TOKEN,
+        schedule: {
+          start: NOW - 10n * 86_400n,
+          end: NOW + 80n * 86_400n,
+          deposited: SCALE,
+          withdrawn: 0n,
+          refunded: 0n,
+          cliffTime: NOW - 10n * 86_400n,
+          isCancelable: false,
+        },
+        withdrawable: SCALE / 10n,
+        remaining: SCALE,
+        status: 1,
+        renderEligible: true,
+        borrowRouteEligible: true,
+        vault: VAULT,
+        market: MARKET,
+      },
+    ];
+    writeWatchSearch({ lens: "streams", selection: { kind: "none" } }, "replace");
+    const { rerender } = render(<WatchApp />);
+    expect(screen.getByRole("button", { name: /STREAM #5/ })).toBeInTheDocument();
+
+    fx.streamStatus = "unavailable";
+    fx.streams = [];
+    rerender(<WatchApp />);
+    expect(screen.getByText(/STREAM DISCOVERY IS UNAVAILABLE/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /STREAM #5/ })).toBeInTheDocument();
+  });
+
   it("STALE REFRESH advances the pin and does not only invalidate stream-book", async () => {
     const advancePin = vi.fn(async () => undefined);
     fx.connected = true;

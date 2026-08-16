@@ -276,6 +276,22 @@ describe("useStreams lens pager", () => {
     expect(result.current.data?.streams).toHaveLength(1);
   });
 
+  it("attaches no book to an unavailable outcome when zero rows survived", async () => {
+    publicCall.mockResolvedValue(encodeUint(1n));
+    loadStreamPage.mockResolvedValue(
+      unavailableOutcome(
+        [readFailure("loadStreamPage", "transport", "rpc down")],
+        {},
+        { streams: [] },
+      ),
+    );
+    const { result } = renderHook(() => useStreams(input), { wrapper: wrapper(client()) });
+    await waitFor(() => {
+      expect(result.current.status).toBe("unavailable");
+    });
+    expect(result.current.data).toBeUndefined();
+  });
+
   it("hides empty streams from the lens", async () => {
     loadStreamPage.mockResolvedValue(
       readyOutcome({

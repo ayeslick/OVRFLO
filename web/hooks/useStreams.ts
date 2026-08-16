@@ -470,10 +470,13 @@ export function useStreams(input: {
     unresolvedFailures: pageFailures.length > 0 || folded.duplicate !== null || okFalse || transportFailed,
   });
   const book: StreamBook = { streams, ...fields };
+  // An unavailable outcome only carries a book when it has rows; a defined
+  // empty book would otherwise replace the caller's last-known rows.
+  const bookForUnavailable = streams.length > 0 ? book : undefined;
 
   if (folded.duplicate !== null) {
     return {
-      ...unavailableOutcome([duplicateStreamFailure(folded.duplicate)], meta, book),
+      ...unavailableOutcome([duplicateStreamFailure(folded.duplicate)], meta, bookForUnavailable),
       ...pager,
       ...pinControls,
     };
@@ -485,7 +488,7 @@ export function useStreams(input: {
           ? pageFailures
           : [readFailure("useStreams", "transport", query.error ?? "stream page failed")],
         meta,
-        book,
+        bookForUnavailable,
       ),
       ...pager,
       ...pinControls,
@@ -504,7 +507,7 @@ export function useStreams(input: {
           ? pageFailures
           : [readFailure("useStreams", "subcall", "stream rows failed hydration")],
         meta,
-        book,
+        bookForUnavailable,
       ),
       ...pager,
       ...pinControls,

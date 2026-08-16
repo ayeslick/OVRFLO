@@ -534,13 +534,16 @@ function wallDataStatus(book: EntryBook): "loading" | "empty" | "ready" | "unava
   return "ready";
 }
 
-function useLastKnown<T>(outcome: ReadOutcome<T>): T | undefined {
+function useLastKnown<T extends { renderCount: number }>(outcome: ReadOutcome<T>): T | undefined {
   const ref = useRef<T | undefined>(undefined);
   if (outcome.status === "ready" || outcome.status === "partial") {
     ref.current = outcome.data;
   }
   if (outcome.status === "unavailable") {
-    const kept = outcome.data ?? ref.current;
+    // A zero-row book attached to a failure must not erase last-ready rows.
+    const incoming =
+      outcome.data !== undefined && outcome.data.renderCount > 0 ? outcome.data : undefined;
+    const kept = incoming ?? ref.current;
     if (kept !== undefined) ref.current = kept;
     return kept;
   }
