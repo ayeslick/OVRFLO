@@ -246,16 +246,26 @@ The open items, each owned by a plan:
 - **Cross-source disappearance (`004`).** A pledged stream leaves owner enumeration and reappears
   via the borrower book. Test the composed failure: owner book ready + borrower book failed must
   render as a degraded Borrowed lens, never as the stream vanishing from existence.
-- **`previewBorrow` compiler sweep (`007`, disposable probe, from the zFi review).** Bytecode size
-  is non-monotonic in compiler settings, so run one throwaway sweep of the direct
-  `previewBorrow` variant (`optimizer_runs` 1/20/50/100/200, selected `via_ir` probes) before the
-  quote design ships immutable. Direct preview wins **only if all four hold**: under the 24,064
-  canary *with real reserve*; no borrow-path execution-gas regression (lower runs shrink bytecode
-  by taxing runtime — a permanent cost on every real borrow is a veto); no second build profile
-  (OVRFLO ships from one; per-contract profiles are zFi complexity we do not carry); full suite
-  green under the chosen settings. Any miss → stop immediately, quote-by-revert stands at +39.
-  Note the drift argument does not distinguish them — both are one-implementation designs — so
-  this is purely a bytecode question, which is exactly what probes settle.
+- **`previewBorrow` compiler sweep (`007`) — RESOLVED 2026-08-15: direct preview wins; `007`
+  must be rewritten before implementation.** Run in a throwaway worktree at commit `917e709`,
+  solc pinned 0.8.36. The runs axis is dead (`runs=1` saves only 221 bytes and taxes runtime),
+  but `via_ir = true` at the same 200 runs is decisive. Measured:
+  baseline legacy 23,837 (227 under canary) → baseline via-IR **21,256** (2,808 under);
+  via-IR + commit-flag `previewBorrow` **22,806** (1,258 under canary, 1,770 under EIP-170);
+  borrow gas 261,348 vs 261,274 via-IR baseline (+74, noise) and 6,254 *below* today's legacy
+  borrow (267,602); one global profile; suite 366/366 green both pipelines. All four win
+  conditions hold, so per this item's pre-agreed rule quote-by-revert is retired in favor of
+  `previewBorrow(market, aprBps, targetBorrow, streamId) returns (actualBorrow, feeAmount,
+  obligation)` — non-view, commit-flag `false` through `_fillTick`/`_selectEpoch`, no state
+  writes executed. Adoption bundle, indivisible: flip `via_ir = true` in `foundry.toml`, land
+  `previewBorrow`, re-baseline every size/gas figure the plans quote, and rewrite `007`
+  (interaction-shape sections survive; the revert-decode machinery, enriched
+  `BelowMinAcceptable`, and sentinel-MAX quote die — MAX becomes `previewBorrow` with a huge
+  target). Note for the record: the variant cost +312 bytes under legacy but +1,550 under
+  via-IR — deltas do not transfer across pipelines; only the measurement settles it. The probe
+  also exposed a latent invariant-handler underflow (fixed in `917e709`): via-IR bytecode
+  changes the fuzzer's mined dictionary, which is itself a reason the final gate runs the suite
+  under the shipping settings.
 - **Lens flip trigger (`005`, decided).** Deployless stands. If this router's capability probe
   finds deployless-plus-pin unsupported or unreliable on target providers, flip to the
   deterministic deployed-CREATE2 fallback pre-specified in `005` — no re-litigation, the recipe is
