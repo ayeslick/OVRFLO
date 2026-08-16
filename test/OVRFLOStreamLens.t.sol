@@ -11,10 +11,16 @@ import {ISablierV2LockupLinear} from "../interfaces/ISablierV2LockupLinear.sol";
 import {OVRFLOTestFixtures} from "../script/lib/OVRFLOTestFixtures.sol";
 import {TestERC20} from "./mocks/TestERC20.sol";
 
+/// @dev Artifact-ABI scalar. The hand-kept lockup interface exposes `isDepleted`
+///      but not `wasCanceled(uint256)`.
+interface ILockupWasCanceled {
+    function wasCanceled(uint256 streamId) external view returns (bool);
+}
+
 /// @notice Standalone lens suite against committed OVRFLOStream bytecode.
-/// @dev Never MockSablier: that mock lacks `statusOf` and its `getStream` never
-///      reverts, the opposite of the fork. Streams are minted by pranking the
-///      registered vault so `createWithDurations` is admitted.
+/// @dev Never MockSablier: that mock's `getStream` never reverts, the opposite
+///      of the fork. Streams are minted by pranking the registered vault so
+///      `createWithDurations` is admitted.
 contract OVRFLOStreamLensTest is OVRFLOTestFixtures, Test {
     uint256 internal constant EIP3860_INITCODE_CAP = 49_152;
     uint128 internal constant DEPOSIT = 1 ether;
@@ -58,6 +64,22 @@ contract OVRFLOStreamLensTest is OVRFLOTestFixtures, Test {
         _assertAgreesWithDirect(row, id, holder);
     }
 
+    /// @notice A withdrawn-to-empty stream is DEPLETED. The lens copies the
+    ///         lockup's own `isDepleted` / `wasCanceled` getters, not a local formula.
+    function test_Hydrate_DepletedStream_IsDepletedTrueWasCanceledFalse() public {
+        uint256 id = fixtureIds[0];
+        _deplete(id, holder);
+        assertEq(uint8(lockup.statusOf(id)), uint8(ISablierV2LockupLinear.Status.DEPLETED));
+        assertTrue(lockup.isDepleted(id));
+        assertFalse(ILockupWasCanceled(address(lockup)).wasCanceled(id));
+
+        OVRFLOStreamLens.StreamView memory row = lens.hydrateOne(lockup, id);
+        _assertAgreesWithDirect(row, id, holder);
+        assertTrue(row.isDepleted);
+        assertFalse(row.wasCanceled);
+        assertEq(uint256(row.status), uint256(uint8(ISablierV2LockupLinear.Status.DEPLETED)));
+    }
+
     function test_StreamsByIds_AgreesWithEnumeration() public view {
         uint256[] memory ids = lockup.tokensOfOwnerIn(holder, 0, FIXTURE_COUNT);
         OVRFLOStreamLens.StreamView[] memory byIds = lens.streamsByIds(lockup, ids);
@@ -87,6 +109,8 @@ contract OVRFLOStreamLensTest is OVRFLOTestFixtures, Test {
 
     /// @notice Mixed `streamsByIds`: valid neighbours stay hydrated; unminted and
     ///         burned ids degrade to `ok: false` with `streamId` preserved.
+    /// @dev `0` and `type(uint256).max` share the unminted path. A duplicate
+    ///      valid id hydrates twice; the lens does not unique the input.
     function test_StreamsByIds_MixedValidUnmintedBurned_DegradesOnlyBadRows() public {
         uint256 burnedId = fixtureIds[1];
         uint256 leftId = fixtureIds[0];
@@ -94,18 +118,24 @@ contract OVRFLOStreamLensTest is OVRFLOTestFixtures, Test {
         uint256 unmintedId = 999;
         _depleteAndBurn(burnedId, holder);
 
-        uint256[] memory ids = new uint256[](4);
+        uint256[] memory ids = new uint256[](7);
         ids[0] = leftId;
         ids[1] = unmintedId;
         ids[2] = burnedId;
         ids[3] = rightId;
+        ids[4] = 0;
+        ids[5] = type(uint256).max;
+        ids[6] = leftId;
 
         OVRFLOStreamLens.StreamView[] memory rows = lens.streamsByIds(lockup, ids);
-        assertEq(rows.length, 4);
+        assertEq(rows.length, 7);
         _assertAgreesWithDirect(rows[0], leftId, holder);
         _assertFailedRow(rows[1], unmintedId);
         _assertFailedRow(rows[2], burnedId);
         _assertAgreesWithDirect(rows[3], rightId, holder);
+        _assertFailedRow(rows[4], 0);
+        _assertFailedRow(rows[5], type(uint256).max);
+        _assertAgreesWithDirect(rows[6], leftId, holder);
     }
 
     /// @notice Owner-scoped forms never emit `ok: false` after a burn.
@@ -171,6 +201,49 @@ contract OVRFLOStreamLensTest is OVRFLOTestFixtures, Test {
 
         vm.expectRevert(INVALID_QUERY_RANGE);
         lens.streamsOfOwnerIn(lockup, holder, 5, 2);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                            DEPLOYLESS SHAPE
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice CREATE from creation bytecode, then call. Mirrors viem `call({ code })`.
+    function test_StreamsByIds_CreateFromInitcode_MatchesNew() public {
+        bytes memory initcode = vm.getCode("OVRFLOStreamLens");
+        address created;
+        assembly {
+            created := create(0, add(initcode, 0x20), mload(initcode))
+        }
+        assertTrue(created != address(0), "CREATE from lens initcode failed");
+        assertTrue(created.code.length > 0, "CREATE installed no runtime");
+
+        uint256[] memory ids = new uint256[](2);
+        ids[0] = fixtureIds[0];
+        ids[1] = fixtureIds[2];
+
+        OVRFLOStreamLens createdLens = OVRFLOStreamLens(created);
+        OVRFLOStreamLens.StreamView[] memory rows = createdLens.streamsByIds(lockup, ids);
+        assertEq(rows.length, 2);
+        _assertAgreesWithDirect(rows[0], fixtureIds[0], holder);
+        _assertAgreesWithDirect(rows[1], fixtureIds[2], holder);
+    }
+
+    /// @notice The initcode return is runtime bytecode, not `StreamView[]`.
+    /// @dev A constructor-return misuse must fail loudly, not decode garbage.
+    function test_InitcodeReturn_DoesNotDecodeAsStreamViewArray() public {
+        bytes memory initcode = vm.getCode("OVRFLOStreamLens");
+        address created;
+        assembly {
+            created := create(0, add(initcode, 0x20), mload(initcode))
+        }
+        assertTrue(created != address(0), "CREATE from lens initcode failed");
+
+        (bool ok,) = address(this).staticcall(abi.encodeCall(this.decodeStreamViews, (created.code)));
+        assertFalse(ok, "constructor-return decoded as StreamView[]");
+    }
+
+    function decodeStreamViews(bytes calldata data) external pure returns (OVRFLOStreamLens.StreamView[] memory) {
+        return abi.decode(data, (OVRFLOStreamLens.StreamView[]));
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -262,11 +335,15 @@ contract OVRFLOStreamLensTest is OVRFLOTestFixtures, Test {
         vm.stopPrank();
     }
 
-    function _depleteAndBurn(uint256 streamId, address nftOwner) internal {
+    function _deplete(uint256 streamId, address nftOwner) internal {
         vm.warp(lockup.getEndTime(streamId));
         uint128 amount = lockup.withdrawableAmountOf(streamId);
         vm.prank(nftOwner);
         lockup.withdraw(streamId, nftOwner, amount);
+    }
+
+    function _depleteAndBurn(uint256 streamId, address nftOwner) internal {
+        _deplete(streamId, nftOwner);
         vm.prank(nftOwner);
         lockup.burn(streamId);
     }
@@ -300,8 +377,8 @@ contract OVRFLOStreamLensTest is OVRFLOTestFixtures, Test {
         assertEq(uint256(row.withdrawableAmount), uint256(lockup.withdrawableAmountOf(id)));
         assertEq(uint256(row.status), uint256(status));
         assertEq(row.isCancelable, stream.isCancelable);
-        assertEq(row.isDepleted, status == uint8(ISablierV2LockupLinear.Status.DEPLETED));
-        assertEq(row.wasCanceled, status == uint8(ISablierV2LockupLinear.Status.CANCELED));
+        assertEq(row.isDepleted, lockup.isDepleted(id));
+        assertEq(row.wasCanceled, ILockupWasCanceled(address(lockup)).wasCanceled(id));
         assertTrue(row.ok);
     }
 
