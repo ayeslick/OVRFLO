@@ -64,6 +64,12 @@ export const freshnessKeys = {
     [...freshnessKeys.all, chainId, addr(account)] as const,
 };
 
+export const protocolBootstrapKeys = {
+  all: ["protocolBootstrap"] as const,
+  root: (factoryAddress: Address, chainId: number) =>
+    [...protocolBootstrapKeys.all, factoryAddress, chainId] as const,
+};
+
 export const DISCOVERY_SCHEMA_VERSION = 1;
 export const DISCOVERY_GC_TIME_MS = 10 * 60 * 1000;
 

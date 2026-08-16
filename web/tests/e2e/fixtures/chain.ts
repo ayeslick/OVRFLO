@@ -117,12 +117,12 @@ export function readSecondaryExpiry(): bigint {
 }
 
 export function readStreamLockup(): Address {
-  const fromEnv = process.env.NEXT_PUBLIC_SABLIER_LOCKUP_ADDRESS;
-  if (fromEnv && /^0x[0-9a-fA-F]{40}$/.test(fromEnv)) return fromEnv as Address;
+  // Browser env no longer carries the stream; e2e reads the deployment artifact
+  // (factory-anchored provenance), which still records the discovered lockup.
   const stream = readDeployment().stream;
-  if (stream) return stream;
+  if (stream && /^0x[0-9a-fA-F]{40}$/.test(stream)) return stream as Address;
   throw new Error(
-    "stream lockup address missing — set NEXT_PUBLIC_SABLIER_LOCKUP_ADDRESS or deployments/local.json stream",
+    "stream lockup address missing — deployments/local.json must record stream from factory.ovrfloStream()",
   );
 }
 

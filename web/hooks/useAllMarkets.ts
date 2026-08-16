@@ -8,7 +8,7 @@ import type { MarketInfo } from "@/lib/types";
 import { bigintToSafeLength, MAX_VAULT_ENUMERATION, useOvrflos } from "./useOvrflos";
 
 export function useAllMarkets() {
-  const ovrflos = useOvrflos(factoryAddress);
+  const ovrflos = useOvrflos();
 
   const marketCountReads = useReadContracts({
     contracts: ovrflos.vaults.map((vault) => ({

@@ -24,10 +24,8 @@ import type {
   TouchedResource,
 } from "@/lib/actions/types";
 import { erc20Abi, ovrfloAbi, ovrfloLendingAbi, sablierLockupAbi } from "@/lib/abis";
-import {
-  chainId as configuredChainId,
-  SABLIER_LOCKUP_ADDRESS,
-} from "@/lib/config";
+import { chainId as configuredChainId } from "@/lib/config";
+import { useProtocolBootstrap } from "./useProtocolBootstrap";
 import { buildRefreshPlan, refreshQueryResources } from "@/lib/query-resource-registry";
 import { invalidateTouchedResources, marketContracts } from "@/lib/invalidate";
 import { isRevertFailure, userFacingError } from "@/lib/errors";
@@ -60,6 +58,7 @@ export function useWriteFlow(
   > | readonly Address[] = EMPTY,
 ) {
   const queryClient = useQueryClient();
+  const bootstrap = useProtocolBootstrap();
   const connection = useConnection();
   const publicClient = usePublicClient({ chainId: configuredChainId });
   const wallet = useWalletClient({ chainId: configuredChainId });
@@ -361,11 +360,29 @@ export function useWriteFlow(
         const prepareAndExecute = (async () => {
           if (isCurrentPreparation()) setIsPreparing(true);
           try {
+            if (bootstrap.status !== "ready") {
+              handled = true;
+              executor.report({
+                status: "invalid",
+                errors: [
+                  {
+                    code: "unregistered-target",
+                    message: "Protocol bootstrap is not ready",
+                  },
+                ],
+              });
+              return;
+            }
+            const marketScope = {
+              ...(scopeRef.current as Exclude<typeof scopeRef.current, readonly Address[]>),
+              sablier: bootstrap.stream,
+            } as LiveMarketScope;
             const prepared = await createLiveExecutionPlan(
               args,
               identity,
-              scopeRef.current as LiveMarketScope,
+              marketScope,
               publicClient,
+              { bootstrap },
             );
             if (!isCurrentPreparation()) {
               handled = true;
@@ -421,7 +438,7 @@ export function useWriteFlow(
         // compile-time `chainId?: never` boundary.
         chainId: configuredChainId,
       } as ExactSimulationRequest;
-      const action = legacyReadyAction(args, identity, scopeRef.current);
+      const action = legacyReadyAction(args, identity, scopeRef.current, bootstrap.status === "ready" ? bootstrap.stream : null);
       const accepted: ActionExecutionDraft = { action, request };
       const plan: ExecutionPlan = {
         flowId: `${action.type}:${action.call.functionName}`,
@@ -444,7 +461,7 @@ export function useWriteFlow(
       };
       void executor.confirm(plan);
     }) as MainnetWriteContract,
-    [executor, publicClient],
+    [bootstrap, executor, publicClient],
   );
 
   return {
@@ -533,6 +550,7 @@ function legacyReadyAction(
     | "ptToken"
     | "expiryCached"
   > | readonly Address[],
+  stream: Address | null,
 ): ReadyAction {
   if (!args.address || !args.functionName) {
     throw new Error("A contract address and function name are required");
@@ -544,7 +562,7 @@ function legacyReadyAction(
     args: args.args ?? [],
     value: args.value ?? 0n,
   };
-  const touchedResources = legacyTouchedResources(args, identity, scope);
+  const touchedResources = legacyTouchedResources(args, identity, scope, stream);
   const type = actionTypeFor(args.functionName);
   return {
     type,
@@ -588,11 +606,16 @@ function legacyTouchedResources(
     | "ptToken"
     | "expiryCached"
   > | readonly Address[],
+  stream: Address | null,
 ): TouchedResource[] {
   if (!args.address || !args.functionName) return [];
   const market = isMarketScope(scope) ? scope : null;
   const contracts: readonly Address[] = market
-    ? marketContracts(market)
+    ? stream
+      ? marketContracts(market, stream)
+      : [market.vault, market.lending, market.underlying, market.ovrfloToken, market.ptToken].filter(
+          (address): address is Address => Boolean(address),
+        )
     : (scope as readonly Address[]);
   const resources: TouchedResource[] = [];
   const callArgs = args.args ?? [];
@@ -602,7 +625,7 @@ function legacyTouchedResources(
       const spender = callArgs[0] as Address | undefined;
       const amountOrId = callArgs[1] as bigint | undefined;
       if (!spender || amountOrId === undefined) break;
-      if (isAddressEqual(args.address, SABLIER_LOCKUP_ADDRESS)) {
+      if (stream && isAddressEqual(args.address, stream)) {
         resources.push({
           kind: "nft-approval",
           token: args.address,
@@ -713,15 +736,15 @@ function legacyTouchedResources(
       if (market) {
         resources.push({ kind: "market-depth", lending: args.address, market: market.market });
       }
-      if (typeof callArgs[3] === "bigint") {
+      if (typeof callArgs[3] === "bigint" && stream) {
         resources.push({
           kind: "stream",
-          sablier: SABLIER_LOCKUP_ADDRESS,
+          sablier: stream,
           id: callArgs[3],
         });
         resources.push({
           kind: "nft-approval",
-          token: SABLIER_LOCKUP_ADDRESS,
+          token: stream,
           owner: identity.account,
           spender: args.address,
           tokenId: callArgs[3],
@@ -795,7 +818,7 @@ function legacyTouchedResources(
       if (typeof callArgs[0] === "bigint") {
         resources.push({ kind: "loan", lending: args.address, id: callArgs[0] });
       }
-      resources.push({ kind: "contract", address: SABLIER_LOCKUP_ADDRESS });
+      if (stream) resources.push({ kind: "contract", address: stream });
       break;
     default:
       resources.push(

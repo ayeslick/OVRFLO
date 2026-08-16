@@ -1,0 +1,41 @@
+summary_ref: "docs/plans/2026-08-15-006-fix-factory-canonical-stream-anchor-plan.md"
+goal: >
+  Make the factory the only static protocol anchor. Discover stream, vaults,
+  and lendings asynchronously with fail-closed discriminated-union states.
+state_keys_touched:
+  - protocolBootstrap (new TanStack Query key; chain-state, not a client key)
+writers_readers:
+  - writes: web/lib/protocol-bootstrap.ts (discoverProtocolBootstrap)
+  - writes: web/hooks/useProtocolBootstrap.ts
+  - reads: web/hooks/useOvrflos.ts, useStreams.ts, useAllMarkets.ts, useWriteFlow.ts
+  - reads: web/lib/live-action-plan.ts, invalidate.ts, actions/*
+  - reads: WatchApp, BorrowFlow, useLoanStreams
+trust_domains:
+  - fact: factory address
+    domain: pure-client (static config)
+    moved_from: null
+  - fact: stream / vault / lending registry
+    domain: on-chain
+    moved_from: pure-client (was env)
+rejected_alternatives:
+  - option: React Context Providers bootstrap cache
+    why_not: pin requires TanStack Query only; no new blocking Context
+  - option: keep SABLIER_LOCKUP_ADDRESS env with factory discovery optional
+    why_not: collapses "cannot ask" into empty protocol; plan invariant
+invariants_held:
+  - invariant: unresolved discovery is loading, never empty ready
+    how: ProtocolBootstrap union; [] vaults only in ready
+  - invariant: signing destinations re-derived from factory registry
+    how: createLiveExecutionPlan checks vault/lending/stream against bootstrap
+risks:
+  - risk: components still import removed config exports
+    residual: grep purge + test suite
+  - risk: e2e fixtures need artifact stream after env removal
+    residual: readStreamLockup reads deployments/local.json
+diff_hints:
+  - path: web/lib/protocol-bootstrap.ts
+    why: two-pass multicall discovery and failure codes
+  - path: web/lib/live-action-plan.ts
+    why: unregistered-target signing verification
+  - path: web/lib/config.ts
+    why: factory-required; obsolete env warning; trimmed FactoryDeployment

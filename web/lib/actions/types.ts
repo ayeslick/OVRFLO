@@ -252,7 +252,8 @@ export type ActionErrorCode =
   | "loan-not-closable"
   | "routing-incomplete"
   | "routing-insufficient"
-  | "quote-invalid";
+  | "quote-invalid"
+  | "unregistered-target";
 
 export type ActionError = {
   code: ActionErrorCode;

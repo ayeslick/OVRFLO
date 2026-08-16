@@ -1,13 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
 import type { Address } from "viem";
-import { SABLIER_LOCKUP_ADDRESS } from "@/lib/config";
 import {
   invalidateAllOnChainReads,
   invalidateOnChainReads,
   invalidateTouchedResources,
   marketContracts,
 } from "@/lib/invalidate";
+
+const STREAM = "0x4444444444444444444444444444444444444444" as Address;
 import { borrowerBookKeys, lenderBookKeys } from "@/lib/query-keys";
 
 const user = "0x0000000000000000000000000000000000000a11" as Address;
@@ -17,9 +18,10 @@ describe("invalidateAllOnChainReads", () => {
     const queryClient = new QueryClient();
     const spy = vi.spyOn(queryClient, "invalidateQueries");
     invalidateAllOnChainReads(queryClient, user);
-    expect(spy).toHaveBeenCalledTimes(2);
+    expect(spy).toHaveBeenCalledTimes(3);
     expect(spy).toHaveBeenCalledWith({ queryKey: ["readContract"] });
     expect(spy).toHaveBeenCalledWith({ queryKey: ["readContracts"] });
+    expect(spy).toHaveBeenCalledWith({ queryKey: ["protocolBootstrap"] });
   });
 });
 
@@ -88,9 +90,14 @@ describe("invalidateOnChainReads (R39)", () => {
   it("adds the stream lockup when streams:true so held reads refresh", () => {
     const client = new QueryClient();
     const spy = vi.spyOn(client, "invalidateQueries");
-    invalidateOnChainReads(client, { contracts: [MARKET_A], user, streams: true });
+    invalidateOnChainReads(client, {
+      contracts: [MARKET_A],
+      user,
+      streams: true,
+      stream: STREAM,
+    });
     expect(
-      matchesAny(predicatesFrom(spy), ["readContract", { address: SABLIER_LOCKUP_ADDRESS }]),
+      matchesAny(predicatesFrom(spy), ["readContract", { address: STREAM }]),
     ).toBe(true);
   });
 });
@@ -104,24 +111,27 @@ describe("marketContracts", () => {
       ovrfloToken: "0x0000000000000000000000000000000000000004" as Address,
       ptToken: "0x0000000000000000000000000000000000000005" as Address,
     };
-    expect(marketContracts(market)).toEqual([
+    expect(marketContracts(market, STREAM)).toEqual([
       market.vault,
       market.lending,
       market.underlying,
       market.ovrfloToken,
       market.ptToken,
-      SABLIER_LOCKUP_ADDRESS,
+      STREAM,
     ]);
   });
 
   it("drops a market with no lending deployment rather than emitting a null", () => {
-    const contracts = marketContracts({
-      vault: "0x0000000000000000000000000000000000000001" as Address,
-      lending: null,
-      underlying: "0x0000000000000000000000000000000000000003" as Address,
-      ovrfloToken: "0x0000000000000000000000000000000000000004" as Address,
-      ptToken: "0x0000000000000000000000000000000000000005" as Address,
-    });
+    const contracts = marketContracts(
+      {
+        vault: "0x0000000000000000000000000000000000000001" as Address,
+        lending: null,
+        underlying: "0x0000000000000000000000000000000000000003" as Address,
+        ovrfloToken: "0x0000000000000000000000000000000000000004" as Address,
+        ptToken: "0x0000000000000000000000000000000000000005" as Address,
+      },
+      STREAM,
+    );
     expect(contracts).not.toContain(null);
     expect(contracts).toHaveLength(5);
   });
@@ -163,11 +173,11 @@ describe("invalidateTouchedResources", () => {
     const spy = vi.spyOn(client, "invalidateQueries");
     invalidateTouchedResources(
       client,
-      [{ kind: "stream", sablier: SABLIER_LOCKUP_ADDRESS, id: 9n }],
+      [{ kind: "stream", sablier: STREAM, id: 9n }],
       identity,
     );
     expect(
-      matchesAny(predicatesFrom(spy), ["readContract", { address: SABLIER_LOCKUP_ADDRESS }]),
+      matchesAny(predicatesFrom(spy), ["readContract", { address: STREAM }]),
     ).toBe(true);
   });
 
@@ -180,7 +190,7 @@ describe("invalidateTouchedResources", () => {
       identity,
     );
     expect(
-      matchesAny(predicatesFrom(spy), ["readContract", { address: SABLIER_LOCKUP_ADDRESS }]),
+      matchesAny(predicatesFrom(spy), ["readContract", { address: STREAM }]),
     ).toBe(false);
   });
 });

@@ -25,23 +25,26 @@ export const CHAINLINK_STETH_USD =
 export const WSTETH_ADDRESS =
   "0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0" as const;
 
+const OBSOLETE_ENV_VARS = [
+  "NEXT_PUBLIC_SABLIER_LOCKUP_ADDRESS",
+  "NEXT_PUBLIC_OVRFLO_ADDRESS",
+  "NEXT_PUBLIC_OVRFLO_LENDING",
+  "NEXT_PUBLIC_LENDING_DEPLOYMENT_BLOCK",
+  "NEXT_PUBLIC_LENDING_DEPLOYMENT_BLOCK_HASH",
+] as const;
+
 const env = {
   profile: process.env.NEXT_PUBLIC_RUNTIME_PROFILE,
   chainId: process.env.NEXT_PUBLIC_CHAIN_ID,
   factory: process.env.NEXT_PUBLIC_OVRFLO_FACTORY,
   factoryDeploymentBlock: process.env.NEXT_PUBLIC_FACTORY_DEPLOYMENT_BLOCK,
   factoryDeploymentBlockHash: process.env.NEXT_PUBLIC_FACTORY_DEPLOYMENT_BLOCK_HASH,
-  ovrflo: process.env.NEXT_PUBLIC_OVRFLO_ADDRESS,
-  lending: process.env.NEXT_PUBLIC_OVRFLO_LENDING,
-  lendingDeploymentBlock: process.env.NEXT_PUBLIC_LENDING_DEPLOYMENT_BLOCK,
-  lendingDeploymentBlockHash: process.env.NEXT_PUBLIC_LENDING_DEPLOYMENT_BLOCK_HASH,
   projectionSchemaVersion: process.env.NEXT_PUBLIC_PROJECTION_SCHEMA_VERSION,
   abiVersion: process.env.NEXT_PUBLIC_ABI_VERSION,
   rpcUrl: process.env.NEXT_PUBLIC_RPC_URL,
   rpcFallbackUrls: process.env.NEXT_PUBLIC_RPC_FALLBACK_URLS,
   historicalRpcUrl: process.env.NEXT_PUBLIC_HISTORICAL_RPC_URL,
   reownProjectId: process.env.NEXT_PUBLIC_REOWN_PROJECT_ID,
-  sablierLockup: process.env.NEXT_PUBLIC_SABLIER_LOCKUP_ADDRESS,
   vercelEnv: process.env.VERCEL_ENV,
   nodeEnv: process.env.NODE_ENV,
   deployableBuild: process.env.OVRFLO_DEPLOYABLE_BUILD,
@@ -52,10 +55,6 @@ export type FactoryDeployment = {
   address: Address;
   blockNumber: bigint;
   blockHash: Hash;
-  ovrflo: Address;
-  lending: Address;
-  lendingBlockNumber: bigint;
-  lendingBlockHash: Hash;
   projectionSchemaVersion: number;
   abiVersion: number;
 };
@@ -99,20 +98,6 @@ function parseChainId(raw: string | undefined, profile: RuntimeProfile): typeof 
     throw new Error("OVRFLO web requires chain id 1, including local mainnet forks");
   }
   return MAINNET_CHAIN_ID;
-}
-
-function parseAddress(
-  raw: string | undefined,
-  name: string,
-  profile: RuntimeProfile,
-): Address {
-  const value =
-    profile === "production" ? required(raw, name) : (raw || ZERO_ADDRESS);
-  if (!isAddress(value)) throw new Error(`${name} must be a valid address`);
-  if (profile === "production" && value.toLowerCase() === ZERO_ADDRESS) {
-    throw new Error(`${name} must not be the zero address in production`);
-  }
-  return value;
 }
 
 function parseBlockNumber(
@@ -215,17 +200,24 @@ function parseReownProjectId(profile: RuntimeProfile) {
   return value;
 }
 
+function warnObsoleteEnvVars() {
+  if (env.nodeEnv === "production") return;
+  for (const name of OBSOLETE_ENV_VARS) {
+    if (process.env[name]) {
+      console.warn(
+        `[ovrflo] ${name} is obsolete; the factory is the only static protocol anchor`,
+      );
+    }
+  }
+}
+
+warnObsoleteEnvVars();
+
 export const runtimeProfile = parseProfile();
 export const chainId = parseChainId(env.chainId, runtimeProfile);
-/** Stream-layer address (OVRFLOStream). Name kept per R9. Required in both profiles. */
-export const SABLIER_LOCKUP_ADDRESS = parseRequiredAddress(
-  env.sablierLockup,
-  "NEXT_PUBLIC_SABLIER_LOCKUP_ADDRESS",
-);
-export const factoryAddress = parseAddress(
+export const factoryAddress = parseRequiredAddress(
   env.factory,
   "NEXT_PUBLIC_OVRFLO_FACTORY",
-  runtimeProfile,
 );
 export const factoryDeployment: FactoryDeployment = {
   address: factoryAddress,
@@ -237,18 +229,6 @@ export const factoryDeployment: FactoryDeployment = {
   blockHash: parseHash(
     env.factoryDeploymentBlockHash,
     "NEXT_PUBLIC_FACTORY_DEPLOYMENT_BLOCK_HASH",
-    runtimeProfile,
-  ),
-  ovrflo: parseAddress(env.ovrflo, "NEXT_PUBLIC_OVRFLO_ADDRESS", runtimeProfile),
-  lending: parseAddress(env.lending, "NEXT_PUBLIC_OVRFLO_LENDING", runtimeProfile),
-  lendingBlockNumber: parseBlockNumber(
-    env.lendingDeploymentBlock,
-    "NEXT_PUBLIC_LENDING_DEPLOYMENT_BLOCK",
-    runtimeProfile,
-  ),
-  lendingBlockHash: parseHash(
-    env.lendingDeploymentBlockHash,
-    "NEXT_PUBLIC_LENDING_DEPLOYMENT_BLOCK_HASH",
     runtimeProfile,
   ),
   projectionSchemaVersion: parseVersion(

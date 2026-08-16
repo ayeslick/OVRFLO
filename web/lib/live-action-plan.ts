@@ -22,8 +22,10 @@ import type {
   MarketActionContext,
   ReadyAction,
 } from "./actions/types";
+import { actionError } from "./actions/types";
 import { applySlippageDown } from "./modal-logic";
-import { SABLIER_LOCKUP_ADDRESS, ZERO_ADDRESS } from "./config";
+import { ZERO_ADDRESS } from "./config";
+import type { ReadyProtocolBootstrap } from "./protocol-bootstrap";
 import { readyOutcome } from "./read-outcome";
 import type { LiquidityPosition, Loan, MarketInfo } from "./types";
 
@@ -36,7 +38,10 @@ export type LiveMarketScope = Pick<
   | "ovrfloToken"
   | "ptToken"
   | "expiryCached"
->;
+> & {
+  /** Discovered factory stream lockup — never an env constant. */
+  sablier: Address;
+};
 
 export type LiveWriteArgs = {
   address?: Address;
@@ -63,6 +68,7 @@ export type LiveBorrowProjectionLoader = (input: {
 type LiveSnapshotOptions = {
   pinnedBlock?: LiveBlockSnapshot;
   loadBorrowProjection?: LiveBorrowProjectionLoader;
+  bootstrap?: ReadyProtocolBootstrap;
 };
 
 type ParsedAction = {
@@ -322,10 +328,39 @@ function marketContext(
     underlying: scope.underlying,
     ovrfloToken: scope.ovrfloToken,
     ptToken: scope.ptToken,
-    sablier: SABLIER_LOCKUP_ADDRESS,
+    sablier: scope.sablier,
     expiry: scope.expiryCached,
     now,
   };
+}
+
+function verifyRegisteredTarget(
+  scope: LiveMarketScope,
+  bootstrap: ReadyProtocolBootstrap,
+): ReturnType<typeof actionError> | null {
+  const registered = bootstrap.vaults.find((entry) =>
+    isAddressEqual(entry.vault, scope.vault),
+  );
+  if (!registered) {
+    return actionError("unregistered-target", "Vault is not registered on the factory");
+  }
+  if (
+    !scope.lending ||
+    !registered.lending ||
+    !isAddressEqual(scope.lending, registered.lending)
+  ) {
+    return actionError(
+      "unregistered-target",
+      "Lending is not the factory mapping for this vault",
+    );
+  }
+  if (!isAddressEqual(scope.sablier, bootstrap.stream)) {
+    return actionError(
+      "unregistered-target",
+      "Market stream lockup does not match factory.ovrfloStream()",
+    );
+  }
+  return null;
 }
 
 async function loadSnapshot(
@@ -608,19 +643,19 @@ async function loadSnapshot(
       const reviewedMin = requireBigint(parsed.raw.args?.[4], "minimum received");
       const [recipient, approved, approvedForAll] = await Promise.all([
         read<Address>(client, blockNumber, {
-          address: SABLIER_LOCKUP_ADDRESS,
+          address: market.sablier,
           abi: sablierLockupAbi,
           functionName: "getRecipient",
           args: [streamId],
         }),
         read<Address>(client, blockNumber, {
-          address: SABLIER_LOCKUP_ADDRESS,
+          address: market.sablier,
           abi: sablierLockupAbi,
           functionName: "getApproved",
           args: [streamId],
         }),
         read<boolean>(client, blockNumber, {
-          address: SABLIER_LOCKUP_ADDRESS,
+          address: market.sablier,
           abi: sablierLockupAbi,
           functionName: "isApprovedForAll",
           args: [identity.account, lending],
@@ -671,13 +706,13 @@ async function loadSnapshot(
       const streamId = parsed.intent.streamId;
       const [recipient, withdrawable] = await Promise.all([
         read<Address>(client, blockNumber, {
-          address: SABLIER_LOCKUP_ADDRESS,
+          address: market.sablier,
           abi: sablierLockupAbi,
           functionName: "getRecipient",
           args: [streamId],
         }),
         read<bigint>(client, blockNumber, {
-          address: SABLIER_LOCKUP_ADDRESS,
+          address: market.sablier,
           abi: sablierLockupAbi,
           functionName: "withdrawableAmountOf",
           args: [streamId],
@@ -750,7 +785,7 @@ async function loadSnapshot(
       const loan = await loanAt(client, lending, parsed.intent.loanId, blockNumber);
       const withdrawable = loan
         ? await read<bigint>(client, blockNumber, {
-            address: SABLIER_LOCKUP_ADDRESS,
+            address: market.sablier,
             abi: sablierLockupAbi,
             functionName: "withdrawableAmountOf",
             args: [loan.streamId],
@@ -824,6 +859,12 @@ export async function createLiveActionDraft(
 > {
   const parsed = parseAction(raw);
   if (!parsed) return null;
+  if (options.bootstrap) {
+    const registrationError = verifyRegisteredTarget(scope, options.bootstrap);
+    if (registrationError) {
+      return { status: "invalid", errors: [registrationError] };
+    }
+  }
   return actionResultToDraft(
     await buildLiveAction(parsed, identity, scope, client, options),
     requestForAction,
@@ -835,20 +876,17 @@ export async function createLiveExecutionPlan(
   identity: ActionIdentity,
   scope: LiveMarketScope,
   client: LiveClient,
-  loadBorrowProjection?: LiveBorrowProjectionLoader,
+  options: {
+    bootstrap: ReadyProtocolBootstrap;
+    loadBorrowProjection?: LiveBorrowProjectionLoader;
+  },
 ): Promise<
   | { status: "ready"; plan: ExecutionPlan }
   | { status: "invalid"; errors: Extract<ActionBuildResult, { status: "invalid" }>["errors"] }
   | { status: "needs_review"; draft: ActionExecutionDraft; plan: ExecutionPlan }
   | null
 > {
-  const initial = await createLiveActionDraft(
-    raw,
-    identity,
-    scope,
-    client,
-    { loadBorrowProjection },
-  );
+  const initial = await createLiveActionDraft(raw, identity, scope, client, options);
   if (!initial) return null;
   if (initial.status === "invalid") return initial;
   const accepted = initial.draft;
@@ -861,7 +899,7 @@ export async function createLiveExecutionPlan(
         currentIdentity,
         scope,
         client,
-        { loadBorrowProjection },
+        options,
       );
       if (!rebuilt) {
         return {

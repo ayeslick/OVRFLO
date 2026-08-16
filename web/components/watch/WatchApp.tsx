@@ -19,7 +19,7 @@ import { symbolFor, useMarketSymbols } from "@/hooks/useMarketSymbols";
 import { useOvrflos } from "@/hooks/useOvrflos";
 import { useStreams, type HydratedStream } from "@/hooks/useStreams";
 import { useUsdPrice } from "@/hooks/useUsdPrice";
-import { chainId, factoryDeployment, isConfiguredAddress } from "@/lib/config";
+import { chainId } from "@/lib/config";
 import { formatUsd } from "@/lib/format";
 import type { Freshness } from "@/lib/freshness";
 import { parseUsdMode, parseWatchLens, type WatchLens } from "@/lib/parse";
@@ -54,7 +54,10 @@ export function WatchApp() {
   const ovrflos = useOvrflos();
   const markets = useAllMarkets();
   const symbols = useMarketSymbols(markets.markets);
-  const lending = isConfiguredAddress(factoryDeployment.lending) ? factoryDeployment.lending : markets.markets[0]?.lending ?? null;
+  const lending =
+    markets.markets[0]?.lending ??
+    ovrflos.vaults.find((vault) => vault.lending)?.lending ??
+    null;
 
   const lender = useLenderBook(lending, account);
   const borrower = useBorrowerBook(lending, account);
@@ -64,6 +67,7 @@ export function WatchApp() {
     markets: markets.markets,
     registryComplete: !ovrflos.isLoading && markets.status !== "loading",
     now: nowSeconds,
+    stream: ovrflos.stream,
   });
 
   const lenderData = useLastKnown(lender);

@@ -4,8 +4,9 @@ import { useMemo, useRef } from "react";
 import { useReadContracts } from "wagmi";
 import type { Address } from "viem";
 import { sablierLockupAbi } from "@/lib/abis";
-import { SABLIER_LOCKUP_ADDRESS } from "@/lib/config";
+import { ZERO_ADDRESS } from "@/lib/config";
 import { readQuery } from "@/lib/query-keys";
+import { useProtocolBootstrap } from "@/hooks/useProtocolBootstrap";
 import type { StreamSchedule } from "@/lib/payoff";
 
 export type LoanStreamTruth = {
@@ -15,6 +16,8 @@ export type LoanStreamTruth = {
 };
 
 export function useLoanStreams(streamIds: readonly bigint[]): ReadonlyMap<string, LoanStreamTruth> {
+  const bootstrap = useProtocolBootstrap();
+  const lockup = bootstrap.status === "ready" ? bootstrap.stream : ZERO_ADDRESS;
   const unique = useMemo(() => {
     const seen = new Set<string>();
     const ids: bigint[] = [];
@@ -32,25 +35,28 @@ export function useLoanStreams(streamIds: readonly bigint[]): ReadonlyMap<string
     () =>
       unique.flatMap((streamId) => [
         {
-          address: SABLIER_LOCKUP_ADDRESS,
+          address: lockup,
           abi: sablierLockupAbi,
           functionName: "getStream" as const,
           args: [streamId] as const,
         },
         {
-          address: SABLIER_LOCKUP_ADDRESS,
+          address: lockup,
           abi: sablierLockupAbi,
           functionName: "withdrawableAmountOf" as const,
           args: [streamId] as const,
         },
       ]),
-    [unique],
+    [lockup, unique],
   );
 
   const reads = useReadContracts({
     allowFailure: true,
     contracts,
-    query: { ...readQuery, enabled: unique.length > 0 },
+    query: {
+      ...readQuery,
+      enabled: unique.length > 0 && bootstrap.status === "ready",
+    },
   });
 
   const lastKnown = useRef(new Map<string, LoanStreamTruth>());

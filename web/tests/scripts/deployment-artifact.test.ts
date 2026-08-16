@@ -20,6 +20,7 @@ const LENDING_REGISTERED_TOPIC =
   "0x4fe43074b419acbe41e8428df134258612acf6435f32c53db0f6a4ba665b4e41";
 const SABLIER_LL_SELECTOR = "0x94cd301a";
 const SABLIER_SELECTOR = "0x482879aa";
+const OVRFLO_STREAM_SELECTOR = "0xce6bc9b5";
 const temporaryDirectories: string[] = [];
 
 function paddedAddress(address: string) {
@@ -31,6 +32,9 @@ function streamAwareRequest(inner: (url: string, method: string, params: unknown
     if (method === "eth_call") {
       const [{ to, data }] = params as [{ to: string; data: string }];
       const selector = data.toLowerCase();
+      if (to.toLowerCase() === FACTORY.toLowerCase() && selector === OVRFLO_STREAM_SELECTOR) {
+        return paddedAddress(STREAM);
+      }
       if (to.toLowerCase() === OVRFLO.toLowerCase() && selector === SABLIER_LL_SELECTOR) {
         return paddedAddress(STREAM);
       }

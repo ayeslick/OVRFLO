@@ -15,15 +15,15 @@ const { LOCKUP } = vi.hoisted(() => ({
   LOCKUP: "0x0000000000000000000000000000000000000f66" as Address,
 }));
 
-vi.mock("@/lib/config", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/lib/config")>();
-  return {
-    ...actual,
-    SABLIER_LOCKUP_ADDRESS: LOCKUP,
-    isConfiguredAddress: (address: Address | null | undefined) =>
-      Boolean(address && address !== "0x0000000000000000000000000000000000000000"),
-  };
-});
+vi.mock("@/hooks/useProtocolBootstrap", () => ({
+  useProtocolBootstrap: () => ({
+    status: "ready" as const,
+    factory: "0x0000000000000000000000000000000000000f00" as Address,
+    stream: LOCKUP,
+    vaults: [],
+    blockNumber: 1n,
+  }),
+}));
 
 const success = (result: unknown) => ({ status: "success" as const, result });
 const failure = (error: unknown) => ({ status: "failure" as const, error });

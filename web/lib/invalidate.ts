@@ -1,8 +1,8 @@
 import type { QueryClient } from "@tanstack/react-query";
 import type { Address } from "viem";
 import type { ActionIdentity, TouchedResource } from "./actions/types";
-import { SABLIER_LOCKUP_ADDRESS } from "./config";
-import { borrowerBookKeys, lenderBookKeys } from "./query-keys";
+import { factoryAddress } from "./config";
+import { borrowerBookKeys, lenderBookKeys, protocolBootstrapKeys } from "./query-keys";
 import type { MarketInfo } from "./types";
 
 // wagmi v3 roots useReadContract / useReadContracts keys at these string
@@ -26,7 +26,12 @@ export const WAGMI_READ_ROOTS = ["readContract", "readContracts"] as const;
  */
 export function invalidateOnChainReads(
   queryClient: QueryClient,
-  options: { contracts: readonly Address[]; user?: Address; streams?: boolean },
+  options: {
+    contracts: readonly Address[];
+    user?: Address;
+    streams?: boolean;
+    stream?: Address;
+  },
 ) {
   const touched = new Set(options.contracts.filter(Boolean).map((address) => address.toLowerCase()));
 
@@ -36,10 +41,10 @@ export function invalidateOnChainReads(
     });
   }
 
-  if (options.streams) {
-    // Held streams are wagmi reads on SABLIER_LOCKUP_ADDRESS — covered when
+  if (options.streams && options.stream) {
+    // Held streams are wagmi reads on the discovered lockup — covered when
     // that address is in `contracts`. No custom streamKeys remain after U8.
-    touched.add(SABLIER_LOCKUP_ADDRESS.toLowerCase());
+    touched.add(options.stream.toLowerCase());
     for (const root of WAGMI_READ_ROOTS) {
       queryClient.invalidateQueries({
         predicate: (query) => query.queryKey[0] === root && keyMentionsAny(query.queryKey, touched),
@@ -79,14 +84,17 @@ export function keyMentionsAny(
  * Naming the market's whole contract set keeps the invalidation honest while
  * staying proportional: one market's reads refresh, not every market's.
  */
-export function marketContracts(market: Pick<MarketInfo, "vault" | "lending" | "underlying" | "ovrfloToken" | "ptToken">) {
+export function marketContracts(
+  market: Pick<MarketInfo, "vault" | "lending" | "underlying" | "ovrfloToken" | "ptToken">,
+  stream: Address,
+) {
   return [
     market.vault,
     market.lending,
     market.underlying,
     market.ovrfloToken,
     market.ptToken,
-    SABLIER_LOCKUP_ADDRESS,
+    stream,
   ].filter((address): address is Address => Boolean(address));
 }
 
@@ -135,8 +143,10 @@ export function invalidateTouchedResources(
     queryClient.invalidateQueries({ queryKey: borrowerBookKeys.all });
     queryClient.invalidateQueries({ queryKey: lenderBookKeys.all });
   }
-  // stream / nft-approval: wagmi keys already mention SABLIER_LOCKUP_ADDRESS
-  // via resourceContracts — no custom streamKeys to invalidate.
+  // Append-only factory registry: refresh discovery after a registration write.
+  if (contracts.has(factoryAddress.toLowerCase())) {
+    queryClient.invalidateQueries({ queryKey: protocolBootstrapKeys.all });
+  }
 }
 
 /**
@@ -154,6 +164,7 @@ export function invalidateAllOnChainReads(queryClient: QueryClient, user?: Addre
   for (const root of WAGMI_READ_ROOTS) {
     queryClient.invalidateQueries({ queryKey: [root] });
   }
+  queryClient.invalidateQueries({ queryKey: protocolBootstrapKeys.all });
 }
 
 /**

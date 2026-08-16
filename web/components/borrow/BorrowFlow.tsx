@@ -31,7 +31,8 @@ import { useUsdPrice } from "@/hooks/useUsdPrice";
 import { useWalletChangeReset } from "@/hooks/useWalletChangeReset";
 import { ovrfloLendingAbi, sablierLockupAbi } from "@/lib/abis";
 import { classifyBorrowError } from "@/lib/borrow";
-import { chainId, factoryAddress, SABLIER_LOCKUP_ADDRESS, ZERO_ADDRESS } from "@/lib/config";
+import { chainId, factoryAddress, ZERO_ADDRESS } from "@/lib/config";
+import { useProtocolBootstrap } from "@/hooks/useProtocolBootstrap";
 import { decodeContractError, isUserRejection } from "@/lib/errors";
 import { formatAprBps, formatUsd } from "@/lib/format";
 import { bestDepthTick, stepWindow, tickWindow, type LadderModel } from "@/lib/ladder";
@@ -73,6 +74,8 @@ function draftKey(account: string) {
 export function BorrowFlow() {
   const router = useRouter();
   const queryClient = useQueryClient();
+  const bootstrap = useProtocolBootstrap();
+  const lockup = bootstrap.status === "ready" ? bootstrap.stream : ZERO_ADDRESS;
   const connection = useConnection();
   const account = connection.addresses?.[0];
   const connected = connection.status === "connected" && Boolean(account);
@@ -99,6 +102,7 @@ export function BorrowFlow() {
     markets: marketsResult.markets,
     registryComplete: marketsResult.status === "ready" && !ovrflos.isLoading,
     now,
+    stream: ovrflos.stream,
   });
 
   const eligible = useMemo(() => {
@@ -182,20 +186,20 @@ export function BorrowFlow() {
     });
   }, [account, amountRaw, draftReady, market?.market, selectedAprBps, selectedStreamId]);
 
-  const nftEnabled = Boolean(account && lending && selectedStream);
+  const nftEnabled = Boolean(account && lending && selectedStream && bootstrap.status === "ready");
   const nftReads = useReadContracts({
     allowFailure: true,
     contracts:
       nftEnabled && account && lending && selectedStream
         ? [
             {
-              address: SABLIER_LOCKUP_ADDRESS,
+              address: lockup,
               abi: sablierLockupAbi,
               functionName: "getApproved",
               args: [selectedStream.streamId],
             },
             {
-              address: SABLIER_LOCKUP_ADDRESS,
+              address: lockup,
               abi: sablierLockupAbi,
               functionName: "isApprovedForAll",
               args: [account, lending],
@@ -360,7 +364,7 @@ export function BorrowFlow() {
   function onApprove() {
     if (!lending || !selectedStream || chainGuard.wrongChain || !signingAllowed) return;
     approveTx.writeContract({
-      address: SABLIER_LOCKUP_ADDRESS,
+      address: lockup,
       abi: sablierLockupAbi,
       functionName: "approve",
       args: [lending, selectedStream.streamId],

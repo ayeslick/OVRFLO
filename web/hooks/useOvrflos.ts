@@ -1,97 +1,49 @@
 "use client";
 
-import { useMemo } from "react";
-import { useReadContract, useReadContracts } from "wagmi";
 import type { Address } from "viem";
-import { ovrfloFactoryAbi } from "@/lib/abis";
-import { factoryAddress, isConfiguredAddress, ZERO_ADDRESS } from "@/lib/config";
 import { MAX_VAULT_REGISTRY_ENTRIES } from "@/lib/discovery/limits";
 import type { VaultInfo } from "@/lib/types";
+import { useProtocolBootstrap } from "./useProtocolBootstrap";
 
-export function useOvrflos(factory: Address = factoryAddress) {
-  const countRead = useReadContract({
-    address: factory,
-    abi: ovrfloFactoryAbi,
-    functionName: "ovrfloCount",
-    query: { enabled: isConfiguredAddress(factory) },
-  });
+/**
+ * Vault registry view over factory bootstrap. Loading never collapses to an
+ * empty ready list; [] vaults means empty only when bootstrap status is ready.
+ */
+export function useOvrflos(_factory?: Address) {
+  void _factory;
+  const bootstrap = useProtocolBootstrap();
 
-  const count = countRead.data ?? 0n;
-  const indexes = useMemo(
-    () => Array.from({ length: bigintToSafeLength(count) }, (_, index) => BigInt(index)),
-    [count],
-  );
+  if (bootstrap.status === "loading") {
+    return {
+      vaults: [] as VaultInfo[],
+      stream: null as Address | null,
+      tooLarge: false,
+      isLoading: true,
+      error: null as Error | null,
+      bootstrap,
+    };
+  }
 
-  const vaultReads = useReadContracts({
-    contracts: indexes.map((index) => ({
-      address: factory,
-      abi: ovrfloFactoryAbi,
-      functionName: "ovrflos",
-      args: [index],
-    })),
-    query: { enabled: indexes.length > 0 },
-  });
-
-  const vaultAddresses = useMemo(
-    () =>
-      (vaultReads.data ?? [])
-        .map((result) => (result.status === "success" ? result.result : undefined))
-        .filter((address): address is Address => Boolean(address && address !== ZERO_ADDRESS)),
-    [vaultReads.data],
-  );
-
-  const infoReads = useReadContracts({
-    contracts: vaultAddresses.flatMap((vault) => [
-      {
-        address: factory,
-        abi: ovrfloFactoryAbi,
-        functionName: "ovrfloInfo",
-        args: [vault],
-      },
-      {
-        address: factory,
-        abi: ovrfloFactoryAbi,
-        functionName: "ovrfloToLending",
-        args: [vault],
-      },
-    ]),
-    query: { enabled: vaultAddresses.length > 0 },
-  });
-
-  const vaults = useMemo<VaultInfo[]>(() => {
-    const results = infoReads.data ?? [];
-    return vaultAddresses.map((vault, index) => {
-      const info = results[index * 2];
-      const lending = results[index * 2 + 1];
-      const tuple = info?.status === "success" ? (info.result as unknown as readonly [Address, Address, Address]) : undefined;
-      const lendingAddress = lending?.status === "success" ? (lending.result as Address) : ZERO_ADDRESS;
-      return {
-        vault,
-        treasury: tuple?.[0] ?? ZERO_ADDRESS,
-        underlying: tuple?.[1] ?? ZERO_ADDRESS,
-        ovrfloToken: tuple?.[2] ?? ZERO_ADDRESS,
-        lending: lendingAddress && lendingAddress !== ZERO_ADDRESS ? lendingAddress : null,
-      };
-    });
-  }, [infoReads.data, vaultAddresses]);
-  const incomplete =
-    count <= MAX_VAULT_ENUMERATION &&
-    ((indexes.length > 0 &&
-      (vaultReads.data?.length !== indexes.length ||
-        vaultReads.data.some((result) => result.status !== "success"))) ||
-      (vaultAddresses.length > 0 &&
-        (infoReads.data?.length !== vaultAddresses.length * 2 ||
-          infoReads.data.some((result) => result.status !== "success"))));
+  if (bootstrap.status === "unavailable") {
+    const budget = bootstrap.failures.some((failure) => failure.code === "budget_exceeded");
+    const message = bootstrap.failures.map((failure) => failure.message).join("; ");
+    return {
+      vaults: [] as VaultInfo[],
+      stream: null as Address | null,
+      tooLarge: budget,
+      isLoading: false,
+      error: new Error(message || "Protocol bootstrap unavailable"),
+      bootstrap,
+    };
+  }
 
   return {
-    vaults: incomplete ? [] : vaults,
-    tooLarge: count > MAX_VAULT_ENUMERATION,
-    isLoading: countRead.isLoading || vaultReads.isLoading || infoReads.isLoading,
-    error:
-      countRead.error ??
-      vaultReads.error ??
-      infoReads.error ??
-      (incomplete ? new Error("Vault registry hydration is incomplete") : null),
+    vaults: bootstrap.vaults,
+    stream: bootstrap.stream,
+    tooLarge: false,
+    isLoading: false,
+    error: null as Error | null,
+    bootstrap,
   };
 }
 
