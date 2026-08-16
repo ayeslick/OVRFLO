@@ -5,10 +5,11 @@ import { LensTabs, type LensId, type LensTab } from "@/components/kit/LensTabs";
 import { RollingNumber } from "@/components/kit/RollingNumber";
 import type { BorrowerLoanRow } from "@/hooks/useBorrowerBook";
 import type { LenderPositionRow } from "@/hooks/useLenderBook";
-import type { HydratedStream } from "@/hooks/useStreams";
+import type { BookPager, HydratedStream } from "@/hooks/useStreams";
 import { formatTruncatedDecimal } from "@/lib/format";
 import type { StreamSchedule } from "@/lib/payoff";
 import type { WatchLens } from "@/lib/parse";
+import type { EntryBook } from "@/lib/watch-entry";
 import type { WatchSelection } from "@/lib/watch-url";
 import {
   borrowedRowState,
@@ -43,6 +44,7 @@ export function Wall({
   onSelect,
   streamsDegraded,
   panelStatus = "ready",
+  pager,
 }: {
   tabs: readonly WallTab[];
   lens: LensId;
@@ -59,6 +61,7 @@ export function Wall({
   onSelect: (selection: WatchSelection) => void;
   streamsDegraded: "pending" | "could-not-ask" | null;
   panelStatus?: "loading" | "empty" | "ready";
+  pager?: BookPager;
 }) {
   return (
     <section className="watch-wall" data-ui="UI-WATCH-WALL" data-region="watch-wall" data-lens={lens}>
@@ -67,7 +70,7 @@ export function Wall({
         {panelStatus === "ready" && lens === "supplied"
           ? positions.map((position) => (
               <SuppliedRow
-                key={position.id.toString()}
+                key={`${position.lending}-${position.id.toString()}`}
                 position={position}
                 selected={selection.kind === "position" && selection.id === position.id}
                 onSelect={() => onSelect({ kind: "position", id: position.id })}
@@ -77,7 +80,7 @@ export function Wall({
         {panelStatus === "ready" && lens === "borrowed"
           ? loans.map((loan) => (
               <BorrowedRow
-                key={loan.id.toString()}
+                key={`${loan.lending}-${loan.id.toString()}`}
                 loan={loan}
                 truth={loanStreams.get(loan.streamId.toString())}
                 nowSeconds={nowSeconds}
@@ -103,6 +106,12 @@ export function Wall({
               />
             ))
           : null}
+        {pager?.hasNextPage || pager?.isFetchingNextPage ? (
+          <LoadMore
+            fetching={Boolean(pager.isFetchingNextPage)}
+            onLoadMore={() => pager.fetchNextPage()}
+          />
+        ) : null}
       </div>
     </section>
   );
@@ -258,9 +267,9 @@ export function StreamsDegraded({ kind }: { kind: "pending" | "could-not-ask" })
 }
 
 export function visibleLensTabs(args: {
-  positions: { status: "loading" | "ready" | "unavailable"; count: number };
-  loans: { status: "loading" | "ready" | "unavailable"; count: number };
-  streams: { status: "loading" | "ready" | "unavailable"; count: number };
+  positions: EntryBook;
+  loans: EntryBook;
+  streams: EntryBook;
 }): WallTab[] {
   return [
     lensTab("supplied", "SUPPLIED", args.positions),
@@ -269,19 +278,34 @@ export function visibleLensTabs(args: {
   ];
 }
 
-function lensTab(
-  id: WatchLens,
-  label: string,
-  book: { status: "loading" | "ready" | "unavailable"; count: number },
-): WallTab {
+function lensTab(id: WatchLens, label: string, book: EntryBook): WallTab {
   if (book.status === "loading") {
     return { id, label, visible: true, state: "loading" };
   }
   if (book.status === "unavailable") {
     return { id, label, visible: true, state: "unavailable" };
   }
-  if (book.count === 0) {
+  if (book.confirmedEmpty) {
     return { id, label, visible: false, state: "ready" };
   }
   return { id, label, visible: true, state: "ready" };
+}
+
+function LoadMore({ fetching, onLoadMore }: { fetching: boolean; onLoadMore: () => void }) {
+  return (
+    <div className="watch-load-more">
+      <button
+        type="button"
+        className="watch-load-more-button"
+        data-ui="UI-WATCH-LOAD-MORE"
+        disabled={fetching}
+        onClick={onLoadMore}
+      >
+        LOAD MORE
+      </button>
+      <span className="watch-load-more-live" aria-live="polite">
+        {fetching ? "LOADING MORE" : ""}
+      </span>
+    </div>
+  );
 }

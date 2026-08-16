@@ -26,7 +26,8 @@ import { useMarketSymbols, symbolFor } from "@/hooks/useMarketSymbols";
 import { useNowSeconds } from "@/hooks/useNowSeconds";
 import { useOvrflos } from "@/hooks/useOvrflos";
 import { useStaleRecovery } from "@/hooks/useStaleRecovery";
-import { useStreams, type HydratedStream } from "@/hooks/useStreams";
+import { useCompleteStreams } from "@/hooks/useCompleteStreams";
+import { type HydratedStream } from "@/hooks/useStreams";
 import { useUsdPrice } from "@/hooks/useUsdPrice";
 import { useWalletChangeReset } from "@/hooks/useWalletChangeReset";
 import { ovrfloLendingAbi, sablierLockupAbi } from "@/lib/abis";
@@ -95,7 +96,7 @@ export function BorrowFlow() {
   const [draftReady, setDraftReady] = useState(false);
   const [bodyKey, setBodyKey] = useState(0);
 
-  const streams = useStreams({
+  const streams = useCompleteStreams({
     account,
     vaults: ovrflos.status === "ready" ? ovrflos.vaults : [],
     markets: marketsResult.markets,
@@ -400,9 +401,9 @@ export function BorrowFlow() {
     quote.fill >= (lendingConfig?.minLiquidityAmount ?? MIN_LIQUIDITY_AMOUNT);
 
   let signingBlocked: string | undefined;
+  if (preview.isStale || stale.staleRecovery) signingBlocked = "QUOTE UPDATED — REVIEW AGAIN";
   if (!signingAllowed) signingBlocked = "EVENTS STALE — SIGNING DISABLED";
   if (chainGuard.wrongChain) signingBlocked = "SWITCH NETWORK";
-  if (stale.staleRecovery) signingBlocked = "QUOTE UPDATED — REVIEW AGAIN";
 
   const usdUnavailable =
     usd.status === "unavailable" || (usd.status === "ready" && usd.data.status === "unavailable");
@@ -758,7 +759,7 @@ function continueReason(
 function streamSelectStatus(
   marketsStatus: "loading" | "ready" | "unavailable",
   vaultsLoading: boolean,
-  streams: ReturnType<typeof useStreams>,
+  streams: ReturnType<typeof useCompleteStreams>,
 ): "loading" | "ready" | "empty" | "unavailable" {
   if (marketsStatus === "unavailable" || streams.status === "unavailable") {
     return "unavailable";
@@ -766,10 +767,14 @@ function streamSelectStatus(
   if (marketsStatus === "loading" || vaultsLoading || streams.status === "loading") {
     return "loading";
   }
-  if (
-    streams.status === "ready" &&
-    streams.data.streams.filter((row) => row.borrowRouteEligible).length === 0
-  ) {
+  const eligibleCount =
+    streams.status === "ready"
+      ? streams.data.streams.filter((row) => row.borrowRouteEligible).length
+      : 0;
+  if (streams.status === "ready" && !streams.data.complete && eligibleCount === 0) {
+    return "loading";
+  }
+  if (streams.status === "ready" && streams.data.complete && eligibleCount === 0) {
     return "empty";
   }
   return "ready";

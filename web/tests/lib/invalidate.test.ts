@@ -14,14 +14,17 @@ import { borrowerBookKeys, lenderBookKeys } from "@/lib/query-keys";
 const user = "0x0000000000000000000000000000000000000a11" as Address;
 
 describe("invalidateAllOnChainReads", () => {
-  it("invalidates exactly the two wagmi roots", () => {
+  it("invalidates wagmi roots, bootstrap, and the three book factories", () => {
     const queryClient = new QueryClient();
     const spy = vi.spyOn(queryClient, "invalidateQueries");
     invalidateAllOnChainReads(queryClient, user);
-    expect(spy).toHaveBeenCalledTimes(3);
+    expect(spy).toHaveBeenCalledTimes(6);
     expect(spy).toHaveBeenCalledWith({ queryKey: ["readContract"] });
     expect(spy).toHaveBeenCalledWith({ queryKey: ["readContracts"] });
     expect(spy).toHaveBeenCalledWith({ queryKey: ["protocolBootstrap"] });
+    expect(spy).toHaveBeenCalledWith({ queryKey: ["stream-book"] });
+    expect(spy).toHaveBeenCalledWith({ queryKey: ["lender-book"] });
+    expect(spy).toHaveBeenCalledWith({ queryKey: ["borrower-book"] });
   });
 });
 

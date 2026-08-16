@@ -5,6 +5,7 @@ import type { BorrowerLoanRow } from "@/hooks/useBorrowerBook";
 import type { LenderPositionRow } from "@/hooks/useLenderBook";
 import type { HydratedStream } from "@/hooks/useStreams";
 import type { StreamSchedule } from "@/lib/payoff";
+import { entryBook } from "@/lib/watch-entry";
 
 const SCALE = 10n ** 18n;
 const ACCOUNT = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8" as const;
@@ -14,6 +15,7 @@ const NOW = 1_800_000_000n;
 function restingPosition(): LenderPositionRow {
   return {
     id: 41n,
+    lending: ACCOUNT,
     lender: ACCOUNT,
     market: MARKET,
     aprBps: 500,
@@ -28,6 +30,7 @@ function restingPosition(): LenderPositionRow {
 function filledPosition(): LenderPositionRow {
   return {
     id: 26n,
+    lending: ACCOUNT,
     lender: ACCOUNT,
     market: MARKET,
     aprBps: 500,
@@ -42,6 +45,8 @@ function filledPosition(): LenderPositionRow {
 function loan(overrides: Partial<BorrowerLoanRow> = {}): BorrowerLoanRow {
   return {
     id: 12n,
+    lending: ACCOUNT,
+    market: MARKET,
     borrower: ACCOUNT,
     streamId: 440n,
     obligation: 2n * SCALE,
@@ -67,9 +72,9 @@ describe("watch wall", () => {
   });
   it("hides a confirmed-zero lens and defaults dual-role to supplied", () => {
     const tabs = visibleLensTabs({
-      positions: { status: "ready", count: 1 },
-      loans: { status: "ready", count: 1 },
-      streams: { status: "ready", count: 0 },
+      positions: entryBook("ready", 1),
+      loans: entryBook("ready", 1),
+      streams: entryBook("ready", 0),
     });
     expect(tabs.find((tab) => tab.id === "streams")?.visible).toBe(false);
     const { rerender } = render(
@@ -115,9 +120,9 @@ describe("watch wall", () => {
 
   it("keeps pending and unavailable lenses visible", () => {
     const tabs = visibleLensTabs({
-      positions: { status: "loading", count: 0 },
-      loans: { status: "unavailable", count: 0 },
-      streams: { status: "unavailable", count: 0 },
+      positions: entryBook("loading", 0),
+      loans: entryBook("unavailable", 0),
+      streams: entryBook("unavailable", 0),
     });
     expect(tabs.every((tab) => tab.visible)).toBe(true);
   });
@@ -128,9 +133,9 @@ describe("watch wall", () => {
       <div data-width="1280" style={{ width: 1280 }}>
         <Wall
           tabs={visibleLensTabs({
-            positions: { status: "ready", count: 1 },
-            loans: { status: "ready", count: 0 },
-            streams: { status: "ready", count: 0 },
+            positions: entryBook("ready", 1),
+            loans: entryBook("ready", 0),
+            streams: entryBook("ready", 0),
           })}
           lens="supplied"
           onSelectLens={() => undefined}
@@ -163,9 +168,9 @@ describe("watch wall", () => {
     const { container } = render(
       <Wall
         tabs={visibleLensTabs({
-          positions: { status: "ready", count: 1 },
-          loans: { status: "ready", count: 0 },
-          streams: { status: "ready", count: 0 },
+          positions: entryBook("ready", 1),
+          loans: entryBook("ready", 0),
+          streams: entryBook("ready", 0),
         })}
         lens="supplied"
         onSelectLens={() => undefined}
@@ -193,9 +198,9 @@ describe("watch wall", () => {
     render(
       <Wall
         tabs={visibleLensTabs({
-          positions: { status: "ready", count: 0 },
-          loans: { status: "ready", count: 1 },
-          streams: { status: "ready", count: 0 },
+          positions: entryBook("ready", 0),
+          loans: entryBook("ready", 1),
+          streams: entryBook("ready", 0),
         })}
         lens="borrowed"
         onSelectLens={() => undefined}
@@ -228,9 +233,9 @@ describe("watch wall", () => {
     render(
       <Wall
         tabs={visibleLensTabs({
-          positions: { status: "ready", count: 0 },
-          loans: { status: "ready", count: 2 },
-          streams: { status: "ready", count: 0 },
+          positions: entryBook("ready", 0),
+          loans: entryBook("ready", 2),
+          streams: entryBook("ready", 0),
         })}
         lens="borrowed"
         onSelectLens={() => undefined}
@@ -262,9 +267,9 @@ describe("watch wall", () => {
     render(
       <Wall
         tabs={visibleLensTabs({
-          positions: { status: "ready", count: 0 },
-          loans: { status: "ready", count: 1 },
-          streams: { status: "ready", count: 0 },
+          positions: entryBook("ready", 0),
+          loans: entryBook("ready", 1),
+          streams: entryBook("ready", 0),
         })}
         lens="borrowed"
         onSelectLens={() => undefined}
@@ -300,9 +305,9 @@ describe("watch wall", () => {
       <div data-width="360" style={{ width: 360 }}>
         <Wall
           tabs={visibleLensTabs({
-            positions: { status: "ready", count: 1 },
-            loans: { status: "ready", count: 0 },
-            streams: { status: "ready", count: 0 },
+            positions: entryBook("ready", 1),
+            loans: entryBook("ready", 0),
+            streams: entryBook("ready", 0),
           })}
           lens="supplied"
           onSelectLens={() => undefined}
@@ -329,9 +334,9 @@ describe("watch wall", () => {
     render(
       <Wall
         tabs={visibleLensTabs({
-          positions: { status: "ready", count: 1 },
-          loans: { status: "ready", count: 0 },
-          streams: { status: "ready", count: 0 },
+          positions: entryBook("ready", 1),
+          loans: entryBook("ready", 0),
+          streams: entryBook("ready", 0),
         })}
         lens="supplied"
         onSelectLens={() => undefined}
@@ -359,9 +364,9 @@ describe("streams degraded copy", () => {
     render(
       <Wall
         tabs={visibleLensTabs({
-          positions: { status: "ready", count: 0 },
-          loans: { status: "ready", count: 0 },
-          streams: { status: "unavailable", count: 0 },
+          positions: entryBook("ready", 0),
+          loans: entryBook("ready", 0),
+          streams: entryBook("unavailable", 0),
         })}
         lens="streams"
         onSelectLens={() => undefined}
@@ -383,5 +388,68 @@ describe("streams degraded copy", () => {
     expect(screen.getByText(/OVRFLOSTREAM/i)).toBeInTheDocument();
     expect(screen.queryByText(/0xAFb9/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/you hold no streams/i)).not.toBeInTheDocument();
+  });
+});
+
+describe("LOAD MORE", () => {
+  it("is last in the tabpanel, disabled while fetching, and keeps the control mounted", () => {
+    const onLoadMore = vi.fn();
+    const { rerender } = render(
+      <Wall
+        tabs={visibleLensTabs({
+          positions: entryBook("ready", 1),
+          loans: entryBook("ready", 0),
+          streams: entryBook("ready", 0),
+        })}
+        lens="supplied"
+        onSelectLens={() => undefined}
+        positions={[filledPosition()]}
+        loans={[]}
+        streams={[]}
+        pledgedByStream={new Map()}
+        loanStreams={new Map()}
+        nowSeconds={NOW}
+        nowMs={Number(NOW) * 1000}
+        lastReadAt={NOW}
+        selection={{ kind: "none" }}
+        onSelect={() => undefined}
+        streamsDegraded={null}
+        pager={{ hasNextPage: true, isFetchingNextPage: false, fetchNextPage: onLoadMore }}
+      />,
+    );
+    const panel = document.getElementById("lens-panel-supplied");
+    const button = screen.getByRole("button", { name: "LOAD MORE" });
+    expect(button).toHaveAttribute("data-ui", "UI-WATCH-LOAD-MORE");
+    expect(button).not.toBeDisabled();
+    expect(panel?.lastElementChild?.querySelector("[data-ui='UI-WATCH-LOAD-MORE']")).not.toBeNull();
+    button.focus();
+    expect(button).toHaveFocus();
+    rerender(
+      <Wall
+        tabs={visibleLensTabs({
+          positions: entryBook("ready", 1),
+          loans: entryBook("ready", 0),
+          streams: entryBook("ready", 0),
+        })}
+        lens="supplied"
+        onSelectLens={() => undefined}
+        positions={[filledPosition()]}
+        loans={[]}
+        streams={[]}
+        pledgedByStream={new Map()}
+        loanStreams={new Map()}
+        nowSeconds={NOW}
+        nowMs={Number(NOW) * 1000}
+        lastReadAt={NOW}
+        selection={{ kind: "none" }}
+        onSelect={() => undefined}
+        streamsDegraded={null}
+        pager={{ hasNextPage: true, isFetchingNextPage: true, fetchNextPage: onLoadMore }}
+      />,
+    );
+    const fetching = screen.getByRole("button", { name: "LOAD MORE" });
+    expect(fetching).toBeDisabled();
+    expect(fetching).toHaveFocus();
+    expect(screen.getByText("LOADING MORE")).toBeInTheDocument();
   });
 });

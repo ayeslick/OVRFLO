@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { WatchApp } from "@/components/watch/WatchApp";
 import { Wall, visibleLensTabs } from "@/components/watch/Wall";
 import { writeWatchSearch } from "@/lib/watch-url";
+import { entryBook } from "@/lib/watch-entry";
 import {
   activeLoan,
   eligibleStream,
@@ -77,15 +78,15 @@ describe("inventory — entry, lenses, watch index, first-run, degraded, narrow 
 
   it("A three lens renders — SUPPLIED / BORROWED / STREAMS labels; zero-count hidden", () => {
     const tabs = visibleLensTabs({
-      positions: { status: "ready", count: 1 },
-      loans: { status: "ready", count: 1 },
-      streams: { status: "ready", count: 1 },
+      positions: entryBook("ready", 1),
+      loans: entryBook("ready", 1),
+      streams: entryBook("ready", 1),
     });
     expect(tabs.map((tab) => tab.label)).toEqual(["SUPPLIED", "BORROWED", "STREAMS"]);
     const hidden = visibleLensTabs({
-      positions: { status: "ready", count: 1 },
-      loans: { status: "ready", count: 0 },
-      streams: { status: "ready", count: 0 },
+      positions: entryBook("ready", 1),
+      loans: entryBook("ready", 0),
+      streams: entryBook("ready", 0),
     });
     expect(hidden.find((tab) => tab.id === "borrowed")?.visible).toBe(false);
     expect(hidden.find((tab) => tab.id === "streams")?.visible).toBe(false);
@@ -115,9 +116,9 @@ describe("inventory — entry, lenses, watch index, first-run, degraded, narrow 
 
   it("A borrowed and streams lenses show role rows and hide CLAIM ALL", () => {
     const tabs = visibleLensTabs({
-      positions: { status: "ready", count: 1 },
-      loans: { status: "ready", count: 1 },
-      streams: { status: "ready", count: 1 },
+      positions: entryBook("ready", 1),
+      loans: entryBook("ready", 1),
+      streams: entryBook("ready", 1),
     });
     const { rerender } = render(
       <Wall

@@ -1,12 +1,17 @@
 "use client";
 
 import { useMemo } from "react";
-import { useReadContract, useReadContracts } from "wagmi";
+import { useInfiniteQuery } from "@tanstack/react-query";
+import { usePublicClient } from "wagmi";
 import type { Address } from "viem";
-import { ovrfloLendingAbi } from "@/lib/abis";
-import { isConfiguredAddress } from "@/lib/config";
-import { MAX_ENUMERATION_IDS } from "@/lib/lending-math";
-import { readQuery } from "@/lib/query-keys";
+import { chainId, isConfiguredAddress } from "@/lib/config";
+import { STREAM_PAGE_SIZE } from "@/lib/lending-math";
+import { borrowerBookKeys, readQuery } from "@/lib/query-keys";
+import { bookFields, nextPageParam } from "@/lib/stream-book";
+import {
+  loadFactoryBorrowerPage,
+  type BorrowerLoanRow,
+} from "@/lib/protocol/lending";
 import {
   loadingOutcome,
   readFailure,
@@ -14,168 +19,151 @@ import {
   unavailableOutcome,
   type ReadOutcome,
 } from "@/lib/read-outcome";
-import type { Loan } from "@/lib/types";
-import { bigintToSafeLength } from "./useOvrflos";
+import type { BookPager } from "./useStreams";
 
-export type BorrowerLoanRow = Loan & {
-  outstanding: bigint;
-};
+export type { BorrowerLoanRow };
 
 export type BorrowerBook = {
   loans: readonly BorrowerLoanRow[];
+  sourceCount: bigint;
+  renderCount: number;
+  complete: boolean;
+  confirmedEmpty: boolean;
 };
 
+export type BorrowerBookResult = ReadOutcome<BorrowerBook> & BookPager;
+
+const idlePager: BookPager = {
+  hasNextPage: false,
+  isFetchingNextPage: false,
+  fetchNextPage: () => undefined,
+};
+
+function asLendings(lending: Address | readonly Address[] | null | undefined): Address[] {
+  if (!lending) return [];
+  if (typeof lending === "string") return [lending];
+  return [...lending];
+}
+
 export function useBorrowerBook(
-  lending: Address | null | undefined,
+  lending: Address | readonly Address[] | null | undefined,
   account: Address | null | undefined,
-): ReadOutcome<BorrowerBook> {
+  options?: { enabled?: boolean },
+): BorrowerBookResult {
+  const lendings = asLendings(lending);
+  const enabledFlag = options?.enabled ?? true;
+  const publicClient = usePublicClient({ chainId });
   const configured =
-    isConfiguredAddress(lending ?? null) && isConfiguredAddress(account ?? null);
+    enabledFlag &&
+    isConfiguredAddress(account ?? null) &&
+    publicClient !== undefined;
 
-  const countRead = useReadContract({
-    address: lending ?? undefined,
-    abi: ovrfloLendingAbi,
-    functionName: "borrowerLoanCount",
-    args: account ? [account] : undefined,
-    query: { ...readQuery, enabled: configured },
+  const query = useInfiniteQuery({
+    queryKey: borrowerBookKeys.factory(chainId, account, lendings),
+    queryFn: async ({ pageParam, signal }) => {
+      if (!publicClient || !account) throw new Error("borrower page query ran unconfigured");
+      const outcome = await loadFactoryBorrowerPage(
+        publicClient,
+        lendings,
+        account,
+        pageParam,
+        pageParam + STREAM_PAGE_SIZE,
+        { signal },
+      );
+      if (outcome.status === "unavailable") {
+        throw new Error(outcome.failures[0]?.message ?? "borrower page failed");
+      }
+      if (outcome.status !== "ready") {
+        throw new Error("borrower page did not resolve");
+      }
+      return outcome.data;
+    },
+    initialPageParam: 0n,
+    getNextPageParam: (lastPage, _pages, lastPageParam) =>
+      nextPageParam(lastPageParam, lastPage.sourceCount, STREAM_PAGE_SIZE),
+    enabled: configured && lendings.length > 0,
+    ...readQuery,
   });
 
-  const count = countRead.data ?? 0n;
-  const countOk = countRead.isSuccess;
-  const overBudget = countOk && count > MAX_ENUMERATION_IDS;
-  const idEnabled = configured && countOk && count > 0n && !overBudget;
-  const idContracts = useMemo(() => {
-    if (!idEnabled || !lending || !account) return [];
-    return Array.from({ length: bigintToSafeLength(count) }, (_, index) => ({
-      address: lending,
-      abi: ovrfloLendingAbi,
-      functionName: "borrowerLoanAt" as const,
-      args: [account, BigInt(index)] as const,
-    }));
-  }, [account, count, idEnabled, lending]);
-
-  const idReads = useReadContracts({
-    allowFailure: true,
-    contracts: idContracts,
-    query: { ...readQuery, enabled: idEnabled },
-  });
-
-  const idsComplete =
-    !idEnabled ||
-    (idReads.data?.length === idContracts.length &&
-      idReads.data.every((result) => result.status === "success"));
-  const ids = useMemo(() => {
-    if (!idsComplete) return [];
-    return (idReads.data ?? [])
-      .map((result) => (result.status === "success" ? (result.result as bigint) : 0n))
-      .filter((value) => value > 0n);
-  }, [idReads.data, idsComplete]);
-
-  const stateEnabled = configured && idsComplete && ids.length > 0;
-  const stateContracts = useMemo(() => {
-    if (!stateEnabled || !lending) return [];
-    return ids.map((id) => ({
-      address: lending,
-      abi: ovrfloLendingAbi,
-      functionName: "loanState" as const,
-      args: [id] as const,
-    }));
-  }, [ids, lending, stateEnabled]);
-
-  const stateReads = useReadContracts({
-    allowFailure: true,
-    contracts: stateContracts,
-    query: { ...readQuery, enabled: stateEnabled },
-  });
-
-  const dataUpdatedAt = Math.max(
-    countRead.dataUpdatedAt ?? 0,
-    idReads.dataUpdatedAt ?? 0,
-    stateReads.dataUpdatedAt ?? 0,
-  );
+  const pager: BookPager = {
+    hasNextPage: Boolean(query.hasNextPage),
+    isFetchingNextPage: query.isFetchingNextPage,
+    fetchNextPage: () => {
+      void query.fetchNextPage();
+    },
+  };
 
   return useMemo(() => {
-    const meta = dataUpdatedAt > 0 ? { dataUpdatedAt } : {};
-    if (!configured) return loadingOutcome<BorrowerBook>(undefined, meta);
-    if (countRead.isLoading && countRead.data === undefined) {
-      return loadingOutcome<BorrowerBook>(undefined, meta);
-    }
-    if (countRead.isError) {
-      return unavailableOutcome<BorrowerBook>(
-        [readFailure("useBorrowerBook", "transport", countRead.error ?? "borrowerLoanCount failed")],
-        meta,
-      );
-    }
-    if (overBudget) {
-      return unavailableOutcome<BorrowerBook>(
-        [
-          readFailure(
-            "useBorrowerBook",
-            "incomplete",
-            "Borrower enumeration exceeds the fail-closed budget",
-          ),
-        ],
-        meta,
-      );
-    }
-    if (count === 0n) {
-      return readyOutcome({ loans: [] }, meta);
-    }
-    if (idReads.isLoading && !idReads.data) return loadingOutcome<BorrowerBook>(undefined, meta);
-    if (!idsComplete) {
-      return unavailableOutcome<BorrowerBook>(
-        [readFailure("useBorrowerBook", "subcall", "borrowerLoanAt batch is incomplete")],
-        meta,
-      );
-    }
-    if (stateReads.isLoading && !stateReads.data) {
-      return loadingOutcome<BorrowerBook>(undefined, meta);
-    }
-    const stateComplete =
-      stateReads.data?.length === stateContracts.length &&
-      stateReads.data.every((result) => result.status === "success");
-    if (!stateComplete) {
-      return unavailableOutcome<BorrowerBook>(
-        [readFailure("useBorrowerBook", "subcall", "loanState batch is incomplete")],
-        meta,
-      );
-    }
-    const loans: BorrowerLoanRow[] = [];
-    for (const [index, id] of ids.entries()) {
-      const result = stateReads.data?.[index];
-      if (result?.status !== "success") continue;
-      const [stored, outstanding] = result.result;
-      const loan: BorrowerLoanRow = {
-        id,
-        borrower: stored.borrower,
-        streamId: stored.streamId,
-        obligation: stored.obligation,
-        drawn: stored.drawn,
-        repaid: stored.repaid,
-        closed: stored.closed,
-        outstanding,
+    const meta = query.dataUpdatedAt > 0 ? { dataUpdatedAt: query.dataUpdatedAt } : {};
+    if (!configured) return { ...loadingOutcome<BorrowerBook>(undefined, meta), ...idlePager };
+    if (lendings.length === 0) {
+      const book: BorrowerBook = {
+        loans: [],
+        ...bookFields({
+          sourceCount: 0n,
+          renderCount: 0,
+          complete: true,
+          unresolvedFailures: false,
+        }),
       };
-      loans.push(loan);
+      return { ...readyOutcome(book, meta), ...idlePager };
     }
-    return readyOutcome({ loans }, meta);
+    if (query.isLoading && !query.data) {
+      return { ...loadingOutcome<BorrowerBook>(undefined, meta), ...pager };
+    }
+    if (query.isError) {
+      const sourceCount = query.data?.pages[0]?.sourceCount ?? 0n;
+      const loans = query.data?.pages.flatMap((page) => [...page.loans]) ?? [];
+      const book =
+        query.data === undefined
+          ? undefined
+          : {
+              loans,
+              ...bookFields({
+                sourceCount,
+                renderCount: loans.length,
+                complete: false,
+                unresolvedFailures: true,
+              }),
+            };
+      return {
+        ...unavailableOutcome(
+          [readFailure("useBorrowerBook", "transport", query.error ?? "borrower page failed")],
+          meta,
+          book,
+        ),
+        ...pager,
+      };
+    }
+    if (!query.data) {
+      return { ...loadingOutcome<BorrowerBook>(undefined, meta), ...pager };
+    }
+    const sourceCount = query.data.pages[0]?.sourceCount ?? 0n;
+    const loans = query.data.pages.flatMap((page) => [...page.loans]);
+    const complete = !query.hasNextPage && !query.isFetching;
+    const book: BorrowerBook = {
+      loans,
+      ...bookFields({
+        sourceCount,
+        renderCount: loans.length,
+        complete,
+        unresolvedFailures: false,
+      }),
+    };
+    if (!complete && loans.length === 0) {
+      return { ...loadingOutcome(book, meta), ...pager };
+    }
+    return { ...readyOutcome(book, meta), ...pager };
   }, [
     configured,
-    count,
-    countRead.data,
-    countRead.dataUpdatedAt,
-    countRead.error,
-    countRead.isError,
-    countRead.isLoading,
-    dataUpdatedAt,
-    idReads.data,
-    idReads.dataUpdatedAt,
-    idReads.isLoading,
-    ids,
-    idsComplete,
-    overBudget,
-    stateContracts.length,
-    stateReads.data,
-    stateReads.dataUpdatedAt,
-    stateReads.isLoading,
+    lendings.length,
+    pager,
+    query.data,
+    query.dataUpdatedAt,
+    query.error,
+    query.hasNextPage,
+    query.isError,
+    query.isFetching,
+    query.isLoading,
   ]);
 }

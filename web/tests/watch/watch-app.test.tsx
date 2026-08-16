@@ -7,6 +7,7 @@ import type { BorrowerLoanRow } from "@/hooks/useBorrowerBook";
 import type { HydratedStream } from "@/hooks/useStreams";
 import { loadingOutcome, readFailure, readyOutcome, unavailableOutcome } from "@/lib/read-outcome";
 import { writeWatchSearch } from "@/lib/watch-url";
+import { idlePager } from "../inventory/fixtures";
 
 const ACCOUNT = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8" as Address;
 const MARKET = "0x1111111111111111111111111111111111111111" as Address;
@@ -137,36 +138,72 @@ vi.mock("@/hooks/useMarketSymbols", () => ({
 
 vi.mock("@/hooks/useLenderBook", () => ({
   useLenderBook: () => {
-    if (fx.lenderStatus === "loading") return loadingOutcome();
+    const rows = { positions: fx.positions };
+    const renderCount = fx.positions.length;
+    const fields = {
+      sourceCount: BigInt(renderCount),
+      renderCount,
+      complete: fx.lenderStatus === "ready",
+      confirmedEmpty: fx.lenderStatus === "ready" && renderCount === 0,
+    };
+    if (fx.lenderStatus === "loading") return { ...loadingOutcome({ ...rows, ...fields }), ...idlePager };
     if (fx.lenderStatus === "unavailable") {
-      return unavailableOutcome([readFailure("useLenderBook", "transport", "down")]);
+      return {
+        ...unavailableOutcome([readFailure("useLenderBook", "transport", "down")], {}, { ...rows, ...fields }),
+        ...idlePager,
+      };
     }
-    return readyOutcome({ positions: fx.positions });
+    return { ...readyOutcome({ ...rows, ...fields }), ...idlePager };
   },
 }));
 
 vi.mock("@/hooks/useBorrowerBook", () => ({
   useBorrowerBook: () => {
     const meta = fx.borrowerUpdatedAt > 0 ? { dataUpdatedAt: fx.borrowerUpdatedAt } : {};
-    if (fx.borrowerStatus === "loading") return loadingOutcome(undefined, meta);
-    if (fx.borrowerStatus === "unavailable") {
-      return unavailableOutcome([readFailure("useBorrowerBook", "transport", "down")], meta);
+    const rows = { loans: fx.loans };
+    const renderCount = fx.loans.length;
+    const fields = {
+      sourceCount: BigInt(renderCount),
+      renderCount,
+      complete: fx.borrowerStatus === "ready",
+      confirmedEmpty: fx.borrowerStatus === "ready" && renderCount === 0,
+    };
+    if (fx.borrowerStatus === "loading") {
+      return { ...loadingOutcome({ ...rows, ...fields }, meta), ...idlePager };
     }
-    return readyOutcome({ loans: fx.loans }, meta);
+    if (fx.borrowerStatus === "unavailable") {
+      return {
+        ...unavailableOutcome(
+          [readFailure("useBorrowerBook", "transport", "down")],
+          meta,
+          { ...rows, ...fields },
+        ),
+        ...idlePager,
+      };
+    }
+    return { ...readyOutcome({ ...rows, ...fields }, meta), ...idlePager };
   },
 }));
 
 vi.mock("@/hooks/useStreams", () => ({
   useStreams: () => {
     const meta = fx.streamUpdatedAt > 0 ? { dataUpdatedAt: fx.streamUpdatedAt } : {};
+    const rows = { streams: fx.streams };
+    const renderCount = fx.streams.length;
+    const fields = {
+      sourceCount: BigInt(renderCount),
+      renderCount,
+      complete: fx.streamStatus === "ready",
+      confirmedEmpty: fx.streamStatus === "ready" && renderCount === 0,
+    };
     if (fx.streamStatus === "loading") {
-      return loadingOutcome({ streams: [] as typeof fx.streams }, meta);
+      return { ...loadingOutcome({ ...rows, ...fields }, meta), ...idlePager };
     }
     if (fx.streamStatus === "unavailable") {
       const failure = [readFailure("useStreams", "transport", "could-not-ask")];
-      return unavailableOutcome(failure, meta);
+      return { ...unavailableOutcome(failure, meta, { ...rows, ...fields }), ...idlePager };
     }
-    return readyOutcome({ streams: fx.streams }, meta);
+    return { ...readyOutcome({ ...rows, ...fields }, meta), ...idlePager };
   },
 }));
 
@@ -279,6 +316,7 @@ describe("watch shell + entry", () => {
     fx.positions = [
       {
         id: 26n,
+        lending: LENDING,
         lender: ACCOUNT,
         market: MARKET,
         aprBps: 500,
@@ -300,6 +338,7 @@ describe("watch shell + entry", () => {
     fx.positions = [
       {
         id: 26n,
+        lending: LENDING,
         lender: ACCOUNT,
         market: MARKET,
         aprBps: 500,
@@ -336,6 +375,8 @@ describe("watch shell + entry", () => {
     fx.loans = [
       {
         id: 12n,
+        lending: LENDING,
+        market: MARKET,
         borrower: ACCOUNT,
         streamId: 5n,
         obligation: SCALE,
@@ -359,6 +400,7 @@ describe("watch shell + entry", () => {
     fx.positions = [
       {
         id: 26n,
+        lending: LENDING,
         lender: ACCOUNT,
         market: MARKET,
         aprBps: 500,
@@ -381,6 +423,7 @@ describe("watch shell + entry", () => {
     fx.positions = [
       {
         id: 26n,
+        lending: LENDING,
         lender: ACCOUNT,
         market: MARKET,
         aprBps: 500,
@@ -430,6 +473,8 @@ describe("watch shell + entry", () => {
     fx.loans = [
       {
         id: 12n,
+        lending: LENDING,
+        market: MARKET,
         borrower: ACCOUNT,
         streamId: 5n,
         obligation: SCALE,

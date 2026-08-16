@@ -1,18 +1,25 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { renderHook } from "@testing-library/react";
-import type { Address } from "viem";
-import { useStreams, renderEligibleStream, borrowRouteEligibleStream } from "@/hooks/useStreams";
-import { MAX_ENUMERATION_IDS, MIN_STREAM_AMOUNT } from "@/lib/lending-math";
-import { READ_INTERVAL_MS } from "@/lib/query-keys";
+import { renderHook, waitFor } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { createElement, type ReactNode } from "react";
+import type { Address, Hash } from "viem";
+import { useStreams } from "@/hooks/useStreams";
+import { MAX_ENUMERATION_IDS, MIN_STREAM_AMOUNT, STREAM_PAGE_SIZE } from "@/lib/lending-math";
+import { readyOutcome, unavailableOutcome, readFailure } from "@/lib/read-outcome";
+import type { StreamView } from "@/lib/protocol/streams";
+import { streamBookKeys } from "@/lib/query-keys";
+import { chainId } from "@/lib/config";
 
 const ACCOUNT = "0x00000000000000000000000000000000000000a1" as Address;
 const VAULT = "0x00000000000000000000000000000000000000b2" as Address;
 const TOKEN = "0x00000000000000000000000000000000000000c3" as Address;
-const OTHER = "0x00000000000000000000000000000000000000d4" as Address;
 const MARKET = "0x00000000000000000000000000000000000000e5" as Address;
+const PIN_HASH = `0x${"AB".repeat(32)}` as Hash;
 
-const { LOCKUP } = vi.hoisted(() => ({
+const { LOCKUP, loadStreamPage, readContract } = vi.hoisted(() => ({
   LOCKUP: "0x0000000000000000000000000000000000000f66" as Address,
+  loadStreamPage: vi.fn(),
+  readContract: vi.fn(),
 }));
 
 vi.mock("@/hooks/useProtocolBootstrap", () => ({
@@ -25,79 +32,47 @@ vi.mock("@/hooks/useProtocolBootstrap", () => ({
   }),
 }));
 
-const success = (result: unknown) => ({ status: "success" as const, result });
-const failure = (error: unknown) => ({ status: "failure" as const, error });
-
-type ReadReturn = {
-  data?: unknown;
-  isLoading: boolean;
-  isError: boolean;
-  isSuccess: boolean;
-  error: unknown;
-  dataUpdatedAt: number;
-};
-
-let balanceReturn: ReadReturn;
-let idsReturn: ReadReturn;
-let stateReturn: {
-  data?: unknown[];
-  isLoading: boolean;
-  dataUpdatedAt: number;
-};
-const readContractConfigs: unknown[] = [];
-const readContractsConfigs: unknown[] = [];
-
-vi.mock("wagmi", () => ({
-  useReadContract: (config: { functionName?: string }) => {
-    readContractConfigs.push(config);
-    if (config.functionName === "balanceOf") return balanceReturn;
-    if (config.functionName === "tokensOfOwnerIn") return idsReturn;
-    return balanceReturn;
-  },
-  useReadContracts: (config: unknown) => {
-    readContractsConfigs.push(config);
-    return stateReturn;
-  },
+vi.mock("@/hooks/useEnumerationPin", () => ({
+  useEnumerationPin: () => ({
+    pin: { blockNumber: 10n, blockHash: PIN_HASH },
+    mode: "hash" as const,
+    blockTimestamp: 1n,
+    headUpdatedAt: 1_000,
+    restartEpoch: 0,
+    stale: false,
+    markStaleAndRestart: vi.fn(),
+  }),
 }));
 
-function streamTuple(overrides: Partial<{
-  sender: Address;
-  asset: Address;
-  deposited: bigint;
-  withdrawn: bigint;
-  refunded: bigint;
-  isDepleted: boolean;
-  startTime: number;
-  endTime: number;
-  cliffTime: number;
-  isCancelable: boolean;
-}> = {}) {
-  return {
-    sender: overrides.sender ?? VAULT,
-    startTime: overrides.startTime ?? 1_000,
-    cliffTime: overrides.cliffTime ?? 1_000,
-    isCancelable: overrides.isCancelable ?? false,
-    wasCanceled: false,
-    asset: overrides.asset ?? TOKEN,
-    endTime: overrides.endTime ?? 2_000,
-    isDepleted: overrides.isDepleted ?? false,
-    isStream: true,
-    isTransferable: true,
-    amounts: {
-      deposited: overrides.deposited ?? MIN_STREAM_AMOUNT * 2n,
-      withdrawn: overrides.withdrawn ?? 0n,
-      refunded: overrides.refunded ?? 0n,
-    },
-  };
-}
+vi.mock("wagmi", () => ({
+  usePublicClient: () => ({ readContract, call: vi.fn() }),
+}));
 
-function stateRow(streamId: bigint, owner: Address = ACCOUNT, tuple = streamTuple()) {
-  return [
-    success(owner),
-    success(tuple),
-    success(1n),
-    success(1),
-  ];
+vi.mock("@/lib/protocol/streams", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/protocol/streams")>();
+  return { ...actual, loadStreamPage };
+});
+
+function view(streamId: bigint, overrides: Partial<StreamView> = {}): StreamView {
+  return {
+    streamId,
+    owner: ACCOUNT,
+    sender: VAULT,
+    asset: TOKEN,
+    startTime: 1_000,
+    cliffTime: 1_000,
+    endTime: 2_000,
+    deposited: MIN_STREAM_AMOUNT * 2n,
+    withdrawn: 0n,
+    refunded: 0n,
+    withdrawableAmount: 1n,
+    status: 1,
+    isCancelable: false,
+    isDepleted: false,
+    wasCanceled: false,
+    ok: true,
+    ...overrides,
+  };
 }
 
 const input = {
@@ -106,239 +81,169 @@ const input = {
   markets: [{ vault: VAULT, market: MARKET, ovrfloToken: TOKEN, expiryCached: 2_000n }],
   registryComplete: true,
   now: 1_500n,
+  stream: LOCKUP,
 };
 
-describe("useStreams Enumerable discovery", () => {
+function wrapper(queryClient: QueryClient) {
+  return function Wrapper({ children }: { children: ReactNode }) {
+    return createElement(QueryClientProvider, { client: queryClient }, children);
+  };
+}
+
+function client() {
+  return new QueryClient({
+    defaultOptions: { queries: { retry: false, gcTime: 0 } },
+  });
+}
+
+describe("useStreams lens pager", () => {
   beforeEach(() => {
-    readContractConfigs.length = 0;
-    readContractsConfigs.length = 0;
-    balanceReturn = {
-      data: 1n,
-      isLoading: false,
-      isError: false,
-      isSuccess: true,
-      error: null,
-      dataUpdatedAt: 1_000,
-    };
-    idsReturn = {
-      data: [5n],
-      isLoading: false,
-      isError: false,
-      isSuccess: true,
-      error: null,
-      dataUpdatedAt: 1_000,
-    };
-    stateReturn = {
-      data: stateRow(5n).flat(),
-      isLoading: false,
-      dataUpdatedAt: 1_000,
-    };
+    loadStreamPage.mockReset();
+    readContract.mockReset();
+    readContract.mockResolvedValue(1n);
+    loadStreamPage.mockResolvedValue(readyOutcome({ streams: [view(5n)] }));
   });
 
-  it("hydrates all ids in one state batch with READ_INTERVAL_MS", () => {
-    const { result } = renderHook(() => useStreams(input));
-    expect(result.current.status).toBe("ready");
+  it("hydrates page one from loadStreamPage and keeps ids as bigint", async () => {
+    const queryClient = client();
+    const { result } = renderHook(() => useStreams(input), { wrapper: wrapper(queryClient) });
+    await waitFor(() => {
+      expect(result.current.status).toBe("ready");
+    });
     if (result.current.status !== "ready") throw new Error("expected ready");
     expect(result.current.data.streams).toHaveLength(1);
     expect(result.current.data.streams[0]?.streamId).toBe(5n);
-    expect(result.current.metadata.dataUpdatedAt).toBe(1_000);
-
-    const stateConfig = readContractsConfigs.at(-1) as {
-      query: { refetchInterval: number; enabled: boolean };
-      contracts: unknown[];
-    };
-    expect(stateConfig.query.refetchInterval).toBe(READ_INTERVAL_MS);
-    expect(stateConfig.contracts).toHaveLength(4);
-
-    const balanceConfig = readContractConfigs.find(
-      (c) => (c as { functionName?: string }).functionName === "balanceOf",
-    ) as { query: { refetchInterval: number; enabled: boolean } };
-    expect(balanceConfig.query.refetchInterval).toBe(READ_INTERVAL_MS);
-    expect(balanceConfig.query.enabled).toBe(true);
+    expect(typeof result.current.data.streams[0]?.streamId).toBe("bigint");
+    expect(loadStreamPage).toHaveBeenCalled();
+    const [, , , start, stop] = loadStreamPage.mock.calls[0] as unknown[];
+    expect(start).toBe(0n);
+    expect(stop).toBe(1n);
   });
 
-  it("hides empty streams from the lens", () => {
-    stateReturn.data = stateRow(
-      5n,
-      ACCOUNT,
-      streamTuple({ deposited: MIN_STREAM_AMOUNT * 2n, withdrawn: MIN_STREAM_AMOUNT * 2n }),
-    ).flat();
-    const { result } = renderHook(() => useStreams(input));
-    expect(result.current.status).toBe("ready");
-    if (result.current.status !== "ready") throw new Error("expected ready");
-    expect(result.current.data.streams).toHaveLength(0);
+  it("puts the lowercased pin hash in the query key", async () => {
+    const queryClient = client();
+    renderHook(() => useStreams(input), { wrapper: wrapper(queryClient) });
+    await waitFor(() => {
+      expect(queryClient.getQueryCache().getAll().length).toBeGreaterThan(0);
+    });
+    const key = streamBookKeys.wall(chainId, LOCKUP, ACCOUNT, PIN_HASH);
+    expect(key[key.length - 1]).toBe(PIN_HASH.toLowerCase());
+    expect(
+      queryClient.getQueryCache().getAll().some((entry) => entry.queryKey[0] === streamBookKeys.all[0]),
+    ).toBe(true);
   });
 
-  it("excludes streams whose sender is not a registered vault", () => {
-    stateReturn.data = stateRow(5n, ACCOUNT, streamTuple({ sender: OTHER })).flat();
-    const { result } = renderHook(() => useStreams(input));
-    expect(result.current.status).toBe("ready");
-    if (result.current.status !== "ready") throw new Error("expected ready");
-    expect(result.current.data.streams).toHaveLength(0);
-  });
-
-  it("flips unavailable when balanceOf exceeds MAX_ENUMERATION_IDS", () => {
-    balanceReturn.data = MAX_ENUMERATION_IDS + 1n;
-    const { result } = renderHook(() => useStreams(input));
-    expect(result.current.status).toBe("unavailable");
-  });
-
-  it("returns ready-empty for zero balance", () => {
-    balanceReturn.data = 0n;
-    const { result } = renderHook(() => useStreams(input));
-    expect(result.current.status).toBe("ready");
+  it("returns ready-empty for zero balance without calling streamsOfOwnerIn", async () => {
+    readContract.mockResolvedValue(0n);
+    const { result } = renderHook(() => useStreams(input), { wrapper: wrapper(client()) });
+    await waitFor(() => {
+      expect(result.current.status).toBe("ready");
+    });
     if (result.current.status !== "ready") throw new Error("expected ready");
     expect(result.current.data.streams).toEqual([]);
+    expect(result.current.data.confirmedEmpty).toBe(true);
+    expect(loadStreamPage).not.toHaveBeenCalled();
   });
 
-  it("flips unavailable when balance is nonzero and tokensOfOwnerIn yields no ids", () => {
-    balanceReturn.data = 2n;
-    idsReturn.data = [];
-    const { result } = renderHook(() => useStreams(input));
-    expect(result.current.status).toBe("unavailable");
-  });
-
-  it("does not fire reads when the wallet is disconnected", () => {
-    const { result } = renderHook(() =>
-      useStreams({ ...input, account: null }),
-    );
+  it("does not fire the pager when the wallet is disconnected", () => {
+    const { result } = renderHook(() => useStreams({ ...input, account: null }), {
+      wrapper: wrapper(client()),
+    });
     expect(result.current.status).toBe("loading");
-    const enabled = readContractConfigs.map(
-      (c) => (c as { query?: { enabled?: boolean } }).query?.enabled,
+    expect(loadStreamPage).not.toHaveBeenCalled();
+  });
+
+  it("does not refuse a book larger than MAX_ENUMERATION_IDS", async () => {
+    readContract.mockResolvedValue(MAX_ENUMERATION_IDS + 1n);
+    loadStreamPage.mockResolvedValue(
+      readyOutcome({
+        streams: Array.from({ length: Number(STREAM_PAGE_SIZE) }, (_, index) => view(BigInt(index + 1))),
+      }),
     );
-    expect(enabled.every((value) => value === false)).toBe(true);
-  });
-
-  it("drops a burned id failure and keeps the book rendered", () => {
-    balanceReturn.data = 2n;
-    idsReturn.data = [5n, 6n];
-    stateReturn.data = [
-      ...stateRow(5n).flat(),
-      failure(new Error("notNull")),
-      failure(new Error("notNull")),
-      failure(new Error("notNull")),
-      failure(new Error("notNull")),
-    ];
-    const { result } = renderHook(() => useStreams(input));
-    expect(result.current.status).toBe("ready");
+    const { result } = renderHook(() => useStreams(input), { wrapper: wrapper(client()) });
+    await waitFor(() => {
+      expect(result.current.status).toBe("ready");
+    });
     if (result.current.status !== "ready") throw new Error("expected ready");
-    expect(result.current.data.streams.map((row) => row.streamId)).toEqual([5n]);
+    expect(result.current.data.sourceCount).toBe(MAX_ENUMERATION_IDS + 1n);
+    expect(result.current.hasNextPage).toBe(true);
+    expect(result.current.status).not.toBe("unavailable");
   });
 
-  it("drops a stream owned by the market (pledged)", () => {
-    stateReturn.data = stateRow(5n, MARKET).flat();
-    const { result } = renderHook(() => useStreams(input));
-    expect(result.current.status).toBe("ready");
+  it("resumes the next page at the first unconsumed source index", async () => {
+    readContract.mockResolvedValue(40n);
+    loadStreamPage.mockImplementation(async (_c, _l, _o, start: bigint, stop: bigint) => {
+      const streams = [];
+      for (let index = start; index < stop; index++) streams.push(view(index + 1n));
+      return readyOutcome({ streams });
+    });
+    const { result } = renderHook(() => useStreams(input), { wrapper: wrapper(client()) });
+    await waitFor(() => {
+      expect(result.current.status).toBe("ready");
+    });
+    expect(loadStreamPage.mock.calls[0]?.[3]).toBe(0n);
+    await result.current.fetchNextPage();
+    await waitFor(() => {
+      expect(loadStreamPage.mock.calls.length).toBeGreaterThan(1);
+    });
+    expect(loadStreamPage.mock.calls[1]?.[3]).toBe(STREAM_PAGE_SIZE);
+  });
+
+  it("advances the cursor after an all-ineligible window", async () => {
+    readContract.mockResolvedValue(40n);
+    loadStreamPage.mockImplementation(async (_c, _l, _o, start: bigint, stop: bigint) => {
+      const streams = [];
+      for (let index = start; index < stop; index++) {
+        streams.push(view(index + 1n, { sender: TOKEN }));
+      }
+      return readyOutcome({ streams });
+    });
+    const { result } = renderHook(() => useStreams(input), { wrapper: wrapper(client()) });
+    await waitFor(() => {
+      expect(loadStreamPage.mock.calls.length).toBeGreaterThan(1);
+    });
+    expect(loadStreamPage.mock.calls[1]?.[3]).toBe(STREAM_PAGE_SIZE);
+    expect(result.current.data?.renderCount ?? 0).toBe(0);
+  });
+
+  it("fails closed on a duplicate id instead of Set-merging", async () => {
+    readContract.mockResolvedValue(2n);
+    loadStreamPage.mockResolvedValue(readyOutcome({ streams: [view(5n), view(5n)] }));
+    const { result } = renderHook(() => useStreams(input), { wrapper: wrapper(client()) });
+    await waitFor(() => {
+      expect(result.current.status).toBe("unavailable");
+    });
+    expect(result.current.data?.streams.map((row) => row.streamId)).toEqual([5n, 5n]);
+    expect(result.current.failures.some((failure) => failure.code === "incomplete")).toBe(true);
+  });
+
+  it("keeps attached rows when a page is unavailable", async () => {
+    readContract.mockResolvedValue(1n);
+    loadStreamPage.mockResolvedValue(
+      unavailableOutcome(
+        [readFailure("loadStreamPage", "transport", "rpc down")],
+        {},
+        { streams: [view(5n)] },
+      ),
+    );
+    const { result } = renderHook(() => useStreams(input), { wrapper: wrapper(client()) });
+    await waitFor(() => {
+      expect(result.current.status).toBe("unavailable");
+    });
+    expect(result.current.data?.streams).toHaveLength(1);
+  });
+
+  it("hides empty streams from the lens", async () => {
+    loadStreamPage.mockResolvedValue(
+      readyOutcome({
+        streams: [view(5n, { deposited: MIN_STREAM_AMOUNT * 2n, withdrawn: MIN_STREAM_AMOUNT * 2n })],
+      }),
+    );
+    const { result } = renderHook(() => useStreams(input), { wrapper: wrapper(client()) });
+    await waitFor(() => {
+      expect(result.current.status).toBe("ready");
+    });
     if (result.current.status !== "ready") throw new Error("expected ready");
     expect(result.current.data.streams).toHaveLength(0);
-  });
-
-  it("marks the book unavailable on id-batch RPC failure", () => {
-    idsReturn = {
-      data: undefined,
-      isLoading: false,
-      isError: true,
-      isSuccess: false,
-      error: new Error("rpc down"),
-      dataUpdatedAt: 0,
-    };
-    const { result } = renderHook(() => useStreams(input));
-    expect(result.current.status).toBe("unavailable");
-  });
-
-  it("keeps the book when balance shrinks between stages (fewer ids)", () => {
-    balanceReturn.data = 2n;
-    idsReturn.data = [5n];
-    stateReturn.data = stateRow(5n).flat();
-    const { result } = renderHook(() => useStreams(input));
-    expect(result.current.status).toBe("ready");
-    if (result.current.status !== "ready") throw new Error("expected ready");
-    expect(result.current.data.streams).toHaveLength(1);
-  });
-
-  it("rerenders when mock returns change (SC18)", () => {
-    const { result, rerender } = renderHook(() => useStreams(input));
-    expect(result.current.status).toBe("ready");
-
-    balanceReturn.data = 0n;
-    idsReturn.data = [];
-    stateReturn.data = [];
-    rerender();
-    expect(result.current.status).toBe("ready");
-    if (result.current.status !== "ready") throw new Error("expected ready");
-    expect(result.current.data.streams).toEqual([]);
-  });
-
-  it("keeps stream ids as bigint in detail-view args", () => {
-    const { result } = renderHook(() => useStreams(input));
-    if (result.current.status !== "ready") throw new Error("expected ready");
-    const id = result.current.data.streams[0]!.streamId;
-    expect(typeof id).toBe("bigint");
-    const stateConfig = readContractsConfigs.at(-1) as {
-      contracts: { args: readonly unknown[] }[];
-    };
-    expect(stateConfig.contracts.every((c) => typeof c.args[0] === "bigint")).toBe(true);
-  });
-});
-
-describe("stream eligibility predicates", () => {
-  const vaults = [{ vault: VAULT, ovrfloToken: TOKEN }];
-  const schedule = {
-    start: 1_000n,
-    end: 2_000n,
-    deposited: MIN_STREAM_AMOUNT * 2n,
-    withdrawn: 0n,
-    refunded: 0n,
-    cliffTime: 1_000n,
-    isCancelable: false,
-  };
-
-  it("render predicate keeps vault+asset streams including matured markets", () => {
-    expect(
-      renderEligibleStream({ sender: VAULT, asset: TOKEN, vaults }).eligible,
-    ).toBe(true);
-    expect(
-      renderEligibleStream({ sender: OTHER, asset: TOKEN, vaults }).eligible,
-    ).toBe(false);
-    expect(
-      renderEligibleStream({ sender: VAULT, asset: OTHER, vaults }).eligible,
-    ).toBe(false);
-  });
-
-  it("borrow-route predicate drops SeriesMatured and dust remaining", () => {
-    const markets = [{ vault: VAULT, market: MARKET, ovrfloToken: TOKEN, expiryCached: 2_000n }];
-    expect(
-      borrowRouteEligibleStream({
-        sender: VAULT,
-        asset: TOKEN,
-        schedule,
-        remaining: MIN_STREAM_AMOUNT * 2n,
-        now: 1_500n,
-        vaults,
-        markets,
-      }).eligible,
-    ).toBe(true);
-    expect(
-      borrowRouteEligibleStream({
-        sender: VAULT,
-        asset: TOKEN,
-        schedule,
-        remaining: MIN_STREAM_AMOUNT * 2n,
-        now: 2_000n,
-        vaults,
-        markets,
-      }).eligible,
-    ).toBe(false);
-    expect(
-      borrowRouteEligibleStream({
-        sender: VAULT,
-        asset: TOKEN,
-        schedule,
-        remaining: MIN_STREAM_AMOUNT - 1n,
-        now: 1_500n,
-        vaults,
-        markets,
-      }).eligible,
-    ).toBe(false);
   });
 });

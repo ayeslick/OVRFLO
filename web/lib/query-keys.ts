@@ -1,8 +1,11 @@
+import { keepPreviousData } from "@tanstack/react-query";
 import type { Address } from "viem";
 import type { BlockIdentity } from "./discovery/types";
 
 /** Event-truth refetch cadence. Named owner of the read interval (KTD9 / mechanism map). */
 export const READ_INTERVAL_MS = 15_000;
+/** Pinned snapshot gc: two intervals. Default five minutes would retain dead pages. */
+export const PINNED_GC_TIME_MS = READ_INTERVAL_MS * 2;
 /** TanStack retry budget — pinned low so `isError` is not delayed by stacked retries. */
 export const QUERY_RETRY = 1;
 
@@ -10,6 +13,15 @@ export const readQuery = {
   refetchInterval: READ_INTERVAL_MS,
   refetchOnWindowFocus: true,
   retry: QUERY_RETRY,
+} as const;
+
+/** Pinned enumeration: the pin in the query key is the invalidation. */
+export const pinnedQuery = {
+  retry: QUERY_RETRY,
+  gcTime: PINNED_GC_TIME_MS,
+  staleTime: Number.POSITIVE_INFINITY,
+  refetchOnWindowFocus: false,
+  placeholderData: keepPreviousData,
 } as const;
 
 function addr(value?: Address | null): string | null {
@@ -60,6 +72,14 @@ export const lenderBookKeys = {
   all: ["lender-book"] as const,
   account: (chainId: number, lending?: Address | null, account?: Address | null) =>
     [...lenderBookKeys.all, chainId, addr(lending), addr(account)] as const,
+  factory: (chainId: number, account?: Address | null, lendings?: readonly Address[]) =>
+    [
+      ...lenderBookKeys.all,
+      "factory",
+      chainId,
+      addr(account),
+      (lendings ?? []).map((value) => value.toLowerCase()).join(","),
+    ] as const,
   loansOf: (
     chainId: number,
     lending: Address,
@@ -72,6 +92,46 @@ export const borrowerBookKeys = {
   all: ["borrower-book"] as const,
   account: (chainId: number, lending?: Address | null, account?: Address | null) =>
     [...borrowerBookKeys.all, chainId, addr(lending), addr(account)] as const,
+  factory: (chainId: number, account?: Address | null, lendings?: readonly Address[]) =>
+    [
+      ...borrowerBookKeys.all,
+      "factory",
+      chainId,
+      addr(account),
+      (lendings ?? []).map((value) => value.toLowerCase()).join(","),
+    ] as const,
+};
+
+export const streamBookKeys = {
+  all: ["stream-book"] as const,
+  wall: (
+    chainId: number,
+    lockup?: Address | null,
+    account?: Address | null,
+    blockHash?: string | null,
+  ) =>
+    [
+      ...streamBookKeys.all,
+      "wall",
+      chainId,
+      addr(lockup),
+      addr(account),
+      blockHash ? blockHash.toLowerCase() : null,
+    ] as const,
+  complete: (
+    chainId: number,
+    lockup?: Address | null,
+    account?: Address | null,
+    blockHash?: string | null,
+  ) =>
+    [
+      ...streamBookKeys.all,
+      "complete",
+      chainId,
+      addr(lockup),
+      addr(account),
+      blockHash ? blockHash.toLowerCase() : null,
+    ] as const,
 };
 
 export const usdKeys = {

@@ -30,6 +30,7 @@ import { lensKey, storageGet, storageSet, usdModeKey } from "@/lib/storage";
 import { tokenUsd8 } from "@/lib/usd";
 import type { Usd8 } from "@/lib/units";
 import { classifyEntry, streamsDegradedKind, type EntryBook } from "@/lib/watch-entry";
+import { uniqueLendings } from "@/lib/watch-lendings";
 import { sortBorrowedLoans } from "@/lib/watch-rows";
 import { inferredLens, writeWatchSearch, type WatchSelection } from "@/lib/watch-url";
 import { BorrowedDetail } from "./BorrowedDetail";
@@ -55,20 +56,16 @@ export function WatchApp() {
   const markets = useAllMarkets();
   const symbols = useMarketSymbols(markets.markets);
   const readyVaults = ovrflos.status === "ready" ? ovrflos.vaults : [];
-  // Ticket 14 owns factory-wide Watch aggregation; markets[0] is a temporary
-  // single-market book scope until that rebuild lands.
-  const lending =
-    markets.markets[0]?.lending ??
-    readyVaults.find((vault) => vault.lending)?.lending ??
-    null;
+  const registryComplete = ovrflos.status === "ready" && markets.status !== "loading";
+  const lendings = uniqueLendings(markets.markets);
 
-  const lender = useLenderBook(lending, account);
-  const borrower = useBorrowerBook(lending, account);
+  const lender = useLenderBook(lendings, account, { enabled: registryComplete });
+  const borrower = useBorrowerBook(lendings, account, { enabled: registryComplete });
   const streams = useStreams({
     account,
     vaults: readyVaults,
     markets: markets.markets,
-    registryComplete: ovrflos.status === "ready" && markets.status !== "loading",
+    registryComplete,
     now: nowSeconds,
     stream: ovrflos.status === "ready" ? ovrflos.stream : undefined,
   });
@@ -95,9 +92,9 @@ export function WatchApp() {
     return map;
   }, [loans]);
 
-  const positionBook = toBook(lender, positions.length);
-  const loanBook = toBook(borrower, loans.length);
-  const streamBook = toBook(streams, ownedStreams.length);
+  const positionBook = toBook(lender);
+  const loanBook = toBook(borrower);
+  const streamBook = toBook(streams);
   const entry = classifyEntry({
     connected,
     positions: positionBook,
@@ -149,7 +146,10 @@ export function WatchApp() {
     writeWatchSearch({ lens: resolvedLens, selection: url.selection }, "replace");
   }, [entry, resolvedLens, url.lens, url.selection]);
 
-  const lastReadAt = lensFreshness.freshness.asOf ?? nowSeconds;
+  const lastReadAt =
+    resolvedLens === "streams" && streams.metadata.blockTimestamp !== undefined
+      ? streams.metadata.blockTimestamp
+      : (lensFreshness.freshness.asOf ?? nowSeconds);
   const usdQuote: Usd8 | null =
     usd.status === "ready" && usd.data.status === "available" ? usd.data.usd8 : null;
   const usdAvailable = usdQuote !== null;
@@ -206,15 +206,10 @@ export function WatchApp() {
   const detailOpen = url.selection.kind !== "none";
   const wallBook =
     resolvedLens === "supplied" ? positionBook : resolvedLens === "borrowed" ? loanBook : streamBook;
+  const wallPager =
+    resolvedLens === "supplied" ? lender : resolvedLens === "borrowed" ? borrower : streams;
   const wallSurface = classifySurfaceState({
-    dataStatus:
-      wallBook.status === "loading"
-        ? "loading"
-        : wallBook.status === "unavailable"
-          ? "unavailable"
-          : wallBook.count === 0
-            ? "empty"
-            : "ready",
+    dataStatus: wallDataStatus(wallBook),
     hasLastKnown:
       Boolean(lenderData) || Boolean(borrowerData) || Boolean(streamData) || wallBook.status !== "loading",
     stale: !lensFreshness.signingAllowed,
@@ -225,6 +220,7 @@ export function WatchApp() {
     selectedStreamId !== null &&
     !selectedStream &&
     !matchingOpenLoan &&
+    streamBook.complete &&
     streamBookReady &&
     Boolean(streamData || streamBook.status === "ready") &&
     (lastSelectedStreamRef.current === undefined || borrowerCaughtUp);
@@ -341,6 +337,11 @@ export function WatchApp() {
               selection={url.selection}
               onSelect={onSelect}
               streamsDegraded={resolvedLens === "streams" ? streamsDegraded : null}
+              pager={{
+                hasNextPage: wallPager.hasNextPage,
+                isFetchingNextPage: wallPager.isFetchingNextPage,
+                fetchNextPage: wallPager.fetchNextPage,
+              }}
             />
           </RegionErrorBoundary>
           <RegionErrorBoundary region="watch-detail">
@@ -358,7 +359,7 @@ export function WatchApp() {
                     : tokenLabel
                 }
                 market={selectedPositionMarket}
-                lending={lending}
+                lending={selectedPosition.lending}
                 nowMs={nowMs}
                 freshness={lensFreshness.freshness}
                 signingAllowed={lensFreshness.signingAllowed}
@@ -385,8 +386,12 @@ export function WatchApp() {
                     : tokenLabel
                 }
                 underlyingSymbol={tokenLabel}
-                market={markets.markets[0] ?? null}
-                lending={lending}
+                market={
+                  markets.markets.find(
+                    (row) => row.lending?.toLowerCase() === selectedLoan.lending.toLowerCase(),
+                  ) ?? null
+                }
+                lending={selectedLoan.lending}
                 nowSeconds={nowSeconds}
                 nowMs={nowMs}
                 lastReadAt={lastReadAt}
@@ -455,10 +460,50 @@ function resolveLens(
   return visible[0] ?? "supplied";
 }
 
-function toBook(outcome: ReadOutcome<unknown>, count: number): EntryBook {
-  if (outcome.status === "loading") return { status: "loading", count };
-  if (outcome.status === "unavailable") return { status: "unavailable", count };
-  return { status: "ready", count };
+function toBook(
+  outcome: ReadOutcome<{
+    sourceCount: bigint;
+    renderCount: number;
+    complete: boolean;
+    confirmedEmpty: boolean;
+  }>,
+): EntryBook {
+  const sourceCount = outcome.data?.sourceCount ?? 0n;
+  const renderCount = outcome.data?.renderCount ?? 0;
+  const complete = outcome.data?.complete ?? false;
+  if (outcome.status === "loading") {
+    return {
+      status: "loading",
+      sourceCount,
+      renderCount,
+      complete: false,
+      confirmedEmpty: false,
+    };
+  }
+  if (outcome.status === "unavailable") {
+    return {
+      status: "unavailable",
+      sourceCount,
+      renderCount,
+      complete: false,
+      confirmedEmpty: false,
+    };
+  }
+  return {
+    status: "ready",
+    sourceCount,
+    renderCount,
+    complete,
+    confirmedEmpty: Boolean(outcome.data?.confirmedEmpty),
+  };
+}
+
+function wallDataStatus(book: EntryBook): "loading" | "empty" | "ready" | "unavailable" {
+  if (book.status === "unavailable") return "unavailable";
+  if (book.confirmedEmpty) return "empty";
+  if (book.renderCount === 0 && !book.complete) return "loading";
+  if (book.status === "loading") return "loading";
+  return "ready";
 }
 
 function useLastKnown<T>(outcome: ReadOutcome<T>): T | undefined {

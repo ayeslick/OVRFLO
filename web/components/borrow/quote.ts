@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { usePublicClient } from "wagmi";
 import {
   BaseError,
@@ -321,7 +321,8 @@ export function useBorrowPreview(input: {
     },
     enabled: capEnabled,
     ...readQuery,
-    placeholderData: keepPreviousData,
+    // Cap must not keep another tick's MAX. Fill already keeps the last complete quote.
+    placeholderData: undefined,
   });
 
   const quoteQuery = useQuery({
@@ -356,19 +357,22 @@ export function useBorrowPreview(input: {
     ...readQuery,
   });
 
-  const cap = capQuery.data
+  const capStale = capQuery.isFetching || capQuery.isPlaceholderData;
+  const capReady =
+    capQuery.isSuccess && !capStale && capQuery.data !== undefined;
+  const cap = capReady
     ? capQuery.data.emptyTick
       ? 0n
       : capQuery.data.actualBorrow
     : undefined;
   const preview =
-    quoteQuery.data !== undefined && !quoteQuery.isPlaceholderData ? quoteQuery.data : undefined;
+    quoteQuery.data !== undefined && !quoteQuery.isFetching ? quoteQuery.data : undefined;
   const presented = useMemo(() => {
-    if (!preview || input.aprBps === null) return null;
+    if (!preview || input.aprBps === null || cap === undefined) return null;
     return presentQuote({
       preview,
       target,
-      cap: cap ?? 0n,
+      cap,
       depth: input.depth,
       aprBps: input.aprBps,
       streamRemaining: input.streamRemaining,
@@ -380,8 +384,8 @@ export function useBorrowPreview(input: {
   if (presented) lastQuoteRef.current = presented;
   const quote = presented ?? lastQuoteRef.current;
   const quoteFailed = quoteQuery.isError;
-  const isStale = quoteQuery.isFetching || isDebouncing || quoteFailed;
-  const emptyTick = Boolean(presented?.emptyTick || capQuery.data?.emptyTick);
+  const isStale = quoteQuery.isFetching || capStale || isDebouncing || quoteFailed;
+  const emptyTick = Boolean(presented?.emptyTick || (capReady && capQuery.data?.emptyTick));
   return {
     quote,
     cap,

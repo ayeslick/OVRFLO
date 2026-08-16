@@ -16,12 +16,41 @@ export function sameBlockHash(left: string, right: string) {
   return left.toLowerCase() === right.toLowerCase();
 }
 
+export type PinMode = "hash" | "number";
+
 /**
  * Primary EIP-1898 selector. Never pair with `blockNumber` on the same call.
  * Omitting `requireCanonical` lets a node serve a reorged-out block.
  */
 export function hashPin(pin: BlockPin) {
   return { blockHash: pin.blockHash, requireCanonical: true as const };
+}
+
+export function hostIsLoopback(url: string): boolean {
+  try {
+    const host = new URL(url).hostname;
+    return host === "127.0.0.1" || host === "localhost" || host === "::1";
+  } catch {
+    return false;
+  }
+}
+
+/** Hash pin only when every configured URL is loopback. Hosted URLs use number+verify. */
+export function pinModeForRpcUrls(urls: readonly string[]): PinMode {
+  if (urls.length === 0) return "number";
+  return urls.every(hostIsLoopback) ? "hash" : "number";
+}
+
+/**
+ * Number-pin fallback after the 008 probe. Pair with `verifyPinHash`
+ * before accepting a page. Never send hash and number on the same call.
+ */
+export function numberPin(pin: BlockPin) {
+  return { blockNumber: pin.blockNumber };
+}
+
+export function callPin(pin: BlockPin, mode: PinMode) {
+  return mode === "number" ? numberPin(pin) : hashPin(pin);
 }
 
 /**

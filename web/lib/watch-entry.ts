@@ -2,7 +2,10 @@ export type BookStatus = "loading" | "ready" | "unavailable";
 
 export type EntryBook = {
   status: BookStatus;
-  count: number;
+  sourceCount: bigint;
+  renderCount: number;
+  complete: boolean;
+  confirmedEmpty: boolean;
 };
 
 export type EntryInput = {
@@ -22,6 +25,27 @@ export type EntryKind =
   | "watch"
   | "watch-streams-degraded";
 
+export function emptyEntryBook(status: BookStatus = "ready"): EntryBook {
+  return {
+    status,
+    sourceCount: 0n,
+    renderCount: 0,
+    complete: status === "ready",
+    confirmedEmpty: status === "ready",
+  };
+}
+
+/** Test and wall helper: one book from status plus loaded row count. */
+export function entryBook(status: BookStatus, renderCount: number): EntryBook {
+  return {
+    status,
+    sourceCount: BigInt(renderCount),
+    renderCount,
+    complete: status === "ready",
+    confirmedEmpty: status === "ready" && renderCount === 0,
+  };
+}
+
 /**
  * R12 entry gate. First-run only when positions, loans, AND stream discovery
  * are all confirmed-empty. Pending/could-not-ask with zero books is degraded
@@ -36,13 +60,11 @@ export function classifyEntry(input: EntryInput): EntryKind {
     input.positions.status === "loading" || input.loans.status === "loading";
   if (booksLoading) return "syncing";
 
-  const positionsReadyZero = input.positions.status === "ready" && input.positions.count === 0;
-  const loansReadyZero = input.loans.status === "ready" && input.loans.count === 0;
-  const booksConfirmedEmpty = positionsReadyZero && loansReadyZero;
+  const booksConfirmedEmpty = input.positions.confirmedEmpty && input.loans.confirmedEmpty;
   const booksHaveItems =
-    (input.positions.status === "ready" && input.positions.count > 0) ||
-    (input.loans.status === "ready" && input.loans.count > 0);
-  const streamsReadyHydrated = input.streams.status === "ready" && input.streams.count > 0;
+    (input.positions.status === "ready" && input.positions.renderCount > 0) ||
+    (input.loans.status === "ready" && input.loans.renderCount > 0);
+  const streamsReadyHydrated = input.streams.status === "ready" && input.streams.renderCount > 0;
   const streamsDegraded =
     input.streams.status === "loading" || input.streams.status === "unavailable";
 
@@ -51,7 +73,7 @@ export function classifyEntry(input: EntryInput): EntryKind {
   }
 
   if (booksConfirmedEmpty) {
-    if (input.streams.status === "ready" && input.streams.count === 0) return "first-run";
+    if (input.streams.confirmedEmpty) return "first-run";
     if (streamsDegraded) return "watch-streams-degraded";
   }
 

@@ -23,6 +23,8 @@ export type ReadOutcomeMetadata = {
   scopeKey?: string;
   blockNumber?: bigint;
   blockHash?: `0x${string}`;
+  /** Timestamp of the pinned block, when the enumeration stamp carries one. */
+  blockTimestamp?: bigint;
   /** TanStack / wagmi success timestamp (ms). Threads into freshness asOf. */
   dataUpdatedAt?: number;
 };

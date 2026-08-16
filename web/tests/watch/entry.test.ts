@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { classifyEntry, streamsDegradedKind } from "@/lib/watch-entry";
+import { classifyEntry, emptyEntryBook, entryBook, streamsDegradedKind } from "@/lib/watch-entry";
 
-const empty = { status: "ready" as const, count: 0 };
-const loading = { status: "loading" as const, count: 0 };
-const unavailable = { status: "unavailable" as const, count: 0 };
-const some = { status: "ready" as const, count: 1 };
+const empty = emptyEntryBook("ready");
+const loading = emptyEntryBook("loading");
+const unavailable = emptyEntryBook("unavailable");
+const some = entryBook("ready", 1);
 
 describe("R12 entry gate", () => {
   it("renders disconnected when no wallet is connected", () => {
@@ -85,5 +85,23 @@ describe("R12 entry gate", () => {
         streams: empty,
       }),
     ).toBe("watch");
+  });
+
+  it("does not treat an incomplete zero-render book as confirmed empty", () => {
+    const incompleteEmpty = {
+      status: "ready" as const,
+      sourceCount: 20n,
+      renderCount: 0,
+      complete: false,
+      confirmedEmpty: false,
+    };
+    expect(
+      classifyEntry({
+        connected: true,
+        positions: incompleteEmpty,
+        loans: empty,
+        streams: empty,
+      }),
+    ).toBe("syncing");
   });
 });

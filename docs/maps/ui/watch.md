@@ -47,10 +47,11 @@ or could-not-ask while on-chain books read zero → this region with
   that could be mistaken for actionable badges. No `ALL` mixed book. No `NOW`/`NEXT`
   strip beside the tabs.
 - **Data authority.** `pure-client` for which lens is selected and for memory.
-  `on-chain` for the counts that hide a **confirmed-zero** lens (position and loan
-  enumeration). A failed enumeration does not hide the lens. `projection` for the
-  stream-candidate count that hides Streams — and a could-not-ask must not hide
-  Streams (that is `UI-WATCH-STREAMS-DEGRADED`).
+  `chain.stream-truth` / factory-wide lender and borrower books for
+  **confirmedEmpty** (hide a lens only when every source id is read and zero
+  render-eligible rows remain, with no unresolved failure). A failed or incomplete
+  book does not hide the lens. A could-not-ask Streams book stays visible
+  (`UI-WATCH-STREAMS-DEGRADED`).
 
 ## `UI-WATCH-WALL`
 
@@ -66,8 +67,24 @@ or could-not-ask while on-chain books read zero → this region with
     (AE5).
 - **Action.** None itself — rows are `UI-WATCH-ROW-*`.
 - **Copy rules.** No demonstration loan, no synthetic instrument, no spectator row.
-- **Data authority.** `on-chain` for positions and loans.
-  `projection` for stream candidates, each hydrated `on-chain` before a row renders.
+- **Data authority.** Factory-wide `on-chain` books: every discovered lending, keyed
+  `(chainId, lendingAddress, id)`. Streams from the pinned lens pager
+  (`chain.stream-truth`). Rows are the loaded window, not a silent truncation.
+
+## `UI-WATCH-LOAD-MORE`
+
+- **ID.** `UI-WATCH-LOAD-MORE`
+- **Purpose.** Fetch the next source-coordinate page of the active lens when unread
+  ids remain. TanStack owns `hasNextPage` / `fetchNextPage`.
+- **Visible when.** The active book has a next page, or the next page is in flight.
+  Last control in the tabpanel. No intersection observer.
+- **States.** Enabled while idle with a next page. Disabled while
+  `isFetchingNextPage`. `aria-live="polite"` announces `LOADING MORE`.
+- **Action.** Click calls `fetchNextPage`. Focus stays on the control.
+- **Copy rules.** Label `LOAD MORE`. No "500 of N" badge. No lens-tab count.
+- **Data authority.** Same book as the active lens. Pagination advances by the
+  enumeration window inspected, even when the window produced zero render-eligible
+  rows.
 
 ## `UI-WATCH-ROW-SUPPLIED`
 

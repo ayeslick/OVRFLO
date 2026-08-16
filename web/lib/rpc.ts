@@ -12,6 +12,7 @@ export type RpcFailureKind =
   | "revoked_credential"
   | "historical_capability"
   | "execution_reverted"
+  | "unknown_block"
   | "transport_unavailable"
   | "unknown";
 
@@ -59,6 +60,13 @@ export function classifyRpcFailure(error: unknown): RpcFailureKind {
     return "execution_reverted";
   }
   if (
+    /unknown block|block not found|header not found|could not find block|unknown block hash|blockhash.*(not found|unknown)|not in the canonical chain|requirecanonical/.test(
+      message,
+    )
+  ) {
+    return "unknown_block";
+  }
+  if (
     /network|fetch failed|timeout|timed out|connection|socket|unavailable|gateway/.test(message)
   ) {
     return "transport_unavailable";
@@ -89,7 +97,9 @@ export function createOrderedReadTransport<const T extends readonly Transport[]>
     rank: false,
     retryCount: 0,
     shouldThrow(error) {
-      return classifyRpcFailure(error) === "execution_reverted" || shouldThrow(error);
+      return classifyRpcFailure(error) === "execution_reverted" ||
+        classifyRpcFailure(error) === "unknown_block" ||
+        shouldThrow(error);
     },
   });
 }

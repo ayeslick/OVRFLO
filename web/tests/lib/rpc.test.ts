@@ -13,6 +13,8 @@ describe("RPC failure classification", () => {
     [new Error("monthly compute-unit quota exhausted"), "quota_exhausted"],
     [new Error("API key revoked"), "revoked_credential"],
     [new Error("block range is too wide for this provider"), "historical_capability"],
+    [new Error("unknown block"), "unknown_block"],
+    [new Error("header not found"), "unknown_block"],
   ] as const)("classifies %j as %s", (error, expected) => {
     expect(classifyRpcFailure(error)).toBe(expected);
   });
@@ -48,6 +50,20 @@ describe("ordered transports", () => {
     ])({ chain: undefined });
 
     await expect(transport.request({ method: "eth_call", params: [] })).rejects.toThrow(/execution reverted/i);
+    expect(primary).toHaveBeenCalledOnce();
+    expect(secondary).not.toHaveBeenCalled();
+  });
+
+  it("does not fail over on an unknown-block pin miss", async () => {
+    const missing = Object.assign(new Error("unknown block"), { code: -32000 });
+    const primary = vi.fn().mockRejectedValue(missing);
+    const secondary = vi.fn().mockResolvedValue("0x1");
+    const transport = createOrderedReadTransport([
+      custom({ request: primary }),
+      custom({ request: secondary }),
+    ])({ chain: undefined });
+
+    await expect(transport.request({ method: "eth_call", params: [] })).rejects.toThrow(/unknown block/i);
     expect(primary).toHaveBeenCalledOnce();
     expect(secondary).not.toHaveBeenCalled();
   });
