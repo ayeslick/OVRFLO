@@ -363,12 +363,16 @@ pipeline, `parseRequiredAddress`, and `FIELD_BINDINGS` items died with the addre
 `web/lib/lending-math.ts` mirrors `StreamPricing` in TypeScript, and that duplication has the same
 shape as the hydration fan-out this plan fixes. It is **not** solved here.
 
-`2026-08-15-007` solves it inside `borrow` itself, by enriching the existing `BelowMinAcceptable`
-error so an `eth_call` with `minAcceptable == type(uint128).max` returns the quote. Two hunks, +39
-bytes, no new contract.
+`2026-08-15-007` solves it on `OVRFLOLending` itself (redesigned 2026-08-15): a direct
+`previewBorrow` external function running the real fill path with writes gated off, made to fit by
+flipping `via_ir = true` — the compiler sweep showed the old size constraint was self-imposed. No
+new contract. Note for this plan: the via-IR flip changes **all** main-repo bytecode, so the lens's
+embedded creation bytecode and its drift gate are generated under the shipping settings (via-IR),
+which the provenance stamp records.
 
-**This lens computes no borrow quote and gains no function for it.** No `previewBorrow`, no adapter,
-no new getter on `OVRFLOLending`.
+**This lens computes no borrow quote and gains no quote function of its own.** The quote lives on
+`OVRFLOLending` (`previewBorrow`, from `007`); the lens's only role near the quote is
+`streamsByIds` same-block hydration for `BorrowQuoteSnapshot` composition.
 
 ## Out of scope
 

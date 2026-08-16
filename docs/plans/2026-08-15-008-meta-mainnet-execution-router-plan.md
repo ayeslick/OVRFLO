@@ -32,10 +32,13 @@ by accident.
   contract is marked superseded in place). `tokensOfOwnerIn`'s signature and clamp semantics do not
   change. Carry OpenZeppelin's MIT notice as a full third-party notice (version and source), not
   only the source comment.
-- `007` in OVRFLO core: enrich the existing `BelowMinAcceptable` error with
-  `(actualBorrow, feeAmount, obligation)`; the quote is `eth_call borrow(..., type(uint128).max)`.
-  **No dedicated quote branch and no `QuoteBorrow` error** — `007` rejects that by measurement
-  (the sentinel-check branch is the byte cost the design exists to avoid).
+- `007` in OVRFLO core (redesigned 2026-08-15 by the compiler-sweep verdict below): flip
+  `via_ir = true` in `foundry.toml` and land `previewBorrow(market, aprBps, targetBorrow,
+  streamId)` with commit-flag threading through `_fillTick`/`_selectEpoch` — one indivisible
+  bundle. **No error changes** — `BelowMinAcceptable` keeps its zero-argument signature; the
+  quote is a normal `eth_call` with three named returns, not a decoded revert. Ships with the
+  via-IR safety net (storage-layout golden, raw-slot packing tests, dual-pipeline gate) specified
+  in `007`.
 - `005` in OVRFLO: the stream lens (Solidity and Foundry tests). It reads the lockup through its
   external interface, which `002` does not change, so it does not wait for `002`.
 
@@ -43,8 +46,9 @@ by accident.
 
 - Lens creation-bytecode generation (`bytecode.object` → `web/lib/generated/lens-bytecode.ts`) and
   its drift gate (`005`).
-- Quote decoder, `classifyBorrowError` payload, regenerated ABI, and the `ABI_VERSION` 1 → 2 bump
-  (`007`).
+- Regenerated ABI for `previewBorrow` (`007`). Additive only: no error changed, so
+  `classifyBorrowError` is untouched and **no `ABI_VERSION` bump** — the bump obligation died with
+  the quote-by-revert design.
 - Protocol-client functions (`loadStreamPage`, `loadCompleteStreams`, quote read) — the layer wave 3
   consumes. No product UI changes in this wave.
 
@@ -103,12 +107,14 @@ production `STREAM_PAGE_SIZE` is re-derived separately from measured lens cost (
 - **Reorg fault injection (004):** anvil can simulate reorgs (snapshot/revert, `anvil_reorg`). One
   scenario: reorg the pinned block, assert pinned pages fail closed under `requireCanonical`, the
   book goes `unavailable`, and a re-pin recovers.
-- **`007`'s enriched `BelowMinAcceptable` fields and the `type(uint128).max` sentinel are public
-  ABI** once deployed. Documented as interface, not implementation.
+- **`007`'s `previewBorrow` signature and its three wei-denominated returns are public ABI** once
+  deployed. Documented as interface, not implementation. (The superseded design's enriched-error
+  ABI concern died with it — `BelowMinAcceptable` is unchanged.)
 - **`002`'s outward-facing break:** `supportsInterface(0x780e9d63)` goes false; explorers and
   marketplaces see vanilla ERC721. Deliberate. One line in the fork README deviation table.
-- **Size budget:** after `007`, `OVRFLOLending` has ~188 bytes under the canary. That is the repair
-  budget for audit findings. Re-measure `forge build --sizes` after any core change.
+- **Size budget (re-baselined 2026-08-15 under via-IR):** after `007`, `OVRFLOLending` is 22,806
+  bytes — 1,258 under the canary. That is the repair budget for audit findings. Re-measure
+  `forge build --sizes` after any core change, always under the shipping settings (via-IR).
 - **Wave 3 builds below React (adopted from the rewrite brief) — with a precise boundary.** The
   protocol client owns the *page operation* and the *complete-set operation*: `loadStreamPage(client,
   owner, start, stop, pin)`, `loadCompleteStreams(client, owner, pin)` (which may loop windows), lens
@@ -210,10 +216,11 @@ The open items, each owned by a plan:
   universe, so ownership is reconstructable off-chain by an `ownerOf` sweep over `[1, nextStreamId)`
   if the index is ever suspect in production. Record it as a diagnostic runbook before the index
   ships immutable.
-- **Pin `solc_version` (`002`/`007`/`005` builds).** Verified: `foundry.toml` pins
-  `optimizer_runs = 200` but **no compiler version**. The `007` canary margin, the lens drift
-  gate, and the fork size table are all stable only under a pinned compiler. Pin it, then run the
-  final EIP-170 gate on the merged source, not per-change deltas.
+- **RESOLVED 2026-08-15 — pin `solc_version` (`002`/`007`/`005` builds).** Main repo pinned to
+  `solc = "0.8.36"` (commit `ee7778e`) — the release with all three 2026 registry bugs fixed,
+  including the via-IR mutual-recursion miscompile, and no unfixed known bug (registry verified
+  2026-08-15). The fork was already pinned (`0.8.23`, `auto_detect_solc = false`). Still open from
+  the original item: run the final EIP-170 gate on the merged source, not per-change deltas.
 - **Descriptor-slot assertion (`002`).** Beyond deriving `NFT_DESCRIPTOR_SLOT` from
   `forge inspect` (already required), add a deploy-time check that writing the descriptor does not
   mutate neighboring slots, so the next layout change fails loudly instead of corrupting state.
@@ -230,10 +237,10 @@ The open items, each owned by a plan:
 - **Composite identity keys (wave 3).** Factory-wide Watch means loan ids, position ids, React
   keys, and caches key on `(chainId, lendingAddress, id)`, never bare `id`. Extends the
   factory-wide decision above.
-- **Quote revert through the transport (`007` tests).** The quote's success *is* a revert; verify
-  the fallback transport neither retries nor rewrites it before the decoder sees the payload, and
-  test against the real target providers, not only anvil. The decoder strict-matches the enriched
-  `BelowMinAcceptable` shape; any other revert is a quote failure, never a decoded quote.
+- **RETIRED 2026-08-15 — quote revert through the transport (`007` tests).** The concern existed
+  only for quote-by-revert, where the quote's success *was* a revert that a fallback transport
+  could retry or rewrite. The redesigned `007` quotes through a normal `eth_call previewBorrow`
+  with ordinary return-value decoding; there is no revert to protect. No replacement work.
 - **Approval-flow semantics (wave 3).** Fee-on-transfer is contract-rejected, but verify the
   approval path against the actual admitted assets for zero-before-nonzero approval requirements
   (USDT-class) before assuming standard `approve` behavior.
@@ -247,7 +254,7 @@ The open items, each owned by a plan:
   via the borrower book. Test the composed failure: owner book ready + borrower book failed must
   render as a degraded Borrowed lens, never as the stream vanishing from existence.
 - **`previewBorrow` compiler sweep (`007`) — RESOLVED 2026-08-15: direct preview wins; `007`
-  must be rewritten before implementation.** Run in a throwaway worktree at commit `917e709`,
+  rewritten around it the same day (see that plan's superseding header).** Run in a throwaway worktree at commit `917e709`,
   solc pinned 0.8.36. The runs axis is dead (`runs=1` saves only 221 bytes and taxes runtime),
   but `via_ir = true` at the same 200 runs is decisive. Measured:
   baseline legacy 23,837 (227 under canary) → baseline via-IR **21,256** (2,808 under);
