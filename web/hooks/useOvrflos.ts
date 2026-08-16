@@ -2,25 +2,53 @@
 
 import type { Address } from "viem";
 import { MAX_VAULT_REGISTRY_ENTRIES } from "@/lib/discovery/limits";
+import type {
+  ProtocolBootstrap,
+  ReadyProtocolBootstrap,
+} from "@/lib/protocol-bootstrap";
 import type { VaultInfo } from "@/lib/types";
 import { useProtocolBootstrap } from "./useProtocolBootstrap";
 
+export type OvrflosResult =
+  | {
+      status: "loading";
+      bootstrap: Extract<ProtocolBootstrap, { status: "loading" }>;
+      isLoading: true;
+      tooLarge: false;
+      error: null;
+    }
+  | {
+      status: "unavailable";
+      bootstrap: Extract<ProtocolBootstrap, { status: "unavailable" }>;
+      isLoading: false;
+      tooLarge: boolean;
+      error: Error;
+    }
+  | {
+      status: "ready";
+      bootstrap: ReadyProtocolBootstrap;
+      vaults: readonly VaultInfo[];
+      stream: Address;
+      isLoading: false;
+      tooLarge: false;
+      error: null;
+    };
+
 /**
- * Vault registry view over factory bootstrap. Loading never collapses to an
- * empty ready list; [] vaults means empty only when bootstrap status is ready.
+ * Vault registry view over factory bootstrap. vaults/stream exist only in
+ * ready — consumers branch on status so loading never collapses to empty.
  */
-export function useOvrflos(_factory?: Address) {
+export function useOvrflos(_factory?: Address): OvrflosResult {
   void _factory;
   const bootstrap = useProtocolBootstrap();
 
   if (bootstrap.status === "loading") {
     return {
-      vaults: [] as VaultInfo[],
-      stream: null as Address | null,
-      tooLarge: false,
-      isLoading: true,
-      error: null as Error | null,
+      status: "loading",
       bootstrap,
+      isLoading: true,
+      tooLarge: false,
+      error: null,
     };
   }
 
@@ -28,22 +56,22 @@ export function useOvrflos(_factory?: Address) {
     const budget = bootstrap.failures.some((failure) => failure.code === "budget_exceeded");
     const message = bootstrap.failures.map((failure) => failure.message).join("; ");
     return {
-      vaults: [] as VaultInfo[],
-      stream: null as Address | null,
-      tooLarge: budget,
-      isLoading: false,
-      error: new Error(message || "Protocol bootstrap unavailable"),
+      status: "unavailable",
       bootstrap,
+      isLoading: false,
+      tooLarge: budget,
+      error: new Error(message || "Protocol bootstrap unavailable"),
     };
   }
 
   return {
+    status: "ready",
+    bootstrap,
     vaults: bootstrap.vaults,
     stream: bootstrap.stream,
-    tooLarge: false,
     isLoading: false,
-    error: null as Error | null,
-    bootstrap,
+    tooLarge: false,
+    error: null,
   };
 }
 

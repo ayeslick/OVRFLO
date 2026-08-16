@@ -98,11 +98,11 @@ export function BorrowFlow() {
 
   const streams = useStreams({
     account,
-    vaults: ovrflos.vaults,
+    vaults: ovrflos.status === "ready" ? ovrflos.vaults : [],
     markets: marketsResult.markets,
-    registryComplete: marketsResult.status === "ready" && !ovrflos.isLoading,
+    registryComplete: marketsResult.status === "ready" && ovrflos.status === "ready",
     now,
-    stream: ovrflos.stream,
+    stream: ovrflos.status === "ready" ? ovrflos.stream : undefined,
   });
 
   const eligible = useMemo(() => {

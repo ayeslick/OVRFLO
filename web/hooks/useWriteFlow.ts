@@ -332,7 +332,26 @@ export function useWriteFlow(
         executor.report({ status: "identity_changed" });
         return;
       }
-      if (publicClient && isMarketScope(scopeRef.current)) {
+      if (isMarketScope(scopeRef.current)) {
+        if (!publicClient) {
+          executor.report({
+            status: "transport_failed",
+            error: new Error("Public client is unavailable"),
+          });
+          return;
+        }
+        if (bootstrap.status !== "ready") {
+          executor.report({
+            status: "invalid",
+            errors: [
+              {
+                code: "unregistered-target",
+                message: "Protocol bootstrap is not ready",
+              },
+            ],
+          });
+          return;
+        }
         if (preparationRef.current) return;
         const fingerprint = writeFingerprint(args);
         const pendingReview = pendingReviewRef.current;
@@ -360,19 +379,6 @@ export function useWriteFlow(
         const prepareAndExecute = (async () => {
           if (isCurrentPreparation()) setIsPreparing(true);
           try {
-            if (bootstrap.status !== "ready") {
-              handled = true;
-              executor.report({
-                status: "invalid",
-                errors: [
-                  {
-                    code: "unregistered-target",
-                    message: "Protocol bootstrap is not ready",
-                  },
-                ],
-              });
-              return;
-            }
             const marketScope = {
               ...(scopeRef.current as Exclude<typeof scopeRef.current, readonly Address[]>),
               sablier: bootstrap.stream,
@@ -411,6 +417,20 @@ export function useWriteFlow(
               } else {
                 executor.report(prepared);
               }
+              return;
+            }
+            // null = verified approve only; any other unparsed market write is refused.
+            if (args.functionName !== "approve") {
+              handled = true;
+              executor.report({
+                status: "invalid",
+                errors: [
+                  {
+                    code: "unregistered-target",
+                    message: "Market-scoped write is not a supported action",
+                  },
+                ],
+              });
               return;
             }
           } catch (error) {

@@ -98,6 +98,33 @@ describe("discoverProtocolBootstrap", () => {
     }
   });
 
+  it("fails closed when ovrfloInfo reverts", async () => {
+    client.multicall
+      .mockResolvedValueOnce([success(STREAM), success(1n)])
+      .mockResolvedValueOnce([success(VAULT_A)])
+      .mockResolvedValueOnce([failure(), success(LENDING)]);
+    const result = await discoverProtocolBootstrap(client, FACTORY, 1);
+    expect(result.status).toBe("unavailable");
+    if (result.status === "unavailable") {
+      expect(result.failures[0]?.message).toMatch(/ovrfloInfo/);
+    }
+  });
+
+  it("fails closed when ovrfloToLending reverts", async () => {
+    client.multicall
+      .mockResolvedValueOnce([success(STREAM), success(1n)])
+      .mockResolvedValueOnce([success(VAULT_A)])
+      .mockResolvedValueOnce([
+        success([TREASURY, UNDERLYING, OVRFLO_TOKEN]),
+        failure(),
+      ]);
+    const result = await discoverProtocolBootstrap(client, FACTORY, 1);
+    expect(result.status).toBe("unavailable");
+    if (result.status === "unavailable") {
+      expect(result.failures[0]?.message).toMatch(/ovrfloToLending/);
+    }
+  });
+
   it("returns ready with an empty vault list when the registry is empty", async () => {
     client.multicall.mockResolvedValueOnce([success(STREAM), success(0n)]);
     const result = await discoverProtocolBootstrap(client, FACTORY, 1);

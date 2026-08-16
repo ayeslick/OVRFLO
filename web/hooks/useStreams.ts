@@ -129,14 +129,25 @@ export function useStreams(input: {
   markets: readonly StreamMarket[];
   registryComplete: boolean;
   now: bigint;
-  stream?: Address | null;
+  /** Present only when factory bootstrap is ready — never a null sentinel. */
+  stream?: Address;
 }): ReadOutcome<StreamBook> {
   const bootstrap = useProtocolBootstrap();
+  if (bootstrap.status === "loading" && input.stream === undefined) {
+    return loadingOutcome();
+  }
+  if (bootstrap.status === "unavailable" && input.stream === undefined) {
+    return unavailableOutcome(
+      bootstrap.failures.map((failure) =>
+        readFailure("useStreams", "transport", failure.message),
+      ),
+    );
+  }
   const discovered =
     input.stream ??
-    (bootstrap.status === "ready" ? bootstrap.stream : null);
+    (bootstrap.status === "ready" ? bootstrap.stream : undefined);
   const account = input.account;
-  const lockupConfigured = isConfiguredAddress(discovered);
+  const lockupConfigured = isConfiguredAddress(discovered ?? null);
   const configured =
     isConfiguredAddress(account ?? null) && lockupConfigured && input.registryComplete;
 
@@ -200,7 +211,7 @@ export function useStreams(input: {
         args: [streamId] as const,
       },
     ]);
-  }, [ids, stateEnabled]);
+  }, [discovered, ids, stateEnabled]);
 
   const stateReads = useReadContracts({
     allowFailure: true,
@@ -404,8 +415,10 @@ export function useStreams(input: {
     idRead.isLoading,
     ids,
     idsComplete,
+    bootstrap,
     input.markets,
     input.now,
+    input.stream,
     input.vaults,
     overBudget,
     stateReads.data,

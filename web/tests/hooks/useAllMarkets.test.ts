@@ -29,7 +29,15 @@ const vaultB: VaultInfo = { ...vault, vault: VAULT_B };
 const success = (result: unknown) => ({ status: "success" as const, result });
 const seriesTuple = (ptToken: Address) => [900, 40, 1_800_000_000n, ptToken, OVRFLO_TOKEN, UNDERLYING, ORACLE];
 
-let ovrflosState: { vaults: VaultInfo[]; isLoading: boolean; error: unknown; tooLarge?: boolean };
+let ovrflosState: {
+  status: "ready" | "loading" | "unavailable";
+  vaults?: VaultInfo[];
+  stream?: Address;
+  isLoading: boolean;
+  error: unknown;
+  tooLarge?: boolean;
+  bootstrap?: unknown;
+};
 vi.mock("@/hooks/useOvrflos", async () => {
   const actual = await vi.importActual<typeof import("@/hooks/useOvrflos")>("@/hooks/useOvrflos");
   return { ...actual, useOvrflos: () => ovrflosState };
@@ -57,7 +65,7 @@ describe("useAllMarkets", () => {
   });
 
   it("builds one MarketInfo row per approved market, merging vault + series data", () => {
-    ovrflosState = { vaults: [vault], isLoading: false, error: null };
+    ovrflosState = { status: "ready", stream: VAULT_A, bootstrap: { status: "ready" }, vaults: [vault], isLoading: false, error: null };
     marketCountReturn = { data: [success(2n)], isLoading: false, error: null };
     marketAddressReturn = { data: [success(MARKET_A), success(MARKET_B)], isLoading: false, error: null };
     seriesReturn = {
@@ -84,7 +92,7 @@ describe("useAllMarkets", () => {
     // implementation that (incorrectly) reset the cursor per vault; giving
     // vault A 1 market and vault B 2 lets a reset-per-vault regression
     // misattribute or duplicate rows.
-    ovrflosState = { vaults: [vault, vaultB], isLoading: false, error: null };
+    ovrflosState = { status: "ready", stream: VAULT_A, bootstrap: { status: "ready" }, vaults: [vault, vaultB], isLoading: false, error: null };
     marketCountReturn = { data: [success(1n), success(2n)], isLoading: false, error: null };
     marketAddressReturn = {
       data: [success(MARKET_A), success(MARKET_B), success(MARKET_C)],
@@ -105,7 +113,7 @@ describe("useAllMarkets", () => {
   });
 
   it("skips a series slot whose ptToken is the zero address (not yet approved/matured-cleared)", () => {
-    ovrflosState = { vaults: [vault], isLoading: false, error: null };
+    ovrflosState = { status: "ready", stream: VAULT_A, bootstrap: { status: "ready" }, vaults: [vault], isLoading: false, error: null };
     marketCountReturn = { data: [success(2n)], isLoading: false, error: null };
     marketAddressReturn = { data: [success(MARKET_A), success(MARKET_B)], isLoading: false, error: null };
     seriesReturn = {
@@ -120,7 +128,7 @@ describe("useAllMarkets", () => {
   });
 
   it("returns no markets when there are no vaults at all", () => {
-    ovrflosState = { vaults: [], isLoading: false, error: null };
+    ovrflosState = { status: "ready", stream: VAULT_A, bootstrap: { status: "ready" }, vaults: [], isLoading: false, error: null };
     marketCountReturn = { data: [], isLoading: false, error: null };
     marketAddressReturn = { data: [], isLoading: false, error: null };
     seriesReturn = { data: [], isLoading: false, error: null };
@@ -135,7 +143,7 @@ describe("useAllMarkets", () => {
     // holding 101 markets, truncated silently: the enumeration stopped at 100
     // and the notice never rendered, which is exactly the case the disclosure
     // exists for.
-    ovrflosState = { vaults: [vault], isLoading: false, error: null, tooLarge: false };
+    ovrflosState = { status: "ready", stream: VAULT_A, bootstrap: { status: "ready" }, vaults: [vault], isLoading: false, error: null, tooLarge: false };
     marketCountReturn = { data: [success(2_049n)], isLoading: false, error: null };
     marketAddressReturn = { data: [success(MARKET_A)], isLoading: false, error: null };
     seriesReturn = { data: [success(seriesTuple(PT_TOKEN))], isLoading: false, error: null };
@@ -145,7 +153,7 @@ describe("useAllMarkets", () => {
   });
 
   it("says nothing when the registry fits the global market budget", () => {
-    ovrflosState = { vaults: [vault], isLoading: false, error: null, tooLarge: false };
+    ovrflosState = { status: "ready", stream: VAULT_A, bootstrap: { status: "ready" }, vaults: [vault], isLoading: false, error: null, tooLarge: false };
     marketCountReturn = { data: [success(1n)], isLoading: false, error: null };
     marketAddressReturn = { data: [success(MARKET_A)], isLoading: false, error: null };
     seriesReturn = { data: [success(seriesTuple(PT_TOKEN))], isLoading: false, error: null };
@@ -156,7 +164,7 @@ describe("useAllMarkets", () => {
   });
 
   it("fails closed when multiple individually valid vaults exceed the global market budget", () => {
-    ovrflosState = { vaults: [vault, vaultB], isLoading: false, error: null, tooLarge: false };
+    ovrflosState = { status: "ready", stream: VAULT_A, bootstrap: { status: "ready" }, vaults: [vault, vaultB], isLoading: false, error: null, tooLarge: false };
     marketCountReturn = { data: [success(1_025n), success(1_025n)], isLoading: false, error: null };
     marketAddressReturn = { data: [], isLoading: false, error: null };
     seriesReturn = { data: [], isLoading: false, error: null };
@@ -167,7 +175,7 @@ describe("useAllMarkets", () => {
   });
 
   it("fails closed when any approved-market address read is incomplete", () => {
-    ovrflosState = { vaults: [vault], isLoading: false, error: null, tooLarge: false };
+    ovrflosState = { status: "ready", stream: VAULT_A, bootstrap: { status: "ready" }, vaults: [vault], isLoading: false, error: null, tooLarge: false };
     marketCountReturn = { data: [success(2n)], isLoading: false, error: null };
     marketAddressReturn = { data: [success(MARKET_A)], isLoading: false, error: null };
     seriesReturn = { data: [], isLoading: false, error: null };
@@ -180,7 +188,7 @@ describe("useAllMarkets", () => {
   });
 
   it("still reports truncation from the vault count alone", () => {
-    ovrflosState = { vaults: [vault], isLoading: false, error: null, tooLarge: true };
+    ovrflosState = { status: "ready", stream: VAULT_A, bootstrap: { status: "ready" }, vaults: [vault], isLoading: false, error: null, tooLarge: true };
     marketCountReturn = { data: [success(2n)], isLoading: false, error: null };
     marketAddressReturn = { data: [success(MARKET_A), success(MARKET_B)], isLoading: false, error: null };
     seriesReturn = {
@@ -193,15 +201,32 @@ describe("useAllMarkets", () => {
     expect(result.current.tooLarge).toBe(true);
   });
 
-  it("propagates loading/error from the upstream useOvrflos hook", () => {
-    const error = new Error("factory unreachable");
-    ovrflosState = { vaults: [], isLoading: true, error };
+  it("propagates loading from the upstream useOvrflos hook", () => {
+    ovrflosState = { status: "loading", isLoading: true, error: null, bootstrap: { status: "loading" } };
     marketCountReturn = { data: [], isLoading: false, error: null };
     marketAddressReturn = { data: [], isLoading: false, error: null };
     seriesReturn = { data: [], isLoading: false, error: null };
 
     const { result } = renderHook(() => useAllMarkets());
     expect(result.current.isLoading).toBe(true);
+    expect(result.current.status).toBe("loading");
+  });
+
+  it("propagates unavailable from the upstream useOvrflos hook", () => {
+    const error = new Error("factory unreachable");
+    ovrflosState = {
+      status: "unavailable",
+      isLoading: false,
+      error,
+      tooLarge: false,
+      bootstrap: { status: "unavailable", failures: [{ code: "rpc_revert", message: "factory unreachable" }] },
+    };
+    marketCountReturn = { data: [], isLoading: false, error: null };
+    marketAddressReturn = { data: [], isLoading: false, error: null };
+    seriesReturn = { data: [], isLoading: false, error: null };
+
+    const { result } = renderHook(() => useAllMarkets());
+    expect(result.current.status).toBe("unavailable");
     expect(result.current.error).toBe(error);
   });
 });

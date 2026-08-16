@@ -9,19 +9,20 @@ import { bigintToSafeLength, MAX_VAULT_ENUMERATION, useOvrflos } from "./useOvrf
 
 export function useAllMarkets() {
   const ovrflos = useOvrflos();
+  const vaults = ovrflos.status === "ready" ? ovrflos.vaults : [];
 
   const marketCountReads = useReadContracts({
-    contracts: ovrflos.vaults.map((vault) => ({
+    contracts: vaults.map((vault) => ({
       address: factoryAddress,
       abi: ovrfloFactoryAbi,
       functionName: "approvedMarketCount",
       args: [vault.vault],
     })),
-    query: { enabled: ovrflos.vaults.length > 0 },
+    query: { enabled: ovrflos.status === "ready" && vaults.length > 0 },
   });
   const marketCountsComplete =
-    ovrflos.vaults.length === 0 ||
-    (marketCountReads.data?.length === ovrflos.vaults.length &&
+    vaults.length === 0 ||
+    (marketCountReads.data?.length === vaults.length &&
       marketCountReads.data.every((result) => result.status === "success"));
   const totalMarketCount = marketCountsComplete
     ? (marketCountReads.data ?? []).reduce(
@@ -32,8 +33,8 @@ export function useAllMarkets() {
   const marketBudgetExceeded = totalMarketCount > MAX_VAULT_ENUMERATION;
 
   const marketAddressContracts = useMemo(() => {
-    if (!marketCountsComplete || marketBudgetExceeded) return [];
-    return ovrflos.vaults.flatMap((vault, vaultIndex) => {
+    if (ovrflos.status !== "ready" || !marketCountsComplete || marketBudgetExceeded) return [];
+    return vaults.flatMap((vault, vaultIndex) => {
       const countResult = marketCountReads.data?.[vaultIndex];
       const count = countResult?.status === "success" ? asBigInt(countResult.result) : 0n;
       return Array.from({ length: bigintToSafeLength(count) }, (_, index) => ({
@@ -47,7 +48,8 @@ export function useAllMarkets() {
     marketBudgetExceeded,
     marketCountReads.data,
     marketCountsComplete,
-    ovrflos.vaults,
+    ovrflos.status,
+    vaults,
   ]);
 
   const marketAddressReads = useReadContracts({
@@ -62,9 +64,9 @@ export function useAllMarkets() {
         marketAddressReads.data.every((result) => result.status === "success")));
 
   const marketSeriesContracts = useMemo(() => {
-    if (!marketAddressesComplete) return [];
+    if (ovrflos.status !== "ready" || !marketAddressesComplete) return [];
     let readIndex = 0;
-    return ovrflos.vaults.flatMap((vault, vaultIndex) => {
+    return vaults.flatMap((vault, vaultIndex) => {
       const countResult = marketCountReads.data?.[vaultIndex];
       const count = countResult?.status === "success" ? asBigInt(countResult.result) : 0n;
       return Array.from({ length: bigintToSafeLength(count) }, () => {
@@ -82,7 +84,8 @@ export function useAllMarkets() {
     marketAddressReads.data,
     marketAddressesComplete,
     marketCountReads.data,
-    ovrflos.vaults,
+    ovrflos.status,
+    vaults,
   ]);
 
   const seriesReads = useReadContracts({
@@ -96,9 +99,10 @@ export function useAllMarkets() {
         seriesReads.data.every((result) => result.status === "success")));
 
   const markets = useMemo<MarketInfo[]>(() => {
+    if (ovrflos.status !== "ready") return [];
     const rows: MarketInfo[] = [];
     let readIndex = 0;
-    for (const [vaultIndex, vault] of ovrflos.vaults.entries()) {
+    for (const [vaultIndex, vault] of vaults.entries()) {
       const count = marketCountReads.data?.[vaultIndex];
       const marketCount = count?.status === "success" ? asBigInt(count.result) : 0n;
       for (let offset = 0; offset < bigintToSafeLength(marketCount); offset++) {
@@ -123,10 +127,34 @@ export function useAllMarkets() {
       }
     }
     return rows;
-  }, [marketAddressReads.data, marketCountReads.data, ovrflos.vaults, seriesReads.data]);
+  }, [
+    marketAddressReads.data,
+    marketCountReads.data,
+    ovrflos.status,
+    seriesReads.data,
+    vaults,
+  ]);
+
+  if (ovrflos.status === "loading") {
+    return {
+      markets: [] as MarketInfo[],
+      tooLarge: false,
+      status: "loading" as const,
+      isLoading: true,
+      error: null as Error | null,
+    };
+  }
+  if (ovrflos.status === "unavailable") {
+    return {
+      markets: [] as MarketInfo[],
+      tooLarge: ovrflos.tooLarge,
+      status: "unavailable" as const,
+      isLoading: false,
+      error: ovrflos.error,
+    };
+  }
 
   const registrySettled =
-    !ovrflos.isLoading &&
     !marketCountReads.isLoading &&
     !marketAddressReads.isLoading &&
     !seriesReads.isLoading;
@@ -135,12 +163,10 @@ export function useAllMarkets() {
     !marketBudgetExceeded &&
     (!marketCountsComplete || !marketAddressesComplete || !seriesComplete);
   const isLoading =
-    ovrflos.isLoading ||
     marketCountReads.isLoading ||
     marketAddressReads.isLoading ||
     seriesReads.isLoading;
   const error =
-    ovrflos.error ??
     marketCountReads.error ??
     marketAddressReads.error ??
     seriesReads.error ??
@@ -152,7 +178,7 @@ export function useAllMarkets() {
         ? []
         : markets,
     tooLarge: ovrflos.tooLarge || marketBudgetExceeded,
-    status: isLoading ? "loading" as const : error ? "unavailable" as const : "ready" as const,
+    status: isLoading ? ("loading" as const) : error ? ("unavailable" as const) : ("ready" as const),
     isLoading,
     error,
   };

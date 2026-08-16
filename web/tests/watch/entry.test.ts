@@ -29,6 +29,18 @@ describe("R12 entry gate", () => {
     ).toBe("syncing");
   });
 
+  it("surfaces factory bootstrap failure as unavailable, never syncing", () => {
+    expect(
+      classifyEntry({
+        connected: true,
+        positions: loading,
+        loans: loading,
+        streams: loading,
+        protocolUnavailable: true,
+      }),
+    ).toBe("unavailable");
+  });
+
   it("renders first-run only when positions, loans, and streams are confirmed empty", () => {
     expect(
       classifyEntry({

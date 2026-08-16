@@ -67,7 +67,7 @@ export const freshnessKeys = {
 export const protocolBootstrapKeys = {
   all: ["protocolBootstrap"] as const,
   root: (factoryAddress: Address, chainId: number) =>
-    [...protocolBootstrapKeys.all, factoryAddress, chainId] as const,
+    [...protocolBootstrapKeys.all, addr(factoryAddress), chainId] as const,
 };
 
 export const DISCOVERY_SCHEMA_VERSION = 1;

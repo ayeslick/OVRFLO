@@ -250,4 +250,11 @@ describe("local-only profile", () => {
     vi.stubEnv("VERCEL_ENV", "production");
     await expect(loadConfig()).rejects.toThrow(/local.*production/i);
   });
+
+  it("cannot activate when OVRFLO_DEPLOYABLE_BUILD is set", async () => {
+    vi.stubEnv("NEXT_PUBLIC_RUNTIME_PROFILE", "local");
+    vi.stubEnv("NEXT_PUBLIC_OVRFLO_FACTORY", REAL_ADDRESS);
+    vi.stubEnv("OVRFLO_DEPLOYABLE_BUILD", "1");
+    await expect(loadConfig()).rejects.toThrow(/local.*production/i);
+  });
 });

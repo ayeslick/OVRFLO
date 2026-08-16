@@ -10,11 +10,14 @@ export type EntryInput = {
   positions: EntryBook;
   loans: EntryBook;
   streams: EntryBook;
+  /** Factory bootstrap failure — never classify as syncing / CHECKING…. */
+  protocolUnavailable?: boolean;
 };
 
 export type EntryKind =
   | "disconnected"
   | "syncing"
+  | "unavailable"
   | "first-run"
   | "watch"
   | "watch-streams-degraded";
@@ -22,10 +25,12 @@ export type EntryKind =
 /**
  * R12 entry gate. First-run only when positions, loans, AND stream discovery
  * are all confirmed-empty. Pending/could-not-ask with zero books is degraded
- * watch, never first-run.
+ * watch, never first-run. A failed factory bootstrap is unavailable, never
+ * syncing.
  */
 export function classifyEntry(input: EntryInput): EntryKind {
   if (!input.connected) return "disconnected";
+  if (input.protocolUnavailable) return "unavailable";
 
   const booksLoading =
     input.positions.status === "loading" || input.loans.status === "loading";

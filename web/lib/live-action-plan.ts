@@ -68,7 +68,7 @@ export type LiveBorrowProjectionLoader = (input: {
 type LiveSnapshotOptions = {
   pinnedBlock?: LiveBlockSnapshot;
   loadBorrowProjection?: LiveBorrowProjectionLoader;
-  bootstrap?: ReadyProtocolBootstrap;
+  bootstrap: ReadyProtocolBootstrap;
 };
 
 type ParsedAction = {
@@ -337,6 +337,7 @@ function marketContext(
 function verifyRegisteredTarget(
   scope: LiveMarketScope,
   bootstrap: ReadyProtocolBootstrap,
+  callTarget?: Address,
 ): ReturnType<typeof actionError> | null {
   const registered = bootstrap.vaults.find((entry) =>
     isAddressEqual(entry.vault, scope.vault),
@@ -344,20 +345,57 @@ function verifyRegisteredTarget(
   if (!registered) {
     return actionError("unregistered-target", "Vault is not registered on the factory");
   }
-  if (
-    !scope.lending ||
-    !registered.lending ||
-    !isAddressEqual(scope.lending, registered.lending)
-  ) {
-    return actionError(
-      "unregistered-target",
-      "Lending is not the factory mapping for this vault",
-    );
-  }
   if (!isAddressEqual(scope.sablier, bootstrap.stream)) {
     return actionError(
       "unregistered-target",
       "Market stream lockup does not match factory.ovrfloStream()",
+    );
+  }
+  const targetsLending =
+    Boolean(callTarget) &&
+    Boolean(scope.lending) &&
+    isAddressEqual(callTarget!, scope.lending!);
+  // Vault-only writes (wrap/deposit/unwrap/claim) may run when lending is unset.
+  // Require the mapping when the factory has one, or when the call targets lending.
+  if (registered.lending !== null) {
+    if (!scope.lending || !isAddressEqual(scope.lending, registered.lending)) {
+      return actionError(
+        "unregistered-target",
+        "Lending is not the factory mapping for this vault",
+      );
+    }
+  } else if (targetsLending) {
+    return actionError(
+      "unregistered-target",
+      "Lending is not registered for this vault",
+    );
+  }
+  return null;
+}
+
+function verifyApproveSpender(
+  raw: LiveWriteArgs,
+  scope: LiveMarketScope,
+  bootstrap: ReadyProtocolBootstrap,
+): ReturnType<typeof actionError> | null {
+  const spender = raw.args?.[0];
+  if (typeof spender !== "string" || !spender.startsWith("0x")) {
+    return actionError("unregistered-target", "Approve spender is missing");
+  }
+  const spenderAddress = spender as Address;
+  const registered = bootstrap.vaults.find((entry) =>
+    isAddressEqual(entry.vault, scope.vault),
+  );
+  if (!registered) {
+    return actionError("unregistered-target", "Vault is not registered on the factory");
+  }
+  const allowed: Address[] = [bootstrap.stream];
+  if (registered.lending) allowed.push(registered.lending);
+  if (scope.lending) allowed.push(scope.lending);
+  if (!allowed.some((address) => isAddressEqual(address, spenderAddress))) {
+    return actionError(
+      "unregistered-target",
+      "Approve spender is not the registered lending or discovered stream",
     );
   }
   return null;
@@ -370,7 +408,7 @@ async function loadSnapshot(
   client: LiveClient,
   {
     pinnedBlock,
-  }: LiveSnapshotOptions = {},
+  }: Pick<LiveSnapshotOptions, "pinnedBlock" | "loadBorrowProjection"> = {},
 ): Promise<ActionSnapshot> {
   const block = pinnedBlock ?? await client.getBlock({ blockTag: "latest" });
   if (!block.hash) throw new Error("Action snapshot block has no hash");
@@ -840,7 +878,7 @@ async function buildLiveAction(
   identity: ActionIdentity,
   scope: LiveMarketScope,
   client: LiveClient,
-  options: LiveSnapshotOptions = {},
+  options: LiveSnapshotOptions,
 ): Promise<ActionBuildResult> {
   const snapshot = await loadSnapshot(parsed, identity, scope, client, options);
   return buildAction(parsed.intent, snapshot);
@@ -851,19 +889,38 @@ export async function createLiveActionDraft(
   identity: ActionIdentity,
   scope: LiveMarketScope,
   client: LiveClient,
-  options: LiveSnapshotOptions = {},
+  options: LiveSnapshotOptions,
 ): Promise<
   | { status: "ready"; draft: ActionExecutionDraft }
   | { status: "invalid"; errors: Extract<ActionBuildResult, { status: "invalid" }>["errors"] }
   | null
 > {
+  const registrationError = verifyRegisteredTarget(
+    scope,
+    options.bootstrap,
+    raw.address,
+  );
+  if (registrationError) {
+    return { status: "invalid", errors: [registrationError] };
+  }
+
   const parsed = parseAction(raw);
-  if (!parsed) return null;
-  if (options.bootstrap) {
-    const registrationError = verifyRegisteredTarget(scope, options.bootstrap);
-    if (registrationError) {
-      return { status: "invalid", errors: [registrationError] };
+  if (!parsed) {
+    if (raw.functionName === "approve") {
+      const approveError = verifyApproveSpender(raw, scope, options.bootstrap);
+      if (approveError) return { status: "invalid", errors: [approveError] };
+      // Verified approve — caller may use the legacy adapter after this null.
+      return null;
     }
+    return {
+      status: "invalid",
+      errors: [
+        actionError(
+          "unregistered-target",
+          "Market-scoped write is not a supported action",
+        ),
+      ],
+    };
   }
   return actionResultToDraft(
     await buildLiveAction(parsed, identity, scope, client, options),

@@ -31,7 +31,6 @@ const wagmiState = {
 };
 
 
-const stream = "0x0000000000000000000000000000000000000999" as Address;
 
 vi.mock("@/hooks/useProtocolBootstrap", () => ({
   useProtocolBootstrap: () => ({
