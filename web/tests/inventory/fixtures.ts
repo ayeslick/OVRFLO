@@ -191,6 +191,7 @@ export const idlePager = {
   hasNextPage: false,
   isFetchingNextPage: false,
   fetchNextPage: () => undefined,
+  advancePin: async () => undefined,
 };
 
 export function mockBookOutcome<T extends object>(

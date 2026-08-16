@@ -10,6 +10,7 @@ export type UsdMode = "token" | "usd";
 
 export type WatchSearch = {
   lens: WatchLens | null;
+  lending: Address | null;
   position: bigint | null;
   loan: bigint | null;
   stream: bigint | null;
@@ -63,12 +64,13 @@ export function parseWatchSearch(source: URLSearchParams | string): WatchSearch 
     const params = typeof source === "string" ? new URLSearchParams(source.replace(/^\?/, "")) : source;
     return {
       lens: parseWatchLens(params.get("lens")),
+      lending: parseAddressParam(params.get("lending")),
       position: parseEntityId(params.get("position")),
       loan: parseEntityId(params.get("loan")),
       stream: parseEntityId(params.get("stream")),
     };
   } catch {
-    return { lens: null, position: null, loan: null, stream: null };
+    return { lens: null, lending: null, position: null, loan: null, stream: null };
   }
 }
 

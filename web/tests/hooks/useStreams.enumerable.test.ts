@@ -1,9 +1,10 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { createElement, type ReactNode } from "react";
+import { createElement, useEffect, useState, type ReactNode } from "react";
 import type { Address, Hash } from "viem";
 import { useStreams } from "@/hooks/useStreams";
+import { AUTO_INELIGIBLE_PAGE_CAP } from "@/lib/stream-book";
 import { MAX_ENUMERATION_IDS, MIN_STREAM_AMOUNT, STREAM_PAGE_SIZE } from "@/lib/lending-math";
 import { readyOutcome, unavailableOutcome, readFailure } from "@/lib/read-outcome";
 import type { StreamView } from "@/lib/protocol/streams";
@@ -14,13 +15,42 @@ const ACCOUNT = "0x00000000000000000000000000000000000000a1" as Address;
 const VAULT = "0x00000000000000000000000000000000000000b2" as Address;
 const TOKEN = "0x00000000000000000000000000000000000000c3" as Address;
 const MARKET = "0x00000000000000000000000000000000000000e5" as Address;
-const PIN_HASH = `0x${"AB".repeat(32)}` as Hash;
 
-const { LOCKUP, loadStreamPage, readContract } = vi.hoisted(() => ({
-  LOCKUP: "0x0000000000000000000000000000000000000f66" as Address,
-  loadStreamPage: vi.fn(),
-  readContract: vi.fn(),
-}));
+const { LOCKUP, loadStreamPage, publicCall, pinCtl } = vi.hoisted(() => {
+  const HASH_A = `0x${"aa".repeat(32)}` as Hash;
+  const HASH_B = `0x${"bb".repeat(32)}` as Hash;
+  let current = { blockNumber: 10n, blockHash: HASH_A };
+  const listeners = new Set<() => void>();
+  return {
+    LOCKUP: "0x0000000000000000000000000000000000000f66" as Address,
+    loadStreamPage: vi.fn(),
+    publicCall: vi.fn(),
+    pinCtl: {
+      HASH_A,
+      HASH_B,
+      get: () => current,
+      set(next: { blockNumber: bigint; blockHash: Hash }) {
+        current = next;
+        for (const listener of listeners) listener();
+      },
+      reset() {
+        current = { blockNumber: 10n, blockHash: HASH_A };
+      },
+      subscribe(listener: () => void) {
+        listeners.add(listener);
+        return () => {
+          listeners.delete(listener);
+        };
+      },
+      advancePin: vi.fn(async () => {
+        current = { blockNumber: 11n, blockHash: HASH_B };
+        for (const listener of listeners) listener();
+      }),
+    },
+  };
+});
+
+const PIN_HASH = pinCtl.HASH_A;
 
 vi.mock("@/hooks/useProtocolBootstrap", () => ({
   useProtocolBootstrap: () => ({
@@ -33,25 +63,33 @@ vi.mock("@/hooks/useProtocolBootstrap", () => ({
 }));
 
 vi.mock("@/hooks/useEnumerationPin", () => ({
-  useEnumerationPin: () => ({
-    pin: { blockNumber: 10n, blockHash: PIN_HASH },
-    mode: "hash" as const,
-    blockTimestamp: 1n,
-    headUpdatedAt: 1_000,
-    restartEpoch: 0,
-    stale: false,
-    markStaleAndRestart: vi.fn(),
-  }),
+  useEnumerationPin: () => {
+    const [pin, setPin] = useState(pinCtl.get());
+    useEffect(() => pinCtl.subscribe(() => setPin(pinCtl.get())), []);
+    return {
+      pin,
+      mode: "hash" as const,
+      blockTimestamp: 1n,
+      headUpdatedAt: 1_000,
+      stale: false,
+      advancePin: pinCtl.advancePin,
+      markFresh: vi.fn(),
+    };
+  },
 }));
 
 vi.mock("wagmi", () => ({
-  usePublicClient: () => ({ readContract, call: vi.fn() }),
+  usePublicClient: () => ({ call: publicCall, getBlock: vi.fn() }),
 }));
 
 vi.mock("@/lib/protocol/streams", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/protocol/streams")>();
   return { ...actual, loadStreamPage };
 });
+
+function encodeUint(value: bigint) {
+  return { data: `0x${value.toString(16).padStart(64, "0")}` as `0x${string}` };
+}
 
 function view(streamId: bigint, overrides: Partial<StreamView> = {}): StreamView {
   return {
@@ -99,8 +137,13 @@ function client() {
 describe("useStreams lens pager", () => {
   beforeEach(() => {
     loadStreamPage.mockReset();
-    readContract.mockReset();
-    readContract.mockResolvedValue(1n);
+    publicCall.mockReset();
+    pinCtl.reset();
+    pinCtl.advancePin.mockReset();
+    pinCtl.advancePin.mockImplementation(async () => {
+      pinCtl.set({ blockNumber: 11n, blockHash: pinCtl.HASH_B });
+    });
+    publicCall.mockResolvedValue(encodeUint(1n));
     loadStreamPage.mockResolvedValue(readyOutcome({ streams: [view(5n)] }));
   });
 
@@ -134,7 +177,7 @@ describe("useStreams lens pager", () => {
   });
 
   it("returns ready-empty for zero balance without calling streamsOfOwnerIn", async () => {
-    readContract.mockResolvedValue(0n);
+    publicCall.mockResolvedValue(encodeUint(0n));
     const { result } = renderHook(() => useStreams(input), { wrapper: wrapper(client()) });
     await waitFor(() => {
       expect(result.current.status).toBe("ready");
@@ -154,7 +197,7 @@ describe("useStreams lens pager", () => {
   });
 
   it("does not refuse a book larger than MAX_ENUMERATION_IDS", async () => {
-    readContract.mockResolvedValue(MAX_ENUMERATION_IDS + 1n);
+    publicCall.mockResolvedValue(encodeUint(MAX_ENUMERATION_IDS + 1n));
     loadStreamPage.mockResolvedValue(
       readyOutcome({
         streams: Array.from({ length: Number(STREAM_PAGE_SIZE) }, (_, index) => view(BigInt(index + 1))),
@@ -171,7 +214,7 @@ describe("useStreams lens pager", () => {
   });
 
   it("resumes the next page at the first unconsumed source index", async () => {
-    readContract.mockResolvedValue(40n);
+    publicCall.mockResolvedValue(encodeUint(40n));
     loadStreamPage.mockImplementation(async (_c, _l, _o, start: bigint, stop: bigint) => {
       const streams = [];
       for (let index = start; index < stop; index++) streams.push(view(index + 1n));
@@ -190,7 +233,7 @@ describe("useStreams lens pager", () => {
   });
 
   it("advances the cursor after an all-ineligible window", async () => {
-    readContract.mockResolvedValue(40n);
+    publicCall.mockResolvedValue(encodeUint(40n));
     loadStreamPage.mockImplementation(async (_c, _l, _o, start: bigint, stop: bigint) => {
       const streams = [];
       for (let index = start; index < stop; index++) {
@@ -207,7 +250,7 @@ describe("useStreams lens pager", () => {
   });
 
   it("fails closed on a duplicate id instead of Set-merging", async () => {
-    readContract.mockResolvedValue(2n);
+    publicCall.mockResolvedValue(encodeUint(2n));
     loadStreamPage.mockResolvedValue(readyOutcome({ streams: [view(5n), view(5n)] }));
     const { result } = renderHook(() => useStreams(input), { wrapper: wrapper(client()) });
     await waitFor(() => {
@@ -218,7 +261,7 @@ describe("useStreams lens pager", () => {
   });
 
   it("keeps attached rows when a page is unavailable", async () => {
-    readContract.mockResolvedValue(1n);
+    publicCall.mockResolvedValue(encodeUint(1n));
     loadStreamPage.mockResolvedValue(
       unavailableOutcome(
         [readFailure("loadStreamPage", "transport", "rpc down")],
@@ -245,5 +288,95 @@ describe("useStreams lens pager", () => {
     });
     if (result.current.status !== "ready") throw new Error("expected ready");
     expect(result.current.data.streams).toHaveLength(0);
+  });
+
+  it("re-pins on unknown_block and fetches page one under the new hash", async () => {
+    publicCall.mockResolvedValue(encodeUint(40n));
+    loadStreamPage
+      .mockResolvedValueOnce(readyOutcome({ streams: [view(5n)] }))
+      .mockResolvedValueOnce(
+        unavailableOutcome([readFailure("loadStreamPage", "transport", "unknown block")]),
+      )
+      .mockResolvedValue(readyOutcome({ streams: [view(7n)] }));
+    const queryClient = client();
+    const { result } = renderHook(() => useStreams(input), { wrapper: wrapper(queryClient) });
+    await waitFor(() => {
+      expect(result.current.status).toBe("ready");
+    });
+    await result.current.fetchNextPage();
+    await waitFor(() => {
+      expect(pinCtl.advancePin).toHaveBeenCalled();
+    });
+    await waitFor(() => {
+      const keys = queryClient.getQueryCache().getAll().map((entry) => entry.queryKey);
+      expect(
+        keys.some((key) => key[key.length - 1] === pinCtl.HASH_B.toLowerCase()),
+      ).toBe(true);
+    });
+    await waitFor(() => {
+      expect(result.current.data?.streams.some((row) => row.streamId === 7n)).toBe(true);
+    });
+    const firstNew = loadStreamPage.mock.calls.find((call) => {
+      const pin = call[5] as { blockHash: string } | undefined;
+      return pin?.blockHash.toLowerCase() === pinCtl.HASH_B.toLowerCase();
+    });
+    expect(firstNew?.[3]).toBe(0n);
+  });
+
+  it("marks placeholder pages under a new hash as stale and keeps the page pin", async () => {
+    publicCall.mockResolvedValue(encodeUint(1n));
+    let release: (() => void) | undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    loadStreamPage.mockImplementation(async (_c, _l, _o, _start, _stop, pin: { blockHash: string }) => {
+      if (pin.blockHash.toLowerCase() === pinCtl.HASH_B.toLowerCase()) {
+        await held;
+        return readyOutcome({ streams: [view(9n)] });
+      }
+      return readyOutcome({ streams: [view(5n)] });
+    });
+    const { result } = renderHook(() => useStreams(input), { wrapper: wrapper(client()) });
+    await waitFor(() => {
+      expect(result.current.status).toBe("ready");
+    });
+    expect(result.current.status).toBe("ready");
+    if (result.current.status !== "ready") throw new Error("expected ready");
+    expect(result.current.freshness).toBe("fresh");
+    expect(result.current.metadata.blockHash?.toLowerCase()).toBe(pinCtl.HASH_A.toLowerCase());
+    pinCtl.set({ blockNumber: 11n, blockHash: pinCtl.HASH_B });
+    await waitFor(() => {
+      expect(result.current.status).toBe("ready");
+      if (result.current.status !== "ready") throw new Error("expected ready");
+      expect(result.current.freshness).toBe("stale");
+    });
+    expect(result.current.data?.streams[0]?.streamId).toBe(5n);
+    expect(result.current.metadata.blockHash?.toLowerCase()).toBe(pinCtl.HASH_A.toLowerCase());
+    release?.();
+    await waitFor(() => {
+      expect(result.current.status).toBe("ready");
+      if (result.current.status !== "ready") throw new Error("expected ready");
+      expect(result.current.freshness).toBe("fresh");
+    });
+    expect(result.current.data?.streams[0]?.streamId).toBe(9n);
+    expect(result.current.metadata.blockHash?.toLowerCase()).toBe(pinCtl.HASH_B.toLowerCase());
+  });
+
+  it("auto-fetches at most four all-ineligible pages then waits for LOAD MORE", async () => {
+    const pages = AUTO_INELIGIBLE_PAGE_CAP + 2;
+    publicCall.mockResolvedValue(encodeUint(STREAM_PAGE_SIZE * BigInt(pages)));
+    loadStreamPage.mockImplementation(async (_c, _l, _o, start: bigint, stop: bigint) => {
+      const streams = [];
+      for (let index = start; index < stop; index++) {
+        streams.push(view(index + 1n, { sender: TOKEN }));
+      }
+      return readyOutcome({ streams });
+    });
+    const { result } = renderHook(() => useStreams(input), { wrapper: wrapper(client()) });
+    await waitFor(() => {
+      expect(loadStreamPage.mock.calls.length).toBe(1 + AUTO_INELIGIBLE_PAGE_CAP);
+    });
+    expect(result.current.hasNextPage).toBe(true);
+    expect(loadStreamPage.mock.calls.length).toBe(1 + AUTO_INELIGIBLE_PAGE_CAP);
   });
 });

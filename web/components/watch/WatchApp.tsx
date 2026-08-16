@@ -32,7 +32,13 @@ import type { Usd8 } from "@/lib/units";
 import { classifyEntry, streamsDegradedKind, type EntryBook } from "@/lib/watch-entry";
 import { uniqueLendings } from "@/lib/watch-lendings";
 import { sortBorrowedLoans } from "@/lib/watch-rows";
-import { inferredLens, writeWatchSearch, type WatchSelection } from "@/lib/watch-url";
+import { streamBookKeys } from "@/lib/query-keys";
+import {
+  inferredLens,
+  selectionMatchesRow,
+  writeWatchSearch,
+  type WatchSelection,
+} from "@/lib/watch-url";
 import { BorrowedDetail } from "./BorrowedDetail";
 import { ClosedLoanDetail } from "./ClosedLoanDetail";
 import { StreamClosedDetail, StreamDetail } from "./StreamDetail";
@@ -85,9 +91,11 @@ export function WatchApp() {
   const loanStreams = useLoanStreams(streamIds);
 
   const pledgedByStream = useMemo(() => {
-    const map = new Map<string, bigint>();
+    const map = new Map<string, { lending: typeof loans[number]["lending"]; id: bigint }>();
     for (const loan of loans) {
-      if (!loan.closed && loan.outstanding > 0n) map.set(loan.streamId.toString(), loan.id);
+      if (!loan.closed && loan.outstanding > 0n) {
+        map.set(loan.streamId.toString(), { lending: loan.lending, id: loan.id });
+      }
     }
     return map;
   }, [loans]);
@@ -168,17 +176,19 @@ export function WatchApp() {
     writeWatchSearch({ lens: resolvedLens, selection }, "push");
   }
 
-  const selectedPositionId = url.selection.kind === "position" ? url.selection.id : null;
-  const selectedLoanId = url.selection.kind === "loan" ? url.selection.id : null;
   const selectedStreamId = url.selection.kind === "stream" ? url.selection.id : null;
   const selectedPosition =
-    selectedPositionId !== null ? positions.find((row) => row.id === selectedPositionId) : undefined;
+    url.selection.kind === "position"
+      ? positions.find((row) => selectionMatchesRow(url.selection, "position", row))
+      : undefined;
   const selectedPositionMarket = selectedPosition
     ? markets.markets.find((row) => row.market.toLowerCase() === selectedPosition.market.toLowerCase()) ??
       null
     : null;
   const selectedLoanFromUrl =
-    selectedLoanId !== null ? loans.find((row) => row.id === selectedLoanId) : undefined;
+    url.selection.kind === "loan"
+      ? loans.find((row) => selectionMatchesRow(url.selection, "loan", row))
+      : undefined;
   const selectedStream =
     selectedStreamId !== null
       ? ownedStreams.find((row) => row.streamId === selectedStreamId)
@@ -194,13 +204,13 @@ export function WatchApp() {
         )
       : undefined;
   const selectedLoan = selectedLoanFromUrl ?? matchingOpenLoan;
-
-  const streamStamp = streams.metadata.dataUpdatedAt ?? 0;
-  const borrowerStamp = borrower.metadata.dataUpdatedAt ?? 0;
-  const borrowerCaughtUp =
-    borrower.status === "ready" && (borrowerStamp >= streamStamp || streamStamp === 0);
-
+  const selectedLoanMarket = selectedLoan
+    ? markets.markets.find(
+        (row) => row.lending?.toLowerCase() === selectedLoan.lending.toLowerCase(),
+      ) ?? null
+    : null;
   const matchingOpenLoanId = matchingOpenLoan?.id;
+  const matchingOpenLoanLending = matchingOpenLoan?.lending;
 
   const showWatch = entry === "watch" || entry === "watch-streams-degraded";
   const detailOpen = url.selection.kind !== "none";
@@ -222,8 +232,7 @@ export function WatchApp() {
     !matchingOpenLoan &&
     streamBook.complete &&
     streamBookReady &&
-    Boolean(streamData || streamBook.status === "ready") &&
-    (lastSelectedStreamRef.current === undefined || borrowerCaughtUp);
+    Boolean(streamData || streamBook.status === "ready");
   const stickyStream =
     !selectedStream && !showStreamClosed && !matchingOpenLoan
       ? lastSelectedStreamRef.current
@@ -231,12 +240,17 @@ export function WatchApp() {
   const streamForDetail = selectedStream ?? stickyStream;
 
   useEffect(() => {
-    if (matchingOpenLoanId === undefined || selectedStreamId === null) return;
+    if (matchingOpenLoanId === undefined || !matchingOpenLoanLending || selectedStreamId === null) {
+      return;
+    }
     writeWatchSearch(
-      { lens: "borrowed", selection: { kind: "loan", id: matchingOpenLoanId } },
+      {
+        lens: "borrowed",
+        selection: { kind: "loan", lending: matchingOpenLoanLending, id: matchingOpenLoanId },
+      },
       "replace",
     );
-  }, [matchingOpenLoanId, selectedStreamId]);
+  }, [matchingOpenLoanId, matchingOpenLoanLending, selectedStreamId]);
 
   useEffect(() => {
     if (!narrow || !detailOpen) return;
@@ -316,7 +330,10 @@ export function WatchApp() {
               onRefresh={
                 wallSurface === "STALE"
                   ? () => {
-                      void queryClient.invalidateQueries();
+                      void streams.advancePin();
+                      void queryClient.invalidateQueries({
+                        predicate: (query) => query.queryKey[0] !== streamBookKeys.all[0],
+                      });
                     }
                   : undefined
               }
@@ -371,7 +388,11 @@ export function WatchApp() {
             {selectedLoan && (selectedLoan.closed || selectedLoan.outstanding === 0n) ? (
               <ClosedLoanDetail
                 loan={selectedLoan}
-                symbol={tokenLabel}
+                symbol={
+                  selectedLoanMarket
+                    ? symbolFor(symbols, selectedLoanMarket.ovrfloToken)
+                    : tokenLabel
+                }
                 freshness={lensFreshness.freshness}
                 streamPresent={loanStreams.has(selectedLoan.streamId.toString())}
                 onSelectStream={(streamId) => onSelect({ kind: "stream", id: streamId })}
@@ -381,16 +402,16 @@ export function WatchApp() {
               <BorrowedDetail
                 loan={selectedLoan}
                 symbol={
-                  markets.markets[0]
-                    ? symbolFor(symbols, markets.markets[0].ovrfloToken)
+                  selectedLoanMarket
+                    ? symbolFor(symbols, selectedLoanMarket.ovrfloToken)
                     : tokenLabel
                 }
-                underlyingSymbol={tokenLabel}
-                market={
-                  markets.markets.find(
-                    (row) => row.lending?.toLowerCase() === selectedLoan.lending.toLowerCase(),
-                  ) ?? null
+                underlyingSymbol={
+                  selectedLoanMarket
+                    ? symbolFor(symbols, selectedLoanMarket.underlying)
+                    : tokenLabel
                 }
+                market={selectedLoanMarket}
                 lending={selectedLoan.lending}
                 nowSeconds={nowSeconds}
                 nowMs={nowMs}
@@ -409,7 +430,7 @@ export function WatchApp() {
               <StreamDetail
                 stream={streamForDetail}
                 symbol={symbolFor(symbols, streamForDetail.asset)}
-                pledgedLoanId={pledgedByStream.get(streamForDetail.streamId.toString())}
+                pledgedLoanId={pledgedByStream.get(streamForDetail.streamId.toString())?.id}
                 nowSeconds={nowSeconds}
                 nowMs={nowMs}
                 lastReadAt={lastReadAt}
@@ -418,7 +439,14 @@ export function WatchApp() {
                 usdMode={usdMode}
                 usdAvailable={usdAvailable}
                 usdText={usdTextFor(streamForDetail.withdrawable, usdQuote)}
-                onSelectLoan={(loanId) => onSelect({ kind: "loan", id: loanId })}
+                onSelectLoan={(loanId) => {
+                  const pledged = pledgedByStream.get(streamForDetail.streamId.toString());
+                  if (pledged) onSelect({ kind: "loan", lending: pledged.lending, id: pledged.id });
+                  else {
+                    const loan = loans.find((row) => row.id === loanId);
+                    if (loan) onSelect({ kind: "loan", lending: loan.lending, id: loan.id });
+                  }
+                }}
               />
             ) : null}
             {showStreamClosed && selectedStreamId !== null ? (
@@ -511,7 +539,11 @@ function useLastKnown<T>(outcome: ReadOutcome<T>): T | undefined {
   if (outcome.status === "ready" || outcome.status === "partial") {
     ref.current = outcome.data;
   }
-  if (outcome.status === "unavailable") return ref.current;
+  if (outcome.status === "unavailable") {
+    const kept = outcome.data ?? ref.current;
+    if (kept !== undefined) ref.current = kept;
+    return kept;
+  }
   return outcome.data ?? ref.current;
 }
 

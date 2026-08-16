@@ -1,16 +1,17 @@
 "use client";
 
+import type { Address } from "viem";
 import { EntityRow } from "@/components/kit/EntityRow";
 import { LensTabs, type LensId, type LensTab } from "@/components/kit/LensTabs";
 import { RollingNumber } from "@/components/kit/RollingNumber";
 import type { BorrowerLoanRow } from "@/hooks/useBorrowerBook";
 import type { LenderPositionRow } from "@/hooks/useLenderBook";
 import type { BookPager, HydratedStream } from "@/hooks/useStreams";
-import { formatTruncatedDecimal } from "@/lib/format";
+import { formatAddress, formatTruncatedDecimal } from "@/lib/format";
 import type { StreamSchedule } from "@/lib/payoff";
 import type { WatchLens } from "@/lib/parse";
 import type { EntryBook } from "@/lib/watch-entry";
-import type { WatchSelection } from "@/lib/watch-url";
+import { selectionMatchesRow, type WatchSelection } from "@/lib/watch-url";
 import {
   borrowedRowState,
   borrowedStateLine,
@@ -52,7 +53,7 @@ export function Wall({
   positions: readonly LenderPositionRow[];
   loans: readonly BorrowerLoanRow[];
   streams: readonly HydratedStream[];
-  pledgedByStream: ReadonlyMap<string, bigint>;
+  pledgedByStream: ReadonlyMap<string, { lending: Address; id: bigint }>;
   loanStreams: ReadonlyMap<string, { withdrawable: bigint; schedule: StreamSchedule }>;
   nowSeconds: bigint;
   nowMs: number;
@@ -72,8 +73,10 @@ export function Wall({
               <SuppliedRow
                 key={`${position.lending}-${position.id.toString()}`}
                 position={position}
-                selected={selection.kind === "position" && selection.id === position.id}
-                onSelect={() => onSelect({ kind: "position", id: position.id })}
+                selected={selectionMatchesRow(selection, "position", position)}
+                onSelect={() =>
+                  onSelect({ kind: "position", lending: position.lending, id: position.id })
+                }
               />
             ))
           : null}
@@ -86,20 +89,20 @@ export function Wall({
                 nowSeconds={nowSeconds}
                 nowMs={nowMs}
                 lastReadAt={lastReadAt}
-                selected={selection.kind === "loan" && selection.id === loan.id}
-                onSelect={() => onSelect({ kind: "loan", id: loan.id })}
+                selected={selectionMatchesRow(selection, "loan", loan)}
+                onSelect={() => onSelect({ kind: "loan", lending: loan.lending, id: loan.id })}
               />
             ))
           : null}
         {lens === "streams" && streamsDegraded ? (
           <StreamsDegraded kind={streamsDegraded} />
         ) : null}
-        {panelStatus === "ready" && lens === "streams" && !streamsDegraded
+        {panelStatus === "ready" && lens === "streams" && (streams.length > 0 || !streamsDegraded)
           ? streams.map((stream) => (
               <StreamRow
                 key={stream.streamId.toString()}
                 stream={stream}
-                pledgedLoanId={pledgedByStream.get(stream.streamId.toString())}
+                pledgedLoanId={pledgedByStream.get(stream.streamId.toString())?.id}
                 nowMs={nowMs}
                 selected={selection.kind === "stream" && selection.id === stream.streamId}
                 onSelect={() => onSelect({ kind: "stream", id: stream.streamId })}
@@ -142,7 +145,7 @@ function SuppliedRow({
   return (
     <EntityRow
       state={match}
-      identity={`SUPPLY #${position.id.toString()}`}
+      identity={`SUPPLY #${position.id.toString()} · ${formatAddress(position.market)}`}
       stateLine={suppliedStateLine({ match, filled, unfilled, aprBps: position.aprBps })}
       decisive={decisive}
       selected={selected}
@@ -181,7 +184,7 @@ function BorrowedRow({
   return (
     <EntityRow
       state={state}
-      identity={`LOAN #${loan.id.toString()}`}
+      identity={`LOAN #${loan.id.toString()} · ${formatAddress(loan.market)}`}
       stateLine={borrowedStateLine({
         state,
         streamId: loan.streamId,

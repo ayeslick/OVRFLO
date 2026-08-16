@@ -3,13 +3,18 @@
 import { useEffect, useRef } from "react";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { usePublicClient } from "wagmi";
-import { isAddressEqual, type Address } from "viem";
+import {
+  decodeFunctionResult,
+  encodeFunctionData,
+  isAddressEqual,
+  type Address,
+} from "viem";
 import { useProtocolBootstrap } from "./useProtocolBootstrap";
 import { useEnumerationPin } from "./useEnumerationPin";
 import { chainId, isConfiguredAddress, ZERO_ADDRESS } from "@/lib/config";
 import { MIN_STREAM_AMOUNT, STREAM_PAGE_SIZE } from "@/lib/lending-math";
 import { classifyRpcFailure } from "@/lib/rpc";
-import { pinnedQuery, streamBookKeys } from "@/lib/query-keys";
+import { pinnedQuery, QUERY_RETRY, streamBookKeys } from "@/lib/query-keys";
 import {
   AUTO_INELIGIBLE_PAGE_CAP,
   bookFields,
@@ -19,7 +24,7 @@ import {
   windowStop,
 } from "@/lib/stream-book";
 import { loadStreamPage, type StreamView } from "@/lib/protocol/streams";
-import { verifyPinHash } from "@/lib/protocol/pin";
+import { callPin, verifyPinHash, type BlockPin } from "@/lib/protocol/pin";
 import {
   loadingOutcome,
   readFailure,
@@ -71,7 +76,34 @@ export type BookPager = {
   fetchNextPage: () => void;
 };
 
-export type StreamBookResult = ReadOutcome<StreamBook> & BookPager;
+export type StreamBookResult = ReadOutcome<StreamBook> &
+  BookPager & {
+    advancePin: () => Promise<void>;
+  };
+
+const balanceOfAbi = [
+  {
+    type: "function",
+    name: "balanceOf",
+    stateMutability: "view",
+    inputs: [{ name: "owner", type: "address" }],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+] as const;
+
+function throwIfUnknownBlock(error: unknown): void {
+  if (classifyRpcFailure(error) === "unknown_block") {
+    throw error instanceof Error ? error : new Error("unknown block");
+  }
+}
+
+function throwIfUnknownBlockFailures(
+  failures: readonly { message: string }[],
+): void {
+  for (const failure of failures) {
+    throwIfUnknownBlock(failure.message);
+  }
+}
 
 export type StreamMarket = Pick<
   MarketInfo,
@@ -177,6 +209,10 @@ const idlePager: BookPager = {
   fetchNextPage: () => undefined,
 };
 
+const idleAdvance = {
+  advancePin: async () => undefined,
+};
+
 /**
  * Held-stream wall pager. TanStack owns pageParams. The protocol client owns
  * the page operation. Complete-set consumers must use useCompleteStreams.
@@ -217,22 +253,23 @@ export function useStreams(input: {
         throw new Error("stream page query ran without a pin");
       }
       const start = pageParam;
-      const counted = await publicClient.readContract({
-        address: discovered,
-        abi: [
-          {
-            type: "function",
-            name: "balanceOf",
-            stateMutability: "view",
-            inputs: [{ name: "owner", type: "address" }],
-            outputs: [{ name: "", type: "uint256" }],
-          },
-        ] as const,
+      const countedCall = await publicClient.call({
+        to: discovered,
+        data: encodeFunctionData({
+          abi: balanceOfAbi,
+          functionName: "balanceOf",
+          args: [account],
+        }),
+        ...callPin(pin, pinState.mode),
+        ...(signal ? { requestOptions: { signal } } : {}),
+      });
+      if (!countedCall.data || countedCall.data === "0x") {
+        throw new Error("balanceOf returned empty data");
+      }
+      const counted = decodeFunctionResult({
+        abi: balanceOfAbi,
         functionName: "balanceOf",
-        args: [account],
-        ...{ ...(pinState.mode === "number"
-          ? { blockNumber: pin.blockNumber }
-          : { blockHash: pin.blockHash, requireCanonical: true as const }) },
+        data: countedCall.data,
       });
       if (counted === 0n || start >= counted) {
         return {
@@ -270,6 +307,7 @@ export function useStreams(input: {
         }
       }
       if (outcome.status === "unavailable") {
+        throwIfUnknownBlockFailures(outcome.failures);
         return {
           start,
           stop,
@@ -303,6 +341,8 @@ export function useStreams(input: {
       nextPageParam(lastPageParam, lastPage.sourceCount, STREAM_PAGE_SIZE),
     enabled: configured,
     ...pinnedQuery,
+    retry: (failureCount, error) =>
+      classifyRpcFailure(error) !== "unknown_block" && failureCount < QUERY_RETRY,
   });
 
   const wantedDepth = useRef(1);
@@ -350,9 +390,14 @@ export function useStreams(input: {
   useEffect(() => {
     if (!query.isError || !query.error) return;
     if (classifyRpcFailure(query.error) === "unknown_block") {
-      pinState.markStaleAndRestart();
+      void pinState.advancePin();
     }
-  }, [pinState, query.error, query.isError]);
+  }, [pinState.advancePin, query.error, query.isError]);
+
+  useEffect(() => {
+    if (query.isPlaceholderData || !query.data) return;
+    pinState.markFresh();
+  }, [pinState.markFresh, query.data, query.isPlaceholderData]);
 
   const pager: BookPager = {
     hasNextPage: Boolean(query.hasNextPage),
@@ -362,12 +407,20 @@ export function useStreams(input: {
     },
   };
 
+  const pageStamp = useRef<{ pin: BlockPin; blockTimestamp: bigint | null } | null>(null);
+  if (pin && query.data && !query.isPlaceholderData) {
+    pageStamp.current = { pin, blockTimestamp: pinState.blockTimestamp };
+  }
+  const stamp = query.isPlaceholderData ? pageStamp.current : pin
+    ? { pin, blockTimestamp: pinState.blockTimestamp }
+    : null;
   const meta = {
     dataUpdatedAt: pinState.headUpdatedAt || query.dataUpdatedAt,
-    blockNumber: pin?.blockNumber,
-    blockHash: pin?.blockHash,
-    blockTimestamp: pinState.blockTimestamp ?? undefined,
+    blockNumber: stamp?.pin.blockNumber,
+    blockHash: stamp?.pin.blockHash,
+    blockTimestamp: stamp?.blockTimestamp ?? undefined,
   };
+  const pinControls = { advancePin: pinState.advancePin };
 
   if (bootstrap.status === "unavailable" && input.stream === undefined) {
     return {
@@ -378,20 +431,22 @@ export function useStreams(input: {
         meta,
       ),
       ...idlePager,
+      ...idleAdvance,
     };
   }
   if (!configured) {
-    return { ...loadingOutcome<StreamBook>(undefined, meta), ...idlePager };
+    return { ...loadingOutcome<StreamBook>(undefined, meta), ...idlePager, ...idleAdvance };
   }
   if (query.isError && !query.data) {
     const message = query.error instanceof Error ? query.error.message : "stream page failed";
     return {
       ...unavailableOutcome([readFailure("useStreams", "transport", message)], meta),
       ...pager,
+      ...pinControls,
     };
   }
   if (!query.data) {
-    return { ...loadingOutcome<StreamBook>(undefined, meta), ...pager };
+    return { ...loadingOutcome<StreamBook>(undefined, meta), ...pager, ...pinControls };
   }
 
   const pages = query.data.pages;
@@ -420,6 +475,7 @@ export function useStreams(input: {
     return {
       ...unavailableOutcome([duplicateStreamFailure(folded.duplicate)], meta, book),
       ...pager,
+      ...pinControls,
     };
   }
   if (transportFailed) {
@@ -432,13 +488,14 @@ export function useStreams(input: {
         book,
       ),
       ...pager,
+      ...pinControls,
     };
   }
   if (sourceCount === 0n && complete) {
-    return { ...readyOutcome(book, meta), ...pager };
+    return { ...readyOutcome(book, meta), ...pager, ...pinControls };
   }
   if (!complete && streams.length === 0 && !query.isPlaceholderData) {
-    return { ...loadingOutcome(book, meta), ...pager };
+    return { ...loadingOutcome(book, meta), ...pager, ...pinControls };
   }
   if ((pageFailures.length > 0 || okFalse) && streams.length === 0 && complete) {
     return {
@@ -450,8 +507,9 @@ export function useStreams(input: {
         book,
       ),
       ...pager,
+      ...pinControls,
     };
   }
-  const freshness = pinState.stale ? "stale" : "fresh";
-  return { ...readyOutcome(book, meta, freshness), ...pager };
+  const freshness = query.isPlaceholderData || pinState.stale ? "stale" : "fresh";
+  return { ...readyOutcome(book, meta, freshness), ...pager, ...pinControls };
 }

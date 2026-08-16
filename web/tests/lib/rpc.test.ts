@@ -14,6 +14,7 @@ describe("RPC failure classification", () => {
     [new Error("API key revoked"), "revoked_credential"],
     [new Error("block range is too wide for this provider"), "historical_capability"],
     [new Error("unknown block"), "unknown_block"],
+    ["unknown block", "unknown_block"],
     [new Error("header not found"), "unknown_block"],
   ] as const)("classifies %j as %s", (error, expected) => {
     expect(classifyRpcFailure(error)).toBe(expected);

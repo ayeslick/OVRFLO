@@ -494,7 +494,7 @@ a `projection` count is a module where a fail-closed mistake can happen.
 | Direction | Key | Trust domain | Role |
 |---|---|---|---|
 | writes | `watch.narrow-nav` | `pure-client` | landing U7: list vs detail from viewport + `watch.selected-entity` |
-| writes | `watch.selected-entity` | `pure-client` | landing U7: `UI-WATCH-SELECT` writes `?position=` / `?loan=` / `?stream=` |
+| writes | `watch.selected-entity` | `pure-client` | landing U7: `UI-WATCH-SELECT` writes `?lending=` plus `?position=` / `?loan=` / `?stream=` |
 | reads | `chain.borrower-loans` | `on-chain` | landing U7: borrowed lens, SETTLED rows after active |
 | reads | `chain.connection` | `on-chain` | landing U7: scopes the wall to the connected account |
 | reads | `chain.lender-positions` | `on-chain` | landing U7: supplied lens rows |

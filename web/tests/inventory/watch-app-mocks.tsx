@@ -90,13 +90,15 @@ vi.mock("@/hooks/useBorrowerBook", () => ({
 }));
 
 vi.mock("@/hooks/useStreams", () => ({
-  useStreams: () =>
-    mockBookOutcome(
+  useStreams: () => ({
+    ...mockBookOutcome(
       fx.streamStatus,
       { streams: fx.streams },
       {},
       "could-not-ask",
     ),
+    advancePin: async () => undefined,
+  }),
 }));
 
 vi.mock("@/hooks/useUsdPrice", () => ({

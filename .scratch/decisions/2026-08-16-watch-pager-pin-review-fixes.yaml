@@ -1,0 +1,78 @@
+# Scratch decision record — schema: docs/maps/SCHEMAS.md §4
+summary_ref: "docs/plans/2026-08-15-001-feat-watch-enumeration-load-more-plan.md + docs/plans/2026-08-15-003-feat-snapshot-pinned-enumeration-plan.md (ticket 14 review reject; no numbered ADR)"
+
+goal: >
+  Fix ticket 14 merge blockers: Watch selection is (lending, id), unavailable
+  stream pages keep last-known rows, a pin miss takes a new hash, placeholder
+  pages under a new hash stay stale, STALE REFRESH advances the pin, and a
+  complete stream book is authority for STREAM CLOSED.
+
+state_keys_touched:
+  - watch.selected-entity
+  - chain.stream-truth
+  - chain.market-symbols
+
+writers_readers:
+  - writes: web/lib/parse.ts
+  - writes: web/lib/watch-url.ts
+  - writes: web/hooks/useEnumerationPin.ts
+  - writes: web/hooks/useStreams.ts
+  - writes: web/hooks/useCompleteStreams.ts
+  - writes: web/components/watch/WatchApp.tsx
+  - writes: web/components/watch/Wall.tsx
+  - reads: web/components/watch/StreamDetail.tsx
+  - reads: web/components/watch/BorrowedDetail.tsx
+  - reads: web/lib/query-client.ts
+
+trust_domains:
+  - fact: selected Watch position or loan
+    domain: pure-client
+    moved_from: id-only URL
+  - fact: stream book presence at a pin
+    domain: on-chain
+    moved_from: borrower dataUpdatedAt comparison
+  - fact: enumeration pin identity
+    domain: on-chain
+    moved_from: useBlock latest with unused restartEpoch
+
+rejected_alternatives:
+  - option: Keep id-only URL and disambiguate in memory
+    why_not: Deep links and highlight would still collide across lendings.
+  - option: Treat unavailable as empty and wait for retry
+    why_not: Plan 003 keeps the previous list behind the degraded caption.
+  - option: Increment restartEpoch on unknown_block
+    why_not: Epoch is not in the query key. The new hash must be.
+  - option: Bare invalidateQueries on STALE REFRESH
+    why_not: staleTime Infinity refetches the dead pin. Capture a new head first.
+  - option: Keep borrowerCaughtUp timestamp wait
+    why_not: Plan 003. Ticket default is complete stream book is authority.
+
+invariants_held:
+  - invariant: Two markets with SUPPLY #1 open the selected lending
+    how: URL and find match lending + id
+  - invariant: Pin miss creates a new query keyed by the new hash
+    how: unknown_block throws; advancePin reads latest and sets the captured pin
+  - invariant: Placeholder pages after a pin change are stale
+    how: isPlaceholderData stamps the page pin and freshness stale
+  - invariant: STREAM CLOSED does not wait on borrower timestamps
+    how: complete stream book plus no matching open loan
+
+risks:
+  - risk: Old bookmarks ?position=1 without lending no longer select
+    residual: Ambiguous across markets. Require lending on position and loan.
+  - risk: getBlock latest after a pin miss can return the same dead hash
+    residual: Query key stays. The next head poll advances the pin.
+  - risk: claimAllStreamsFromCompleteSet still has no Watch UI caller
+    residual: Recorded residual. Do not build Claim-All in this fix.
+
+diff_hints:
+  - path: web/lib/watch-url.ts
+    why: Selection and URL carry lending for position and loan
+  - path: web/hooks/useEnumerationPin.ts
+    why: Captured pin; advancePin; no restartEpoch
+  - path: web/hooks/useStreams.ts
+    why: Throw on unknown_block; placeholder stale; signal on balanceOf
+  - path: web/components/watch/WatchApp.tsx
+    why: Composite find; last-known on unavailable; REFRESH advances pin
+  - path: web/components/watch/Wall.tsx
+    why: Highlight lending+id; last-known rows under degraded caption

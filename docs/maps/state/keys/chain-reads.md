@@ -52,10 +52,11 @@ The factory's vault set and each vault's underlying, ovrfloToken, and lending ad
 - **notes:** Fails closed in two directions. A partial hydration returns an empty
   vault list **plus** an explicit incompleteness error rather than a short list
   that reads as complete; a registry larger than the enumeration cap sets
-  `tooLarge` rather than silently truncating. `useStreams` refuses to start
-  discovery unless the registry is loaded, error-free, and within the cap, and
-  marks itself unavailable otherwise. Truncation surfaces through
-  `UI-SHELL-TRUNCATION`.
+  `tooLarge` rather than silently truncating. `useStreams` starts the pinned
+  pager only after the registry is ready (`registryComplete`). The wall no
+  longer refuses over `MAX_ENUMERATION_IDS`; complete-set consumers use
+  `useCompleteStreams`. Truncation of the vault list itself still surfaces
+  through `UI-SHELL-TRUNCATION`.
 
 ### `chain.markets`
 
@@ -231,10 +232,15 @@ loopback, else `{blockNumber}` plus `verifyPinHash`). Complete-set consumers
   Freshness: a held pin is success. The head poll refreshes `dataUpdatedAt`
   (`headUpdatedAt`) every interval whether or not the pin hash changes, so
   `FRESHNESS_MAX_AGE_MS` does not disable signing on a current snapshot.
-  `blockTimestamp` on the outcome is the pinned block time. Writes still simulate
-  against latest. Pledged-stream companion `useLoanStreams` shares
-  `READ_INTERVAL_MS`. Watch lender/borrower books aggregate every lending from
-  factory discovery; `markets[0].lending` is not the Watch scope.
+  `blockTimestamp` on the outcome is the pinned block time. An `unknown_block`
+  pin miss captures a new `{blockNumber, blockHash}` and puts the new hash in
+  the query key. Placeholder pages under a new hash stay stale and keep the
+  page pin until page one of the new snapshot arrives. STALE REFRESH advances
+  the pin; it does not refetch the old hash. Writes still simulate against
+  latest. Pledged-stream companion `useLoanStreams` shares `READ_INTERVAL_MS`.
+  Watch lender/borrower books aggregate every lending from factory discovery;
+  `markets[0].lending` is not the Watch scope. Selection and writes bind
+  `(lending, id)`.
 
 ### `chain.balances`
 

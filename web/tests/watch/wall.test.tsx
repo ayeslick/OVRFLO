@@ -389,6 +389,57 @@ describe("streams degraded copy", () => {
     expect(screen.queryByText(/0xAFb9/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/you hold no streams/i)).not.toBeInTheDocument();
   });
+
+  it("keeps last-known stream rows under the degraded caption", () => {
+    render(
+      <Wall
+        tabs={visibleLensTabs({
+          positions: entryBook("ready", 0),
+          loans: entryBook("ready", 0),
+          streams: entryBook("unavailable", 1),
+        })}
+        lens="streams"
+        onSelectLens={() => undefined}
+        positions={[]}
+        loans={[]}
+        streams={[
+          {
+            streamId: 5n,
+            owner: ACCOUNT,
+            sender: ACCOUNT,
+            asset: MARKET,
+            schedule: {
+              start: NOW - 10n,
+              end: NOW + 80n,
+              deposited: SCALE,
+              withdrawn: 0n,
+              refunded: 0n,
+              cliffTime: NOW - 10n,
+              isCancelable: false,
+            },
+            withdrawable: 1n,
+            remaining: SCALE,
+            status: 1,
+            renderEligible: true,
+            borrowRouteEligible: true,
+            vault: ACCOUNT,
+            market: MARKET,
+          },
+        ]}
+        pledgedByStream={new Map()}
+        loanStreams={new Map()}
+        nowSeconds={NOW}
+        nowMs={Number(NOW) * 1000}
+        lastReadAt={NOW}
+        selection={{ kind: "none" }}
+        onSelect={() => undefined}
+        streamsDegraded="could-not-ask"
+        panelStatus="ready"
+      />,
+    );
+    expect(screen.getByText(/STREAM DISCOVERY IS UNAVAILABLE/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /STREAM #5/ })).toBeInTheDocument();
+  });
 });
 
 describe("LOAD MORE", () => {

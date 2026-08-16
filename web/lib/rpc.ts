@@ -27,6 +27,7 @@ type ErrorShape = {
 };
 
 export function classifyRpcFailure(error: unknown): RpcFailureKind {
+  if (typeof error === "string") return classifyRpcFailure({ message: error });
   const shapes = errorChain(error);
   const status = shapes
     .map((shape) => shape.status ?? shape.statusCode)

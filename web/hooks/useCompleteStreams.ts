@@ -1,9 +1,10 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { usePublicClient } from "wagmi";
 import type { Address } from "viem";
+import { classifyRpcFailure } from "@/lib/rpc";
 import { useProtocolBootstrap } from "./useProtocolBootstrap";
 import { useEnumerationPin } from "./useEnumerationPin";
 import {
@@ -13,7 +14,7 @@ import {
   type HydratedStream,
 } from "./useStreams";
 import { chainId, isConfiguredAddress, ZERO_ADDRESS } from "@/lib/config";
-import { pinnedQuery, streamBookKeys } from "@/lib/query-keys";
+import { pinnedQuery, QUERY_RETRY, streamBookKeys } from "@/lib/query-keys";
 import { bookFields } from "@/lib/stream-book";
 import { loadCompleteStreams } from "@/lib/protocol/streams";
 import { verifyPinHash } from "@/lib/protocol/pin";
@@ -69,6 +70,13 @@ export function useCompleteStreams(input: {
         pin,
         { signal, pinMode: pinState.mode },
       );
+      if (outcome.status === "unavailable") {
+        for (const failure of outcome.failures) {
+          if (classifyRpcFailure(failure.message) === "unknown_block") {
+            throw new Error(failure.message);
+          }
+        }
+      }
       if (pinState.mode === "number" && outcome.status !== "unavailable") {
         const verified = await verifyPinHash(publicClient, pin);
         if (!verified.ok) {
@@ -79,13 +87,46 @@ export function useCompleteStreams(input: {
     },
     enabled: configured,
     ...pinnedQuery,
+    retry: (failureCount, error) =>
+      classifyRpcFailure(error) !== "unknown_block" && failureCount < QUERY_RETRY,
   });
 
+  useEffect(() => {
+    if (!query.isError || !query.error) return;
+    if (classifyRpcFailure(query.error) === "unknown_block") {
+      void pinState.advancePin();
+    }
+  }, [pinState.advancePin, query.error, query.isError]);
+
+  useEffect(() => {
+    if (query.isPlaceholderData || !query.data) return;
+    pinState.markFresh();
+  }, [pinState.markFresh, query.data, query.isPlaceholderData]);
+
+  const pageStamp = useRef<{
+    blockNumber: bigint;
+    blockHash: `0x${string}`;
+    blockTimestamp: bigint | null;
+  } | null>(null);
+  if (pin && query.data && !query.isPlaceholderData) {
+    pageStamp.current = {
+      blockNumber: pin.blockNumber,
+      blockHash: pin.blockHash,
+      blockTimestamp: pinState.blockTimestamp,
+    };
+  }
+  const stamp = query.isPlaceholderData ? pageStamp.current : pin
+    ? {
+        blockNumber: pin.blockNumber,
+        blockHash: pin.blockHash,
+        blockTimestamp: pinState.blockTimestamp,
+      }
+    : null;
   const meta = {
     dataUpdatedAt: pinState.headUpdatedAt || query.dataUpdatedAt,
-    blockNumber: pin?.blockNumber,
-    blockHash: pin?.blockHash,
-    blockTimestamp: pinState.blockTimestamp ?? undefined,
+    blockNumber: stamp?.blockNumber,
+    blockHash: stamp?.blockHash,
+    blockTimestamp: stamp?.blockTimestamp ?? undefined,
   };
 
   return useMemo(() => {
@@ -139,16 +180,19 @@ export function useCompleteStreams(input: {
         book,
       );
     }
-    return readyOutcome(book, { ...meta, ...outcome.metadata });
+    const freshness = query.isPlaceholderData || pinState.stale ? "stale" : "fresh";
+    return readyOutcome(book, { ...meta, ...outcome.metadata }, freshness);
   }, [
     bootstrap,
     configured,
     input,
     meta,
+    pinState.stale,
     query.data,
     query.error,
     query.isError,
     query.isLoading,
+    query.isPlaceholderData,
   ]);
 }
 
