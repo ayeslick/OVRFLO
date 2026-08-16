@@ -53,6 +53,15 @@ interface ISablierV2LockupLinear {
         Amounts amounts;
     }
 
+    /// @notice Mirrors the fork's `Lockup.Status` ordering. An enum crosses the ABI as uint8.
+    enum Status {
+        PENDING,
+        STREAMING,
+        SETTLED,
+        CANCELED,
+        DEPLETED
+    }
+
     function createWithDurations(CreateWithDurations calldata params) external returns (uint256 streamId);
 
     function getSender(uint256 streamId) external view returns (address sender);
@@ -82,6 +91,21 @@ interface ISablierV2LockupLinear {
     function transferFrom(address from, address to, uint256 tokenId) external;
 
     function ownerOf(uint256 tokenId) external view returns (address owner);
+
+    /// @notice ERC-721 live token count for `owner`.
+    function balanceOf(address owner) external view returns (uint256);
+
+    /// @notice Token ids owned by `owner` for enumeration indices in `[start, stop)`.
+    /// @dev Reverts `SablierV2Lockup_InvalidQueryRange` when `start >= stop`. Clamps
+    ///      `stop` to `balanceOf(owner)`. Returns empty if `owner` holds no tokens or
+    ///      if `start` is at or past that balance.
+    function tokensOfOwnerIn(address owner, uint256 start, uint256 stop)
+        external
+        view
+        returns (uint256[] memory tokenIds);
+
+    /// @notice Stream status. Reverts if `streamId` is null.
+    function statusOf(uint256 streamId) external view returns (Status status);
 
     /// @notice Burns a depleted OVRFLO Stream NFT. Reverts unless the stream is depleted
     ///         and the caller is the NFT owner or an approved operator.

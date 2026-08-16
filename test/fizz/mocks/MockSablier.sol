@@ -223,11 +223,16 @@ contract MockSablier is ISablierV2LockupLinear {
         require(owner != address(0), "ERC721: invalid token ID");
     }
 
-    function balanceOf(address owner) public view returns (uint256) {
+    function balanceOf(address owner) public view override returns (uint256) {
         return ownedTokens[owner].length;
     }
 
-    function tokensOfOwnerIn(address owner, uint256 start, uint256 stop) external view returns (uint256[] memory ids) {
+    function tokensOfOwnerIn(address owner, uint256 start, uint256 stop)
+        external
+        view
+        override
+        returns (uint256[] memory ids)
+    {
         require(start < stop, "invalid range");
         uint256 bal = ownedTokens[owner].length;
         if (bal == 0 || start >= bal) return new uint256[](0);
@@ -236,6 +241,15 @@ contract MockSablier is ISablierV2LockupLinear {
         for (uint256 i = start; i < exclusiveEnd; ++i) {
             ids[i - start] = ownedTokens[owner][i];
         }
+    }
+
+    function statusOf(uint256 streamId) external view override returns (Status) {
+        StreamData memory s = streams[streamId];
+        require(s.depositedAmount > 0, "null stream");
+        if (s.depleted) return Status.DEPLETED;
+        if (block.timestamp < s.startTime) return Status.PENDING;
+        if (block.timestamp >= s.endTime) return Status.SETTLED;
+        return Status.STREAMING;
     }
 
     function _addOwned(address to, uint256 tokenId) private {
