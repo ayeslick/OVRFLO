@@ -67,6 +67,7 @@ node_modules/
 .superdesign
 .githooks
 .pnpm-store
+pnpm-lock.yaml
 
 # Agents
 .claude/
