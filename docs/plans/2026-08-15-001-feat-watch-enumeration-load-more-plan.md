@@ -85,7 +85,10 @@ The book state model separates them explicitly:
   while enumeration is incomplete.
 - `renderCount` — render-eligible rows loaded so far. Display only, never an emptiness signal.
 - `complete` — every page fetched (`hasNextPage` false and no page failed).
-- `confirmedEmpty` — `sourceCount == 0`, **or** `complete && renderCount == 0`. This, and only
+- `confirmedEmpty` — `sourceCount == 0`, **or** `complete && renderCount == 0` **with zero
+  unresolved failures** (no failed page, no `ok: false` row, no invariant violation). A book that
+  exhausted its pages but dropped rows to hydration failures is `unavailable`, not empty — a
+  transient failure must never become an assertion that the user owns nothing. This, and only
   this, may send a holder to first-run or hide the lens.
 
 **`sourceCount` must stay the on-chain `balanceOf`, never the number of loaded rows:**

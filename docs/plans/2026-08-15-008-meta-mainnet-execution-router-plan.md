@@ -180,6 +180,69 @@ Skipping this ships the old `ERC721Enumerable` lockup from a green pipeline.
   behavioral coverage; any test killed by an architecture change names its successor scenario in
   the same commit (precedent: `005`'s rule for `useStreams.enumerable.test.ts`).
 
+## Investigation queue — prove irrelevant or promote, never assume
+
+Unproven concerns from the 2026-08-15 external review, evaluated against the tree. Items the
+evaluation collapsed are recorded so they are not re-raised: version coexistence and migration
+(nothing is deployed anywhere; fresh deployments only, per the mainnet gates), packed-index hazards
+(packing was rejected — `002` uses two separate mappings), hostile lens targets (the only target is
+the factory-bound lockup), external Enumerable consumers (none can exist pre-deploy), a Solidity
+range cap on `tokensOfOwnerIn` (deliberately rejected in `002`), and fee-on-transfer underlyings
+(**impossible by contract**: `_pullExact` balance-diff checks revert `TransferMismatch` in both
+`OVRFLO.sol` and `OVRFLOLending.sol`).
+
+The open items, each owned by a plan:
+
+- **Owner-index invariant fuzzing (`002`).** The index is derived truth with no rediscovery path,
+  so it earns more than the 8 unit cases: invariant runs over random sequences of mint, transfer,
+  self-transfer, safe-transfer, and burn proving (a) `balanceOf(owner)` equals the indexed count,
+  (b) every indexed id has `ownerOf(id) == owner`, (c) every owned id appears exactly once,
+  (d) forward and reverse indices agree. Include the index-zero trap (a missing reverse entry reads
+  as legitimate index 0), index-zero removals, only-item and last-item moves, repeated
+  swap-and-pop, and receiver-callback transfers. Add a standing deviation guard:
+  `supportsInterface(0x780e9d63)` must stay false, so an upstream merge cannot silently
+  reintroduce Enumerable.
+- **Emergency rediscovery procedure (`002`, documentation).** `nextStreamId` bounds the id
+  universe, so ownership is reconstructable off-chain by an `ownerOf` sweep over `[1, nextStreamId)`
+  if the index is ever suspect in production. Record it as a diagnostic runbook before the index
+  ships immutable.
+- **Pin `solc_version` (`002`/`007`/`005` builds).** Verified: `foundry.toml` pins
+  `optimizer_runs = 200` but **no compiler version**. The `007` canary margin, the lens drift
+  gate, and the fork size table are all stable only under a pinned compiler. Pin it, then run the
+  final EIP-170 gate on the merged source, not per-change deltas.
+- **Descriptor-slot assertion (`002`).** Beyond deriving `NFT_DESCRIPTOR_SLOT` from
+  `forge inspect` (already required), add a deploy-time check that writing the descriptor does not
+  mutate neighboring slots, so the next layout change fails loudly instead of corrupting state.
+- **Factory bootstrap hardening (`006`).** The factory is the single trust root: at bootstrap
+  assert the expected chain id and non-empty `eth_getCode(factory)`. Threat-model a poisoned or
+  misconfigured anchor; add identity checks only if that model shows real benefit.
+- **Signing-destination verification (`006` / wave 3).** Factory-discovered addresses feed
+  transactions, so RPC honesty crosses from display into signing safety. The display/signing split
+  extends to **addresses**: immediately before signing, re-establish the destination through the
+  wallet-facing provider or through the transaction simulation itself.
+- **Atomic bootstrap discovery (`006` / wave 3).** Registry count, entries, and bindings are
+  multiple reads over appendable state — take them in one multicall (atomic at one block by
+  construction). Stale-but-coherent beats mixed-block topology.
+- **Composite identity keys (wave 3).** Factory-wide Watch means loan ids, position ids, React
+  keys, and caches key on `(chainId, lendingAddress, id)`, never bare `id`. Extends the
+  factory-wide decision above.
+- **Quote revert through the transport (`007` tests).** The quote's success *is* a revert; verify
+  the fallback transport neither retries nor rewrites it before the decoder sees the payload, and
+  test against the real target providers, not only anvil. The decoder strict-matches the enriched
+  `BelowMinAcceptable` shape; any other revert is a quote failure, never a decoded quote.
+- **Approval-flow semantics (wave 3).** Fee-on-transfer is contract-rejected, but verify the
+  approval path against the actual admitted assets for zero-before-nonzero approval requirements
+  (USDT-class) before assuming standard `approve` behavior.
+- **Page-size derivation through production RPC class (`005` sweep, strengthens existing rule).**
+  Derive `STREAM_PAGE_SIZE` against the real provider class — `eth_call` caps, response size,
+  latency, JSON decode, mobile memory — not anvil alone.
+- **Receipt and finality wording (wave 3).** Pinned-snapshot metadata must not imply stronger
+  finality than established; verify the receipt pipeline's confirmation/replacement behavior under
+  reorg.
+- **Cross-source disappearance (`004`).** A pledged stream leaves owner enumeration and reappears
+  via the borrower book. Test the composed failure: owner book ready + borrower book failed must
+  render as a degraded Borrowed lens, never as the stream vanishing from existence.
+
 ## Campaign two — the frontend rewrite brief
 
 A frontend rewrite brief ("Implementation Brief V2": protocol client below React, then remove
