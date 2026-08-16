@@ -4,7 +4,7 @@
 
 This file is bytecode of `SablierV2LockupLinear` from the OVRFLO Streams fork.
 The Solidity name stays `SablierV2LockupLinear`. The deployed ERC721 identity is
-`OVRFLO Stream` / `OVRFLOStream`.
+`OVRFLO Stream` / `Stream`.
 
 The surrounding MIT sources in this repository call the deployment by address.
 Those MIT sources are not a derivative of this object code.
@@ -13,7 +13,7 @@ Those MIT sources are not a derivative of this object code.
 
 - Repository: OVRFLO-Streams (fork of sablier-labs/v2-core `v1.1.2`)
 - Upstream tag: `v1.1.2`
-- Fork commit: `0f77e638e7c7a9251463f35099bc8af5651bdb7e`
+- Fork commit: `8ff0c3203bfb0ad76c577f114d9b39f958e9fd02`
 
 ## Compiler
 
@@ -33,9 +33,9 @@ artifact. Ticket 08 compares rebuilds against this stamp.
 Recomputed by `web/scripts/check-ovrflo-stream-bytecode.mjs` from
 `artifacts/OVRFLOStream.json`. A mismatch fails the gate.
 
-- Artifact sha256: `5de326865e0ebfbdfc71fb425012a644fe44d8398be3cc10106e26dae7606767`
+- Artifact sha256: `c73a3cc9069e1a44bc1b854f0629f096ae344b03bc9228086dd1dfa8195c18e8`
 - ABI sha256: `7220bf29735eddbf496a2ffaf940a018e3885f7b84998b2a623dab9f1c02e169`
-- Creation-bytecode sha256: `d1a4100bca52ca6ccf50b28b9b8ba6a2293e43d5176439bb1e6fe59361d93e8f`
+- Creation-bytecode sha256: `b44485582000aabfdbed9042a5e0190bcb072fb4d4401fd6f9dfc9caa4145eae`
 - Runtime-bytecode sha256: `8dd5070c4deb8ed5c3ac249fcd14b26c9a5907beb671fa49d1da3012b181a972`
 
 ABI hash is SHA-256 of `JSON.stringify(abi)` (no whitespace) over the

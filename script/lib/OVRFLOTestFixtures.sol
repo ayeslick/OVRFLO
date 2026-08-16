@@ -3,6 +3,7 @@ pragma solidity ^0.8.20;
 
 import {StdCheats} from "forge-std/StdCheats.sol";
 
+import {IERC721Metadata} from "@openzeppelin/contracts/token/ERC721/extensions/IERC721Metadata.sol";
 import {OVRFLO} from "../../src/OVRFLO.sol";
 import {OVRFLOFactory} from "../../src/OVRFLOFactory.sol";
 import {OVRFLOToken} from "../../src/OVRFLOToken.sol";
@@ -67,6 +68,14 @@ abstract contract OVRFLOTestFixtures is StdCheats {
         require(lockup.admin() == factory, "OVRFLOTestFixtures: stream admin");
         require(lockup.factory() == factory, "OVRFLOTestFixtures: stream factory");
         require(lockup.comptroller() == comptroller, "OVRFLOTestFixtures: stream comptroller");
+        require(
+            keccak256(bytes(IERC721Metadata(stream).name())) == keccak256("OVRFLO Stream"),
+            "OVRFLOTestFixtures: stream name"
+        );
+        require(
+            keccak256(bytes(IERC721Metadata(stream).symbol())) == keccak256("Stream"),
+            "OVRFLOTestFixtures: stream symbol"
+        );
         require(stream != CANONICAL_SABLIER, "OVRFLOTestFixtures: canonical sablier");
     }
 
