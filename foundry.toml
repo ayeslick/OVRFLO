@@ -7,14 +7,31 @@ remappings = [
 ]
 fs_permissions = [
     { access = "read-write", path = "./deployments" },
-    { access = "read", path = "./artifacts" }
+    { access = "read", path = "./artifacts" },
+    { access = "read", path = "./out" }
 ]
-# Pinned: every size measurement (EIP-170 margins, the 24,064 canary, quote-by-revert byte
-# accounting, lens drift gate) is stable only under an exact compiler version.
+# Pinned: every size measurement (EIP-170 margins, the 24,064 canary, lens drift
+# gate) is stable only under an exact compiler version. via-IR is the shipping
+# pipeline (plan 007). Dual-pipeline storage-layout identity:
+# tools/scripts/check-storage-layout.sh
 solc = "0.8.36"
 optimizer = true
 optimizer_runs = 200
+via_ir = true
+extra_output = ["storageLayout"]
+
+# Pre-IR codegen for the dual-pipeline gate. previewBorrow does not fit the
+# 24,064 canary here; that pass asserts EIP-170 only (test/DeploySize.t.sol).
+[profile.legacy]
 via_ir = false
+
+# 500/40 invariant campaign under the legacy pipeline.
+[profile.invariant-legacy]
+via_ir = false
+
+[profile.invariant-legacy.invariant]
+runs = 500
+depth = 40
 
 [rpc_endpoints]
 mainnet = "${MAINNET_RPC_URL}"

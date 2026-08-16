@@ -1,0 +1,469 @@
+{
+  "storage": [
+    {
+      "label": "_owner",
+      "offset": 0,
+      "slot": "0",
+      "type": "t_address"
+    },
+    {
+      "label": "_pendingOwner",
+      "offset": 0,
+      "slot": "1",
+      "type": "t_address"
+    },
+    {
+      "label": "_status",
+      "offset": 0,
+      "slot": "2",
+      "type": "t_uint256"
+    },
+    {
+      "label": "aprMinBps",
+      "offset": 0,
+      "slot": "3",
+      "type": "t_uint16"
+    },
+    {
+      "label": "aprMaxBps",
+      "offset": 2,
+      "slot": "3",
+      "type": "t_uint16"
+    },
+    {
+      "label": "feeBps",
+      "offset": 4,
+      "slot": "3",
+      "type": "t_uint16"
+    },
+    {
+      "label": "treasury",
+      "offset": 6,
+      "slot": "3",
+      "type": "t_address"
+    },
+    {
+      "label": "nextPositionId",
+      "offset": 0,
+      "slot": "4",
+      "type": "t_uint256"
+    },
+    {
+      "label": "nextLoanId",
+      "offset": 0,
+      "slot": "5",
+      "type": "t_uint256"
+    },
+    {
+      "label": "_ticks",
+      "offset": 0,
+      "slot": "6",
+      "type": "t_mapping(t_address,t_mapping(t_uint16,t_struct(Tick)_storage))"
+    },
+    {
+      "label": "tickSpacing",
+      "offset": 0,
+      "slot": "7",
+      "type": "t_mapping(t_address,t_uint16)"
+    },
+    {
+      "label": "positions",
+      "offset": 0,
+      "slot": "8",
+      "type": "t_mapping(t_uint256,t_struct(Position)_storage)"
+    },
+    {
+      "label": "lenderPositionCount",
+      "offset": 0,
+      "slot": "9",
+      "type": "t_mapping(t_address,t_uint256)"
+    },
+    {
+      "label": "lenderPositionAt",
+      "offset": 0,
+      "slot": "10",
+      "type": "t_mapping(t_address,t_mapping(t_uint256,t_uint256))"
+    },
+    {
+      "label": "loans",
+      "offset": 0,
+      "slot": "11",
+      "type": "t_mapping(t_uint256,t_struct(Loan)_storage)"
+    },
+    {
+      "label": "loanAt",
+      "offset": 0,
+      "slot": "12",
+      "type": "t_mapping(t_address,t_mapping(t_uint16,t_mapping(t_uint32,t_mapping(t_uint64,t_uint256))))"
+    },
+    {
+      "label": "borrowerLoanCount",
+      "offset": 0,
+      "slot": "13",
+      "type": "t_mapping(t_address,t_uint256)"
+    },
+    {
+      "label": "borrowerLoanAt",
+      "offset": 0,
+      "slot": "14",
+      "type": "t_mapping(t_address,t_mapping(t_uint256,t_uint256))"
+    },
+    {
+      "label": "proceeds",
+      "offset": 0,
+      "slot": "15",
+      "type": "t_mapping(t_uint256,t_uint128)"
+    },
+    {
+      "label": "received",
+      "offset": 0,
+      "slot": "16",
+      "type": "t_mapping(t_uint256,t_mapping(t_uint256,t_uint128))"
+    }
+  ],
+  "types": {
+    "t_address": {
+      "encoding": "inplace",
+      "label": "address",
+      "numberOfBytes": "20"
+    },
+    "t_bool": {
+      "encoding": "inplace",
+      "label": "bool",
+      "numberOfBytes": "1"
+    },
+    "t_mapping(t_address,t_mapping(t_uint16,t_mapping(t_uint32,t_mapping(t_uint64,t_uint256))))": {
+      "encoding": "mapping",
+      "key": "t_address",
+      "label": "mapping(address => mapping(uint16 => mapping(uint32 => mapping(uint64 => uint256))))",
+      "numberOfBytes": "32",
+      "value": "t_mapping(t_uint16,t_mapping(t_uint32,t_mapping(t_uint64,t_uint256)))"
+    },
+    "t_mapping(t_address,t_mapping(t_uint16,t_struct(Tick)_storage))": {
+      "encoding": "mapping",
+      "key": "t_address",
+      "label": "mapping(address => mapping(uint16 => struct OVRFLOLending.Tick))",
+      "numberOfBytes": "32",
+      "value": "t_mapping(t_uint16,t_struct(Tick)_storage)"
+    },
+    "t_mapping(t_address,t_mapping(t_uint256,t_uint256))": {
+      "encoding": "mapping",
+      "key": "t_address",
+      "label": "mapping(address => mapping(uint256 => uint256))",
+      "numberOfBytes": "32",
+      "value": "t_mapping(t_uint256,t_uint256)"
+    },
+    "t_mapping(t_address,t_uint16)": {
+      "encoding": "mapping",
+      "key": "t_address",
+      "label": "mapping(address => uint16)",
+      "numberOfBytes": "32",
+      "value": "t_uint16"
+    },
+    "t_mapping(t_address,t_uint256)": {
+      "encoding": "mapping",
+      "key": "t_address",
+      "label": "mapping(address => uint256)",
+      "numberOfBytes": "32",
+      "value": "t_uint256"
+    },
+    "t_mapping(t_uint16,t_mapping(t_uint32,t_mapping(t_uint64,t_uint256)))": {
+      "encoding": "mapping",
+      "key": "t_uint16",
+      "label": "mapping(uint16 => mapping(uint32 => mapping(uint64 => uint256)))",
+      "numberOfBytes": "32",
+      "value": "t_mapping(t_uint32,t_mapping(t_uint64,t_uint256))"
+    },
+    "t_mapping(t_uint16,t_struct(Tick)_storage)": {
+      "encoding": "mapping",
+      "key": "t_uint16",
+      "label": "mapping(uint16 => struct OVRFLOLending.Tick)",
+      "numberOfBytes": "32",
+      "value": "t_struct(Tick)_storage"
+    },
+    "t_mapping(t_uint256,t_mapping(t_uint256,t_uint128))": {
+      "encoding": "mapping",
+      "key": "t_uint256",
+      "label": "mapping(uint256 => mapping(uint256 => uint128))",
+      "numberOfBytes": "32",
+      "value": "t_mapping(t_uint256,t_uint128)"
+    },
+    "t_mapping(t_uint256,t_struct(Loan)_storage)": {
+      "encoding": "mapping",
+      "key": "t_uint256",
+      "label": "mapping(uint256 => struct OVRFLOLending.Loan)",
+      "numberOfBytes": "32",
+      "value": "t_struct(Loan)_storage"
+    },
+    "t_mapping(t_uint256,t_struct(Position)_storage)": {
+      "encoding": "mapping",
+      "key": "t_uint256",
+      "label": "mapping(uint256 => struct OVRFLOLending.Position)",
+      "numberOfBytes": "32",
+      "value": "t_struct(Position)_storage"
+    },
+    "t_mapping(t_uint256,t_uint128)": {
+      "encoding": "mapping",
+      "key": "t_uint256",
+      "label": "mapping(uint256 => uint128)",
+      "numberOfBytes": "32",
+      "value": "t_uint128"
+    },
+    "t_mapping(t_uint256,t_uint256)": {
+      "encoding": "mapping",
+      "key": "t_uint256",
+      "label": "mapping(uint256 => uint256)",
+      "numberOfBytes": "32",
+      "value": "t_uint256"
+    },
+    "t_mapping(t_uint32,t_mapping(t_uint64,t_uint256))": {
+      "encoding": "mapping",
+      "key": "t_uint32",
+      "label": "mapping(uint32 => mapping(uint64 => uint256))",
+      "numberOfBytes": "32",
+      "value": "t_mapping(t_uint64,t_uint256)"
+    },
+    "t_mapping(t_uint32,t_struct(Epoch)_storage)": {
+      "encoding": "mapping",
+      "key": "t_uint32",
+      "label": "mapping(uint32 => struct OVRFLOLending.Epoch)",
+      "numberOfBytes": "32",
+      "value": "t_struct(Epoch)_storage"
+    },
+    "t_mapping(t_uint64,t_uint256)": {
+      "encoding": "mapping",
+      "key": "t_uint64",
+      "label": "mapping(uint64 => uint256)",
+      "numberOfBytes": "32",
+      "value": "t_uint256"
+    },
+    "t_mapping(t_uint8,t_mapping(t_uint256,t_uint256))": {
+      "encoding": "mapping",
+      "key": "t_uint8",
+      "label": "mapping(uint8 => mapping(uint256 => uint256))",
+      "numberOfBytes": "32",
+      "value": "t_mapping(t_uint256,t_uint256)"
+    },
+    "t_struct(Epoch)_storage": {
+      "encoding": "inplace",
+      "label": "struct OVRFLOLending.Epoch",
+      "members": [
+        {
+          "label": "tree",
+          "offset": 0,
+          "slot": "0",
+          "type": "t_struct(Tree)_storage"
+        },
+        {
+          "label": "filled",
+          "offset": 0,
+          "slot": "2",
+          "type": "t_uint64"
+        },
+        {
+          "label": "loanCount",
+          "offset": 8,
+          "slot": "2",
+          "type": "t_uint64"
+        }
+      ],
+      "numberOfBytes": "96"
+    },
+    "t_struct(Loan)_storage": {
+      "encoding": "inplace",
+      "label": "struct OVRFLOLending.Loan",
+      "members": [
+        {
+          "label": "borrower",
+          "offset": 0,
+          "slot": "0",
+          "type": "t_address"
+        },
+        {
+          "label": "aprBps",
+          "offset": 20,
+          "slot": "0",
+          "type": "t_uint16"
+        },
+        {
+          "label": "epoch",
+          "offset": 22,
+          "slot": "0",
+          "type": "t_uint32"
+        },
+        {
+          "label": "closed",
+          "offset": 26,
+          "slot": "0",
+          "type": "t_bool"
+        },
+        {
+          "label": "market",
+          "offset": 0,
+          "slot": "1",
+          "type": "t_address"
+        },
+        {
+          "label": "seq",
+          "offset": 20,
+          "slot": "1",
+          "type": "t_uint64"
+        },
+        {
+          "label": "streamId",
+          "offset": 0,
+          "slot": "2",
+          "type": "t_uint256"
+        },
+        {
+          "label": "fillStart",
+          "offset": 0,
+          "slot": "3",
+          "type": "t_uint64"
+        },
+        {
+          "label": "fillEnd",
+          "offset": 8,
+          "slot": "3",
+          "type": "t_uint64"
+        },
+        {
+          "label": "obligation",
+          "offset": 16,
+          "slot": "3",
+          "type": "t_uint128"
+        },
+        {
+          "label": "drawn",
+          "offset": 0,
+          "slot": "4",
+          "type": "t_uint128"
+        },
+        {
+          "label": "repaid",
+          "offset": 16,
+          "slot": "4",
+          "type": "t_uint128"
+        }
+      ],
+      "numberOfBytes": "160"
+    },
+    "t_struct(Position)_storage": {
+      "encoding": "inplace",
+      "label": "struct OVRFLOLending.Position",
+      "members": [
+        {
+          "label": "lender",
+          "offset": 0,
+          "slot": "0",
+          "type": "t_address"
+        },
+        {
+          "label": "market",
+          "offset": 0,
+          "slot": "1",
+          "type": "t_address"
+        },
+        {
+          "label": "aprBps",
+          "offset": 20,
+          "slot": "1",
+          "type": "t_uint16"
+        },
+        {
+          "label": "epoch",
+          "offset": 22,
+          "slot": "1",
+          "type": "t_uint32"
+        },
+        {
+          "label": "leafIndex",
+          "offset": 26,
+          "slot": "1",
+          "type": "t_uint32"
+        }
+      ],
+      "numberOfBytes": "64"
+    },
+    "t_struct(Tick)_storage": {
+      "encoding": "inplace",
+      "label": "struct OVRFLOLending.Tick",
+      "members": [
+        {
+          "label": "oldestLiveEpoch",
+          "offset": 0,
+          "slot": "0",
+          "type": "t_uint32"
+        },
+        {
+          "label": "currentEpoch",
+          "offset": 4,
+          "slot": "0",
+          "type": "t_uint32"
+        },
+        {
+          "label": "epochs",
+          "offset": 0,
+          "slot": "1",
+          "type": "t_mapping(t_uint32,t_struct(Epoch)_storage)"
+        }
+      ],
+      "numberOfBytes": "64"
+    },
+    "t_struct(Tree)_storage": {
+      "encoding": "inplace",
+      "label": "struct TickTree.Tree",
+      "members": [
+        {
+          "label": "leaves",
+          "offset": 0,
+          "slot": "0",
+          "type": "t_uint32"
+        },
+        {
+          "label": "height",
+          "offset": 4,
+          "slot": "0",
+          "type": "t_uint8"
+        },
+        {
+          "label": "nodes",
+          "offset": 0,
+          "slot": "1",
+          "type": "t_mapping(t_uint8,t_mapping(t_uint256,t_uint256))"
+        }
+      ],
+      "numberOfBytes": "64"
+    },
+    "t_uint128": {
+      "encoding": "inplace",
+      "label": "uint128",
+      "numberOfBytes": "16"
+    },
+    "t_uint16": {
+      "encoding": "inplace",
+      "label": "uint16",
+      "numberOfBytes": "2"
+    },
+    "t_uint256": {
+      "encoding": "inplace",
+      "label": "uint256",
+      "numberOfBytes": "32"
+    },
+    "t_uint32": {
+      "encoding": "inplace",
+      "label": "uint32",
+      "numberOfBytes": "4"
+    },
+    "t_uint64": {
+      "encoding": "inplace",
+      "label": "uint64",
+      "numberOfBytes": "8"
+    },
+    "t_uint8": {
+      "encoding": "inplace",
+      "label": "uint8",
+      "numberOfBytes": "1"
+    }
+  }
+}

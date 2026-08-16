@@ -1,0 +1,131 @@
+{
+  "storage": [
+    {
+      "label": "_status",
+      "offset": 0,
+      "slot": "0",
+      "type": "t_uint256"
+    },
+    {
+      "label": "wrappedUnderlying",
+      "offset": 0,
+      "slot": "1",
+      "type": "t_uint256"
+    },
+    {
+      "label": "flashFeeBps",
+      "offset": 0,
+      "slot": "2",
+      "type": "t_uint16"
+    },
+    {
+      "label": "flashLoanPaused",
+      "offset": 2,
+      "slot": "2",
+      "type": "t_bool"
+    },
+    {
+      "label": "_series",
+      "offset": 0,
+      "slot": "3",
+      "type": "t_mapping(t_address,t_struct(SeriesInfo)_storage)"
+    },
+    {
+      "label": "ptToMarket",
+      "offset": 0,
+      "slot": "4",
+      "type": "t_mapping(t_address,t_address)"
+    },
+    {
+      "label": "marketDepositLimits",
+      "offset": 0,
+      "slot": "5",
+      "type": "t_mapping(t_address,t_uint256)"
+    },
+    {
+      "label": "marketTotalDeposited",
+      "offset": 0,
+      "slot": "6",
+      "type": "t_mapping(t_address,t_uint256)"
+    }
+  ],
+  "types": {
+    "t_address": {
+      "encoding": "inplace",
+      "label": "address",
+      "numberOfBytes": "20"
+    },
+    "t_bool": {
+      "encoding": "inplace",
+      "label": "bool",
+      "numberOfBytes": "1"
+    },
+    "t_mapping(t_address,t_address)": {
+      "encoding": "mapping",
+      "key": "t_address",
+      "label": "mapping(address => address)",
+      "numberOfBytes": "32",
+      "value": "t_address"
+    },
+    "t_mapping(t_address,t_struct(SeriesInfo)_storage)": {
+      "encoding": "mapping",
+      "key": "t_address",
+      "label": "mapping(address => struct OVRFLO.SeriesInfo)",
+      "numberOfBytes": "32",
+      "value": "t_struct(SeriesInfo)_storage"
+    },
+    "t_mapping(t_address,t_uint256)": {
+      "encoding": "mapping",
+      "key": "t_address",
+      "label": "mapping(address => uint256)",
+      "numberOfBytes": "32",
+      "value": "t_uint256"
+    },
+    "t_struct(SeriesInfo)_storage": {
+      "encoding": "inplace",
+      "label": "struct OVRFLO.SeriesInfo",
+      "members": [
+        {
+          "label": "twapDurationFixed",
+          "offset": 0,
+          "slot": "0",
+          "type": "t_uint32"
+        },
+        {
+          "label": "feeBps",
+          "offset": 4,
+          "slot": "0",
+          "type": "t_uint16"
+        },
+        {
+          "label": "expiryCached",
+          "offset": 0,
+          "slot": "1",
+          "type": "t_uint256"
+        },
+        {
+          "label": "ptToken",
+          "offset": 0,
+          "slot": "2",
+          "type": "t_address"
+        }
+      ],
+      "numberOfBytes": "96"
+    },
+    "t_uint16": {
+      "encoding": "inplace",
+      "label": "uint16",
+      "numberOfBytes": "2"
+    },
+    "t_uint256": {
+      "encoding": "inplace",
+      "label": "uint256",
+      "numberOfBytes": "32"
+    },
+    "t_uint32": {
+      "encoding": "inplace",
+      "label": "uint32",
+      "numberOfBytes": "4"
+    }
+  }
+}
