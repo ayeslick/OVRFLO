@@ -66,6 +66,7 @@ node_modules/
 .gas-snapshot
 .superdesign
 .githooks
+.pnpm-store
 
 # Agents
 .claude/

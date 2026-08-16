@@ -8,7 +8,7 @@ fails loudly on wrong chain id or empty `eth_getCode(factory)`. Plan:
 
 **Repo:** `/Users/jay/OVRFLO`, branch `feat/008-mainnet-campaign`.
 
-**Blocked by:** — (sweep gate removed) | **Status:** claimed | **Labels:** ready-for-agent
+**Blocked by:** — (sweep gate removed) | **Status:** resolved — merged at 2f5a975 (impl 6fde2b5 + review fixes 8d834b3). Review: approve-with-fixes, fixes landed. Web 825/825. | **Labels:** ready-for-agent
 
 **Pinned model:** `cursor-grok-4.5-high`, subagent_type `generalPurpose`
 
