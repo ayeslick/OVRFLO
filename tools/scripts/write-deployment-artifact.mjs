@@ -11,6 +11,8 @@ const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
 // cast sig "sablierLL()" / cast sig "sablier()"
 const SABLIER_LL_SELECTOR = "0x94cd301a";
 const SABLIER_SELECTOR = "0x482879aa";
+// cast sig "ovrfloStream()"
+const OVRFLO_STREAM_SELECTOR = "0xce6bc9b5";
 
 export async function verifyDeploymentArtifactInput({
   artifactPath,
@@ -106,6 +108,7 @@ export async function verifyDeploymentArtifactInput({
   }
 
   const stream = await deriveStreamAddress({
+    factory,
     ovrflo,
     lending,
     supplied: current.stream,
@@ -156,7 +159,11 @@ export async function verifyAndWriteDeploymentArtifact(options) {
   return verified;
 }
 
-async function deriveStreamAddress({ ovrflo, lending, supplied, request }) {
+async function deriveStreamAddress({ factory, ovrflo, lending, supplied, request }) {
+  const factoryStream = decodeReturnedAddress(
+    await request("eth_call", [{ to: factory, data: OVRFLO_STREAM_SELECTOR }, "latest"]),
+    "factory.ovrfloStream()",
+  );
   const vaultStream = decodeReturnedAddress(
     await request("eth_call", [{ to: ovrflo, data: SABLIER_LL_SELECTOR }, "latest"]),
     "vault.sablierLL()",
@@ -165,17 +172,20 @@ async function deriveStreamAddress({ ovrflo, lending, supplied, request }) {
     await request("eth_call", [{ to: lending, data: SABLIER_SELECTOR }, "latest"]),
     "lending.sablier()",
   );
-  if (!sameHex(vaultStream, lendingStream)) {
-    throw new Error("vault.sablierLL() does not match lending.sablier()");
+  if (!sameHex(vaultStream, factoryStream)) {
+    throw new Error("vault.sablierLL() does not match factory.ovrfloStream()");
   }
-  const code = await request("eth_getCode", [vaultStream, "latest"]);
+  if (!sameHex(lendingStream, factoryStream)) {
+    throw new Error("lending.sablier() does not match factory.ovrfloStream()");
+  }
+  const code = await request("eth_getCode", [factoryStream, "latest"]);
   if (!code || code === "0x") {
     throw new Error("derived stream has no code");
   }
-  if (supplied !== undefined && !sameHex(String(supplied), vaultStream)) {
-    throw new Error("supplied stream does not match the vault and lending bindings");
+  if (supplied !== undefined && !sameHex(String(supplied), factoryStream)) {
+    throw new Error("supplied stream does not match factory.ovrfloStream()");
   }
-  return vaultStream;
+  return factoryStream;
 }
 
 function decodeReturnedAddress(result, name) {

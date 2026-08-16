@@ -74,11 +74,6 @@ describe("deployment build input", () => {
     NEXT_PUBLIC_OVRFLO_FACTORY: verified.factory,
     NEXT_PUBLIC_FACTORY_DEPLOYMENT_BLOCK: verified.factoryDeploymentBlock,
     NEXT_PUBLIC_FACTORY_DEPLOYMENT_BLOCK_HASH: verified.factoryDeploymentBlockHash,
-    NEXT_PUBLIC_OVRFLO_ADDRESS: verified.ovrflo,
-    NEXT_PUBLIC_OVRFLO_LENDING: verified.lending,
-    NEXT_PUBLIC_LENDING_DEPLOYMENT_BLOCK: verified.lendingDeploymentBlock,
-    NEXT_PUBLIC_LENDING_DEPLOYMENT_BLOCK_HASH: verified.lendingDeploymentBlockHash,
-    NEXT_PUBLIC_SABLIER_LOCKUP_ADDRESS: verified.stream,
     NEXT_PUBLIC_PROJECTION_SCHEMA_VERSION: "1",
     NEXT_PUBLIC_ABI_VERSION: "1",
   };

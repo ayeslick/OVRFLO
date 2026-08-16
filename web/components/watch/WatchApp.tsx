@@ -19,7 +19,7 @@ import { symbolFor, useMarketSymbols } from "@/hooks/useMarketSymbols";
 import { useOvrflos } from "@/hooks/useOvrflos";
 import { useStreams, type HydratedStream } from "@/hooks/useStreams";
 import { useUsdPrice } from "@/hooks/useUsdPrice";
-import { chainId, factoryDeployment, isConfiguredAddress } from "@/lib/config";
+import { chainId } from "@/lib/config";
 import { formatUsd } from "@/lib/format";
 import type { Freshness } from "@/lib/freshness";
 import { parseUsdMode, parseWatchLens, type WatchLens } from "@/lib/parse";
@@ -54,16 +54,23 @@ export function WatchApp() {
   const ovrflos = useOvrflos();
   const markets = useAllMarkets();
   const symbols = useMarketSymbols(markets.markets);
-  const lending = isConfiguredAddress(factoryDeployment.lending) ? factoryDeployment.lending : markets.markets[0]?.lending ?? null;
+  const readyVaults = ovrflos.status === "ready" ? ovrflos.vaults : [];
+  // Ticket 14 owns factory-wide Watch aggregation; markets[0] is a temporary
+  // single-market book scope until that rebuild lands.
+  const lending =
+    markets.markets[0]?.lending ??
+    readyVaults.find((vault) => vault.lending)?.lending ??
+    null;
 
   const lender = useLenderBook(lending, account);
   const borrower = useBorrowerBook(lending, account);
   const streams = useStreams({
     account,
-    vaults: ovrflos.vaults,
+    vaults: readyVaults,
     markets: markets.markets,
-    registryComplete: !ovrflos.isLoading && markets.status !== "loading",
+    registryComplete: ovrflos.status === "ready" && markets.status !== "loading",
     now: nowSeconds,
+    stream: ovrflos.status === "ready" ? ovrflos.stream : undefined,
   });
 
   const lenderData = useLastKnown(lender);
@@ -96,6 +103,8 @@ export function WatchApp() {
     positions: positionBook,
     loans: loanBook,
     streams: streamBook,
+    protocolUnavailable:
+      ovrflos.status === "unavailable" || markets.status === "unavailable",
   });
   const streamsDegraded = streamsDegradedKind(streamBook);
 
@@ -273,6 +282,17 @@ export function WatchApp() {
       {entry === "syncing" ? (
         <section data-region="entry-syncing" aria-live="polite">
           <p className="watch-kicker">CHECKING…</p>
+        </section>
+      ) : null}
+      {entry === "unavailable" ? (
+        <section data-region="entry-unavailable" aria-live="polite">
+          <SurfaceState state="ERROR" topology="watch" />
+          <p className="watch-kicker">PROTOCOL UNAVAILABLE</p>
+          <p className="watch-note">
+            {ovrflos.error?.message ??
+              markets.error?.message ??
+              "Factory bootstrap failed"}
+          </p>
         </section>
       ) : null}
       {entry === "first-run" ? (

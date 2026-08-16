@@ -30,6 +30,26 @@ const wagmiState = {
   chainId: 1,
 };
 
+
+
+vi.mock("@/hooks/useProtocolBootstrap", () => ({
+  useProtocolBootstrap: () => ({
+    status: "ready" as const,
+    factory: "0x0000000000000000000000000000000000000f00" as Address,
+    stream: "0x0000000000000000000000000000000000000999" as Address,
+    vaults: [
+      {
+        vault: "0x0000000000000000000000000000000000000d44" as Address,
+        treasury: "0x0000000000000000000000000000000000000c33" as Address,
+        underlying: "0x0000000000000000000000000000000000000c33" as Address,
+        ovrfloToken: "0x0000000000000000000000000000000000000e55" as Address,
+        lending: "0x0000000000000000000000000000000000000b22" as Address,
+      },
+    ],
+    blockNumber: 1n,
+  }),
+}));
+
 vi.mock("wagmi", () => ({
   useConnection: () => ({
     addresses: [wagmiState.address],

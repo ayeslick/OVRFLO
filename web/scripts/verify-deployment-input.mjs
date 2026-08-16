@@ -6,11 +6,6 @@ const FIELD_BINDINGS = [
   ["factory", "NEXT_PUBLIC_OVRFLO_FACTORY"],
   ["factoryDeploymentBlock", "NEXT_PUBLIC_FACTORY_DEPLOYMENT_BLOCK"],
   ["factoryDeploymentBlockHash", "NEXT_PUBLIC_FACTORY_DEPLOYMENT_BLOCK_HASH"],
-  ["ovrflo", "NEXT_PUBLIC_OVRFLO_ADDRESS"],
-  ["lending", "NEXT_PUBLIC_OVRFLO_LENDING"],
-  ["lendingDeploymentBlock", "NEXT_PUBLIC_LENDING_DEPLOYMENT_BLOCK"],
-  ["lendingDeploymentBlockHash", "NEXT_PUBLIC_LENDING_DEPLOYMENT_BLOCK_HASH"],
-  ["stream", "NEXT_PUBLIC_SABLIER_LOCKUP_ADDRESS"],
   ["projectionSchemaVersion", "NEXT_PUBLIC_PROJECTION_SCHEMA_VERSION"],
   ["abiVersion", "NEXT_PUBLIC_ABI_VERSION"],
 ];

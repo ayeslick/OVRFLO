@@ -35,7 +35,21 @@ vi.mock("@/hooks/useClock", () => ({
 }));
 
 vi.mock("@/hooks/useOvrflos", () => ({
-  useOvrflos: () => ({ vaults: [], isLoading: false, error: null, tooLarge: false }),
+  useOvrflos: () => ({
+    status: "ready" as const,
+    bootstrap: {
+      status: "ready" as const,
+      factory: VAULT,
+      stream: LENDING,
+      vaults: [],
+      blockNumber: 1n,
+    },
+    vaults: [],
+    stream: LENDING,
+    isLoading: false,
+    error: null,
+    tooLarge: false,
+  }),
 }));
 
 vi.mock("@/hooks/useAllMarkets", () => ({

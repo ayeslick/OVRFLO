@@ -1,31 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const REAL_ADDRESS = "0x1234567890abcdef1234567890abcdef12345678" as const;
-const OVRFLO_ADDRESS = "0x2234567890abcdef1234567890abcdef12345678" as const;
-const LENDING_ADDRESS = "0x3234567890abcdef1234567890abcdef12345678" as const;
-const STREAM_ADDRESS = "0x4234567890abcdef1234567890abcdef12345678" as const;
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as const;
 const BLOCK_HASH = `0x${"ab".repeat(32)}` as const;
-const LENDING_BLOCK_HASH = `0x${"cd".repeat(32)}` as const;
 
-// lib/config.ts parses process.env at module-evaluation time (top-level
-// `parseChainId(env.chainId)` etc.), so exercising the parsing/enforcement
-// paths requires a fresh module instance per scenario via resetModules + a
-// dynamic import — including for isConfiguredAddress, which is otherwise
-// pure. A *static* top-of-file import would evaluate lib/config.ts against
-// whatever the real, un-stubbed ambient env happens to be at file-collection
-// time, before any vi.stubEnv call runs; if that ambient env is invalid
-// (e.g. a real NEXT_PUBLIC_CHAIN_ID=31337 from a local-fork .env), the import
-// throws and the entire file collapses to "0 tests" instead of failing one
-// assertion.
 async function loadConfig() {
   vi.resetModules();
   return import("@/lib/config");
 }
 
-// Every runtime/build var lib/config.ts reads, stubbed to unset before every test so no
-// test's outcome depends on the ambient environment — each test then
-// overrides only the variables it is exercising.
 const ENV_KEYS = [
   "NEXT_PUBLIC_RUNTIME_PROFILE",
   "NEXT_PUBLIC_CHAIN_ID",
@@ -45,6 +28,7 @@ const ENV_KEYS = [
   "NEXT_PUBLIC_REOWN_PROJECT_ID",
   "VERCEL_ENV",
   "OVRFLO_DEPLOYABLE_BUILD",
+  "NODE_ENV",
 ] as const;
 
 beforeEach(() => {
@@ -60,11 +44,6 @@ function stubValidProduction() {
   vi.stubEnv("NEXT_PUBLIC_OVRFLO_FACTORY", REAL_ADDRESS);
   vi.stubEnv("NEXT_PUBLIC_FACTORY_DEPLOYMENT_BLOCK", "123456");
   vi.stubEnv("NEXT_PUBLIC_FACTORY_DEPLOYMENT_BLOCK_HASH", BLOCK_HASH);
-  vi.stubEnv("NEXT_PUBLIC_OVRFLO_ADDRESS", OVRFLO_ADDRESS);
-  vi.stubEnv("NEXT_PUBLIC_OVRFLO_LENDING", LENDING_ADDRESS);
-  vi.stubEnv("NEXT_PUBLIC_LENDING_DEPLOYMENT_BLOCK", "123460");
-  vi.stubEnv("NEXT_PUBLIC_LENDING_DEPLOYMENT_BLOCK_HASH", LENDING_BLOCK_HASH);
-  vi.stubEnv("NEXT_PUBLIC_SABLIER_LOCKUP_ADDRESS", STREAM_ADDRESS);
   vi.stubEnv("NEXT_PUBLIC_PROJECTION_SCHEMA_VERSION", "1");
   vi.stubEnv("NEXT_PUBLIC_ABI_VERSION", "1");
   vi.stubEnv("NEXT_PUBLIC_RPC_URL", "https://eth-mainnet.g.alchemy.com/v2/public-browser-key");
@@ -79,7 +58,7 @@ function stubValidProduction() {
 describe("isConfiguredAddress", () => {
   it("is false for null, undefined, and the zero address; true otherwise", async () => {
     vi.stubEnv("NEXT_PUBLIC_RUNTIME_PROFILE", "local");
-    vi.stubEnv("NEXT_PUBLIC_SABLIER_LOCKUP_ADDRESS", STREAM_ADDRESS);
+    vi.stubEnv("NEXT_PUBLIC_OVRFLO_FACTORY", REAL_ADDRESS);
     const mod = await loadConfig();
     expect(mod.isConfiguredAddress(null)).toBe(false);
     expect(mod.isConfiguredAddress(undefined)).toBe(false);
@@ -121,8 +100,18 @@ describe("factory address parsing", () => {
     await expect(loadConfig()).rejects.toThrow(/NEXT_PUBLIC_OVRFLO_FACTORY.*required/i);
   });
 
-  it("rejects a zero production factory", async () => {
+  it("rejects a missing local factory instead of degrading to the zero address", async () => {
+    vi.stubEnv("NEXT_PUBLIC_RUNTIME_PROFILE", "local");
+    vi.stubEnv("NEXT_PUBLIC_OVRFLO_FACTORY", undefined);
+    await expect(loadConfig()).rejects.toThrow(/NEXT_PUBLIC_OVRFLO_FACTORY.*required/i);
+  });
+
+  it("rejects a zero factory in both profiles", async () => {
     stubValidProduction();
+    vi.stubEnv("NEXT_PUBLIC_OVRFLO_FACTORY", ZERO_ADDRESS);
+    await expect(loadConfig()).rejects.toThrow(/must not be the zero address/i);
+
+    vi.stubEnv("NEXT_PUBLIC_RUNTIME_PROFILE", "local");
     vi.stubEnv("NEXT_PUBLIC_OVRFLO_FACTORY", ZERO_ADDRESS);
     await expect(loadConfig()).rejects.toThrow(/must not be the zero address/i);
   });
@@ -141,17 +130,13 @@ describe("factory address parsing", () => {
 });
 
 describe("deployment anchor parsing", () => {
-  it("accepts a complete versioned deployment anchor", async () => {
+  it("accepts a factory-only versioned deployment anchor", async () => {
     stubValidProduction();
     const mod = await loadConfig();
     expect(mod.factoryDeployment).toEqual({
       address: REAL_ADDRESS,
       blockNumber: 123456n,
       blockHash: BLOCK_HASH,
-      ovrflo: OVRFLO_ADDRESS,
-      lending: LENDING_ADDRESS,
-      lendingBlockNumber: 123460n,
-      lendingBlockHash: LENDING_BLOCK_HASH,
       projectionSchemaVersion: 1,
       abiVersion: 1,
     });
@@ -162,10 +147,6 @@ describe("deployment anchor parsing", () => {
     ["NEXT_PUBLIC_FACTORY_DEPLOYMENT_BLOCK", "-1"],
     ["NEXT_PUBLIC_FACTORY_DEPLOYMENT_BLOCK_HASH", undefined],
     ["NEXT_PUBLIC_FACTORY_DEPLOYMENT_BLOCK_HASH", "0x1234"],
-    ["NEXT_PUBLIC_OVRFLO_ADDRESS", undefined],
-    ["NEXT_PUBLIC_OVRFLO_LENDING", ZERO_ADDRESS],
-    ["NEXT_PUBLIC_LENDING_DEPLOYMENT_BLOCK", "-1"],
-    ["NEXT_PUBLIC_LENDING_DEPLOYMENT_BLOCK_HASH", "0x1234"],
     ["NEXT_PUBLIC_PROJECTION_SCHEMA_VERSION", "2"],
     ["NEXT_PUBLIC_ABI_VERSION", "2"],
   ] as const)("rejects an invalid %s value", async (key, value) => {
@@ -232,54 +213,47 @@ describe("reownProjectId", () => {
   );
 });
 
-describe("stream address parsing", () => {
-  it("rejects a missing stream address in the production profile", async () => {
-    stubValidProduction();
-    vi.stubEnv("NEXT_PUBLIC_SABLIER_LOCKUP_ADDRESS", undefined);
-    await expect(loadConfig()).rejects.toThrow(/NEXT_PUBLIC_SABLIER_LOCKUP_ADDRESS.*required/i);
-  });
-
-  it("rejects a missing stream address in the local profile", async () => {
-    vi.stubEnv("NEXT_PUBLIC_RUNTIME_PROFILE", "local");
-    vi.stubEnv("NEXT_PUBLIC_SABLIER_LOCKUP_ADDRESS", undefined);
-    await expect(loadConfig()).rejects.toThrow(/NEXT_PUBLIC_SABLIER_LOCKUP_ADDRESS.*required/i);
-  });
-
-  it("rejects a zero stream address in both profiles", async () => {
-    stubValidProduction();
-    vi.stubEnv("NEXT_PUBLIC_SABLIER_LOCKUP_ADDRESS", ZERO_ADDRESS);
-    await expect(loadConfig()).rejects.toThrow(/must not be the zero address/i);
-
-    vi.stubEnv("NEXT_PUBLIC_RUNTIME_PROFILE", "local");
-    vi.stubEnv("NEXT_PUBLIC_SABLIER_LOCKUP_ADDRESS", ZERO_ADDRESS);
-    await expect(loadConfig()).rejects.toThrow(/must not be the zero address/i);
-  });
-
-  it("exports the configured lockup address", async () => {
+describe("obsolete derived address env vars", () => {
+  it("loads without requiring stream, vault, or lending env vars", async () => {
     stubValidProduction();
     const mod = await loadConfig();
-    expect(mod.SABLIER_LOCKUP_ADDRESS).toBe(STREAM_ADDRESS);
+    expect(mod.factoryAddress).toBe(REAL_ADDRESS);
+    expect("SABLIER_LOCKUP_ADDRESS" in mod).toBe(false);
+  });
+
+  it("emits a dev-mode warning when an obsolete var is present", async () => {
+    stubValidProduction();
+    vi.stubEnv("NODE_ENV", "development");
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.stubEnv("NEXT_PUBLIC_SABLIER_LOCKUP_ADDRESS", REAL_ADDRESS);
+    await loadConfig();
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("NEXT_PUBLIC_SABLIER_LOCKUP_ADDRESS is obsolete"),
+    );
+    warn.mockRestore();
   });
 });
 
 describe("local-only profile", () => {
-  it("allows explicit local defaults outside a production deployment", async () => {
+  it("requires an explicit factory and keeps mainnet chain id", async () => {
     vi.stubEnv("NEXT_PUBLIC_RUNTIME_PROFILE", "local");
-    vi.stubEnv("NEXT_PUBLIC_SABLIER_LOCKUP_ADDRESS", STREAM_ADDRESS);
+    vi.stubEnv("NEXT_PUBLIC_OVRFLO_FACTORY", REAL_ADDRESS);
     const mod = await loadConfig();
     expect(mod.chainId).toBe(1);
-    expect(mod.factoryAddress).toBe(ZERO_ADDRESS);
+    expect(mod.factoryAddress).toBe(REAL_ADDRESS);
     expect(mod.rpcUrls).toEqual(["http://127.0.0.1:8545/"]);
   });
 
   it("cannot activate on a Vercel production deployment", async () => {
     vi.stubEnv("NEXT_PUBLIC_RUNTIME_PROFILE", "local");
+    vi.stubEnv("NEXT_PUBLIC_OVRFLO_FACTORY", REAL_ADDRESS);
     vi.stubEnv("VERCEL_ENV", "production");
     await expect(loadConfig()).rejects.toThrow(/local.*production/i);
   });
 
-  it("cannot activate in any deployable production build", async () => {
+  it("cannot activate when OVRFLO_DEPLOYABLE_BUILD is set", async () => {
     vi.stubEnv("NEXT_PUBLIC_RUNTIME_PROFILE", "local");
+    vi.stubEnv("NEXT_PUBLIC_OVRFLO_FACTORY", REAL_ADDRESS);
     vi.stubEnv("OVRFLO_DEPLOYABLE_BUILD", "1");
     await expect(loadConfig()).rejects.toThrow(/local.*production/i);
   });

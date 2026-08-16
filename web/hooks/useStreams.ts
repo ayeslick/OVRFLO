@@ -4,7 +4,8 @@ import { useMemo, useRef } from "react";
 import { useReadContract, useReadContracts } from "wagmi";
 import { isAddressEqual, type Address } from "viem";
 import { sablierLockupAbi } from "@/lib/abis";
-import { isConfiguredAddress, SABLIER_LOCKUP_ADDRESS } from "@/lib/config";
+import { isConfiguredAddress, ZERO_ADDRESS } from "@/lib/config";
+import { useProtocolBootstrap } from "./useProtocolBootstrap";
 import { MAX_ENUMERATION_IDS, MIN_STREAM_AMOUNT } from "@/lib/lending-math";
 import { readQuery } from "@/lib/query-keys";
 import {
@@ -128,16 +129,32 @@ export function useStreams(input: {
   markets: readonly StreamMarket[];
   registryComplete: boolean;
   now: bigint;
+  /** Present only when factory bootstrap is ready — never a null sentinel. */
+  stream?: Address;
 }): ReadOutcome<StreamBook> {
+  const bootstrap = useProtocolBootstrap();
+  if (bootstrap.status === "loading" && input.stream === undefined) {
+    return loadingOutcome();
+  }
+  if (bootstrap.status === "unavailable" && input.stream === undefined) {
+    return unavailableOutcome(
+      bootstrap.failures.map((failure) =>
+        readFailure("useStreams", "transport", failure.message),
+      ),
+    );
+  }
+  const discovered =
+    input.stream ??
+    (bootstrap.status === "ready" ? bootstrap.stream : undefined);
   const account = input.account;
-  const lockupConfigured = isConfiguredAddress(SABLIER_LOCKUP_ADDRESS);
+  const lockupConfigured = isConfiguredAddress(discovered ?? null);
   const configured =
     isConfiguredAddress(account ?? null) && lockupConfigured && input.registryComplete;
 
   const fixedCache = useRef(new Map<string, FixedStreamFields>());
 
   const balanceRead = useReadContract({
-    address: SABLIER_LOCKUP_ADDRESS,
+    address: (discovered ?? ZERO_ADDRESS),
     abi: sablierLockupAbi,
     functionName: "balanceOf",
     args: account ? [account] : undefined,
@@ -150,7 +167,7 @@ export function useStreams(input: {
   const idEnabled = configured && balanceOk && balance > 0n && !overBudget;
 
   const idRead = useReadContract({
-    address: SABLIER_LOCKUP_ADDRESS,
+    address: (discovered ?? ZERO_ADDRESS),
     abi: sablierLockupAbi,
     functionName: "tokensOfOwnerIn",
     args: account && idEnabled ? [account, 0n, balance] : undefined,
@@ -170,31 +187,31 @@ export function useStreams(input: {
     if (!stateEnabled) return [];
     return ids.flatMap((streamId) => [
       {
-        address: SABLIER_LOCKUP_ADDRESS,
+        address: (discovered ?? ZERO_ADDRESS),
         abi: sablierLockupAbi,
         functionName: "ownerOf" as const,
         args: [streamId] as const,
       },
       {
-        address: SABLIER_LOCKUP_ADDRESS,
+        address: (discovered ?? ZERO_ADDRESS),
         abi: sablierLockupAbi,
         functionName: "getStream" as const,
         args: [streamId] as const,
       },
       {
-        address: SABLIER_LOCKUP_ADDRESS,
+        address: (discovered ?? ZERO_ADDRESS),
         abi: sablierLockupAbi,
         functionName: "withdrawableAmountOf" as const,
         args: [streamId] as const,
       },
       {
-        address: SABLIER_LOCKUP_ADDRESS,
+        address: (discovered ?? ZERO_ADDRESS),
         abi: sablierLockupAbi,
         functionName: "statusOf" as const,
         args: [streamId] as const,
       },
     ]);
-  }, [ids, stateEnabled]);
+  }, [discovered, ids, stateEnabled]);
 
   const stateReads = useReadContracts({
     allowFailure: true,
@@ -398,8 +415,10 @@ export function useStreams(input: {
     idRead.isLoading,
     ids,
     idsComplete,
+    bootstrap,
     input.markets,
     input.now,
+    input.stream,
     input.vaults,
     overBudget,
     stateReads.data,

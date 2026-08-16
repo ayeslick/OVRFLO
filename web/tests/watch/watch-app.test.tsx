@@ -28,6 +28,8 @@ const fx = vi.hoisted(() => ({
   freshnessKind: "synced" as "synced" | "degraded" | "unavailable",
   streamUpdatedAt: 0,
   borrowerUpdatedAt: 0,
+  ovrflosStatus: "ready" as "ready" | "loading" | "unavailable",
+  marketsStatus: "ready" as "ready" | "loading" | "unavailable",
 }));
 
 vi.mock("wagmi", () => ({
@@ -64,7 +66,44 @@ vi.mock("@/hooks/useClock", () => ({
 }));
 
 vi.mock("@/hooks/useOvrflos", () => ({
-  useOvrflos: () => ({ vaults: [], isLoading: false, error: null, tooLarge: false }),
+  useOvrflos: () => {
+    if (fx.ovrflosStatus === "unavailable") {
+      return {
+        status: "unavailable" as const,
+        bootstrap: {
+          status: "unavailable" as const,
+          failures: [{ code: "no_code" as const, message: "Factory has no bytecode" }],
+        },
+        isLoading: false,
+        tooLarge: false,
+        error: new Error("Factory has no bytecode"),
+      };
+    }
+    if (fx.ovrflosStatus === "loading") {
+      return {
+        status: "loading" as const,
+        bootstrap: { status: "loading" as const },
+        isLoading: true,
+        tooLarge: false,
+        error: null,
+      };
+    }
+    return {
+      status: "ready" as const,
+      bootstrap: {
+        status: "ready" as const,
+        factory: VAULT,
+        stream: LENDING,
+        vaults: [],
+        blockNumber: 1n,
+      },
+      vaults: [],
+      stream: LENDING,
+      isLoading: false,
+      tooLarge: false,
+      error: null,
+    };
+  },
 }));
 
 vi.mock("@/hooks/useAllMarkets", () => ({
@@ -84,9 +123,9 @@ vi.mock("@/hooks/useAllMarkets", () => ({
         oracle: TOKEN,
       },
     ],
-    status: "ready",
-    isLoading: false,
-    error: null,
+    status: fx.marketsStatus,
+    isLoading: fx.marketsStatus === "loading",
+    error: fx.marketsStatus === "unavailable" ? new Error("markets down") : null,
     tooLarge: false,
   }),
 }));
@@ -168,6 +207,8 @@ function stubViewport(width: number) {
 
 function resetFx() {
   fx.connected = false;
+  fx.ovrflosStatus = "ready";
+  fx.marketsStatus = "ready";
   fx.lenderStatus = "ready";
   fx.borrowerStatus = "ready";
   fx.streamStatus = "ready";
@@ -185,6 +226,19 @@ describe("watch shell + entry", () => {
   beforeEach(() => {
     resetFx();
     stubViewport(1280);
+  });
+
+  it("renders unavailable for a codeless factory, never CHECKING…", async () => {
+    fx.connected = true;
+    fx.ovrflosStatus = "unavailable";
+    fx.marketsStatus = "unavailable";
+    fx.lenderStatus = "loading";
+    fx.borrowerStatus = "loading";
+    fx.streamStatus = "loading";
+    render(<WatchApp />);
+    expect(screen.getByText("PROTOCOL UNAVAILABLE")).toBeInTheDocument();
+    expect(screen.queryByText("CHECKING…")).not.toBeInTheDocument();
+    expect(screen.getByText(/Factory has no bytecode/i)).toBeInTheDocument();
   });
 
   afterEach(() => {
