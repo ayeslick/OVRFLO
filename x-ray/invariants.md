@@ -472,7 +472,8 @@ holding for escrowed amounts, breaking I-3.
 > `aprMinBps ≤ aprMaxBps ≤ APR_MAX_CEILING (10_000)`.
 
 **Derivation** — guard-lift of `OVRFLOLending.sol:347-348`. Write sites of `aprMinBps`/`aprMaxBps`: the
-constructor (`:334-335`, both `LAUNCH_APR_BPS = 1000`) and `setAprBounds` (`:350-351`, guarded). No other writer.
+constructor (`:334-335`, both `launchAprBps`, guarded by `BadLaunchApr`) and `setAprBounds`
+(`:350-351`, guarded). No other writer.
 
 **If violated** — `tickDepths`' rung count arithmetic (`:770`) would underflow, and the ladder view would revert.
 

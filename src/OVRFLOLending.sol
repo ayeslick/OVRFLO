@@ -26,8 +26,6 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
                                 CONSTANTS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Launch APR (10%) used as the initial min and max APR bound.
-    uint16 public constant LAUNCH_APR_BPS = 1000;
     /// @notice Hard ceiling on the maximum APR bound the owner may set (100%).
     uint16 public constant APR_MAX_CEILING = 10_000;
     /// @notice Hard ceiling on the protocol fee the owner may set (100%).
@@ -100,6 +98,8 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
     error BadAprBounds();
     /// @dev `aprMaxBps_` exceeds `APR_MAX_CEILING`.
     error AprTooHigh();
+    /// @dev `launchAprBps_` is above `APR_MAX_CEILING` or not a multiple of 25 bps.
+    error BadLaunchApr();
     /// @dev `feeBps_` exceeds `MAX_FEE_BPS`.
     error FeeTooHigh();
     /// @dev The pulled token delivered less than `amount` (fee-on-transfer behavior).
@@ -320,10 +320,15 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
     /// @param factory_ OVRFLOFactory registry; also the initial owner via Ownable2Step.
     /// @param core_ The OVRFLO vault this lending market is bound to.
     /// @param sablier_ Sablier V2 LockupLinear deployment used for stream custody.
-    constructor(address factory_, address core_, address sablier_) {
+    /// @param launchAprBps_ Initial maximum APR bound (`aprMaxBps`); `aprMinBps` starts at 0.
+    ///      Capped at `APR_MAX_CEILING` (the same 100% ceiling `setAprBounds` enforces)
+    ///      and quantized to 25 bps steps. A market opens its full `[0, launchAprBps_]`
+    ///      ladder at birth; the owner narrows or widens it later via `setAprBounds`.
+    constructor(address factory_, address core_, address sablier_, uint16 launchAprBps_) {
         if (factory_ == address(0)) revert ZeroAddress();
         if (core_ == address(0)) revert ZeroAddress();
         if (sablier_ == address(0)) revert ZeroAddress();
+        if (launchAprBps_ > APR_MAX_CEILING || launchAprBps_ % 25 != 0) revert BadLaunchApr();
 
         (address treasury_, address underlying_, address ovrfloToken_) =
             IOVRFLOFactoryRegistry(factory_).ovrfloInfo(core_);
@@ -337,8 +342,8 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
         treasury = treasury_;
         underlying = underlying_;
         ovrfloToken = ovrfloToken_;
-        aprMinBps = LAUNCH_APR_BPS;
-        aprMaxBps = LAUNCH_APR_BPS;
+        aprMinBps = 0;
+        aprMaxBps = launchAprBps_;
 
         _transferOwnership(factory_);
     }

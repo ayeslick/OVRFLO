@@ -14,7 +14,7 @@
   `OVRFLO`/`overflo` prefix. (Learned preference, AGENTS.md.)
 - **Contracts/structs/events:** CapWords — `TickTree`, `Position`, `Loan`,
   `Epoch`, `Supplied`, `Borrowed`. **Functions/variables:** mixedCase.
-  **Constants:** `UPPER_CASE_WITH_UNDERSCORES` — `LAUNCH_APR_BPS`,
+  **Constants:** `UPPER_CASE_WITH_UNDERSCORES` — `APR_MAX_CEILING`,
   `MIN_LIQUIDITY_AMOUNT`. **Internal functions:** `_` prefix — `_liveLoan`,
   `_outstanding`, `_fillTick`. (Matches the Solidity style guide; already
   house practice. Known deviation: the internal mapping `ticks` lacks the

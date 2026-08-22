@@ -579,7 +579,7 @@ contract OVRFLOAttackScenariosLendingTest is LendingMockFixture {
         bookFactory.setInfo(address(bookCore), LENDING_TREASURY, underlying_, address(bookOvrflo));
         bookCore.setSeries(MARKET, expiry, address(bookOvrflo), underlying_);
 
-        book = new OVRFLOLending(address(bookFactory), address(bookCore), address(bookSablier));
+        book = new OVRFLOLending(address(bookFactory), address(bookCore), address(bookSablier), APR);
         vm.prank(address(bookFactory));
         book.setTickSpacing(MARKET, SPACING);
     }

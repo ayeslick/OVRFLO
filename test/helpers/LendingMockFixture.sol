@@ -51,7 +51,7 @@ abstract contract LendingMockFixture is Test {
         factory.setInfo(address(core), LENDING_TREASURY, address(underlying), address(ovrfloToken));
         core.setSeries(MARKET, expiry, address(ovrfloToken), address(underlying));
 
-        lending = new OVRFLOLending(address(factory), address(core), address(sablier));
+        lending = new OVRFLOLending(address(factory), address(core), address(sablier), APR);
         vm.prank(address(factory));
         lending.setTickSpacing(MARKET, SPACING);
     }

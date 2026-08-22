@@ -102,7 +102,9 @@ abstract contract OVRFLOSeedRunner is Script, StdCheats, OVRFLOTestFixtures {
 
     function _deployAndRegisterLending(OVRFLOFactory factory, OVRFLO ovrflo) private returns (OVRFLOLending lending) {
         address stream = address(ovrflo.sablierLL());
-        lending = new OVRFLOLending(address(factory), address(ovrflo), stream);
+        // 1000 bps mirrors script/seed-local.sh's LAUNCH_APR_BPS: the constructor
+        // seeds aprMax with it and opens aprMin at 0, so the demo's whole ladder is valid.
+        lending = new OVRFLOLending(address(factory), address(ovrflo), stream, 1000);
         require(lending.owner() == address(factory), "OVRFLOSeedRunner: lending owner");
         require(address(lending.sablier()) == stream, "OVRFLOSeedRunner: lending stream");
         factory.registerLending(address(lending));

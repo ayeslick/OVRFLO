@@ -364,7 +364,7 @@ contract OVRFLOFactoryTest is Test, FactoryStreamBind {
         // FactoryMismatch is the sole on-chain guard for this class.
         (OVRFLO ovrflo, OVRFLOToken token) = _deployConfiguredSystem();
         MockRegistryStub stub = new MockRegistryStub(TREASURY, address(underlying), address(token));
-        OVRFLOLending hostile = new OVRFLOLending(address(stub), address(ovrflo), address(ovrflo.sablierLL()));
+        OVRFLOLending hostile = new OVRFLOLending(address(stub), address(ovrflo), address(ovrflo.sablierLL()), 1000);
 
         vm.prank(OWNER);
         vm.expectRevert(OVRFLOFactory.FactoryMismatch.selector);
@@ -414,7 +414,7 @@ contract OVRFLOFactoryTest is Test, FactoryStreamBind {
         (OVRFLO ovrflo,) = _deployConfiguredSystem();
 
         vm.prank(STRANGER);
-        OVRFLOLending lending = new OVRFLOLending(address(factory), address(ovrflo), address(ovrflo.sablierLL()));
+        OVRFLOLending lending = new OVRFLOLending(address(factory), address(ovrflo), address(ovrflo.sablierLL()), 1000);
 
         assertEq(lending.owner(), address(factory));
         assertEq(lending.pendingOwner(), address(0));
@@ -447,7 +447,7 @@ contract OVRFLOFactoryTest is Test, FactoryStreamBind {
         // Pins the runbook ordering: the lending cannot even be constructed until
         // its core vault is registered with the factory it points at.
         vm.expectRevert(OVRFLOLending.UnknownCore.selector);
-        new OVRFLOLending(address(factory), address(0xDEAD), address(0xCAFE));
+        new OVRFLOLending(address(factory), address(0xDEAD), address(0xCAFE), 1000);
     }
 
     function test_LendingConstruction_EmitsOwnershipHandoffToFactory() public {
@@ -1177,7 +1177,7 @@ contract OVRFLOFactoryTest is Test, FactoryStreamBind {
     }
 
     function _newLending(OVRFLO ovrflo) internal returns (OVRFLOLending) {
-        return new OVRFLOLending(address(factory), address(ovrflo), address(ovrflo.sablierLL()));
+        return new OVRFLOLending(address(factory), address(ovrflo), address(ovrflo.sablierLL()), 1000);
     }
 
     function _deployConfiguredSystem() internal returns (OVRFLO ovrflo, OVRFLOToken token) {

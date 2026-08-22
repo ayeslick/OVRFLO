@@ -13,7 +13,7 @@ inherited OZ surfaces enumerated at the end (ERC20 transfer family, `Ownable2Ste
 ### Setup (Multisig → Factory)
 
 `new OVRFLOFactory(...)` → deploy OVRFLO Streams lockup+comptroller+descriptor → `setOvrfloStream()` →
-`new OVRFLO(..., stream)` → `registerOvrflo()` → `new OVRFLOLending(..., stream)` → `registerLending()` →
+`new OVRFLO(..., stream)` → `registerOvrflo()` → `new OVRFLOLending(..., stream, launchAprBps)` → `registerLending()` →
 `prepareOracle()` → `addMarket()` → `setLendingTickSpacing()`
                                                                                                      └─→ `setLendingAprBounds()` / `setLendingFee()` / `setLendingTreasury()`
                                                                                                      └─→ `setStreamNFTDescriptor()` (art swap; only lockup admin forwarder)

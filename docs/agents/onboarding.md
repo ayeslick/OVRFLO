@@ -152,7 +152,7 @@ Deploy order:
 2. Deploy OVRFLO Streams lockup + comptroller + descriptor (sibling repo artifacts); `setOvrfloStream(lockup)`
 3. `new OVRFLO(factory, treasury, underlying, name, symbol, oracle, stream)` — vault constructs its token; `stream` becomes `sablierLL`
 4. `registerOvrflo(vault)`
-5. `new OVRFLOLending(factory, vault, stream)`
+5. `new OVRFLOLending(factory, vault, stream, launchAprBps)` — `aprMaxBps` starts at `launchAprBps` (multiple of 25 bps, capped at `APR_MAX_CEILING`); `aprMinBps` starts at 0
 6. `registerLending(lending)`
 7. `prepareOracle(market, twap)` then `addMarket(vault, market, twap, feeBps)`
 8. `setLendingTickSpacing(lending, market, spacing)` — **once per market**. No on-chain default. Supply and borrow revert `SpacingUnset` until this lands.

@@ -130,7 +130,7 @@ Loan-only, fixed-rate tick order book for self-repaying loans. Lenders rest liqu
 | `setFee(feeBps)` | Set protocol fee on borrows (owner) |
 | `setTreasury(treasury)` | Set fee recipient (owner) |
 
-**Constants:** `APR_MAX_CEILING = 10_000` (100%), `MAX_FEE_BPS = 10_000` (100%), `LAUNCH_APR_BPS = 1000` (10%, the initial min and max APR bound), `UNIT = 1e12` (book quantization granule, in wei), `MIN_LIQUIDITY_AMOUNT = 1e15` (0.001 token; the shared supply-minimum and borrow-fill-minimum atom), `CURSOR_CAP = 32` (max epoch-cursor steps one `borrow` may perform), `MIN_STREAM_AMOUNT = 1e6` (minimum remaining stream face accepted by the borrower side). APR bounds and fee are owner-governed but cannot exceed the hardcoded ceilings above.
+**Constants:** `APR_MAX_CEILING = 10_000` (100%, caps both `setAprBounds` and the constructor's `launchAprBps` argument), `MAX_FEE_BPS = 10_000` (100%), `UNIT = 1e12` (book quantization granule, in wei), `MIN_LIQUIDITY_AMOUNT = 1e15` (0.001 token; the shared supply-minimum and borrow-fill-minimum atom), `CURSOR_CAP = 32` (max epoch-cursor steps one `borrow` may perform), `MIN_STREAM_AMOUNT = 1e6` (minimum remaining stream face accepted by the borrower side). The launch APR is a constructor argument (`launchAprBps`, 25 bps steps) that seeds `aprMaxBps`; `aprMinBps` starts at 0, so the `[0, launchAprBps]` ladder is open from birth. Bounds are owner-governed afterwards but cannot exceed the hardcoded ceilings above.
 
 ### StreamPricing.sol
 
@@ -391,7 +391,9 @@ address ovrfloToken = ovrflo.ovrfloToken();
 //    pulls treasury/underlying/ovrfloToken from the factory registry and
 //    reverts UnknownCore unless the vault was registered in step 2 above;
 //    the factory is the lending market's owner from construction.
-OVRFLOLending lendingMarket = new OVRFLOLending(address(factory), address(ovrflo), sablier);
+//    launchAprBps seeds both APR bounds; it must be a multiple of 25 bps and
+//    cannot exceed APR_MAX_CEILING (100%).
+OVRFLOLending lendingMarket = new OVRFLOLending(address(factory), address(ovrflo), sablier, 1000);
 
 // 2. Multisig registers the lending market, after the same off-chain
 //    bytecode-verification checklist item.

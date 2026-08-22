@@ -295,10 +295,10 @@ export async function readAprBounds(lending: Address) {
   return { aprMinBps, aprMaxBps };
 }
 
-// OVRFLOLending's constructor sets aprMinBps == aprMaxBps == LAUNCH_APR_BPS
-// (src/OVRFLOLending.sol) — a deliberate single-tick launch default, widened
-// later by governance via setAprBounds. seed-local.sh never widens it, so
-// every freshly-seeded local market starts with exactly one rate tick.
+// OVRFLOLending's constructor sets aprMinBps to 0 and aprMaxBps to launchAprBps
+// (the seed passes 1000, mirroring script/seed-local.sh), so the full
+// [0, 1000] ladder is valid from birth. Governance can still narrow or widen
+// it later via setAprBounds; seed-local.sh never does.
 export async function widenAprBounds(params: { factory: Address; lending: Address; aprMinBps: number; aprMaxBps: number }) {
   const hash = await ownerClient.writeContract({
     address: params.factory,

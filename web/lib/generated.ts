@@ -1151,6 +1151,7 @@ export const ovrfloLendingAbi = [
       { name: 'factory_', internalType: 'address', type: 'address' },
       { name: 'core_', internalType: 'address', type: 'address' },
       { name: 'sablier_', internalType: 'address', type: 'address' },
+      { name: 'launchAprBps_', internalType: 'uint16', type: 'uint16' },
     ],
     stateMutability: 'nonpayable',
   },
@@ -1166,13 +1167,6 @@ export const ovrfloLendingAbi = [
     inputs: [],
     name: 'CURSOR_CAP',
     outputs: [{ name: '', internalType: 'uint8', type: 'uint8' }],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [],
-    name: 'LAUNCH_APR_BPS',
-    outputs: [{ name: '', internalType: 'uint16', type: 'uint16' }],
     stateMutability: 'view',
   },
   {

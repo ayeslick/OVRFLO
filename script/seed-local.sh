@@ -74,11 +74,11 @@ PT_SEED_AMOUNT=1000000000000000000000   # 1000 * 1e18
 STETH_SEED_ETH=200ether
 WSTETH_SEED_AMOUNT=60000000000000000000 # 60 * 1e18 per seeded wallet
 PENDLE_EXPIRY_BUFFER_DAYS=${PENDLE_EXPIRY_BUFFER_DAYS:-14}
-# Demo lending state seeded after HTD 10. LAUNCH_APR_BPS mirrors
-# OVRFLOLending's constructor default (10%) — the only valid tick until the
-# multisig widens aprMin/aprMax, so the demo deliberately reuses it. Tick
-# spacing (25bps) matches the plan's stated per-market default (KTD4/session-
-# settled) and evenly divides LAUNCH_APR_BPS.
+# Demo lending state seeded after HTD 10. LAUNCH_APR_BPS is the launch aprMax
+# passed to OVRFLOLending's constructor below; aprMin starts at 0, so the
+# [0,1000] ladder is open from birth and the demo supplies at its top tick.
+# Tick spacing (25bps) matches the plan's stated per-market default
+# (KTD4/session-settled) and evenly divides it.
 LENDING_TICK_SPACING=25
 LAUNCH_APR_BPS=1000
 LENDER_SUPPLY_AMOUNT=5000000000000000000   # 5 * 1e18, UNIT-aligned (UNIT = 1e12)
@@ -283,7 +283,7 @@ LENDING_JSON=$(
   forge create \
     --rpc-url "$RPC" --private-key "$OWNER_PK" --broadcast --legacy --json \
     src/OVRFLOLending.sol:OVRFLOLending \
-    --constructor-args "$FACTORY" "$OVRFLO" "$LENDING_SABLIER"
+    --constructor-args "$FACTORY" "$OVRFLO" "$LENDING_SABLIER" "$LAUNCH_APR_BPS"
 )
 LENDING=$(echo "$LENDING_JSON" | jq -r '.deployedTo')
 require_eq "$(call_addr "$LENDING" 'owner()(address)')" "$FACTORY" "lending.owner mismatch"
@@ -309,8 +309,8 @@ send "$FACTORY" 'addMarket(address,address,uint32,uint16)' \
 # tick ladder view (`tickDepths`) is O(rungs), and spacing is set-once per market —
 # a pathological small spacing (e.g. 1) permanently blows up the ladder's rung
 # count ((aprMax-aprMin)/spacing) into a discovery-time DoS with no recovery path.
-# Keep rungs <= ~400. With the launch bounds (aprMin == aprMax == LAUNCH_APR_BPS),
-# the ladder is exactly one rung regardless of spacing, so this only matters once
+# Keep rungs <= ~400. With the launch bounds (aprMin 0, aprMax LAUNCH_APR_BPS
+# from the constructor), the ladder is 41 rungs at spacing 25, so this only matters once
 # the multisig widens aprMin/aprMax later — flagging it here, at the only site that
 # sets spacing, is cheaper than re-deriving the bound at every future market.
 send "$FACTORY" 'setLendingTickSpacing(address,address,uint16)' \
@@ -358,8 +358,8 @@ send_as() {
   cast send --rpc-url "$RPC" --private-key "$pk" --legacy "$@" >/dev/null
 }
 
-# Lender rests liquidity at the launch tick (the only valid tick until the
-# multisig widens aprMin/aprMax past LAUNCH_APR_BPS).
+# Lender rests liquidity at the launch aprMax tick (the ladder's top rung; the
+# whole [0, LAUNCH_APR_BPS] range is valid from birth).
 send_as "$LENDER_PK" "$WSTETH" 'approve(address,uint256)' "$LENDING" "$LENDER_SUPPLY_AMOUNT"
 send_as "$LENDER_PK" "$LENDING" 'supply(address,uint16,uint128)' \
   "$PRIMARY_MARKET" "$LAUNCH_APR_BPS" "$LENDER_SUPPLY_AMOUNT"

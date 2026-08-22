@@ -13,7 +13,7 @@ import {MockLendingFactory, MockLendingCore, MockLendingSablier} from "./mocks/L
 contract LendingInternalHarness is OVRFLOLending {
     using TickTree for TickTree.Tree;
 
-    constructor(address factory, address core, address sablier) OVRFLOLending(factory, core, sablier) {}
+    constructor(address factory, address core, address sablier) OVRFLOLending(factory, core, sablier, 1000) {}
 
     function exposed_setFilled(address market, uint16 aprBps, uint32 epoch, uint64 filled) external {
         _ticks[market][aprBps].epochs[epoch].filled = filled;
@@ -149,12 +149,38 @@ contract OVRFLOLendingTest is Test {
         assertEq(lending.treasury(), TREASURY);
         assertEq(lending.underlying(), address(underlying));
         assertEq(lending.ovrfloToken(), address(ovrfloToken));
-        assertEq(lending.aprMinBps(), lending.LAUNCH_APR_BPS());
-        assertEq(lending.aprMaxBps(), lending.LAUNCH_APR_BPS());
+        assertEq(lending.aprMinBps(), 0);
+        assertEq(lending.aprMaxBps(), APR);
         assertEq(lending.UNIT(), 1e12);
         assertEq(lending.MIN_LIQUIDITY_AMOUNT(), 1e15);
         assertEq(lending.CURSOR_CAP(), 32);
         assertEq(lending.nextLoanId(), 1);
+    }
+
+    /// The launch bound is constructor-fixed: above `APR_MAX_CEILING` or off the 25 bps
+    /// quantum must fail at deploy time, so no market can be born outside the same
+    /// envelope `setAprBounds` enforces for the rest of its life.
+    function test_Constructor_RejectsLaunchAprAboveCapOrOffQuantum() public {
+        // Read the ceiling first: an external read in the argument list would be the
+        // "next call" the pending `expectRevert` judges (same trap as test_SetAprBounds).
+        uint16 ceiling = lending.APR_MAX_CEILING();
+
+        vm.expectRevert(OVRFLOLending.BadLaunchApr.selector);
+        new OVRFLOLending(address(factory), address(core), address(sablier), ceiling + 25);
+
+        vm.expectRevert(OVRFLOLending.BadLaunchApr.selector);
+        new OVRFLOLending(address(factory), address(core), address(sablier), 130);
+    }
+
+    function test_Constructor_AcceptsLaunchAprBoundaries() public {
+        OVRFLOLending atZero = new OVRFLOLending(address(factory), address(core), address(sablier), 0);
+        assertEq(atZero.aprMinBps(), 0);
+        assertEq(atZero.aprMaxBps(), 0);
+
+        uint16 ceiling = lending.APR_MAX_CEILING();
+        OVRFLOLending atCap = new OVRFLOLending(address(factory), address(core), address(sablier), ceiling);
+        assertEq(atCap.aprMinBps(), 0);
+        assertEq(atCap.aprMaxBps(), ceiling);
     }
 
     function test_SetTickSpacing_SetsOnceAndEmits() public {

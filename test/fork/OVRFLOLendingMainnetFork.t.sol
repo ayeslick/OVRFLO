@@ -289,7 +289,7 @@ contract OVRFLOLendingMainnetForkTest is OVRFLOForkBase {
     /// @dev The constructor transfers ownership to the `factory` argument, not the
     ///      deploying test contract, so setting spacing must be pranked as the factory.
     function _deployLending(OVRFLOFactory factory, OVRFLO ovrflo) internal returns (OVRFLOLending lending) {
-        lending = new OVRFLOLending(address(factory), address(ovrflo), address(ovrflo.sablierLL()));
+        lending = new OVRFLOLending(address(factory), address(ovrflo), address(ovrflo.sablierLL()), APR);
         vm.prank(address(factory));
         lending.setTickSpacing(PRIMARY_MARKET, SPACING);
     }

@@ -23,7 +23,7 @@ import {TickTree} from "../../../src/TickTree.sol";
 contract OVRFLOLendingHarness is OVRFLOLending {
     using TickTree for TickTree.Tree;
 
-    constructor(address factory_, address core_, address sablier_) OVRFLOLending(factory_, core_, sablier_) {}
+    constructor(address factory_, address core_, address sablier_) OVRFLOLending(factory_, core_, sablier_, 1000) {}
 
     /// @notice Raw per-epoch tape coordinates for one `(market, aprBps, epoch)` tuple.
     /// @dev Never reverts on an untouched tuple: an unwritten `Epoch` reads as an
