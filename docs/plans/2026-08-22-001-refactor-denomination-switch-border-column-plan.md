@@ -257,6 +257,7 @@ CS2 (next audit cycle, per handoff §4): ERC-3156 `maxFlashLoan`/`flashFee`/`fla
 CS3 (after CS1 stabilizes): the borrow request book as a thin router. Mechanics settled here so CS3's plan inherits them:
 
 - Escrow: borrower posts stream + terms (`market`, `maxAprBps` — ceiling semantics; `targetBorrow`; `minAcceptable`) via plain `transferFrom` (never `safeTransferFrom` — mirroring the borrow escrow rationale at `src/OVRFLOLending.sol:486-488`). Escrowed streams are never drawn from.
+- `cancel(requestId)` — borrower-only, callable anytime while the request rests; returns the escrowed stream intact (plain `transferFrom` back). Cancel is the only exit for a resting request, and KD10's router-replace rationale depends on it: after a swap, resting escrow comes home by owner choice instead of waiting for fillable depth (handoff §6).
 - Post-or-execute: at post time, if acceptable depth exists at or below the ceiling, fill immediately (one call). `execute(requestId)` is permissionless and routes to the *cheapest* tick at or below the ceiling.
 - `execute` calls core `borrow(..., onBehalfOf = human)` from the book (`msg.sender == router`). Proceeds go to the human. The stream returns to the human at close. The book holds nothing after a successful execute except still-resting requests. No `loanId -> borrower` table. No `settle`.
 - Remaining face is read live at fill time; no snapshot. Fees: none in the book; the core's fill-time borrower fee is the only fee, now in ovrfloToken via KD9.
