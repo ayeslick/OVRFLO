@@ -261,7 +261,7 @@ CS3 (after CS1 stabilizes): the borrow request book as a thin router. Mechanics 
 - Post-or-execute: at post time, if acceptable depth exists at or below the ceiling, fill immediately (one call). `execute(requestId)` is permissionless and routes to the *cheapest* tick at or below the ceiling.
 - `execute` calls core `borrow(..., onBehalfOf = human)` from the book (`msg.sender == router`). Proceeds go to the human. The stream returns to the human at close. The book holds nothing after a successful execute except still-resting requests. No `loanId -> borrower` table. No `settle`.
 - Remaining face is read live at fill time; no snapshot. Fees: none in the book; the core's fill-time borrower fee is the only fee, now in ovrfloToken via KD9.
-- Before CS3 ships, the Safe calls `setLendingRouter` on the factory.
+- Before CS3 ships, the Safe calls `setLendingRouter` on the factory. After the swap (or a zero-set), a retired book's `execute` loses the on-behalf path — the market attributes that borrow to `msg.sender` (the book itself, since `msg.sender != router`), so proceeds and the returned stream land inside the book's own contracts. The CS3 book therefore reverts `execute` unless `lending.router() == address(this)`; borrowers exit resting requests through `cancel`, which never consults the slot.
 
 ### KD15 — README fixes ship immediately (CS0)
 
