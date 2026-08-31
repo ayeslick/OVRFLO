@@ -1,0 +1,40 @@
+# 25 — Oxfmt formatting-only commit
+
+**What to build:** Oxfmt output lands in a separate formatting-only commit after rule-migration behavior is green. The first run produces only syntactic formatting changes. The second run produces no diff. Independent correctness, accessibility, policy, and build gates stay green.
+
+**Blocked by:** 24
+
+**Status:** ready-for-agent
+**Labels:** ready-for-agent
+
+## Session prompt (paste into a new chat)
+
+```text
+/ce-work docs/plans/2026-08-22-001-refactor-denomination-switch-border-column-plan.md
+
+Scope: CS7-U3 only (= this ticket). Stop when this ticket's acceptance criteria are met.
+Ticket: .scratch/denomination-border-column/issues/25-oxfmt-formatting.md
+Spec/harness: .scratch/denomination-border-column/spec.md — follow its per-session rules.
+Do not edit the plan. Do not start other units. Do not mix dependency, rule, or
+behavior changes into the formatting commit.
+Read Required reading below and the plan sections: KD20 Oxfmt paragraph, ### CS7-U3,
+and Verification Contract item 8 (formatter output reviewed in a separate diff).
+Run Oxfmt twice. Require the second run to produce no diff.
+After local verification, mark ticket checkboxes done and set Status: resolved.
+```
+
+**Required reading:**
+
+- Plan KD20 and CS7-U3
+- this ticket's acceptance criteria
+
+## Acceptance criteria
+
+- [ ] The first formatter run produces only syntactic formatting changes
+- [ ] The second formatter run is idempotent
+- [ ] TypeScript, independent policy gates, Vitest, Playwright, axe, and production build results are unchanged after formatting
+- [ ] The formatting commit contains no logic or configuration change
+
+## Plan unit
+
+CS7-U3 in `docs/plans/2026-08-22-001-refactor-denomination-switch-border-column-plan.md`
