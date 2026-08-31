@@ -41,7 +41,7 @@ Core workflows include:
 - wrapping and unwrapping the vault underlying one-to-one with ovrfloToken;
 - claiming PT against ovrfloToken after series maturity.
 
-Users evaluate token amounts, APR, maturity, stream value, loan obligation, fees, residual value, wallet state, approvals, and transaction status. Amounts may be displayed with a USD reference at the user's option, but transactions are always denominated in token units and USD values are display-only. There is no indexer backend. Stream discovery is still a two-step browser verified-log scan: Transfer logs yield a candidate set, then ownership and every action-critical fact are verified by direct on-chain reads. Candidates never gate.
+Users evaluate amounts, APR, maturity, stream value, loan obligation, fees, residual value, wallet state, approvals, and transaction status. The Markets app shows amounts in USD by default for the selected column's underlying (wstETH, rETH, sUSDe, or any later underlying). The customer can switch and see the same amounts in token units. Each underlying has its own USD quote. The Markets app must not show another column's dollars on this position. If the USD quote is missing or stale, the Markets app shows token units and does not invent a dollar figure. Transactions stay denominated in token units. USD never enters calldata. There is no indexer backend. Stream discovery is still a two-step browser verified-log scan: Transfer logs yield a candidate set, then ownership and every action-critical fact are verified by direct on-chain reads. Candidates never gate.
 
 ## Capabilities and Constraints
 
@@ -53,6 +53,7 @@ Users evaluate token amounts, APR, maturity, stream value, loan obligation, fees
 - Wrap and unwrap are permissionless and one-to-one, bounded by a separately tracked underlying reserve. PT claims are bounded by PT backing.
 - Administrative actions flow from a timelocked multisig through OVRFLOFactory to vaults and lending markets. Product design must not imply direct administration of dependent contracts.
 - Market data and transaction previews must preserve exact asset, maturity, fee, APR, obligation, and residual semantics. Unsupported or stale data must degrade explicitly rather than appear authoritative.
+- USD display is per underlying and defaults on when that column's quote is live. A missing recipe or a stale quote hides USD for that column only. Token-native submit remains available. USD never becomes execution authority.
 - The name is always `OVRFLO`; `OVFL` is not a product or token name. Receipt tokens use the `OVRFLO` or `ovrflo` prefix.
 
 ## Brand Commitments
