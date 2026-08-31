@@ -1,6 +1,6 @@
 # 01 — Delete PT flash
 
-**What to build:** The vault no longer offers a PT flash loan. Flash functions, storage, events, errors, factory forwarders, the flash-borrower interface, and the flash test surface are gone. The vault drops `ReentrancyGuard`. This commit is pure removal and must land before border extraction so later diffs do not mix deletion with the structural move.
+**What to build:** The vault no longer offers a PT flash loan. Flash functions, storage, events, errors, factory forwarders, the flash-borrower interface, and the flash test surface are gone. The vault drops `ReentrancyGuard`. This commit is pure removal and must land before reserve extraction so later diffs do not mix deletion with the structural move.
 
 **Blocked by:** None — can start immediately.
 
@@ -15,7 +15,7 @@
 Scope: CS1 U1 only (= this ticket). Stop when this ticket's acceptance criteria are met.
 Ticket: .scratch/denomination-border-column/issues/01-delete-pt-flash.md
 Spec/harness: .scratch/denomination-border-column/spec.md — follow its per-session rules.
-Do not edit the plan. Do not start other units. Do not extract the border. Do not
+Do not edit the plan. Do not start other units. Do not extract OVRFLOReserve. Do not
 change denomination, minters, or lending.
 Before any code, read Required reading below and the plan sections: Goal Capsule,
 KD1, Sweep rule 8 (error-catalog regeneration rides this unit), Verification

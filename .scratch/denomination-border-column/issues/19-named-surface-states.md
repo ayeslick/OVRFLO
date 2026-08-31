@@ -45,7 +45,7 @@ After local verification, mark ticket checkboxes done and set Status: resolved.
 - [ ] No borrower demand yet remains reachable as an unmatched Fixed Return supply state with a valid next action and withdrawable funds
 - [ ] Market moved requires refreshed review before submission
 - [ ] Retired-router state disables execute and preserves cancel
-- [ ] Completed position exposes detail; PT claim appears only with maturity and PT backing; unwrap appears whenever border reserve and wallet ovrfloToken balance permit
+- [ ] Completed position exposes detail; PT claim appears only with maturity and PT backing; unwrap appears whenever `OVRFLOReserve` and wallet ovrfloToken balance permit
 - [ ] Network/read failure never renders authoritative zero or empty portfolio
 - [ ] Caught render error records region and execution phase and offers persisted-attempt resume rather than a blind restart
 - [ ] Status uses text and icon; color is supplementary

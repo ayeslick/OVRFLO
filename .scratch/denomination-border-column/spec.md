@@ -1,8 +1,8 @@
-# Denomination switch, border column, and Default / Advanced product
+# Denomination switch, wrap reserve, and Default / Advanced product
 
 **Authoritative plan:** `docs/plans/2026-08-22-001-refactor-denomination-switch-border-column-plan.md`
 
-**Objective:** Switch the column to ovrfloToken denomination, extract wrap/unwrap into `OVRFLOBorder` via nested constructors, admit the column at the factory, remove PT flash, add the lending router hook, then replace the Markets product with the boards' `Default` / `Advanced` model over one canonical action runtime. CS5–CS7 add public-read resilience, a gated eth-compress evaluation, and classified web tooling.
+**Objective:** Switch the column to ovrfloToken denomination, extract wrap/unwrap into `OVRFLOReserve` via nested constructors, admit the column at the factory, remove PT flash, add the lending router hook, then replace the Markets product with the boards' `Default` / `Advanced` model over one canonical action runtime. CS5–CS7 add public-read resilience, a gated eth-compress evaluation, and classified web tooling.
 
 **Tickets:** `.scratch/denomination-border-column/issues/` (01–26). Work the frontier: any ticket whose blockers are done. Do **one ticket per chat**.
 
@@ -87,8 +87,8 @@ Run the gates the plan's Verification Contract names for that changeset. Do not 
 - Point `ce-work` at the whole plan with no unit scope
 - Edit the plan file, Key Decisions, or Sweep Contracts while implementing
 - Touch `StreamPricing` math or `_fillTick` (stop condition (d))
-- Extend the `OvrfloInfo` tuple or add `replaceBorder`
-- Add `NEXT_PUBLIC_OVRFLO_BORDER` (add it to the obsolete list instead)
+- Extend the `OvrfloInfo` tuple or add `replaceReserve`
+- Add `NEXT_PUBLIC_OVRFLO_RESERVE` (add it to the obsolete list instead)
 - Add `supplyWithPermit` or `repayWithPermit` on the lending market
 - Split `Default` and `Advanced` into two visual systems
 - Use viem-dlc or eth-compress to transform wallet writes
@@ -106,7 +106,7 @@ Run the gates the plan's Verification Contract names for that changeset. Do not 
 | # | Title | Plan units | Blocked by | Status at publish |
 |---|---|---|---|---|
 | 01 | Delete PT flash | CS1-U1 | — | ready-for-agent |
-| 02 | Token, border, vault constructor chain | CS1-U2 | 01 | ready-for-agent |
+| 02 | Token, reserve, vault constructor chain | CS1-U2 | 01 | ready-for-agent |
 | 03 | Lending asset switch and router hook | CS1-U3 | 02 | ready-for-agent |
 | 04 | Factory registration, replaceLending, setLendingRouter | CS1-U4 | 03 | ready-for-agent |
 | 05 | Deploy recipe and seed tooling | CS1-U5 | 04 | ready-for-agent |

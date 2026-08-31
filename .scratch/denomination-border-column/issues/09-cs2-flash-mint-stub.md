@@ -1,6 +1,6 @@
-# 09 — CS2 stub: ERC-3156 flash mint in the border
+# 09 — CS2 stub: ERC-3156 flash mint in OVRFLOReserve
 
-**What to build:** After a separate swept CS2 plan exists, the border offers ERC-3156 flash mint of ovrfloToken. Fee launches at zero under a hardcoded single-digit-bps ceiling. Owner sets a supply cap under a hardcoded ceiling. Cap check, repay-and-burn check, per-function reentrancy guard, and supply-conservation FREI-PI all hold. The vault has no flash lock. Wrap and unwrap never touch the flash-mint path.
+**What to build:** After a separate swept CS2 plan exists, `OVRFLOReserve` offers ERC-3156 flash mint of ovrfloToken. Fee launches at zero under a hardcoded single-digit-bps ceiling. Owner sets a supply cap under a hardcoded ceiling. Cap check, repay-and-burn check, per-function reentrancy guard, and supply-conservation FREI-PI all hold. The vault has no flash lock. Wrap and unwrap never touch the flash-mint path.
 
 **This file is a stub.** Do not implement CS2 from the denomination plan. KD14 is inheritance for the later plan. Calibration numbers are open.
 
@@ -36,7 +36,7 @@ Until then leave Status: needs-info. Do not write Solidity.
 ## Acceptance criteria
 
 - [ ] A swept CS2 plan exists and this ticket points at it
-- [ ] Border implements ERC-3156 `maxFlashLoan` / `flashFee` / `flashLoan` of ovrfloToken
+- [ ] `OVRFLOReserve` implements ERC-3156 `maxFlashLoan` / `flashFee` / `flashLoan` of ovrfloToken
 - [ ] Fee ceiling is hardcoded single-digit bps; launch fee is zero with an owner setter
 - [ ] Supply cap has a hardcoded ceiling and an owner setter
 - [ ] Cap check, repay-and-burn check, per-function reentrancy guard, and `totalSupply` after equals `totalSupply` before all hold

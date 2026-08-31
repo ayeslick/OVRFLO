@@ -1,6 +1,6 @@
 # 06 — Invariant and fuzz re-derivation
 
-**What to build:** Solvency and reserve invariants span vault plus border. Lending escrow and money-recipient invariants use ovrfloToken. The wrap/unwrap invariant suite ports to the border. Vault underlying-reserve invariants leave the vault suite. Fizz properties flip asset, holder set, span, retarget, and minter shape after a fizz-sync against the live harness. Raw-slot constants are recomputed from the regenerated lending golden.
+**What to build:** Solvency and wrap-reserve invariants span vault plus `OVRFLOReserve`. Lending escrow and money-recipient invariants use ovrfloToken. The wrap/unwrap invariant suite ports to `OVRFLOReserve`. Vault underlying-reserve invariants leave the vault suite. Fizz properties flip asset, holder set, span, retarget, and minter shape after a fizz-sync against the live harness. Raw-slot constants are recomputed from the regenerated lending golden.
 
 **Blocked by:** 04 (parallel with 05)
 
@@ -18,7 +18,7 @@ Spec/harness: .scratch/denomination-border-column/spec.md — follow its per-ses
 Do not edit the plan. Do not start other units. 05 runs in parallel — do not rewrite
 seed or DeploySize here. Do not flip web call sites (07).
 Before any code, read Required reading below and the plan sections: KD13, Sweep
-rule 4, Verification Contract items 2 and 7 (column solvency, border reserve,
+rule 4, Verification Contract items 2 and 7 (column solvency, wrap reserve,
 lending escrow), and ### CS1 U6.
 Run the fizz-sync path. Verify each cited GL-nn id against test/fizz/Properties.sol
 during the sync rather than trusting the plan citation. Recompute TICKS_SLOT and
@@ -39,15 +39,15 @@ After local verification, mark ticket checkboxes done and set Status: resolved.
 
 ## Acceptance criteria
 
-- [ ] Column solvency: `ovrfloToken.totalSupply() <= Σ_pt.balanceOf(vault) + underlying.balanceOf(border)` across every approved series
-- [ ] Per-origin equality: `totalSupply == Σ marketTotalDeposited + border.wrappedUnderlying`
-- [ ] Border reserve: `wrappedUnderlying <= underlying.balanceOf(border)`; unwrap never spends PT
+- [ ] Column solvency: `ovrfloToken.totalSupply() <= Σ_pt.balanceOf(vault) + underlying.balanceOf(reserve)` across every approved series
+- [ ] Per-origin equality: `totalSupply == Σ marketTotalDeposited + reserve.wrappedUnderlying`
+- [ ] Wrap reserve: `wrappedUnderlying <= underlying.balanceOf(reserve)`; unwrap never spends PT
 - [ ] Vault suite no longer asserts underlying-reserve on the vault; `invariant_PtBalanceGteDeposited` survives
 - [ ] Lending `invariant_EscrowSolvency` and `invariant_MoneyRecipients` use ovrfloToken
 - [ ] Fizz GL-02/03/04/06/07/09/30 successors are verified against the live harness and updated
 - [ ] Raw-slot constants match the regenerated lending golden; `exposed_epochState` cross-checks stay green
 - [ ] `FOUNDRY_PROFILE=invariant forge test --match-contract OVRFLOLendingInvariant -vvv` green at 500 runs / depth 40
-- [ ] Border wrap invariant suite green under the same invariant profile
+- [ ] Reserve wrap invariant suite green under the same invariant profile
 - [ ] `forge build` then `forge test` green; `forge fmt --check` clean
 
 ## Plan unit

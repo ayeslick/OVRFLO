@@ -31,20 +31,20 @@ After local verification, mark ticket checkboxes done and set Status: resolved.
 
 - `docs/agents/onboarding.md`
 - `docs/solutions/patterns/ovrflo-critical-patterns.md`
-- `docs/audit/rejected-findings-record.md` (R-02 pointer follows the sweep to the border)
+- `docs/audit/rejected-findings-record.md` (R-02 pointer follows the sweep to the reserve)
 - this ticket's acceptance criteria
 
 ## Acceptance criteria
 
 - [ ] `README.md` uses `book.getfoundry.sh`, not `lending.getfoundry.sh`
 - [ ] `README.md` roadmap line is "Built after the lending market establishes an APR"
-- [ ] README architecture sections describe border, two named minters, ovrfloToken lending escrow, and nested deploy
-- [ ] `CONCEPTS.md` has a border entry, three labeled exits, and denomination vocabulary
+- [ ] README architecture sections describe `OVRFLOReserve`, two named minters, ovrfloToken lending escrow, and nested deploy
+- [ ] `CONCEPTS.md` has an `OVRFLOReserve` entry, three labeled exits, and denomination vocabulary
 - [ ] `docs/agents/onboarding.md` §2/§4/§5/§7 and `AGENTS.md` overview plus solvency fact match KD13
-- [ ] Critical patterns fee denomination and sweep-reserve reasoning move to the border
+- [ ] Critical patterns fee denomination and sweep-reserve reasoning move to the reserve
 - [ ] `VAULT_SECURITY.md` records two burn authorities
 - [ ] `PRODUCT.md` Operating Context: lender-supply and borrower-proceeds references are ovrfloToken; `underlying` stays column identity
-- [ ] R-02 rejected-finding pointer follows the sweep to the border
+- [ ] R-02 rejected-finding pointer follows the sweep to the reserve
 - [ ] `x-ray/` refresh matches the post-CS1 contracts
 - [ ] Grep for PT flash as a live vault facility returns hits only in historical plans, audits, or this ticket's "removed" wording
 

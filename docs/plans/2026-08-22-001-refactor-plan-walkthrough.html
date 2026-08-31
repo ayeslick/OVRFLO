@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OVRFLO Refactor — Plan Walkthrough</title>
+<style>
+  :root {
+    --paper: #FDFDFC;
+    --ink: #0A0A0A;
+    --dim: #6B6B6B;
+    --halftone: #EFEFEC;
+    --gold: #E8930C;
+    --gold-ink: #FFB84D;
+    --rule-hairline: #CCCCCC;
+    --rule-faint: #DDDDDD;
+    --grotesk: "Schibsted Grotesk", ui-sans-serif, system-ui, sans-serif;
+    --martian: "Martian Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--paper); color: var(--ink); font-family: var(--grotesk); font-size: 15px; line-height: 1.45; letter-spacing: -0.02em; }
+  .shell { max-width: min(1200px, 100%); margin: 0 auto; min-height: 100vh; border-left: 1px solid var(--ink); border-right: 1px solid var(--ink); padding: 32px 22px; }
+  @media (max-width: 800px) { .shell { padding: 12px; } }
+
+  .kicker { font-family: var(--martian); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--dim); }
+  h1 { font-family: var(--grotesk); font-size: 28px; font-weight: 800; line-height: 1.15; letter-spacing: -0.02em; margin: 8px 0 8px; }
+  .lede { max-width: 46em; color: var(--dim); }
+  h2 { font-size: 20px; font-weight: 900; line-height: 1.2; letter-spacing: -0.02em; margin-top: 32px; }
+  h2::before { content: attr(data-num) "  "; font-family: var(--martian); font-size: 11px; letter-spacing: 0.08em; color: var(--dim); font-weight: 400; }
+  .sub { color: var(--dim); margin-bottom: 16px; max-width: 60em; }
+  code { font-family: var(--martian); font-size: 11px; letter-spacing: 0; background: var(--halftone); padding: 1px 4px; }
+
+  header { border-bottom: 2px solid var(--ink); padding-bottom: 22px; }
+  .headmeta { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 12px; }
+  .headmeta span { font-family: var(--martian); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; border: 1.5px solid var(--ink); padding: 4px 8px; }
+  .headmeta .live { background: var(--ink); color: var(--gold-ink); }
+
+  .band-label { display: flex; justify-content: space-between; margin: 8px 0 4px; }
+  .band { display: flex; height: 16px; border: 1px solid var(--ink); }
+  .band i { display: block; height: 100%; }
+  .b-cs0 { width: 8%; background: #8a8a8a; }
+  .b-cs1 { width: 44%; background: var(--gold); }
+  .b-cs2 { width: 16%; background: #8a8a8a; }
+  .b-cs3 { width: 16%; background: #8a8a8a; }
+  .b-cs4 { width: 16%; background: var(--ink); }
+
+  .csrow { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-top: 12px; }
+  @media (max-width: 800px) { .csrow { grid-template-columns: 1fr; } }
+  .cs { border: 1.5px solid var(--ink); padding: 12px; }
+  .cs .tag { font-family: var(--martian); font-size: 11px; font-weight: 700; letter-spacing: 0.08em; }
+  .cs .nm { font-weight: 700; margin: 4px 0; }
+  .cs .ds { color: var(--dim); }
+  .cs.focus { background: var(--ink); color: var(--paper); }
+  .cs.focus .tag { color: var(--gold-ink); }
+  .cs.focus .ds { color: var(--halftone); }
+
+  table { width: 100%; border-collapse: collapse; border: 1.5px solid var(--ink); margin-top: 16px; }
+  th { font-family: var(--martian); font-size: 11px; font-weight: 400; letter-spacing: 0.08em; text-transform: uppercase; text-align: left; color: var(--dim); padding: 9px 16px; border-bottom: 1.5px solid var(--ink); }
+  td { padding: 14px 16px; border-bottom: 1px solid var(--rule-hairline); vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  td.u { font-family: var(--martian); font-size: 11px; font-weight: 700; white-space: nowrap; }
+  td small { display: block; color: var(--dim); margin-top: 4px; }
+
+  .compare { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; margin-top: 16px; }
+  @media (max-width: 900px) { .compare { grid-template-columns: 1fr; } }
+  .arch { border: 1.5px solid var(--ink); padding: 16px; }
+  .arch.after { outline: 2px solid var(--gold); outline-offset: 2px; }
+  .arch h3 { font-family: var(--martian); font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid var(--rule-hairline); }
+  .node { border: 1.5px solid var(--ink); padding: 9px 12px; background: var(--paper); }
+  .node .t { font-family: var(--martian); font-size: 11px; font-weight: 700; letter-spacing: 0.05em; }
+  .node .d { color: var(--dim); margin-top: 2px; }
+  .node.ghost { border-color: var(--rule-hairline); }
+  .node.inverted { background: var(--ink); color: var(--paper); }
+  .node.inverted .d { color: var(--halftone); }
+  .arrow { font-family: var(--martian); font-size: 11px; letter-spacing: 0.05em; color: var(--dim); padding: 8px 0 8px 12px; }
+  .foot { margin-top: 12px; padding-top: 8px; border-top: 1px dashed #999999; color: var(--dim); }
+
+  .flows { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; margin-top: 16px; }
+  @media (max-width: 900px) { .flows { grid-template-columns: 1fr; } }
+  .flow { border: 1.5px solid var(--ink); }
+  .flow .bar { background: var(--ink); color: var(--gold-ink); font-family: var(--martian); font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; padding: 4px 12px; display: flex; justify-content: space-between; }
+  .flow .bar span { color: var(--halftone); font-weight: 400; }
+  .flow ol { list-style: none; counter-reset: s; padding: 12px 16px; }
+  .flow li { position: relative; padding-left: 30px; margin-bottom: 8px; }
+  .flow li::before { content: counter(s, decimal-leading-zero); counter-increment: s; position: absolute; left: 0; top: 2px; font-family: var(--martian); font-size: 11px; color: var(--dim); }
+  .netline { border-top: 1px solid var(--rule-faint); padding: 9px 16px 12px; color: var(--dim); }
+
+  .kd-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 16px; }
+  @media (max-width: 900px) { .kd-grid { grid-template-columns: 1fr; } }
+  .kd { border: 1px solid var(--rule-hairline); border-left: 2px solid var(--ink); padding: 10px 12px; }
+  .kd .id { font-family: var(--martian); font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+  .kd .txt { margin-top: 4px; }
+  .kd .why { margin-top: 6px; color: var(--dim); }
+
+  .gates { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 16px; }
+  @media (max-width: 900px) { .gates { grid-template-columns: 1fr; } }
+  .gate { border: 1.5px solid var(--ink); padding: 10px 12px; }
+  .gate b { display: block; font-family: var(--martian); font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 4px; }
+  .gate span { color: var(--dim); }
+
+  footer { margin-top: 32px; border-top: 1px solid var(--rule-hairline); padding-top: 12px; font-family: var(--martian); font-size: 11px; letter-spacing: 0.05em; color: var(--dim); }
+</style>
+</head>
+<body>
+<div class="shell">
+
+<header>
+  <div class="kicker">Plan walkthrough · discussion artifact</div>
+  <h1>Denomination switch &amp; wrap-reserve module</h1>
+  <p class="lede">This page summarizes what <code>2026-08-22-001-refactor-denomination-switch-border-column-plan.md</code> instructs and describes how OVRFLO works once CS1 lands. The plan remains proposed because the ignorance-lens sweep has yet to run, and implementation work has not started.</p>
+  <div class="headmeta">
+    <span class="live">CS1 focus</span>
+    <span>Five changesets</span>
+    <span>Nine units</span>
+    <span>2026-08-22</span>
+  </div>
+</header>
+
+<h2 data-num="01">What the plan does</h2>
+<p class="sub">The plan stages one coherent core change so that every commit keeps the build green and pure removals land separately from structural moves.</p>
+
+<div class="band-label"><span class="kicker">Changeset pipeline</span><span class="kicker">the gold segment marks CS1, the current focus</span></div>
+<div class="band" role="img" aria-label="Pipeline band showing five changesets, with the large gold segment representing CS1">
+  <i class="b-cs0"></i><i class="b-cs1"></i><i class="b-cs2"></i><i class="b-cs3"></i><i class="b-cs4"></i>
+</div>
+
+<div class="csrow">
+  <div class="cs"><div class="tag">CS0</div><div class="nm">README fixes</div><div class="ds">Ships two documentation lines immediately.</div></div>
+  <div class="cs focus"><div class="tag">CS1</div><div class="nm">Core refactor</div><div class="ds">Fee denomination, OVRFLOReserve, minters, Permit, registration, replaceLending, router hook, flash deletion.</div></div>
+  <div class="cs"><div class="tag">CS2</div><div class="nm">Flash mint</div><div class="ds">Adds ERC-3156 inside OVRFLOReserve during the next audit cycle.</div></div>
+  <div class="cs"><div class="tag">CS3</div><div class="nm">Request book</div><div class="ds">Composes the audited borrow(onBehalfOf) path through a thin router.</div></div>
+  <div class="cs"><div class="tag">CS4</div><div class="nm">Frontend UX</div><div class="ds">Delivers facts labels, simple/advanced modes, ladder view, suggestions.</div></div>
+</div>
+
+<table>
+  <tr><th>Unit</th><th>What lands</th><th>Why it is safe</th></tr>
+  <tr><td class="u">U1</td><td>Deletes PT flash loans entirely: vault block, factory forwarders, interface, tests across six suites.</td><td>Pure removal as the first commit means later diffs never mix deletion with extraction.<small>flashLoan was the vault's only nonReentrant user, so ReentrancyGuard goes too.</small></td></tr>
+  <tr><td class="u">U2</td><td>Rewrites the token (vault() + reserve() minters, ERC20Permit), adds OVRFLOReserve, rewires the vault constructor chain. One compile unit.</td><td>Audited wrap/unwrap code moves verbatim, and construction fixes every binding by itself.<small>All five storage goldens regenerate through check-storage-layout.sh.</small></td></tr>
+  <tr><td class="u">U3</td><td>Switches the lending asset at three transfer sites, plus router slot and borrow(onBehalfOf).</td><td>Pricing math goes untouched because obligations were already ovrfloToken, and the Borrowed event emits the attributed borrower.<small>If the size canary fails, the hook drops while the asset switch stays.</small></td></tr>
+  <tr><td class="u">U4</td><td>Extends the factory: minter/reserve binding checks, ovrfloToReserve mapping, replaceLending, setLendingRouter forwarder.</td><td>The OvrfloInfo tuple stays frozen, which leaves the cross-repo stream ABI untouched.</td></tr>
+  <tr><td class="u">U5</td><td>Updates the deploy runbook, seed script, deployment artifact; DeploySize gains OVRFLOReserve.</td><td>The runbook keeps its shape (deploy vault, then register), and the design contains no nonce math at all.</td></tr>
+  <tr><td class="u">U6</td><td>Re-derives invariants across vault+OVRFLOReserve; regenerates the fizz harness.</td><td>Solvency restated in the same form it holds today: supply &le; PT(vault) + underlying(OVRFLOReserve).</td></tr>
+  <tr><td class="u">U7</td><td>Syncs the web app: assets flip, wrap/unwrap retarget to OVRFLOReserve, deposit drops an approval, borrow adds onBehalfOf.</td><td>The work is mechanical because action definitions localize every change; the intent capsule lands before any edit.</td></tr>
+  <tr><td class="u">U8</td><td>Syncs docs: README, CONCEPTS, onboarding, critical patterns, VAULT_SECURITY.</td><td>Stale authority gets rewritten inside the same change set that falsifies it.</td></tr>
+</table>
+
+<h2 data-num="02">Protocol today vs after CS1</h2>
+<p class="sub">The column keeps its shape and gains one member. Underlying appears in exactly one place after the switch, while every other contract speaks ovrfloToken throughout.</p>
+
+<div class="compare">
+  <div class="arch">
+    <h3>Today</h3>
+    <div class="node"><div class="t">User</div><div class="d">Needs two approvals to deposit: PT plus an underlying fee payment.</div></div>
+    <div class="arrow">approve + deposit</div>
+    <div class="node"><div class="t">OVRFLO.sol (vault)</div><div class="d">Handles deposit, claim, wrap / unwrap, wrap reserve, PT flash loan, sweeps. Constructs its token internally.</div></div>
+    <div class="arrow">token relationship</div>
+    <div class="node ghost"><div class="t">OVRFLOToken</div><div class="d">Carries a single owner set to the vault, with no permit support.</div></div>
+    <div class="arrow">escrows underlying</div>
+    <div class="node"><div class="t">OVRFLOLending</div><div class="d">Lenders post wstETH, borrowers get paid wstETH, and debts sit in ovrfloToken, so two assets share one book.</div></div>
+    <div class="arrow">verified by</div>
+    <div class="node"><div class="t">OVRFLOFactory</div><div class="d">Registers children and forwards admin, but a flawed market bricks its column permanently.</div></div>
+    <div class="foot">In this shape the machine carries two assets internally, charges a second approval per deposit, and offers no repair path once a registered market turns out to be flawed.</div>
+  </div>
+
+  <div class="arch after">
+    <h3>After CS1</h3>
+    <div class="node"><div class="t">User</div><div class="d">Approves once (PT), then covers lend and repay with permit signatures.</div></div>
+    <div class="arrow">deposit &middot; wrap</div>
+    <div class="node inverted"><div class="t">OVRFLO + OVRFLOReserve (new)</div><div class="d">Vault handles deposit, claim, and fee-from-mint. OVRFLOReserve takes wrap, unwrap, wrappedUnderlying, and sweep. Peg asserted on chain. Flash mint slots in at CS2.</div></div>
+    <div class="arrow">vault creates OVRFLOReserve, OVRFLOReserve creates token</div>
+    <div class="node ghost"><div class="t">OVRFLOToken</div><div class="d">Exposes immutable vault() + reserve() authorities for mint and burn, plus ERC20Permit.</div></div>
+    <div class="arrow">single asset end to end</div>
+    <div class="node"><div class="t">OVRFLOLending</div><div class="d">Lenders post ovrfloToken and borrowers receive ovrfloToken, with borrow(onBehalfOf) serving routers.</div></div>
+    <div class="arrow">verified by</div>
+    <div class="node"><div class="t">OVRFLOFactory</div><div class="d">Checks minter + reserve bindings, gains replaceLending and setLendingRouter, and keeps old markets known while loans wind down.</div></div>
+    <div class="foot">After the switch, underlying appears only at OVRFLOReserve, the deposit flow needs one approval, and replaceLending supplies the repair path while old-market loans wind down through permissionless calls.</div>
+  </div>
+</div>
+
+<h2 data-num="03">User flows after landing</h2>
+<p class="sub">Every number in these flows is exact at origination, and the CS4 facts label will render them verbatim.</p>
+
+<div class="flows">
+  <div class="flow">
+    <div class="bar">Deposit PT <span>vault &middot; one approval</span></div>
+    <ol>
+      <li>You approve PT once, and the fee comes out of the mint so there is nothing else to approve.</li>
+      <li>The vault pulls PT, reads the TWAP rate, and splits immediate versus streamed portions.</li>
+      <li>It mints toUser minus fee to you, sends the fee to treasury, and streams the discount.</li>
+      <li>You receive ovrfloTokens plus an OVRFLO Stream NFT, and the deposit assert runs first.</li>
+    </ol>
+    <div class="netline">Approval count falls from two to one because fee payment now travels inside the mint itself.</div>
+  </div>
+
+  <div class="flow">
+    <div class="bar">Wrap underlying <span>OVRFLOReserve &middot; permissionless &middot; no fee</span></div>
+    <ol>
+      <li>You send underlying to OVRFLOReserve, which mints 1:1 forever with no tin fee, no tout fee, and no ceiling.</li>
+      <li>wrappedUnderlying accounting moves over from the audited code unchanged, byte for byte.</li>
+      <li>An end-of-call assert pins wrappedUnderlying at or under balance, so the peg gets checked rather than assumed.</li>
+      <li>Three labeled exits exist: unwrap is a window, DEX works anytime, claim is guaranteed.</li>
+    </ol>
+    <div class="netline">Because OVRFLOReserve asserts the peg on every call, other contracts stop needing to assume it.</div>
+  </div>
+
+  <div class="flow">
+    <div class="bar">Lend <span>lending &middot; ovrfloToken</span></div>
+    <ol>
+      <li>You get ovrfloTokens by deposit, wrap, or DEX, then sign a permit and skip the approve transaction.</li>
+      <li>You supply at an APR tick; resting liquidity withdraws anytime while filled liquidity locks to maturity.</li>
+      <li>Fills pay you in ovrfloToken, claims floor pro rata, and rounding dust strands in proceeds by design.</li>
+      <li>Collect-and-relend compounds your position without ever leaving the asset.</li>
+    </ol>
+    <div class="netline">Lenders post ovrfloToken and borrowers draw ovrfloToken, which makes this a single-asset book.</div>
+  </div>
+
+  <div class="flow">
+    <div class="bar">Borrow <span>lending &middot; nonrecourse</span></div>
+    <ol>
+      <li>You pledge a stream, and the fill crosses cheapest ticks blind with gas flat as positions accumulate.</li>
+      <li>Proceeds arrive in ovrfloToken net of fee, and the obligation ceils toward the lender.</li>
+      <li>Through the router path (CS3), the book escrows your stream and calls borrow with onBehalfOf set to you.</li>
+      <li>Loan, proceeds, and stream return are all yours because the router holds nothing after execute.</li>
+    </ol>
+    <div class="netline">Once CS3 ships, unmet demand rests visibly on chain, and attribution keeps streams off middlemen entirely.</div>
+  </div>
+</div>
+
+<h2 data-num="04">Decisions that shape it</h2>
+<p class="sub">Each decision below carries the alternative it rejected along with the reason that alternative lost.</p>
+
+<div class="kd-grid">
+  <div class="kd"><div class="id">KD5 deploy chain</div><div class="txt">Vault constructs OVRFLOReserve; OVRFLOReserve constructs the token. One transaction, zero prediction.</div><div class="why">CREATE2 offers no computable fixed point here, nonce-precomputed CREATE stays silent until registration reverts, and both lose to nested construction.</div></div>
+  <div class="kd"><div class="id">KD4 minters</div><div class="txt">Two immutable authorities named vault() and reserve(), both mint and burn, plus ERC20Permit.</div><div class="why">Numbered slots such as minter0/minter1 buy nothing because the handoff forbids any third minter outright.</div></div>
+  <div class="kd"><div class="id">KD10 borrower identity</div><div class="txt">Factory-set router slot. borrow attributes onBehalfOf. Events emit the human, never the router.</div><div class="why">Per-user operator maps guard a harm that cannot occur, settle tables strand NFTs on the router, and both cost more bytes than the slot.</div></div>
+  <div class="kd"><div class="id">KD7 repairability</div><div class="txt">replaceLending repoints a column. The old market stays known while its loans wind down.</div><div class="why">Unregister and pause switches stay out of scope, and vault-level replace remains excluded because pattern #9 protects token fungibility.</div></div>
+  <div class="kd"><div class="id">KD2 fees</div><div class="txt">Fee deducted from the mint. Event, slippage guard, and preview all report net.</div><div class="why">A gross-bound slippage check lost because users must bound the amount they actually receive.</div></div>
+  <div class="kd"><div class="id">KD8 frei-pi</div><div class="txt">Peg asserts on wrap and unwrap. Deposit assert on the vault. Borrow skips; structure already enforces it.</div><div class="why">The roughly 2,600-gas-per-call cost is accepted in exchange for turning the peg into an on-chain fact.</div></div>
+  <div class="kd"><div class="id">KD11 generation</div><div class="txt">Fresh generation including a new lockup from the sibling repo. Devnets and testnets reseed.</div><div class="why">Constructor-level wiring rules out in-place migration entirely, so mainnet launch stays blocked until CS1 completes.</div></div>
+  <div class="kd"><div class="id">KD6 registry abi</div><div class="txt">OvrfloInfo tuple frozen. OVRFLOReserve lives beside it in ovrfloToReserve. Registration keeps one argument.</div><div class="why">The off-repo stream mint gate reads that tuple positionally, which is why it must not grow.</div></div>
+</div>
+
+<h2 data-num="05">How we know it worked</h2>
+<div class="gates">
+  <div class="gate"><b>Build + tests</b><span>forge build then forge test run green, invariant campaigns hold at 500 runs by depth 40, and the fizz harness regenerates cleanly.</span></div>
+  <div class="gate"><b>Sizes</b><span>DeploySize gates all five deployables; if the lending canary fails, the router hook drops with a logged reason while the canary itself never moves.</span></div>
+  <div class="gate"><b>Storage</b><span>The dual-pipeline layout check runs green, with all five goldens committed alongside the units that changed them.</span></div>
+  <div class="gate"><b>Seed smoke</b><span>The local fork deploys the vault (which creates OVRFLOReserve and token), registers the column, and serves the E2E suite.</span></div>
+  <div class="gate"><b>Web</b><span>Unit and Playwright/Gherkin suites run green against the regenerated ABIs.</span></div>
+  <div class="gate"><b>Blast radius</b><span>The final diff-stat is compared against the per-unit prediction before anyone calls CS1 done.</span></div>
+</div>
+
+<footer>SOURCE docs/plans/2026-08-22-001-refactor-denomination-switch-border-column-plan.md &middot; STATUS proposed, with the ignorance-lens sweep still outstanding &middot; This page summarizes the plan for discussion purposes</footer>
+
+</div>
+</body>
+</html>

@@ -223,7 +223,7 @@ Default may summarize an internal action graph as one user outcome. It must stil
 
 ### Exits
 
-PT claim and unwrap are separate exits. PT claim requires maturity and sufficient PT backing. Unwrap is available whenever the border reserve and the wallet's ovrfloToken balance permit one-to-one redemption. Never describe unwrap as maturity-only.
+PT claim and unwrap are separate exits. PT claim requires maturity and sufficient PT backing. Unwrap is available whenever `OVRFLOReserve` and the wallet's ovrfloToken balance permit one-to-one redemption. Never describe unwrap as maturity-only.
 
 ## Do's and Don'ts
 
