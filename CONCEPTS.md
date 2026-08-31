@@ -76,6 +76,14 @@ The tracked amount of underlying asset that backs the unwrap path.
 
 Direct token transfers or donations to the vault do not increase the wrap reserve. Excess underlying above the tracked reserve can be recovered without reducing unwrap capacity.
 
+### Flash mint
+
+An atomic ERC-3156 mint of ovrfloToken from `OVRFLOReserve`, repaid in the same transaction. The economic cap is a factory-set per-call `flashMintMax`. Wrap and unwrap stay callable in the callback. Net `totalSupply` does not change.
+
+### Request book
+
+A thin router that escrows an OVRFLO Stream until lending depth can fill a borrow for the human owner. Core `borrow` uses `onBehalfOf`. The book holds no loan-to-borrower table.
+
 ### OVRFLO Stream
 
 A per-deposit linear vesting stream used by OVRFLO to deliver the discount between a principal token's current value and its face value over time. OVRFLO mints the non-discounted portion to the depositor immediately as ovrfloToken and streams only the remaining discount, so a stream's face value is that discount — not the deposited principal token amount, which can be far larger.

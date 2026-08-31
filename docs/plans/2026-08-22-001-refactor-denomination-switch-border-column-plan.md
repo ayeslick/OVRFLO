@@ -6,7 +6,7 @@ topic: denomination-border-column
 artifact_contract: ce-unified-plan/v1
 artifact_readiness: requirements-only
 cs1_readiness: implementation-ready — swept 2026-08-24
-build_readiness: not-build-ready for CS4-CS7 (amended scope); CS0-CS3 implementation-ready — CS1 swept 2026-08-24, amended-scope lenses complete 2026-08-31
+build_readiness: not-build-ready for CS4-CS7 visual/tooling gates (CS6/CS7); CS0-CS3 and CS4 Hosted Convert plus execution USD are implementation-ready from this file — CS1 swept 2026-08-24, CS2/CS3/USD/hosted pinned 2026-08-31
 product_contract_source: newest four user-provided frontend reference boards, then the 2026-08-22 implementation handoff and earlier plan
 execution: code
 deepened: 2026-08-24
@@ -24,11 +24,11 @@ sweep_folded: 2026-08-31 — the amended-scope sweep (frontend decisions, runtim
 
 **Execution profile.** Solidity/Foundry, shell seed tooling, and a browser-only statically exported Next.js frontend. No app server is introduced. CS1 verification keeps the clean `forge build` then `forge test` order. CS4-CS7 add web unit, E2E, runtime-read, performance-contract, and tooling parity gates without mixing those additions into CS1.
 
-**Stop conditions.** Stop and surface if: (a) any live mainnet deployment must be preserved in place (KD11 assumes fresh-generation deployment); (b) the OVRFLO-Streams fork cannot be redeployed against a new factory because its mint gate reads the factory registry positionally at `src/OVRFLOFactory.sol:87-91`; (c) the two-minter registration checks cannot be expressed without touching the 3-field `OvrfloInfo` tuple; (d) the lending asset switch touches `_fillTick` or `StreamPricing` math; (e) `test/DeploySize.t.sol` fails after the vault constructor embeds reserve and token creation code; (f) the lending runtime canary fails after the asset switch plus router hook, in which case drop the hook and surface rather than weakening the canary; (g) the reviewed Pendle Hosted Convert browser contract cannot be proven compatible with static export, CORS, CSP, and a reviewed router allowlist; (h) no reviewed authority for execution-grade USD bounds is selected; (i) `Your OVRFLO` cannot remain the single `Default` portfolio label; (j) a Fixed Return supply position cannot be classified and hydrated authoritatively; (k) the bounded portfolio scan cannot distinguish incomplete from empty; (l) CS3 is unavailable for no-liquidity request states; (m) safe recovery would require exposing hidden protocol mechanics in `Default`; (n) shared visual scoping would create separate `Default` and `Advanced` design systems; (o) CS6 lacks publication or an explicitly approved full-commit Git dependency plus benchmark evidence; (p) CS7 lacks reviewed exact pins, supported configuration paths, common scope, or the parity-ledger path; or (q) the amended-scope completeness critic and final documentation review have not completed.
+**Stop conditions.** Stop and surface if: (a) any live mainnet deployment must be preserved in place (KD11 assumes fresh-generation deployment); (b) the OVRFLO-Streams fork cannot be redeployed against a new factory because its mint gate reads the factory registry positionally at `src/OVRFLOFactory.sol:87-91`; (c) the two-minter registration checks cannot be expressed without touching the 3-field `OvrfloInfo` tuple; (d) the lending asset switch touches `_fillTick` or `StreamPricing` math; (e) `test/DeploySize.t.sol` fails after the vault constructor embeds reserve and token creation code; (f) the lending runtime canary fails after the asset switch plus router hook, in which case drop the hook and surface rather than weakening the canary; (g) Hosted Convert CORS, CSP, static export, or Router V4 allowlist checks fail at implementation; (h) a USD submit uses a missing recipe or another column's quote; (i) `Your OVRFLO` cannot remain the single `Default` portfolio label; (j) a Fixed Return supply position cannot be classified and hydrated authoritatively; (k) the bounded portfolio scan cannot distinguish incomplete from empty; (l) CS3 is unavailable for no-liquidity request states; (m) safe recovery would require exposing hidden protocol mechanics in `Default`; (n) shared visual scoping would create separate `Default` and `Advanced` design systems; (o) CS6 lacks publication or an explicitly approved full-commit Git dependency plus benchmark evidence; or (p) CS7 lacks reviewed exact pins, supported configuration paths, common scope, or the parity-ledger path. The amended-scope completeness critic and the final documentation review completed 2026-08-31.
 
-**Open blockers.** CS1 has no structural blocker. CS2 calibration numbers remain open by design. CS4 is blocked on selecting and reviewing the exact execution-grade USD authority before any USD-denominated request may become executable. Hosted Pendle Convert is blocked until browser compatibility, CSP, CORS, response decoding, and router allowlist discovery are proven. CS4 no-liquidity request states depend on CS3. CS6 stops until `eth-compress` 0.5.0 is published, unless reviewers explicitly approve the full commit-pinned Git dependency and verify its built browser artifacts. CS7 stops until exact supported pins, configuration paths, a common include/exclude scope, and the checked-in A–E parity-ledger path are reviewed. The amended-scope completeness critic and the final documentation review have both run and their findings are folded (see the 2026-08-31 amended-scope sweep record). The unified plan remains requirements-only and is not executable as a whole.
+**Open blockers.** CS1, CS2, CS3, and ticket 18 have no structural blocker. CS2 and CS3 implement after CS1 in this plan. Hosted Convert and execution-grade USD are pinned in KD17 (2026-08-31). CS4 no-liquidity request states depend on CS3 in this plan. CS6 stops until `eth-compress` 0.5.0 is published, unless reviewers explicitly approve the full commit-pinned Git dependency and verify its built browser artifacts. CS7 stops until exact supported pins, configuration paths, a common include/exclude scope, and the checked-in A–E parity-ledger path are reviewed. The amended-scope completeness critic and the final documentation review have both run and their findings are folded (see the 2026-08-31 amended-scope sweep record). The unified plan remains requirements-only for CS6/CS7 tooling gates; CS0-CS3 and CS4 Hosted Convert plus execution USD are executable from this file.
 
-**Readiness (folded 2026-08-31).** CS0-CS3 are implementation-ready now: CS1 was swept 2026-08-24 and CS0 is a two-line fix, so an implementer can start CS1 immediately from this plan alone, without any attachment, PDF, or image board. CS4's only pre-implementation planning blockers are the execution-grade USD authority decision and the hosted Pendle Convert browser-contract review, both owned by CS4-U4 planning. CS5's first gate is the viem-dlc policy source (AS10). CS6 waits on eth-compress publication or an approved commit-pinned Git dependency. CS7 waits on exact pins, config paths, scope, and the parity-ledger path. The full amended scope stays not-build-ready for CS4-CS7: all planned amended-scope lenses — the frontend-decision, runtime/trust, read/tooling, design-accuracy, and completeness-critic lenses, plus the error-boundary recovery lens and the final documentation review — have run and their material findings are folded; no plan-text decision remains underdetermined.
+**Readiness (folded 2026-08-31, CS2/CS3/hosted/USD folded 2026-08-31).** CS0-CS3 are implementation-ready from this file: CS1 was swept 2026-08-24; CS2 and CS3 are later units in this plan (session-settled: user-directed — chosen over separate plans: introduced work must be implementable here). Ticket 18 is ready-for-agent after CS4 recovery (ticket 17). An implementer starts CS1 immediately, then CS2 and CS3. CS5's first gate is the viem-dlc policy source (AS10). CS6 waits on eth-compress publication or an approved commit-pinned Git dependency. CS7 waits on exact pins, config paths, scope, and the parity-ledger path. The full amended scope stays not-build-ready for CS6/CS7 tooling gates.
 
 ---
 
@@ -198,7 +198,7 @@ The implementation-discipline FREI-PI gate applies. Only the protocol-invariant 
 
 - **`OVRFLOReserve` `wrap` and `unwrap`:** end-of-function `wrappedUnderlying <= IERC20(underlying).balanceOf(address(this))`. This is the peg as a checked fact.
 - **Vault `deposit`:** end-of-function `marketTotalDeposited[market] <= IERC20(info.ptToken).balanceOf(address(this))`. `toUser + toStream == ptAmount` holds by construction in `_computeSplit` (`src/OVRFLO.sol:418-423`) — do not restate it.
-- **Flash mint (CS2):** `totalSupply` after equals `totalSupply` before. Non-negotiable in that later plan.
+- **Flash mint (CS2):** `totalSupply` after equals `totalSupply` before. Non-negotiable in CS2-U1.
 - **Lending `borrow`:** skip. `obligation <= remaining` is already enforced by the gross-price cap (`src/StreamPricing.sol:52-59`). The fuzz conservation property covers token flow.
 
 Cost accounting: each retained assert is one SLOAD plus one cold `balanceOf` (~2,600 gas) on every wrap, unwrap, or deposit. Accepted by design — the peg is checked, not assumed. Do not relitigate per call.
@@ -261,18 +261,35 @@ The handoff's §7 UX is replaced and extended by KD16-KD20 and CS4-CS7. There is
 - **Lending escrow:** `invariant_EscrowSolvency` (`test/OVRFLOLendingInvariant.t.sol:1471`) flips asset: `ovrfloToken.balanceOf(lending)` vs unfilled + proceeds. `invariant_MoneyRecipients` (`:1693`) asserts borrower and treasury payouts in ovrfloToken. Fizz GL-04 (`property_underlying_flow_ghosts`) re-expresses over ovrfloToken flow through the lending market.
 - **Vault post-CS1:** `invariant_PtBalanceGteDeposited` (`test/OVRFLOInvariant.t.sol:305`) survives; the underlying-reserve invariants (`:296`, `:314`) leave the vault suite.
 
-### KD14 — Flash mint (CS2) and borrow request book (CS3) are separately planned follow-ups
+### KD14 — Flash mint (CS2) and borrow request book (CS3) are later units in this plan
 
-CS2 (next audit cycle): ERC-3156 `maxFlashLoan`/`flashFee`/`flashLoan` of ovrfloTokens inside `OVRFLOReserve`, fee launching at zero with an owner-governed setter under a hardcoded **single-digit-bps** ceiling (not the 10_000 pattern), owner-set supply cap under a hardcoded ceiling, cap check + repay-and-burn check + per-function reentrancy guard + KD8's supply-conservation assert, **no** vault-wide lock. Calibration numbers are open items at CS2 planning.
+CS2 and CS3 live in this file after CS1. `(session-settled: user-directed — chosen over separate CS2/CS3 plans: if this plan introduces the work, this plan implements it.)` Do not land CS2 or CS3 inside CS1 commits.
 
-CS3 (after CS1 stabilizes): the borrow request book as a thin router. Mechanics settled here so CS3's plan inherits them:
+CS2 (after CS1 U2 and U4): ERC-3156 `maxFlashLoan`/`flashFee`/`flashLoan` of ovrfloToken inside `OVRFLOReserve`. Use OpenZeppelin `IERC3156FlashLender` / `IERC3156FlashBorrower` under `lib/openzeppelin-contracts/contracts/interfaces/`. `(session-settled: user-directed — chosen over DssFlash `cap - totalSupply()` as the economic bound: per-call `amount <= flashMintMax`.)` Constants:
+
+- `FLASH_MINT_MAX_CEILING` is `1_000_000 * 10**18` (one million whole ovrfloToken).
+- `flashMintMax` launches at `0` (mint disabled until the Safe raises it through the factory timelock).
+- `FLASH_FEE_MAX_BPS = 9`.
+- `flashFeeBps` launches at `0`.
+- `maxFlashLoan(token)` returns `0` when `token` is not `ovrfloToken`, when a flash is entered, or when `flashMintMax` is `0`. Otherwise it returns `min(flashMintMax, type(uint256).max - IERC20(ovrfloToken).totalSupply())`. The `type(uint256).max - totalSupply()` term is an overflow guard only.
+- `flashLoan` reverts when `amount` is `0` or `amount > maxFlashLoan(token)`.
+- Fee when nonzero: pull `amount + fee` from the receiver, burn `amount`, send `fee` to the column treasury from those already-pulled tokens. KD8 still holds: `totalSupply` after equals `totalSupply` before.
+- Flash-only lock on the reserve. Wrap, unwrap, and vault `deposit` stay ungarded and callable in the callback. No vault-wide lock. No pause flag: `flashMintMax == 0` disables mint.
+- Factory forwarders: `setReserveFlashMintMax(ovrflo, max)` and `setReserveFlashFeeBps(ovrflo, bps)`, `onlyOwner`, after `_requireKnownOvrflo`. `setReserveFlashMintMax` reverts above the ceiling. `setReserveFlashFeeBps` reverts above 9.
+
+CS3 (after CS1 U3 and U4): the borrow request book as a thin router. Contract name `OVRFLORequestBook` at `src/OVRFLORequestBook.sol`. Mechanics:
 
 - Escrow: borrower posts stream + terms (`market`, `maxAprBps` — ceiling semantics; `targetBorrow`; `minAcceptable`) via plain `transferFrom` (never `safeTransferFrom` — mirroring the borrow escrow rationale at `src/OVRFLOLending.sol:486-488`). Escrowed streams are never drawn from.
 - `cancel(requestId)` — borrower-only, callable anytime while the request rests; returns the escrowed stream intact (plain `transferFrom` back). Cancel is the only exit for a resting request, and KD10's router-replace rationale depends on it: after a swap, resting escrow comes home by owner choice instead of waiting for fillable depth (resting escrow returns by owner choice through `cancel`, which never consults the router slot).
 - Post-or-execute: at post time, if acceptable depth exists at or below the ceiling, fill immediately (one call). `execute(requestId)` is permissionless and routes to the *cheapest* tick at or below the ceiling.
 - `execute` calls core `borrow(..., onBehalfOf = human)` from the book (`msg.sender == router`). Proceeds go to the human. The stream returns to the human at close. The book holds nothing after a successful execute except still-resting requests. No `loanId -> borrower` table. No `settle`.
 - Remaining face is read live at fill time; no snapshot. Fees: none in the book; the core's fill-time borrower fee is the only fee, now in ovrfloToken via KD9.
-- Before CS3 ships, the Safe calls `setLendingRouter` on the factory. After the swap (or a zero-set), a retired book loses the on-behalf path — the market attributes its borrow to `msg.sender` (the book itself, since `msg.sender != router`), so proceeds and the returned stream land inside the book's own contracts. The CS3 book therefore gates **every leg that calls core borrow** (post-time immediate fill and `execute`) on `lending.router() == address(this)`; borrowers exit resting requests through `cancel`, which never consults the slot.
+- Before CS3 ships, seed and production both call `setLendingRouter` on the factory after the book is deployed. After the swap (or a zero-set), a retired book loses the on-behalf path — the market attributes its borrow to `msg.sender` (the book itself, since `msg.sender != router`), so proceeds and the returned stream land inside the book's own contracts. The CS3 book therefore gates **every leg that calls core borrow** (post-time immediate fill and `execute`) on `lending.router() == address(this)`; borrowers exit resting requests through `cancel`, which never consults the slot.
+- Events (indexed topics as written):
+  - `RequestPosted(uint256 indexed requestId, address indexed borrower, address indexed market, uint256 streamId, uint16 maxAprBps, uint256 targetBorrow, uint256 minAcceptable)`
+  - `RequestFilled(uint256 indexed requestId, uint256 indexed loanId, uint256 actualBorrow)` — fires on post-time immediate fill and on later `execute`
+  - `RequestCancelled(uint256 indexed requestId, address indexed borrower)`
+- The factory does not register the book. `DeploySize` gates `OVRFLORequestBook`. Seed deploys the book, then calls `setLendingRouter`. CS4 must not fake a request before this contract exists.
 
 ### KD15 — README fixes ship immediately (CS0)
 
@@ -370,28 +387,58 @@ The Self-Repaying Loan composition may include deposit followed by immediate bor
 
 CS4 may execute deposit-plus-borrow without CS3 only when immediate borrow is executable before the first wallet prompt. If no-liquidity continuation would be possible only after deposit, the flow depends on canonical CS3 post/execute/wait/cancel. Without CS3 it blocks before deposit. A borrow-step rebuild loads real routed depth, calls the authoritative stream-eligibility path, and reads current router and request state instead of using placeholders.
 
-Pendle Hosted Convert is a dedicated canonical action and contract kind. `createLiveActionDraft` re-decodes it. It never uses the legacy raw-call compatibility path. Its reviewed hosted origin is included in `web/scripts/build-csp.mjs` and covered by security-packaging tests. Hosted responses remain untrusted input. Before a conversion action reaches the wallet, validate:
+Pendle Hosted Convert is a dedicated canonical action and contract kind. `createLiveActionDraft` re-decodes it. It never uses the legacy raw-call compatibility path. `(session-settled: user-directed — chosen over deferral: the Hosted Convert contract is already known and CORS is proven.)` Pinned browser contract (probed 2026-08-31):
+
+- Origin: `https://api-v2.pendle.finance`. Add that origin to `web/scripts/build-csp.mjs` `connect-src`. Do not add a free-form `NEXT_PUBLIC_PENDLE_API_URL` origin.
+- Call: `POST https://api-v2.pendle.finance/core/v3/sdk/{chainId}/convert` with a JSON body. Do not call deprecated `GET /v2/sdk/{chainId}/convert`.
+- CORS: the Hosted SDK reflects the request `Origin` (including `https://overflow.finance`, `https://www.overflow.finance`, and `http://localhost:3000`) and allows `POST`. No app server.
+- Router allowlist: Ethereum Pendle Router V4 `0x888888888889758F76e7103c6CbF23ABbF58F946` only. `routes[0].tx.to` and every `requiredApprovals` spender must equal that address. Do not derive the allowlist from the response.
+- Response contract: `action`, `inputs`, `requiredApprovals`, `routes[0].tx.{to,data,from,value}`, `routes[0].outputs`, `routes[0].data`. Reject a response that lacks `routes[0]` or that fails the checks below.
+- Local fork: disable Hosted Convert (live quotes drift from the pinned fork). Show a named unavailable state. Do not send the hosted call.
+- `enableAggregator` starts `false`. If Convert rejects the pair, a retry with `enableAggregator=true` is allowed only while `tx.to` stays on the allowlist.
+
+Hosted responses remain untrusted input. Before a conversion action reaches the wallet, validate:
 
 - expected chain;
 - exact input token and output PT derived from the selected position type, source, underlying, and term;
-- router target against a reviewed allowlist;
+- router target against the allowlist above;
 - calldata selector and decoded semantics against the intended conversion;
 - token-native input, output, and slippage bounds;
 - deadline freshness; and
 - immediate wallet-client simulation after final revalidation.
 
-Stop the hosted-conversion work if the reviewed browser contract cannot prove static-export compatibility, CORS and CSP compatibility, the exact response contract, or a maintainable router allowlist discovery process. The owner approves the compatibility proof — static-export compatibility, CORS, CSP inclusion via the build-time CSP generation, response decoding, and the router allowlist — after reviewers verify it; unapproved means no hosted call ships. Do not proxy it through an app server.
+Stop Hosted Convert at implementation if CORS, CSP, static export, or allowlist checks fail. Do not proxy it through an app server.
 
-USD is display-only until execution. USD values never enter canonical actions, calldata, or committed receipts. An execution-grade USD request must resolve immediately before submission into reviewed token-native minimum and maximum bounds from a selected authority. The exact authority is not settled by the attachments. Selecting and reviewing it is a planning blocker. The owner selects the authority; reviewers verify the selection against the resolver requirements below (decimal normalization, freshness, confidence/deviation, rounding, and the token-native bound formulas above). An unresolved selection keeps USD execution paths blocked; display-only USD is unaffected. Do not invent a provider or silently reuse an informational display feed.
+USD is display-only until execution. USD values never enter canonical actions, calldata, or committed receipts. An execution-grade USD request must resolve immediately before submission into reviewed token-native minimum and maximum bounds. `(session-settled: user-directed — chosen over a wstETH-only pin: the protocol has one column per underlying, so USD lookup is per underlying.)`
 
-The separate execution-only resolver must specify decimal normalization, block and timestamp freshness, confidence and deviation policy, and rounding direction. For a USD request integer `usdQ` and a reviewed USD-per-whole-token interval `[priceLowQ, priceHighQ]` normalized to the same USD scale, it returns the enclosing native-unit interval:
+**Lookup key.** Every USD quote, display or execution, is keyed by the column's `underlying` address from factory/`vault.underlying()`. ovrfloToken of that column uses the same recipe (1:1). PT of an approved series uses the parent column's underlying recipe for USD display only. Never apply one underlying's recipe to another. Never default a missing row to wstETH.
+
+**Recipe table.** A checked-in table (config module, not env) maps `underlying → recipe`. Ticket 18 ships the table and the lookup. A later column joins by adding a reviewed row; it does not invent a second vendor.
+
+Allowed kinds:
+
+- `chainlink-usd-times-share-rate` — Chainlink `{base}/USD` × an on-chain share rate on a named contract (wstETH: stETH/USD × `stEthPerToken` on the underlying).
+- `chainlink-usd-direct` — Chainlink `{asset}/USD` when the underlying is the feed asset.
+- `chainlink-eth-usd-times-eth-rate` — Chainlink ETH/USD × an on-chain `{asset}/ETH` rate (for ETH-indexed LSTs).
+
+Each row carries: `underlying`, `kind`, Chainlink aggregator address, `feedDecimals`, `heartbeatSeconds`, optional share-rate `{contract, function}`, explorer verification date and URL, and `maxSourceDeviationBps`. Execution `maxAgeSeconds` equals that row's `heartbeatSeconds` with **no** display grace. Display may keep a 120-second grace. Absolute cutoff remains 86400 seconds. `maxBlockLag` is unused; freshness uses `updatedAt` against chain time. Minimum confidence: complete round (`answeredInRound >= roundId`, `answer > 0`, and share-rate `> 0` when the kind uses one). Protocol tokens stay 18 decimals; if `decimals()` is not 18, USD is unavailable.
+
+**First row (launch).** wstETH `0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0`, kind `chainlink-usd-times-share-rate`, feed `CHAINLINK_STETH_USD` `0xCfE54B5cD566aB89272946F602D76Ea879CAb4a8` (explorer-verified 2026-08-12), `feedDecimals = 8`, `heartbeatSeconds = 3600`, share-rate `stEthPerToken` on the underlying, `maxSourceDeviationBps = 50`.
+
+**Fail closed.** No row, stale round, incomplete round, or `decimals() != 18`: display shows USD unavailable for that column; an execution-grade USD request blocks submission. Token-native amounts still work. Never fall back to the display hook or to another column's quote.
+
+**Hooks.** `useUsdPrice` takes `underlying`. Borrow, supply, watch, and convert pass the selected column's underlying. A mixed `Your OVRFLO` view never sums unlike token units. It may sum USD only across legs whose recipes all resolved; any missing recipe makes that aggregate incomplete.
+
+**Execution resolver.** Separate `web/lib/` module that never imports `useUsdPrice`. Input: `chainId`, `underlying`, `usdQ` (`usd8`). Re-read that row's aggregator (and share-rate if any) immediately before submit. Bypass the display cache. Build `[priceLowQ, priceHighQ]` from the point quote and that row's `maxSourceDeviationBps`:
 
 ```
+priceLowQ  = priceQ * (10000 - maxSourceDeviationBps) / 10000
+priceHighQ = priceQ * (10000 + maxSourceDeviationBps) / 10000
 tokenNativeMin = floor(usdQ * 10**assetDecimals / priceHighQ)
 tokenNativeMax = ceil(usdQ * 10**assetDecimals / priceLowQ)
 ```
 
-The implementation uses integer `mulDiv`-equivalent arithmetic, never JavaScript `Number`. The authority decision must supply `maxBlockLag`, `maxAgeSeconds`, minimum confidence, maximum source deviation, and failure behavior before this resolver is executable. A display-price hook does not satisfy this contract.
+Integer `mulDiv`-equivalent arithmetic only, never JavaScript `Number`. Canonical actions, calldata, and committed receipts contain no USD.
 
 ### KD18 — Pin `@morpho-org/viem-dlc` 0.0.16 as a public-read transport exception
 
@@ -456,6 +503,56 @@ flowchart LR
 ```
 
 `Default` and `Advanced` differ in information architecture, disclosure, and control density. The canonical action and runtime layers own approvals, calls, bounds, simulation, receipts, recovery, and request actions. `Default` translates those mechanics into branded outcomes. Its `Details` observes the user-meaningful result without exposing hidden protocol mechanics or mutating the action.
+
+### Per-underlying USD lookup
+
+```mermaid
+flowchart TD
+    U[Selected column underlying] --> T{Recipe row exists?}
+    T -->|no| X[USD unavailable. Token-native still works]
+    T -->|yes| R[Read that row's Chainlink feed and share rate]
+    R --> F{Fresh complete round?}
+    F -->|no| X
+    F -->|yes| D[Display quote for this column only]
+    D --> E{USD submit?}
+    E -->|no| P[Canonical amount stays token-native]
+    E -->|yes| B[Enclosing tokenNativeMin and tokenNativeMax from this row]
+    B --> P
+```
+
+A second column never reuses the first column's row. Mixed portfolio USD sums only legs whose recipes all resolved.
+
+### Flash mint (CS2)
+
+```mermaid
+sequenceDiagram
+    participant C as Caller
+    participant R as OVRFLOReserve
+    participant T as ovrfloToken
+    participant B as IERC3156 receiver
+    C->>R: flashLoan
+    R->>R: enter flash lock
+    R->>T: mint amount to B
+    R->>B: onFlashLoan
+    B->>R: wrap or unwrap allowed
+    B-->>R: keccak success
+    R->>T: pull amount plus fee
+    R->>T: burn amount
+    R->>R: send fee to treasury
+    R->>R: exit lock and assert supply
+```
+
+### Request book (CS3)
+
+```mermaid
+stateDiagram-v2
+    [*] --> Resting: post without depth
+    [*] --> Filled: post with depth
+    Resting --> Filled: execute while router is this book
+    Resting --> Cancelled: borrower cancel
+    Filled --> [*]
+    Cancelled --> [*]
+```
 
 ### Conditional `Default` flow
 
@@ -543,8 +640,9 @@ Confirmed steps and decoded outputs are immutable recovery evidence in the throw
 ### In scope
 
 - CS0 and CS1 exactly as defined below, with CS1 U7 limited to protocol-correctness synchronization.
-- CS2 and CS3 as separately planned protocol/periphery follow-ups governed by KD14.
+- CS2 and CS3 in this plan after CS1, governed by KD14.
 - CS4's `DESIGN.md`-normative and board-evidenced shared visual foundation, deterministic `Default` / `Advanced` information architecture, portfolio routing, adaptive create flows, canonical composition, recovery, hosted-conversion validation, request states, responsive behavior, accessibility, and executable token-native bounds.
+- CS4 Hosted Convert (pinned origin, POST v3, Router V4 allowlist) and per-underlying USD recipes (KD17).
 - CS4's `Fixed Returns` flow as the `Default` presentation of OVRFLOLending supply: ovrfloToken rests at a selected APR tick, stays withdrawable before match, and gains an exact contractual return/date only after authoritative matched-position reads establish both.
 - CS5's pinned viem-dlc public-read resilience.
 - CS6's evidence-gated eth-compress evaluation and optional adoption.
@@ -552,9 +650,8 @@ Confirmed steps and decoded outputs are immutable recovery evidence in the throw
 
 ### Deferred to follow-up work
 
-- CS2 calibration remains owned by its separate plan and sweep.
-- CS3 contract implementation remains owned by its separate plan and sweep. CS4's request UI may not land ahead of the KD14 contract behavior.
-- Selection of the execution-grade USD authority requires an explicit reviewed decision before CS4's executable USD path can proceed.
+- A new underlying's USD recipe row (explorer verification, heartbeat, kind, share-rate) is added when that column is onboarded. Launch ships the wstETH row only. Token-native flows do not wait on a recipe.
+- CS4's request UI (CS4-U5) may not land ahead of CS3 in this plan. That is sequencing, not a missing plan.
 - eth-compress adoption remains conditional. A documented non-adoption decision is a valid CS6 result.
 
 ### Outside this plan
@@ -589,13 +686,85 @@ Ordered units. Write an intent record before the first code write of each unit. 
 - **U7. Web denomination sync** (KD12): asset flips, reserve retargeting via the new bootstrap discovery leg (KD5 provenance decision — `NEXT_PUBLIC_OVRFLO_RESERVE` is not added), approval-count change, `borrow` `onBehalfOf`, E2E + fixtures. State-touching frontend work: write the scratch intent capsule per `docs/maps/SCHEMAS.md` §4 before the first edit. Do not rewrite destination paths or query keys; that contract is KD16 and CS4.
 - **U8. Docs sync**: `README.md` architecture sections, `CONCEPTS.md` (`OVRFLOReserve` entry, three labeled exits, denomination vocabulary), `docs/agents/onboarding.md` §2/§4/§5/§7, `AGENTS.md` overview and solvency fact, `docs/solutions/patterns/ovrflo-critical-patterns.md` (fee denomination; sweep-reserve reasoning moves to the reserve), `VAULT_SECURITY.md` (two burn authorities), `PRODUCT.md` (Operating Context: lender-supply and borrower-proceeds underlying references become ovrfloToken, while `underlying` stays the column identity asset and the wrap/unwrap reserve semantics are unchanged), R-02 rejected-finding pointer follows the sweep to the reserve, `x-ray/` refresh after implementation. Also: the stale reserve-authority lines in `docs/maps/ui/assets.md` and `docs/maps/state/keys/chain-reads.md` (`chain.wrap-reserve` retargets to the reserve read) — the maps-presence gate forces a companion map update with U7 anyway; name the two files so it is not improvised.
 
-### CS2 — ERC-3156 flash mint in the reserve (KD14, next audit cycle)
+### CS2 — ERC-3156 flash mint in the reserve (KD14)
 
-Separate plan + sweep. Constants calibration is an explicit open item (fee ceiling single-digit bps; supply cap a low multiple of circulating supply and deepest pool depth, timelock-raised).
+CS2 starts after CS1 U2 (reserve exists) and CS1 U4 (factory forwarders exist). Ticket 09 is blocked by 08. Do not mix CS2 into CS1 commits.
+
+#### CS2-U1 — ERC-3156 flash mint of ovrfloToken
+
+**Goal.** `OVRFLOReserve` lends ovrfloToken for one callback under ERC-3156. Supply after the call equals supply before the call. Wrap and unwrap stay callable in the callback.
+
+**Requirements.** KD8 flash-mint FREI-PI, KD14 CS2 constants, signed decision 10 (updated).
+
+**Dependencies.** CS1-U2, CS1-U4.
+
+**Files.** `src/OVRFLOReserve.sol`, `src/OVRFLOFactory.sol`, `test/OVRFLOReserveFlashMint.t.sol`, `test/OVRFLOAttackScenarios.t.sol`, `test/DeploySize.t.sol`, `artifacts/tests/storage-layout/`, `tools/scripts/check-storage-layout.sh`, `web/wagmi.config.ts`, `web/lib/errors.ts`, `CONCEPTS.md`, `docs/agents/onboarding.md`.
+
+**Approach.**
+
+- Implement `IERC3156FlashLender` on `OVRFLOReserve` using the OpenZeppelin interfaces already in `lib/openzeppelin-contracts/contracts/interfaces/`.
+- Keep a flash-only entered flag. Do not inherit `ReentrancyGuard` on wrap or unwrap.
+- `maxFlashLoan`, `flashFee`, `flashLoan`, ceilings, launch zeros, fee pull/burn/treasury, and factory `setReserveFlashMintMax` / `setReserveFlashFeeBps` follow KD14 exactly.
+- Callback success value is the ERC-3156 keccak of `onFlashLoan`. Wrong token, nested flash, `amount == 0`, `amount > maxFlashLoan`, failed pull, and failed callback revert.
+- A callback that unwraps then wraps (or deposits) must succeed when `flashMintMax` permits the mint.
+- Regenerate the reserve golden after the new storage slots. Do not hand-edit goldens.
+- Import `ovrfloReserveAbi` stays in the web error union (already required at CS1-U2); new errors join the catalog in this unit.
+
+**Execution note.** Start with a failing test that `totalSupply` after a successful flash equals `totalSupply` before, including a nonzero-fee case that pays treasury from pulled tokens.
+
+**Patterns to follow.** DssFlash per-call `max` (not `cap - totalSupply` as the economic bound). Current vault flash deletion in CS1-U1 — do not resurrect PT flash. OZ IERC3156, not a local interface.
+
+**Test scenarios.**
+
+1. `token == ovrfloToken`, `flashMintMax > 0`, fee 0: receiver gets `amount`, callback runs, `totalSupply` after equals `totalSupply` before, `flashLoan` returns true.
+2. Launch `flashMintMax == 0`: `maxFlashLoan` is 0 and `flashLoan` reverts.
+3. `maxFlashLoan` equals `min(flashMintMax, type(uint256).max - totalSupply())` and is 0 for any other token.
+4. Nested `flashLoan` from the callback reverts. `maxFlashLoan` is 0 while entered.
+5. Wrap and unwrap from the callback succeed and do not share the flash-entered flag.
+6. Nonzero fee: pull `amount + fee`, burn `amount`, treasury balance rises by `fee`, `totalSupply` after equals `totalSupply` before.
+7. `setReserveFlashMintMax` above `1_000_000 * 10**18` reverts. `setReserveFlashFeeBps` above 9 reverts. Non-factory callers revert.
+8. Failed callback return, failed `transferFrom` repay, and `amount == 0` revert and leave supply unchanged.
+
+**Verification.** Focused Foundry tests plus DeploySize and storage-golden gates pass. Web build still compiles after the ABI change.
 
 ### CS3 — Borrow request book periphery (KD14)
 
-Separate plan + sweep, after CS1 stabilizes. Composes `borrow(..., onBehalfOf)`. Event schema for the two-sided ladder frontend is decided there. The post, post-time execute, permissionless later execute, waiting, and cancel states remain one CS3 contract plus UI delivery. Do not ship a CS4 placeholder that changes those semantics or claims a request exists before CS3. CS4's no-liquidity dependency (CS4-U4) points back at this contract's blocker list, and vice versa: neither changeset ships without the other's gate.
+CS3 starts after CS1 U3 (router hook) and CS1 U4 (`setLendingRouter`). Ticket 10 is blocked by 08. CS4 must not claim a request exists before this contract.
+
+#### CS3-U1 — OVRFLORequestBook
+
+**Goal.** A thin router holds resting borrow requests and fills them through core `borrow` with `onBehalfOf` equal to the human.
+
+**Requirements.** KD10, KD14 CS3 bullets, CS4-U4 no-liquidity gate, CS4-U5 CS3 dependency.
+
+**Dependencies.** CS1-U3, CS1-U4.
+
+**Files.** `src/OVRFLORequestBook.sol`, `test/OVRFLORequestBook.t.sol`, `test/DeploySize.t.sol`, `tools/scripts/check-storage-layout.sh`, `artifacts/tests/storage-layout/`, `script/seed-local.sh`, `script/lib/OVRFLOTestFixtures.sol`, `web/wagmi.config.ts`, `web/lib/errors.ts`, `CONCEPTS.md`.
+
+**Approach.**
+
+- New contract `OVRFLORequestBook`. Constructor binds factory, lending, and stream lockup. It is not factory-registered.
+- `post` takes stream plus `market`, `maxAprBps`, `targetBorrow`, `minAcceptable` with plain `transferFrom`. Never `safeTransferFrom`. Never draw the escrowed stream.
+- If acceptable depth exists at post, fill in the same call and emit `RequestPosted` then `RequestFilled`. Otherwise the request rests.
+- `execute` is permissionless, fills the cheapest eligible tick at or below the ceiling, and emits `RequestFilled`.
+- Every core `borrow` sets `onBehalfOf` to the human and runs only while `lending.router() == address(this)`.
+- `cancel` is borrower-only while resting, returns the stream with plain `transferFrom`, never reads the router slot, and emits `RequestCancelled`.
+- Event schema is the three events in KD14. No `loanId -> borrower` table. No `settle`. No book fee.
+- Seed deploys the book then calls `setLendingRouter`. `DeploySize` gates the new bytecode. Append `OVRFLORequestBook` to `CONTRACTS` before the first golden.
+
+**Patterns to follow.** Lending `borrow` escrow rationale at `src/OVRFLOLending.sol` (plain `transferFrom`). Factory `setLendingRouter` / `router` slot from CS1-U3/U4.
+
+**Test scenarios.**
+
+1. Post with fillable depth: stream leaves the book, loan borrower is the human, proceeds go to the human, `RequestFilled` fires, book holds nothing for that id.
+2. Post without depth: stream stays in the book, `RequestPosted` fires, later `execute` fills when depth appears.
+3. `execute` while `lending.router()` is not the book reverts. `cancel` still returns the stream.
+4. `cancel` from a non-borrower reverts. After cancel the stream owner is the human.
+5. `onBehalfOf` on the core call is the human, never the book.
+6. Remaining face is read live at fill; a stale posted `targetBorrow` above remaining face still fills at remaining face or reverts per core borrow rules — the book does not snapshot face.
+7. Retired router after `setLendingRouter(0)`: `execute` reverts; `cancel` succeeds.
+
+**Verification.** Foundry tests, DeploySize, storage golden, seed `setLendingRouter`, and web ABI union compile.
 
 ### CS4 — `Default` / `Advanced` product UX and canonical composition (KD12, KD14, KD16, KD17)
 
@@ -739,9 +908,9 @@ Map ownership is fixed without a new region slug: SHELL owns global navigation a
 
 **Goal.** Keep board-level simplicity without weakening pre-prompt revalidation, partial-completion recovery, hosted-response validation, or token-native execution bounds.
 
-**Dependencies.** CS4-U3. Hosted conversion and execution-grade USD are gated per KD17 and KD19 respectively.
+**Dependencies.** CS4-U3. Hosted conversion and execution-grade USD follow KD17 (pinned).
 
-**Files.** `web/lib/action-runtime.ts`, `web/lib/actions/registry.ts`, `web/lib/live-action-plan.ts`, `web/lib/convert.ts`, `web/lib/usd.ts`, `web/lib/protocol-bootstrap.ts`, `web/lib/wagmi.ts`, `web/scripts/build-csp.mjs`, `web/hooks/useWriteFlow.ts`, `web/hooks/useTxQueue.ts`, `web/hooks/useUsdPrice.ts`, `web/tests/lib/action-runtime.test.ts`, `web/tests/lib/actions.test.ts`, `web/tests/lib/convert.test.ts`, `web/tests/lib/usd.test.ts`, `web/tests/scripts/security-packaging.test.ts`, `web/tests/hooks/useTxQueue.test.tsx`, `web/tests/e2e/borrow.feature`, `web/tests/e2e/supply.feature`.
+**Files.** `web/lib/action-runtime.ts`, `web/lib/actions/registry.ts`, `web/lib/live-action-plan.ts`, `web/lib/convert.ts`, `web/lib/usd.ts`, `web/lib/usd-recipes.ts`, `web/lib/protocol-bootstrap.ts`, `web/lib/wagmi.ts`, `web/scripts/build-csp.mjs`, `web/hooks/useWriteFlow.ts`, `web/hooks/useTxQueue.ts`, `web/hooks/useUsdPrice.ts`, `web/tests/lib/action-runtime.test.ts`, `web/tests/lib/actions.test.ts`, `web/tests/lib/convert.test.ts`, `web/tests/lib/usd.test.ts`, `web/tests/scripts/security-packaging.test.ts`, `web/tests/hooks/useTxQueue.test.tsx`, `web/tests/hooks/useUsdPrice.test.ts`, `web/tests/e2e/borrow.feature`, `web/tests/e2e/supply.feature`.
 
 **Approach.**
 
@@ -755,7 +924,7 @@ Map ownership is fixed without a new region slug: SHELL owns global navigation a
 - In `Default`, explain partial completion as what completed, what remains, and the valid next action. Do not expose approvals, calldata, routes, PT identity, or internal step names.
 - Make Hosted Convert a dedicated canonical action/contract kind. Re-decode it in `createLiveActionDraft`; never use legacy raw-call. Add the reviewed hosted origin to `web/scripts/build-csp.mjs` and security-packaging tests.
 - Validate hosted chain, input/output token, router allowlist, calldata semantics, token-native bounds, and deadline. Stop rather than add an app server if browser CORS/CSP compatibility fails.
-- Keep ordinary USD display-only. Resolve any execution-grade USD request in a separate execution-only resolver using KD17's exact enclosing-interval formulas. The reviewed authority decision supplies decimal normalization, `maxBlockLag`, `maxAgeSeconds`, minimum confidence, maximum source deviation, and failure behavior. Never put USD in canonical actions, calldata, or committed receipts.
+- Keep ordinary USD display-only. Resolve any execution-grade USD request in a separate execution-only resolver using KD17's per-underlying recipe table and enclosing-interval formulas. `useUsdPrice` takes `underlying`. Never put USD in canonical actions, calldata, or committed receipts. Never apply the wstETH row to another underlying.
 - Rebuild borrow from real routed depth, authoritative stream eligibility, and current router/request state. Do not use placeholder liquidity or request state.
 - Permit deposit-plus-borrow without CS3 only when immediate borrow is executable before the first prompt. A no-liquidity continuation depends on canonical CS3 post/execute/wait/cancel; otherwise block before deposit. This dependency is CS3's own blocker list read in reverse: CS3's plan records the same dependency as a stop condition, and neither changeset ships without the other's gate.
 
@@ -769,16 +938,18 @@ Map ownership is fixed without a new region slug: SHELL owns global navigation a
 6. A changed hosted response is revalidated and simulated immediately before prompt.
 7. Hosted Convert uses its dedicated action/contract kind, is re-decoded by `createLiveActionDraft`, and never enters legacy raw-call.
 8. Token/USD display switching changes no canonical amount or calldata.
-9. A stale, unavailable, or unreviewed USD authority blocks submission instead of reusing the display quote.
-10. Clear-to-zero and set-allowance keep distinct stable step IDs; each next prompt follows receipt persistence, wallet reacquisition, rebuild, and simulation.
-11. Receipt storage keys include factory, chain, account, graph ID, and step ID. Throwing storage does not erase runtime progress.
-12. Missing or ambiguous `Deposited.streamId` blocks the borrow continuation.
-13. Borrow rebuild uses real routed depth, authoritative eligibility, and current router/request reads.
-14. Without CS3, no-liquidity deposit-plus-borrow blocks before deposit. With immediate executable borrow, the composition may proceed.
-15. Completion, settlement, close, and repayment labels require both finality and a fresh authoritative state read.
-16. The USD resolver fixtures prove decimal normalization, freshness, confidence/deviation handling, conservative rounding, and exact token-native bound formulas.
-17. A wallet submit that returns unconfirmed persists the pending transaction hash and step identity; resume reconciles the hash through the authoritative receipt and replacement/reorg rules before rebuild or prompt; submission stays suppressed while the outcome is unresolved.
-18. Transfer-with-reallocation: the user intentionally re-enters the same deposit; a fresh graph ID is allocated for the new attempt; resume keys only on the current attempt's graph ID; the prior attempt's confirmed-step evidence stays intact read-only as audit evidence, excluded from resume keying, and is never replayed or double-prompted by the new attempt.
+9. A stale, unavailable, missing-recipe, or other-column USD quote blocks submission instead of reusing the display quote or the wstETH row.
+10. `useUsdPrice` and the execution resolver keyed by underlying A never return underlying B's quote.
+11. A column with no recipe shows USD unavailable and still accepts token-native submit.
+12. Clear-to-zero and set-allowance keep distinct stable step IDs; each next prompt follows receipt persistence, wallet reacquisition, rebuild, and simulation.
+13. Receipt storage keys include factory, chain, account, graph ID, and step ID. Throwing storage does not erase runtime progress.
+14. Missing or ambiguous `Deposited.streamId` blocks the borrow continuation.
+15. Borrow rebuild uses real routed depth, authoritative eligibility, and current router/request reads.
+16. Without CS3, no-liquidity deposit-plus-borrow blocks before deposit. With immediate executable borrow, the composition may proceed.
+17. Completion, settlement, close, and repayment labels require both finality and a fresh authoritative state read.
+18. The USD resolver fixtures prove per-underlying lookup, missing-recipe failure, no cross-column leakage, decimal normalization, freshness, confidence/deviation handling, conservative rounding, and exact token-native bound formulas.
+19. A wallet submit that returns unconfirmed persists the pending transaction hash and step identity; resume reconciles the hash through the authoritative receipt and replacement/reorg rules before rebuild or prompt; submission stays suppressed while the outcome is unresolved.
+20. Transfer-with-reallocation: the user intentionally re-enters the same deposit; a fresh graph ID is allocated for the new attempt; resume keys only on the current attempt's graph ID; the prior attempt's confirmed-step evidence stays intact read-only as audit evidence, excluded from resume keying, and is never replayed or double-prompted by the new attempt.
 
 **Verification.** Runtime, queue, conversion, and USD tests prove recovery and authority boundaries. Browser-only static export remains intact.
 
@@ -857,7 +1028,7 @@ Map ownership is fixed without a new region slug: SHELL owns global navigation a
 
 **Verification.** Axe, keyboard E2E, heading-order assertions, live-region tests, and desktop/mobile regression captures pass across the named surfaces.
 
-**CS4 stop conditions.** Stop if `Your OVRFLO` cannot remain the single `Default` portfolio label; Fixed Return supply cannot be classified and hydrated authoritatively; the bounded scan cannot distinguish incomplete from empty; CS3 is unavailable for no-liquidity request states; safe recovery requires hidden mechanics; visual scope creates two design systems; hosted conversion cannot meet the browser-only trust contract; execution-grade USD authority remains unsettled for an executable USD path; or the remaining completeness critic or final documentation review finds an unresolved contract.
+**CS4 stop conditions.** Stop if `Your OVRFLO` cannot remain the single `Default` portfolio label; Fixed Return supply cannot be classified and hydrated authoritatively; the bounded scan cannot distinguish incomplete from empty; CS3 is unavailable for no-liquidity request states; safe recovery requires hidden mechanics; visual scope creates two design systems; hosted conversion cannot meet the browser-only trust contract; a USD submit uses a missing recipe or another column's quote; or CORS/CSP/allowlist checks fail at implementation.
 
 **CS4 Definition of Done.** `DESIGN.md` and shared tokens encode the normative cool near-white, soft blue, card-based visual language. `Default` navigation is `Your OVRFLO`, `Create`, and `Activity`, with global mode reachability, on the KD16 destination URLs. Portfolio routing waits for complete bounded discovery and hydration before applying the zero/one/same-type/mixed-type matrix. Self-Repaying Loans and supply-backed Fixed Returns are separate position types. Adaptive create flows use `SOURCE → UNDERLYING → AMOUNT → TERM → OUTCOME → REVIEW` with exact visibility and invalidation rules. Waiting and completed states remain reachable. Every named state has bounded actions. Mobile and desktop behavior, axe, keyboard, focus, headings, live regions, safe areas, overflow, and reduced motion pass. `Default` hides protocol mechanics. `Advanced` shares the foundation and exposes only supported exact controls. Both compile through one canonical runtime without changing protocol behavior. This Definition of Done cannot be claimed until the blockers, completeness critic, and final documentation review close.
 
@@ -1122,7 +1293,8 @@ PT flash (removed, KD1), underlying flash loans (deferred indefinitely — flash
    - *Lending single-asset*: `supply` moves ovrfloToken into escrow and touches no underlying; `borrow` pays net ovrfloToken to the attributed borrower and fee ovrfloToken to the treasury.
    - *Router hook*: a non-router caller who passes `onBehalfOf = other` still owns the loan; a router call with `onBehalfOf = human` pays and indexes the human and returns the stream to the human on close; a router call with `onBehalfOf = address(0)` reverts.
    - *replaceLending*: after replace, `ovrfloToLending` is the new market; `registerLending` still reverts `LendingExists`; factory `setLendingFee` still reaches the old market; an old-market loan can `repay`/`close`/`claim`.
-   - *Flash surface gone*: no ABI entry for `flashLoan` on the vault; the deleted suites' removal matches the KD1 list.
+   - *Flash mint conservation*: successful ERC-3156 mint on the reserve leaves `totalSupply` unchanged; nested flash reverts; wrap in the callback succeeds; `flashMintMax == 0` disables mint.
+   - *Request book attribution*: post or execute sets core `onBehalfOf` to the human; proceeds and returned stream go to the human; `execute` while `router` is not the book reverts; `cancel` still returns the stream.
    - *Permit*: an EIP-2612 signature lets a lender `supply` without a prior `approve` transaction (two calls or a batch); a non-minter still cannot mint.
    - *Product-mode parity*: equivalent `Default` and `Advanced` choices produce the same typed primitive or graph intent before calldata; `createLiveExecutionPlan` consumes it; `parseAction` remains compatibility-only; `Default` hides protocol mechanics and its read-only `Details` cannot change the action.
    - *Portfolio routing*: partial or retrying discovery preserves confirmed cards in an incomplete `Your OVRFLO` state and does not route; only complete bounded discovery plus full hydration applies zero-to-empty, one-to-detail, multiple-same-type-to-collection, and mixed-to-hub routing; waiting and completed positions remain reachable.
@@ -1136,7 +1308,7 @@ PT flash (removed, KD1), underlying flash loans (deferred indefinitely — flash
    - *Authorization sequence*: clear-to-zero and set-allowance are separate stable steps; receipt persistence and rebuild occur between prompts.
    - *Deposit output decode*: a unique `Deposited.streamId` continues the graph; missing or ambiguous event output blocks it.
    - *Hosted-response hostility*: Hosted Convert uses its dedicated canonical kind, is re-decoded in `createLiveActionDraft`, and rejects every wrong chain/token/router/semantics/bounds/deadline case before prompt; CSP/security packaging covers the reviewed origin.
-   - *USD boundary*: display denomination changes no canonical action; an execution-only resolver applies decimal normalization, freshness, confidence/deviation policy, conservative rounding, and exact token-native min/max formulas; USD appears in neither calldata nor committed receipt.
+   - *USD boundary*: display denomination changes no canonical action; lookup is keyed by column `underlying`; a missing recipe or a quote from another column blocks USD execution; the execution-only resolver applies that row's freshness, deviation band, and token-native min/max formulas; USD appears in neither calldata nor committed receipt.
    - *Default disclosure*: the rendered `Default` DOM contains no APY, protocol, router, PT, market, route, approval, calldata, or simulation-diagnostic labels.
    - *State-action contract*: every named error, waiting, pending, confirmed, incomplete, empty, and completed state has at most one primary action and one secondary recovery action; text links may provide learning or explorer access; refreshing and pending suppress submit and may have no primary.
    - *Finality*: first-mined receipts remain pending; successful receipts become confirmed only at `RECEIPT_CONFIRMATIONS`; Completed/settled/closed/repaid also requires a fresh authoritative state read.
@@ -1152,13 +1324,13 @@ PT flash (removed, KD1), underlying flash loans (deferred indefinitely — flash
    - *Post-submit throw reconciliation*: deposit submits, a render throw lands during receipt processing, the user reloads, and resume reconciles the persisted hash without resubmitting; no path claims no transaction was submitted.
    - *Modal close keeps the attempt*: closing the modal unmounts the body while the flow keeps the pending plan and graph ID; a reopened body resumes the stored attempt or reallocates a fresh graph ID and never auto-confirms a latched plan the user did not accept in that attempt.
    - *Reset is resume*: the route-level `web/app/error.tsx` and `web/app/global-error.tsx` reset, the modal error boundary's TRY AGAIN remount, and flow unmount cleanup converge on the single resume contract — reconcile persisted evidence first, resume at the first unconfirmed step, never replay a confirmed step, never re-prompt a step whose outcome is unresolved.
-8. Diff review compares `git diff --stat` against the predicted blast radius before each changeset is called done. CS7 formatter output is reviewed in a separate formatting-only diff. The final review confirms CS1 contains no broad CS4-CS7 UI/read/tooling work and that the amended-scope completeness critic and final documentation review are complete before CS4-CS7 implementation begins.
+8. Diff review compares `git diff --stat` against the predicted blast radius before each changeset is called done. CS7 formatter output is reviewed in a separate formatting-only diff. The final review confirms CS1 contains no broad CS4-CS7 UI/read/tooling work. The amended-scope completeness critic and final documentation review already ran (2026-08-31). CS6 and CS7 still wait on their owner gates.
 
 ## Definition of Done
 
 **CS1.** All contracts compile and the full Foundry suite, re-derived invariants, and regenerated fizz properties pass. The seed smoke deploys the nested column and registers with one-argument `registerOvrflo`. DeploySize gates all five deployables. The minimal web sync and docs no longer describe the pre-switch architecture. CS1 does not absorb CS4-CS7 work.
 
-**CS4.** The CS4 Definition of Done under that changeset is satisfied only after the remaining completeness critic, final documentation review, and blockers close. `DESIGN.md` is normative. Portfolio routing waits for complete discovery and hydration. Self-Repaying Loans and supply-backed Fixed Returns remain separate. Adaptive stage invalidation, state coverage, global mode reachability, finality, separate exits, mobile behavior, and accessibility are proven. `Advanced` shares the foundation and exposes only supported exact controls. The execution-grade USD authority and hosted Pendle browser contract are reviewed rather than assumed.
+**CS4.** `DESIGN.md` is normative. Portfolio routing waits for complete discovery and hydration. Self-Repaying Loans and supply-backed Fixed Returns remain separate. Adaptive stage invalidation, state coverage, global mode reachability, finality, separate exits, mobile behavior, and accessibility are proven. `Advanced` shares the foundation and exposes only supported exact controls. Hosted Convert uses the pinned origin and Router V4 allowlist. USD lookup is per-underlying with fail-closed missing rows.
 
 **CS5.** The CS5 Definition of Done under that changeset is satisfied after its fresh sweep. The public-read transport never becomes write authority or a second chain-state store.
 
@@ -1166,7 +1338,7 @@ PT flash (removed, KD1), underlying flash loans (deferred indefinitely — flash
 
 **CS7.** The CS7 Definition of Done requires reviewed exact pins, supported config paths, common scope, a checked-in ledger with zero unclassified and zero C entries, and no-console/scripts-override fixture proof. Tool migration does not remove or merge independent correctness, accessibility, policy, or build gates.
 
-**Whole plan.** The unified artifact remains requirements-only while USD/hosted-contract decisions, CS6/CS7 dependency decisions, the amended-scope completeness critic, and final documentation review are open. CS0-CS7 are complete only when every active changeset has met its own dependencies, stop conditions, named scenarios, verification, and Definition of Done. Every deviation is logged on the ticket with its reason. Do not edit this plan to absorb an implementation deviation.
+**Whole plan.** The unified artifact remains requirements-only for CS6/CS7 tooling gates. CS0-CS3, Hosted Convert, and per-underlying USD are executable from this file. CS0-CS7 are complete only when every active changeset has met its own dependencies, stop conditions, named scenarios, verification, and Definition of Done. Every deviation is logged on the ticket with its reason. Do not edit this plan to absorb an implementation deviation.
 
 ## Decisions already signed
 
@@ -1181,10 +1353,10 @@ These were open in an earlier draft. They are closed:
 7. Token getters — `vault()` / `reserve()`, not `minter0` / `minter1` (KD4).
 8. `replaceLending` and the router hook — CS1 (KD7, KD10), not a later factory/lending reopen. All later products use one canonical runtime (KD17).
 9. Request-book identity — core `onBehalfOf`; no `settle` table (KD10, KD14). Post/execute/wait/cancel stays coupled to CS3 and its CS4 UI.
-10. CS2 constants — deferred to CS2 planning; only the shape (single-digit-bps ceiling, capped owner-set supply cap) is settled here. The execution-grade USD authority and CS6 benchmark decision are also explicitly unsettled and cannot be inferred from this item.
+10. CS2 constants and USD recipes — pinned 2026-08-31 in KD14 and KD17. Flash mint launches at `max = 0`, ceiling one million whole ovrfloToken, `FLASH_FEE_MAX_BPS = 9`. USD is a per-underlying recipe table, not a wstETH singleton. CS6 benchmark decision stays explicit and is not inferred from this item.
 11. Destination URLs (KD16, user 2026-08-31) — the KD16 table is the path and query contract. Standing web rules still put view state in the address bar; they do not pick these destinations.
 
-The newest four frontend reference boards additionally settle the CS4 visual foundation, `Default` information architecture, separate Self-Repaying Loan and Fixed Return position types, supply-backed Fixed Return semantics, adaptive six-stage grammar, portfolio routing matrix, state presentation, responsive behavior, and accessibility direction. They supersede `PRODUCT.md` Operating Context only for CS4's `Default` information architecture. `DESIGN.md` is the normative implementation contract; the boards are acceptance evidence. These decisions bind the amended scope, but CS4-CS7 remain not build-ready until blockers, the completeness critic, and final documentation review close.
+The newest four frontend reference boards additionally settle the CS4 visual foundation, `Default` information architecture, separate Self-Repaying Loan and Fixed Return position types, supply-backed Fixed Return semantics, adaptive six-stage grammar, portfolio routing matrix, state presentation, responsive behavior, and accessibility direction. They supersede `PRODUCT.md` Operating Context only for CS4's `Default` information architecture. `DESIGN.md` is the normative implementation contract; the boards are acceptance evidence. These decisions bind the amended scope. CS6 and CS7 remain not build-ready until their owner gates close. Hosted Convert and per-underlying USD are pinned in KD17.
 
 ## Sweep Contracts
 
@@ -1203,6 +1375,8 @@ The 2026-08-24 sweep covered the inherited CS1 scope only. It did not review KD1
 7. **Fee equality is structural (KD2/KD13).** Fee-from-mint means treasury gain equals depositor deduction with no token outside the mint split; tests assert the split, not a re-derived conservation proof.
 8. **Compile-coupled web edits land with their unit (U1/U2/U7).** The error-catalog regeneration rides U1; `wagmi.config.ts`, the `ovrfloReserveAbi` import into `web/lib/errors.ts` (union type plus `generatedErrorNames`), and invalidation ride U2; call-site flips ride U7. Without the U2 import, every reserve revert loses catalog copy and typed decoding and no gate notices — the coverage loop only checks names the union already contains. A green `forge test` does not mean the web compiles — run `npm --prefix web run build` at U2 and U3 boundaries.
 9. **Maps layer is named blast radius (U7/U8).** `docs/maps/ui/assets.md` and `docs/maps/state/keys/chain-reads.md` update with U7 (reserve authority retarget); do not let the maps-presence gate discover them.
+10. **Flash mint bound (KD14).** `amount <= flashMintMax` is the economic cap. `type(uint256).max - totalSupply()` is overflow guard only. Launch `flashMintMax = 0`. Two agents must not invent `cap - totalSupply()` as the user-facing max.
+11. **USD is per underlying (KD17).** Lookup keys `vault.underlying()`. A missing row fails closed. Never apply the wstETH recipe to another column. A new series adds a reviewed recipe row; it does not reuse wstETH by default.
 
 ### Proven absences
 
@@ -1214,19 +1388,21 @@ Recorded so later lenses do not re-open settled ground:
 - **ABI changes:** no off-repo consumers of `borrow`, `Borrowed`, `FeeTaken`, `previewBorrow`, or `registerOvrflo` shapes; deployment-artifact selectors cover stream/factory only. `generated.ts` decoding survives shape-preserving event changes.
 - **Two-minter burn authority, nested-constructor trust, flash removal residue, hostile-candidate admission:** cleared by the security lens; admission weakness is closed by rule 5, not new checks.
 
-CS2 and CS3 each keep their own plan and sweep.
+CS2 and CS3 are later units in this plan. Their binding rules are KD14 plus the CS2-U1 and CS3-U1 test scenarios.
 
 ### 2026-08-24 amended-scope review record (incomplete)
 
 This correction pass ran four amended-scope lenses: frontend decision accuracy; action runtime and trust boundaries; read-plane and tooling provenance; and documentation/design-system accuracy. It did not rerun or replace the inherited CS1 sweep. It point-fixed verified contradictions and recorded the contracts below.
 
-The amended-scope sweep is not complete. The required completeness critic has not yet walked CS4-CS7 to a diminishing-returns verdict. The final documentation review has not yet verified this integrated text. USD authority, Hosted Convert browser compatibility, eth-compress publication or Git exception, and CS7 pins/config/scope/ledger decisions also remain blockers. Therefore this plan remains `requirements-only` and must not be marked BUILD-READY.
+This 2026-08-24 record is historical. The 2026-08-31 amended-scope sweep record supersedes the incomplete claim below it. Do not treat USD, Hosted Convert, CS2, or CS3 as open owner gates. Remaining owner gates are CS6 (eth-compress) and CS7 (pins/config/scope/ledger).
+
+The amended-scope sweep was not complete on 2026-08-24. The required completeness critic had not yet walked CS4-CS7. USD, Hosted Convert, eth-compress, and CS7 pins remained blockers on that date. The 2026-08-31 pass closed the critic, Hosted Convert, USD recipes, CS2, and CS3. The unified artifact stays `requirements-only` only for CS6/CS7 tooling gates.
 
 ### 2026-08-31 amended-scope sweep record (this pass)
 
-Folded 2026-08-31. Five amended-scope lenses ran — frontend decision accuracy; action runtime and trust boundaries; read-plane and tooling provenance; design accuracy; and the completeness critic — and their material findings are folded into KD16-KD20, CS4-U1-U6, CS5-U1-U3, and the Verification Contract. The scanner-scope decision is recorded as AS10, a later owner correction that takes the next stable ID without renumbering AS1-AS9. The inherited CS1 sweep record (2026-08-24) is untouched. The error-boundary recovery lens has run and its four findings are folded (KD17 recovery rules, CS4-U4/CS4-U5, and Verification Contract item 7); the final documentation review has run and its findings — the AS1 precedence rule, readiness scoping, the CS4 gate deciders, and the CS3/CS4 cross-links — are folded. All planned amended-scope lenses have run; no plan-text decision remains underdetermined. CS0-CS3 are implementation-ready; CS4-CS7 carry explicit pre-implementation gates owned as stated above: the owner-selected USD authority, the owner-approved Hosted Convert compatibility proof, eth-compress publication or an approved Git pin, and the CS7 pins/config/scope/ledger review.
+Folded 2026-08-31. Five amended-scope lenses ran — frontend decision accuracy; action runtime and trust boundaries; read-plane and tooling provenance; design accuracy; and the completeness critic — and their material findings are folded into KD16-KD20, CS4-U1-U6, CS5-U1-U3, and the Verification Contract. The scanner-scope decision is recorded as AS10, a later owner correction that takes the next stable ID without renumbering AS1-AS9. The inherited CS1 sweep record (2026-08-24) is untouched. The error-boundary recovery lens has run and its four findings are folded (KD17 recovery rules, CS4-U4/CS4-U5, and Verification Contract item 7); the final documentation review has run and its findings — the AS1 precedence rule, readiness scoping, the CS4 gate deciders, and the CS3/CS4 cross-links — are folded. A later same-day fold pinned CS2, CS3, Hosted Convert, and per-underlying USD in this file. CS0-CS3 and ticket 18 are implementation-ready. Remaining gates are CS6 (eth-compress publication or approved Git pin) and CS7 (pins/config/scope/ledger).
 
-Final critic pass (this record): the checkpoint-grammar × state-machine cross-product lens ran; its three findings are folded (superseded graph-ID evidence in KD17's attempt rules, confirmed-step status transfer across graph-ID reallocation in KD17 and the Verification Contract, and the distinct unknown-outcome state in the composite recovery state diagram); the doc-review pass's mechanical fixes are folded (U5 step pairing, CS4-U4's dependencies line, KD16's stage-visibility compression, and the KD3/KD14 inlined citations); remaining named lenses (build reproducibility, timezone/DST presentation) were re-ranked as marginal or already covered, and long-session/deploy-skew was previously absorbed; the completeness critic's formal verdict is STOP at diminishing returns. The plan remains requirements-only with CS4-CS7's owner-owned gates open.
+Final critic pass (this record): the checkpoint-grammar × state-machine cross-product lens ran; its three findings are folded (superseded graph-ID evidence in KD17's attempt rules, confirmed-step status transfer across graph-ID reallocation in KD17 and the Verification Contract, and the distinct unknown-outcome state in the composite recovery state diagram); the doc-review pass's mechanical fixes are folded (U5 step pairing, CS4-U4's dependencies line, KD16's stage-visibility compression, and the KD3/KD14 inlined citations); remaining named lenses (build reproducibility, timezone/DST presentation) were re-ranked as marginal or already covered, and long-session/deploy-skew was previously absorbed; the completeness critic's formal verdict is STOP at diminishing returns. The unified artifact stays `requirements-only` only for CS6/CS7 tooling gates.
 
 ### Amended-scope rules recorded by the 2026-08-24 pass
 
@@ -1235,7 +1411,7 @@ Final critic pass (this record): the checkpoint-grammar × state-machine cross-p
 - **AS3 — Portfolio routing waits for complete hydration.** Aggregate count/completeness is projection. Position ownership/type/status/amount is on-chain only after hydration. Partial and retrying scans preserve confirmed cards in a stable incomplete surface and never route from provisional counts. Unlike token symbols are never summed.
 - **AS4 — Stage and mode behavior is deterministic.** Upstream changes preserve only still-valid dependents, clear the rest, recompute visibility, and focus the first newly required/blocking stage. Desktop shows one active decision plus completed-choice summary. Global mode switching is reachable on every route, preserves the object/task where supported, and never invents alternate homes. Destination paths and surviving query keys follow the KD16 URL table.
 - **AS5 — One typed action graph and finality contract.** Equivalent modes produce one typed primitive or graph intent before calldata. One graph type owns stable graph/step IDs, dependencies, rebuilds, receipts, and decoded outputs. Authorization steps remain distinct. Every next prompt follows finality, persistence, wallet reacquisition, rebuild, and simulation. First-mined is pending; position completion also requires a fresh authoritative read.
-- **AS6 — Hosted conversion, USD, and no-liquidity gates.** Hosted Convert is a dedicated re-decoded canonical kind with reviewed CSP origin. The execution-only USD resolver owns normalization, freshness, confidence/deviation, rounding, and token-native formulas. Deposit-plus-borrow blocks before deposit if immediate borrow is not executable and canonical CS3 continuation is unavailable.
+- **AS6 — Hosted conversion, USD, and no-liquidity gates.** Hosted Convert is a dedicated re-decoded canonical kind with reviewed CSP origin. The execution-only USD resolver looks up a per-underlying recipe, then owns normalization, freshness, confidence/deviation, rounding, and token-native formulas. A missing recipe fails closed for that column. Deposit-plus-borrow blocks before deposit if immediate borrow is not executable and canonical CS3 continuation is unavailable.
 - **AS7 — Read ownership and provenance.** viem-dlc npm 0.0.16 provenance is `0df02a9a79bce8ed0a98974034d34cf5c8de7e11`. Per-provider policy includes range, sustained rate, burst, and concurrency. One discovery owner calls `getLogs`; hydration modules do not. Missing pages or hydration failures are incomplete partial outcomes. Hash and provider/lens state-override probes remain separate. Scanner output is UI-only; it never enters write paths.
 - **AS8 — Dependency and tooling blockers are explicit.** eth-compress npm 0.5.0 is unpublished; only publication or explicit full-commit Git approval with verified browser artifacts can unblock evaluation. Response compression cannot justify adoption. CS7 waits for exact pins, supported config paths, common scope, and a checked-in ledger path; ESLint removal requires zero unclassified and zero C entries plus no-console/scripts-override fixture proof.
 - **AS9 — Recovery and exits stay truthful.** One primary action is a maximum, not mandatory. Obsolete actions keep authoritative recovery available. PT claim requires maturity and PT backing. Unwrap depends on wrap reserve and wallet ovrfloToken balance, not maturity. Route/stage changes focus headings; inline status retains focus; Back restores opener focus.
@@ -1243,4 +1419,4 @@ Final critic pass (this record): the checkpoint-grammar × state-machine cross-p
 
 ### Remaining sweep exit criteria
 
-Run the completeness critic across CS4-CS7 in dependency order until it reaches a documented diminishing-returns verdict. Then run the final documentation review. Point-fix verified wrong text without renumbering D1-D5, KD1-KD20, CS0-CS7, CS1 U1-U8, existing CS4-CS7 namespaced unit IDs, Verification items 1-8, signed decisions 1-10, or inherited sweep rules 1-9. Signed decision 11 is the 2026-08-31 destination URL table (additive). Only after those reviews and all named blockers close may the unified artifact advance beyond `requirements-only`.
+The completeness critic and final documentation review have already run (2026-08-31 record). Point-fix verified wrong text without renumbering D1-D5, KD1-KD20, CS0-CS7, CS1 U1-U8, CS2-U1, CS3-U1, existing CS4-CS7 namespaced unit IDs, Verification items 1-8, signed decisions 1-11, or inherited sweep rules 1-11. Remaining blockers that keep the unified artifact `requirements-only` are CS6 (eth-compress publication or approved Git pin) and CS7 (pins/config/scope/ledger). USD and Hosted Convert are pinned in KD17. CS2 and CS3 are units in this file.

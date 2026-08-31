@@ -17,7 +17,7 @@ Ticket: .scratch/denomination-border-column/issues/19-named-surface-states.md
 Spec/harness: .scratch/denomination-border-column/spec.md — follow its per-session rules.
 Do not edit the plan. Do not start other units. Do not wait on 18. Do not invent
 request-book contract behavior; consume CS3 canonical post/execute/wait/cancel.
-If ticket 10 is still needs-info, do not claim this ticket.
+If ticket 10 is not resolved, do not claim this ticket.
 Before any writes, write the scratch intent capsule per docs/maps/SCHEMAS.md §4.
 Read Required reading below and the plan sections: KD14 request states, KD16
 waiting copy, AS9, ### CS4-U5, and Verification Contract successors

@@ -6,7 +6,7 @@
 
 **Tickets:** `.scratch/denomination-border-column/issues/` (01–26). Work the frontier: any ticket whose blockers are done. Do **one ticket per chat**.
 
-**CS0** is folded into ticket **08**. **CS4-U4** is split: ticket **17** ships composite recovery; ticket **18** ships Hosted Convert and execution-grade USD. Tickets **09** and **10** are stubs for CS2 and CS3.
+**CS0** is folded into ticket **08**. **CS4-U4** is split: ticket **17** ships composite recovery; ticket **18** ships Hosted Convert and per-underlying USD. Tickets **09** and **10** are CS2 and CS3 in this plan.
 
 ---
 
@@ -43,10 +43,10 @@ Read `PRODUCT.md`, `DESIGN.md`, `docs/solutions/patterns/ovrflo-web-standard.md`
 01 ── 02 ── 03 ── 04 ──┬── 05 ── 07 ──┬── 08
                        │              │
                        └── 06 ────────┘
-                                      08 ── 09 (stub)
-                                      08 ── 10 (stub)
+                                      08 ── 09 (CS2 flash mint)
+                                      08 ── 10 (CS3 request book)
 
-07 ── 11 ── 15 ── 16 ── 17 ── 18 (needs-info: owner USD + Hosted Convert)
+07 ── 11 ── 15 ── 16 ── 17 ── 18 (Hosted Convert + per-underlying USD)
                  │              └── 19 ── 20     (19 also waits on 10)
                  └── (11)────────────────┘
 
@@ -61,8 +61,8 @@ Read `PRODUCT.md`, `DESIGN.md`, `docs/solutions/patterns/ovrflo-web-standard.md`
 - **11** and **12** run in parallel after **07**. Do not wait for **08**.
 - **13** and **14** run in parallel after **12**.
 - **06** and **07** do not block each other.
-- **09** and **10** stay `needs-info` until their own swept plans exist. Do not implement them from this plan.
-- **18** stays `needs-info` until the owner selects the execution-grade USD authority and approves the Hosted Convert browser-contract proof.
+- **09** and **10** are ready-for-agent after **08**. Implement them from this plan. Do not mix them into CS1 commits.
+- **18** is ready-for-agent after **17**. USD is a per-underlying recipe table (KD17). Launch ships the wstETH row. A missing row fails closed. Never reuse wstETH for another column.
 - **17** must not wait on **18**. **19** and **20** must not wait on **18**.
 - **22** exists only if **21** records `adopt`. If **21** records `do not adopt`, mark **22** cancelled.
 - **23** waits on CS1 docs (**08**), CS5 (**13**, **14**), CS4 a11y (**20**), and the CS6 decision (**21**). **23** must not wait on **09**, **10**, or **18**.
@@ -93,10 +93,10 @@ Run the gates the plan's Verification Contract names for that changeset. Do not 
 - Split `Default` and `Advanced` into two visual systems
 - Use viem-dlc or eth-compress to transform wallet writes
 - Let log-derived candidates gate, size, or authorize an action
-- Invent an execution-grade USD provider or reuse a display feed as authority
+- Apply the wstETH USD recipe to another column, or default a missing recipe to wstETH
 - Invent destination paths or query keys outside the KD16 URL table; add redirects from pre-CS4 URL shapes; put Advanced in the URL
 - Enable type-aware Oxlint or upgrade to TypeScript 7
-- Claim ticket **09**, **10**, or **18** while Status is `needs-info`
+- Implement ticket **09** or **10** before **08** is resolved
 - Lower `LENDING_RUNTIME_CANARY` if the canary fails; drop the router hook and surface
 - Use `git commit` from the agent (Cursor injects `Co-authored-by`); use write-tree / commit-tree / update-ref
 
@@ -114,8 +114,8 @@ Run the gates the plan's Verification Contract names for that changeset. Do not 
 | 06 | Invariant and fuzz re-derivation | CS1-U6 | 04 | ready-for-agent |
 | 07 | Web denomination sync | CS1-U7 | 05 | ready-for-agent |
 | 08 | Docs sync and README two-line fix | CS1-U8, CS0 | 06, 07 | ready-for-agent |
-| 09 | CS2 stub: ERC-3156 flash mint | CS2 | 08 | needs-info |
-| 10 | CS3 stub: borrow request book | CS3 | 08 | needs-info |
+| 09 | CS2: ERC-3156 flash mint | CS2-U1 | 08 | ready-for-agent |
+| 10 | CS3: borrow request book | CS3-U1 | 08 | ready-for-agent |
 | 11 | Shared visual system and Default / Advanced shell | CS4-U1 | 07 | ready-for-agent |
 | 12 | Pin viem-dlc public-read transport | CS5-U1 | 07 | ready-for-agent |
 | 13 | Bounded logs and progressive completeness | CS5-U2 | 12 | ready-for-agent |
@@ -123,7 +123,7 @@ Run the gates the plan's Verification Contract names for that changeset. Do not 
 | 15 | Portfolio hub, collection, and detail routing | CS4-U2 | 11 | ready-for-agent |
 | 16 | Self-Repaying Loan and Fixed Return create flows | CS4-U3 | 11, 15 | ready-for-agent |
 | 17 | Composite recovery runtime | CS4-U4 recovery | 16 | ready-for-agent |
-| 18 | Hosted Convert and USD execution bounds | CS4-U4 hosted/USD | 17 | needs-info |
+| 18 | Hosted Convert and USD execution bounds | CS4-U4 hosted/USD | 17 | ready-for-agent |
 | 19 | Named request, waiting, transaction, and edge states | CS4-U5 | 10, 15, 16, 17 | ready-for-agent |
 | 20 | Responsive, accessible, Advanced-parity proof | CS4-U6 | 11, 15, 16, 17, 19 | ready-for-agent |
 | 21 | eth-compress benchmark and adopt gate | CS6-U1 | 12, 14 | ready-for-agent |
@@ -139,7 +139,7 @@ Run the gates the plan's Verification Contract names for that changeset. Do not 
 
 When sources disagree, the higher one wins:
 
-1. The plan's Key Decisions, Sweep Contracts (inherited CS1 rules 1–9 and AS1–AS10), and Verification Contract.
+1. The plan's Key Decisions, Sweep Contracts (inherited CS1 rules 1–11 and AS1–AS10), and Verification Contract.
 2. Product truth: `PRODUCT.md`, `CONCEPTS.md`. CS4 `Default` information architecture follows `DESIGN.md`; the newest four boards are acceptance evidence only (AS1).
 3. Contract truth: live `src/` as built after each ticket — never a doc's paraphrase of a prior architecture.
 4. `docs/audit/rejected-findings-record.md` for findings already disproven.
@@ -152,7 +152,6 @@ Stop conditions in the plan Goal Capsule (a)–(q) remain binding. A hit is a st
 
 Record these on the ticket as environment/owner gates. Do not invent a substitute.
 
-- **Ticket 18:** owner selects the execution-grade USD authority; reviewers verify decimal normalization, freshness, confidence/deviation, rounding, and the token-native bound formulas. Owner approves the Hosted Convert compatibility proof (static export, CORS, CSP, response decoding, router allowlist).
 - **Ticket 21:** eth-compress npm `0.5.0` is published, or reviewers approve Git commit `f1df09b9cb12b3a4a72019db544bac258ba9f7de` and verify built browser artifacts. Measurement of plain transport may proceed before that gate; adding the dependency may not.
 - **Ticket 23:** reviewers record exact Ultracite, Oxlint, and Oxfmt pins; supported configuration paths; common include/exclude scope; and the checked-in A–E parity-ledger path.
-- **Tickets 09 and 10:** a separate swept plan exists. KD14 in this plan is inheritance for that later plan, not an implementation spec.
+- **A later underlying:** add a reviewed USD recipe row (explorer verification, kind, heartbeat, share-rate) before USD display or USD submit for that column. Token-native flows do not wait. Do not copy the wstETH row.
