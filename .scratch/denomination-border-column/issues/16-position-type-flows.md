@@ -19,10 +19,10 @@ Do not edit the plan. Do not start other units. Do not implement composite resum
 (17), Hosted Convert, or USD execution (18). Do not invent request-book UI (19).
 Before any writes, write the scratch intent capsule per docs/maps/SCHEMAS.md §4.
 Read Required reading below and the plan sections: KD16 stage grammar and Fixed
-Returns, KD17 first four paragraphs (typed intent and graph ID allocation only —
+Returns, KD16 destination URL table, KD17 first four paragraphs (typed intent and graph ID allocation only —
 resume persistence is 17), AS2, AS4, AS5, ### CS4-U3, and Verification Contract
 successors *Position types*, *Conditional stages*, *Fixed-source amount*,
-*Fixed return supply*, *Product-mode parity*, *Default disclosure*.
+*Fixed return supply*, *Product-mode parity*, *Default disclosure*, *Destination URLs*.
 Map ownership: BORROW owns Self-Repaying Loans; SUPPLY owns Fixed Returns;
 REVIEW owns review. parseAction stays compatibility-only.
 After local verification, mark ticket checkboxes done and set Status: resolved.
@@ -55,6 +55,7 @@ After local verification, mark ticket checkboxes done and set Status: resolved.
 - [ ] A partially filled Fixed Return that matched across multiple loans shows exact per-loan amounts and dates under a Multiple completion dates summary; the unfilled suffix stays Waiting and withdrawable
 - [ ] Desktop renders one active decision plus completed-choice summary; mobile renders one decision surface
 - [ ] Route/stage transitions and Back satisfy the heading/opener focus contract
+- [ ] Self-Repaying Loan create stays on `/borrow/`; Fixed Return create stays on `/supply/`; `/create/` is only the type chooser; `?step=` round-trips a decision stage and a transaction-checkpoint value is not enterable
 
 ## Plan unit
 

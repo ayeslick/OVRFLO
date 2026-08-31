@@ -94,6 +94,7 @@ Run the gates the plan's Verification Contract names for that changeset. Do not 
 - Use viem-dlc or eth-compress to transform wallet writes
 - Let log-derived candidates gate, size, or authorize an action
 - Invent an execution-grade USD provider or reuse a display feed as authority
+- Invent destination paths or query keys outside the KD16 URL table; add redirects from pre-CS4 URL shapes; put Advanced in the URL
 - Enable type-aware Oxlint or upgrade to TypeScript 7
 - Claim ticket **09**, **10**, or **18** while Status is `needs-info`
 - Lower `LENDING_RUNTIME_CANARY` if the canary fails; drop the router hook and surface

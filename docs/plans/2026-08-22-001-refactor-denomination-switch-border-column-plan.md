@@ -309,6 +309,33 @@ Stage visibility is deterministic:
 
 `Go to Advanced` is available from desktop account navigation and the mobile menu on every `Default` route; the hub help panel may duplicate it. `Advanced` exposes `Return to Default` in the same global location. `Advanced` is a disclosure level over the current destination, not a separate theme or alternate home. Switching modes preserves the current object or task when supported, or routes to the closest truthful parent and explains the change. Do not invent `Dashboard` or `Markets` destinations unless `PRODUCT.md` or the active surface brief supports them.
 
+**Destination URLs.** The web standard already puts view state in the address bar (`searchParams`, not a second router store). This table is the destination-to-URL contract CS4 must implement. Do not restate that ladder. Paths use a trailing slash (`web/next.config.ts` `trailingSlash: true`). CS1-U7 must not rewrite this table.
+
+| Destination | URL | Notes |
+|---|---|---|
+| Your OVRFLO hub, empty, or incomplete scan | `/` | Incomplete scan does not change the path and does not write matrix query params from a provisional count |
+| Self-Repaying Loan collection | `/?type=loan` | Written only after complete hydration on `/` |
+| Self-Repaying Loan detail | `/?lending=<market>&loan=<id>` | Identity stays `(lending, id)` |
+| Fixed Return collection | `/?type=fixed` | Written only after complete hydration on `/` |
+| Fixed Return detail | `/?lending=<market>&position=<id>` | Same identity rule as today |
+| Create (type not yet chosen) | `/create/` | New static-export page. Empty-portfolio Create and the Create nav item land here |
+| Create Self-Repaying Loan | `/borrow/` | Existing page. `?stream=` and `?step=` stay |
+| Create Fixed Return | `/supply/` | Existing page. `?step=` stays |
+| Activity | `/activity/` | New static-export page. The portfolio matrix on `/` does not apply here |
+| Wrap, unwrap, PT deposit | `/assets/` | Existing page |
+| Risk | `/risk/` | Unchanged |
+| Default vs Advanced | no path or query change | Disclosure only. `Return to Default` is the control. Browser Back does not toggle disclosure. Refresh lands in Default on the same destination |
+
+Query keys that survive: `?lending=`, `?loan=`, `?position=`, `?stream=`, `?step=`, `?type=` (`loan` or `fixed` only). Transaction checkpoints (`acknowledge`, `approve`, `sign`, `pending`, `confirmed`) remain unenterable from history: a URL that names one revalidates to review, then drops as today's flow-history map already requires.
+
+Query keys that die: `?lens=`. Ignore it and strip it. Do not keep lens tabs.
+
+The URL must not carry incomplete-scan count, USD display mode, wallet transaction phase, or Advanced disclosure. Those keep their existing non-URL homes.
+
+The portfolio matrix applies only when the path is `/`. After complete hydration on `/`, write the URL for the resulting surface (hub has no `?type=` and no identity params; collection has `?type=`; detail has identity params). If the URL names an entity the hydration does not own, drop those params and apply the matrix. Incomplete scan on `/` preserves a deep-link URL and does not treat that selection as a confirmed route.
+
+Old Markets URLs (`/?lens=borrowed&loan=…`, `/borrow?stream=…` without the trailing slash, and any other pre-CS4 shape) have no compatibility redirects. KD11 is a fresh column and CS4 is a fresh product shell. Unknown query keys are ignored and must not crash.
+
 `Default` portfolio routing is count- and type-driven only after the bounded discovery scan completes and every candidate has been hydrated. Aggregate count and completeness are `projection`. Each position's ownership, type, status, and amount become `on-chain` only after direct hydration. While a scan is partial or retrying, keep a stable incomplete `Your OVRFLO` state, preserve confirmed cards, and never route to empty, detail, or collection from a provisional count. The scanner and its candidates exist only to build the UI; they never feed action gating, which always uses fresh direct reads. Log-derived candidates are UI hints and display data only; every action-critical fact (current ownership, balances, allowances, stream eligibility, loan/request state, router state, executable bounds) is re-read directly from chain before any wallet prompt, and a stale, partial, or missing candidate never blocks or authorizes an action beyond its display effect.
 
 After complete hydration:
@@ -559,7 +586,7 @@ Ordered units. Write an intent record before the first code write of each unit. 
 - **U4. Factory** (KD6, KD7): `src/OVRFLOFactory.sol` — `registerOvrflo` binding checks, `ovrfloToReserve`, `TokenMinterMismatch`/`ReserveMismatch`, `replaceLending`, `setLendingRouter`, retargeted `sweepExcessUnderlying`, flash forwarder deletion (if any residue from U1). Tests: `test/OVRFLOFactory.t.sol` — replace `test_VaultConstruction_CreatesAndOwnsToken` (`:211-220`) with minter-binding and `vault.reserve()` tests; add reserve mismatch paths; add `replaceLending` (old market still known; new market is `ovrfloToLending`; second `registerLending` still reverts); port mock forwarders (`test/mocks/MockOvrfloAdmin.sol`).
 - **U5. Deploy recipe + tooling** (KD5, KD11): `script/OVRFLO.s.sol` runbook steps 6–9 (6 = deploy vault, 7 = `registerOvrflo(vault)`, 8 = creation-wiring reads (`vault.reserve()`, `reserve.ovrfloToken() == vault.ovrfloToken()`), 9 = binding reads (`token.vault() == vault`, `token.reserve() == reserve`)), `script/seed-local.sh`, `script/lib/OVRFLOTestFixtures.sol` (`_deployConfiguredSystemAs` return tuple grows to `(factory, ovrflo, token, reserve)` — positional destructurers break loudly at compile time), `write-deployment-artifact.mjs` (the artifact's `reserve` field joins the same paired-optional consume rule as `ovrflo`/`lending` — both present or both derived, `tools/scripts/write-deployment-artifact.mjs:27-31`), `test/DeploySize.t.sol` `_artifacts()` gains `OVRFLOReserve`. The client env contract gains nothing (`web/lib/config.ts` unchanged) — reserve reaches the web through bootstrap discovery, not env.
 - **U6. Invariant/fuzz re-derivation** (KD13): reserve wrap suite; vault drops underlying-reserve terms; fizz regeneration. Run the fizz-sync path after U2–U4 land. The GL-nn property IDs (GL-02/03/04 asset flip, GL-06 holder set, GL-07 span, GL-09 retarget, GL-30 minter shape) are cited from the current harness read; verify each against `test/fizz/Properties.sol` during the sync rather than trusting the citation. Recompute raw-slot constants from the regenerated lending golden (`TICKS_SLOT`, packed epoch-slot decode in `test/OVRFLOLending.t.sol`) and keep the `exposed_epochState` cross-checks green.
-- **U7. Web denomination sync** (KD12): asset flips, reserve retargeting via the new bootstrap discovery leg (KD5 provenance decision — `NEXT_PUBLIC_OVRFLO_RESERVE` is not added), approval-count change, `borrow` `onBehalfOf`, E2E + fixtures. State-touching frontend work: write the scratch intent capsule per `docs/maps/SCHEMAS.md` §4 before the first edit.
+- **U7. Web denomination sync** (KD12): asset flips, reserve retargeting via the new bootstrap discovery leg (KD5 provenance decision — `NEXT_PUBLIC_OVRFLO_RESERVE` is not added), approval-count change, `borrow` `onBehalfOf`, E2E + fixtures. State-touching frontend work: write the scratch intent capsule per `docs/maps/SCHEMAS.md` §4 before the first edit. Do not rewrite destination paths or query keys; that contract is KD16 and CS4.
 - **U8. Docs sync**: `README.md` architecture sections, `CONCEPTS.md` (`OVRFLOReserve` entry, three labeled exits, denomination vocabulary), `docs/agents/onboarding.md` §2/§4/§5/§7, `AGENTS.md` overview and solvency fact, `docs/solutions/patterns/ovrflo-critical-patterns.md` (fee denomination; sweep-reserve reasoning moves to the reserve), `VAULT_SECURITY.md` (two burn authorities), `PRODUCT.md` (Operating Context: lender-supply and borrower-proceeds underlying references become ovrfloToken, while `underlying` stays the column identity asset and the wrap/unwrap reserve semantics are unchanged), R-02 rejected-finding pointer follows the sweep to the reserve, `x-ray/` refresh after implementation. Also: the stale reserve-authority lines in `docs/maps/ui/assets.md` and `docs/maps/state/keys/chain-reads.md` (`chain.wrap-reserve` retargets to the reserve read) — the maps-presence gate forces a companion map update with U7 anyway; name the two files so it is not improvised.
 
 ### CS2 — ERC-3156 flash mint in the reserve (KD14, next audit cycle)
@@ -582,7 +609,7 @@ Map ownership is fixed without a new region slug: SHELL owns global navigation a
 
 **Dependencies.** CS1 U7.
 
-**Files.** `DESIGN.md`, `web/app/globals.css`, `web/components/kit/kit.css`, `web/components/kit/Shell.tsx`, `web/components/MarketsApp.tsx`, `web/components/Footer.tsx`, `web/components/first-run/Chooser.tsx`, `docs/maps/ui/`, `docs/maps/state/keys/`, `PRODUCT.md`, `.impeccable/surfaces/web-app-page-tsx.md`, `web/tests/e2e/borrow.feature`, `web/tests/e2e/supply.feature`, `web/tests/e2e/watch.feature`.
+**Files.** `DESIGN.md`, `web/app/globals.css`, `web/components/kit/kit.css`, `web/components/kit/Shell.tsx`, `web/components/MarketsApp.tsx`, `web/components/Footer.tsx`, `web/components/first-run/Chooser.tsx`, `web/app/page.tsx`, `web/app/create/page.tsx`, `web/app/activity/page.tsx`, `web/lib/watch-url.ts`, `web/lib/parse.ts`, `docs/maps/ui/`, `docs/maps/state/keys/`, `PRODUCT.md`, `.impeccable/surfaces/web-app-page-tsx.md`, `web/tests/e2e/borrow.feature`, `web/tests/e2e/supply.feature`, `web/tests/e2e/watch.feature`.
 
 **Approach.**
 
@@ -590,8 +617,10 @@ Map ownership is fixed without a new region slug: SHELL owns global navigation a
 - Implement KD16's shared cool near-white, navy, cobalt, blue-loan, green-fixed-return visual foundation with `DESIGN.md`'s approved semantic tokens and deterministic layout contract.
 - Use moderate radii, subtle shadows, white bordered cards, modern sans type, soft icon medallions, slim progress, generous spacing, and one dominant decision per card.
 - Make `Your OVRFLO`, `Create`, and `Activity` the fixed `Default` labels. Mobile uses the logo and menu. Wallet and network remain visible but secondary.
+- Implement KD16's destination URL table. Shell hrefs are `/`, `/create/`, and `/activity/`. Add static-export pages for `/create/` and `/activity/`. `/create/` is the type chooser (Self-Repaying Loan → `/borrow/`, Fixed Return → `/supply/`). Copy the table into `DESIGN.md` Navigation and into the view-state map. Do not add a region slug.
+- Ignore and strip `?lens=`. Do not write it. Unknown query keys must not crash. Do not add redirects from pre-CS4 URL shapes.
 - Expose `Go to Advanced` in desktop account navigation and the mobile menu on every `Default` route. Expose `Return to Default` in the same global location in `Advanced`, preserving the current object or task.
-- Treat `Advanced` as disclosure over the current destination. Do not invent `Dashboard` or `Markets` unless `PRODUCT.md` or the active surface brief authorizes them.
+- Treat `Advanced` as disclosure over the current destination. Advanced writes no path and no query param. Do not invent `Dashboard` or `Markets` unless `PRODUCT.md` or the active surface brief authorizes them.
 - Apply one visual foundation to both disclosure levels. `Advanced` increases density without reverting to the discarded design system.
 - Sync `PRODUCT.md` Operating Context and `.impeccable/surfaces/web-app-page-tsx.md` to the CS4 `Default` information architecture and normative design system. These files are planned blast radius only in this correction pass.
 - Update maps under the fixed ownership assignment above. Do not add a region slug.
@@ -605,6 +634,10 @@ Map ownership is fixed without a new region slug: SHELL owns global navigation a
 5. Desktop and mobile visual-regression captures satisfy the durable board requirements without asserting JPEG-derived hex values.
 6. Every `Default` route exposes `Go to Advanced`; every `Advanced` route exposes `Return to Default` in the same global location and preserves the current object or task where supported.
 7. At wide layout, welcome spans, type cards use equal columns, and activity/help use 2:1; below the wide breakpoint, source order stacks.
+8. `Your OVRFLO` navigates to `/`, `Create` to `/create/`, and `Activity` to `/activity/`.
+9. `/create/` and `/activity/` exist as static-export pages. `/create/` offers the two position types and links to `/borrow/` and `/supply/`.
+10. Advanced writes no query param. Refresh on a destination lands in Default.
+11. A URL that still carries `?lens=` is ignored and stripped. Unknown query keys do not crash. Pre-CS4 shapes are not redirected.
 
 **Verification.** `DESIGN.md`, shared tokens, and rendered shells agree. No active CS4 rule restores gold-only accent, square one-bit cards, black inversion, mono-heavy/all-caps navigation, bitmap framing, or watch-wall-first IA.
 
@@ -614,20 +647,21 @@ Map ownership is fixed without a new region slug: SHELL owns global navigation a
 
 **Dependencies.** CS4-U1 and CS5-U2's authoritative progressive-read contract if CS5 lands first. The router must remain correct without optional enrichment.
 
-**Files.** `web/components/watch/WatchApp.tsx`, `web/components/watch/Wall.tsx`, `web/components/watch/StreamDetail.tsx`, `web/components/watch/BorrowedDetail.tsx`, `web/components/watch/SuppliedDetail.tsx`, `web/components/watch/ClosedLoanDetail.tsx`, `web/components/assets/AssetsPage.tsx`, `web/lib/discovery/portfolio-log-candidates.ts`, `web/lib/protocol/streams.ts`, `web/lib/protocol/lending.ts`, `web/tests/lib/read-outcome.test.ts`, `web/tests/e2e/watch.feature`.
+**Files.** `web/components/watch/WatchApp.tsx`, `web/components/watch/Wall.tsx`, `web/components/watch/StreamDetail.tsx`, `web/components/watch/BorrowedDetail.tsx`, `web/components/watch/SuppliedDetail.tsx`, `web/components/watch/ClosedLoanDetail.tsx`, `web/app/activity/page.tsx`, `web/lib/watch-url.ts`, `web/lib/parse.ts`, `web/components/assets/AssetsPage.tsx`, `web/lib/discovery/portfolio-log-candidates.ts`, `web/lib/protocol/streams.ts`, `web/lib/protocol/lending.ts`, `web/tests/lib/read-outcome.test.ts`, `web/tests/watch/watch-url.test.ts`, `web/tests/e2e/watch.feature`.
 
 **Approach.**
 
 - Treat aggregate count and completeness as projection. Hydrate every candidate through direct reads before treating ownership, type, status, or amount as on-chain truth.
 - Make `web/lib/discovery/portfolio-log-candidates.ts` the only portfolio log-candidate owner. Protocol stream and lending modules hydrate candidate IDs but never call `getLogs`. Scanner output is UI-only: log-derived candidates are display data; they never gate, permit, size, or price an action, and action-critical facts come from fresh direct reads.
-- Keep a stable incomplete `Your OVRFLO` state while discovery is partial or retrying. Preserve confirmed cards and suppress empty/detail/collection routing until the bounded scan and every hydration complete.
+- Keep a stable incomplete `Your OVRFLO` state while discovery is partial or retrying. Preserve confirmed cards and suppress empty/detail/collection routing until the bounded scan and every hydration complete. Incomplete scan on `/` does not write `?type=` or identity params from a provisional count. A deep-link URL on `/` is preserved and is not a confirmed route until hydration completes.
+- Apply the count/type matrix only when the path is `/`. After complete hydration, write the KD16 URL for the resulting surface. If the URL names an entity the hydration does not own, drop those params and apply the matrix. Empty state's Create control goes to `/create/`.
 - Route zero positions to one empty state with `Create`.
 - Route one position of any type directly to its detail.
 - Route multiple positions of one type directly to that collection.
 - Route mixed position types to a simple `Your OVRFLO` hub with one collection card per type.
 - Keep waiting and completed positions reachable from the same type collection or direct-detail route.
 - Aggregate only same-underlying positions. When token symbols differ, show a count and group totals by underlying instead of summing them.
-- List chain-confirmed, user-meaningful activity newest first. Keep pending and rejected wallet attempts in transaction status. Label partial history incomplete and show activity empty only after the bounded scan completes.
+- Render Activity at `/activity/`. List chain-confirmed, user-meaningful activity newest first. Keep pending and rejected wallet attempts in transaction status. Label partial history incomplete and show activity empty only after the bounded scan completes. The portfolio matrix does not apply on `/activity/`.
 - Collections show count, status, decisive values, sorting, and `View all`. Desktop uses dense rows without horizontal overflow.
 - Detail shows position type, status, source/principal, current user outcome, remaining amount, progress, expected completion date, and valid next action.
 
@@ -644,8 +678,12 @@ Map ownership is fixed without a new region slug: SHELL owns global navigation a
 9. Collection sorting changes row order without changing hydrated counts or hiding completed/waiting entries.
 10. Different token symbols are never summed; same-underlying groups retain exact totals.
 11. Activity is newest-first and chain-confirmed; partial history says incomplete; wallet rejection is not an activity row.
+12. After complete hydration, `/` with one loan writes `?lending=` and `?loan=`; one Fixed Return writes `?lending=` and `?position=`; multiple same-type writes `?type=`; mixed hub writes neither type nor identity.
+13. A stale `?loan=` or `?position=` for an entity the hydration does not own is stripped and the matrix applies.
+14. Incomplete scan on `/` does not add `?type=` or identity params from a provisional count.
+15. `/activity/` lists activity and does not apply the portfolio matrix.
 
-**Verification.** `web/tests/e2e/watch.feature` covers the zero/one/same-type/mixed-type matrix, reachable waiting/completed states, collection rows, and direct detail fields.
+**Verification.** `web/tests/e2e/watch.feature` covers the zero/one/same-type/mixed-type matrix, reachable waiting/completed states, collection rows, direct detail fields, and the KD16 URL writes on `/` and `/activity/`. `web/tests/watch/watch-url.test.ts` covers parse/serialize for surviving keys and `?lens=` strip.
 
 #### CS4-U3 — Build adaptive position-type flows on canonical actions
 
@@ -653,11 +691,12 @@ Map ownership is fixed without a new region slug: SHELL owns global navigation a
 
 **Dependencies.** CS4-U1 and CS4-U2.
 
-**Files.** `web/components/borrow/BorrowFlow.tsx`, `web/components/borrow/AmountStep.tsx`, `web/components/borrow/RateStep.tsx`, `web/components/borrow/ReviewHandoff.tsx`, `web/components/supply/SupplyFlow.tsx`, `web/lib/actions/registry.ts`, relevant supply actions under `web/lib/actions/`, `web/lib/action-runtime.ts`, `web/lib/protocol/streams.ts`, `web/lib/protocol/lending.ts`, `web/tests/lib/actions.test.ts`, `web/tests/lib/action-runtime.test.ts`, `web/tests/e2e/borrow.feature`, `web/tests/e2e/supply.feature`.
+**Files.** `web/app/create/page.tsx`, `web/components/borrow/BorrowFlow.tsx`, `web/components/borrow/AmountStep.tsx`, `web/components/borrow/RateStep.tsx`, `web/components/borrow/ReviewHandoff.tsx`, `web/components/supply/SupplyFlow.tsx`, `web/lib/actions/registry.ts`, relevant supply actions under `web/lib/actions/`, `web/lib/action-runtime.ts`, `web/lib/flow-history.ts`, `web/lib/protocol/streams.ts`, `web/lib/protocol/lending.ts`, `web/tests/lib/actions.test.ts`, `web/tests/lib/action-runtime.test.ts`, `web/tests/e2e/borrow.feature`, `web/tests/e2e/supply.feature`.
 
 **Approach.**
 
 - Use `SOURCE → UNDERLYING → AMOUNT → TERM → OUTCOME → REVIEW`.
+- Keep typed create flows on the KD16 paths: Self-Repaying Loan at `/borrow/`, Fixed Return at `/supply/`. `/create/` remains the type chooser from CS4-U1. Keep `?stream=` and `?step=` as surviving query keys. Transaction checkpoints stay unenterable from history.
 - Show `SOURCE` only for a meaningful choice such as fresh capital versus eligible existing stream.
 - Show `UNDERLYING` only for multiple supported assets.
 - Show `AMOUNT` unless the selected source fixes it.
@@ -692,6 +731,7 @@ Map ownership is fixed without a new region slug: SHELL owns global navigation a
 16. Route/stage transitions and Back satisfy the heading/opener focus contract.
 17. A partially filled Fixed Return that matched across multiple loans shows exact per-loan amounts and dates under a `Multiple completion dates` summary, and its unfilled suffix stays `Waiting` and withdrawable.
 18. A Fixed Return whose entire matched amount falls under one authoritative loan term shows one exact return and date for the whole amount.
+19. Self-Repaying Loan create stays on `/borrow/`; Fixed Return create stays on `/supply/`; `/create/` is only the type chooser; `?step=` round-trips a decision stage and a transaction-checkpoint value is not enterable.
 
 **Verification.** Action and E2E tests prove the exact stage grammar, supply-backed Fixed Returns, hidden `Default` mechanics, supported `Advanced` disclosure, focus behavior, and mode-neutral typed-intent parity.
 
@@ -819,7 +859,7 @@ Map ownership is fixed without a new region slug: SHELL owns global navigation a
 
 **CS4 stop conditions.** Stop if `Your OVRFLO` cannot remain the single `Default` portfolio label; Fixed Return supply cannot be classified and hydrated authoritatively; the bounded scan cannot distinguish incomplete from empty; CS3 is unavailable for no-liquidity request states; safe recovery requires hidden mechanics; visual scope creates two design systems; hosted conversion cannot meet the browser-only trust contract; execution-grade USD authority remains unsettled for an executable USD path; or the remaining completeness critic or final documentation review finds an unresolved contract.
 
-**CS4 Definition of Done.** `DESIGN.md` and shared tokens encode the normative cool near-white, soft blue, card-based visual language. `Default` navigation is `Your OVRFLO`, `Create`, and `Activity`, with global mode reachability. Portfolio routing waits for complete bounded discovery and hydration before applying the zero/one/same-type/mixed-type matrix. Self-Repaying Loans and supply-backed Fixed Returns are separate position types. Adaptive create flows use `SOURCE → UNDERLYING → AMOUNT → TERM → OUTCOME → REVIEW` with exact visibility and invalidation rules. Waiting and completed states remain reachable. Every named state has bounded actions. Mobile and desktop behavior, axe, keyboard, focus, headings, live regions, safe areas, overflow, and reduced motion pass. `Default` hides protocol mechanics. `Advanced` shares the foundation and exposes only supported exact controls. Both compile through one canonical runtime without changing protocol behavior. This Definition of Done cannot be claimed until the blockers, completeness critic, and final documentation review close.
+**CS4 Definition of Done.** `DESIGN.md` and shared tokens encode the normative cool near-white, soft blue, card-based visual language. `Default` navigation is `Your OVRFLO`, `Create`, and `Activity`, with global mode reachability, on the KD16 destination URLs. Portfolio routing waits for complete bounded discovery and hydration before applying the zero/one/same-type/mixed-type matrix. Self-Repaying Loans and supply-backed Fixed Returns are separate position types. Adaptive create flows use `SOURCE → UNDERLYING → AMOUNT → TERM → OUTCOME → REVIEW` with exact visibility and invalidation rules. Waiting and completed states remain reachable. Every named state has bounded actions. Mobile and desktop behavior, axe, keyboard, focus, headings, live regions, safe areas, overflow, and reduced motion pass. `Default` hides protocol mechanics. `Advanced` shares the foundation and exposes only supported exact controls. Both compile through one canonical runtime without changing protocol behavior. This Definition of Done cannot be claimed until the blockers, completeness critic, and final documentation review close.
 
 ### CS5 — viem-dlc read-plane resilience (KD18)
 
@@ -1086,6 +1126,7 @@ PT flash (removed, KD1), underlying flash loans (deferred indefinitely — flash
    - *Permit*: an EIP-2612 signature lets a lender `supply` without a prior `approve` transaction (two calls or a batch); a non-minter still cannot mint.
    - *Product-mode parity*: equivalent `Default` and `Advanced` choices produce the same typed primitive or graph intent before calldata; `createLiveExecutionPlan` consumes it; `parseAction` remains compatibility-only; `Default` hides protocol mechanics and its read-only `Details` cannot change the action.
    - *Portfolio routing*: partial or retrying discovery preserves confirmed cards in an incomplete `Your OVRFLO` state and does not route; only complete bounded discovery plus full hydration applies zero-to-empty, one-to-detail, multiple-same-type-to-collection, and mixed-to-hub routing; waiting and completed positions remain reachable.
+   - *Destination URLs*: `Your OVRFLO` is `/`, `Create` is `/create/`, `Activity` is `/activity/`; typed create stays `/borrow/` and `/supply/`; complete hydration on `/` writes the KD16 query for that surface; stale identity params are stripped; `?lens=` is ignored and stripped; Advanced writes no query param; pre-CS4 shapes are not redirected.
    - *Position types*: Self-Repaying Loans and Fixed Returns are separate create flows; Fixed Return never appears in the loan `OUTCOME` choices.
    - *Conditional stages*: `SOURCE`, `UNDERLYING`, `AMOUNT`, `TERM`, and `OUTCOME` follow KD16's individual visibility rules; `REVIEW` always appears; all-fixed routes directly to review; zero valid options block with named copy; changing an upstream choice preserves only valid dependents and moves to the first newly required or blocking stage.
    - *Fixed-source amount*: an eligible existing stream with a chain-fixed amount skips `AMOUNT`; fresh capital with a selectable amount does not.
@@ -1141,6 +1182,7 @@ These were open in an earlier draft. They are closed:
 8. `replaceLending` and the router hook — CS1 (KD7, KD10), not a later factory/lending reopen. All later products use one canonical runtime (KD17).
 9. Request-book identity — core `onBehalfOf`; no `settle` table (KD10, KD14). Post/execute/wait/cancel stays coupled to CS3 and its CS4 UI.
 10. CS2 constants — deferred to CS2 planning; only the shape (single-digit-bps ceiling, capped owner-set supply cap) is settled here. The execution-grade USD authority and CS6 benchmark decision are also explicitly unsettled and cannot be inferred from this item.
+11. Destination URLs (KD16, user 2026-08-31) — the KD16 table is the path and query contract. Standing web rules still put view state in the address bar; they do not pick these destinations.
 
 The newest four frontend reference boards additionally settle the CS4 visual foundation, `Default` information architecture, separate Self-Repaying Loan and Fixed Return position types, supply-backed Fixed Return semantics, adaptive six-stage grammar, portfolio routing matrix, state presentation, responsive behavior, and accessibility direction. They supersede `PRODUCT.md` Operating Context only for CS4's `Default` information architecture. `DESIGN.md` is the normative implementation contract; the boards are acceptance evidence. These decisions bind the amended scope, but CS4-CS7 remain not build-ready until blockers, the completeness critic, and final documentation review close.
 
@@ -1191,7 +1233,7 @@ Final critic pass (this record): the checkpoint-grammar × state-machine cross-p
 - **AS1 — Normative design authority.** `DESIGN.md` is the implementation contract. The newest four boards are acceptance evidence for visual design, interaction, portfolio states, and disclosed `Default` concepts. Token changes require an explicit design-system revision. They supersede `PRODUCT.md` Operating Context only for CS4's `Default` information architecture. `DESIGN.md` and the sweep rules bind implementation; the boards are acceptance evidence and never override them. Where a board conflicts with `DESIGN.md`, `DESIGN.md` prevails and the board is recorded as superseded.
 - **AS2 — Fixed Return means supply.** `Default` Fixed Returns are OVRFLOLending supply positions. Users supply ovrfloToken at an APR tick. Unmatched funds remain withdrawable and show Waiting without a promised return. Exact return/date requires authoritative matched-position reads. PT acquisition, if still supported, remains an `Advanced` conversion primitive.
 - **AS3 — Portfolio routing waits for complete hydration.** Aggregate count/completeness is projection. Position ownership/type/status/amount is on-chain only after hydration. Partial and retrying scans preserve confirmed cards in a stable incomplete surface and never route from provisional counts. Unlike token symbols are never summed.
-- **AS4 — Stage and mode behavior is deterministic.** Upstream changes preserve only still-valid dependents, clear the rest, recompute visibility, and focus the first newly required/blocking stage. Desktop shows one active decision plus completed-choice summary. Global mode switching is reachable on every route, preserves the object/task where supported, and never invents alternate homes.
+- **AS4 — Stage and mode behavior is deterministic.** Upstream changes preserve only still-valid dependents, clear the rest, recompute visibility, and focus the first newly required/blocking stage. Desktop shows one active decision plus completed-choice summary. Global mode switching is reachable on every route, preserves the object/task where supported, and never invents alternate homes. Destination paths and surviving query keys follow the KD16 URL table.
 - **AS5 — One typed action graph and finality contract.** Equivalent modes produce one typed primitive or graph intent before calldata. One graph type owns stable graph/step IDs, dependencies, rebuilds, receipts, and decoded outputs. Authorization steps remain distinct. Every next prompt follows finality, persistence, wallet reacquisition, rebuild, and simulation. First-mined is pending; position completion also requires a fresh authoritative read.
 - **AS6 — Hosted conversion, USD, and no-liquidity gates.** Hosted Convert is a dedicated re-decoded canonical kind with reviewed CSP origin. The execution-only USD resolver owns normalization, freshness, confidence/deviation, rounding, and token-native formulas. Deposit-plus-borrow blocks before deposit if immediate borrow is not executable and canonical CS3 continuation is unavailable.
 - **AS7 — Read ownership and provenance.** viem-dlc npm 0.0.16 provenance is `0df02a9a79bce8ed0a98974034d34cf5c8de7e11`. Per-provider policy includes range, sustained rate, burst, and concurrency. One discovery owner calls `getLogs`; hydration modules do not. Missing pages or hydration failures are incomplete partial outcomes. Hash and provider/lens state-override probes remain separate. Scanner output is UI-only; it never enters write paths.
@@ -1201,4 +1243,4 @@ Final critic pass (this record): the checkpoint-grammar × state-machine cross-p
 
 ### Remaining sweep exit criteria
 
-Run the completeness critic across CS4-CS7 in dependency order until it reaches a documented diminishing-returns verdict. Then run the final documentation review. Point-fix verified wrong text without renumbering D1-D5, KD1-KD20, CS0-CS7, CS1 U1-U8, existing CS4-CS7 namespaced unit IDs, Verification items 1-8, signed decisions 1-10, or inherited sweep rules 1-9. Only after those reviews and all named blockers close may the unified artifact advance beyond `requirements-only`.
+Run the completeness critic across CS4-CS7 in dependency order until it reaches a documented diminishing-returns verdict. Then run the final documentation review. Point-fix verified wrong text without renumbering D1-D5, KD1-KD20, CS0-CS7, CS1 U1-U8, existing CS4-CS7 namespaced unit IDs, Verification items 1-8, signed decisions 1-10, or inherited sweep rules 1-9. Signed decision 11 is the 2026-08-31 destination URL table (additive). Only after those reviews and all named blockers close may the unified artifact advance beyond `requirements-only`.

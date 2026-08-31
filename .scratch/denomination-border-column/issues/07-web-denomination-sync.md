@@ -18,6 +18,7 @@ Spec/harness: .scratch/denomination-border-column/spec.md — follow its per-ses
 Do not edit the plan. Do not start other units. Do not add Default / Advanced
 navigation, hosted conversion, composite recovery, viem-dlc, or tooling migration.
 Do not add NEXT_PUBLIC_OVRFLO_RESERVE.
+Do not rewrite destination paths or query keys; that contract is KD16 and CS4.
 Before any code, write the scratch intent capsule per docs/maps/SCHEMAS.md §4.
 Read Required reading below and the plan sections: KD5 provenance, KD12, Sweep
 rules 2 and 9, Verification Contract item 6 CS1 U7 bullet, and ### CS1 U7.
