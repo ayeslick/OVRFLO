@@ -1,8 +1,16 @@
 # Concepts
 
-Shared domain vocabulary for this project — entities, named processes, and status concepts with project-specific meaning. Seeded with core domain vocabulary, then accretes as ce-compound and ce-compound-refresh process learnings; direct edits are fine. Glossary only, not a spec or catch-all.
+Shared domain vocabulary for this project — entities, named processes, and status concepts with project-specific meaning. Seeded with core domain vocabulary, then accretes as ce-compound and ce-compound-refresh process learnings; direct edits are fine. Glossary only, not a spec or catch-all. The column tower and hop table live in `docs/agents/system.md`.
 
 ## OVRFLO core
+
+### Column
+
+One underlying plus the vault, receipt token, wrap reserve, lending market, and (after CS3) request book that serve it. The factory admits at most one column per underlying.
+
+ovrfloToken, streams, loans, and supply positions of that column belong to that underlying only. A USD quote for that column keys by `vault.underlying()`. Never apply another column's quote, backing, or lending book. A later underlying is a new column with its own reviewed recipe row.
+
+Live `src/` still keeps wrap on the vault and lending escrow in underlying. After CS1, wrap lives on `OVRFLOReserve` and lending escrows ovrfloToken.
 
 ### Factory
 
@@ -34,9 +42,9 @@ OVRFLO treats Principal Tokens as the backing asset for the post-maturity claim 
 
 ### Underlying asset
 
-The base asset associated with an OVRFLO vault and its receipt token.
+The base asset associated with an OVRFLO vault and its receipt token. It is the column's identity.
 
-Underlying assets back the wrap/unwrap path directly and are also used for fee payment in deposit flows. Underlying held as wrap reserve is not interchangeable with Principal Tokens in accounting, even when both are economically one-to-one at maturity.
+Underlying assets back the wrap/unwrap path directly. Live `src/` still takes the deposit fee in underlying. After CS1 the deposit fee is ovrfloToken from the mint split. Underlying held as wrap reserve is not interchangeable with Principal Tokens in accounting, even when both are economically one-to-one at maturity.
 
 ## OVRFLO processes
 
@@ -74,7 +82,11 @@ Unwrap capacity is bounded by underlying reserve, not by the vault's raw underly
 
 The tracked amount of underlying asset that backs the unwrap path.
 
-Direct token transfers or donations to the vault do not increase the wrap reserve. Excess underlying above the tracked reserve can be recovered without reducing unwrap capacity.
+Direct token transfers or donations do not increase the wrap reserve. Excess underlying above the tracked reserve can be recovered without reducing unwrap capacity. Live `src/` stores this counter on the vault. After CS1 the counter lives on `OVRFLOReserve`.
+
+### USD display
+
+A per-column overlay. The Markets app shows amounts in USD by default when that column's Chainlink recipe is live. The customer can switch to token units. USD never enters calldata. A missing or stale recipe hides USD for that column only. Token-native submit still works. Never reuse another column's quote.
 
 ### Flash mint
 

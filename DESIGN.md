@@ -74,9 +74,11 @@ components:
 
 OVRFLO Markets is a guided position manager. It helps a connected wallet understand what it owns, choose one meaningful economic action, and complete that action with exact consequences visible before signing. It is not a trading terminal or a metrics dashboard.
 
-This file is the normative visual and interaction system. The approved frontend boards are acceptance evidence for it. They are not a fallback source for implementation-time token changes. Any token change requires an explicit design-system revision here before implementation.
+This file is the normative visual and interaction system. The approved frontend boards are acceptance evidence for it. They are not a fallback source for implementation-time token changes. Any token change requires an explicit design-system revision here before implementation. Agent cockpit: `docs/agents/system.md`.
 
 Default and Advanced are disclosure levels over the same current destination. They share tokens, position identities, action intent, transaction feedback, accessibility behavior, and responsive structure. Advanced may reveal exact protocol controls when product truth supports them. It is not a separate theme, alternate home, or license to invent Dashboard or Markets destinations.
+
+Amounts default to USD for the selected column's underlying. The customer can switch to token units. Signing stays token-native. A missing USD quote hides dollars for that column and does not invent a figure.
 
 **Key characteristics:**
 
@@ -84,6 +86,7 @@ Default and Advanced are disclosure levels over the same current destination. Th
 - Deep navy text with cobalt actions.
 - Blue Self-Repaying Loan identity and green Fixed Return identity.
 - Exact token-native consequences before signing.
+- USD as the default display for the selected column.
 - One active economic decision at a time.
 - Clear incomplete, waiting, failed, and recovery states.
 

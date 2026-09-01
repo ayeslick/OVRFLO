@@ -1,6 +1,8 @@
 # Issue tracker: Local Markdown
 
-Issues and specs (you may know a spec as a PRD) for this repo live as markdown files in `.scratch/`, not GitHub Issues. `gh` is not installed on this machine — do not shell out to it for issue-tracking work; use file reads/writes under `.scratch/` instead.
+Campaign issues and specs live as markdown files in `.scratch/`, not GitHub Issues. `gh` is installed for pull requests, checks, and GitHub API work. Do not publish denomination tickets as GitHub Issues unless the Owner asks.
+
+The column tower and hop table live in `docs/agents/system.md`.
 
 ## Conventions
 

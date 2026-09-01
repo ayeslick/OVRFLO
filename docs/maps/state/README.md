@@ -5,7 +5,7 @@ query/wagmi/executor state, and the facts the UI displays. It exists so an agent
 answer *"what state do I touch, and who depends on it?"* before editing.
 
 **This is not the Solidity state map.** `x-ray/` remains the authority for on-chain
-entry points and contract state. This catalog covers the browser. A key marked
+entry points and contract state. The column tower is `docs/agents/system.md`. This catalog covers the browser. A key marked
 `on-chain` here describes *the browser's copy of* a chain fact and who depends on
 that copy — it neither summarises nor supersedes `x-ray/`, and a question about
 contract behaviour is answered there, not here.

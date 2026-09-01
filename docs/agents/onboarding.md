@@ -2,12 +2,14 @@
 
 Audience: coding agents. Not a user manual. Not a marketing brief.
 
+The system tower, live vs target, and the hop table live in `docs/agents/system.md`. Read that file first. This file is the live-`src/` briefing.
+
 Purpose: take a new agent from zero to two jobs:
 
 1. Ship code that matches the live contracts and the settled design.
 2. Advise what this codebase must do and must not do, for this change and for the mid and long term.
 
-Verified against `src/` on 2026-08-14. Treat every claim below as a hypothesis until the agent re-opens the named file. Line numbers drift. Function names and immutables drift less.
+Verified against `src/` on 2026-08-14. Treat every claim below as a hypothesis until the agent re-opens the named file. Line numbers drift. Function names and immutables drift less. This briefing describes **live** `src/`. Wrap still lives on the vault. Lending still escrows underlying. PT flash still exists. The denomination plan is the **target**. Do not blend those two states in one sentence.
 
 ---
 
@@ -28,6 +30,8 @@ Campaign tickets under `.scratch/` copy this sequence into the session prompt. O
 ## 0. How to read this repo
 
 This repository holds years of plans, audits, glossaries, and UI briefs. Many are true. Some are superseded. Some mix live state with a future name. Some contradict `src/` in one sentence.
+
+The hop table and live-vs-target split are in `docs/agents/system.md`. If this briefing disagrees with the maps charter, apply the ranking table in `system.md`. Do not average the two lists.
 
 ### Trust ranking (highest wins)
 
@@ -78,6 +82,8 @@ The vault stays solvent on the combined check in §5. The deposit adds PT backin
 ---
 
 ## 2. Live contract map
+
+This table is live `src/` today. Target column wiring (reserve, ovrfloToken lending, no PT flash, request book) is `docs/agents/system.md` plus the denomination plan. Do not treat the target as already in `src/`.
 
 Six Solidity files in `src/`. Nothing else is a protocol contract.
 

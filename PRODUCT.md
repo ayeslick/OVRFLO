@@ -20,7 +20,11 @@ Users interact through a wallet-connected application and are expected to unders
 
 OVRFLO enables self-repaying loans backed by deterministic, non-cancelable OVRFLO Streams created from Pendle PT deposits. It turns the fixed discount embedded in a principal token into two usable legs: immediate ovrfloToken value and streamed value through maturity.
 
+The product unit is a **column**: one underlying (wstETH, rETH, sUSDe, or a later one) with its vault, receipt token, wrap reserve, and lending market. A second underlying is a second column. The Markets app shows each column's amounts in USD by default and keeps token units available. Transactions stay in token units.
+
 Success means users can supply liquidity at a fixed APR, borrow against streams (a maximum borrow is economically a sale), manage positions, and exit their ovrfloToken positions with the exact financial consequences visible before signing.
+
+The column tower for agents is `docs/agents/system.md`.
 
 ## Positioning
 

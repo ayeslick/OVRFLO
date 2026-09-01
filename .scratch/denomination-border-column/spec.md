@@ -2,6 +2,8 @@
 
 **Authoritative plan:** `docs/plans/2026-08-22-001-refactor-denomination-switch-border-column-plan.md`
 
+**First hop:** `docs/agents/system.md`. Then this spec's session rules. Then the ticket's plan unit. Do not reread the whole plan for a question the hop table already routes.
+
 **Objective:** Switch the column to ovrfloToken denomination, extract wrap/unwrap into `OVRFLOReserve` via nested constructors, admit the column at the factory, remove PT flash, add the lending router hook, then replace the Markets product with the boards' `Default` / `Advanced` model over one canonical action runtime. CS5–CS7 add public-read resilience, a gated eth-compress evaluation, and classified web tooling.
 
 **Tickets:** `.scratch/denomination-border-column/issues/` (01–26). Work the frontier: any ticket whose blockers are done. Do **one ticket per chat**.
@@ -20,7 +22,7 @@ Do **one ticket per chat**. Do not run the whole plan in one session.
 2. Claim the ticket: set `Status: claimed` near the top of that issue file. Do not claim a ticket whose Status is `needs-info`.
 3. Paste the **Session prompt** block from that ticket (already filled in).
 4. Let `/ce-work` implement only that plan unit; it must read Required reading before code.
-5. **The plan is the single decision authority.** Search Key Decisions, Implementation Units, Sweep Contracts, and the Verification Contract before assuming anything is open. If something genuinely is not pinned, STOP and surface it; do not decide locally. Do not re-litigate settled ground: `docs/audit/rejected-findings-record.md` and the plan's signed decisions are binding.
+5. **The plan is the single decision authority for this campaign.** Search the hop table in `docs/agents/system.md` first. Then search Key Decisions, Implementation Units, Sweep Contracts, and the Verification Contract before assuming anything is open. If something genuinely is not pinned, STOP and surface it; do not decide locally. Do not re-litigate settled ground: `docs/audit/rejected-findings-record.md` and the plan's signed decisions are binding.
 6. **Do not edit the plan file** while implementing. Log every deviation on the ticket with its reason.
 7. Before the first code write, record intent (assumptions, predicted blast radius, verification). Solidity: Sequence 6 in `docs/solutions/patterns/solidity-implementation-discipline.md`. State-touching web: scratch YAML under `.scratch/decisions/` per `docs/maps/SCHEMAS.md` §4. Do not reconstruct the record afterward.
 8. Before hand-writing production code, run a **mandatory reuse audit**. In the final report, list what was reused; if a new abstraction was necessary, state the concrete incompatibility that prevented reuse.
@@ -137,14 +139,14 @@ Run the gates the plan's Verification Contract names for that changeset. Do not 
 
 ## Authority (do not invent)
 
-When sources disagree, the higher one wins:
+Start with `docs/agents/system.md`. When sources disagree, the higher one wins:
 
 1. The plan's Key Decisions, Sweep Contracts (inherited CS1 rules 1–11 and AS1–AS10), and Verification Contract.
 2. Product truth: `PRODUCT.md`, `CONCEPTS.md`. CS4 `Default` information architecture follows `DESIGN.md`; the newest four boards are acceptance evidence only (AS1).
 3. Contract truth: live `src/` as built after each ticket — never a doc's paraphrase of a prior architecture.
 4. `docs/audit/rejected-findings-record.md` for findings already disproven.
 
-Stop conditions in the plan Goal Capsule (a)–(q) remain binding. A hit is a stop, not a local workaround.
+Stop conditions in the plan Goal Capsule (a)–(p) remain binding. A hit is a stop, not a local workaround.
 
 ---
 

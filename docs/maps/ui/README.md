@@ -2,6 +2,8 @@
 
 The meaning layer for OVRFLO Markets UI/UX. Eight region-level briefs, each
 documenting its controls against the seven mandatory fields in `../SCHEMAS.md`.
+Column tower: `docs/agents/system.md`. These eight files are the live control map.
+CS4 Default / Advanced is the target product IA, not a ninth region.
 
 **All eight bodies are written (watch-surface rebuild, U2).** Every control
 carries the seven mandatory fields. Optional columns — a11y notes, colour/token

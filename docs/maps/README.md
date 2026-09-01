@@ -4,6 +4,9 @@ This is the operating charter for changing **OVRFLO Markets UI/UX**. It exists s
 coding agent opening a fresh checkout can declare blast radius and durable rationale
 without inventing process.
 
+The column tower, live vs target, and the hop table live in `docs/agents/system.md`.
+Read that file first. This charter is layer 5 live control map plus client state.
+
 Solidity already has an entry→state map and a process to keep it honest (`x-ray/`).
 This is the client-side equivalent for the web app. **The two are separate systems.**
 `x-ray/` remains the authority for on-chain state; nothing here replaces or subsumes it.
@@ -33,8 +36,12 @@ Two rules make this operational:
   has no health factors and no liquidations. A number, badge, or gauge that appears
   in a comp but has no product truth behind it does not enter the product.
 
-Code is last on purpose. Code that contradicts a brief is a defect in the code, not
-an amendment to the brief.
+Maps charter "code is last" applies to **product meaning vs `web/`**. It does not
+outrank `src/` for what the chain does. See `docs/agents/system.md` ranking table.
+
+The eight regions below are the **live** Markets control map. CS4 target IA is
+`Default` / `Advanced` over one action graph (`DESIGN.md`). Do not add a ninth
+region for Default. Do not treat the eight files as already rewritten to Default.
 
 ## The eight Markets regions
 

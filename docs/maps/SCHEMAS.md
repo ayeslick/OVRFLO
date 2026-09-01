@@ -4,7 +4,7 @@ Region briefs, state entries, and scratch decision files **must** validate again
 the schemas below. These are the field names other artifacts are checked against —
 do not rename them locally, and do not add a parallel vocabulary.
 
-Charter: `README.md`. Review contract: `REVIEW.md`.
+Charter: `README.md`. Review contract: `REVIEW.md`. Column tower: `docs/agents/system.md`.
 
 ---
 

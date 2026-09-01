@@ -1,0 +1,6 @@
+ts	phase	decision	why	evidence	result
+2026-09-01T04:35:00Z	frame	root object is the column, not a pile of contracts	agents were blending live src with the denomination target and following two trust rankings	docs/agents/onboarding.md:80 docs/maps/README.md:21	framed
+2026-09-01T04:40:00Z	design	one cockpit file plus hops, no second glossary, no ninth maps region	laziness. restating the tower in every charter is the failure mode	docs/agents/system.md	wrote
+2026-09-01T04:50:00Z	unit	hop AGENTS onboarding CONCEPTS PRODUCT DESIGN maps plan spec domain issue-tracker	every later session should open one file then one hop	git grep docs/agents/system.md	VERIFIED hops present
+2026-09-01T04:55:00Z	skip-arena	did not run architect/arena	encoding a settled column model, not a novel architecture bakeoff	docs/agents/system.md	skipped
+2026-09-01T04:56:00Z	skip-second-family	did not spawn a different-family trail reviewer	session policy forbids GPT and limits review models. parent remains grok	user_rule cursor-models-only	open

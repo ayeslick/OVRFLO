@@ -1,4 +1,4 @@
-Protocol briefing for agents (trust ranking, live contract map, settled do/do-not, known contradictions): `docs/agents/onboarding.md`. Read that file before advising on or changing protocol code. The **Before writing code** section there is binding: record intent (assumptions, predicted blast radius, verification) *before* the first code write; log every deviation from the active plan and why (do not edit the plan); compare the actual `git diff --stat` to that prediction before calling the work done. Do not reconstruct the record afterward. Frontend state-touching changes also write the scratch intent capsule (`docs/maps/SCHEMAS.md` §4).
+The system is one column tower. Start at `docs/agents/system.md`. Then read `docs/agents/onboarding.md` for the live contract map, trust ranking, and settled do/do-not. Read both before advising on or changing protocol code. The **Before writing code** section there is binding: record intent (assumptions, predicted blast radius, verification) *before* the first code write; log every deviation from the active plan and why (do not edit the plan); compare the actual `git diff --stat` to that prediction before calling the work done. Do not reconstruct the record afterward. Frontend state-touching changes also write the scratch intent capsule (`docs/maps/SCHEMAS.md` §4).
 
 Read https://ethskills.com/SKILL.md and follow it before writing Solidity or shipping anything onchain.
 Read `docs/solutions/patterns/solidity-implementation-discipline.md` before writing or modifying Solidity — it carries the minimality ladder, the FREI-PI gate, the root-cause-fix procedure, the precedence rule (plan > critical patterns > ladder), and Sequence 6–9 (intent record → implement → verify → compare the final diff).
@@ -55,7 +55,7 @@ Default canonical labels (no renames): `needs-triage`, `needs-info`, `ready-for-
 
 ### Domain docs
 
-Single-context layout (no `CONTEXT-MAP.md`). See `docs/agents/domain.md`.
+The column tower is `docs/agents/system.md`. Vocabulary is `CONCEPTS.md`. See `docs/agents/domain.md`.
 
 ### Testing
 
