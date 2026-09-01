@@ -468,7 +468,7 @@ A single `OVRFLOToken` is shared by every PT market that resolves to the same un
 
 ## Roadmap
 
-**The Pool** — passive, closed-end, sealed, pro-rata aggregation of loans over the same StreamPricing core. Many lenders pool underlying, many borrowers each pledge a stream, residuals return per borrower, and lenders own a pro-rata share of the sum of obligations. Built after the Lending establishes a market APR.
+**The Pool** — passive, closed-end, sealed, pro-rata aggregation of loans over the same StreamPricing core. Many lenders pool underlying, many borrowers each pledge a stream, residuals return per borrower, and lenders own a pro-rata share of the sum of obligations. Built after the lending market establishes an APR.
 
 ## External Dependencies
 
@@ -487,7 +487,7 @@ A single `OVRFLOToken` is shared by every PT market that resolves to the same un
 
 ### Prerequisites
 
-- [Foundry](https://lending.getfoundry.sh/getting-started/installation)
+- [Foundry](https://book.getfoundry.sh/getting-started/installation)
 
 ### Build
 
