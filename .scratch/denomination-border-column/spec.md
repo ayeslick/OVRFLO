@@ -126,6 +126,8 @@ Run the gates the plan's Verification Contract names for that changeset. Do not 
 - Spread Ultracite `core.ignorePatterns` (it drops `web/lib/generated.ts`)
 - Implement ticket **09** or **10** before **08** is resolved
 - Let the request book pick, search, or cap a tick; the borrower's stored `aprBps` is the only fill tick (KD14)
+- Wrap core `borrow` in `try/catch` inside the request book; only `previewBorrow` is caught, and only `EmptyTick` / `BelowMinimum` rest a request (KD14 fill-or-rest)
+- Read one `ovrfloToLending` per vault as the whole lending set in the web; enumerate `lendings(i)` so a replaced market's positions stay visible (KD7)
 - Lower `LENDING_RUNTIME_CANARY` if the canary fails; drop the router hook and surface
 - Use `git commit` from the agent (Cursor injects `Co-authored-by`); use write-tree / commit-tree / update-ref
 

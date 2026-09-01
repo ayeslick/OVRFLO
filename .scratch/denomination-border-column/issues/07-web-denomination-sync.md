@@ -23,7 +23,7 @@ Before any code, write the scratch intent capsule per docs/maps/SCHEMAS.md §4.
 Read Required reading below and the plan sections: KD5 provenance, KD12, Sweep
 rules 2 and 9, Verification Contract item 6 CS1 U7 bullet, and ### CS1 U7.
 Bootstrap gains a third multicall leg; result pairing becomes ×3; VaultInfo gains
-reserve. Maps: assets.md and chain-reads.md wrap-reserve retarget with this ticket.
+reserve and retiredLendings (KD7 web wind-down pin; enumerate lendings(i)). Maps: assets.md and chain-reads.md wrap-reserve retarget with this ticket.
 After local verification, mark ticket checkboxes done and set Status: resolved.
 ```
 
@@ -39,6 +39,7 @@ After local verification, mark ticket checkboxes done and set Status: resolved.
 
 - [ ] Scratch intent capsule exists before the first web state-touching edit
 - [ ] Bootstrap reads `factory.ovrfloToReserve(vault)` into `VaultInfo.reserve`; no client env reserve variable
+- [ ] Bootstrap enumerates `lendings(i)` for `i < lendingCount`, maps each through `lendingToOvrflo`, and fills `VaultInfo.retiredLendings` with markets where `ovrfloToLending[vault] != market` (KD7 web wind-down pin); with no replacement the list is empty and existing behavior is unchanged
 - [ ] Supply path branded money is ovrfloToken, not underlying
 - [ ] Deposit review requires one PT approval and no underlying fee approval
 - [ ] Wrap and unwrap target the discovered reserve; wrap-reserve reads target the reserve

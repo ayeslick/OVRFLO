@@ -45,6 +45,8 @@ After local verification, mark ticket checkboxes done and set Status: resolved.
 - [ ] A candidate whose reserve reports a foreign factory is rejected
 - [ ] `ovrfloToReserve` is write-once; no `replaceReserve` exists
 - [ ] `replaceLending`: `ovrfloToLending` is the new market; `registerLending` still reverts `LendingExists`; factory admin still reaches the old market; an old-market loan can `repay` / `close` / `claim`; `LendingReplaced` fires
+- [ ] `replaceLending` appends the new market to `lendings` / `lendingCount` and keeps the old entry, so a reader can enumerate every market of a vault (KD7 web wind-down pin)
+- [ ] The `replaceLending` NatSpec or the factory doc names the operator order: deploy the new market, `replaceLending(new)`, then `setLendingRouter` on the new market once a book bound to it exists
 - [ ] `setLendingRouter` forwards to the market; factory re-emits
 - [ ] `sweepExcessUnderlying(ovrflo, to)` calls the registered reserve
 - [ ] `OvrfloInfo` tuple length and field order are unchanged

@@ -19,9 +19,10 @@ Do not edit the plan. Do not start other units. Do not wait on 18. Do not invent
 request-book contract behavior; consume CS3 canonical post/execute/wait/cancel.
 If ticket 10 is not resolved, do not claim this ticket.
 Before any writes, write the scratch intent capsule per docs/maps/SCHEMAS.md §4.
-Read Required reading below and the plan sections: KD14 request states, KD16
-waiting copy, AS9, ### CS4-U5, and Verification Contract successors
-*State-action contract*, *Separate exits*, *Immediate-total honesty*.
+Read Required reading below and the plan sections: KD7 web wind-down pin, KD14
+request states and resting truth, KD16 waiting copy, AS9, ### CS4-U5, and
+Verification Contract successors *State-action contract*, *Separate exits*,
+*Immediate-total honesty*, *Retired market wind-down*.
 Closing the modal is not cancelling the attempt. Every reset path is resume (17).
 After local verification, mark ticket checkboxes done and set Status: resolved.
 ```
@@ -45,6 +46,9 @@ After local verification, mark ticket checkboxes done and set Status: resolved.
 - [ ] No borrower demand yet remains reachable as an unmatched Fixed Return supply state with a valid next action and withdrawable funds
 - [ ] Market moved requires refreshed review before submission
 - [ ] Retired-router state disables execute and preserves cancel
+- [ ] Retired-market position offers repay, close, claim, and liquidity withdraw; never offers supply, borrow, or request post; `Default` copy is the KD7 sentence
+- [ ] Waiting-for-liquidity copy states that vested ovrfloToken stays in the stream until cancel or loan close, and that a request past series maturity cannot fill and must be cancelled
+- [ ] The request-post authorization leg names the book as ERC-721 spender, not the lending market
 - [ ] Completed position exposes detail; PT claim appears only with maturity and PT backing; unwrap appears whenever `OVRFLOReserve` and wallet ovrfloToken balance permit
 - [ ] Network/read failure never renders authoritative zero or empty portfolio
 - [ ] Caught render error records region and execution phase and offers persisted-attempt resume rather than a blind restart

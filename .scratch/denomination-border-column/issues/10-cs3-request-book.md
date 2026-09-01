@@ -19,10 +19,12 @@ Spec/harness: .scratch/denomination-border-column/spec.md — follow its per-ses
 Do not edit the plan. Do not start CS4 request UI (19). Do not add settle
 or a loanId-to-borrower table. Do not add a tick ceiling, a tick search, or a
 tickDepths scan: the borrower's stored aprBps is the only fill tick.
+Never wrap core borrow in try/catch; follow the KD14 fill-or-rest order.
 Before any writes, write the Solidity intent record (Sequence 6).
-Read Required reading below and the plan sections: KD10, KD14 CS3 bullets,
-CS3-U1, CS4-U4 no-liquidity gate, Verification Contract successor
-*Request book attribution*.
+Read Required reading below and the plan sections: KD10, KD14 CS3 bullets
+(including the fill-or-rest algorithm), CS3-U1, CS4-U4 no-liquidity gate,
+Verification Contract successors *Request book attribution* and
+*Request book fill-or-rest*.
 Seed must call setLendingRouter after deploy. DeploySize gates the book.
 After local verification, mark ticket checkboxes done and set Status: resolved.
 ```
@@ -42,6 +44,10 @@ After local verification, mark ticket checkboxes done and set Status: resolved.
 - [ ] Escrowed streams are never drawn from
 - [ ] `cancel` is borrower-only while the request rests and returns the stream intact without reading the router slot
 - [ ] Post-time fill runs when core `borrow` at the stored `aprBps` clears `minAcceptable`; later `execute` is permissionless and fills at the stored `aprBps` only
+- [ ] `post` follows the KD14 fill-or-rest order: router gate (`lending.router() == address(this)`, else revert), `StreamPricing.requireEligible` plus `remaining >= lending.MIN_STREAM_AMOUNT()` (failure reverts `post`), `previewBorrow` in `try/catch` that rests only on `EmptyTick` or `BelowMinimum` and re-reverts every other error with the same data, then core `borrow` with `minAcceptable`; core `borrow` is never inside `try/catch`
+- [ ] Depth exists but net proceeds are below `minAcceptable`: `post` rests without calling core `borrow`
+- [ ] `execute` has no `try/catch`; a resting request past series maturity makes `execute` revert `SeriesMatured` and `cancel` still returns the stream
+- [ ] The human approves the book on the lockup; a human who approved only the lending market cannot post
 - [ ] Depth at a cheaper tick does not fill: `execute` reverts and the request keeps resting; no tick search or `tickDepths` read exists in the book
 - [ ] Every core `borrow` leg uses `onBehalfOf = human` and requires `lending.router() == address(this)`
 - [ ] Proceeds go to the human; the stream returns to the human at close; the book holds nothing after a successful execute except still-resting requests

@@ -18,10 +18,11 @@ Spec/harness: .scratch/denomination-border-column/spec.md — follow its per-ses
 Do not edit the plan. Do not start other units. Do not build create flows (16).
 Do not wait for CS5-U2; the router must remain correct without optional enrichment.
 Before any writes, write the scratch intent capsule per docs/maps/SCHEMAS.md §4.
-Read Required reading below and the plan sections: KD16 portfolio routing, KD16
-destination URL table, AS3, AS10, ### CS4-U2, Verification Contract successors
-*Portfolio routing* and *Destination URLs*, and map ownership (WATCH owns
-portfolio and activity).
+Read Required reading below and the plan sections: KD7 web wind-down pin, KD16
+portfolio routing, KD16 destination URL table, AS3, AS10, ### CS4-U2,
+Verification Contract successors *Portfolio routing*, *Destination URLs*, and
+*Retired market wind-down*, and map ownership (WATCH owns portfolio and
+activity).
 Log-derived candidates are display data. Action-critical facts are re-read
 directly from chain before any wallet prompt.
 After local verification, mark ticket checkboxes done and set Status: resolved.
@@ -48,6 +49,7 @@ After local verification, mark ticket checkboxes done and set Status: resolved.
 - [ ] Waiting and completed positions remain reachable and retain their meaningful status
 - [ ] Collection sorting changes row order without changing hydrated counts or hiding completed/waiting entries
 - [ ] Different token symbols are never summed; same-underlying groups retain exact totals
+- [ ] Positions hydrate from the active market and from every `VaultInfo.retiredLendings` entry; a retired-market position keeps type and status, carries the `retired market` marker, and counts in the matrix (KD7 web wind-down pin)
 - [ ] Activity is newest-first and chain-confirmed; partial history says incomplete; wallet rejection is not an activity row
 - [ ] After complete hydration, `/` with one loan writes `?lending=` and `?loan=`; one Fixed Return writes `?lending=` and `?position=`; multiple same-type writes `?type=`; mixed hub writes neither type nor identity
 - [ ] A stale `?loan=` or `?position=` for an unowned entity is stripped and the matrix applies
