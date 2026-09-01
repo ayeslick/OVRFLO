@@ -42,7 +42,7 @@ The hop table and live-vs-target split are in `docs/agents/system.md`. If this b
 5. **`x-ray/`** — entry points and invariants as of a named commit. IDs were renumbered at the v1-lite rewrite. Cite as `x-ray/invariants.md` plus the commit, never as a timeless ID.
 6. **`CONCEPTS.md`** — glossary. Use the live "OVRFLOLending v1-lite" terms. The earlier "OVRFLOLending" section is labeled superseded. Some live-looking entries already use the unbuilt stream-fork name.
 7. **`PRODUCT.md`** — product identity for the Markets app. `docs/maps/` puts this above UI code for *meaning*. It does not outrank `src/` for what the chain does.
-8. **`AGENTS.md`, `README.md`** — orientation. Both lag. Both still name deleted functions in places, or mix flash-loan reentrancy facts.
+8. **`README.md`** — orientation. Lags. Can still name deleted functions or mix flash-loan reentrancy facts. **`AGENTS.md`** is the always-on session router, hydra list, and landmines. It is not the live contract map. That map is this file.
 9. **Historical plans, `.scratch/`, old audit writeups, model memory.** Use as leads. Never as authority.
 
 ### Conflict rule

@@ -94,7 +94,8 @@ New work joins a layer. It does not start a parallel system.
 | A new underlying | A factory-admitted column, plus a reviewed USD recipe row. Token-native flows do not wait. Never copy wstETH's row. |
 | A new PT series | `setSeriesApproved` on an existing column. Same underlying recipe. |
 | A new position type | `CONCEPTS.md` plus a maps control. Not a ninth region until the Owner amends the maps charter. |
-| A new agent lesson | `docs/solutions/` and, if ALWAYS REQUIRED, a critical pattern. Not a third onboarding essay. |
+| A new agent lesson | `docs/solutions/` and, if ALWAYS REQUIRED, a critical pattern. Not a third onboarding essay and not an `AGENTS.md` architecture dump. |
+| A session landmine that hops failed to stop | `AGENTS.md` landmines. Hydra findings stay inlined. |
 | A plan deviation | The ticket. Not an edit to the plan during implementation. |
 | A display amount | Layer 4. Canonical action and calldata stay layer 3. |
 

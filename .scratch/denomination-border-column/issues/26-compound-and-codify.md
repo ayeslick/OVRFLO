@@ -41,7 +41,7 @@ ovrflo-critical-patterns.md.
 - [ ] No new rule restates an existing critical pattern (reference only)
 - [ ] Plan-gap harvest classifies could-not-follow-the-plan instances (ambiguity / contradiction / unpinned decision / wrong assumption / missing contingency)
 - [ ] Open owner gates (eth-compress, CS7 pins) are listed rather than silently closed. USD recipes, Hosted Convert, CS2, and CS3 are in this plan — do not relist them as missing plans.
-- [ ] `AGENTS.md` reading list points at any new required docs
+- [ ] `AGENTS.md` Open by task points at any new always-required doc. Do not restore an architecture essay into that file.
 - [ ] User has reviewed the harvest
 
 ## Plan unit

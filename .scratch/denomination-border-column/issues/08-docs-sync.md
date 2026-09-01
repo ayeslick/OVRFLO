@@ -40,7 +40,7 @@ After local verification, mark ticket checkboxes done and set Status: resolved.
 - [ ] `README.md` roadmap line is "Built after the lending market establishes an APR"
 - [ ] README architecture sections describe `OVRFLOReserve`, two named minters, ovrfloToken lending escrow, and nested deploy
 - [ ] `CONCEPTS.md` has an `OVRFLOReserve` entry, three labeled exits, and denomination vocabulary
-- [ ] `docs/agents/onboarding.md` §2/§4/§5/§7 and `AGENTS.md` overview plus solvency fact match KD13
+- [ ] `docs/agents/onboarding.md` §2/§4/§5/§7 combined solvency and live map match KD13. Do not restore an Architecture Overview into `AGENTS.md`; that file stays the session router.
 - [ ] Critical patterns fee denomination and sweep-reserve reasoning move to the reserve
 - [ ] `VAULT_SECURITY.md` records two burn authorities
 - [ ] `PRODUCT.md` Operating Context: lender-supply and borrower-proceeds references are ovrfloToken; `underlying` stays column identity
