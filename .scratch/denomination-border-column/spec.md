@@ -8,7 +8,7 @@
 
 **Tickets:** `.scratch/denomination-border-column/issues/` (01–26). Work the frontier: any ticket whose blockers are done. Do **one ticket per chat**.
 
-**CS0** is folded into ticket **08**. **CS4-U4** is split: ticket **17** ships composite recovery; ticket **18** ships Hosted Convert and per-underlying USD. Tickets **09** and **10** are CS2 and CS3 in this plan.
+**CS0** shipped on 2026-09-01 as its own two-line README commit; no ticket carries it. **CS4-U4** is split: ticket **17** ships composite recovery; ticket **18** ships Hosted Convert and per-underlying USD. Tickets **09** and **10** are CS2 and CS3 in this plan.
 
 ---
 
@@ -55,10 +55,11 @@ Read `PRODUCT.md`, `DESIGN.md`, `docs/solutions/patterns/ovrflo-web-standard.md`
 07 ── 12 ──┬── 13
            └── 14 ── 21 ── 22 (22 only if 21 evaluates)
 
-08 + 13 + 14 + 20 + 21 ── 23 ── 24 ── 25 ── 26
+08 + 13 + 14 + 18 + 20 + 21 ── 23 ── 24 ── 25 ── 26
 ```
 
 - **01** can start immediately.
+- **Parallel tickets use separate git worktrees.** Two chats must not share one checkout (pattern #24). For each ticket that runs beside another: `git worktree add ../OVRFLO-<nn> -b ticket/<nn> <campaign-branch>`, work there, then merge `ticket/<nn>` into the campaign branch on resolve and remove the worktree. Serial tickets may share the checkout.
 - **05** and **06** run in parallel after **04**.
 - **11** and **12** run in parallel after **07**. Do not wait for **08**.
 - **13** and **14** run in parallel after **12**.
@@ -67,9 +68,31 @@ Read `PRODUCT.md`, `DESIGN.md`, `docs/solutions/patterns/ovrflo-web-standard.md`
 - **18** is ready-for-agent after **17**. USD is a per-underlying recipe table (KD17). Launch ships the wstETH row. A missing row fails closed. Never reuse wstETH for another column.
 - **17** must not wait on **18**. **19** and **20** must not wait on **18**.
 - **22** exists only if **21** records `evaluate` and **22** then records final `adopt`. If **21** records `do not adopt`, mark **22** cancelled.
-- **23** waits on CS1 docs (**08**), CS5 (**13**, **14**), CS4 a11y (**20**), and the CS6 decision (**21**). **23** must not wait on **09**, **10**, **18**, or **22**.
+- **23** waits on CS1 docs (**08**), CS5 (**13**, **14**), CS4 web code (**18**, **20**), and the CS6 decision (**21**). **23** must not wait on **09**, **10**, or **22**. Reason: the formatting-only commit (**25**) and the parity ledger (**24**) must run over settled web code (plan CS7-U1 dependencies).
 - Tickets **21** and **23** also wait for owner start-OK. Pins are already in KD19/KD20. Do not re-research pins.
 - Ticket **26** is coordinator-executed, not a fresh-chat cheap-model ticket.
+
+### Model routing (updated 2026-09-01; supersedes `ori-eval/routing-recommendation.md`)
+
+All model slugs are available. The per-ticket chat is both orchestrator and implementer; it dispatches one read-only reviewer subagent and disposes the findings itself. Do not keep a standing orchestrator chat across tickets; context cost grows with every ticket. The main cost lever is the Required reading rule: read the named plan sections only, never the whole plan.
+
+| Tickets | Implementer (UI pick for the chat) | Reviewer subagent (read-only) |
+|---|---|---|
+| 02, 03, 04, 06, 09, 10 (custody, admission, invariants, flash mint, request book) | `claude-fable-5-thinking-medium` | `gpt-5.6-sol-medium`; second pass `cursor-grok-4.6-xhigh` on **02** and **04** only. Reviewers read https://ethskills.com/SKILL.md (security and audit branches) and `docs/audit/rejected-findings-record.md`, then use their own judgment. Do not use the `solidity-security-auditor` subagent or any other review persona. |
+| 01, 05 (deletion, deploy scripts) | `cursor-grok-4.6-xhigh` | `gpt-5.6-sol-medium` |
+| 17, 18 (recovery runtime, hosted response validation, USD execution bounds) | `claude-fable-5-thinking-medium` | `gpt-5.6-sol-medium` |
+| 07, 11, 12, 13, 14, 15, 16, 19, 20, 22, 24 (web bulk) | `cursor-grok-4.6-xhigh` | `gpt-5.6-sol-medium` |
+| 21 (bench harness and measurement) | `gpt-5.6-sol-medium` | `cursor-grok-4.6-xhigh` |
+| 23, 25 (config files printed in KD20; formatter output) | `composer-2.5-fast` | `gpt-5.6-sol-medium`, diff-only |
+| 08 (docs) | `claude-fable-5-thinking-medium` | `gpt-5.6-sol-medium` |
+| 26 (compound) | coordinator chat, `claude-fable-5-thinking-medium` | none |
+
+Rules:
+
+- The reviewer is a different model family from the implementer. Fable implements, GPT reviews; Grok implements, GPT reviews; GPT implements (21 only), Grok reviews.
+- One reviewer per ticket. No panels. Two reviewers only on **02** and **04**.
+- Reviewers report findings (severity, `file:line`, evidence, suggested fix). They do not edit, commit, or pick verdicts. The ticket chat decides.
+- Prices are not pinned here. Check the Cursor pricing page before the first ticket. If Fable medium costs no more than Grok xhigh per request, put Fable on every implementer seat; the in-repo eval scored it higher on these briefs.
 
 ### Solidity verification (tickets 01–06)
 
@@ -79,7 +102,7 @@ Keep the clean `forge build` then `forge test` order. `forge fmt --check` must b
 
 **Storage goldens (tickets 02–05):** append new deployables to `CONTRACTS` in `tools/scripts/check-storage-layout.sh` before the first golden. Regenerate goldens **only** via `check-storage-layout.sh --write`. Hand-edited golden files are a logged deviation. Recompute raw-slot test constants from the regenerated lending golden; keep `exposed_epochState` cross-checks as the loud-failure guard.
 
-**Web compile at Solidity seams:** a green `forge test` does not mean the web compiles. Run `npm --prefix web run build` at the ticket **02** and ticket **03** boundaries (sweep rule 8).
+**Web build is ticket 07's gate.** Tickets **02** and **03** change the vault and lending ABIs; the web call sites that break (`wrap`, `unwrap`, `wrappedUnderlying`, `borrow`) flip in **07**. Do not run or gate on `npm --prefix web run build` in **01–06**. The compile-coupled file edits named in CS1 U2 (wagmi config, `ovrfloReserveAbi` in the error union, invalidation keys) still land with **02**.
 
 ### Web verification (tickets 07, 11–25)
 
@@ -102,6 +125,7 @@ Run the gates the plan's Verification Contract names for that changeset. Do not 
 - Run `npx ultracite init`, git-install eth-compress, or install unpublished `eth-compress@0.5.0`
 - Spread Ultracite `core.ignorePatterns` (it drops `web/lib/generated.ts`)
 - Implement ticket **09** or **10** before **08** is resolved
+- Let the request book pick, search, or cap a tick; the borrower's stored `aprBps` is the only fill tick (KD14)
 - Lower `LENDING_RUNTIME_CANARY` if the canary fails; drop the router hook and surface
 - Use `git commit` from the agent (Cursor injects `Co-authored-by`); use write-tree / commit-tree / update-ref
 
@@ -118,7 +142,7 @@ Run the gates the plan's Verification Contract names for that changeset. Do not 
 | 05 | Deploy recipe and seed tooling | CS1-U5 | 04 | ready-for-agent |
 | 06 | Invariant and fuzz re-derivation | CS1-U6 | 04 | ready-for-agent |
 | 07 | Web denomination sync | CS1-U7 | 05 | ready-for-agent |
-| 08 | Docs sync and README two-line fix | CS1-U8, CS0 | 06, 07 | ready-for-agent |
+| 08 | Docs sync | CS1-U8 | 06, 07 | ready-for-agent |
 | 09 | CS2: ERC-3156 flash mint | CS2-U1 | 08 | ready-for-agent |
 | 10 | CS3: borrow request book | CS3-U1 | 08 | ready-for-agent |
 | 11 | Shared visual system and Default / Advanced shell | CS4-U1 | 07 | ready-for-agent |
@@ -133,7 +157,7 @@ Run the gates the plan's Verification Contract names for that changeset. Do not 
 | 20 | Responsive, accessible, Advanced-parity proof | CS4-U6 | 11, 15, 16, 17, 19 | ready-for-agent |
 | 21 | eth-compress benchmark and evaluate gate | CS6-U1 | 12, 14, owner start-OK | ready-for-agent |
 | 22 | eth-compress read-only path with plain fallback | CS6-U2 | 21 (evaluate) | ready-for-agent |
-| 23 | Add Ultracite, Oxlint, and Oxfmt commands | CS7-U1 | 08, 13, 14, 20, 21, owner start-OK | ready-for-agent |
+| 23 | Add Ultracite, Oxlint, and Oxfmt commands | CS7-U1 | 08, 13, 14, 18, 20, 21, owner start-OK | ready-for-agent |
 | 24 | Classify ESLint/Oxlint parity | CS7-U2 | 23 | ready-for-agent |
 | 25 | Oxfmt formatting-only commit | CS7-U3 | 24 | ready-for-agent |
 | 26 | Compound and codify | post-plan | 25 | ready-for-human |

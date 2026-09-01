@@ -55,6 +55,7 @@ After local verification, mark ticket checkboxes done and set Status: resolved.
 - [ ] Confirmed-step status transfers across graph-ID reallocation by economic identity; resume never double-prompts an economically identical confirmed step
 - [ ] Closing the modal unmounts the body and keeps the pending plan and graph ID; a reopened body resumes or reallocates and never auto-confirms a latched plan the user did not accept
 - [ ] Route-level error reset, modal TRY AGAIN remount, and flow unmount cleanup converge on the same resume contract
+- [ ] Risk acknowledgment gate (KD17 owner pin 2026-09-01): `RISK_DISCLOSURE_VERSION` in the policy module; key `ovrflo:ack:<chainId>:<factory>:<account>:<version>`; shown after position-type selection and before the first wallet prompt; never on hub, collection, or detail; older version or other factory re-requires it; `Advanced` shares it; Fixed Return path adds the matched-capital sentence; `VIEW FULL RISKS` links to `/risk/`
 
 ## Plan unit
 

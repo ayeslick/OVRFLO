@@ -23,8 +23,8 @@ KD2, KD3, KD4, KD5, KD8, storage-golden regeneration bullet, Sweep rules 1–3 a
 Verification Contract item 7 successors *Fee-from-mint*, *Zero-fee skip-mint*,
 *Reserve round trip*, *Nested constructors*, *Permit*, and ### CS1 U2.
 Record intent before the first code write. Append OVRFLOReserve to CONTRACTS, then
-regenerate goldens only via check-storage-layout.sh --write. Run npm --prefix web
-run build at this boundary. Token suite uses a pranked stand-in reserve; vault
+regenerate goldens only via check-storage-layout.sh --write. Do not run or gate on
+the web build; that is ticket 07's gate. Token suite uses a pranked stand-in reserve; vault
 construction bindings live in later factory/vault tests — do not duplicate both
 directions in every file.
 After local verification, mark ticket checkboxes done and set Status: resolved.
@@ -55,7 +55,7 @@ After local verification, mark ticket checkboxes done and set Status: resolved.
 - [ ] Wrap 10 then unwrap 7 leaves `wrappedUnderlying` 3; vault underlying balance is zero throughout; unwrap beyond the counter reverts `InsufficientReserve`
 - [ ] Storage goldens for the changed artifacts are generated via `check-storage-layout.sh --write`; `OVRFLOReserve` is in `CONTRACTS`; a reserve golden test exists
 - [ ] Generated web ABI includes `OVRFLOReserve`; error union and `generatedErrorNames` include the reserve ABI; cache invalidation keys include the reserve address
-- [ ] `forge build` then `forge test` green; `forge fmt --check` clean; `npm --prefix web run build` green
+- [ ] `forge build` then `forge test` green; `forge fmt --check` clean. The web build is not a gate here; the vault ABI loses `wrap`/`unwrap`/`wrappedUnderlying` and the web call sites flip in 07
 
 ## Plan unit
 

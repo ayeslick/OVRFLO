@@ -50,6 +50,9 @@ After local verification, mark ticket checkboxes done and set Status: resolved.
 - [ ] A stale or incomplete round blocks USD submission instead of reusing the display quote
 - [ ] USD resolver fixtures prove per-underlying lookup, decimal normalization, freshness, 50 bps enclosing interval, and exact token-native bound formulas using integer `mulDiv`-equivalent arithmetic, never JavaScript `Number`
 - [ ] Browser-only static export remains intact; local fork disables Hosted Convert
+- [ ] Policy module (KD17 owner pin 2026-09-01) owns `PENDLE_SLIPPAGE_BPS = 50` and `MAX_PENDLE_PRICE_IMPACT_BPS = 100`; `web/lib/modal-logic.ts` `DEFAULT_SLIPPAGE_BPS` reads from it; no component defines either number
+- [ ] `Default` applies 50 bps with no control; a hosted candidate at 101 bps impact is rejected before review with "This amount would move the PT market too much" and the two actions (smaller amount, open `Advanced`); 100 bps passes
+- [ ] `Advanced` sets slippage within the existing 10–500 bps range and shows impact without blocking
 
 ## Plan unit
 

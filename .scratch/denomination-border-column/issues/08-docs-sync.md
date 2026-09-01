@@ -1,6 +1,6 @@
-# 08 — Docs sync and README two-line fix
+# 08 — Docs sync
 
-**What to build:** Docs describe the nested column and ovrfloToken denomination. CS0's two README line fixes ship here. Architecture, concepts, onboarding, security, product operating context, critical patterns, rejected-finding pointers, and x-ray match the shipped CS1 surface. This ticket does not rewrite CS4 product UX.
+**What to build:** Docs describe the nested column and ovrfloToken denomination. Architecture, concepts, onboarding, security, product operating context, critical patterns, rejected-finding pointers, and x-ray match the shipped CS1 surface. This ticket does not rewrite CS4 product UX. CS0 (the two README line fixes) already shipped on 2026-09-01 and is not part of this ticket.
 
 **Blocked by:** 06, 07
 
@@ -12,18 +12,15 @@
 ```text
 /ce-work docs/plans/2026-08-22-001-refactor-denomination-switch-border-column-plan.md
 
-Scope: CS1 U8 plus CS0 only (= this ticket). Stop when this ticket's acceptance
+Scope: CS1 U8 only (= this ticket). Stop when this ticket's acceptance
 criteria are met.
 Ticket: .scratch/denomination-border-column/issues/08-docs-sync.md
 Spec/harness: .scratch/denomination-border-column/spec.md — follow its per-session rules.
 Do not edit the plan. Do not start other units. Do not change Solidity or web
 behavior. Maps wrap-reserve retarget belongs to 07 — verify it is present, do not
-relitigate it.
-Before any edits, read Required reading below and the plan sections: KD15, KD13
-doc consequences, ### CS0, ### CS1 U8, Sweep rule 12, and Definition of Done CS1.
-CS0 greps: README lending.getfoundry.sh → book.getfoundry.sh; roadmap sentence
-"Built after the Lending establishes a market APR" → "Built after the lending
-market establishes an APR". No other CS0 content change.
+relitigate it. CS0 already shipped; do not redo it.
+Before any edits, read Required reading below and the plan sections: KD13
+doc consequences, ### CS1 U8, Sweep rule 12, and Definition of Done CS1.
 After local verification, mark ticket checkboxes done and set Status: resolved.
 ```
 
@@ -36,11 +33,10 @@ After local verification, mark ticket checkboxes done and set Status: resolved.
 
 ## Acceptance criteria
 
-- [ ] `README.md` uses `book.getfoundry.sh`, not `lending.getfoundry.sh`
-- [ ] `README.md` roadmap line is "Built after the lending market establishes an APR"
 - [ ] README architecture sections describe `OVRFLOReserve`, two named minters, ovrfloToken lending escrow, and nested deploy
 - [ ] `CONCEPTS.md` has an `OVRFLOReserve` entry, three labeled exits, and denomination vocabulary
 - [ ] `docs/agents/onboarding.md` §2/§4/§5/§7 combined solvency and live map match KD13. Do not restore an Architecture Overview into `AGENTS.md`; that file stays the session router.
+- [ ] `docs/agents/onboarding.md` §2 file list names every file in `src/`, including `OVRFLOStreamLens.sol` (deployless read lens; not a DeploySize deployable) and the new `OVRFLOReserve.sol`. The "six Solidity files" sentence is corrected to the real count.
 - [ ] Critical patterns fee denomination and sweep-reserve reasoning move to the reserve
 - [ ] `VAULT_SECURITY.md` records two burn authorities
 - [ ] `PRODUCT.md` Operating Context: lender-supply and borrower-proceeds references are ovrfloToken; `underlying` stays column identity
@@ -50,4 +46,4 @@ After local verification, mark ticket checkboxes done and set Status: resolved.
 
 ## Plan unit
 
-CS0 and CS1 U8 in `docs/plans/2026-08-22-001-refactor-denomination-switch-border-column-plan.md`
+CS1 U8 in `docs/plans/2026-08-22-001-refactor-denomination-switch-border-column-plan.md`

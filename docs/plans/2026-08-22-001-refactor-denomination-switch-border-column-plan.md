@@ -285,14 +285,15 @@ CS2 (after CS1 U2 and U4): ERC-3156 `maxFlashLoan`/`flashFee`/`flashLoan` of ovr
 
 CS3 (after CS1 U3 and U4): the borrow request book as a thin router. Contract name `OVRFLORequestBook` at `src/OVRFLORequestBook.sol`. Mechanics:
 
-- Escrow: borrower posts stream + terms (`market`, `maxAprBps` — ceiling semantics; `targetBorrow`; `minAcceptable`) via plain `transferFrom` (never `safeTransferFrom` — mirroring the borrow escrow rationale at `src/OVRFLOLending.sol:486-488`). Escrowed streams are never drawn from.
+- Escrow: borrower posts stream + terms (`market`, `aprBps` — the exact tick the borrower chose; `targetBorrow`; `minAcceptable`) via plain `transferFrom` (never `safeTransferFrom` — mirroring the borrow escrow rationale at `src/OVRFLOLending.sol:486-488`). Escrowed streams are never drawn from. The book calls `setApprovalForAll(lending, true)` on the lockup once in its constructor so core `borrow` can pull the escrowed stream.
+- The borrower picks the tick; the book acts on their behalf (owner decision 2026-09-01; Default/Advanced plan §9 and §13: the displayed result maps to one exact 25 bps tick, and OVRFLO never recommends or substitutes another tick). The book stores `aprBps` and fills at that tick only. There is no ceiling, no tick search, no `tickDepths` scan, and no "cheapest tick" logic in the book. `Default` sets `minAcceptable` so the fill is full-or-wait; `Advanced` may loosen `minAcceptable`. Both are web policy, not book logic.
 - `cancel(requestId)` — borrower-only, callable anytime while the request rests; returns the escrowed stream intact (plain `transferFrom` back). Cancel is the only exit for a resting request, and KD10's router-replace rationale depends on it: after a swap, resting escrow comes home by owner choice instead of waiting for fillable depth (resting escrow returns by owner choice through `cancel`, which never consults the router slot).
-- Post-or-execute: at post time, if acceptable depth exists at or below the ceiling, fill immediately (one call). `execute(requestId)` is permissionless and routes to the *cheapest* tick at or below the ceiling.
+- Post-or-execute: at post time, if core `borrow` at the stored `aprBps` clears `minAcceptable`, fill immediately (one call). Otherwise the request rests. `execute(requestId)` is permissionless and fills at the stored `aprBps` only; when depth at that tick still cannot clear `minAcceptable`, `execute` reverts and the request keeps resting.
 - `execute` calls core `borrow(..., onBehalfOf = human)` from the book (`msg.sender == router`). Proceeds go to the human. The stream returns to the human at close. The book holds nothing after a successful execute except still-resting requests. No `loanId -> borrower` table. No `settle`.
 - Remaining face is read live at fill time; no snapshot. Fees: none in the book; the core's fill-time borrower fee is the only fee, now in ovrfloToken via KD9.
 - Before CS3 ships, seed and production both call `setLendingRouter` on the factory after the book is deployed. After the swap (or a zero-set), a retired book loses the on-behalf path — the market attributes its borrow to `msg.sender` (the book itself, since `msg.sender != router`), so proceeds and the returned stream land inside the book's own contracts. The CS3 book therefore gates **every leg that calls core borrow** (post-time immediate fill and `execute`) on `lending.router() == address(this)`; borrowers exit resting requests through `cancel`, which never consults the slot.
 - Events (indexed topics as written):
-  - `RequestPosted(uint256 indexed requestId, address indexed borrower, address indexed market, uint256 streamId, uint16 maxAprBps, uint256 targetBorrow, uint256 minAcceptable)`
+  - `RequestPosted(uint256 indexed requestId, address indexed borrower, address indexed market, uint256 streamId, uint16 aprBps, uint256 targetBorrow, uint256 minAcceptable)`
   - `RequestFilled(uint256 indexed requestId, uint256 indexed loanId, uint256 actualBorrow)` — fires on post-time immediate fill and on later `execute`
   - `RequestCancelled(uint256 indexed requestId, address indexed borrower)`
 - The factory does not register the book. `DeploySize` gates `OVRFLORequestBook`. Seed deploys the book, then calls `setLendingRouter`. CS4 must not fake a request before this contract exists.
@@ -414,6 +415,20 @@ Hosted responses remain untrusted input. Before a conversion action reaches the 
 - immediate wallet-client simulation after final revalidation.
 
 Stop Hosted Convert at implementation if CORS, CSP, static export, or allowlist checks fail. Do not proxy it through an app server.
+
+**Hosted Convert policy values (owner pin 2026-09-01, from the Default/Advanced implementation plan §15).** Two constants live in one versioned policy module under `web/lib/` (name is a micro-decision; `web/lib/default/policy.ts` matches the source plan). Components import them; nothing else defines them.
+
+- `PENDLE_SLIPPAGE_BPS = 50`. `Default` applies it to every Hosted Convert quote and does not expose a control. `Advanced` may let the user set slippage inside the existing `SLIPPAGE_MIN_BPS`–`SLIPPAGE_MAX_BPS` range in `web/lib/borrow.ts` (10–500 bps). The live `DEFAULT_SLIPPAGE_BPS = 50n` in `web/lib/modal-logic.ts` is the same value; the policy module becomes its single owner.
+- `MAX_PENDLE_PRICE_IMPACT_BPS = 100`. Compute price impact from the hosted response (`routes[0].data` price-impact field when present; otherwise expected output versus the quoted spot). A `Default` candidate above the cap is rejected before review with the named state "This amount would move the PT market too much" and two actions: try a smaller amount, or open `Advanced`. `Advanced` shows the impact and does not block on it.
+- Changing either constant is a product-policy change: bump the policy module version, update the fixtures that assert the values, and record the change on the ticket. Do not scatter the numbers through components or read them from env.
+
+**Risk acknowledgment gate (owner pin 2026-09-01, from the Default/Advanced implementation plan §6).** One versioned, one-time acknowledgment guards the first write in either disclosure level. Viewing the product never requires it.
+
+- Constant `RISK_DISCLOSURE_VERSION` (positive integer) lives in the same policy module. The storage key is `ovrflo:ack:<chainId>:<factory>:<account>:<version>` through the existing throw-tolerant storage layer. The live `acknowledgmentKey(chainId, account)` in `web/lib/storage.ts` gains `factory` and `version`; a stored acknowledgment for an older version or another factory does not satisfy the gate.
+- Timing: show the gate after the user selects a position type and before the first wallet prompt of that attempt. Do not show it on the home or hub. Do not show it again while the stored version matches.
+- Copy is the four bullets in the source plan §6 (contracts and external protocols can fail; market conditions can change before confirmation; self-repaying means the pledged stream satisfies the loan and does not remove asset or contract risk; unwrap depends on the live 1:1 wrap reserve) plus, on the Fixed Return path only: "Your fixed rate applies to capital when it is matched. Unfilled capital can wait and does not earn until used." `VIEW FULL RISKS` links to `/risk/`. `I UNDERSTAND` records the key.
+- `Advanced` uses the same gate, key, and version. Do not create a second risk system. The `acknowledge` transaction checkpoint in `web/lib/flow-history.ts` stays unenterable from history as today.
+- Ownership: the gate rides ticket 17 (runtime, before the first prompt). The two Hosted Convert constants ride ticket 18.
 
 USD is display-only until execution. USD values never enter canonical actions, calldata, or committed receipts. An execution-grade USD request must resolve immediately before submission into reviewed token-native minimum and maximum bounds. `(session-settled: user-directed — chosen over a wstETH-only pin: the protocol has one column per underlying, so USD lookup is per underlying.)`
 
@@ -791,7 +806,7 @@ Confirmed steps and decoded outputs are immutable recovery evidence in the throw
 
 ### CS0 — README fixes (KD15)
 
-`README.md` two-line edit. Verify: `grep`. Ships independently.
+`README.md` two-line edit. Verify: `grep`. Ships independently. Shipped 2026-09-01 ahead of ticket 01.
 
 ### CS1 — Denomination switch + reserve + minters + registration + flash removal + router hook (KD1–KD13, KD12-sync)
 
@@ -865,9 +880,9 @@ CS3 starts after CS1 U3 (router hook) and CS1 U4 (`setLendingRouter`). Ticket 10
 **Approach.**
 
 - New contract `OVRFLORequestBook`. Constructor binds factory, lending, and stream lockup. It is not factory-registered.
-- `post` takes stream plus `market`, `maxAprBps`, `targetBorrow`, `minAcceptable` with plain `transferFrom`. Never `safeTransferFrom`. Never draw the escrowed stream.
-- If acceptable depth exists at post, fill in the same call and emit `RequestPosted` then `RequestFilled`. Otherwise the request rests.
-- `execute` is permissionless, fills the cheapest eligible tick at or below the ceiling, and emits `RequestFilled`.
+- `post` takes stream plus `market`, `aprBps`, `targetBorrow`, `minAcceptable` with plain `transferFrom`. Never `safeTransferFrom`. Never draw the escrowed stream. The constructor calls `setApprovalForAll(lending, true)` on the lockup once.
+- If core `borrow` at the stored `aprBps` clears `minAcceptable` at post, fill in the same call and emit `RequestPosted` then `RequestFilled`. Otherwise the request rests.
+- `execute` is permissionless, fills at the stored `aprBps` only, and emits `RequestFilled`. The book never searches ticks, never reads `tickDepths`, and never picks a tick for the borrower (KD14).
 - Every core `borrow` sets `onBehalfOf` to the human and runs only while `lending.router() == address(this)`.
 - `cancel` is borrower-only while resting, returns the stream with plain `transferFrom`, never reads the router slot, and emits `RequestCancelled`.
 - Event schema is the three events in KD14. No `loanId -> borrower` table. No `settle`. No book fee.
@@ -878,8 +893,9 @@ CS3 starts after CS1 U3 (router hook) and CS1 U4 (`setLendingRouter`). Ticket 10
 **Test scenarios.**
 
 1. Post with fillable depth: stream leaves the book, loan borrower is the human, proceeds go to the human, `RequestFilled` fires, book holds nothing for that id.
-2. Post without depth: stream stays in the book, `RequestPosted` fires, later `execute` fills when depth appears.
+2. Post without depth at the stored tick: stream stays in the book, `RequestPosted` fires, later `execute` fills when depth appears at that tick.
 3. `execute` while `lending.router()` is not the book reverts. `cancel` still returns the stream.
+3a. Depth exists only at a cheaper tick: `execute` reverts and the request keeps resting. The book does not fill at any tick other than the stored `aprBps`.
 4. `cancel` from a non-borrower reverts. After cancel the stream owner is the human.
 5. `onBehalfOf` on the core call is the human, never the book.
 6. Remaining face is read live at fill; a stale posted `targetBorrow` above remaining face still fills at remaining face or reverts per core borrow rules — the book does not snapshot face.
@@ -1056,6 +1072,8 @@ Map ownership is fixed without a new region slug: SHELL owns global navigation a
 3. A first-mined receipt and a confirmed hash with a failed receipt are not complete.
 4. `Default` recovery copy identifies completed and remaining user outcomes without protocol or approval mechanics.
 5. Each wrong hosted chain/token/router/semantics/bounds/deadline case fails before prompt.
+5a. `Default` applies `PENDLE_SLIPPAGE_BPS = 50` with no control; a candidate above `MAX_PENDLE_PRICE_IMPACT_BPS = 100` is rejected before review with the named state and its two actions; `Advanced` exposes slippage within the existing range and shows impact without blocking.
+5b. The first wallet prompt of an attempt is gated by `RISK_DISCLOSURE_VERSION`; a stored acknowledgment for an older version or another factory does not satisfy it; viewing never requires it; `Advanced` shares the gate.
 6. A changed hosted response is revalidated and simulated immediately before prompt.
 7. Hosted Convert uses its dedicated action/contract kind, is re-decoded by `createLiveActionDraft`, and never enters legacy raw-call.
 8. Token/USD display switching changes no canonical amount or calldata.
@@ -1319,7 +1337,7 @@ Do not start CS7 until the owner records start-OK on ticket 23. Pins, paths, ign
 
 **Goal.** Introduce the new native rule families and tools alongside the current checks.
 
-**Dependencies.** CS1–CS5 feature code settled for the migration baseline. Ticket 21 closed with `evaluate` or `do not adopt`. Owner start-OK on ticket 23. Do not wait on ticket 22.
+**Dependencies.** CS1–CS5 feature code settled for the migration baseline: tickets 08, 13, 14, 18, and 20 resolved. Ticket 21 closed with `evaluate` or `do not adopt`. Owner start-OK on ticket 23. Do not wait on tickets 09, 10, or 22 (their web footprint is an ABI union entry).
 
 **Files.** `web/package.json`, `web/package-lock.json`, `web/oxlint.config.ts`, `web/oxfmt.config.ts`, `web/oxlint-eslint-parity.md`, `web/tests/scripts/banned-patterns.test.ts`, `web/tests/lib/performance-contract.test.ts`. Read `web/eslint.config.mjs`; do not edit it in this unit.
 
@@ -1425,7 +1443,7 @@ PT flash (removed, KD1), underlying flash loans (deferred indefinitely — flash
    - *Router hook*: a non-router caller who passes `onBehalfOf = other` still owns the loan; a router call with `onBehalfOf = human` pays and indexes the human and returns the stream to the human on close; a router call with `onBehalfOf = address(0)` reverts.
    - *replaceLending*: after replace, `ovrfloToLending` is the new market; `registerLending` still reverts `LendingExists`; factory `setLendingFee` still reaches the old market; an old-market loan can `repay`/`close`/`claim`.
    - *Flash mint conservation*: successful ERC-3156 mint on the reserve leaves `totalSupply` unchanged; nested flash reverts; wrap in the callback succeeds; `flashMintMax == 0` disables mint.
-   - *Request book attribution*: post or execute sets core `onBehalfOf` to the human; proceeds and returned stream go to the human; `execute` while `router` is not the book reverts; `cancel` still returns the stream.
+   - *Request book attribution*: post or execute sets core `onBehalfOf` to the human; proceeds and returned stream go to the human; the fill happens only at the borrower's stored `aprBps` (depth at a cheaper tick does not fill); `execute` while `router` is not the book reverts; `cancel` still returns the stream.
    - *Permit*: an EIP-2612 signature lets a lender `supply` without a prior `approve` transaction (two calls or a batch); a non-minter still cannot mint.
    - *Product-mode parity*: equivalent `Default` and `Advanced` choices produce the same typed primitive or graph intent before calldata; `createLiveExecutionPlan` consumes it; `parseAction` remains compatibility-only; `Default` hides protocol mechanics and its read-only `Details` cannot change the action.
    - *Portfolio routing*: partial or retrying discovery preserves confirmed cards in an incomplete `Your OVRFLO` state and does not route; only complete bounded discovery plus full hydration applies zero-to-empty, one-to-detail, multiple-same-type-to-collection, and mixed-to-hub routing; waiting and completed positions remain reachable.
@@ -1439,6 +1457,8 @@ PT flash (removed, KD1), underlying flash loans (deferred indefinitely — flash
    - *Authorization sequence*: clear-to-zero and set-allowance are separate stable steps; receipt persistence and rebuild occur between prompts.
    - *Deposit output decode*: a unique `Deposited.streamId` continues the graph; missing or ambiguous event output blocks it.
    - *Hosted-response hostility*: Hosted Convert uses its dedicated canonical kind, is re-decoded in `createLiveActionDraft`, and rejects every wrong chain/token/router/semantics/bounds/deadline case before prompt; CSP/security packaging covers the reviewed origin.
+   - *Hosted policy values*: `Default` slippage is exactly `PENDLE_SLIPPAGE_BPS = 50` with no control; a quote at 101 bps impact is rejected before review and a quote at 100 bps passes; `Advanced` sets slippage within 10–500 bps and is not blocked by impact; both constants have one owner module.
+   - *Risk gate*: the first wallet prompt of a new attempt is blocked until `I UNDERSTAND` stores `ovrflo:ack:<chainId>:<factory>:<account>:<version>`; bumping `RISK_DISCLOSURE_VERSION` or changing the factory re-requires it; browsing the hub, collections, and detail never shows it; the Fixed Return path adds the matched-capital sentence.
    - *USD boundary*: display denomination changes no canonical action; lookup is keyed by column `underlying`; a missing recipe or a quote from another column blocks USD execution; the execution-only resolver applies that row's freshness, deviation band, and token-native min/max formulas; USD appears in neither calldata nor committed receipt.
    - *Default disclosure*: the rendered `Default` DOM contains no APY, protocol, router, PT, market, route, approval, calldata, or simulation-diagnostic labels.
    - *State-action contract*: every named error, waiting, pending, confirmed, incomplete, empty, and completed state has at most one primary action and one secondary recovery action; text links may provide learning or explorer access; refreshing and pending suppress submit and may have no primary.
@@ -1505,7 +1525,7 @@ The 2026-08-24 sweep covered the inherited CS1 scope only. It did not review KD1
 5. **Code identity stays off-chain (KD6).** On-chain registration checks prove wiring; the multisig creation-code checklist proves code identity for all three creation transactions (vault, reserve, token). Do not add on-chain bytecode-identity checks and do not let "the factory verifies it now" erode checklist discipline on the two new children.
 6. **Router trust posture (KD10).** `setRouter` accepts zero to disable or any nonzero Safe-selected address; attribution power belongs to whoever holds the slot until the Safe changes or clears it. No identity check, no allowlist. Deployment verification covers `router` as part of the verified surface.
 7. **Fee equality is structural (KD2/KD13).** Fee-from-mint means treasury gain equals depositor deduction with no token outside the mint split; tests assert the split, not a re-derived conservation proof.
-8. **Compile-coupled web edits land with their unit (U1/U2/U7).** The error-catalog regeneration rides U1; `wagmi.config.ts`, the `ovrfloReserveAbi` import into `web/lib/errors.ts` (union type plus `generatedErrorNames`), and invalidation ride U2; call-site flips ride U7. Without the U2 import, every reserve revert loses catalog copy and typed decoding and no gate notices — the coverage loop only checks names the union already contains. A green `forge test` does not mean the web compiles — run `npm --prefix web run build` at U2 and U3 boundaries.
+8. **Compile-coupled web edits land with their unit (U1/U2/U7).** The error-catalog regeneration rides U1; `wagmi.config.ts`, the `ovrfloReserveAbi` import into `web/lib/errors.ts` (union type plus `generatedErrorNames`), and invalidation ride U2; call-site flips ride U7. Without the U2 import, every reserve revert loses catalog copy and typed decoding and no gate notices — the coverage loop only checks names the union already contains. The web build is U7's gate, not U2's or U3's: U2 removes `wrap`/`unwrap`/`wrappedUnderlying` from the vault ABI and U3 adds `onBehalfOf` to `borrow`, so the web call sites cannot compile until U7 flips them (owner decision 2026-09-01).
 9. **Maps layer is named blast radius (U7/U8).** `docs/maps/ui/assets.md` and `docs/maps/state/keys/chain-reads.md` update with U7 (reserve authority retarget); do not let the maps-presence gate discover them.
 10. **Flash mint bound (KD14).** `amount <= flashMintMax` is the economic cap. `type(uint256).max - totalSupply()` is overflow guard only. Launch `flashMintMax = 0`. Two agents must not invent `cap - totalSupply()` as the user-facing max.
 11. **USD is per underlying (KD17).** Lookup keys `vault.underlying()`. A missing row fails closed. Never apply the wstETH recipe to another column. A new series adds a reviewed recipe row; it does not reuse wstETH by default.
@@ -1572,6 +1592,16 @@ Left as micro-decisions (threshold 3): bench script filename under `web/scripts/
 Owner start-OK on tickets 21 and 23 starts code. It is not a missing pin.
 
 Completeness for this pin pass: STOP at diminishing returns. A later-underlying USD recipe remains an owner gate and is not CS6/CS7.
+
+### 2026-09-01 owner corrections (pre-implementation)
+
+Recorded before ticket 01 started; no unit was implementing. Four point fixes, no renumbering:
+
+- **KD14 / CS3-U1:** the borrower chooses the exact `aprBps`; the book fills at that tick only. `maxAprBps` ceiling and "cheapest tick" search are removed. Source: Default/Advanced implementation plan §9 and §13 (customer picks the result; OVRFLO never substitutes a tick).
+- **Sweep rule 8:** the web build is U7's gate. U2 and U3 do not run or gate on it.
+- **CS7-U1 dependencies:** named as tickets 08, 13, 14, 18, 20 plus 21's verdict. Ticket 18 was missing.
+- **CS0:** shipped as its own README commit; removed from ticket 08.
+- **KD17 policy pins:** `PENDLE_SLIPPAGE_BPS = 50`, `MAX_PENDLE_PRICE_IMPACT_BPS = 100`, and the versioned risk acknowledgment gate (`RISK_DISCLOSURE_VERSION`, key includes factory) were carried in from the Default/Advanced implementation plan §6 and §15. The plan named "slippage bounds" without a number; ticket 18 would have stopped on it. Constants ride ticket 18; the gate rides ticket 17.
 
 ### Remaining sweep exit criteria
 

@@ -23,8 +23,8 @@ stop condition (d) and (f), KD9, KD10, Sweep rules 4 and 6, Verification Contrac
 item 7 successors *Lending single-asset* and *Router hook*, and ### CS1 U3.
 Declare router after the last existing storage variable. If
 test_Lending_RetainsRuntimeHeadroomCanary fails, drop the hook, keep the asset
-switch, surface, and do not lower LENDING_RUNTIME_CANARY. Run npm --prefix web
-run build at this boundary. Owner reaches setRouter directly until 04 lands —
+switch, surface, and do not lower LENDING_RUNTIME_CANARY. Do not run or gate on
+the web build; that is ticket 07's gate. Owner reaches setRouter directly until 04 lands —
 both land before merge.
 After local verification, mark ticket checkboxes done and set Status: resolved.
 ```
@@ -54,7 +54,7 @@ After local verification, mark ticket checkboxes done and set Status: resolved.
 - [ ] `setRouter` accepts zero or any nonzero address; one event `LendingRouterSet`
 - [ ] Lending runtime canary still holds, or the hook is dropped and the failure is surfaced without lowering the canary
 - [ ] Storage goldens regenerated via `check-storage-layout.sh --write`; raw-slot constants follow the golden
-- [ ] `forge build` then `forge test` green; `forge fmt --check` clean; `npm --prefix web run build` green
+- [ ] `forge build` then `forge test` green; `forge fmt --check` clean. The web build is not a gate here; `borrow` gains `onBehalfOf` and the web call sites flip in 07
 
 ## Plan unit
 

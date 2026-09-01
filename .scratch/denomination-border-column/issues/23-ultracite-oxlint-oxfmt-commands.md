@@ -2,7 +2,7 @@
 
 **What to build:** New native rule families and format commands run beside the current checks. ESLint stays. TypeScript, banned-pattern, dependency, maps, Vitest, Playwright, axe, and production build remain separately runnable. No type-aware Oxlint. No TypeScript 7. Current no-console policy and scripts override stay. Config files and pins are KD20.
 
-**Blocked by:** 08, 13, 14, 20, 21, owner start-OK
+**Blocked by:** 08, 13, 14, 18, 20, 21, owner start-OK
 
 **Status:** ready-for-agent
 **Labels:** ready-for-agent
@@ -16,7 +16,7 @@ Scope: CS7-U1 only (= this ticket). Stop when this ticket's acceptance criteria 
 Ticket: .scratch/denomination-border-column/issues/23-ultracite-oxlint-oxfmt-commands.md
 Spec/harness: .scratch/denomination-border-column/spec.md — follow its per-session rules.
 Do not edit the plan. Do not start other units. Do not remove ESLint (24). Do not
-commit formatter output (25). Do not wait on 09, 10, 18, or 22.
+commit formatter output (25). Do not wait on 09, 10, or 22.
 STOP if the owner has not recorded start-OK on this ticket. Pins are KD20.
 Do not re-research pins. Do not run npx ultracite init. Do not spread
 core.ignorePatterns. Do not enable js-plugins, anti-slop, or type-aware Oxlint.
