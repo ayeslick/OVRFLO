@@ -1,6 +1,6 @@
 # 25 — Oxfmt formatting-only commit
 
-**What to build:** Oxfmt output lands in a separate formatting-only commit after rule-migration behavior is green. The first run produces only syntactic formatting changes. The second run produces no diff. Independent correctness, accessibility, policy, and build gates stay green.
+**What to build:** Oxfmt output lands in a separate formatting-only commit after rule-migration behavior is green. The first run produces only syntactic formatting changes. The second run produces no diff. Independent correctness, accessibility, policy, and build gates stay green. Do not rewrite `web/lib/generated.ts` or `web/lib/generated/lens-bytecode.ts`.
 
 **Blocked by:** 24
 
@@ -19,7 +19,8 @@ Do not edit the plan. Do not start other units. Do not mix dependency, rule, or
 behavior changes into the formatting commit.
 Read Required reading below and the plan sections: KD20 Oxfmt paragraph, ### CS7-U3,
 and Verification Contract item 8 (formatter output reviewed in a separate diff).
-Run Oxfmt twice. Require the second run to produce no diff.
+Run npm --prefix web run fmt:oxfmt twice. Require the second run to produce no
+diff. Prove check mode with fmt:oxfmt:check.
 After local verification, mark ticket checkboxes done and set Status: resolved.
 ```
 
@@ -32,8 +33,10 @@ After local verification, mark ticket checkboxes done and set Status: resolved.
 
 - [ ] The first formatter run produces only syntactic formatting changes
 - [ ] The second formatter run is idempotent
+- [ ] `fmt:oxfmt:check` is clean after the second write
 - [ ] TypeScript, independent policy gates, Vitest, Playwright, axe, and production build results are unchanged after formatting
 - [ ] The formatting commit contains no logic or configuration change
+- [ ] `web/lib/generated.ts` and `web/lib/generated/lens-bytecode.ts` are not rewritten
 
 ## Plan unit
 

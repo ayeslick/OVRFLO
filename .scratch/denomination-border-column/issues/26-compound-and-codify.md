@@ -17,7 +17,8 @@ Do not paste this into a fresh cheap-model chat.
 Harvest CS1–CS7 (including CS2 flash mint and CS3 request book) into
 docs/solutions writeups and pattern updates. The denomination plan stays
 read-only. Ticket 22 may still be cancelled if 21 records do-not-adopt —
-harvest what shipped and record the open CS6/CS7 gates.
+harvest what shipped. CS6/CS7 pins live in KD19/KD20. Start-OK is execution
+authorization, not a missing plan. CS6 installs npm eth-compress@0.4.0.
 Read Required reading below. Follow the remediation hierarchy in
 .scratch/lending-v1-lite/issues/09-compound-and-codify.md (unrepresentable >
 unmissable > detected > reviewable). Cite sources. Deduplicate against
@@ -40,7 +41,7 @@ ovrflo-critical-patterns.md.
 - [ ] New or refreshed critical patterns cite detection greps and current code
 - [ ] No new rule restates an existing critical pattern (reference only)
 - [ ] Plan-gap harvest classifies could-not-follow-the-plan instances (ambiguity / contradiction / unpinned decision / wrong assumption / missing contingency)
-- [ ] Open owner gates (eth-compress, CS7 pins) are listed rather than silently closed. USD recipes, Hosted Convert, CS2, and CS3 are in this plan — do not relist them as missing plans.
+- [ ] CS6/CS7 pins in KD19/KD20 are not relisted as missing plans. Start-OK is execution authorization. USD recipes, Hosted Convert, CS2, and CS3 are in this plan.
 - [ ] `AGENTS.md` Open by task points at any new always-required doc. Do not restore an architecture essay into that file.
 - [ ] User has reviewed the harvest
 

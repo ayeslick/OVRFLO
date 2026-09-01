@@ -20,7 +20,7 @@ Do not edit the plan. Do not start other units. Do not change Solidity or web
 behavior. Maps wrap-reserve retarget belongs to 07 — verify it is present, do not
 relitigate it.
 Before any edits, read Required reading below and the plan sections: KD15, KD13
-doc consequences, ### CS0, ### CS1 U8, and Definition of Done CS1.
+doc consequences, ### CS0, ### CS1 U8, Sweep rule 12, and Definition of Done CS1.
 CS0 greps: README lending.getfoundry.sh → book.getfoundry.sh; roadmap sentence
 "Built after the Lending establishes a market APR" → "Built after the lending
 market establishes an APR". No other CS0 content change.

@@ -4,14 +4,14 @@ type: refactor
 date: 2026-08-22
 topic: denomination-border-column
 artifact_contract: ce-unified-plan/v1
-artifact_readiness: requirements-only
+artifact_readiness: implementation-ready
 cs1_readiness: implementation-ready — swept 2026-08-24
-build_readiness: not-build-ready for CS4-CS7 visual/tooling gates (CS6/CS7); CS0-CS3 and CS4 Hosted Convert plus execution USD are implementation-ready from this file — CS1 swept 2026-08-24, CS2/CS3/USD/hosted pinned 2026-08-31
+build_readiness: implementation-ready — CS1 swept 2026-08-24; CS2/CS3/USD/hosted pinned 2026-08-31; CS6/CS7 pins recorded 2026-09-01. CS6 and CS7 code still wait for owner start-OK.
 product_contract_source: newest four user-provided frontend reference boards, then the 2026-08-22 implementation handoff and earlier plan
 execution: code
 deepened: 2026-08-24
 amended: 2026-08-24
-sweep_folded: 2026-08-31 — the amended-scope sweep (frontend decisions, runtime/trust, read/tooling, design accuracy, completeness critic) ran and its material findings are folded, including the error-boundary recovery lens and the final documentation review; scanner scope is recorded as AS10, a later owner correction; the inherited CS1 sweep record (2026-08-24) is untouched
+sweep_folded: 2026-08-31 — the amended-scope sweep (frontend decisions, runtime/trust, read/tooling, design accuracy, completeness critic) ran and its material findings are folded, including the error-boundary recovery lens and the final documentation review; scanner scope is recorded as AS10, a later owner correction; the inherited CS1 sweep record (2026-08-24) is untouched. 2026-09-01 — CS6/CS7 pins folded (KD19/KD20). Owner correction the same day: CS6 installs npm `eth-compress@0.4.0`, not unpublished 0.5.0.
 ---
 
 # Denomination switch, wrap-reserve module, and per-underlying columns — reconciliation plan
@@ -26,11 +26,11 @@ sweep_folded: 2026-08-31 — the amended-scope sweep (frontend decisions, runtim
 
 **Execution profile.** Solidity/Foundry, shell seed tooling, and a browser-only statically exported Next.js frontend. No app server is introduced. CS1 verification keeps the clean `forge build` then `forge test` order. CS4-CS7 add web unit, E2E, runtime-read, performance-contract, and tooling parity gates without mixing those additions into CS1.
 
-**Stop conditions.** Stop and surface if: (a) any live mainnet deployment must be preserved in place (KD11 assumes fresh-generation deployment); (b) the OVRFLO-Streams fork cannot be redeployed against a new factory because its mint gate reads the factory registry positionally at `src/OVRFLOFactory.sol:87-91`; (c) the two-minter registration checks cannot be expressed without touching the 3-field `OvrfloInfo` tuple; (d) the lending asset switch touches `_fillTick` or `StreamPricing` math; (e) `test/DeploySize.t.sol` fails after the vault constructor embeds reserve and token creation code; (f) the lending runtime canary fails after the asset switch plus router hook, in which case drop the hook and surface rather than weakening the canary; (g) Hosted Convert CORS, CSP, static export, or Router V4 allowlist checks fail at implementation; (h) a USD submit uses a missing recipe or another column's quote; (i) `Your OVRFLO` cannot remain the single `Default` portfolio label; (j) a Fixed Return supply position cannot be classified and hydrated authoritatively; (k) the bounded portfolio scan cannot distinguish incomplete from empty; (l) CS3 is unavailable for no-liquidity request states; (m) safe recovery would require exposing hidden protocol mechanics in `Default`; (n) shared visual scoping would create separate `Default` and `Advanced` design systems; (o) CS6 lacks publication or an explicitly approved full-commit Git dependency plus benchmark evidence; or (p) CS7 lacks reviewed exact pins, supported configuration paths, common scope, or the parity-ledger path. The amended-scope completeness critic and the final documentation review completed 2026-08-31.
+**Stop conditions.** Stop and surface if: (a) any live mainnet deployment must be preserved in place (KD11 assumes fresh-generation deployment); (b) the OVRFLO-Streams fork cannot be redeployed against a new factory because its mint gate reads the factory registry positionally at `src/OVRFLOFactory.sol:87-91`; (c) the two-minter registration checks cannot be expressed without touching the 3-field `OvrfloInfo` tuple; (d) the lending asset switch touches `_fillTick` or `StreamPricing` math; (e) `test/DeploySize.t.sol` fails after the vault constructor embeds reserve and token creation code; (f) the lending runtime canary fails after the asset switch plus router hook, in which case drop the hook and surface rather than weakening the canary; (g) Hosted Convert CORS, CSP, static export, or Router V4 allowlist checks fail at implementation; (h) a USD submit uses a missing recipe or another column's quote; (i) `Your OVRFLO` cannot remain the single `Default` portfolio label; (j) a Fixed Return supply position cannot be classified and hydrated authoritatively; (k) the bounded portfolio scan cannot distinguish incomplete from empty; (l) CS3 is unavailable for no-liquidity request states; (m) safe recovery would require exposing hidden protocol mechanics in `Default`; (n) shared visual scoping would create separate `Default` and `Advanced` design systems; (o) CS6-U2 cannot install npm `eth-compress@0.4.0` with `_esm` browser files, or the production client bundle loads `index.node.js`; or (p) a CS7 pin in KD20 is unpublished, the documented config path is unsupported by that pin, type-aware Oxlint appears, or TypeScript 7 enters `web/package.json`. The amended-scope completeness critic and the final documentation review completed 2026-08-31. CS6/CS7 pins were recorded 2026-09-01.
 
-**Open blockers.** CS1, CS2, CS3, and ticket 18 have no structural blocker. CS2 and CS3 implement after CS1 in this plan. Hosted Convert and execution-grade USD are pinned in KD17 (2026-08-31). CS4 no-liquidity request states depend on CS3 in this plan. CS6 stops until `eth-compress` 0.5.0 is published, unless reviewers explicitly approve the full commit-pinned Git dependency and verify its built browser artifacts. CS7 stops until exact supported pins, configuration paths, a common include/exclude scope, and the checked-in A–E parity-ledger path are reviewed. The amended-scope completeness critic and the final documentation review have both run and their findings are folded (see the 2026-08-31 amended-scope sweep record). The unified plan remains requirements-only for CS6/CS7 tooling gates; CS0-CS3 and CS4 Hosted Convert plus execution USD are executable from this file.
+**Open blockers.** None in the plan text. CS6 and CS7 code wait for owner start-OK on tickets 21 and 23. That is start authorization, not a missing pin. Hosted Convert and execution-grade USD are pinned in KD17. CS4 no-liquidity request states depend on CS3.
 
-**Readiness (folded 2026-08-31, CS2/CS3/hosted/USD folded 2026-08-31).** CS0-CS3 are implementation-ready from this file: CS1 was swept 2026-08-24; CS2 and CS3 are later units in this plan (session-settled: user-directed — chosen over separate plans: introduced work must be implementable here). Ticket 18 is ready-for-agent after CS4 recovery (ticket 17). An implementer starts CS1 immediately, then CS2 and CS3. CS5's first gate is the viem-dlc policy source (AS10). CS6 waits on eth-compress publication or an approved commit-pinned Git dependency. CS7 waits on exact pins, config paths, scope, and the parity-ledger path. The full amended scope stays not-build-ready for CS6/CS7 tooling gates.
+**Readiness (CS6/CS7 pins folded 2026-09-01).** The whole plan is implementation-ready from this file. CS1 was swept 2026-08-24. CS2, CS3, Hosted Convert, and USD were pinned 2026-08-31. CS6 and CS7 pins are KD19 and KD20. An implementer starts CS1 immediately. Do not start CS6 or CS7 until the owner records start-OK on that ticket. Do not re-research pins.
 
 ---
 
@@ -73,7 +73,11 @@ The handoff describes a target architecture. The repo implements a different one
 - **An app server for hosted conversion or read aggregation.** Rejected: the frontend remains browser-only and statically exported. A hosted integration that cannot satisfy that boundary is not adopted.
 - **Use viem-dlc or eth-compress to transform wallet writes.** Rejected: both additions are limited to public reads. Every wallet prompt reacquires a fresh wallet client and receives the exact reviewed, simulated transaction for that step (KD17-KD19).
 - **Adopt eth-compress because compressed calldata is smaller in theory.** Rejected: request-body wire bytes, request latency, and provider acceptance are measured first; response compression is recorded separately and cannot justify adoption. State-override transformation remains an evaluation until package provenance, benchmark evidence, and decoded-result equivalence justify it (KD19).
+- **Wait for unpublished `eth-compress@0.5.0` or git-install `f1df09b9cb12b3a4a72019db544bac258ba9f7de`.** Rejected (owner 2026-09-01): CS6 evaluates the published npm package. `0.4.0` ships `compress_call`, the 1150-byte skip, and browser `_esm` files. Unpublished 0.5.0 is source-only and is not the install target.
+- **Git-install unpublished 0.5.0 at `f1df09b9cb12b3a4a72019db544bac258ba9f7de`.** Rejected: that commit has no `_esm` / `_cjs` / `_types`. Its build uses TypeScript 7.0.2.
 - **Replace ESLint and the formatter in one unclassified pass.** Rejected: ESLint and Oxlint run in parallel until every difference is classified and parity is proven. Formatter output lands separately as formatting-only (KD20).
+- **`npx ultracite init`.** Rejected: init writes agent files, including `AGENTS.md`. CS7 writes `web/oxlint.config.ts` and `web/oxfmt.config.ts` by hand from KD20.
+- **Spread Ultracite `core.ignorePatterns` into Oxlint.** Rejected: ultracite 7.10.7 includes `**/generated`, which matches `web/lib/generated.ts` and `web/lib/generated/`. ESLint currently lints those files. Oxlint must lint them too.
 
 ---
 
@@ -460,19 +464,132 @@ Logs are discovery or analytics hints. They never establish registration, author
 
 At every wallet prompt and write boundary, bypass cached public transport state, reacquire a fresh wallet client from the connected wallet, re-read authoritative inputs, and simulate the untransformed write. viem-dlc never transforms, submits, batches, or retries writes.
 
-### KD19 — Evaluate `eth-compress` 0.5.0 conditionally for large read-only calls
+### KD19 — Evaluate `eth-compress` 0.4.0 conditionally for large read-only calls
 
-`eth-compress` npm version `0.5.0` is not published. CS6 stops until publication unless reviewers explicitly approve a commit-pinned Git dependency at full commit `f1df09b9cb12b3a4a72019db544bac258ba9f7de` and verify its built browser artifacts. It is not an adopted runtime dependency until provenance, browser artifacts, benchmark evidence, and a reviewer adoption decision are complete.
+Research date: 2026-09-01. Owner re-pin the same day: CS6 uses published npm `eth-compress@0.4.0` (16 March 2026). npm has no `0.5.0`. GitHub commit `f1df09b9cb12b3a4a72019db544bac258ba9f7de` is unpublished 0.5.0 source with no `_esm` artifacts. Do not install that SHA. Do not wait for npm `0.5.0`.
 
-Measure passive transport behavior first using representative production-shaped RPC calls. Record request-body wire bytes, request latency, and provider acceptance. Record response compression separately; response compression cannot justify eth-compress adoption because eth-compress changes request calldata. Only if a material unresolved bottleneck remains may CS6 evaluate state-override compression for large read-only lens or multicall `eth_call` requests. Never use it for discovery, authorization, transaction simulation, calldata presented to a wallet, or any write.
+`0.4.0` ships `_esm/index.js` (browser) and `_esm/index.node.js` (Node). Package `main` and the default export are the Node file. The `browser` export map points at `_esm/index.js`. `./compressor` points at `_esm/jit-compressor.js` for both.
 
-Do not invent a percentage threshold. Before implementation, record the representative call set, baseline metrics, user-facing or provider-cost objective, and the minimum material improvement that would justify added dependency and fallback complexity. If reviewers cannot agree on that rule from measured baseline evidence, stop and decide. Non-adoption is a valid CS6 outcome.
+**Install rule.** CS6-U1 installs nothing. CS6-U2 may add a runtime dependency only as npm `eth-compress@0.4.0` (exact, no caret) after all of these hold:
 
-Every transformed call has a plain-call fallback at the same reviewed pin and inputs. Tests must prove decoded-result equivalence. Never combine an eth-compress state-override transformation and viem-dlc deployless code in one `eth_call`; choose one read path, with plain fallback, so failures remain attributable.
+1. `npm view eth-compress@0.4.0 version` returns `0.4.0`.
+2. The installed package contains `_esm/index.js` and `_esm/jit-compressor.js`.
+3. Those two files contain no `node:` specifiers and no `fs` imports.
+
+If any check fails, STOP. Do not git-install. Do not install unpublished `0.5.0`. Do not vendor-build. Do not add TypeScript 7 to `web/package.json`.
+
+**Browser wiring.** Client public-read code imports `compressModule` from `eth-compress` and `compress_call` from `eth-compress/compressor`. That code must live on the browser public-read path so the bundler applies the `browser` export. Do not import `eth-compress` from a Node-only script into the client bundle. STOP if the production client bundle includes `_esm/index.node.js` or a `node:` specifier from this package. Decoded-equivalence tests must load the browser entry (`_esm/index.js`), not `index.node.js`. If Vitest resolves the `node` condition, set test `resolve.conditions` so those tests use `browser`. STOP if tests pass only against the Node entry.
+
+The package skip threshold in the 0.4.0 README is: request payload **under 1150 bytes is not compressed**. If the installed 0.4.0 documents a different constant, STOP and re-pin that constant. Calls under the threshold stay plain.
+
+**Representative calls (named; do not invent a new RPC shape).**
+
+1. Measure, never adopt: the vault-binding `client.multicall` inside `discoverProtocolBootstrap` in `web/lib/protocol-bootstrap.ts`. Factory discovery stays fail-closed and plain.
+2. Candidate: `streamsOfOwnerIn` through `lensCall` in `web/lib/protocol/streams.ts` at window `COMPLETE_SET_WINDOW` (`500n`). Do not bench `COMPLETE_SET_UNBOUNDED_MAX`.
+3. Candidate: the largest single `readContract` issued by `loadLenderPage` in `web/lib/protocol/lending.ts` on one first-page hydration (`LOANS_OF_PAGE` / `STREAM_PAGE_SIZE` as those files already define them). Do not wrap those reads into a new multicall for the bench.
+
+Never transform wallet writes, including the `multicall` write path in `web/lib/actions/positions.ts`. Never transform simulation or authorization reads.
+
+**Providers.** Use `rpcUrls` from `web/lib/config.ts`: `NEXT_PUBLIC_RPC_URL` plus `NEXT_PUBLIC_RPC_FALLBACK_URLS`. Do not add a bench-only URL. Do not use `NEXT_PUBLIC_HISTORICAL_RPC_URL` for this bench. Measure each URL separately. Do not share burst or concurrency budget across URLs. If `NEXT_PUBLIC_RPC_URL` is unset, STOP.
+
+**CS6-U1 measures plain JSON-RPC POST bodies only.** Record request-body wire bytes, request latency, and provider success class. Record HTTP response `Content-Encoding` (gzip/deflate) in a separate column. Response compression cannot justify `compress_call`. Do not install eth-compress in U1. Do not send `stateDiff` / `compress_call` in U1.
+
+Evidence path: `.scratch/denomination-border-column/cs6-eth-compress-evidence.md`. Required headings, in this order: `Environment`, `Call 1 vault-binding multicall`, `Call 2 streamsOfOwnerIn`, `Call 3 loadLenderPage`, `Verdict`. Each call heading contains one row per URL with wire bytes, three cold latencies, median latency, success class, and response `Content-Encoding`. `Verdict` is exactly `evaluate` or `do not adopt` plus the KD19 rule that produced it.
+
+**U1 verdicts.** Write exactly one of:
+
+- `do not adopt` — every representative body is under the skip threshold, or the 3-run baseline is unstable, or npm `0.4.0` fails the install rule. Cancel ticket 22.
+- `evaluate` — npm `0.4.0` passes the install rule, at least one of calls 2 or 3 is at or above the skip threshold, and the 3-run baseline is stable. U1 still does not add the dependency.
+
+**U2 materiality (all must hold on every adopted call).** Adopt `compress_call` only if:
+
+1. Decoded results equal the plain `eth_call` at the same block hash.
+2. Request-body wire bytes are strictly less than the plain body.
+3. Provider success class is unchanged (HTTP success plus JSON-RPC success versus the plain class).
+4. Median wall time of 3 cold runs is not greater than the plain median.
+
+Cold means a new process and no reused HTTP cache. Record `cache: cold`. If three runs disagree on success class or on the sign of the byte delta, STOP. If materiality fails after install, uninstall and record `do not adopt`. Non-adoption is valid.
+
+HTTP gzip of the module without `compress_call` is not adoption evidence.
+
+Every transformed call keeps a same-input, same-block, same-pin plain `eth_call` fallback. Never combine eth-compress state-override transformation and viem-dlc deployless code in one `eth_call`.
+
+Owner start-OK on ticket 21 authorizes CS6 code. It does not re-open these pins.
 
 ### KD20 — Migrate web quality tooling through classified parity
 
-CS7 is blocked until reviewers establish exact supported Ultracite, Oxlint, and Oxfmt pins; supported configuration paths; a common include/exclude scope for parity runs; and the checked-in A–E parity-ledger path. Do not invent unsupported configuration filenames. After those decisions, adopt Ultracite's supported native core, React, Next, and Vitest rules with Oxlint and Oxfmt. Preserve the current no-console policy and scripts override from `web/eslint.config.mjs`. Keep TypeScript checking, banned-pattern and dependency gates, maps gates, Vitest, Playwright, axe, and production build checks as separate commands and failure domains.
+Research date: 2026-09-01. Pins (exact, no caret), installed from `web/` as devDependencies:
+
+- `ultracite@7.10.7` (peer: `oxlint ^1.79.0`, `oxfmt >=0.1.0`)
+- `oxlint@1.80.0` (engines `^20.19.0 || >=22.12.0`)
+- `oxfmt@0.65.0`
+
+Install command: `npm install -D ultracite@7.10.7 oxlint@1.80.0 oxfmt@0.65.0` with cwd `web/`. If the lockfile records any other version for those three names, STOP. If `typescript` in `web/package.json` is not `5.9.3`, STOP. If `oxlint-tsgolint` appears, STOP.
+
+**Do not run `npx ultracite init`.** Init writes agent files, including `AGENTS.md`. Do not enable type-aware Oxlint (`options.typeAware` / `options.typeCheck`). Do not import `ultracite/oxlint/js-plugins`, `ultracite/oxlint/next/js-plugins`, or `ultracite/oxlint/anti-slop` in CS7-U1. Anti-slop stays off until a later unit cites a named repo failure class (KD20 last paragraph).
+
+**Node.** `oxlint.config.ts` needs a Node that executes TypeScript configs (Node v22.18+ or v24+). If `node -v` is below that, STOP. Do not fall back to `.oxlintrc.json`.
+
+**Config paths (hand-written; names are the auto-discovery names Oxlint/Oxfmt document).**
+
+`web/oxlint.config.ts`:
+
+```ts
+import { defineConfig } from "oxlint";
+import core from "ultracite/oxlint/core";
+import next from "ultracite/oxlint/next";
+import react from "ultracite/oxlint/react";
+import vitest from "ultracite/oxlint/vitest";
+
+export default defineConfig({
+  extends: [core, react, next, vitest],
+  ignorePatterns: [
+    "**/node_modules",
+    "**/.git",
+    "**/.next",
+    "**/out",
+    "**/.features-gen",
+  ],
+  rules: {
+    "no-console": ["error", { allow: ["warn", "error"] }],
+  },
+  overrides: [
+    {
+      files: ["scripts/**/*.{mjs,js,ts}"],
+      rules: { "no-console": "off" },
+    },
+  ],
+});
+```
+
+Do not spread `core.ignorePatterns`. ultracite 7.10.7 `core.ignorePatterns` contains `**/generated`, which matches `web/lib/generated.ts` and `web/lib/generated/lens-bytecode.ts`. ESLint currently lints those files (`web/eslint.config.mjs` ignores only `.next/**`, `node_modules/**`, `out/**`, `.features-gen/**`). Oxlint must lint them too. Class D for generated files is allowed only if ESLint already special-cases them; it does not.
+
+Ultracite core sets `"no-console": "off"`. The root `rules` and scripts `overrides` above restore `web/eslint.config.mjs` policy. If Oxlint 1.80.0 rejects the `allow` option, STOP and record a C ledger row. Do not weaken application `no-console` to off.
+
+`web/oxfmt.config.ts`:
+
+```ts
+import { defineConfig } from "oxfmt";
+import ultracite from "ultracite/oxfmt";
+
+export default defineConfig({
+  ...ultracite,
+});
+```
+
+Spreading Ultracite Oxfmt ignores is allowed: the formatter must not rewrite wagmi output under `web/lib/generated.ts`. If Oxfmt 0.65.0 would rewrite that file or `web/lib/generated/lens-bytecode.ts`, add those two paths to Oxfmt ignore and continue. If `oxfmt --check` does not apply `web/oxfmt.config.ts`, change the scripts to pass `-c oxfmt.config.ts`. If `-c` fails, STOP.
+
+**npm scripts** (cwd `web/`; do not replace `"lint": "eslint ."`):
+
+- `"lint:oxlint": "oxlint"`
+- `"fmt:oxfmt": "oxfmt"`
+- `"fmt:oxfmt:check": "oxfmt --check"`
+
+Oxfmt default writes. `oxfmt --check` is the check mode.
+
+**Parity scope.** ESLint command remains `eslint .` from `web/`. Oxlint command is `oxlint` from `web/` with the ignore list above. The file sets must match: every path ESLint lints, Oxlint lints, except files Oxlint cannot parse. A parse limitation is class C or E with evidence, not a silent ignore.
+
+**Ledger path.** `web/oxlint-eslint-parity.md`. Columns, in this order: `id`, `eslint-rule`, `oxlint-rule`, `class`, `evidence`, `disposition`. CS7-U1 creates the file with the header row. CS7-U2 fills one row per difference. Do not pre-classify the whole ESLint rule set in this plan.
 
 Run ESLint and Oxlint in parallel until every difference is classified:
 
@@ -482,9 +599,11 @@ Run ESLint and Oxlint in parallel until every difference is classified:
 - **D:** intentional project exception with rationale and owner;
 - **E:** false positive, unsupported rule, or obsolete rule with evidence and an explicit keep/drop decision.
 
-ESLint may be removed only when the checked-in ledger has zero unclassified items and zero C items, and fixture proofs preserve no-console plus scripts-override behavior. Do not treat a retained external gate as closure for a C item. Do not enable type-aware Oxlint. Do not upgrade to TypeScript 7.
+ESLint may be removed only when the checked-in ledger has zero unclassified items and zero C items, and fixture proofs preserve no-console plus scripts-override behavior. Do not treat a retained external gate as closure for a C item. Keep TypeScript checking, banned-pattern and dependency gates, maps gates, Vitest, Playwright, axe, and production build checks as separate commands and failure domains.
 
 Adopt Oxfmt separately. Commit its output as formatting-only after the rule migration behavior is green. Run it twice and require the second run to produce no diff. Enable anti-slop rules selectively only when concrete violations or recurring review failures in this repo justify each rule. Record the evidence and expected remediation before enabling it.
+
+Owner start-OK on ticket 23 authorizes CS7 code. It does not re-open these pins.
 
 ---
 
@@ -686,7 +805,7 @@ Ordered units. Write an intent record before the first code write of each unit. 
 - **U5. Deploy recipe + tooling** (KD5, KD11): `script/OVRFLO.s.sol` runbook steps 6–9 (6 = deploy vault, 7 = `registerOvrflo(vault)`, 8 = creation-wiring reads (`vault.reserve()`, `reserve.ovrfloToken() == vault.ovrfloToken()`), 9 = binding reads (`token.vault() == vault`, `token.reserve() == reserve`)), `script/seed-local.sh`, `script/lib/OVRFLOTestFixtures.sol` (`_deployConfiguredSystemAs` return tuple grows to `(factory, ovrflo, token, reserve)` — positional destructurers break loudly at compile time), `write-deployment-artifact.mjs` (the artifact's `reserve` field joins the same paired-optional consume rule as `ovrflo`/`lending` — both present or both derived, `tools/scripts/write-deployment-artifact.mjs:27-31`), `test/DeploySize.t.sol` `_artifacts()` gains `OVRFLOReserve`. The client env contract gains nothing (`web/lib/config.ts` unchanged) — reserve reaches the web through bootstrap discovery, not env.
 - **U6. Invariant/fuzz re-derivation** (KD13): reserve wrap suite; vault drops underlying-reserve terms; fizz regeneration. Run the fizz-sync path after U2–U4 land. The GL-nn property IDs (GL-02/03/04 asset flip, GL-06 holder set, GL-07 span, GL-09 retarget, GL-30 minter shape) are cited from the current harness read; verify each against `test/fizz/Properties.sol` during the sync rather than trusting the citation. Recompute raw-slot constants from the regenerated lending golden (`TICKS_SLOT`, packed epoch-slot decode in `test/OVRFLOLending.t.sol`) and keep the `exposed_epochState` cross-checks green.
 - **U7. Web denomination sync** (KD12): asset flips, reserve retargeting via the new bootstrap discovery leg (KD5 provenance decision — `NEXT_PUBLIC_OVRFLO_RESERVE` is not added), approval-count change, `borrow` `onBehalfOf`, E2E + fixtures. State-touching frontend work: write the scratch intent capsule per `docs/maps/SCHEMAS.md` §4 before the first edit. Do not rewrite destination paths or query keys; that contract is KD16 and CS4.
-- **U8. Docs sync**: `README.md` architecture sections, `CONCEPTS.md` (`OVRFLOReserve` entry, three labeled exits, denomination vocabulary), `docs/agents/onboarding.md` §2/§4/§5/§7, `AGENTS.md` overview and solvency fact, `docs/solutions/patterns/ovrflo-critical-patterns.md` (fee denomination; sweep-reserve reasoning moves to the reserve), `VAULT_SECURITY.md` (two burn authorities), `PRODUCT.md` (Operating Context: lender-supply and borrower-proceeds underlying references become ovrfloToken, while `underlying` stays the column identity asset and the wrap/unwrap reserve semantics are unchanged), R-02 rejected-finding pointer follows the sweep to the reserve, `x-ray/` refresh after implementation. Also: the stale reserve-authority lines in `docs/maps/ui/assets.md` and `docs/maps/state/keys/chain-reads.md` (`chain.wrap-reserve` retargets to the reserve read) — the maps-presence gate forces a companion map update with U7 anyway; name the two files so it is not improvised.
+- **U8. Docs sync**: `README.md` architecture sections, `CONCEPTS.md` (`OVRFLOReserve` entry, three labeled exits, denomination vocabulary), `docs/agents/onboarding.md` §2/§4/§5/§7 combined solvency and live map, `docs/solutions/patterns/ovrflo-critical-patterns.md` (fee denomination; sweep-reserve reasoning moves to the reserve), `VAULT_SECURITY.md` (two burn authorities), `PRODUCT.md` (Operating Context: lender-supply and borrower-proceeds underlying references become ovrfloToken, while `underlying` stays the column identity asset and the wrap/unwrap reserve semantics are unchanged), R-02 rejected-finding pointer follows the sweep to the reserve, `x-ray/` refresh after implementation. Also: the stale reserve-authority lines in `docs/maps/ui/assets.md` and `docs/maps/state/keys/chain-reads.md` (`chain.wrap-reserve` retargets to the reserve read) — the maps-presence gate forces a companion map update with U7 anyway; name the two files so it is not improvised. Keep `AGENTS.md` as the session router. Do not restore an architecture essay into that file.
 
 ### CS2 — ERC-3156 flash mint in the reserve (KD14)
 
@@ -1126,86 +1245,94 @@ CS5 may proceed after CS1 U7. It must not become a prerequisite for canonical wr
 
 CS6 depends on CS5's read-path separation so benchmarks can compare plain, viem-dlc deployless, and eth-compress paths independently.
 
-CS6 stops before dependency work because npm version 0.5.0 is not published. It may continue only after publication, or after reviewers explicitly approve a Git dependency pinned at full commit `f1df09b9cb12b3a4a72019db544bac258ba9f7de` and verify the built browser artifacts.
+Do not start CS6 until the owner records start-OK on ticket 21. Pins are KD19. Do not re-research them. Do not git-install. Do not install unpublished `0.5.0`. CS6-U1 does not add `eth-compress` to `web/package.json`.
 
 #### CS6-U1 — Establish the benchmark contract and adoption gate
 
-**Goal.** Decide from measured evidence whether state-override compression solves a material remaining problem.
+**Goal.** Measure plain transport on the named representative calls and record `evaluate` or `do not adopt`.
 
-**Dependencies.** CS5-U1 and CS5-U3.
+**Dependencies.** CS5-U1 and CS5-U3. Owner start-OK on ticket 21.
 
-**Files.** `web/package.json`, `web/package-lock.json`, `web/lib/rpc.ts`, `web/tests/lib/performance-contract.test.ts`, `web/tests/lib/rpc.test.ts`.
+**Files.** `.scratch/denomination-border-column/cs6-eth-compress-evidence.md`, `web/tests/lib/performance-contract.test.ts`, `web/tests/lib/rpc.test.ts`. A Node script under `web/scripts/` is allowed for the bench harness. Do not edit `web/package.json` in this unit.
 
 **Approach.**
 
-- Measure passive request transport first on representative large lens/multicall calls and target providers.
-- Record request-body wire bytes, request latency, and provider acceptance. Record response compression separately and never count response compression as evidence for eth-compress adoption.
-- Record provider errors/rate pressure, decode cost, and fallback frequency as supporting diagnostics.
-- Before evaluating state overrides, write the measured user-facing or provider-cost objective and the minimum material improvement reviewers agree justifies another runtime dependency.
-- Stop and decide if the threshold cannot be grounded in baseline evidence. Do not manufacture a universal percentage.
-- Record either `adopt` or `do not adopt` with the benchmark evidence. Do not add the runtime dependency on non-adoption.
+- Follow KD19. Install nothing.
+- Hit the three named representative calls on each URL in `rpcUrls` from `web/lib/config.ts`. Record request-body wire bytes, request latency, and provider success class. Record response `Content-Encoding` separately.
+- Run 3 cold processes per call per URL. Record `cache: cold`. If success class or byte-delta sign disagrees across the three, STOP.
+- Apply the U1 verdict rule in KD19. Write it in the evidence file.
+- Do not send `stateDiff` or `compress_call`.
 
 **Test scenarios.**
 
-1. The benchmark records request-body wire bytes, request latency, and provider acceptance separately from response compression and any state-override result.
-2. Representative calls include large portfolio/lens and multicall reads, not small calls that cannot justify transformation.
-3. Runs record provider and cache conditions so a favorable warm-cache result cannot masquerade as compression benefit.
-4. Missing baseline, unstable results, or no reviewer-approved materiality rule produces a stop decision.
+1. The evidence file lists the three named calls, each URL, wire bytes, latency, success class, response encoding, and cache condition.
+2. Call 1 (vault-binding multicall) is measured and marked never-adopt.
+3. `streamsOfOwnerIn` uses `COMPLETE_SET_WINDOW`, not `COMPLETE_SET_UNBOUNDED_MAX`.
+4. A below-threshold body is recorded as below-gate and stays plain.
+5. Unstable 3-run baseline produces STOP, not `evaluate`.
+6. `web/package.json` has no `eth-compress` entry after this unit.
 
-**Verification.** Performance-contract evidence is reproducible and ends in an explicit reviewed adoption or non-adoption decision.
+**Verification.** The evidence file exists, names `evaluate` or `do not adopt`, and matches KD19. On `do not adopt`, ticket 22 is cancelled.
 
 #### CS6-U2 — Adopt only the proven read-only path with equivalent plain fallback
 
-**Goal.** If CS6-U1 says adopt, pin and constrain eth-compress without changing decoded results or write authority.
+**Goal.** If CS6-U1 says `evaluate`, install npm `0.4.0` under KD19, apply materiality, and keep the dependency only if every conjunct holds.
 
-**Dependencies.** CS6-U1 adoption decision.
+**Dependencies.** CS6-U1 verdict `evaluate`.
 
-**Files.** `web/package.json`, `web/package-lock.json`, `web/lib/rpc.ts`, `web/lib/protocol/streams.ts`, `web/lib/protocol/lending.ts`, `web/tests/lib/rpc.test.ts`, `web/tests/lib/read-outcome.test.ts`, `web/tests/lib/performance-contract.test.ts`, plus the reviewed dependency record for publication or Git-pin approval.
+**Files.** `web/package.json`, `web/package-lock.json`, `web/lib/rpc.ts`, `web/lib/protocol/streams.ts`, `web/lib/protocol/lending.ts`, `web/tests/lib/rpc.test.ts`, `web/tests/lib/read-outcome.test.ts`, `web/tests/lib/performance-contract.test.ts`, `.scratch/denomination-border-column/cs6-eth-compress-evidence.md`.
 
 **Approach.**
 
-- Install published npm version `0.5.0` only if its reviewed provenance matches. If npm publication is still absent, use a Git dependency only after explicit reviewer approval at full commit `f1df09b9cb12b3a4a72019db544bac258ba9f7de` and verification of built browser artifacts.
-- Restrict transformation to the benchmarked large read-only lens/multicall call classes.
+- Re-run the KD19 install-rule checks. If `0.4.0` is missing or artifacts fail, STOP. Do not git-install. Do not install unpublished `0.5.0`.
+- Install with cwd `web/`: `npm install eth-compress@0.4.0` as a runtime dependency.
+- Wire `compressModule` / `compress_call` per KD19 browser wiring. STOP if the client bundle includes `index.node.js`.
+- Restrict `compress_call` to U1 candidate calls 2 and/or 3 that met the skip threshold. Call 1 stays plain.
 - Keep a same-input, same-block, same-pin plain `eth_call` fallback.
 - Select either eth-compress transformation or viem-dlc deployless code for a call. Never compose both.
+- Apply the four U2 materiality conjuncts. If any fail, uninstall and record `do not adopt`.
 - Compare decoded semantic results, not just successful transport.
 
 **Test scenarios.**
 
-1. Each adopted call returns a decoded result equivalent to the plain call at the same block.
+1. Each adopted call returns a decoded result equivalent to the plain call at the same block hash.
 2. Unsupported state overrides, provider rejection, malformed compressed results, or decode failure use the plain fallback.
 3. A call selected for viem-dlc deployless execution cannot also select eth-compress.
-4. Factory/bootstrap, authorization reads, transaction simulation, and wallet writes never enter the transformed path.
-5. Calls below the benchmarked class remain plain.
+4. Factory/bootstrap (including call 1), authorization reads, transaction simulation, and wallet writes never enter the transformed path.
+5. Calls below the skip threshold remain plain.
+6. `npm ls eth-compress` is `0.4.0` on keep, or the package is absent on `do not adopt`.
+7. The production client bundle does not contain `_esm/index.node.js`.
 
-**Verification.** Equivalence and fallback tests pass across each supported provider class. Post-adoption performance still clears the evidence-backed materiality rule.
+**Verification.** Equivalence and fallback tests pass on each URL in `rpcUrls`. Post-adoption performance still clears KD19 materiality. Non-adoption leaves no eth-compress runtime code or dependency.
 
-**CS6 stop conditions.** Stop while npm 0.5.0 is unpublished unless the full-commit Git exception and built browser artifacts are explicitly approved; also stop on no material benchmark benefit, irreproducible pin provenance, provider incompatibility, decoded-result divergence, inability to keep a plain fallback, or pressure to transform any authoritative/write path.
+**CS6 stop conditions.** Stop if owner start-OK is missing; npm `0.4.0` fails the install rule; the client bundle loads `index.node.js`; TypeScript 7 enters `web/package.json`; git or unpublished `0.5.0` install is proposed; baseline is unstable; decoded results diverge; plain fallback cannot be kept; or any write/authorization/simulation path would be transformed.
 
-**CS6 Definition of Done.** A reviewed evidence record says adopt or do not adopt. On adoption, the exact pin is installed, only benchmarked large read-only calls transform, plain fallback and semantic equivalence are proven, and viem-dlc deployless code is never combined in the same call. On non-adoption, no eth-compress runtime code or dependency remains.
+**CS6 Definition of Done.** The evidence file states `evaluate` then final `adopt`, or `do not adopt`. On adoption, npm `0.4.0` is installed, only threshold-passing calls 2 and/or 3 transform, the client bundle uses the browser entry, plain fallback and semantic equivalence are proven, and viem-dlc deployless code is never combined in the same call. On non-adoption, no eth-compress runtime code or dependency remains.
 
 ### CS7 — Web quality-tooling migration (KD20)
 
 CS7 is independent of protocol behavior and lands after feature changes to avoid mixing lint and formatting churn with CS1-CS6.
 
-CS7 is blocked before implementation until reviewers record the exact supported Ultracite, Oxlint, and Oxfmt pins; supported configuration paths; the common include/exclude scope used by both parity runs; and one checked-in A–E parity-ledger path. This plan does not invent configuration filenames or a ledger path.
+Do not start CS7 until the owner records start-OK on ticket 23. Pins, paths, ignore list, scripts, and ledger path are KD20. Do not run `npx ultracite init`. Do not re-research pins.
 
 #### CS7-U1 — Add Ultracite, Oxlint, and Oxfmt commands without removing gates
 
 **Goal.** Introduce the new native rule families and tools alongside the current checks.
 
-**Dependencies.** CS1-CS6 feature code settled for the migration baseline.
+**Dependencies.** CS1–CS5 feature code settled for the migration baseline. Ticket 21 closed with `evaluate` or `do not adopt`. Owner start-OK on ticket 23. Do not wait on ticket 22.
 
-**Files.** To be finalized after reviewers select supported configuration paths and the parity-ledger path. Known blast radius includes `web/package.json`, `web/package-lock.json`, `web/eslint.config.mjs`, `web/tests/scripts/banned-patterns.test.ts`, and `web/tests/lib/performance-contract.test.ts`.
+**Files.** `web/package.json`, `web/package-lock.json`, `web/oxlint.config.ts`, `web/oxfmt.config.ts`, `web/oxlint-eslint-parity.md`, `web/tests/scripts/banned-patterns.test.ts`, `web/tests/lib/performance-contract.test.ts`. Read `web/eslint.config.mjs`; do not edit it in this unit.
 
 **Approach.**
 
-- Stop until exact supported pins and configuration paths are reviewed against the current Next.js, TypeScript, and Vitest stack.
-- After approval, enable the supported Ultracite native core, React, Next, and Vitest rule families and add explicit scripts.
-- Run ESLint and Oxlint over the same reviewed include/exclude scope.
-- Preserve the current no-console policy and scripts override.
+- Confirm `node -v` is v22.18+ or v24+. Confirm TypeScript stays `5.9.3`.
+- Install the three exact pins from KD20. Write the two config files exactly as KD20 shows them.
+- Add the three npm scripts from KD20. Leave `"lint": "eslint ."` in place.
+- Create `web/oxlint-eslint-parity.md` with the six-column header only.
+- Run ESLint and Oxlint over the KD20 ignore list. Confirm `web/lib/generated.ts` and `web/lib/generated/lens-bytecode.ts` remain in both file sets.
+- Preserve no-console policy via the KD20 `rules` / `overrides`. If Oxlint rejects `allow`, STOP and add a C row; do not turn application `no-console` off.
 - Keep TypeScript, banned-pattern, dependency, maps, Vitest, Playwright, axe, and build checks separately runnable.
-- Do not enable type-aware Oxlint. Do not change TypeScript major version.
+- Do not enable type-aware Oxlint. Do not import js-plugins or anti-slop.
 
 **Test scenarios.**
 
@@ -1213,8 +1340,9 @@ CS7 is blocked before implementation until reviewers record the exact supported 
 2. React, Next, and Vitest fixture violations are checked by the intended native rule family.
 3. Running lint does not implicitly replace TypeScript, tests, accessibility, maps, dependency, or build gates.
 4. Dependency inspection proves no TypeScript 7 or type-aware Oxlint path was introduced.
-5. Package and configuration fixtures prove every tool uses the reviewed exact pin and supported configuration path.
-6. ESLint and Oxlint report over the same include/exclude file set.
+5. `npm ls ultracite oxlint oxfmt` matches `7.10.7`, `1.80.0`, and `0.65.0`.
+6. ESLint and Oxlint report over the same include/exclude file set, including generated ABI files.
+7. `AGENTS.md` is still the session router (no init rewrite).
 
 **Verification.** Existing and new scripts run independently, and current policy fixtures retain their expected pass/fail behavior.
 
@@ -1224,12 +1352,12 @@ CS7 is blocked before implementation until reviewers record the exact supported 
 
 **Dependencies.** CS7-U1.
 
-**Files.** The reviewer-selected checked-in A–E parity ledger, `web/package.json`, `web/eslint.config.mjs`, and `web/tests/scripts/banned-patterns.test.ts`; any new native configuration path must be one the selected tool version documents as supported.
+**Files.** `web/oxlint-eslint-parity.md`, `web/package.json`, `web/oxlint.config.ts`, `web/eslint.config.mjs`, and `web/tests/scripts/banned-patterns.test.ts`.
 
 **Approach.**
 
 - Run ESLint and Oxlint over the same checked-in source/test scope.
-- Record every rule and finding difference in the checked-in ledger as A, B, C, D, or E under KD20.
+- Record every rule and finding difference in `web/oxlint-eslint-parity.md` as A, B, C, D, or E under KD20. Classify from this run. Do not invent rows for rules that did not differ.
 - Fix B translations. Keep ESLint while any C exists. Give D and E entries evidence plus an explicit owner-approved decision.
 - Enable an anti-slop rule only when named repo evidence shows the failure class and the proposed rule catches it without unacceptable false positives.
 - Remove ESLint configuration and dependency only after the parity record is complete and the independent gates remain.
@@ -1238,9 +1366,9 @@ CS7 is blocked before implementation until reviewers record the exact supported 
 
 1. Same-source runs produce a complete classified difference set with no unmatched finding.
 2. A C gap keeps the ESLint command active.
-3. A D exception is narrow and does not suppress unrelated files.
+3. A D exception is narrow and does not suppress unrelated files. Generated ABI is not D unless ESLint already ignored it (it does not).
 4. An E decision includes a reproducer or rule-support reference rather than an unexplained disable.
-5. No-console and scripts-override fixtures behave identically before and after ESLint removal.
+5. No-console and scripts-override fixtures behave identically before and after any ESLint removal.
 6. Any unclassified or C ledger entry blocks ESLint removal.
 
 **Verification.** The checked-in parity ledger has zero unclassified items and zero C items. No-console and scripts-override fixture proofs pass. If parity is not achieved, ESLint remains and CS7 records the blocker.
@@ -1251,21 +1379,22 @@ CS7 is blocked before implementation until reviewers record the exact supported 
 
 **Dependencies.** CS7-U2 and all behavior-changing CS7 edits.
 
-**Files.** `web/package.json` plus only files changed by the checked-in Oxfmt scope.
+**Files.** `web/package.json` plus only files changed by `npm --prefix web run fmt:oxfmt`.
 
-**Approach.** Commit formatter output separately from dependency, rule, or behavior changes. Review the formatting-only diff for semantic movement. Run Oxfmt twice and require the second run to produce no diff.
+**Approach.** Commit formatter output separately from dependency, rule, or behavior changes. Review the formatting-only diff for semantic movement. Run `fmt:oxfmt` twice and require the second run to produce no diff. Prove check mode with `fmt:oxfmt:check`.
 
 **Test scenarios.**
 
 1. The first formatter run produces only syntactic formatting changes.
 2. The second formatter run is idempotent.
 3. TypeScript, independent policy gates, Vitest, Playwright, axe, and production build results are unchanged after formatting.
+4. `web/lib/generated.ts` and `web/lib/generated/lens-bytecode.ts` are not rewritten.
 
 **Verification.** The formatting commit contains no logic or configuration change and all independent checks pass.
 
-**CS7 stop conditions.** Stop all CS7 implementation until exact pins, supported configuration paths, common include/exclude scope, and a checked-in A–E ledger path are reviewed. Stop ESLint removal on any C item, unclassified difference, no-console/scripts-override regression, TypeScript 7 pressure, type-aware Oxlint requirement, or inability to isolate formatter-only output.
+**CS7 stop conditions.** Stop if owner start-OK is missing; a KD20 pin is unpublished or the lockfile drifts; Node cannot execute `oxlint.config.ts`; type-aware Oxlint or TypeScript 7 appears; `ultracite init` is proposed; ignorePatterns would drop ESLint-linted generated files; no-console policy cannot be expressed; any C or unclassified ledger row remains; or formatter output cannot be isolated.
 
-**CS7 Definition of Done.** Reviewed exact pins and supported configuration paths are used; Ultracite native rule families, Oxlint, and Oxfmt are installed and separately runnable over the same scope; the checked-in ledger has zero unclassified and zero C entries; ESLint is removed only after no-console and scripts-override fixtures prove parity; independent gates remain; no type-aware Oxlint or TypeScript 7 appears; formatter output is separate and idempotent; anti-slop rules have concrete repo evidence.
+**CS7 Definition of Done.** KD20 pins and config files are in use; Ultracite native rule families, Oxlint, and Oxfmt are installed and separately runnable over the same scope; `web/oxlint-eslint-parity.md` has zero unclassified and zero C entries; ESLint is removed only after no-console and scripts-override fixtures prove parity; independent gates remain; no type-aware Oxlint or TypeScript 7 appears; formatter output is separate and idempotent; anti-slop rules have concrete repo evidence.
 
 ### Not built
 
@@ -1284,8 +1413,8 @@ PT flash (removed, KD1), underlying flash loans (deferred indefinitely — flash
    - CS1 U7: `npm --prefix web run test`, production build, and the existing E2E suite prove the minimal denomination/reserve/calldata sync.
    - CS4: `web/tests/lib/actions.test.ts`, `web/tests/lib/action-runtime.test.ts`, `web/tests/hooks/useTxQueue.test.tsx`, `web/tests/e2e/borrow.feature`, `web/tests/e2e/supply.feature`, `web/tests/e2e/deposit-wrap-unwrap.feature`, and `web/tests/e2e/watch.feature` prove normative hierarchy, complete-scan portfolio routing, adaptive-stage invalidation, supply-backed Fixed Returns, mode-neutral typed intents, composite recovery, hosted-response rejection, request/error states, execution-only USD resolution, finality, separate exits, desktop/mobile responsiveness, keyboard operation, and axe.
    - CS5: `web/tests/lib/rpc.test.ts`, `web/tests/lib/protocol/pin-probe.test.ts`, `web/tests/lib/read-outcome.test.ts`, `web/tests/scripts/banned-patterns.test.ts`, and `web/tests/lib/performance-contract.test.ts` prove ordered per-provider policy, bounded logs, one `getLogs` owner, progressive completeness, fail-closed discovery, separate hash and provider/lens policy probes, and write isolation.
-   - CS6: performance-contract and RPC tests capture request-body wire bytes, request latency, provider acceptance, separately reported response compression, the reviewed materiality rule, adoption decision, plain fallback, and decoded equivalence. Non-adoption leaves no dependency.
-   - CS7: the checked-in A–E ledger, no-console/scripts-override fixtures, Ultracite/ESLint/Oxlint parity, TypeScript, `web/tests/scripts/banned-patterns.test.ts`, dependency/maps gates, Vitest, Playwright, axe, and production build remain separate. Oxfmt's second run is diff-free.
+   - CS6: `.scratch/denomination-border-column/cs6-eth-compress-evidence.md` plus performance-contract and RPC tests capture request-body wire bytes, request latency, provider success class, separately reported response compression, the four materiality conjuncts, `evaluate` then final `adopt` or `do not adopt`, plain fallback, and decoded equivalence. Non-adoption leaves no dependency.
+   - CS7: `web/oxlint-eslint-parity.md`, no-console/scripts-override fixtures, Ultracite/ESLint/Oxlint parity, TypeScript, `web/tests/scripts/banned-patterns.test.ts`, dependency/maps gates, Vitest, Playwright, axe, and production build remain separate. Oxfmt's second run is diff-free. `npx ultracite init` never ran.
 7. Named successor scenarios (test accountability — each names the scenario, not just the unit):
    - *Fee-from-mint*: depositor approves only the PT; treasury ends with exactly `feeAmount` ovrfloToken; `Deposited.toUser` and the user's balance equal `toUser - feeAmount`; no party's underlying balance changes during `deposit`; `minToUser` equal to the net passes and one wei above the net reverts.
    - *Zero-fee skip-mint*: with fee zero, treasury balance is unchanged, no mint reaches the treasury, and the depositor receives the full gross — the branch must not silently mint dust or revert on a zero transfer-to-self.
@@ -1321,8 +1450,8 @@ PT flash (removed, KD1), underlying flash loans (deferred indefinitely — flash
    - *Read authority*: log-derived candidates lose to current authoritative ownership and state; partial analytics never enable a write; discovery remains fail-closed. Log-derived candidates never appear in any wallet prompt, simulation, or calldata path; they are display data.
    - *Unknown-outcome resolution*: a hash persisted with no observed receipt — including after a throw during receipt processing — becomes a distinct unknown-outcome state; it resolves to confirmed or recoverable only through the receipt and replacement/reorg reconciliation, and no reset is offered while the outcome is unresolved.
    - *Read policy and ownership*: each provider uses ordered range/rate/burst/concurrency policy; only the named discovery owner calls `getLogs`; missing pages and hydration failures return incomplete partial outcomes.
-   - *Compression isolation*: CS6 stops while npm 0.5.0 is unpublished unless the full-commit Git exception and built browser artifacts are approved; every adopted transformed read equals its plain fallback, and no call combines eth-compress with viem-dlc deployless code.
-   - *Tool parity*: CS7 waits for reviewed pins, config paths, common scope, and ledger path; ESLint remains until the ledger has zero unclassified and zero C entries; no-console/scripts override fixtures pass; Oxfmt's second run is idempotent.
+   - *Compression isolation*: CS6-U1 installs nothing and records `evaluate` or `do not adopt`. Adopted transformed reads equal the plain fallback at the same block hash. No call combines eth-compress with viem-dlc deployless code. Factory bootstrap (representative call 1) stays plain. npm `0.4.0` is the only install path. The client bundle uses `_esm/index.js`, not `index.node.js`.
+   - *Tool parity*: CS7 uses KD20 pins, `web/oxlint.config.ts`, `web/oxfmt.config.ts`, and `web/oxlint-eslint-parity.md`. ESLint remains until the ledger has zero unclassified and zero C entries; no-console/scripts override fixtures pass; Oxfmt's second run is idempotent. `npx ultracite init` never runs.
    - *Post-submit throw reconciliation*: deposit submits, a render throw lands during receipt processing, the user reloads, and resume reconciles the persisted hash without resubmitting; no path claims no transaction was submitted.
    - *Modal close keeps the attempt*: closing the modal unmounts the body while the flow keeps the pending plan and graph ID; a reopened body resumes the stored attempt or reallocates a fresh graph ID and never auto-confirms a latched plan the user did not accept in that attempt.
    - *Reset is resume*: the route-level `web/app/error.tsx` and `web/app/global-error.tsx` reset, the modal error boundary's TRY AGAIN remount, and flow unmount cleanup converge on the single resume contract — reconcile persisted evidence first, resume at the first unconfirmed step, never replay a confirmed step, never re-prompt a step whose outcome is unresolved.
@@ -1336,11 +1465,11 @@ PT flash (removed, KD1), underlying flash loans (deferred indefinitely — flash
 
 **CS5.** The CS5 Definition of Done under that changeset is satisfied after its fresh sweep. The public-read transport never becomes write authority or a second chain-state store.
 
-**CS6.** The CS6 Definition of Done requires package publication or the explicit full-commit Git exception with verified browser artifacts. Its outcome may be evidence-backed non-adoption.
+**CS6.** The CS6 Definition of Done requires the evidence file and either npm `eth-compress@0.4.0` under KD19 or evidence-backed non-adoption. Git install is not a path.
 
-**CS7.** The CS7 Definition of Done requires reviewed exact pins, supported config paths, common scope, a checked-in ledger with zero unclassified and zero C entries, and no-console/scripts-override fixture proof. Tool migration does not remove or merge independent correctness, accessibility, policy, or build gates.
+**CS7.** The CS7 Definition of Done requires KD20 pins, the two config files, `web/oxlint-eslint-parity.md` with zero unclassified and zero C entries, and no-console/scripts-override fixture proof. Tool migration does not remove or merge independent correctness, accessibility, policy, or build gates.
 
-**Whole plan.** The unified artifact remains requirements-only for CS6/CS7 tooling gates. CS0-CS3, Hosted Convert, and per-underlying USD are executable from this file. CS0-CS7 are complete only when every active changeset has met its own dependencies, stop conditions, named scenarios, verification, and Definition of Done. Every deviation is logged on the ticket with its reason. Do not edit this plan to absorb an implementation deviation.
+**Whole plan.** The unified artifact is implementation-ready from this file. CS6 and CS7 code wait for owner start-OK on tickets 21 and 23. CS0-CS7 are complete only when every active changeset has met its own dependencies, stop conditions, named scenarios, verification, and Definition of Done. Every deviation is logged on the ticket with its reason. Do not edit this plan to absorb an implementation deviation.
 
 ## Decisions already signed
 
@@ -1357,14 +1486,15 @@ These were open in an earlier draft. They are closed:
 9. Request-book identity — core `onBehalfOf`; no `settle` table (KD10, KD14). Post/execute/wait/cancel stays coupled to CS3 and its CS4 UI.
 10. CS2 constants and USD recipes — pinned 2026-08-31 in KD14 and KD17. Flash mint launches at `max = 0`, ceiling one million whole ovrfloToken, `FLASH_FEE_MAX_BPS = 9`. USD is a per-underlying recipe table, not a wstETH singleton. CS6 benchmark decision stays explicit and is not inferred from this item.
 11. Destination URLs (KD16, user 2026-08-31) — the KD16 table is the path and query contract. Standing web rules still put view state in the address bar; they do not pick these destinations.
+12. CS6/CS7 pins (KD19, KD20, 2026-09-01) — npm `eth-compress@0.4.0` is the only install (owner re-pin the same day; unpublished 0.5.0 is not the target); Ultracite/Oxlint/Oxfmt versions, config files, ignore list, scripts, and `web/oxlint-eslint-parity.md` are pinned. Owner start-OK starts the code, and does not re-open the pins.
 
-The newest four frontend reference boards additionally settle the CS4 visual foundation, `Default` information architecture, separate Self-Repaying Loan and Fixed Return position types, supply-backed Fixed Return semantics, adaptive six-stage grammar, portfolio routing matrix, state presentation, responsive behavior, and accessibility direction. They supersede `PRODUCT.md` Operating Context only for CS4's `Default` information architecture. `DESIGN.md` is the normative implementation contract; the boards are acceptance evidence. These decisions bind the amended scope. CS6 and CS7 remain not build-ready until their owner gates close. Hosted Convert and per-underlying USD are pinned in KD17.
+The newest four frontend reference boards additionally settle the CS4 visual foundation, `Default` information architecture, separate Self-Repaying Loan and Fixed Return position types, supply-backed Fixed Return semantics, adaptive six-stage grammar, portfolio routing matrix, state presentation, responsive behavior, and accessibility direction. They supersede `PRODUCT.md` Operating Context only for CS4's `Default` information architecture. `DESIGN.md` is the normative implementation contract; the boards are acceptance evidence. These decisions bind the amended scope. CS6 and CS7 code wait for owner start-OK. Hosted Convert and per-underlying USD are pinned in KD17.
 
 ## Sweep Contracts
 
 ### Inherited CS1 sweep record
 
-The 2026-08-24 sweep covered the inherited CS1 scope only. It did not review KD16-KD20 or CS4-CS7. Per `docs/solutions/patterns/ignorance-lens-sweep.md`, its round-1 lenses were storage/interface, security, test accountability, and web/docs/tooling. The completeness critic returned STOP with three point fixes, which were folded. The dry-run implementer pass completed the same day after an evidence walk resumed from a rate-limit interruption. Its final verdict was BUILD-READY WITH NOTES, with those notes folded into the CS1 text. The rules below remain binding for CS1. They do not make the amended additions build-ready.
+The 2026-08-24 sweep covered the inherited CS1 scope only. It did not review KD16-KD20 or CS4-CS7. Per `docs/solutions/patterns/ignorance-lens-sweep.md`, its round-1 lenses were storage/interface, security, test accountability, and web/docs/tooling. The completeness critic returned STOP with three point fixes, which were folded. The dry-run implementer pass completed the same day after an evidence walk resumed from a rate-limit interruption. Its final verdict was BUILD-READY WITH NOTES, with those notes folded into the CS1 text. The rules below remain binding. Rules 1–12 are the CS1 sweep contracts. Rules 13–14 bind CS6 and CS7 (added 2026-09-01). The 2026-08-24 CS1 sweep did not review KD16–KD20.
 
 ### Sweep rules — binding
 
@@ -1379,6 +1509,9 @@ The 2026-08-24 sweep covered the inherited CS1 scope only. It did not review KD1
 9. **Maps layer is named blast radius (U7/U8).** `docs/maps/ui/assets.md` and `docs/maps/state/keys/chain-reads.md` update with U7 (reserve authority retarget); do not let the maps-presence gate discover them.
 10. **Flash mint bound (KD14).** `amount <= flashMintMax` is the economic cap. `type(uint256).max - totalSupply()` is overflow guard only. Launch `flashMintMax = 0`. Two agents must not invent `cap - totalSupply()` as the user-facing max.
 11. **USD is per underlying (KD17).** Lookup keys `vault.underlying()`. A missing row fails closed. Never apply the wstETH recipe to another column. A new series adds a reviewed recipe row; it does not reuse wstETH by default.
+12. **AGENTS.md is the session router (U8).** Combined solvency and the live contract map live in `docs/agents/onboarding.md`. U8 must not restore an architecture essay into `AGENTS.md`. Hydra findings and landmines stay. Successor scenario: ticket 08 acceptance forbids restoring that essay.
+13. **eth-compress is npm `0.4.0` only (KD19).** CS6-U1 installs nothing. CS6-U2 installs only npm `eth-compress@0.4.0` after the artifact checks. Do not git-install `f1df09b9cb12b3a4a72019db544bac258ba9f7de`. Do not wait for npm `0.5.0`. Do not vendor-build with TypeScript 7. The client bundle must use `_esm/index.js`. Representative call 1 stays plain. Successor scenarios: ticket 21 evidence file; ticket 22 install or uninstall.
+14. **Ultracite without init (KD20).** Pins are `ultracite@7.10.7`, `oxlint@1.80.0`, `oxfmt@0.65.0`. Config files are `web/oxlint.config.ts` and `web/oxfmt.config.ts`. Ledger is `web/oxlint-eslint-parity.md`. Never `npx ultracite init`. Never spread `core.ignorePatterns` (it drops `web/lib/generated.ts`). Never type-aware Oxlint, js-plugins, or TypeScript 7. Successor scenarios: tickets 23–25.
 
 ### Proven absences
 
@@ -1396,15 +1529,15 @@ CS2 and CS3 are later units in this plan. Their binding rules are KD14 plus the 
 
 This correction pass ran four amended-scope lenses: frontend decision accuracy; action runtime and trust boundaries; read-plane and tooling provenance; and documentation/design-system accuracy. It did not rerun or replace the inherited CS1 sweep. It point-fixed verified contradictions and recorded the contracts below.
 
-This 2026-08-24 record is historical. The 2026-08-31 amended-scope sweep record supersedes the incomplete claim below it. Do not treat USD, Hosted Convert, CS2, or CS3 as open owner gates. Remaining owner gates are CS6 (eth-compress) and CS7 (pins/config/scope/ledger).
+This 2026-08-24 record is historical. The 2026-08-31 amended-scope sweep record supersedes the incomplete claim below it. Do not treat USD, Hosted Convert, CS2, or CS3 as open owner gates. The 2026-09-01 pin record supersedes CS6/CS7 as missing-plan gates. Remaining CS6/CS7 wait is owner start-OK, not missing pins.
 
-The amended-scope sweep was not complete on 2026-08-24. The required completeness critic had not yet walked CS4-CS7. USD, Hosted Convert, eth-compress, and CS7 pins remained blockers on that date. The 2026-08-31 pass closed the critic, Hosted Convert, USD recipes, CS2, and CS3. The unified artifact stays `requirements-only` only for CS6/CS7 tooling gates.
+The amended-scope sweep was not complete on 2026-08-24. The required completeness critic had not yet walked CS4-CS7. USD, Hosted Convert, eth-compress, and CS7 pins remained blockers on that date. The 2026-08-31 pass closed the critic, Hosted Convert, USD recipes, CS2, and CS3. The 2026-09-01 pass closed CS6/CS7 pin text. The unified artifact is implementation-ready. CS6/CS7 code still wait for owner start-OK.
 
 ### 2026-08-31 amended-scope sweep record (this pass)
 
-Folded 2026-08-31. Five amended-scope lenses ran — frontend decision accuracy; action runtime and trust boundaries; read-plane and tooling provenance; design accuracy; and the completeness critic — and their material findings are folded into KD16-KD20, CS4-U1-U6, CS5-U1-U3, and the Verification Contract. The scanner-scope decision is recorded as AS10, a later owner correction that takes the next stable ID without renumbering AS1-AS9. The inherited CS1 sweep record (2026-08-24) is untouched. The error-boundary recovery lens has run and its four findings are folded (KD17 recovery rules, CS4-U4/CS4-U5, and Verification Contract item 7); the final documentation review has run and its findings — the AS1 precedence rule, readiness scoping, the CS4 gate deciders, and the CS3/CS4 cross-links — are folded. A later same-day fold pinned CS2, CS3, Hosted Convert, and per-underlying USD in this file. CS0-CS3 and ticket 18 are implementation-ready. Remaining gates are CS6 (eth-compress publication or approved Git pin) and CS7 (pins/config/scope/ledger).
+Folded 2026-08-31. Five amended-scope lenses ran — frontend decision accuracy; action runtime and trust boundaries; read-plane and tooling provenance; design accuracy; and the completeness critic — and their material findings are folded into KD16-KD20, CS4-U1-U6, CS5-U1-U3, and the Verification Contract. The scanner-scope decision is recorded as AS10, a later owner correction that takes the next stable ID without renumbering AS1-AS9. The inherited CS1 sweep record (2026-08-24) is untouched. The error-boundary recovery lens has run and its four findings are folded (KD17 recovery rules, CS4-U4/CS4-U5, and Verification Contract item 7); the final documentation review has run and its findings — the AS1 precedence rule, readiness scoping, the CS4 gate deciders, and the CS3/CS4 cross-links — are folded. A later same-day fold pinned CS2, CS3, Hosted Convert, and per-underlying USD in this file. CS0-CS3 and ticket 18 are implementation-ready. CS6/CS7 pin text was still open on this date; the 2026-09-01 record closed it.
 
-Final critic pass (this record): the checkpoint-grammar × state-machine cross-product lens ran; its three findings are folded (superseded graph-ID evidence in KD17's attempt rules, confirmed-step status transfer across graph-ID reallocation in KD17 and the Verification Contract, and the distinct unknown-outcome state in the composite recovery state diagram); the doc-review pass's mechanical fixes are folded (U5 step pairing, CS4-U4's dependencies line, KD16's stage-visibility compression, and the KD3/KD14 inlined citations); remaining named lenses (build reproducibility, timezone/DST presentation) were re-ranked as marginal or already covered, and long-session/deploy-skew was previously absorbed; the completeness critic's formal verdict is STOP at diminishing returns. The unified artifact stays `requirements-only` only for CS6/CS7 tooling gates.
+Final critic pass (this record): the checkpoint-grammar × state-machine cross-product lens ran; its three findings are folded (superseded graph-ID evidence in KD17's attempt rules, confirmed-step status transfer across graph-ID reallocation in KD17 and the Verification Contract, and the distinct unknown-outcome state in the composite recovery state diagram); the doc-review pass's mechanical fixes are folded (U5 step pairing, CS4-U4's dependencies line, KD16's stage-visibility compression, and the KD3/KD14 inlined citations); remaining named lenses (build reproducibility, timezone/DST presentation) were re-ranked as marginal or already covered, and long-session/deploy-skew was previously absorbed; the completeness critic's formal verdict is STOP at diminishing returns. CS6/CS7 pin text was still open on this date; see the 2026-09-01 record.
 
 ### Amended-scope rules recorded by the 2026-08-24 pass
 
@@ -1415,10 +1548,31 @@ Final critic pass (this record): the checkpoint-grammar × state-machine cross-p
 - **AS5 — One typed action graph and finality contract.** Equivalent modes produce one typed primitive or graph intent before calldata. One graph type owns stable graph/step IDs, dependencies, rebuilds, receipts, and decoded outputs. Authorization steps remain distinct. Every next prompt follows finality, persistence, wallet reacquisition, rebuild, and simulation. First-mined is pending; position completion also requires a fresh authoritative read.
 - **AS6 — Hosted conversion, USD, and no-liquidity gates.** Hosted Convert is a dedicated re-decoded canonical kind with reviewed CSP origin. The execution-only USD resolver looks up a per-underlying recipe, then owns normalization, freshness, confidence/deviation, rounding, and token-native formulas. A missing recipe fails closed for that column. Deposit-plus-borrow blocks before deposit if immediate borrow is not executable and canonical CS3 continuation is unavailable.
 - **AS7 — Read ownership and provenance.** viem-dlc npm 0.0.16 provenance is `0df02a9a79bce8ed0a98974034d34cf5c8de7e11`. Per-provider policy includes range, sustained rate, burst, and concurrency. One discovery owner calls `getLogs`; hydration modules do not. Missing pages or hydration failures are incomplete partial outcomes. Hash and provider/lens state-override probes remain separate. Scanner output is UI-only; it never enters write paths.
-- **AS8 — Dependency and tooling blockers are explicit.** eth-compress npm 0.5.0 is unpublished; only publication or explicit full-commit Git approval with verified browser artifacts can unblock evaluation. Response compression cannot justify adoption. CS7 waits for exact pins, supported config paths, common scope, and a checked-in ledger path; ESLint removal requires zero unclassified and zero C entries plus no-console/scripts-override fixture proof.
+- **AS8 — Dependency and tooling pins are explicit.** eth-compress evaluation uses KD19: npm `0.4.0` only, U1 installs nothing, call 1 stays plain, materiality is the four conjuncts, evidence lives at `.scratch/denomination-border-column/cs6-eth-compress-evidence.md`. Response compression cannot justify adoption. CS7 uses KD20 pins, config files, ignore list, scripts, and `web/oxlint-eslint-parity.md`. ESLint removal requires zero unclassified and zero C entries plus no-console/scripts-override fixture proof. `npx ultracite init` is forbidden.
 - **AS9 — Recovery and exits stay truthful.** One primary action is a maximum, not mandatory. Obsolete actions keep authoritative recovery available. PT claim requires maturity and PT backing. Unwrap depends on wrap reserve and wallet ovrfloToken balance, not maturity. Route/stage changes focus headings; inline status retains focus; Back restores opener focus.
 - **AS10 — Scanner scope.** The event-log scanner is UI infrastructure: portfolio candidate discovery and activity display for the connected wallet. It never authorizes, gates, or sizes any action; all action-critical reads are direct and fresh. Log-derived candidates are UI hints and display data only; every action-critical fact (current ownership, balances, allowances, stream eligibility, loan/request state, router state, executable bounds) is re-read directly from chain before any wallet prompt, and a stale, partial, or missing candidate never blocks or authorizes an action beyond its display effect. (Recorded 2026-08-31 as a later owner correction — additive, not a renumber; AS9 was already assigned, so this rule takes the next stable ID without renumbering.)
 
+### 2026-09-01 CS6/CS7 pin record
+
+Targeted decision-sufficiency fold only. Did not rerun the ten-lens CS1 sweep.
+
+Walked CS6-U1, CS6-U2, CS7-U1, CS7-U2, and CS7-U3 as the implementer. Facts checked on 2026-09-01: npm `eth-compress` latest `0.4.0`; `0.5.0` 404; git `f1df09b9cb12b3a4a72019db544bac258ba9f7de` has version `0.5.0` and no `_esm` artifacts; ultracite `7.10.7`, oxlint `1.80.0`, oxfmt `0.65.0`; Ultracite `core.ignorePatterns` includes `**/generated`; Ultracite core sets `no-console` off; `npx ultracite init` writes `AGENTS.md`. Owner correction later the same day: CS6 installs npm `0.4.0`. Unpublished 0.5.0 is not the target.
+
+Folded into KD19, KD20, CS6, CS7, AS8, and sweep rules 13–14:
+
+- Git-source install is not a runtime. Do not wait for npm `0.5.0`.
+- npm `0.4.0` is the published install. Client code must resolve the `browser` export (`_esm/index.js`), not `index.node.js`.
+- Materiality is four conjuncts, not a percentage. Representative calls are named. Call 1 is measured and never adopted.
+- U1 verdict is `evaluate` or `do not adopt`. Final adopt is U2.
+- Do not copy `core.ignorePatterns`. Do not run ultracite init. Config file bodies are in KD20.
+- Do not pre-classify every ESLint rule. U2 classifies from a real same-source run.
+
+Left as micro-decisions (threshold 3): bench script filename under `web/scripts/`; rpc helper names; ledger row prose; npm install order of the three CS7 packages; which existing test file grows a fixture.
+
+Owner start-OK on tickets 21 and 23 starts code. It is not a missing pin.
+
+Completeness for this pin pass: STOP at diminishing returns. A later-underlying USD recipe remains an owner gate and is not CS6/CS7.
+
 ### Remaining sweep exit criteria
 
-The completeness critic and final documentation review have already run (2026-08-31 record). Point-fix verified wrong text without renumbering D1-D5, KD1-KD20, CS0-CS7, CS1 U1-U8, CS2-U1, CS3-U1, existing CS4-CS7 namespaced unit IDs, Verification items 1-8, signed decisions 1-11, or inherited sweep rules 1-11. Remaining blockers that keep the unified artifact `requirements-only` are CS6 (eth-compress publication or approved Git pin) and CS7 (pins/config/scope/ledger). USD and Hosted Convert are pinned in KD17. CS2 and CS3 are units in this file.
+The completeness critic and final documentation review have already run (2026-08-31 record). The 2026-09-01 pin fold added signed decision 12 and sweep rules 13–14 without renumbering D1-D5, KD1-KD20, CS0-CS7, CS1 U1-U8, CS2-U1, CS3-U1, existing CS4-CS7 namespaced unit IDs, Verification items 1-8, signed decisions 1-11, inherited sweep rules 1-12, or AS1-AS10. No remaining plan-text blocker. CS6 and CS7 code wait for owner start-OK. USD and Hosted Convert are pinned in KD17. CS2 and CS3 are units in this file.

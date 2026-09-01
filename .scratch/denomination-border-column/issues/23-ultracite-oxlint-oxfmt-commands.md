@@ -1,8 +1,8 @@
 # 23 — Add Ultracite, Oxlint, and Oxfmt commands
 
-**What to build:** New native rule families and format commands run beside the current checks. ESLint stays. TypeScript, banned-pattern, dependency, maps, Vitest, Playwright, axe, and production build remain separately runnable. No type-aware Oxlint. No TypeScript 7. Current no-console policy and scripts override stay.
+**What to build:** New native rule families and format commands run beside the current checks. ESLint stays. TypeScript, banned-pattern, dependency, maps, Vitest, Playwright, axe, and production build remain separately runnable. No type-aware Oxlint. No TypeScript 7. Current no-console policy and scripts override stay. Config files and pins are KD20.
 
-**Blocked by:** 08, 13, 14, 20, 21
+**Blocked by:** 08, 13, 14, 20, 21, owner start-OK
 
 **Status:** ready-for-agent
 **Labels:** ready-for-agent
@@ -16,13 +16,15 @@ Scope: CS7-U1 only (= this ticket). Stop when this ticket's acceptance criteria 
 Ticket: .scratch/denomination-border-column/issues/23-ultracite-oxlint-oxfmt-commands.md
 Spec/harness: .scratch/denomination-border-column/spec.md — follow its per-session rules.
 Do not edit the plan. Do not start other units. Do not remove ESLint (24). Do not
-commit formatter output (25). Do not wait on 09, 10, or 18.
-STOP before implementation if reviewers have not recorded exact Ultracite, Oxlint,
-and Oxfmt pins; supported configuration paths; common include/exclude scope; and
-the checked-in A–E parity-ledger path. Do not invent unsupported configuration
-filenames.
-Read Required reading below and the plan sections: KD20, AS8, ### CS7-U1, CS7
-stop conditions, and Verification Contract successor *Tool parity*.
+commit formatter output (25). Do not wait on 09, 10, 18, or 22.
+STOP if the owner has not recorded start-OK on this ticket. Pins are KD20.
+Do not re-research pins. Do not run npx ultracite init. Do not spread
+core.ignorePatterns. Do not enable js-plugins, anti-slop, or type-aware Oxlint.
+Write web/oxlint.config.ts and web/oxfmt.config.ts exactly as KD20 shows them.
+Create web/oxlint-eslint-parity.md with the six-column header only.
+Read Required reading below and the plan sections: KD20, AS8, sweep rule 14,
+### CS7-U1, CS7 stop conditions, and Verification Contract successor
+*Tool parity*.
 After local verification, mark ticket checkboxes done and set Status: resolved.
 ```
 
@@ -33,13 +35,17 @@ After local verification, mark ticket checkboxes done and set Status: resolved.
 
 ## Acceptance criteria
 
-- [ ] Reviewed exact pins, supported configuration paths, common scope, and ledger path are recorded before the first install
+- [ ] Owner recorded start-OK on this ticket before the first install
+- [ ] `npm ls ultracite oxlint oxfmt` is `7.10.7`, `1.80.0`, and `0.65.0`
+- [ ] `web/oxlint.config.ts` and `web/oxfmt.config.ts` match KD20
+- [ ] Scripts `lint:oxlint`, `fmt:oxfmt`, and `fmt:oxfmt:check` exist; `lint` is still `eslint .`
+- [ ] `web/lib/generated.ts` and `web/lib/generated/lens-bytecode.ts` remain in both ESLint and Oxlint file sets
 - [ ] A representative console violation still fails in application code and remains allowed only where the existing scripts override permits it
 - [ ] React, Next, and Vitest fixture violations are checked by the intended native rule family
 - [ ] Running lint does not implicitly replace TypeScript, tests, accessibility, maps, dependency, or build gates
 - [ ] Dependency inspection proves no TypeScript 7 or type-aware Oxlint path was introduced
-- [ ] Package and configuration fixtures prove every tool uses the reviewed exact pin and supported configuration path
-- [ ] ESLint and Oxlint report over the same include/exclude file set
+- [ ] `AGENTS.md` is still the session router
+- [ ] `web/oxlint-eslint-parity.md` exists with the six-column header
 - [ ] ESLint remains installed and runnable
 
 ## Plan unit

@@ -1,8 +1,8 @@
-# 21 — eth-compress benchmark and adopt gate
+# 21 — eth-compress benchmark and evaluate gate
 
-**What to build:** A reviewed evidence record that says `adopt` or `do not adopt` for read-only eth-compress. Measure passive request transport first on representative large lens and multicall calls. Record request-body wire bytes, request latency, and provider acceptance. Record response compression separately and never count it as adoption evidence. Write the user-facing or provider-cost objective and the minimum material improvement before evaluating state overrides. Non-adoption is a valid close.
+**What to build:** An evidence file that says `evaluate` or `do not adopt` for read-only eth-compress. Measure plain JSON-RPC POST bodies on the three named representative calls. Install nothing. Record request-body wire bytes, request latency, and provider success class. Record response compression separately and never count it as adoption evidence. Non-adoption is a valid close.
 
-**Blocked by:** 12, 14
+**Blocked by:** 12, 14, owner start-OK
 
 **Status:** ready-for-agent
 **Labels:** ready-for-agent
@@ -15,18 +15,17 @@
 Scope: CS6-U1 only (= this ticket). Stop when this ticket's acceptance criteria are met.
 Ticket: .scratch/denomination-border-column/issues/21-eth-compress-benchmark.md
 Spec/harness: .scratch/denomination-border-column/spec.md — follow its per-session rules.
-Do not edit the plan. Do not start other units. Do not add the runtime dependency
-in this ticket. Do not invent a percentage threshold.
-Before any dependency work, npm 0.5.0 must be published OR reviewers must
-explicitly approve Git commit f1df09b9cb12b3a4a72019db544bac258ba9f7de and
-verify built browser artifacts. Plain-transport measurement may proceed before
-that gate. If the publication/Git gate is open, record the baseline, then STOP
-before installing eth-compress.
-Read Required reading below and the plan sections: KD19, AS8, ### CS6-U1,
-CS6 stop conditions, and Verification Contract successor *Compression isolation*.
+Do not edit the plan. Do not start other units. Do not add eth-compress to
+web/package.json. Do not git-install. Do not invent a
+percentage threshold. Do not send stateDiff or compress_call.
+STOP if the owner has not recorded start-OK on this ticket. Pins are KD19.
+Do not re-research pins.
+Read Required reading below and the plan sections: KD19, AS8, sweep rule 13,
+### CS6-U1, CS6 stop conditions, and Verification Contract successor
+*Compression isolation*.
+Write evidence to .scratch/denomination-border-column/cs6-eth-compress-evidence.md.
 After local verification, mark ticket checkboxes done and set Status: resolved
-with an explicit adopt or do not adopt record. If do not adopt, mark ticket 22
-cancelled.
+with evaluate or do not adopt. If do not adopt, mark ticket 22 cancelled.
 ```
 
 **Required reading:**
@@ -36,14 +35,14 @@ cancelled.
 
 ## Acceptance criteria
 
-- [ ] Benchmark records request-body wire bytes, request latency, and provider acceptance separately from response compression and any state-override result
-- [ ] Representative calls include large portfolio/lens and multicall reads
-- [ ] Runs record provider and cache conditions so a favorable warm-cache result cannot masquerade as compression benefit
-- [ ] The measured objective and minimum material improvement are written before any state-override evaluation
-- [ ] Missing baseline, unstable results, or no reviewer-approved materiality rule produces a stop decision rather than a silent adopt
-- [ ] A reviewed record states `adopt` or `do not adopt` with the evidence
+- [ ] Owner recorded start-OK on this ticket before the first code or bench write
+- [ ] Evidence file lists the three named KD19 calls, each `rpcUrls` entry from `web/lib/config.ts`, wire bytes, latency, success class, response encoding, and `cache: cold`
+- [ ] Call 1 (vault-binding multicall) is measured and marked never-adopt
+- [ ] `streamsOfOwnerIn` used `COMPLETE_SET_WINDOW`, not `COMPLETE_SET_UNBOUNDED_MAX`
+- [ ] Three cold runs per call per URL; unstable success class or byte-delta sign produced STOP, not `evaluate`
+- [ ] Verdict is exactly `evaluate` or `do not adopt` per KD19
 - [ ] On `do not adopt`, no eth-compress runtime code or dependency remains; ticket 22 is cancelled
-- [ ] Publication or approved Git pin plus verified browser artifacts is recorded before any install attempt
+- [ ] `web/package.json` has no `eth-compress` entry
 
 ## Plan unit
 

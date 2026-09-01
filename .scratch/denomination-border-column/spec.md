@@ -53,7 +53,7 @@ Read `PRODUCT.md`, `DESIGN.md`, `docs/solutions/patterns/ovrflo-web-standard.md`
                  └── (11)────────────────┘
 
 07 ── 12 ──┬── 13
-           └── 14 ── 21 ── 22 (22 only if 21 adopts)
+           └── 14 ── 21 ── 22 (22 only if 21 evaluates)
 
 08 + 13 + 14 + 20 + 21 ── 23 ── 24 ── 25 ── 26
 ```
@@ -66,8 +66,9 @@ Read `PRODUCT.md`, `DESIGN.md`, `docs/solutions/patterns/ovrflo-web-standard.md`
 - **09** and **10** are ready-for-agent after **08**. Implement them from this plan. Do not mix them into CS1 commits.
 - **18** is ready-for-agent after **17**. USD is a per-underlying recipe table (KD17). Launch ships the wstETH row. A missing row fails closed. Never reuse wstETH for another column.
 - **17** must not wait on **18**. **19** and **20** must not wait on **18**.
-- **22** exists only if **21** records `adopt`. If **21** records `do not adopt`, mark **22** cancelled.
-- **23** waits on CS1 docs (**08**), CS5 (**13**, **14**), CS4 a11y (**20**), and the CS6 decision (**21**). **23** must not wait on **09**, **10**, or **18**.
+- **22** exists only if **21** records `evaluate` and **22** then records final `adopt`. If **21** records `do not adopt`, mark **22** cancelled.
+- **23** waits on CS1 docs (**08**), CS5 (**13**, **14**), CS4 a11y (**20**), and the CS6 decision (**21**). **23** must not wait on **09**, **10**, **18**, or **22**.
+- Tickets **21** and **23** also wait for owner start-OK. Pins are already in KD19/KD20. Do not re-research pins.
 - Ticket **26** is coordinator-executed, not a fresh-chat cheap-model ticket.
 
 ### Solidity verification (tickets 01–06)
@@ -98,6 +99,8 @@ Run the gates the plan's Verification Contract names for that changeset. Do not 
 - Apply the wstETH USD recipe to another column, or default a missing recipe to wstETH
 - Invent destination paths or query keys outside the KD16 URL table; add redirects from pre-CS4 URL shapes; put Advanced in the URL
 - Enable type-aware Oxlint or upgrade to TypeScript 7
+- Run `npx ultracite init`, git-install eth-compress, or install unpublished `eth-compress@0.5.0`
+- Spread Ultracite `core.ignorePatterns` (it drops `web/lib/generated.ts`)
 - Implement ticket **09** or **10** before **08** is resolved
 - Lower `LENDING_RUNTIME_CANARY` if the canary fails; drop the router hook and surface
 - Use `git commit` from the agent (Cursor injects `Co-authored-by`); use write-tree / commit-tree / update-ref
@@ -128,9 +131,9 @@ Run the gates the plan's Verification Contract names for that changeset. Do not 
 | 18 | Hosted Convert and USD execution bounds | CS4-U4 hosted/USD | 17 | ready-for-agent |
 | 19 | Named request, waiting, transaction, and edge states | CS4-U5 | 10, 15, 16, 17 | ready-for-agent |
 | 20 | Responsive, accessible, Advanced-parity proof | CS4-U6 | 11, 15, 16, 17, 19 | ready-for-agent |
-| 21 | eth-compress benchmark and adopt gate | CS6-U1 | 12, 14 | ready-for-agent |
-| 22 | eth-compress read-only path with plain fallback | CS6-U2 | 21 (adopt) | ready-for-agent |
-| 23 | Add Ultracite, Oxlint, and Oxfmt commands | CS7-U1 | 08, 13, 14, 20, 21 | ready-for-agent |
+| 21 | eth-compress benchmark and evaluate gate | CS6-U1 | 12, 14, owner start-OK | ready-for-agent |
+| 22 | eth-compress read-only path with plain fallback | CS6-U2 | 21 (evaluate) | ready-for-agent |
+| 23 | Add Ultracite, Oxlint, and Oxfmt commands | CS7-U1 | 08, 13, 14, 20, 21, owner start-OK | ready-for-agent |
 | 24 | Classify ESLint/Oxlint parity | CS7-U2 | 23 | ready-for-agent |
 | 25 | Oxfmt formatting-only commit | CS7-U3 | 24 | ready-for-agent |
 | 26 | Compound and codify | post-plan | 25 | ready-for-human |
@@ -141,7 +144,7 @@ Run the gates the plan's Verification Contract names for that changeset. Do not 
 
 Start with `docs/agents/system.md`. When sources disagree, the higher one wins:
 
-1. The plan's Key Decisions, Sweep Contracts (inherited CS1 rules 1–11 and AS1–AS10), and Verification Contract.
+1. The plan's Key Decisions, Sweep Contracts (inherited CS1 rules 1–12 and AS1–AS10, plus CS6/CS7 rules 13–14), and Verification Contract.
 2. Product truth: `PRODUCT.md`, `CONCEPTS.md`. CS4 `Default` information architecture follows `DESIGN.md`; the newest four boards are acceptance evidence only (AS1).
 3. Contract truth: live `src/` as built after each ticket — never a doc's paraphrase of a prior architecture.
 4. `docs/audit/rejected-findings-record.md` for findings already disproven.
@@ -150,10 +153,10 @@ Stop conditions in the plan Goal Capsule (a)–(p) remain binding. A hit is a st
 
 ---
 
-## Owner gates (not agent-decidable)
+## Start authorization and remaining owner gates
 
-Record these on the ticket as environment/owner gates. Do not invent a substitute.
+Pins for CS6 and CS7 are in KD19 and KD20. Do not invent a substitute. Do not re-research pins.
 
-- **Ticket 21:** eth-compress npm `0.5.0` is published, or reviewers approve Git commit `f1df09b9cb12b3a4a72019db544bac258ba9f7de` and verify built browser artifacts. Measurement of plain transport may proceed before that gate; adding the dependency may not.
-- **Ticket 23:** reviewers record exact Ultracite, Oxlint, and Oxfmt pins; supported configuration paths; common include/exclude scope; and the checked-in A–E parity-ledger path.
+- **Tickets 21 and 23:** do not start CS6 or CS7 code until the owner records start-OK on that ticket.
+- **Ticket 22:** runs only if ticket 21 recorded `evaluate`. Install only npm `eth-compress@0.4.0` per KD19. If artifacts fail, STOP. Do not git-install. Do not wait for `0.5.0`.
 - **A later underlying:** add a reviewed USD recipe row (explorer verification, kind, heartbeat, share-rate) before USD display or USD submit for that column. Token-native flows do not wait. Do not copy the wstETH row.
