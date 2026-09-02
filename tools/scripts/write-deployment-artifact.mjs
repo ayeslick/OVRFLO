@@ -13,6 +13,10 @@ const SABLIER_LL_SELECTOR = "0x94cd301a";
 const SABLIER_SELECTOR = "0x482879aa";
 // cast sig "ovrfloStream()"
 const OVRFLO_STREAM_SELECTOR = "0xce6bc9b5";
+// cast sig "reserve()"
+const RESERVE_SELECTOR = "0xcd3293de";
+// cast sig "ovrfloToReserve(address)"
+const OVRFLO_TO_RESERVE_SELECTOR = "0x82029b36";
 
 export async function verifyDeploymentArtifactInput({
   artifactPath,
@@ -26,8 +30,9 @@ export async function verifyDeploymentArtifactInput({
   const factory = requiredAddress(current.factory, "factory");
   let ovrflo = optionalAddress(current.ovrflo, "ovrflo");
   let lending = optionalAddress(current.lending, "lending");
-  if (Boolean(ovrflo) !== Boolean(lending)) {
-    throw new Error("ovrflo and lending must either both be present or both be derived");
+  let reserve = optionalAddress(current.reserve, "reserve");
+  if (Boolean(ovrflo) !== Boolean(lending) || Boolean(ovrflo) !== Boolean(reserve)) {
+    throw new Error("ovrflo, lending, and reserve must either both be present or both be derived");
   }
 
   const chainId = Number.parseInt(await request(rpcUrl, "eth_chainId", []), 16);
@@ -114,6 +119,12 @@ export async function verifyDeploymentArtifactInput({
     supplied: current.stream,
     request: rpcRequest,
   });
+  reserve = await deriveReserveAddress({
+    factory,
+    ovrflo,
+    supplied: current.reserve,
+    request: rpcRequest,
+  });
 
   const verified = {
     ...current,
@@ -130,6 +141,7 @@ export async function verifyDeploymentArtifactInput({
     lendingDeploymentBlock: lendingDeploymentBlock.toString(),
     lendingDeploymentBlockHash: lendingBlock.hash,
     stream,
+    reserve,
   };
   if (requireExistingIdentity) {
     for (const field of [
@@ -141,6 +153,7 @@ export async function verifyDeploymentArtifactInput({
       "lendingDeploymentBlock",
       "lendingDeploymentBlockHash",
       "stream",
+      "reserve",
     ]) {
       if (!sameHexOrValue(current[field], verified[field])) {
         throw new Error(`${field} does not match the chain-verified deployment identity`);
@@ -186,6 +199,34 @@ async function deriveStreamAddress({ factory, ovrflo, lending, supplied, request
     throw new Error("supplied stream does not match factory.ovrfloStream()");
   }
   return factoryStream;
+}
+
+async function deriveReserveAddress({ factory, ovrflo, supplied, request }) {
+  const vaultReserve = decodeReturnedAddress(
+    await request("eth_call", [{ to: ovrflo, data: RESERVE_SELECTOR }, "latest"]),
+    "vault.reserve()",
+  );
+  const factoryReserve = decodeReturnedAddress(
+    await request("eth_call", [
+      {
+        to: factory,
+        data: `${OVRFLO_TO_RESERVE_SELECTOR}${ovrflo.slice(2).toLowerCase().padStart(64, "0")}`,
+      },
+      "latest",
+    ]),
+    "factory.ovrfloToReserve()",
+  );
+  if (!sameHex(vaultReserve, factoryReserve)) {
+    throw new Error("vault.reserve() does not match factory.ovrfloToReserve()");
+  }
+  const code = await request("eth_getCode", [vaultReserve, "latest"]);
+  if (!code || code === "0x") {
+    throw new Error("derived reserve has no code");
+  }
+  if (supplied !== undefined && !sameHex(String(supplied), vaultReserve)) {
+    throw new Error("supplied reserve does not match vault.reserve()");
+  }
+  return vaultReserve;
 }
 
 function decodeReturnedAddress(result, name) {

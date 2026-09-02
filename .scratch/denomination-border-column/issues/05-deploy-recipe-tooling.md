@@ -4,8 +4,20 @@
 
 **Blocked by:** 04
 
-**Status:** ready-for-agent
-**Labels:** ready-for-agent
+**Status:** resolved
+**Labels:** ready-for-human
+
+## Intent (ticket/05, 2026-09-02) — before code
+
+Assumptions: nested constructors already exist (U2); factory `ovrfloToReserve` already exists (U4); this unit wires that column into deploy, seed, fixtures, the artifact writer, and DeploySize. `web/lib/config.ts` stays unchanged. Ticket 07 owns factory discovery of `reserve` and must not gain `NEXT_PUBLIC_OVRFLO_RESERVE`. Storage goldens already include `OVRFLOReserve`; this unit does not change storage. Fuzz and invariant files already compile; 06 owns re-derivation. Seed demo supply and borrow follow the U3 asset and `onBehalfOf` ABI, or the seed smoke fails.
+
+Predicted blast radius: `script/OVRFLO.s.sol`, `script/seed-local.sh`, `script/lib/OVRFLOTestFixtures.sol`, `script/lib/OVRFLOSeedRunner.sol`, `test/fork/OVRFLOForkBase.t.sol`, `tools/scripts/write-deployment-artifact.mjs`, `web/tests/scripts/deployment-artifact.test.ts`, `test/DeploySize.t.sol`, this ticket.
+
+Verification: `forge build` then `forge test`; `forge fmt --check`; `bash tools/scripts/check-storage-layout.sh`; artifact pairing tests; seed smoke or an environment-gate result; no `NEXT_PUBLIC_OVRFLO_RESERVE` in `web/lib/config.ts`.
+
+Reuse: seed `require_eq`, fixture `require` after deploy, artifact `optionalAddress` pairing, DeploySize `_artifacts()` array. No new abstraction.
+
+Rejected: a struct return from `_deployConfiguredSystemAs` (would not break positional destructurers); adding `NEXT_PUBLIC_OVRFLO_RESERVE`; allowing `ovrflo` present and `reserve` absent (violates the joined consume rule).
 
 ## Session prompt (paste into a new chat)
 
@@ -46,16 +58,32 @@ After local verification, mark ticket checkboxes done and set Status: resolved.
 
 ## Acceptance criteria
 
-- [ ] Deploy runbook steps 6–9: deploy vault, `registerOvrflo(vault)`, creation-wiring reads, minter-binding reads
-- [ ] Seed writes `reserve` into `deployments/local.json`
-- [ ] Artifact `reserve` follows the paired-optional consume rule (both present or both derived)
-- [ ] Fixture return tuple includes `reserve`; old positional destructurers fail to compile until updated
-- [ ] `test/DeploySize.t.sol` gates `OVRFLOReserve` against EIP-170 and EIP-3860 caps
-- [ ] Client env contract is unchanged; `NEXT_PUBLIC_OVRFLO_RESERVE` is obsolete, not added
-- [ ] `bash tools/scripts/check-storage-layout.sh` is green
-- [ ] `bash script/seed-local.sh` deploys a nested column and registers it, or an environment gate is recorded
-- [ ] `forge build` then `forge test` green; `forge fmt --check` clean
+- [x] Deploy runbook steps 6–9: deploy vault, `registerOvrflo(vault)`, creation-wiring reads, minter-binding reads
+- [x] Seed writes `reserve` into `deployments/local.json`
+- [x] Artifact `reserve` follows the paired-optional consume rule (both present or both derived)
+- [x] Fixture return tuple includes `reserve`; old positional destructurers fail to compile until updated
+- [x] `test/DeploySize.t.sol` gates `OVRFLOReserve` against EIP-170 and EIP-3860 caps
+- [x] Client env contract is unchanged; `NEXT_PUBLIC_OVRFLO_RESERVE` is obsolete, not added
+- [x] `bash tools/scripts/check-storage-layout.sh` is green
+- [x] `bash script/seed-local.sh` deploys a nested column and registers it, or an environment gate is recorded
+- [x] `forge build` then `forge test` green; `forge fmt --check` clean
 
 ## Plan unit
 
 CS1 U5 in `docs/plans/2026-08-22-001-refactor-denomination-switch-border-column-plan.md`
+
+## Session log
+
+Fuzz and invariant files: no minimum edits. Plain `forge test` stayed green without touching those suites.
+
+`web/lib/config.ts` is unchanged. `NEXT_PUBLIC_OVRFLO_RESERVE` is not added.
+
+`git diff --stat` vs predicted blast radius: match, plus this ticket. `script/local-stress-test.sh` still calls vault wrap/unwrap and wstETH supply; that file is not in U5 and was already stale after U2/U3. Left for a later ticket.
+
+Seed smoke environment gate (2026-09-02): `MAINNET_RPC_URL` was present. Anvil fork started. `script/seed-local.sh` stopped at Pendle discovery: 1 qualifying wstETH market, need 2. Retry with `PENDLE_EXPIRY_BUFFER_DAYS=0` still found 1. Nested deploy/register was not reached on the live fork. Nested constructors plus `registerOvrflo` remain covered by the fixture `require`s and by `test/OVRFLOFactory.t.sol`. Did not fake a second market.
+
+Legacy compile: `_runSeed` cannot keep a `reserve` local plus the existing write arguments (stack too deep). SeedDevnet JSON still writes `reserve` from `ovrflo.reserve()`.
+
+`forge build` then `forge test`: 379 passed, 0 failed, 5 skipped (fork suites without RPC in that run). `forge fmt --check` clean. `check-storage-layout.sh` green. Artifact tests: 9 passed. DeploySize: three tests passed, including `OVRFLOReserve`.
+
+Review: GPT-5.6 Sol reported no findings. This chat accepts that report.

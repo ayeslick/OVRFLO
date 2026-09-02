@@ -40,15 +40,22 @@ import {OVRFLOFactory} from "../src/OVRFLOFactory.sol";
 /// 7. The Safe calls `registerOvrflo(vault)`. On-chain:
 ///    `vault.sablierLL() == factory.ovrfloStream()`. An address with treasury
 ///    zero calling `create*` reverts.
-/// 8. Deploy `OVRFLOLending(factory, vault, stream)`. Read `owner() == factory`
-///    and the stream binding equals `vault.sablierLL()`.
-/// 9. The Safe calls `registerLending(lending)`. Do not re-check
-///    `stream.factory()`, `stream.admin()`, or `comptroller.admin()`.
-/// 10. The Safe calls `prepareOracle`, waits until the TWAP window is ready,
+/// 8. Creation-wiring reads: `vault.reserve()`,
+///    `reserve.ovrfloToken() == vault.ovrfloToken()`.
+/// 9. Binding reads: `token.vault() == vault`, `token.reserve() == reserve`.
+/// 10. Deploy `OVRFLOLending(factory, vault, stream)`. Read `owner() == factory`
+///     and the stream binding equals `vault.sablierLL()`.
+/// 11. The Safe calls `registerLending(lending)`. Do not re-check
+///     `stream.factory()`, `stream.admin()`, or `comptroller.admin()`.
+/// 12. The Safe calls `prepareOracle`, waits until the TWAP window is ready,
 ///     then `addMarket`, then `setLendingTickSpacing`.
-/// 11. Write the deployment artifact. The writer derives the stream address
-///     from the vault and cross-checks lending (SC24). Frontend `required()`
-///     on `NEXT_PUBLIC_SABLIER_LOCKUP_ADDRESS` in both runtime profiles.
+/// 13. Write the deployment artifact. The writer derives the stream address
+///     from the vault and cross-checks lending (SC24). The artifact's
+///     `reserve` field follows the same paired-optional consume rule as
+///     `ovrflo` and `lending`: both present or both derived. Frontend
+///     `required()` on `NEXT_PUBLIC_SABLIER_LOCKUP_ADDRESS` in both runtime
+///     profiles. Do not add `NEXT_PUBLIC_OVRFLO_RESERVE`. The web learns
+///     `reserve` from factory discovery.
 ///
 /// Fork artifact create (lockup example):
 /// ```
@@ -86,6 +93,7 @@ import {OVRFLOFactory} from "../src/OVRFLOFactory.sol";
 /// `NEXT_PUBLIC_SABLIER_LOCKUP_ADDRESS`, `NEXT_PUBLIC_RPC_URL`,
 /// `NEXT_PUBLIC_RPC_FALLBACK_URLS`, `NEXT_PUBLIC_HISTORICAL_RPC_URL`,
 /// `NEXT_PUBLIC_REOWN_PROJECT_ID`.
+/// Do not add `NEXT_PUBLIC_OVRFLO_RESERVE`.
 contract OVRFLOScript is Script {
     OVRFLOFactory public factory;
 
@@ -107,9 +115,10 @@ contract OVRFLOScript is Script {
         vm.stopBroadcast();
 
         // Partial manifest. The browser requires factory/lending block hashes
-        // and a verified LendingRegistered identity. After steps 2–10 complete,
+        // and a verified LendingRegistered identity. After steps 2–12 complete,
         // run write-deployment-artifact.mjs — it derives the stream address
-        // (SC24). Runtime/build config rejects this partial file.
+        // (SC24) and the reserve address. Runtime/build config rejects this
+        // partial file. Do not add NEXT_PUBLIC_OVRFLO_RESERVE.
         string memory objectKey = "ovrflo_production_deployment";
         vm.serializeUint(objectKey, "formatVersion", 1);
         vm.serializeUint(objectKey, "projectionSchemaVersion", 1);

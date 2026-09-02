@@ -73,7 +73,7 @@ abstract contract OVRFLOSeedRunner is Script, StdCheats, OVRFLOTestFixtures {
         internal
         returns (OVRFLOFactory factory, OVRFLO ovrflo, OVRFLOToken token)
     {
-        (factory, ovrflo, token) = _deployConfiguredSystemAs(owner);
+        (factory, ovrflo, token,) = _deployConfiguredSystemAs(owner);
 
         _prepareOracleAs(factory, PRIMARY_MARKET);
         _prepareOracleAs(factory, SECONDARY_MARKET);
@@ -129,6 +129,7 @@ abstract contract OVRFLOSeedRunner is Script, StdCheats, OVRFLOTestFixtures {
         vm.serializeAddress(obj, "factory", address(factory));
         vm.serializeAddress(obj, "ovrflo", address(ovrflo));
         vm.serializeAddress(obj, "token", address(token));
+        vm.serializeAddress(obj, "reserve", ovrflo.reserve());
         vm.serializeAddress(obj, "lending", address(lending));
         vm.serializeAddress(obj, "devWallet", devWallet);
         string memory out = vm.serializeUint(obj, "chainId", block.chainid);
@@ -151,6 +152,7 @@ abstract contract OVRFLOSeedRunner is Script, StdCheats, OVRFLOTestFixtures {
         console.log("factory:  ", address(factory));
         console.log("ovrflo:   ", address(ovrflo));
         console.log("token:    ", address(token));
+        console.log("reserve:  ", ovrflo.reserve());
         console.log("lending:  ", address(lending));
         console.log("devWallet:", devWallet);
     }

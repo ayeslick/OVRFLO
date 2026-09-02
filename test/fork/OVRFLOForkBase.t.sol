@@ -22,7 +22,7 @@ abstract contract OVRFLOForkBase is OVRFLOTestFixtures, Test {
 
     function _deployConfiguredSystem() internal returns (OVRFLOFactory factory, OVRFLO ovrflo, OVRFLOToken token) {
         vm.startPrank(OWNER);
-        (factory, ovrflo, token) = _deployConfiguredSystemAs(OWNER);
+        (factory, ovrflo, token,) = _deployConfiguredSystemAs(OWNER);
         vm.stopPrank();
     }
 

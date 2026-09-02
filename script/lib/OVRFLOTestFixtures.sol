@@ -6,6 +6,7 @@ import {StdCheats} from "forge-std/StdCheats.sol";
 import {IERC721Metadata} from "@openzeppelin/contracts/token/ERC721/extensions/IERC721Metadata.sol";
 import {OVRFLO} from "../../src/OVRFLO.sol";
 import {OVRFLOFactory} from "../../src/OVRFLOFactory.sol";
+import {OVRFLOReserve} from "../../src/OVRFLOReserve.sol";
 import {OVRFLOToken} from "../../src/OVRFLOToken.sol";
 import {IPendleOracle} from "../../interfaces/IPendleOracle.sol";
 import {ISablierV2LockupLinear} from "../../interfaces/ISablierV2LockupLinear.sol";
@@ -79,15 +80,16 @@ abstract contract OVRFLOTestFixtures is StdCheats {
         require(stream != CANONICAL_SABLIER, "OVRFLOTestFixtures: canonical sablier");
     }
 
-    /// @notice Deploy the factory + OVRFLO (which constructs its own token) against
-    ///         wstETH, then register the vault. Caller must already hold the `owner`
-    ///         role on the calling context (`vm.startPrank(owner)` in tests,
+    /// @notice Deploy the factory + OVRFLO (which constructs its reserve and token)
+    ///         against wstETH, then register the vault. Caller must already hold the
+    ///         `owner` role on the calling context (`vm.startPrank(owner)` in tests,
     ///         broadcast-as-owner in scripts) because `setOvrfloStream` and
     ///         `registerOvrflo` are onlyOwner. Deploys OVRFLOStream from committed
-    ///         artifacts (KTD1).
+    ///         artifacts (KTD1). Return tuple is `(factory, ovrflo, token, reserve)` —
+    ///         a three-member positional destructure fails to compile.
     function _deployConfiguredSystemAs(address owner)
         internal
-        returns (OVRFLOFactory factory, OVRFLO ovrflo, OVRFLOToken token)
+        returns (OVRFLOFactory factory, OVRFLO ovrflo, OVRFLOToken token, OVRFLOReserve reserve)
     {
         factory = new OVRFLOFactory(owner, address(ORACLE));
         require(factory.owner() == owner, "OVRFLOTestFixtures: factory owner");
@@ -105,6 +107,12 @@ abstract contract OVRFLOTestFixtures is StdCheats {
 
         factory.registerOvrflo(address(ovrflo));
         token = OVRFLOToken(ovrflo.ovrfloToken());
+        reserve = OVRFLOReserve(ovrflo.reserve());
+        require(address(reserve) != address(0), "OVRFLOTestFixtures: vault reserve");
+        require(reserve.ovrfloToken() == address(token), "OVRFLOTestFixtures: reserve token");
+        require(token.vault() == address(ovrflo), "OVRFLOTestFixtures: token vault");
+        require(token.reserve() == address(reserve), "OVRFLOTestFixtures: token reserve");
+        require(factory.ovrfloToReserve(address(ovrflo)) == address(reserve), "OVRFLOTestFixtures: ovrfloToReserve");
     }
 
     /// @notice Clear the oracle cardinality requirement for a Pendle market.
