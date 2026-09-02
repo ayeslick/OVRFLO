@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  activityKeys,
   borrowKeys,
   borrowerBookKeys,
   demandKeys,
@@ -89,6 +90,12 @@ describe("watch-surface query factories", () => {
     ]);
     expect(lenderBookKeys.loansOf(1, USER_A, 5n)).toEqual(lenderBookKeys.loansOf(1, USER_A, "5"));
     expect(borrowerBookKeys.account(1, USER_A, USER_B)[0]).toBe("borrower-book");
+    expect(
+      activityKeys.account(1, USER_A, 0n, 10n, USER_A, [USER_A], [USER_B]),
+    ).not.toEqual(activityKeys.account(1, USER_A, 0n, 10n, USER_A, [USER_A], []));
+    expect(activityKeys.account(1, USER_A, 0n, 10n, USER_A, [USER_A], [USER_B])[0]).toBe(
+      activityKeys.all[0],
+    );
     expect(usdKeys.price(1, USER_A, USER_B)[0]).toBe("usd");
     expect(freshnessKeys.scope(1, USER_A)[0]).toBe("freshness");
   });

@@ -1,4 +1,4 @@
-import { parseAbiItem, type Address, type Log } from "viem";
+import { parseAbiItem, type Address, type Hex, type Log } from "viem";
 import { publicReadProviderPolicy } from "@/lib/rpc";
 import {
   partialOutcome,
@@ -51,10 +51,22 @@ export type MarketLogCandidate = {
   id: bigint;
 };
 
+export type PortfolioActivityKind = "deposited" | "borrowed" | "supplied";
+
+export type PortfolioActivityRow = {
+  kind: PortfolioActivityKind;
+  blockNumber: bigint;
+  logIndex: number;
+  transactionHash: Hex;
+  id: bigint;
+  address: Address;
+};
+
 export type PortfolioLogCandidates = {
   streamIds: readonly bigint[];
   loans: readonly MarketLogCandidate[];
   positions: readonly MarketLogCandidate[];
+  activity: readonly PortfolioActivityRow[];
 };
 
 export function divideLogRanges(
@@ -110,6 +122,18 @@ export function mergeMarketCandidates(
   });
 }
 
+export function sortActivityNewestFirst(
+  rows: readonly PortfolioActivityRow[],
+): PortfolioActivityRow[] {
+  return [...rows].sort((left, right) => {
+    if (left.blockNumber !== right.blockNumber) {
+      return left.blockNumber < right.blockNumber ? 1 : -1;
+    }
+    if (left.logIndex !== right.logIndex) return right.logIndex - left.logIndex;
+    return left.transactionHash.toLowerCase().localeCompare(right.transactionHash.toLowerCase());
+  });
+}
+
 /**
  * Bounded log-candidate discovery for the connected wallet. Logs name ids to
  * ask about. They do not name the current owner, borrower, or lender.
@@ -123,6 +147,7 @@ export async function discoverPortfolioLogCandidates(
   const streamGroups: Array<readonly bigint[]> = [];
   const loanGroups: Array<readonly MarketLogCandidate[]> = [];
   const positionGroups: Array<readonly MarketLogCandidate[]> = [];
+  const activityGroups: Array<readonly PortfolioActivityRow[]> = [];
   const failures: ReadFailure[] = [];
 
   for (const range of ranges) {
@@ -130,6 +155,7 @@ export async function discoverPortfolioLogCandidates(
     streamGroups.push(page.streamIds);
     loanGroups.push(page.loans);
     positionGroups.push(page.positions);
+    activityGroups.push(page.activity);
     for (const failure of page.failures) failures.push(failure);
   }
 
@@ -137,6 +163,7 @@ export async function discoverPortfolioLogCandidates(
     streamIds: mergeCandidateIds(streamGroups),
     loans: mergeMarketCandidates(loanGroups),
     positions: mergeMarketCandidates(positionGroups),
+    activity: sortActivityNewestFirst(activityGroups.flat()),
   };
   if (failures.length > 0) {
     return partialOutcome(data, failures);
@@ -168,17 +195,13 @@ async function scanRange(
   ];
   if (input.vaults.length > 0) {
     jobs.push(
-      collectStreams(
-        client,
-        {
-          address: input.vaults,
-          event: depositedEvent,
-          args: { user: input.account },
-          fromBlock,
-          toBlock,
-        },
-        "streamId",
-      ),
+      collectDeposits(client, {
+        address: input.vaults,
+        event: depositedEvent,
+        args: { user: input.account },
+        fromBlock,
+        toBlock,
+      }),
     );
   }
   if (input.lendings.length > 0) {
@@ -216,12 +239,23 @@ async function scanRange(
   const streamIds: bigint[] = [];
   const loans: MarketLogCandidate[] = [];
   const positions: MarketLogCandidate[] = [];
+  const activity: PortfolioActivityRow[] = [];
   const failures: ReadFailure[] = [];
   for (const result of settled) {
     if (result.status === "fulfilled") {
       if (result.value.kind === "stream") streamIds.push(...result.value.ids);
-      if (result.value.kind === "loan") loans.push(...result.value.rows);
-      if (result.value.kind === "position") positions.push(...result.value.rows);
+      if (result.value.kind === "deposit") {
+        streamIds.push(...result.value.ids);
+        activity.push(...result.value.activity);
+      }
+      if (result.value.kind === "loan") {
+        loans.push(...result.value.rows);
+        activity.push(...result.value.activity);
+      }
+      if (result.value.kind === "position") {
+        positions.push(...result.value.rows);
+        activity.push(...result.value.activity);
+      }
       continue;
     }
     failures.push(
@@ -233,12 +267,13 @@ async function scanRange(
       ),
     );
   }
-  return { streamIds, loans, positions, failures };
+  return { streamIds, loans, positions, activity, failures };
 }
 
 type ScanHits =
   | { kind: "stream"; ids: bigint[] }
-  | { kind: "loan" | "position"; rows: MarketLogCandidate[] };
+  | { kind: "deposit"; ids: bigint[]; activity: PortfolioActivityRow[] }
+  | { kind: "loan" | "position"; rows: MarketLogCandidate[]; activity: PortfolioActivityRow[] };
 
 async function collectStreams(
   client: PortfolioLogClient,
@@ -254,6 +289,22 @@ async function collectStreams(
   return { kind: "stream", ids };
 }
 
+async function collectDeposits(
+  client: PortfolioLogClient,
+  query: PortfolioLogQuery,
+): Promise<ScanHits> {
+  const logs = await client.getLogs(query);
+  const ids: bigint[] = [];
+  const activity: PortfolioActivityRow[] = [];
+  for (const log of logs) {
+    const id = idFromLog(log, "streamId");
+    if (id !== null) ids.push(id);
+    const row = activityFromLog(log, "deposited");
+    if (row) activity.push(row);
+  }
+  return { kind: "deposit", ids, activity };
+}
+
 async function collectMarket(
   client: PortfolioLogClient,
   kind: "loan" | "position",
@@ -262,12 +313,30 @@ async function collectMarket(
 ): Promise<ScanHits> {
   const logs = await client.getLogs(query);
   const rows: MarketLogCandidate[] = [];
+  const activity: PortfolioActivityRow[] = [];
   for (const log of logs) {
     const id = idFromLog(log, field);
     if (id === null) continue;
     rows.push({ lending: log.address, id });
+    const row = activityFromLog(log, kind === "loan" ? "borrowed" : "supplied");
+    if (row) activity.push(row);
   }
-  return { kind, rows };
+  return { kind, rows, activity };
+}
+
+function activityFromLog(log: Log, kind: PortfolioActivityKind): PortfolioActivityRow | null {
+  const field = kind === "deposited" ? "streamId" : kind === "borrowed" ? "loanId" : "positionId";
+  const id = idFromLog(log, field);
+  if (id === null) return null;
+  if (log.blockNumber === null || log.logIndex === null || !log.transactionHash) return null;
+  return {
+    kind,
+    blockNumber: log.blockNumber,
+    logIndex: log.logIndex,
+    transactionHash: log.transactionHash,
+    id,
+    address: log.address,
+  };
 }
 
 function idFromLog(log: Log, field: string): bigint | null {

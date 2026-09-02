@@ -4,6 +4,7 @@ import type { BorrowerLoanRow } from "@/hooks/useBorrowerBook";
 import { formatTruncatedDecimal } from "@/lib/format";
 import type { Freshness } from "@/lib/freshness";
 import { freshnessCaption } from "./SuppliedDetail";
+import { RetiredMarketMarker } from "./PortfolioViews";
 import "./watch.css";
 
 export function ClosedLoanDetail({
@@ -12,15 +13,18 @@ export function ClosedLoanDetail({
   freshness,
   streamPresent = true,
   onSelectStream,
+  retired = false,
 }: {
   loan: BorrowerLoanRow;
   symbol: string;
   freshness: Freshness;
   streamPresent?: boolean;
   onSelectStream: (streamId: bigint) => void;
+  retired?: boolean;
 }) {
   return (
     <article data-ui="UI-WATCH-CLOSED-DETAIL" data-region="settled-detail" data-state="settled">
+      {retired ? <RetiredMarketMarker /> : null}
       <div className="kit-hero">
         <span className="kit-hero-kicker">SETTLED</span>
         <p className="watch-hero-meta">LOAN #{loan.id.toString()}</p>

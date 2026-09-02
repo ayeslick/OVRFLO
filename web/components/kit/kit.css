@@ -241,6 +241,15 @@
   font-weight: 700;
 }
 
+button.kit-type-card {
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  width: 100%;
+  appearance: none;
+  color: inherit;
+}
+
 .kit-type-card p {
   margin: 0;
   color: var(--muted);

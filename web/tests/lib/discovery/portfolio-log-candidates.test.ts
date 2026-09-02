@@ -5,6 +5,7 @@ import {
   divideLogRanges,
   mergeCandidateIds,
   mergeMarketCandidates,
+  sortActivityNewestFirst,
   type PortfolioLogClient,
 } from "@/lib/discovery/portfolio-log-candidates";
 
@@ -167,5 +168,42 @@ describe("discoverPortfolioLogCandidates", () => {
       { lending: LENDING, id: 9n },
       { lending: LENDING_B, id: 9n },
     ]);
+    expect(outcome.data.activity.map((row) => row.kind)).toEqual([
+      "borrowed",
+      "borrowed",
+      "supplied",
+      "supplied",
+    ]);
+  });
+
+  it("lists activity newest-first and never treats a missing page as empty", async () => {
+    expect(
+      sortActivityNewestFirst([
+        {
+          kind: "supplied",
+          blockNumber: 1n,
+          logIndex: 2,
+          transactionHash: `0x${"22".repeat(32)}`,
+          id: 1n,
+          address: LENDING,
+        },
+        {
+          kind: "borrowed",
+          blockNumber: 3n,
+          logIndex: 0,
+          transactionHash: `0x${"22".repeat(32)}`,
+          id: 2n,
+          address: LENDING,
+        },
+        {
+          kind: "deposited",
+          blockNumber: 3n,
+          logIndex: 4,
+          transactionHash: `0x${"22".repeat(32)}`,
+          id: 9n,
+          address: VAULT,
+        },
+      ]).map((row) => row.kind),
+    ).toEqual(["deposited", "borrowed", "supplied"]);
   });
 });

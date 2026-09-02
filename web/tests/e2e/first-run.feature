@@ -1,8 +1,7 @@
 Feature: First run
-  A connected wallet confirmed empty of positions, loans, AND streams lands
-  on the guided path. Discovery pending or could-not-ask never asserts
-  emptiness. Skip yields the chooser. Borrow, Supply, and Assets stay
-  launchable from nav.
+  A connected wallet confirmed empty of positions and loans lands on
+  empty Your OVRFLO plus Create. Discovery pending or could-not-ask never
+  asserts emptiness. Borrow, Supply, and Assets stay launchable from nav.
 
   Background:
     Given I am on the watch surface
@@ -13,33 +12,21 @@ Feature: First run
     Then I see the disconnected entry
     And I do not see the first-run surface
 
-  @UI-FIRST-RUN-SURFACE
-  Scenario: Happy path — protocol-empty wallet gets the guided path
+  @UI-WATCH-EMPTY
+  Scenario: Happy path — protocol-empty wallet gets empty plus Create
     When I switch to a protocol-empty wallet
-    Then I see the first-run surface
-    And I see the deposit intent
-
-  Scenario: Skip yields the chooser, not an empty meter wall
-    When I switch to a protocol-empty wallet
-    Then I see the first-run surface
-    When I click the "SKIP FOR NOW" button
-    Then I see the first-run chooser
-
-  @UI-FIRST-RUN-INTENT-DEPOSIT
-  Scenario: Deposit intent launches Assets
-    When I switch to a protocol-empty wallet
-    And I follow the first-run deposit intent
-    Then the assets route is open
+    Then I see the empty Your OVRFLO
+    And I do not see the first-run surface
 
   Scenario: Seeded holding wallet never gets first-run
     Given my wallet is connected
     Then I do not see the first-run surface
-    And the watch wall is visible
+    And the borrowed detail is open
 
   Scenario: Identity churn — reconnecting the holding wallet restores watch
     Given my wallet is connected
     When I disconnect my wallet
     Then I see the disconnected entry
     When I reconnect my wallet
-    Then the watch wall is visible
+    Then the borrowed detail is open
     And I do not see the first-run surface

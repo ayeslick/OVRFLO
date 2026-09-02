@@ -10,6 +10,13 @@ import type { BookPager, HydratedStream } from "@/hooks/useStreams";
 import { formatAddress, formatTruncatedDecimal } from "@/lib/format";
 import type { StreamSchedule } from "@/lib/payoff";
 import type { WatchLens } from "@/lib/parse";
+import type { CollectionSort, UnderlyingTotal } from "@/lib/portfolio-status";
+import {
+  compareCollectionRows,
+  loanLifecycle,
+  supplyLifecycle,
+} from "@/lib/portfolio-status";
+import { CollectionTotals } from "./PortfolioViews";
 import type { EntryBook } from "@/lib/watch-entry";
 import { selectionMatchesRow, type WatchSelection } from "@/lib/watch-url";
 import {
@@ -46,6 +53,12 @@ export function Wall({
   streamsDegraded,
   panelStatus = "ready",
   pager,
+  mode = "lenses",
+  collectionType,
+  sort = "id",
+  onSort,
+  retired,
+  totals,
 }: {
   tabs: readonly WallTab[];
   lens: LensId;
@@ -63,16 +76,86 @@ export function Wall({
   streamsDegraded: "pending" | "could-not-ask" | null;
   panelStatus?: "loading" | "empty" | "ready";
   pager?: BookPager;
+  mode?: "lenses" | "collection";
+  collectionType?: "loan" | "fixed";
+  sort?: CollectionSort;
+  onSort?: (sort: CollectionSort) => void;
+  retired?: ReadonlySet<string>;
+  totals?: readonly UnderlyingTotal[];
 }) {
+  const collection = mode === "collection";
+  const shownLoans = collection
+    ? [...loans].sort((left, right) =>
+        compareCollectionRows(
+          { id: left.id, status: loanLifecycle(left), amount: left.outstanding },
+          { id: right.id, status: loanLifecycle(right), amount: right.outstanding },
+          sort,
+        ),
+      )
+    : loans;
+  const shownPositions = collection
+    ? [...positions].sort((left, right) =>
+        compareCollectionRows(
+          {
+            id: left.id,
+            status: supplyLifecycle(left),
+            amount: positionFilled(left) + left.availableLiquidity,
+          },
+          {
+            id: right.id,
+            status: supplyLifecycle(right),
+            amount: positionFilled(right) + right.availableLiquidity,
+          },
+          sort,
+        ),
+      )
+    : positions;
+  const showLoans = collection ? collectionType === "loan" : lens === "borrowed";
+  const showPositions = collection ? collectionType === "fixed" : lens === "supplied";
+  const showStreams = !collection && lens === "streams";
+
   return (
-    <section className="watch-wall" data-ui="UI-WATCH-WALL" data-region="watch-wall" data-lens={lens}>
-      <LensTabs tabs={tabs} selected={lens} onSelect={onSelectLens} />
-      <div role="tabpanel" id={`lens-panel-${lens}`} aria-labelledby={`lens-tab-${lens}`}>
-        {panelStatus === "ready" && lens === "supplied"
-          ? positions.map((position) => (
+    <section
+      className="watch-wall"
+      data-ui={collection ? "UI-WATCH-COLLECTION" : "UI-WATCH-WALL"}
+      data-region="watch-wall"
+      data-lens={collection ? collectionType : lens}
+    >
+      {collection ? (
+        <div className="watch-collection-head">
+          <p className="watch-kicker">
+            {collectionType === "loan" ? "Self-Repaying Loans" : "Fixed Returns"} ·{" "}
+            {collectionType === "loan" ? loans.length : positions.length}
+          </p>
+          {onSort ? (
+            <label className="watch-collection-sort">
+              Sort
+              <select
+                value={sort}
+                onChange={(event) => onSort(event.target.value as CollectionSort)}
+              >
+                <option value="id">Identity</option>
+                <option value="status">Status</option>
+                <option value="amount">Amount</option>
+              </select>
+            </label>
+          ) : null}
+          {totals ? <CollectionTotals totals={totals} /> : null}
+        </div>
+      ) : (
+        <LensTabs tabs={tabs} selected={lens} onSelect={onSelectLens} />
+      )}
+      <div
+        role={collection ? "list" : "tabpanel"}
+        id={collection ? undefined : `lens-panel-${lens}`}
+        aria-labelledby={collection ? undefined : `lens-tab-${lens}`}
+      >
+        {panelStatus === "ready" && showPositions
+          ? shownPositions.map((position) => (
               <SuppliedRow
                 key={`${position.lending}-${position.id.toString()}`}
                 position={position}
+                retired={retired?.has(position.lending.toLowerCase()) ?? false}
                 selected={selectionMatchesRow(selection, "position", position)}
                 onSelect={() =>
                   onSelect({ kind: "position", lending: position.lending, id: position.id })
@@ -80,11 +163,12 @@ export function Wall({
               />
             ))
           : null}
-        {panelStatus === "ready" && lens === "borrowed"
-          ? loans.map((loan) => (
+        {panelStatus === "ready" && showLoans
+          ? shownLoans.map((loan) => (
               <BorrowedRow
                 key={`${loan.lending}-${loan.id.toString()}`}
                 loan={loan}
+                retired={retired?.has(loan.lending.toLowerCase()) ?? false}
                 truth={loanStreams.get(loan.streamId.toString())}
                 nowSeconds={nowSeconds}
                 nowMs={nowMs}
@@ -94,10 +178,10 @@ export function Wall({
               />
             ))
           : null}
-        {lens === "streams" && streamsDegraded ? (
+        {showStreams && streamsDegraded ? (
           <StreamsDegraded kind={streamsDegraded} />
         ) : null}
-        {panelStatus === "ready" && lens === "streams" && (streams.length > 0 || !streamsDegraded)
+        {panelStatus === "ready" && showStreams && (streams.length > 0 || !streamsDegraded)
           ? streams.map((stream) => (
               <StreamRow
                 key={stream.streamId.toString()}
@@ -109,7 +193,7 @@ export function Wall({
               />
             ))
           : null}
-        {pager?.hasNextPage || pager?.isFetchingNextPage ? (
+        {!collection && (pager?.hasNextPage || pager?.isFetchingNextPage) ? (
           <LoadMore
             fetching={Boolean(pager.isFetchingNextPage)}
             onLoadMore={() => pager.fetchNextPage()}
@@ -124,10 +208,12 @@ function SuppliedRow({
   position,
   selected,
   onSelect,
+  retired = false,
 }: {
   position: LenderPositionRow;
   selected: boolean;
   onSelect: () => void;
+  retired?: boolean;
 }) {
   const filled = positionFilled(position);
   const unfilled = position.availableLiquidity;
@@ -150,6 +236,7 @@ function SuppliedRow({
       decisive={decisive}
       selected={selected}
       miniband={{ filled: fraction01(filled, supplied) }}
+      badge={retired ? "retired market" : match === "resting" ? "Waiting" : undefined}
       onSelect={onSelect}
     />
   );
@@ -163,6 +250,7 @@ function BorrowedRow({
   lastReadAt,
   selected,
   onSelect,
+  retired = false,
 }: {
   loan: BorrowerLoanRow;
   truth?: { withdrawable: bigint; schedule: StreamSchedule };
@@ -171,6 +259,7 @@ function BorrowedRow({
   lastReadAt: bigint;
   selected: boolean;
   onSelect: () => void;
+  retired?: boolean;
 }) {
   const state = borrowedRowState({ loan, withdrawable: truth?.withdrawable });
   const coverAt = truth ? loanCoverAt(truth.schedule, loan.outstanding, nowSeconds) : undefined;
@@ -204,7 +293,7 @@ function BorrowedRow({
           />
         )
       }
-      badge={state === "settled" ? "SETTLED" : undefined}
+      badge={retired ? "retired market" : state === "settled" ? "SETTLED" : undefined}
       selected={selected}
       onSelect={onSelect}
     />

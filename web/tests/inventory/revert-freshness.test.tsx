@@ -1,9 +1,10 @@
 import "./watch-app-mocks";
 import { QueryClient } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { WatchApp } from "@/components/watch/WatchApp";
 import { borrowerBookKeys, lenderBookKeys } from "@/lib/query-keys";
+import { writeWatchSearch } from "@/lib/watch-url";
 import { filledPosition, mockCanvas, stubViewport, ACCOUNT, LENDING } from "./fixtures";
 import { fx, resetWatchFx } from "./watch-fx";
 
@@ -24,19 +25,24 @@ describe("inventory — revert freshness (successor to reorg-freshness.test.ts)"
     resetWatchFx();
   });
 
-  it("after mocked revert+refetch, zero rolled-back entities render on watch", () => {
+  it("after mocked revert+refetch, zero rolled-back entities render on watch", async () => {
     const preSnapshot = [filledPosition(26n)];
     const rolledBack = filledPosition(99n);
     fx.connected = true;
     fx.positions = [...preSnapshot, rolledBack];
+    writeWatchSearch({ selection: { kind: "none" } }, "replace");
     const view = render(<WatchApp />);
-    expect(screen.getByRole("button", { name: /SUPPLY #99/ })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /SUPPLY #26/ })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /SUPPLY #99/ })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /SUPPLY #26/ })).toBeInTheDocument();
+    });
 
     fx.positions = preSnapshot;
     view.rerender(<WatchApp />);
-    expect(screen.queryByRole("button", { name: /SUPPLY #99/ })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /SUPPLY #26/ })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: /SUPPLY #99/ })).not.toBeInTheDocument();
+    });
+    expect(screen.getByRole("article")).toHaveAttribute("data-region", "supplied-detail");
 
     const preUnfilled = preSnapshot.reduce((sum, row) => sum + row.availableLiquidity, 0n);
     const afterUnfilled = fx.positions.reduce((sum, row) => sum + row.availableLiquidity, 0n);

@@ -57,8 +57,12 @@ Collection type on `/` after complete hydration: `loan` · `fixed` · none.
 - **writers:**
   - `web/lib/watch-url.ts` — serializes `?type=` only when asked; CS4-U2 writes
     after complete hydration
+  - `web/lib/portfolio-matrix.ts` — chooses type or identity after complete hydration
+  - `web/components/watch/WatchApp.tsx` — calls `writeWatchSearch` on `/` after complete hydration
 - **readers:**
   - `web/lib/watch-url.ts` — parse of surviving query keys
+  - `web/components/watch/WatchApp.tsx` — hub vs collection vs detail
+  - `web/lib/portfolio-matrix.ts` — keeps an explicit `?type=` collection on a mixed wallet
 - **notes:** Written only after complete hydration on `/`. Incomplete scan
   must not write this key. Detail identity params take precedence over type.
 
@@ -74,6 +78,7 @@ Default vs Advanced disclosure over the current destination.
 - **readers:**
   - `web/components/kit/Shell.tsx` — `data-disclosure` and mode label
   - `web/components/kit/DefaultHub.tsx` — hub help duplicate
+  - `web/components/watch/WatchApp.tsx` — Default matrix vs Advanced wall
 - **notes:** Never a URL param. Refresh returns Default. Browser Back does not
   toggle it. Switching preserves the current object or task because the
   destination URL does not change.

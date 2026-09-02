@@ -17,6 +17,7 @@ import {
   positionFilled,
   suppliedMatchState,
 } from "@/lib/watch-rows";
+import { RetiredMarketMarker } from "./PortfolioViews";
 import { WatchWrite } from "./WatchWrite";
 import "./watch.css";
 
@@ -32,6 +33,7 @@ export function SuppliedDetail({
   usdMode,
   usdAvailable,
   usdText,
+  retired = false,
 }: {
   position: LenderPositionRow;
   symbol: string;
@@ -44,6 +46,7 @@ export function SuppliedDetail({
   usdMode: "token" | "usd";
   usdAvailable: boolean;
   usdText?: string;
+  retired?: boolean;
 }) {
   const [write, setWrite] = useState<"claim" | "withdraw" | null>(null);
   const filled = positionFilled(position);
@@ -57,6 +60,7 @@ export function SuppliedDetail({
 
   return (
     <article data-ui="UI-WATCH-SUPPLIED-DETAIL" data-region="supplied-detail" data-state={match}>
+      {retired ? <RetiredMarketMarker /> : null}
       {filled > 0n ? (
         <div className="kit-hero">
           <span className="kit-hero-kicker">YOUR EARNINGS</span>

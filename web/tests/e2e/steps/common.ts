@@ -130,15 +130,25 @@ When("I select the first available rate", async ({ page }) => {
 });
 
 When("I select the {string} lens", async ({ page }, label: string) => {
+  const goAdvanced = page.getByRole("button", { name: "Go to Advanced", exact: true });
+  if (await goAdvanced.count()) await goAdvanced.first().click();
   await ui(page, "UI-WATCH-LENS").getByRole("tab", { name: label, exact: true }).click();
 });
 
 When("I select the first loan row", async ({ page }) => {
-  await ui(page, "UI-WATCH-WALL").getByRole("button", { name: /LOAN #/ }).first().click();
+  await page
+    .locator('[data-ui="UI-WATCH-WALL"], [data-ui="UI-WATCH-COLLECTION"]')
+    .getByRole("button", { name: /LOAN #/ })
+    .first()
+    .click();
 });
 
 When("I select the first supply row", async ({ page }) => {
-  await ui(page, "UI-WATCH-WALL").getByRole("button", { name: /SUPPLY #/ }).first().click();
+  await page
+    .locator('[data-ui="UI-WATCH-WALL"], [data-ui="UI-WATCH-COLLECTION"]')
+    .getByRole("button", { name: /SUPPLY #/ })
+    .first()
+    .click();
 });
 
 When("I start the in-place {string} write", async ({ page }, label: string) => {
@@ -159,9 +169,12 @@ Then("the watch wall is visible", async ({ page }) => {
 });
 
 Then("I see a loan row", async ({ page }) => {
-  await expect(ui(page, "UI-WATCH-WALL").getByRole("button", { name: /LOAN #/ }).first()).toBeVisible({
-    timeout: 15_000,
-  });
+  await expect(
+    page
+      .locator('[data-ui="UI-WATCH-WALL"], [data-ui="UI-WATCH-COLLECTION"]')
+      .getByRole("button", { name: /LOAN #/ })
+      .first(),
+  ).toBeVisible({ timeout: 15_000 });
 });
 
 Then("the borrowed detail is open", async ({ page }) => {
@@ -230,6 +243,34 @@ Then("the URL carries a loan identity", async ({ page }) => {
 Then("the URL carries a position identity", async ({ page }) => {
   await expect(page).toHaveURL(/\?lending=0x[0-9a-fA-F]+&position=\d+/);
   expect(page.url()).not.toMatch(/[?&]lens=/);
+});
+
+Then("the URL carries collection type {string}", async ({ page }, type: string) => {
+  await expect(page).toHaveURL(new RegExp(`[?&]type=${type}\\b`));
+  expect(page.url()).not.toMatch(/[?&](loan|position)=/);
+  expect(page.url()).not.toMatch(/[?&]lens=/);
+});
+
+Then("the URL has no matrix query", async ({ page }) => {
+  await expect(page).toHaveURL(/\/(?:\?.*)?$/);
+  expect(page.url()).not.toMatch(/[?&](type|loan|position)=/);
+  expect(page.url()).not.toMatch(/[?&]lens=/);
+});
+
+Then("I see the empty Your OVRFLO", async ({ page }) => {
+  await expect(ui(page, "UI-WATCH-EMPTY")).toBeVisible({ timeout: 15_000 });
+});
+
+Then("I see the Your OVRFLO hub", async ({ page }) => {
+  await expect(ui(page, "UI-WATCH-HUB")).toBeVisible({ timeout: 15_000 });
+});
+
+Then("I see the activity list", async ({ page }) => {
+  await expect(ui(page, "UI-WATCH-ACTIVITY")).toBeVisible({ timeout: 15_000 });
+});
+
+Given("I am on the activity page", async ({ page }) => {
+  await page.goto("/activity/");
 });
 
 Then("I see a confirmed action receipt", async ({ page }) => {

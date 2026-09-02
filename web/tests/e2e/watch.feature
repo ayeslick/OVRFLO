@@ -1,12 +1,42 @@
 Feature: Watch surface
-  Home is the watch wall. A connected wallet holding protocol objects lands
-  on a role lens; selecting a row opens detail in place. Claim, withdraw,
-  repay, and close live on the entity that owns them — there is no CLAIM ALL
-  strip and no market-row modal.
+  Home is Your OVRFLO. After complete hydration the count/type matrix
+  routes empty, detail, collection, or hub. Advanced keeps the role wall.
+  Claim, withdraw, repay, and close live on the entity that owns them.
 
   Background:
     Given I am on the watch surface
     And my wallet is connected
+
+  @UI-WATCH-EMPTY
+  Scenario: Zero positions route to empty plus Create
+    When I switch to a protocol-empty wallet
+    Then I see the empty Your OVRFLO
+    And the URL has no matrix query
+
+  @UI-WATCH-BORROWED-DETAIL
+  Scenario: One Self-Repaying Loan routes to loan detail
+    Then the borrowed detail is open
+    And the URL carries a loan identity
+
+  @UI-WATCH-COLLECTION
+  Scenario: Multiple Self-Repaying Loans route to the loan collection
+    Given my wallet has a second Self-Repaying Loan
+    And the frontend re-syncs with chain state
+    Then the URL carries collection type "loan"
+    And I see a loan row
+
+  @UI-WATCH-HUB
+  Scenario: Mixed types route to the hub with neither type nor identity
+    Given my wallet has supplied liquidity to the active market
+    And the frontend re-syncs with chain state
+    Then I see the Your OVRFLO hub
+    And the URL has no matrix query
+
+  @UI-WATCH-ACTIVITY
+  Scenario: Activity lists on /activity/ and does not apply the portfolio matrix
+    Given I am on the activity page
+    Then I see the activity list
+    And the URL has no matrix query
 
   @UI-WATCH-WALL
   Scenario: Happy path — borrowed lens opens a loan detail in place
@@ -46,6 +76,7 @@ Feature: Watch surface
     And the URL carries a loan identity
 
   Scenario: Degraded reads — zero-count supplied lens is hidden
+    When I select the "BORROWED" lens
     Then I see a loan row
     And the "SUPPLIED" lens is hidden
     And the "BORROWED" lens is visible

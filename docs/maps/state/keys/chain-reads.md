@@ -25,7 +25,8 @@ The wallet connection: status, connected addresses, and chain ID.
   - `web/components/Providers.tsx` — mounts the wagmi and AppKit providers that own the connection
   - `web/components/WalletRuntime.tsx` — `WalletButton`: connect / disconnect (E2E swaps this module at build time)
 - **readers:**
-  - `web/app/page.tsx` — R12 entry: disconnected vs syncing vs watch vs first-run
+  - `web/app/page.tsx` — R12 entry: disconnected vs watch vs empty
+  - `web/components/watch/WatchApp.tsx` — matrix vs incomplete vs disconnected
   - `web/hooks/useChainGuard.ts` — derives `wrongChain` against the configured chain
   - `web/hooks/useWriteFlow.ts` — builds the execution identity every write is checked against
   - `web/hooks/useWalletChangeReset.ts` — raises `action.wallet-changed` on address change

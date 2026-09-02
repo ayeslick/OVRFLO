@@ -6,10 +6,12 @@ import type { LenderPositionRow } from "@/hooks/useLenderBook";
 import type { BorrowerLoanRow } from "@/hooks/useBorrowerBook";
 import type { HydratedStream } from "@/hooks/useStreams";
 import { loadingOutcome, readFailure, readyOutcome, unavailableOutcome } from "@/lib/read-outcome";
+import { resetDisclosure } from "@/lib/disclosure";
 import { writeWatchSearch } from "@/lib/watch-url";
 import { idlePager } from "../inventory/fixtures";
 
 const ACCOUNT = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8" as Address;
+const ACCOUNT_B = "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC" as Address;
 const MARKET = "0x1111111111111111111111111111111111111111" as Address;
 const TOKEN = "0x3333333333333333333333333333333333333333" as Address;
 const VAULT = "0x2222222222222222222222222222222222222222" as Address;
@@ -22,6 +24,8 @@ const SCALE = 10n ** 18n;
 
 const fx = vi.hoisted(() => ({
   connected: false as boolean,
+  account: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8" as Address,
+  bookDataOnLoad: true,
   lenderStatus: "ready" as "ready" | "loading" | "unavailable",
   borrowerStatus: "ready" as "ready" | "loading" | "unavailable",
   streamStatus: "ready" as "ready" | "loading" | "unavailable",
@@ -55,7 +59,7 @@ const fx = vi.hoisted(() => ({
 vi.mock("wagmi", () => ({
   useConnection: () => ({
     status: fx.connected ? "connected" : "disconnected",
-    addresses: fx.connected ? [ACCOUNT] : undefined,
+    addresses: fx.connected ? [fx.account] : undefined,
     chainId: 1,
   }),
   useDisconnect: () => ({ disconnect: vi.fn() }),
@@ -169,7 +173,12 @@ vi.mock("@/hooks/useLenderBook", () => ({
       complete: fx.lenderStatus === "ready",
       confirmedEmpty: fx.lenderStatus === "ready" && renderCount === 0,
     };
-    if (fx.lenderStatus === "loading") return { ...loadingOutcome({ ...rows, ...fields }), ...idlePager };
+    if (fx.lenderStatus === "loading") {
+      return {
+        ...loadingOutcome(fx.bookDataOnLoad ? { ...rows, ...fields } : undefined),
+        ...idlePager,
+      };
+    }
     if (fx.lenderStatus === "unavailable") {
       return {
         ...unavailableOutcome([readFailure("useLenderBook", "transport", "down")], {}, { ...rows, ...fields }),
@@ -192,7 +201,10 @@ vi.mock("@/hooks/useBorrowerBook", () => ({
       confirmedEmpty: fx.borrowerStatus === "ready" && renderCount === 0,
     };
     if (fx.borrowerStatus === "loading") {
-      return { ...loadingOutcome({ ...rows, ...fields }, meta), ...idlePager };
+      return {
+        ...loadingOutcome(fx.bookDataOnLoad ? { ...rows, ...fields } : undefined, meta),
+        ...idlePager,
+      };
     }
     if (fx.borrowerStatus === "unavailable") {
       return {
@@ -221,7 +233,7 @@ vi.mock("@/hooks/useStreams", () => ({
     };
     if (fx.streamStatus === "loading") {
       return {
-        ...loadingOutcome({ ...rows, ...fields }, meta),
+        ...loadingOutcome(fx.bookDataOnLoad ? { ...rows, ...fields } : undefined, meta),
         ...idlePager,
         advancePin: () => fx.advancePin(),
       };
@@ -277,8 +289,44 @@ function stubViewport(width: number) {
   };
 }
 
+function goToAdvanced() {
+  fireEvent.click(screen.getAllByRole("button", { name: "Go to Advanced" })[0]!);
+}
+
+function supplyRow(id: bigint, lending: Address = LENDING, market: Address = MARKET): LenderPositionRow {
+  return {
+    id,
+    lending,
+    lender: ACCOUNT,
+    market,
+    aprBps: 500,
+    availableLiquidity: 5n * SCALE,
+    intervalStart: 0n,
+    intervalEnd: 0n,
+    pairs: [],
+    pairsTruncated: false,
+  };
+}
+
+function loanRow(id: bigint, streamId: bigint = 5n): BorrowerLoanRow {
+  return {
+    id,
+    lending: LENDING,
+    market: MARKET,
+    borrower: ACCOUNT,
+    streamId,
+    obligation: SCALE,
+    drawn: 0n,
+    repaid: 0n,
+    closed: false,
+    outstanding: SCALE,
+  };
+}
+
 function resetFx() {
   fx.connected = false;
+  fx.account = ACCOUNT;
+  fx.bookDataOnLoad = true;
   fx.ovrflosStatus = "ready";
   fx.marketsStatus = "ready";
   fx.lenderStatus = "ready";
@@ -302,6 +350,11 @@ describe("watch shell + entry", () => {
     stubViewport(1280);
   });
 
+  afterEach(() => {
+    resetFx();
+    resetDisclosure();
+  });
+
   it("renders unavailable for a codeless factory, never CHECKING…", async () => {
     fx.connected = true;
     fx.ovrflosStatus = "unavailable";
@@ -313,10 +366,6 @@ describe("watch shell + entry", () => {
     expect(screen.getByText("PROTOCOL UNAVAILABLE")).toBeInTheDocument();
     expect(screen.queryByText("CHECKING…")).not.toBeInTheDocument();
     expect(screen.getByText(/Factory has no bytecode/i)).toBeInTheDocument();
-  });
-
-  afterEach(() => {
-    resetFx();
   });
 
   it("shows the disconnected entry without protocol metrics", () => {
@@ -333,23 +382,32 @@ describe("watch shell + entry", () => {
     expect(screen.queryByText(/you have no positions/i)).not.toBeInTheDocument();
   });
 
-  it("renders first-run only when every book is confirmed empty", () => {
+  it("renders empty Your OVRFLO plus Create when every book is confirmed empty", async () => {
     fx.connected = true;
     render(<WatchApp />);
-    expect(document.querySelector("[data-control='UI-FIRST-RUN-SURFACE']")).not.toBeNull();
+    expect(document.querySelector("[data-ui='UI-WATCH-EMPTY']")).not.toBeNull();
+    expect(document.querySelector("[data-ui='UI-WATCH-EMPTY-CREATE']")).toHaveAttribute("href", "/create/");
+    expect(document.querySelector("[data-control='UI-FIRST-RUN-SURFACE']")).toBeNull();
     expect(screen.queryByRole("tab", { name: "SUPPLIED" })).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(window.location.search).toBe("");
+    });
   });
 
-  it("renders degraded watch, never first-run, when discovery could-not-ask with zero books", () => {
+  it("renders incomplete Your OVRFLO, never empty, when discovery could-not-ask with zero books", () => {
     fx.connected = true;
     fx.streamStatus = "unavailable";
     render(<WatchApp />);
     expect(document.querySelector("[data-control='UI-FIRST-RUN-SURFACE']")).toBeNull();
+    expect(document.querySelector("[data-ui='UI-WATCH-EMPTY']")).toBeNull();
+    expect(document.querySelector("[data-ui='UI-WATCH-INCOMPLETE']")).not.toBeNull();
     expect(screen.getByText(/STREAM DISCOVERY IS UNAVAILABLE/)).toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "STREAMS" })).not.toBeInTheDocument();
+    goToAdvanced();
     expect(screen.getByRole("tab", { name: "STREAMS" })).toBeInTheDocument();
   });
 
-  it("renders the supplied wall for a seeded position at 1280px", () => {
+  it("routes one supply to detail and writes the identity URL", async () => {
     fx.connected = true;
     fx.positions = [
       {
@@ -366,28 +424,22 @@ describe("watch shell + entry", () => {
       },
     ];
     render(<WatchApp />);
-    expect(screen.getByRole("tab", { name: "SUPPLIED" })).toHaveAttribute("aria-selected", "true");
-    expect(screen.getByRole("button", { name: /SUPPLY #26/ })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(window.location.search).toMatch(new RegExp(`lending=${LENDING}`, "i"));
+      expect(window.location.search).toMatch(/position=26/);
+    });
+    expect(screen.getByRole("article")).toHaveAttribute("data-region", "supplied-detail");
+    expect(screen.queryByRole("tab", { name: "SUPPLIED" })).not.toBeInTheDocument();
     expect(document.querySelector("[data-control='UI-FIRST-RUN-SURFACE']")).toBeNull();
   });
 
-  it("opens detail in place at 1280px and uses list→detail with return at 360px", () => {
+  it("opens collection detail at 1280px and uses list→detail with return at 360px", async () => {
     fx.connected = true;
-    fx.positions = [
-      {
-        id: 26n,
-        lending: LENDING,
-        lender: ACCOUNT,
-        market: MARKET,
-        aprBps: 500,
-        availableLiquidity: 5n * SCALE,
-        intervalStart: 0n,
-        intervalEnd: 0n,
-        pairs: [],
-        pairsTruncated: false,
-      },
-    ];
+    fx.positions = [supplyRow(26n), supplyRow(27n)];
     const wide = render(<WatchApp />);
+    await waitFor(() => {
+      expect(window.location.search).toMatch(/type=fixed/);
+    });
     fireEvent.click(screen.getByRole("button", { name: /SUPPLY #26/ }));
     expect(window.location.search).toMatch(/position=26/);
     expect(screen.getByRole("article")).toHaveAttribute("data-region", "supplied-detail");
@@ -395,11 +447,13 @@ describe("watch shell + entry", () => {
     wide.unmount();
 
     stubViewport(360);
-    writeWatchSearch({ lens: "supplied", selection: { kind: "position", lending: LENDING, id: 26n } }, "replace");
+    writeWatchSearch({ selection: { kind: "position", lending: LENDING, id: 26n } }, "replace");
     render(<WatchApp />);
     expect(screen.getByRole("button", { name: "Back to supplied" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Back to supplied" }));
-    expect(window.location.search).not.toMatch(/position=/);
+    await waitFor(() => {
+      expect(window.location.search).not.toMatch(/position=/);
+    });
     expect(window.location.search).not.toMatch(/lens=/);
   });
 
@@ -571,8 +625,6 @@ describe("watch shell + entry", () => {
     fireEvent.click(rows[1]!);
     expect(window.location.search).toMatch(new RegExp(`lending=${LENDING_B}`, "i"));
     expect(window.location.search).toMatch(/position=1/);
-    expect(rows[0]).toHaveAttribute("data-selected", "false");
-    expect(rows[1]).toHaveAttribute("data-selected", "true");
     expect(screen.getByRole("article")).toHaveAttribute("data-region", "supplied-detail");
     expect(screen.getByRole("article")).toHaveAttribute("data-state", "resting");
   });
@@ -606,6 +658,7 @@ describe("watch shell + entry", () => {
     ];
     writeWatchSearch({ selection: { kind: "none" } }, "replace");
     render(<WatchApp />);
+    goToAdvanced();
     fireEvent.click(screen.getByRole("tab", { name: "STREAMS" }));
     expect(screen.getByText(/STREAM DISCOVERY IS UNAVAILABLE/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /STREAM #5/ })).toBeInTheDocument();
@@ -639,6 +692,7 @@ describe("watch shell + entry", () => {
     ];
     writeWatchSearch({ selection: { kind: "none" } }, "replace");
     const { rerender } = render(<WatchApp />);
+    goToAdvanced();
     fireEvent.click(screen.getByRole("tab", { name: "STREAMS" }));
     expect(screen.getByRole("button", { name: /STREAM #5/ })).toBeInTheDocument();
 
@@ -692,9 +746,134 @@ describe("watch shell + entry", () => {
     ];
     writeWatchSearch({ selection: { kind: "none" } }, "replace");
     render(<WatchApp />);
+    goToAdvanced();
     fireEvent.click(screen.getByRole("tab", { name: "BORROWED" }));
     expect(screen.getByRole("button", { name: /LOAN #12/ })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /STREAM #5/ })).not.toBeInTheDocument();
+    expect(document.querySelector('[data-ui="UI-WATCH-WALL"]')?.textContent).not.toMatch(/STREAM #5/);
     expect(screen.queryByRole("tab", { name: "STREAMS" })).not.toBeInTheDocument();
+  });
+
+  it("does not write type or identity while hydration is incomplete", () => {
+    fx.connected = true;
+    fx.borrowerStatus = "loading";
+    fx.loans = [loanRow(12n)];
+    writeWatchSearch({ type: "loan", selection: { kind: "none" } }, "replace");
+    render(<WatchApp />);
+    expect(document.querySelector("[data-ui='UI-WATCH-INCOMPLETE']")).not.toBeNull();
+    expect(screen.getByRole("button", { name: /LOAN #12/ })).toBeInTheDocument();
+    expect(window.location.search).toBe("?type=loan");
+    expect(window.location.search).not.toMatch(/loan=/);
+  });
+
+  it("does not keep the previous account's cards after an account change", async () => {
+    fx.connected = true;
+    fx.loans = [loanRow(12n)];
+    const view = render(<WatchApp />);
+    await waitFor(() => {
+      expect(screen.getByRole("article")).toHaveAttribute("data-region", "borrowed-detail");
+    });
+    fx.account = ACCOUNT_B;
+    fx.loans = [];
+    fx.bookDataOnLoad = false;
+    fx.lenderStatus = "loading";
+    fx.borrowerStatus = "loading";
+    fx.streamStatus = "loading";
+    view.rerender(<WatchApp />);
+    expect(document.querySelector("[data-ui='UI-WATCH-INCOMPLETE']")).not.toBeNull();
+    expect(screen.queryByRole("button", { name: /LOAN #12/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("article")).not.toBeInTheDocument();
+  });
+
+  it("strips a stale identity and writes the matrix URL", async () => {
+    fx.connected = true;
+    fx.loans = [loanRow(12n)];
+    writeWatchSearch({ selection: { kind: "loan", lending: LENDING_B, id: 99n } }, "replace");
+    render(<WatchApp />);
+    await waitFor(() => {
+      expect(window.location.search).toMatch(new RegExp(`lending=${LENDING}`, "i"));
+      expect(window.location.search).toMatch(/loan=12/);
+    });
+    expect(screen.getByRole("article")).toHaveAttribute("data-region", "borrowed-detail");
+  });
+
+  it("marks a retired-market loan and still routes it in the matrix", async () => {
+    fx.connected = true;
+    fx.markets = [
+      {
+        vault: VAULT,
+        treasury: VAULT,
+        underlying: TOKEN,
+        ovrfloToken: TOKEN,
+        reserve: TOKEN,
+        lending: LENDING_B,
+        retiredLendings: [LENDING],
+        market: MARKET,
+        twapDurationFixed: 900,
+        feeBps: 50,
+        expiryCached: NOW + 150n * 86_400n,
+        ptToken: TOKEN,
+        oracle: TOKEN,
+      },
+    ];
+    fx.loans = [loanRow(12n)];
+    render(<WatchApp />);
+    await waitFor(() => {
+      expect(window.location.search).toMatch(/loan=12/);
+    });
+    expect(screen.getByText("retired market")).toBeInTheDocument();
+    expect(document.querySelector("[data-ui='UI-WATCH-RETIRED']")).not.toBeNull();
+  });
+
+  it("routes mixed types to the hub with neither type nor identity", async () => {
+    fx.connected = true;
+    fx.loans = [loanRow(12n)];
+    fx.positions = [supplyRow(26n)];
+    render(<WatchApp />);
+    await waitFor(() => {
+      expect(document.querySelector("[data-ui='UI-WATCH-HUB']")).not.toBeNull();
+    });
+    expect(window.location.search).not.toMatch(/[?&](type|loan|position)=/);
+    fireEvent.click(screen.getByRole("button", { name: /Self-Repaying Loans/ }));
+    expect(window.location.search).toMatch(/type=loan/);
+    expect(screen.getByRole("button", { name: /LOAN #12/ })).toBeInTheDocument();
+  });
+
+  it("keeps waiting and matched supplies reachable after sort", async () => {
+    fx.connected = true;
+    fx.positions = [
+      {
+        id: 41n,
+        lending: LENDING,
+        lender: ACCOUNT,
+        market: MARKET,
+        aprBps: 500,
+        availableLiquidity: 5n * SCALE,
+        intervalStart: 0n,
+        intervalEnd: 0n,
+        pairs: [],
+        pairsTruncated: false,
+      },
+      {
+        id: 26n,
+        lending: LENDING,
+        lender: ACCOUNT,
+        market: MARKET,
+        aprBps: 500,
+        availableLiquidity: 0n,
+        intervalStart: 0n,
+        intervalEnd: SCALE,
+        pairs: [{ loanId: 1n, contribution: SCALE, claimable: 0n }],
+        pairsTruncated: false,
+      },
+    ];
+    render(<WatchApp />);
+    await waitFor(() => {
+      expect(window.location.search).toMatch(/type=fixed/);
+    });
+    expect(screen.getByRole("button", { name: /SUPPLY #41/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /SUPPLY #26/ })).toBeInTheDocument();
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "status" } });
+    expect(screen.getByRole("button", { name: /SUPPLY #41/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /SUPPLY #26/ })).toBeInTheDocument();
   });
 });

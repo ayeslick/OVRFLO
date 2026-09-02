@@ -19,6 +19,7 @@ import {
   loanOutstanding,
 } from "@/lib/watch-rows";
 import { freshnessCaption } from "./SuppliedDetail";
+import { RetiredMarketMarker } from "./PortfolioViews";
 import { WatchWrite } from "./WatchWrite";
 import "./watch.css";
 
@@ -39,6 +40,7 @@ export function BorrowedDetail({
   usdAvailable,
   usdText,
   onSelectStream,
+  retired = false,
 }: {
   loan: BorrowerLoanRow;
   symbol: string;
@@ -56,6 +58,7 @@ export function BorrowedDetail({
   usdAvailable: boolean;
   usdText?: string;
   onSelectStream: (streamId: bigint) => void;
+  retired?: boolean;
 }) {
   const [write, setWrite] = useState<"repay" | "close" | null>(null);
   const state = borrowedRowState({ loan, withdrawable });
@@ -79,6 +82,7 @@ export function BorrowedDetail({
 
   return (
     <article data-ui="UI-WATCH-BORROWED-DETAIL" data-region="borrowed-detail" data-state={state}>
+      {retired ? <RetiredMarketMarker /> : null}
       <div className="kit-hero">
         <span className="kit-hero-kicker">OUTSTANDING</span>
         <RollingNumber

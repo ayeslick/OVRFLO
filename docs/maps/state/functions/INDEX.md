@@ -23,10 +23,10 @@ on-chain contract state. This index does not cover, replace, or summarise it.
 | | Count |
 |---|---|
 | Key files | 6 |
-| Keys | 64 |
-| Modules | 101 |
+| Keys | 66 |
+| Modules | 105 |
 | `on-chain` keys | 23 |
-| `projection` keys | 0 |
+| `projection` keys | 2 |
 | `pure-client` keys | 41 |
 
 ## Trust-domain exposure by module
@@ -36,6 +36,7 @@ a `projection` count is a module where a fail-closed mistake can happen.
 
 | Module | on-chain | projection | pure-client |
 |---|---|---|---|
+| `web/app/activity/page.tsx` | 0 | 1 | 0 |
 | `web/app/assets/page.tsx` | 1 | 0 | 3 |
 | `web/app/borrow/page.tsx` | 0 | 0 | 2 |
 | `web/app/page.tsx` | 4 | 0 | 2 |
@@ -85,7 +86,7 @@ a `projection` count is a module where a fail-closed mistake can happen.
 | `web/components/watch/StreamLedgerCard.tsx` | 1 | 0 | 0 |
 | `web/components/watch/SuppliedDetail.tsx` | 3 | 0 | 5 |
 | `web/components/watch/Wall.tsx` | 5 | 0 | 7 |
-| `web/components/watch/WatchApp.tsx` | 1 | 0 | 2 |
+| `web/components/watch/WatchApp.tsx` | 2 | 1 | 4 |
 | `web/hooks/useAcknowledgment.ts` | 0 | 0 | 1 |
 | `web/hooks/useAllMarkets.ts` | 3 | 0 | 0 |
 | `web/hooks/useApprovalWriteFlows.ts` | 2 | 0 | 4 |
@@ -103,6 +104,7 @@ a `projection` count is a module where a fail-closed mistake can happen.
 | `web/hooks/useLending.ts` | 2 | 0 | 0 |
 | `web/hooks/useMarketSymbols.ts` | 3 | 0 | 0 |
 | `web/hooks/useOvrflos.ts` | 2 | 0 | 0 |
+| `web/hooks/usePortfolioActivity.ts` | 0 | 2 | 0 |
 | `web/hooks/useStaleBalanceGuard.ts` | 0 | 0 | 1 |
 | `web/hooks/useStaleRecovery.ts` | 0 | 0 | 2 |
 | `web/hooks/useStreams.ts` | 3 | 0 | 0 |
@@ -117,6 +119,7 @@ a `projection` count is a module where a fail-closed mistake can happen.
 | `web/lib/actions/claim.ts` | 1 | 0 | 1 |
 | `web/lib/claim-all.ts` | 1 | 0 | 0 |
 | `web/lib/disclosure.ts` | 0 | 0 | 1 |
+| `web/lib/discovery/portfolio-log-candidates.ts` | 0 | 2 | 0 |
 | `web/lib/flow-history.ts` | 0 | 0 | 1 |
 | `web/lib/freshness.ts` | 0 | 0 | 1 |
 | `web/lib/invalidate.ts` | 5 | 0 | 0 |
@@ -126,6 +129,7 @@ a `projection` count is a module where a fail-closed mistake can happen.
 | `web/lib/live-action-plan.ts` | 1 | 0 | 0 |
 | `web/lib/parse.ts` | 0 | 0 | 2 |
 | `web/lib/payoff.ts` | 2 | 0 | 7 |
+| `web/lib/portfolio-matrix.ts` | 0 | 0 | 1 |
 | `web/lib/protocol-bootstrap.ts` | 1 | 0 | 0 |
 | `web/lib/protocol/streams.ts` | 1 | 0 | 0 |
 | `web/lib/query-keys.ts` | 4 | 0 | 0 |
@@ -139,6 +143,12 @@ a `projection` count is a module where a fail-closed mistake can happen.
 | `web/lib/watch-url.ts` | 0 | 0 | 1 |
 
 ## Modules
+
+### `web/app/activity/page.tsx`
+
+| Direction | Key | Trust domain | Role |
+|---|---|---|---|
+| reads | `projection.activity` | `projection` | list only; does not apply the portfolio matrix |
 
 ### `web/app/assets/page.tsx`
 
@@ -162,7 +172,7 @@ a `projection` count is a module where a fail-closed mistake can happen.
 |---|---|---|---|
 | writes | `watch.selected-entity` | `pure-client` | hydrates from the URL; clears on disconnect |
 | reads | `chain.borrower-loans` | `on-chain` | R12: any loan → watch |
-| reads | `chain.connection` | `on-chain` | R12 entry: disconnected vs syncing vs watch vs first-run |
+| reads | `chain.connection` | `on-chain` | R12 entry: disconnected vs watch vs empty |
 | reads | `chain.lender-positions` | `on-chain` | R12: any position → watch, not first-run |
 | reads | `chain.markets` | `on-chain` | market list for shell and flow launch |
 | reads | `first-run.dismissed` | `pure-client` | chooser vs guided when emptiness is confirmed |
@@ -533,8 +543,13 @@ a `projection` count is a module where a fail-closed mistake can happen.
 | Direction | Key | Trust domain | Role |
 |---|---|---|---|
 | writes | `watch.lens` | `pure-client` | per-wallet localStorage only |
+| writes | `watch.portfolio-type` | `pure-client` | calls `writeWatchSearch` on `/` after complete hydration |
+| reads | `chain.connection` | `on-chain` | matrix vs incomplete vs disconnected |
 | reads | `chain.stream-truth` | `on-chain` | R12 entry book + Streams lens (factory-wide lendings) |
+| reads | `chrome.disclosure` | `pure-client` | Default matrix vs Advanced wall |
 | reads | `chrome.surface-state` | `pure-client` | landing U12: watch wall |
+| reads | `projection.portfolio-candidates` | `projection` | does not route from these counts |
+| reads | `watch.portfolio-type` | `pure-client` | hub vs collection vs detail |
 
 ### `web/hooks/useAcknowledgment.ts`
 
@@ -661,6 +676,13 @@ a `projection` count is a module where a fail-closed mistake can happen.
 | writes | `chain.vault-registry` | `on-chain` | exposes the bootstrap vault list to the rest of the app |
 | writes | `chain.wagmi-reads` | `on-chain` | registry reads |
 
+### `web/hooks/usePortfolioActivity.ts`
+
+| Direction | Key | Trust domain | Role |
+|---|---|---|---|
+| writes | `projection.activity` | `projection` | TanStack query keyed by account, block range, lockup, vaults, and lendings |
+| reads | `projection.portfolio-candidates` | `projection` | activity rows from the same scan |
+
 ### `web/hooks/useStaleBalanceGuard.ts`
 
 | Direction | Key | Trust domain | Role |
@@ -772,6 +794,13 @@ a `projection` count is a module where a fail-closed mistake can happen.
 |---|---|---|---|
 | writes | `chrome.disclosure` | `pure-client` | in-memory store; `setDisclosure` / `toggleDisclosure` |
 
+### `web/lib/discovery/portfolio-log-candidates.ts`
+
+| Direction | Key | Trust domain | Role |
+|---|---|---|---|
+| writes | `projection.activity` | `projection` | same scan as candidates; newest-first |
+| writes | `projection.portfolio-candidates` | `projection` | only `getLogs` owner for portfolio candidates |
+
 ### `web/lib/flow-history.ts`
 
 | Direction | Key | Trust domain | Role |
@@ -844,6 +873,13 @@ a `projection` count is a module where a fail-closed mistake can happen.
 | reads | `schedule.clock` | `pure-client` | landing U5: cover-date / countdown inputs |
 | reads | `schedule.skew-offset` | `pure-client` | landing U5: clamp interpolations to the deterministic formula |
 | reads | `schedule.stream-params` | `on-chain` | landing U5: vested / remaining / cover-date |
+
+### `web/lib/portfolio-matrix.ts`
+
+| Direction | Key | Trust domain | Role |
+|---|---|---|---|
+| writes | `watch.portfolio-type` | `pure-client` | chooses type or identity after complete hydration |
+| reads | `watch.portfolio-type` | `pure-client` | keeps an explicit `?type=` collection on a mixed wallet |
 
 ### `web/lib/protocol-bootstrap.ts`
 
@@ -940,7 +976,7 @@ full entry, including fail-closed guidance on `projection` keys.
 | `chain.balances` | `on-chain` | `web/hooks/useLadder.ts`<br>`web/app/assets/page.tsx` | `web/components/kit/AmountField.tsx`<br>`web/components/supply/AmountStep.tsx`<br>`web/components/assets/Converter.tsx` | `docs/maps/state/keys/chain-reads.md` |
 | `chain.block-timestamp` | `on-chain` | `web/hooks/useClock.ts` | `web/lib/payoff.ts`<br>`web/hooks/useClock.ts` | `docs/maps/state/keys/chain-reads.md` |
 | `chain.borrower-loans` | `on-chain` | `web/hooks/useBorrowerBook.ts` | `web/app/page.tsx`<br>`web/components/watch/Wall.tsx`<br>`web/components/watch/BorrowedDetail.tsx`<br>`web/components/watch/ClosedLoanDetail.tsx` | `docs/maps/state/keys/chain-reads.md` |
-| `chain.connection` | `on-chain` | `web/components/Providers.tsx`<br>`web/components/WalletRuntime.tsx` | `web/app/page.tsx`<br>`web/hooks/useChainGuard.ts`<br>`web/hooks/useWriteFlow.ts`<br>`web/hooks/useWalletChangeReset.ts`<br>`web/components/watch/Wall.tsx` | `docs/maps/state/keys/chain-reads.md` |
+| `chain.connection` | `on-chain` | `web/components/Providers.tsx`<br>`web/components/WalletRuntime.tsx` | `web/app/page.tsx`<br>`web/components/watch/WatchApp.tsx`<br>`web/hooks/useChainGuard.ts`<br>`web/hooks/useWriteFlow.ts`<br>`web/hooks/useWalletChangeReset.ts`<br>`web/components/watch/Wall.tsx` | `docs/maps/state/keys/chain-reads.md` |
 | `chain.lender-positions` | `on-chain` | `web/hooks/useLenderBook.ts` | `web/app/page.tsx`<br>`web/components/watch/Wall.tsx`<br>`web/components/watch/SuppliedDetail.tsx`<br>`web/lib/invalidate.ts` | `docs/maps/state/keys/chain-reads.md` |
 | `chain.lending-config` | `on-chain` | `web/hooks/useLending.ts`<br>`web/hooks/useLadder.ts` | `web/lib/ladder.ts`<br>`web/components/kit/RateWindow.tsx`<br>`web/components/supply/AmountStep.tsx`<br>`web/components/borrow/AmountStep.tsx` | `docs/maps/state/keys/chain-reads.md` |
 | `chain.loans-of-position` | `on-chain` | `web/hooks/useLenderBook.ts` | `web/lib/actions/claim.ts`<br>`web/components/watch/SuppliedDetail.tsx`<br>`web/components/kit/ActionButton.tsx` | `docs/maps/state/keys/chain-reads.md` |
@@ -953,7 +989,7 @@ full entry, including fail-closed guidance on `projection` keys.
 | `chain.wagmi-reads` | `on-chain` | `web/hooks/useOvrflos.ts`<br>`web/hooks/useAllMarkets.ts`<br>`web/hooks/useMarketSymbols.ts`<br>`web/hooks/useLending.ts`<br>`web/lib/invalidate.ts`<br>`web/lib/query-resource-registry.ts` | `web/lib/invalidate.ts`<br>`web/lib/query-resource-registry.ts`<br>`web/hooks/useWriteFlow.ts` | `docs/maps/state/keys/chain-reads.md` |
 | `chain.wrap-reserve` | `on-chain` | `web/components/assets/ConverterFlow.tsx`<br>`web/hooks/useWatchBalances.ts`<br>`web/lib/live-action-plan.ts` | `web/components/assets/Converter.tsx`<br>`web/components/kit/Receipt.tsx` | `docs/maps/state/keys/chain-reads.md` |
 | `chrome.copy-value.copied` | `pure-client` | `web/components/CopyValue.tsx` | `web/components/CopyValue.tsx` | `docs/maps/state/keys/view-state.md` |
-| `chrome.disclosure` | `pure-client` | `web/lib/disclosure.ts`<br>`web/components/kit/Shell.tsx`<br>`web/components/kit/DefaultHub.tsx` | `web/components/kit/Shell.tsx`<br>`web/components/kit/DefaultHub.tsx` | `docs/maps/state/keys/view-state.md` |
+| `chrome.disclosure` | `pure-client` | `web/lib/disclosure.ts`<br>`web/components/kit/Shell.tsx`<br>`web/components/kit/DefaultHub.tsx` | `web/components/kit/Shell.tsx`<br>`web/components/kit/DefaultHub.tsx`<br>`web/components/watch/WatchApp.tsx` | `docs/maps/state/keys/view-state.md` |
 | `chrome.refetch-notice` | `pure-client` | `web/lib/refetch-notice.ts`<br>`web/hooks/useIdentityQueryReset.ts` | `web/components/kit/RefetchNotice.tsx`<br>`web/components/kit/Shell.tsx` | `docs/maps/state/keys/view-state.md` |
 | `chrome.surface-state` | `pure-client` | `web/lib/surface-state.ts` | `web/components/kit/SurfaceState.tsx`<br>`web/components/watch/WatchApp.tsx`<br>`web/components/supply/SupplyFlow.tsx`<br>`web/components/borrow/BorrowFlow.tsx`<br>`web/components/assets/AssetsPage.tsx` | `docs/maps/state/keys/view-state.md` |
 | `executor.registry` | `pure-client` | `web/hooks/useTransactionExecutor.ts` | `web/hooks/useTransactionExecutor.ts` | `docs/maps/state/keys/execution-state.md` |
@@ -963,6 +999,8 @@ full entry, including fail-closed guidance on `projection` keys.
 | `persist.acknowledgment` | `pure-client` | `web/hooks/useAcknowledgment.ts` | `web/components/first-run/useAcknowledgeRiskTrace.ts`<br>`web/app/risk/page.tsx` | `docs/maps/state/keys/view-state.md` |
 | `persist.drafts` | `pure-client` | `web/lib/storage.ts`<br>`web/lib/parse.ts` | `web/components/supply/SupplyFlow.tsx`<br>`web/components/borrow/BorrowFlow.tsx` | `docs/maps/state/keys/form-state.md` |
 | `persist.receipts` | `pure-client` | `web/lib/receipts.ts`<br>`web/components/supply/SupplyFlow.tsx`<br>`web/components/borrow/BorrowFlow.tsx` | `web/lib/receipts.ts`<br>`web/hooks/useStaleBalanceGuard.ts` | `docs/maps/state/keys/execution-state.md` |
+| `projection.activity` | `projection` | `web/lib/discovery/portfolio-log-candidates.ts`<br>`web/hooks/usePortfolioActivity.ts` | `web/app/activity/page.tsx` | `docs/maps/state/keys/projection.md` |
+| `projection.portfolio-candidates` | `projection` | `web/lib/discovery/portfolio-log-candidates.ts` | `web/hooks/usePortfolioActivity.ts`<br>`web/components/watch/WatchApp.tsx` | `docs/maps/state/keys/projection.md` |
 | `query.books.borrower` | `on-chain` | `web/lib/query-keys.ts` | `web/hooks/useBorrowerBook.ts`<br>`web/lib/invalidate.ts` | `docs/maps/state/keys/chain-reads.md` |
 | `query.books.lender` | `on-chain` | `web/lib/query-keys.ts` | `web/hooks/useLenderBook.ts`<br>`web/lib/invalidate.ts` | `docs/maps/state/keys/chain-reads.md` |
 | `query.ladder` | `on-chain` | `web/lib/query-keys.ts` | `web/hooks/useLadder.ts`<br>`web/lib/invalidate.ts` | `docs/maps/state/keys/chain-reads.md` |
@@ -986,6 +1024,6 @@ full entry, including fail-closed guidance on `projection` keys.
 | `usd.staleness` | `on-chain` | `web/lib/usd.ts`<br>`web/hooks/useUsdPrice.ts` | `web/components/kit/TokenUsdSwitch.tsx`<br>`web/components/kit/StatusLine.tsx`<br>`web/components/kit/Amount.tsx` | `docs/maps/state/keys/chain-reads.md` |
 | `watch.lens` | `pure-client` | `web/components/kit/LensTabs.tsx`<br>`web/components/watch/WatchApp.tsx` | `web/components/watch/Wall.tsx`<br>`web/components/kit/LensTabs.tsx` | `docs/maps/state/keys/view-state.md` |
 | `watch.narrow-nav` | `pure-client` | `web/components/watch/Wall.tsx` | `web/components/watch/Wall.tsx` | `docs/maps/state/keys/view-state.md` |
-| `watch.portfolio-type` | `pure-client` | `web/lib/watch-url.ts` | `web/lib/watch-url.ts` | `docs/maps/state/keys/view-state.md` |
+| `watch.portfolio-type` | `pure-client` | `web/lib/watch-url.ts`<br>`web/lib/portfolio-matrix.ts`<br>`web/components/watch/WatchApp.tsx` | `web/lib/watch-url.ts`<br>`web/components/watch/WatchApp.tsx`<br>`web/lib/portfolio-matrix.ts` | `docs/maps/state/keys/view-state.md` |
 | `watch.selected-entity` | `pure-client` | `web/components/watch/Wall.tsx`<br>`web/app/page.tsx` | `web/components/watch/SuppliedDetail.tsx`<br>`web/components/watch/BorrowedDetail.tsx`<br>`web/components/watch/StreamDetail.tsx`<br>`web/components/watch/ClosedLoanDetail.tsx`<br>`web/components/watch/Wall.tsx` | `docs/maps/state/keys/view-state.md` |
 | `writeflow.is-preparing` | `pure-client` | `web/hooks/useWriteFlow.ts` | `web/hooks/useWriteFlow.ts`<br>`web/hooks/useApprovalWriteFlows.ts` | `docs/maps/state/keys/execution-state.md` |

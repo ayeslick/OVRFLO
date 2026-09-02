@@ -1,10 +1,11 @@
 import "./watch-app-mocks";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { WatchApp } from "@/components/watch/WatchApp";
 import { Wall, visibleLensTabs } from "@/components/watch/Wall";
 import { writeWatchSearch } from "@/lib/watch-url";
 import { entryBook } from "@/lib/watch-entry";
+import { resetDisclosure } from "@/lib/disclosure";
 import {
   activeLoan,
   eligibleStream,
@@ -26,6 +27,7 @@ describe("inventory — entry, lenses, watch index, first-run, degraded, narrow 
 
   afterEach(() => {
     resetWatchFx();
+    resetDisclosure();
   });
 
   it("1 ENTRY.DISCONNECTED — shell copy, CONNECT WALLET, no TVL, no empty-book lie", () => {
@@ -43,26 +45,29 @@ describe("inventory — entry, lenses, watch index, first-run, degraded, narrow 
     expect(screen.queryByText(/health factor/i)).not.toBeInTheDocument();
   });
 
-  it("2 ENTRY.READY — connected book lands on supplied watch, not first-run", () => {
+  it("2 ENTRY.READY — connected book lands on supply detail, not first-run", async () => {
     fx.connected = true;
     fx.positions = [filledPosition()];
     render(<WatchApp />);
-    expect(screen.getByRole("tab", { name: "SUPPLIED" })).toHaveAttribute("aria-selected", "true");
-    expect(screen.getByRole("button", { name: /SUPPLY #26/ })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(window.location.search).toMatch(/position=26/);
+    });
+    expect(screen.getByRole("article")).toHaveAttribute("data-region", "supplied-detail");
+    expect(screen.queryByRole("tab", { name: "SUPPLIED" })).not.toBeInTheDocument();
     expect(document.querySelector("[data-control='UI-FIRST-RUN-SURFACE']")).toBeNull();
-    expect(document.querySelector("[data-ui='UI-WATCH-WALL']")).not.toBeNull();
   });
 
-  it("D first-run — confirmed-empty books only; no demonstration loan", () => {
+  it("D empty Your OVRFLO — confirmed-empty books only; no demonstration loan", () => {
     fx.connected = true;
     render(<WatchApp />);
-    expect(document.querySelector("[data-control='UI-FIRST-RUN-SURFACE']")).not.toBeNull();
+    expect(document.querySelector("[data-ui='UI-WATCH-EMPTY']")).not.toBeNull();
+    expect(document.querySelector("[data-control='UI-FIRST-RUN-SURFACE']")).toBeNull();
     expect(screen.queryByRole("tab", { name: "SUPPLIED" })).not.toBeInTheDocument();
     expect(screen.queryByText(/demonstration/i)).not.toBeInTheDocument();
-    expect(screen.getByText(/no health factors and no liquidations/i)).toBeInTheDocument();
+    expect(document.querySelector("[data-ui='UI-WATCH-EMPTY-CREATE']")).toHaveAttribute("href", "/create/");
   });
 
-  it("C degraded status + streams discovery could-not-ask is watch, never first-run", () => {
+  it("C degraded status + streams discovery could-not-ask is incomplete, never first-run", () => {
     fx.connected = true;
     fx.streamStatus = "unavailable";
     fx.freshnessKind = "degraded";
@@ -70,6 +75,8 @@ describe("inventory — entry, lenses, watch index, first-run, degraded, narrow 
     render(<WatchApp />);
     expect(document.querySelector("[data-control='UI-FIRST-RUN-SURFACE']")).toBeNull();
     expect(screen.getByText(/STREAM DISCOVERY IS UNAVAILABLE/)).toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "STREAMS" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole("button", { name: "Go to Advanced" })[0]!);
     expect(screen.getByRole("tab", { name: "STREAMS" })).toBeInTheDocument();
     const shellStatus = document.querySelector(".kit-status");
     expect(shellStatus).toHaveAttribute("data-state", "degraded");
@@ -222,10 +229,13 @@ describe("inventory — entry, lenses, watch index, first-run, degraded, narrow 
     expect(screen.getByRole("button", { name: "BORROW AGAINST THIS STREAM" })).toBeInTheDocument();
   });
 
-  it("H narrow-viewport watch navigation — Back to supplied at 360px, in-place at 1280px", () => {
+  it("H narrow-viewport watch navigation — Back to supplied at 360px, in-place at 1280px", async () => {
     fx.connected = true;
-    fx.positions = [filledPosition()];
+    fx.positions = [filledPosition(), restingPosition()];
     const wide = render(<WatchApp />);
+    await waitFor(() => {
+      expect(window.location.search).toMatch(/type=fixed/);
+    });
     fireEvent.click(screen.getByRole("button", { name: /SUPPLY #26/ }));
     expect(window.location.search).toMatch(/position=26/);
     expect(screen.getByRole("article")).toHaveAttribute("data-region", "supplied-detail");
@@ -233,7 +243,7 @@ describe("inventory — entry, lenses, watch index, first-run, degraded, narrow 
     wide.unmount();
 
     stubViewport(360);
-    writeWatchSearch({ lens: "supplied", selection: { kind: "position", lending: LENDING, id: 26n } }, "replace");
+    writeWatchSearch({ selection: { kind: "position", lending: LENDING, id: 26n } }, "replace");
     render(<WatchApp />);
     expect(screen.getByRole("button", { name: "Back to supplied" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Back to supplied" }));

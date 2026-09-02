@@ -2,46 +2,109 @@
 
 **Slug:** `WATCH` · **Control ID prefix:** `UI-WATCH-` (`../SCHEMAS.md` §1)
 
-**Incumbent code:** `web/app/page.tsx` (R12 entry gate). U7 lands
-`web/components/watch/{Wall,SuppliedDetail,BorrowedDetail,StreamDetail,ClosedLoanDetail}.tsx`.
+**Incumbent code:** `web/app/page.tsx` mounts `WatchApp`. Default home is
+hub / collection / detail / empty / incomplete from complete hydration.
+Advanced disclosure keeps the role wall (`Wall`, details). Activity lives at
+`/activity/` and does not use the portfolio matrix.
 
-**Purpose of the region.** Home for a connected wallet that holds any protocol object:
-the wallet's entities rendered through a role lens as a wall of instruments, each
-opening its detail in place. Lenders watch earnings roll up with claim at hand;
-borrowers watch debt roll down to a known done-date; resting capital stays honestly
-inert. Actions live on the entities that own them. There is no aggregate attention
+**Purpose of the region.** Home for a connected wallet. After the bounded scan
+and full hydration complete, Your OVRFLO shows only the surface the count/type
+matrix justifies: empty plus Create, one identity's detail, one type's
+collection, or a mixed hub. Waiting and completed positions stay reachable.
+Actions live on the entities that own them. There is no aggregate attention
 strip.
 
-**Boundary.** Disconnected entry is `UI-SHELL-ENTRY-DISCONNECTED`. Guided first run is
-`first-run.md` and renders only when positions, loans, *and* stream discovery are all
-confirmed empty. Write checkpoints, SETTLEMENT trace, and receipts are `review.md`.
-Borrow / Supply / Assets flows launch from this region and from `UI-SHELL-NAV`.
+**Boundary.** Disconnected entry is `UI-WATCH-ENTRY-DISCONNECTED`. Complete
+zero loans and Fixed Returns plus a complete stream book is `UI-WATCH-EMPTY`,
+not first-run. Write checkpoints, SETTLEMENT trace, and receipts are
+`review.md`. Borrow / Supply / Assets flows launch from Create and from
+`UI-SHELL-NAV`. `/activity/` is this region and does not apply the matrix.
 
-**Entry (R12).** After `UI-SHELL-ENTRY-SYNCING`: any position, loan, or hydrated stream
-→ this region. Confirmed empty of all three → `first-run.md`. Stream discovery pending
-or could-not-ask while on-chain books read zero → this region with
-`UI-WATCH-STREAMS-DEGRADED` (never first-run).
+**Entry (R12 / KD16).** After connect: incomplete scan stays on
+`UI-WATCH-INCOMPLETE` and never writes matrix query params from a provisional
+count. Complete hydration on `/` writes the KD16 URL. A stale identity is
+stripped, then the matrix applies. Stream inventory stays Advanced density on
+`/`.
 
 ---
+
+## `UI-WATCH-EMPTY`
+
+- **ID.** `UI-WATCH-EMPTY`
+- **Purpose.** Show that complete hydration found zero Self-Repaying Loans and zero Fixed Returns, and send the user to Create.
+- **Visible when.** Connected, books complete, stream book complete and not unavailable, zero loans, zero supplies.
+- **States.** `ready` only. Incomplete and unavailable never share this representation.
+- **Action.** Create goes to `/create/`.
+- **Copy rules.** Say there are no positions yet. Name Create. Do not teach first-run copy. Do not claim emptiness while streams are still loading or unavailable.
+- **Data authority.** `on-chain` for loan and supply counts after hydration. Stream completeness blocks empty when the stream book is loading or unavailable.
+
+## `UI-WATCH-INCOMPLETE`
+
+- **ID.** `UI-WATCH-INCOMPLETE`
+- **Purpose.** Keep confirmed cards visible while discovery or hydration is still running, and refuse to route from a provisional count.
+- **Visible when.** Connected and lender, borrower, or stream books are not complete, including stream could-not-ask.
+- **States.** `incomplete` with confirmed cards if any last-known rows exist. Stream failure mounts `UI-WATCH-STREAMS-DEGRADED` here. Never empty. Never detail or collection from the count.
+- **Action.** None. Confirmed cards stay clickable. URL writes from the matrix are skipped.
+- **Copy rules.** Label `INCOMPLETE`. Say discovery is still running. Confirmed cards stay visible. This count is not a route.
+- **Data authority.** `on-chain` for last-known rows. Completeness is projection over the books. Incomplete must not write `?type=` or identity from the count.
+
+## `UI-WATCH-HUB`
+
+- **ID.** `UI-WATCH-HUB`
+- **Purpose.** Let a mixed-type wallet open one collection per type.
+- **Visible when.** Complete hydration found at least one loan and at least one Fixed Return, and the URL names neither a type collection nor an owned identity.
+- **States.** `ready`. One card per type with that type's hydrated count.
+- **Action.** View all writes `?type=loan` or `?type=fixed` and opens that collection.
+- **Copy rules.** Type names are Self-Repaying Loans and Fixed Returns. Show the count. Do not sum unlike symbols on the cards.
+- **Data authority.** `on-chain` for counts after hydration. Destination URL is `pure-client`.
+
+## `UI-WATCH-COLLECTION`
+
+- **ID.** `UI-WATCH-COLLECTION`
+- **Purpose.** List every position of one type, including waiting and completed, with per-underlying totals and sort.
+- **Visible when.** Complete hydration found multiple positions of one type and none of the other, or the URL names that type on a mixed wallet. Advanced disclosure does not replace this on Default.
+- **States.** `ready` with all hydrated rows. Sort is `id` / `status` / `amount` and only reorders. Totals group by underlying and never sum unlike symbols.
+- **Action.** A row writes that identity and opens detail. Sort does not change counts or hide rows.
+- **Copy rules.** Status stays meaningful (waiting, working, active, completed). Retired-market rows carry `retired market`.
+- **Data authority.** `on-chain` for rows. Sort is `pure-client` and is not a URL key.
+
+## `UI-WATCH-ACTIVITY`
+
+- **ID.** `UI-WATCH-ACTIVITY`
+- **Purpose.** List chain-confirmed Deposited, Borrowed, and Supplied events newest first.
+- **Visible when.** The path is `/activity/`. The portfolio matrix does not apply.
+- **States.** `incomplete` while the bounded scan is partial or failed, and while market discovery is not ready. `empty` only after the scan completes with zero rows. `ready` with newest-first rows. Wallet rejection is not a row.
+- **Action.** None. Rows are display data.
+- **Copy rules.** Label partial history `INCOMPLETE`. Empty copy only after a complete scan. Do not treat Transfers as activity.
+- **Data authority.** `projection` for log rows. Completeness is distinct from empty. Rows never gate a write.
+
+## `UI-WATCH-RETIRED`
+
+- **ID.** `UI-WATCH-RETIRED`
+- **Purpose.** Mark a position whose lending is in `VaultInfo.retiredLendings`.
+- **Visible when.** The row or detail hydrates from a retired lending. Ticket 19 owns the retired-market action set; this control is the marker only.
+- **States.** Present or absent. Type and status stay the live values.
+- **Action.** None on this ticket.
+- **Copy rules.** Marker copy is `retired market`. Do not hide the position or drop it from the matrix count.
+- **Data authority.** `on-chain` from factory retired lendings. The marker is display-only.
 
 ## `UI-WATCH-LENS`
 
 - **ID.** `UI-WATCH-LENS`
 - **Purpose.** Show one role's entities at a time: Supplied, Borrowed, or Streams.
-- **Visible when.** The watch surface is showing. A lens whose **confirmed** count is
+- **Visible when.** Advanced disclosure is on and the watch wall is showing. A lens whose **confirmed** count is
   zero is **hidden**, not rendered empty. A pending or failed book read is not a
   confirmed zero: that lens stays visible in loading or unavailable so a could-not-ask
   cannot masquerade as "you have none". When stream discovery is degraded, the Streams
-  lens remains visible so the failure has a place to live.
+  lens remains visible so the failure has a place to live. Default Your OVRFLO does not mount this tablist.
 - **States.**
   - `supplied` / `borrowed` / `streams` — the active lens.
   - `loading` / `unavailable` — the lens stays mounted while its book or discovery
     read is in flight or failed; it is not hidden and not shown as zero-count.
   - APG tablist: roving tabindex, arrow keys, Home/End, automatic activation.
-- **Action.** Switching lens updates the URL `?lens=` and writes per-wallet
-  `localStorage`. Resolution order: URL param → per-wallet memory → supplied default
-  (dual-role wallets; lenders visit most, on claim cadence). An invalid URL value is
-  ignored and the next fallback applies. Memory is keyed by lowercased address; a
+- **Action.** Switching lens writes per-wallet `localStorage` only. It does not write `?lens=`. Resolution order: per-wallet memory → supplied default
+  (dual-role wallets; lenders visit most, on claim cadence). An invalid historical URL value is
+  ignored and stripped. Memory is keyed by lowercased address; a
   different account never inherits the previous account's lens.
 - **Copy rules.** Labels: `SUPPLIED`, `BORROWED`, `STREAMS`. No counts on the tabs
   that could be mistaken for actionable badges. No `ALL` mixed book. No `NOW`/`NEXT`
