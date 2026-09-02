@@ -28,8 +28,8 @@ abstract contract OVRFLOHandler is Properties {
 
     function ovrflo_unwrap_clamped(uint256 amountSeed) public {
         uint256 balance = ovrfloToken.balanceOf(actor);
-        uint256 reserve = vault.wrappedUnderlying();
-        uint256 cap = balance < reserve ? balance : reserve;
+        uint256 tracked = reserve.wrappedUnderlying();
+        uint256 cap = balance < tracked ? balance : tracked;
         if (cap == 0) return;
         uint256 amount = clampBetween(amountSeed, 1, cap);
         ovrflo_unwrap(amount);
@@ -89,7 +89,7 @@ abstract contract OVRFLOHandler is Properties {
         // market-approval and oracle-freshness gates), discarding the whole call.
         (uint256 previewToUser, uint256 previewToStream, uint256 previewFee,) = vault.previewDeposit(_market, ptAmount);
         (uint256 streamViewToUser, uint256 streamViewToStream,) = vault.previewStream(_market, ptAmount);
-        uint256 underlyingBefore = underlying.balanceOf(actor);
+        uint256 treasuryOvrfloBefore = ovrfloToken.balanceOf(treasury);
 
         (uint256 toUser, uint256 toStream, uint256 streamId) = vault.deposit(_market, ptAmount, minToUser);
         if (toStream > 0) {
@@ -97,19 +97,19 @@ abstract contract OVRFLOHandler is Properties {
             actorStreams[actor].push(streamId);
         }
 
-        // The deposit fee leaves the actor in underlying and the vault treasury is never
-        // an actor, so the realized delta is exactly the fee charged.
-        uint256 actualFee = underlyingBefore - underlying.balanceOf(actor);
+        // The deposit fee is minted to the treasury as ovrfloToken (KD2) and the treasury
+        // is never an actor, so the realized treasury delta is exactly the fee charged.
+        uint256 actualFee = ovrfloToken.balanceOf(treasury) - treasuryOvrfloBefore;
         property_previewDeposit_matchesApplied(previewToUser, previewToStream, previewFee, toUser, toStream, actualFee); // SP-04
-        property_vaultPreview_matchesMoneyPath(streamViewToUser, streamViewToStream, toUser, toStream); // SP-10
+        property_vaultPreview_matchesMoneyPath(streamViewToUser, streamViewToStream, toUser, actualFee, toStream); // SP-10
     }
 
     function ovrflo_wrap(uint256 amount) public asActor {
-        vault.wrap(amount);
+        reserve.wrap(amount);
     }
 
     function ovrflo_unwrap(uint256 amount) public asActor {
-        vault.unwrap(amount);
+        reserve.unwrap(amount);
     }
 
     function ovrflo_claim(address _ptToken, uint256 amount) public asActor {

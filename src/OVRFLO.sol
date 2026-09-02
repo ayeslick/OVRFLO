@@ -4,6 +4,7 @@ pragma solidity ^0.8.20;
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
+import {OVRFLOReserve} from "./OVRFLOReserve.sol";
 import {OVRFLOToken} from "./OVRFLOToken.sol";
 import {IPendleOracle} from "../interfaces/IPendleOracle.sol";
 import {ISablierV2LockupLinear} from "../interfaces/ISablierV2LockupLinear.sol";
@@ -15,6 +16,9 @@ import {StreamPricing} from "./StreamPricing.sol";
 ///      1. Immediate ovrfloTokens equal to PT's current market value (based on TWAP)
 ///      2. A Sablier stream that vests the remaining discount until PT maturity
 ///      After maturity, users can burn ovrfloTokens 1:1 to claim the underlying PT tokens.
+///      The deposit fee is taken from the minted ovrfloToken; the vault never holds underlying.
+///      Wrap/unwrap of underlying lives on the column's OVRFLOReserve, which this vault
+///      constructs, and which in turn constructs the shared ovrfloToken.
 contract OVRFLO {
     using SafeERC20 for IERC20;
 
@@ -45,10 +49,6 @@ contract OVRFLO {
     error NoExcess();
     /// @dev The supplied token amount is zero.
     error ZeroAmount();
-    /// @dev The pulled token delivered less than the requested amount (fee-on-transfer behavior).
-    error TransferMismatch();
-    /// @dev `unwrap` requested more than the tracked wrap reserve holds.
-    error InsufficientReserve();
     /// @dev The Pendle oracle lacks sufficient historical data for the series' fixed TWAP duration.
     error OracleNotReady();
     /// @dev A deposit's rate-split left nothing to stream (rounding produced a zero-duration stream).
@@ -67,6 +67,8 @@ contract OVRFLO {
     error InsufficientDeposited();
     /// @dev The market has no configured series (`ptToken == address(0)`).
     error MarketNotApproved();
+    /// @dev A market's tracked deposits exceeded the PT held at the end of a deposit.
+    error DepositedExceedsBalance();
 
     /*//////////////////////////////////////////////////////////////
                                 STORAGE
@@ -78,10 +80,13 @@ contract OVRFLO {
     /// @notice Treasury address that receives protocol fees
     address public immutable TREASURY_ADDR;
 
-    /// @notice Underlying asset for wrap/unwrap and fee payment (constant per vault)
+    /// @notice The column's identity asset; the vault holds no underlying balance (constant per vault)
     address public immutable underlying;
 
-    /// @notice ovrfloToken minted/burned by this vault (constant per vault)
+    /// @notice OVRFLOReserve created by this vault; holds wrapped underlying (constant per vault)
+    address public immutable reserve;
+
+    /// @notice ovrfloToken created by the reserve, minted/burned by vault and reserve (constant per vault)
     address public immutable ovrfloToken;
 
     /// @notice Pendle TWAP oracle for PT-to-SY rate lookups (constant per vault)
@@ -89,9 +94,6 @@ contract OVRFLO {
 
     /// @notice Factory address with permission to configure markets (immutable, set at construction)
     address public immutable factory;
-
-    /// @notice Underlying deposited through wrap and reserved for 1:1 unwraps
-    uint256 public wrappedUnderlying;
 
     /// @notice OVRFLO Stream lockup used for deposit streams. Getter name stays `sablierLL`.
     ISablierV2LockupLinear public immutable sablierLL;
@@ -151,8 +153,8 @@ contract OVRFLO {
 
     /// @notice Emitted when a fee is collected
     /// @param payer The address paying the fee
-    /// @param token The token used for fee payment
-    /// @param amount The fee amount
+    /// @param token The token the fee is paid in (the vault's ovrfloToken)
+    /// @param amount The fee amount minted to the treasury
     event FeeTaken(address indexed payer, address indexed token, uint256 amount);
 
     /// @notice Emitted when a user claims PT tokens after maturity
@@ -171,27 +173,11 @@ contract OVRFLO {
     /// @param amount The amount swept
     event ExcessSwept(address indexed ptToken, address indexed to, uint256 amount);
 
-    /// @notice Emitted when a user wraps underlying into ovrfloToken
-    /// @param user The wrapper's address
-    /// @param amount Amount of underlying wrapped and ovrfloToken minted
-    event Wrapped(address indexed user, uint256 amount);
-
-    /// @notice Emitted when a user unwraps ovrfloToken back to underlying
-    /// @param user The unwrapper's address
-    /// @param amount Amount of ovrfloToken burned and underlying returned
-    event Unwrapped(address indexed user, uint256 amount);
-
-    /// @notice Emitted when excess underlying tokens are swept
-    /// @param underlying The underlying token address
-    /// @param to The recipient address
-    /// @param amount The amount swept
-    event ExcessUnderlyingSwept(address indexed underlying, address indexed to, uint256 amount);
-
     /// @notice Emitted when a new market series is approved
     /// @param market The Pendle market address
     /// @param ptToken The PT token address
     /// @param ovrfloToken The corresponding ovrflo token address
-    /// @param underlying The underlying asset for fee payment
+    /// @param underlying The column's underlying asset
     /// @param oracle Oracle used for PT-to-SY rate lookups
     /// @param twapDuration TWAP duration in seconds for oracle queries
     /// @param expiry The PT maturity timestamp
@@ -226,12 +212,13 @@ contract OVRFLO {
                               CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Initializes the OVRFLO contract and constructs its ovrfloToken
-    /// @dev The vault creates and permanently owns its token, so token ownership and
-    ///      mint/burn wiring cannot be misconfigured by an external deployer. Name and
-    ///      symbol are full ERC20 strings, reviewed by the multisig before registration.
-    /// @param admin The factory address (immutable admin for the vault's lifetime)
-    /// @param treasury The treasury address for fee collection
+    /// @notice Initializes the OVRFLO contract, its reserve, and (through the reserve) its ovrfloToken
+    /// @dev Nested constructors: the vault creates the reserve; the reserve creates the token
+    ///      with `vault = address(this)` and `reserve = msg.sender`. No external deployer can
+    ///      miswire the minters. Name and symbol are full ERC20 strings, reviewed by the
+    ///      multisig before registration.
+    /// @param admin The factory address (immutable admin for the vault and the reserve)
+    /// @param treasury The treasury address that receives the minted fee
     /// @param _underlying The underlying asset address (constant per vault)
     /// @param name_ Full ERC20 name for the vault's ovrfloToken
     /// @param symbol_ Full ERC20 symbol for the vault's ovrfloToken
@@ -256,7 +243,9 @@ contract OVRFLO {
         factory = admin;
         TREASURY_ADDR = treasury;
         underlying = _underlying;
-        ovrfloToken = address(new OVRFLOToken(name_, symbol_));
+        OVRFLOReserve createdReserve = new OVRFLOReserve(admin, _underlying, name_, symbol_, address(this));
+        reserve = address(createdReserve);
+        ovrfloToken = createdReserve.ovrfloToken();
         oracle = _oracle;
         sablierLL = ISablierV2LockupLinear(stream);
 
@@ -317,56 +306,9 @@ contract OVRFLO {
         emit ExcessSwept(ptToken, to, excess);
     }
 
-    /// @notice Sweeps underlying accidentally sent above the wrap reserve
-    /// @dev Underlying held for wrapped supply is reserved and cannot be swept. `to` is
-    ///      trusted because the caller is always the factory (admin), which is itself owned
-    ///      by a timelocked multisig; zero-address validation is intentionally omitted.
-    /// @param to The recipient address
-    function sweepExcessUnderlying(address to) external onlyAdmin {
-        uint256 balance = IERC20(underlying).balanceOf(address(this));
-        uint256 reserve = wrappedUnderlying;
-        uint256 excess = balance > reserve ? balance - reserve : 0;
-
-        if (excess == 0) revert NoExcess();
-        IERC20(underlying).safeTransfer(to, excess);
-        emit ExcessUnderlyingSwept(underlying, to, excess);
-    }
-
     /*//////////////////////////////////////////////////////////////
                             USER FUNCTIONS
     //////////////////////////////////////////////////////////////*/
-
-    /// @notice Wraps underlying 1:1 into ovrfloToken without fees or streams
-    /// @param amount Amount of underlying to wrap
-    function wrap(uint256 amount) external {
-        if (amount == 0) revert ZeroAmount();
-
-        wrappedUnderlying += amount;
-
-        uint256 balanceBefore = IERC20(underlying).balanceOf(address(this));
-        IERC20(underlying).safeTransferFrom(msg.sender, address(this), amount);
-        uint256 balanceAfter = IERC20(underlying).balanceOf(address(this));
-        if (balanceAfter - balanceBefore != amount) revert TransferMismatch();
-
-        OVRFLOToken(ovrfloToken).mint(msg.sender, amount);
-
-        emit Wrapped(msg.sender, amount);
-    }
-
-    /// @notice Unwraps ovrfloToken 1:1 into underlying when the reserve is funded
-    /// @param amount Amount of ovrfloToken to burn
-    function unwrap(uint256 amount) external {
-        if (amount == 0) revert ZeroAmount();
-
-        uint256 reserve = wrappedUnderlying;
-        if (reserve < amount) revert InsufficientReserve();
-
-        wrappedUnderlying = reserve - amount;
-        OVRFLOToken(ovrfloToken).burn(msg.sender, amount);
-        IERC20(underlying).safeTransfer(msg.sender, amount);
-
-        emit Unwrapped(msg.sender, amount);
-    }
 
     /// @dev Reverts if the TWAP oracle lacks sufficient historical data for the given duration.
     ///      Matches the freshness check performed at market onboarding in OVRFLOFactory.addMarket.
@@ -385,14 +327,17 @@ contract OVRFLO {
     }
 
     /// @notice Deposits PT tokens to receive ovrfloTokens immediately and a stream for the discount
-    /// @dev User must approve both PT token and underlying (for fee) before calling.
-    ///      The rate determines the split: if PT is at 95% of face value, user gets 95% immediately
-    ///      and 5% is streamed via Sablier until maturity.
-    ///      Fee rate is ceiling-capped at FEE_MAX_BPS by the factory at setSeriesApproved time (KTD4).
+    /// @dev User approves only the PT token before calling. The rate determines the split: if
+    ///      PT is at 95% of face value, 95% is minted now and 5% is streamed until maturity.
+    ///      The fee is taken from the immediate mint: the depositor receives `toUser - fee`
+    ///      and the treasury receives `fee`, both as ovrfloToken. `minToUser`, the returned
+    ///      `toUser`, and `Deposited.toUser` all describe the net amount the depositor received.
+    ///      Fee rate is ceiling-capped at FEE_MAX_BPS by the factory at setSeriesApproved time (KTD4),
+    ///      so the net amount cannot underflow.
     /// @param market The Pendle market address
     /// @param ptAmount Amount of PT tokens to deposit
-    /// @param minToUser Minimum ovrfloTokens to receive immediately (slippage protection)
-    /// @return toUser Amount of ovrfloTokens minted immediately to caller
+    /// @param minToUser Minimum net ovrfloTokens to receive immediately (slippage protection)
+    /// @return toUser Net amount of ovrfloTokens minted immediately to caller (after fee)
     /// @return toStream Amount of ovrfloTokens streamed until maturity via Sablier
     /// @return streamId The Sablier stream ID for tracking
     function deposit(address market, uint256 ptAmount, uint256 minToUser)
@@ -419,17 +364,17 @@ contract OVRFLO {
 
         (toUser, toStream) = _computeSplit(ptAmount, rateE18);
 
-        if (toUser < minToUser) revert SlippageExceeded();
-
         uint256 feeAmount = StreamPricing.fee(toUser, info.feeBps);
+        toUser -= feeAmount;
 
-        if (feeAmount > 0) {
-            IERC20(underlying).safeTransferFrom(msg.sender, TREASURY_ADDR, feeAmount);
-            emit FeeTaken(msg.sender, underlying, feeAmount);
-        }
+        if (toUser < minToUser) revert SlippageExceeded();
 
         OVRFLOToken token = OVRFLOToken(ovrfloToken);
         token.mint(msg.sender, toUser);
+        if (feeAmount > 0) {
+            token.mint(TREASURY_ADDR, feeAmount);
+            emit FeeTaken(msg.sender, ovrfloToken, feeAmount);
+        }
         token.mint(address(this), toStream);
 
         uint256 duration = info.expiryCached - block.timestamp;
@@ -448,6 +393,10 @@ contract OVRFLO {
         streamId = sablierLL.createWithDurations(p);
 
         emit Deposited(msg.sender, market, ptAmount, toUser, toStream, streamId);
+
+        if (marketTotalDeposited[market] > IERC20(info.ptToken).balanceOf(address(this))) {
+            revert DepositedExceedsBalance();
+        }
     }
 
     /// @notice Burns ovrfloTokens to claim PT tokens after maturity
@@ -530,9 +479,9 @@ contract OVRFLO {
     /// @notice Full deposit preview including fee calculation
     /// @param market The Pendle market address
     /// @param ptAmount Amount of PT tokens to deposit
-    /// @return toUser Amount of ovrfloTokens minted immediately
+    /// @return toUser Net amount of ovrfloTokens minted immediately to the depositor (after fee)
     /// @return toStream Amount of ovrfloTokens streamed until maturity
-    /// @return feeAmount Fee amount in underlying tokens user must pay
+    /// @return feeAmount Fee amount in ovrfloTokens minted to the treasury
     /// @return rateE18 The PT-to-SY TWAP rate used (1e18 scale)
     function previewDeposit(address market, uint256 ptAmount)
         external
@@ -543,6 +492,7 @@ contract OVRFLO {
         (info, rateE18) = _approvedRate(market);
         (toUser, toStream) = _computeSplit(ptAmount, rateE18);
         feeAmount = StreamPricing.fee(toUser, info.feeBps);
+        toUser -= feeAmount;
     }
 
     function _approvedRate(address market) internal view returns (SeriesInfo memory info, uint256 rateE18) {

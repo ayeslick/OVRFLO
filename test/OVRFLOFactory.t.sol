@@ -213,7 +213,8 @@ contract OVRFLOFactoryTest is Test, FactoryStreamBind {
         OVRFLOToken token = OVRFLOToken(ovrflo.ovrfloToken());
 
         assertTrue(address(token).code.length > 0);
-        assertEq(token.owner(), address(ovrflo));
+        assertEq(token.vault(), address(ovrflo));
+        assertEq(token.reserve(), ovrflo.reserve());
         assertEq(token.name(), "OVRFLO Wrapped Ether");
         assertEq(token.symbol(), "ovrfloWETH");
         assertEq(token.decimals(), 18);

@@ -4,7 +4,9 @@ pragma solidity ^0.8.20;
 import {Test} from "forge-std/Test.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {Vm} from "forge-std/Vm.sol";
 import {OVRFLO} from "../src/OVRFLO.sol";
+import {OVRFLOReserve} from "../src/OVRFLOReserve.sol";
 import {OVRFLOToken} from "../src/OVRFLOToken.sol";
 import {IPendleOracle} from "../interfaces/IPendleOracle.sol";
 import {ISablierV2LockupLinear} from "../interfaces/ISablierV2LockupLinear.sol";
@@ -23,6 +25,15 @@ contract MockERC20Metadata is ERC20 {
 
     function mint(address to, uint256 amount) external {
         _mint(to, amount);
+    }
+}
+
+/// @dev A PT that reports success but delivers one wei less than requested.
+contract ShortTransferPt is MockERC20Metadata {
+    constructor() MockERC20Metadata("Short PT", "SPT", 18) {}
+
+    function transferFrom(address from, address to, uint256 amount) public override returns (bool) {
+        return super.transferFrom(from, to, amount - 1);
     }
 }
 
@@ -112,6 +123,35 @@ contract OVRFLOProtocolTest is VaultMockHelpers {
         (bool ok, bytes memory data) = address(ovrflo).staticcall(abi.encodeWithSignature("ovrfloStream()"));
         assertFalse(ok);
         assertEq(data, "");
+    }
+
+    function test_Constructor_NestsReserveAndTokenWithBothMintersBound() public view {
+        OVRFLOReserve reserve = OVRFLOReserve(ovrflo.reserve());
+
+        assertEq(reserve.vault(), address(ovrflo), "reserve.vault");
+        assertEq(reserve.factory(), ADMIN, "reserve.factory");
+        assertEq(reserve.underlying(), address(underlying), "reserve.underlying");
+        assertEq(reserve.ovrfloToken(), address(ovrfloToken), "reserve.ovrfloToken == vault.ovrfloToken");
+
+        assertEq(ovrfloToken.vault(), address(ovrflo), "token.vault");
+        assertEq(ovrfloToken.reserve(), address(reserve), "token.reserve");
+        assertEq(ovrfloToken.name(), "OVRFLO Underlying");
+        assertEq(ovrfloToken.symbol(), "ovrUND");
+        assertEq(ovrfloToken.allowance(address(ovrflo), SABLIER_LL), type(uint256).max, "stream approval");
+    }
+
+    function test_VaultAbi_HasNoWrapUnwrapOrUnderlyingSweep() public {
+        bytes[4] memory calls = [
+            abi.encodeWithSignature("wrap(uint256)", 1),
+            abi.encodeWithSignature("unwrap(uint256)", 1),
+            abi.encodeWithSignature("wrappedUnderlying()"),
+            abi.encodeWithSignature("sweepExcessUnderlying(address)", TREASURY)
+        ];
+        for (uint256 i; i < calls.length; ++i) {
+            (bool ok, bytes memory data) = address(ovrflo).call(calls[i]);
+            assertFalse(ok);
+            assertEq(data, "");
+        }
     }
 
     function test_SetSeriesApproved_SetsStateApprovesSablierAndEmitsEvent() public {
@@ -239,7 +279,7 @@ contract OVRFLOProtocolTest is VaultMockHelpers {
     }
 
     function test_SweepExcessPt_RevertsForUnknownPt() public {
-        // Fund vault with underlying (simulates wrap reserve balance)
+        // Underlying sent to the vault by mistake is not a PT; the guard must not sweep it
         underlying.mint(address(ovrflo), 50 ether);
         uint256 balBefore = underlying.balanceOf(address(ovrflo));
 
@@ -267,23 +307,98 @@ contract OVRFLOProtocolTest is VaultMockHelpers {
             _seedPreviewAndBalances(MARKET_ONE, ptOne, 10 ether, 0.9e18, FEE_BPS);
         _mockSablier(user, uint128(toStream), expiry - block.timestamp, 77);
 
+        assertGt(feeAmount, 0, "fee-bearing series");
+
         vm.startPrank(user);
         vm.expectEmit(address(ovrflo));
-        emit FeeTaken(user, address(underlying), feeAmount);
+        emit FeeTaken(user, address(ovrfloToken), feeAmount);
         vm.expectEmit(address(ovrflo));
         emit Deposited(user, MARKET_ONE, 10 ether, toUser, toStream, 77);
         (uint256 actualToUser, uint256 actualToStream, uint256 streamId) = ovrflo.deposit(MARKET_ONE, 10 ether, toUser);
         vm.stopPrank();
 
-        assertEq(actualToUser, toUser);
+        assertEq(actualToUser, toUser, "returned toUser is the net amount");
         assertEq(actualToStream, toStream);
         assertEq(streamId, 77);
         assertEq(ptOne.balanceOf(user), 0);
         assertEq(ptOne.balanceOf(address(ovrflo)), 10 ether);
-        assertEq(underlying.balanceOf(TREASURY), feeAmount);
-        assertEq(ovrfloToken.balanceOf(user), toUser);
+        // Fee-from-mint: the treasury gains ovrfloToken, no underlying moves
+        assertEq(underlying.balanceOf(TREASURY), 0, "treasury underlying");
+        assertEq(underlying.balanceOf(user), 0, "user underlying");
+        assertEq(underlying.balanceOf(address(ovrflo)), 0, "vault underlying");
+        assertEq(ovrfloToken.balanceOf(TREASURY), feeAmount, "treasury fee in ovrfloToken");
+        assertEq(ovrfloToken.balanceOf(user), toUser, "user net mint");
         assertEq(ovrfloToken.balanceOf(address(ovrflo)), toStream);
+        assertEq(toUser + feeAmount + toStream, 10 ether, "net + fee + stream == ptAmount");
+        assertEq(ovrfloToken.totalSupply(), 10 ether, "no ovrfloToken outside the mint split");
         assertEq(ovrflo.marketTotalDeposited(MARKET_ONE), 10 ether);
+    }
+
+    function test_Deposit_ZeroFeeSkipsTreasuryMintAndFeeEvent() public {
+        uint256 expiry = block.timestamp + 30 days;
+        _approveSeries(MARKET_ONE, ptOne, expiry, 0);
+        (uint256 toUser, uint256 toStream, uint256 feeAmount,) =
+            _seedPreviewAndBalances(MARKET_ONE, ptOne, 10 ether, 0.9e18, 0);
+        _mockSablier(user, uint128(toStream), expiry - block.timestamp, 77);
+        assertEq(feeAmount, 0);
+
+        vm.recordLogs();
+        vm.prank(user);
+        ovrflo.deposit(MARKET_ONE, 10 ether, toUser);
+
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        bytes32 transferSig = keccak256("Transfer(address,address,uint256)");
+        bytes32 feeTakenSig = keccak256("FeeTaken(address,address,uint256)");
+        uint256 mints;
+        for (uint256 i; i < logs.length; ++i) {
+            if (logs[i].emitter == address(ovrfloToken) && logs[i].topics[0] == transferSig) {
+                assertEq(logs[i].topics[1], bytes32(0), "only mints");
+                assertTrue(logs[i].topics[2] != bytes32(uint256(uint160(TREASURY))), "no treasury mint at zero fee");
+                ++mints;
+            }
+            assertTrue(logs[i].topics[0] != feeTakenSig, "no FeeTaken at zero fee");
+        }
+        assertEq(mints, 2, "one mint to user, one to the vault for the stream");
+        assertEq(ovrfloToken.balanceOf(TREASURY), 0);
+        assertEq(ovrfloToken.totalSupply(), toUser + toStream);
+    }
+
+    function test_Deposit_SlippageGuardBoundsNetAmountAfterFee() public {
+        uint256 expiry = block.timestamp + 30 days;
+        _approveSeries(MARKET_ONE, ptOne, expiry, FEE_BPS);
+        (uint256 netToUser, uint256 toStream, uint256 feeAmount,) =
+            _seedPreviewAndBalances(MARKET_ONE, ptOne, 10 ether, 0.9e18, FEE_BPS);
+        (uint256 grossToUser,,) = ovrflo.previewStream(MARKET_ONE, 10 ether);
+        assertEq(grossToUser, netToUser + feeAmount);
+        _mockSablier(user, uint128(toStream), expiry - block.timestamp, 77);
+
+        vm.prank(user);
+        vm.expectRevert(OVRFLO.SlippageExceeded.selector);
+        ovrflo.deposit(MARKET_ONE, 10 ether, netToUser + 1);
+
+        vm.prank(user);
+        (uint256 actualToUser,,) = ovrflo.deposit(MARKET_ONE, 10 ether, netToUser);
+        assertEq(actualToUser, netToUser);
+    }
+
+    function test_Deposit_RevertsWhenPtDeliversLessThanAccounted() public {
+        ShortTransferPt shortPt = new ShortTransferPt();
+        uint256 expiry = block.timestamp + 30 days;
+        vm.prank(ADMIN);
+        ovrflo.setSeriesApproved(MARKET_TWO, address(shortPt), TWAP_DURATION, expiry, 0);
+        _mockRate(MARKET_TWO, 0.9e18);
+        (, uint256 toStream,) = ovrflo.previewStream(MARKET_TWO, 10 ether);
+        _mockSablier(user, uint128(toStream), expiry - block.timestamp, 78);
+
+        shortPt.mint(user, 10 ether);
+        vm.startPrank(user);
+        shortPt.approve(address(ovrflo), 10 ether);
+        vm.expectRevert(OVRFLO.DepositedExceedsBalance.selector);
+        ovrflo.deposit(MARKET_TWO, 10 ether, 0);
+        vm.stopPrank();
+
+        assertEq(ovrflo.marketTotalDeposited(MARKET_TWO), 0);
+        assertEq(ovrfloToken.totalSupply(), 0);
     }
 
     function test_Deposit_RevertsForUnapprovedMarket() public {
@@ -560,11 +675,12 @@ contract OVRFLOProtocolTest is VaultMockHelpers {
         assertEq(rate, 0.9e18);
         assertEq(previewRate_, 0.9e18);
         assertEq(depositRate, 0.9e18);
-        assertEq(toUser, 9 ether);
+        assertEq(toUser, 9 ether, "previewStream is the gross split");
         assertEq(toStream, 1 ether);
-        assertEq(depositToUser, 9 ether);
+        assertEq(feeAmount, 0.09 ether, "fee is 1% of the gross immediate mint, in ovrfloToken");
+        assertEq(depositToUser, 8.91 ether, "previewDeposit toUser is net of fee");
         assertEq(depositToStream, 1 ether);
-        assertEq(feeAmount, 0.09 ether);
+        assertEq(depositToUser + feeAmount, toUser);
     }
 
     function test_PreviewFunctions_RevertsWhenRateExceedsUnit() public {
@@ -609,12 +725,9 @@ contract OVRFLOProtocolTest is VaultMockHelpers {
         assertEq(rate, rateE18);
 
         pt.mint(user, ptAmount);
-        underlying.mint(user, feeAmount);
 
-        vm.startPrank(user);
+        vm.prank(user);
         pt.approve(address(ovrflo), ptAmount);
-        underlying.approve(address(ovrflo), feeAmount);
-        vm.stopPrank();
 
         if (feeBps == 0) {
             assertEq(feeAmount, 0);
@@ -627,11 +740,12 @@ contract OVRFLOProtocolTest is VaultMockHelpers {
         _deposit(MARKET_ONE, ptOne, 10 ether, 0.8e18, 0, expiry, 11);
         // marketTotalDeposited = 10, user has 8 ovrfloToken
 
-        // Wrap extra underlying to get more ovrfloToken beyond deposited PT
+        // Wrap extra underlying on the reserve to get more ovrfloToken beyond deposited PT
+        OVRFLOReserve reserve = OVRFLOReserve(ovrflo.reserve());
         underlying.mint(user, 5 ether);
         vm.startPrank(user);
-        underlying.approve(address(ovrflo), 5 ether);
-        ovrflo.wrap(5 ether);
+        underlying.approve(address(reserve), 5 ether);
+        reserve.wrap(5 ether);
         vm.stopPrank();
         // user now has 8 + 5 = 13 ovrfloToken, but marketTotalDeposited = 10
 

@@ -3,6 +3,7 @@ pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
 import {OVRFLO} from "../src/OVRFLO.sol";
+import {OVRFLOReserve} from "../src/OVRFLOReserve.sol";
 import {OVRFLOToken} from "../src/OVRFLOToken.sol";
 import {IPendleOracle} from "../interfaces/IPendleOracle.sol";
 import {ISablierV2LockupLinear} from "../interfaces/ISablierV2LockupLinear.sol";
@@ -11,6 +12,7 @@ import {MockOvrfloAdmin} from "./mocks/MockOvrfloAdmin.sol";
 
 contract OVRFLOWrapUnwrapHandler is Test {
     OVRFLO internal ovrflo;
+    OVRFLOReserve internal reserve;
     OVRFLOToken internal ovrfloToken;
     TestERC20 internal underlying;
     TestERC20 internal pt;
@@ -34,6 +36,7 @@ contract OVRFLOWrapUnwrapHandler is Test {
         uint256 expiry_
     ) {
         ovrflo = ovrflo_;
+        reserve = OVRFLOReserve(ovrflo_.reserve());
         ovrfloToken = ovrfloToken_;
         underlying = underlying_;
         pt = pt_;
@@ -84,8 +87,8 @@ contract OVRFLOWrapUnwrapHandler is Test {
         underlying.mint(actor, amount);
 
         vm.startPrank(actor);
-        underlying.approve(address(ovrflo), amount);
-        ovrflo.wrap(amount);
+        underlying.approve(address(reserve), amount);
+        reserve.wrap(amount);
         vm.stopPrank();
 
         totalWrapped += amount;
@@ -93,37 +96,37 @@ contract OVRFLOWrapUnwrapHandler is Test {
 
     function unwrap(uint256 actorSeed, uint256 amount) public {
         address actor = _actor(actorSeed);
-        uint256 maxAmount = _min(ovrfloToken.balanceOf(actor), ovrflo.wrappedUnderlying());
+        uint256 maxAmount = _min(ovrfloToken.balanceOf(actor), reserve.wrappedUnderlying());
         if (maxAmount == 0) return;
 
         amount = bound(amount, 1, maxAmount);
 
         vm.prank(actor);
-        ovrflo.unwrap(amount);
+        reserve.unwrap(amount);
 
         totalUnwrapped += amount;
     }
 
     function unwrapBeyondReserve(uint256 actorSeed, uint256 amount) public {
         address actor = _actor(actorSeed);
-        uint256 reserve = ovrflo.wrappedUnderlying();
+        uint256 tracked = reserve.wrappedUnderlying();
         uint256 balance = ovrfloToken.balanceOf(actor);
-        if (balance <= reserve) return;
+        if (balance <= tracked) return;
 
-        amount = bound(amount, reserve + 1, balance);
-        uint256 underlyingBefore = underlying.balanceOf(address(ovrflo));
+        amount = bound(amount, tracked + 1, balance);
+        uint256 underlyingBefore = underlying.balanceOf(address(reserve));
 
         vm.prank(actor);
-        vm.expectRevert(OVRFLO.InsufficientReserve.selector);
-        ovrflo.unwrap(amount);
+        vm.expectRevert(OVRFLOReserve.InsufficientReserve.selector);
+        reserve.unwrap(amount);
 
-        assertEq(ovrflo.wrappedUnderlying(), reserve);
-        assertEq(underlying.balanceOf(address(ovrflo)), underlyingBefore);
+        assertEq(reserve.wrappedUnderlying(), tracked);
+        assertEq(underlying.balanceOf(address(reserve)), underlyingBefore);
     }
 
     function sweepExcessUnderlying(uint256 amount) public {
         amount = bound(amount, 1, 50 ether);
-        underlying.mint(address(ovrflo), amount);
+        underlying.mint(address(reserve), amount);
         admin.sweepExcessUnderlying(ovrflo, actors[0]);
     }
 
@@ -146,6 +149,7 @@ contract OVRFLOWrapUnwrapInvariantTest is Test {
     uint256 internal constant RATE_E18 = 0.8e18;
 
     OVRFLO internal ovrflo;
+    OVRFLOReserve internal reserve;
     OVRFLOToken internal ovrfloToken;
     TestERC20 internal underlying;
     TestERC20 internal pt;
@@ -160,6 +164,7 @@ contract OVRFLOWrapUnwrapInvariantTest is Test {
         ovrflo = new OVRFLO(
             address(admin), TREASURY, address(underlying), "OVRFLO Underlying", "ovrfloUND", ORACLE, SABLIER_LL
         );
+        reserve = OVRFLOReserve(ovrflo.reserve());
         ovrfloToken = OVRFLOToken(ovrflo.ovrfloToken());
 
         admin.setInfo(TREASURY, address(underlying), address(ovrfloToken));
@@ -180,13 +185,17 @@ contract OVRFLOWrapUnwrapInvariantTest is Test {
     function invariant_SupplyEqualsPtBackingPlusUnderlyingReserve() public view {
         assertEq(
             ovrfloToken.totalSupply(),
-            ovrflo.marketTotalDeposited(MARKET) + ovrflo.wrappedUnderlying(),
+            ovrflo.marketTotalDeposited(MARKET) + reserve.wrappedUnderlying(),
             "supply backing mismatch"
         );
     }
 
     function invariant_WrappedReserveNeverExceedsUnderlyingBalance() public view {
-        assertLe(ovrflo.wrappedUnderlying(), underlying.balanceOf(address(ovrflo)), "reserve exceeds balance");
+        assertLe(reserve.wrappedUnderlying(), underlying.balanceOf(address(reserve)), "reserve exceeds balance");
+    }
+
+    function invariant_VaultHoldsNoUnderlying() public view {
+        assertEq(underlying.balanceOf(address(ovrflo)), 0, "vault holds underlying");
     }
 
     function invariant_UnwrapsNeverExceedSuccessfulWraps() public view {

@@ -5,6 +5,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {OVRFLO} from "../../src/OVRFLO.sol";
 import {OVRFLOLending} from "../../src/OVRFLOLending.sol";
 import {OVRFLOFactory} from "../../src/OVRFLOFactory.sol";
+import {OVRFLOReserve} from "../../src/OVRFLOReserve.sol";
 import {OVRFLOToken} from "../../src/OVRFLOToken.sol";
 import {StreamPricing} from "../../src/StreamPricing.sol";
 import {ISablierV2LockupLinear} from "../../interfaces/ISablierV2LockupLinear.sol";
@@ -165,10 +166,11 @@ contract OVRFLOLendingMainnetForkTest is OVRFLOForkBase {
         assertEq(sablier.ownerOf(streamId), address(lending), "book should hold the NFT during the loan");
         (, uint128 outstanding) = lending.loanState(loanId);
 
+        OVRFLOReserve reserve = OVRFLOReserve(ovrflo.reserve());
         _seedWstEth(USER, outstanding);
         vm.startPrank(USER);
-        IERC20(WSTETH).approve(address(ovrflo), outstanding);
-        ovrflo.wrap(outstanding);
+        IERC20(WSTETH).approve(address(reserve), outstanding);
+        reserve.wrap(outstanding);
         token.approve(address(lending), outstanding);
         lending.repay(loanId, outstanding);
         vm.stopPrank();

@@ -148,15 +148,15 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
         eq(sumPt, ptToken.totalSupply(), "GL-06: ptToken appeared or vanished outside the known holders");
     }
 
-    /// @notice GL-07: vault combined solvency — total ovrfloToken supply is backed by the
-    ///         vault's underlying plus PT, regardless of who holds the token. The
-    ///         documented combined form (2026-07-01 campaign); per-leg forms are too
-    ///         strict post-maturity.
+    /// @notice GL-07: column combined solvency — total ovrfloToken supply is backed by the
+    ///         reserve's underlying plus the vault's PT, regardless of who holds the token.
+    ///         The documented combined form (2026-07-01 campaign); per-leg forms are too
+    ///         strict post-maturity. Span re-derivation is CS1 U6.
     function property_vault_combined_solvency() public {
         lte(
             ovrfloToken.totalSupply(),
-            underlying.balanceOf(address(vault)) + ptToken.balanceOf(address(vault)),
-            "GL-07: ovrfloToken supply exceeds vault underlying + PT backing"
+            underlying.balanceOf(address(reserve)) + ptToken.balanceOf(address(vault)),
+            "GL-07: ovrfloToken supply exceeds reserve underlying + vault PT backing"
         );
     }
 
@@ -199,13 +199,13 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
 
     // ―― Liveness, donation resistance & access control ――
 
-    /// @notice GL-09: the wrap reserve never exceeds the vault's raw underlying balance —
-    ///         a donation can inflate the balance but never the reserve.
+    /// @notice GL-09: the wrap reserve never exceeds the reserve contract's raw underlying
+    ///         balance — a donation can inflate the balance but never the tracked reserve.
     function property_wrapReserve_le_balance() public {
         lte(
-            vault.wrappedUnderlying(),
-            underlying.balanceOf(address(vault)),
-            "GL-09: wrap reserve exceeds the vault's underlying balance"
+            reserve.wrappedUnderlying(),
+            underlying.balanceOf(address(reserve)),
+            "GL-09: wrap reserve exceeds the reserve's underlying balance"
         );
     }
 
@@ -567,9 +567,11 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
         _gl_assertLoanFingerprints("GL-29: an immutable loan field changed after creation");
     }
 
-    /// @notice GL-30: the vault owns its ovrfloToken for the campaign's whole life.
+    /// @notice GL-30: the ovrfloToken's two minters stay the vault and the reserve for the
+    ///         campaign's whole life.
     function property_ovrfloToken_owner_stable() public {
-        t(ovrfloToken.owner() == address(vault), "GL-30: ovrfloToken ownership left the vault");
+        t(ovrfloToken.vault() == address(vault), "GL-30: ovrfloToken vault minter left the vault");
+        t(ovrfloToken.reserve() == address(reserve), "GL-30: ovrfloToken reserve minter left the reserve");
     }
 
     /// @notice GL-31: [GL-70 successor] a closed loan's `drawn` equals the pledged
@@ -744,14 +746,17 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
         lte(residualPot, contributors, "SP-09: a closed, fully drained loan stranded more than 1 wei per contributor");
     }
 
-    /// @notice SP-10: previewStream's reported split is exactly what `deposit` applies.
+    /// @notice SP-10: previewStream's reported gross split is exactly what `deposit` applies.
+    ///         `deposit` returns the net immediate mint (KD2), so the gross immediate leg is
+    ///         the net plus the fee minted to the treasury.
     function property_vaultPreview_matchesMoneyPath(
         uint256 previewToUser,
         uint256 previewToStream,
         uint256 actualToUser,
+        uint256 actualFee,
         uint256 actualToStream
     ) internal {
-        eq(previewToUser, actualToUser, "SP-10: previewStream's toUser is not what deposit minted");
+        eq(previewToUser, actualToUser + actualFee, "SP-10: previewStream's toUser is not what deposit minted");
         eq(previewToStream, actualToStream, "SP-10: previewStream's toStream is not what deposit streamed");
     }
 

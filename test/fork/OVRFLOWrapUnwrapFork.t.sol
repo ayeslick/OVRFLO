@@ -4,6 +4,7 @@ pragma solidity ^0.8.20;
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {OVRFLO} from "../../src/OVRFLO.sol";
 import {OVRFLOFactory} from "../../src/OVRFLOFactory.sol";
+import {OVRFLOReserve} from "../../src/OVRFLOReserve.sol";
 import {OVRFLOToken} from "../../src/OVRFLOToken.sol";
 import {OVRFLOForkBase} from "./OVRFLOForkBase.t.sol";
 
@@ -18,39 +19,41 @@ contract OVRFLOWrapUnwrapForkTest is OVRFLOForkBase {
 
     function test_WrapUnwrap_RealWstEthRoundTripIsOneToOne() public {
         (, OVRFLO ovrflo, OVRFLOToken token) = _deployConfiguredSystem();
+        OVRFLOReserve reserve = OVRFLOReserve(ovrflo.reserve());
         _seedWstEth(USER, WRAP_AMOUNT);
         uint256 startingBalance = IERC20(WSTETH).balanceOf(USER);
 
         vm.startPrank(USER);
-        IERC20(WSTETH).approve(address(ovrflo), WRAP_AMOUNT);
-        ovrflo.wrap(WRAP_AMOUNT);
+        IERC20(WSTETH).approve(address(reserve), WRAP_AMOUNT);
+        reserve.wrap(WRAP_AMOUNT);
         vm.stopPrank();
 
         assertEq(token.balanceOf(USER), WRAP_AMOUNT);
-        assertEq(IERC20(WSTETH).balanceOf(address(ovrflo)), WRAP_AMOUNT);
-        assertEq(ovrflo.wrappedUnderlying(), WRAP_AMOUNT);
+        assertEq(IERC20(WSTETH).balanceOf(address(reserve)), WRAP_AMOUNT);
+        assertEq(IERC20(WSTETH).balanceOf(address(ovrflo)), 0);
+        assertEq(reserve.wrappedUnderlying(), WRAP_AMOUNT);
 
         vm.prank(USER);
-        ovrflo.unwrap(WRAP_AMOUNT);
+        reserve.unwrap(WRAP_AMOUNT);
 
         assertEq(IERC20(WSTETH).balanceOf(USER), startingBalance);
         assertEq(token.balanceOf(USER), 0);
-        assertEq(IERC20(WSTETH).balanceOf(address(ovrflo)), 0);
-        assertEq(ovrflo.wrappedUnderlying(), 0);
+        assertEq(IERC20(WSTETH).balanceOf(address(reserve)), 0);
+        assertEq(reserve.wrappedUnderlying(), 0);
     }
 
     function test_UnwrapBeyondFundedReserve_RevertsOnRealToken() public {
         (, OVRFLO ovrflo,) = _deployConfiguredSystem();
-        _wrapWstEth(ovrflo, USER, WRAP_AMOUNT);
+        OVRFLOReserve reserve = _wrapWstEth(ovrflo, USER, WRAP_AMOUNT);
 
         vm.prank(USER);
-        vm.expectRevert(OVRFLO.InsufficientReserve.selector);
-        ovrflo.unwrap(WRAP_AMOUNT + 1);
+        vm.expectRevert(OVRFLOReserve.InsufficientReserve.selector);
+        reserve.unwrap(WRAP_AMOUNT + 1);
     }
 
     function test_DepositOriginHolderCanUnwrapAgainstIndependentWrapperReserve() public {
         (, OVRFLO ovrflo, OVRFLOToken token) = _deployApprovedPrimarySeries(0);
-        _wrapWstEth(ovrflo, WRAPPER, WRAP_AMOUNT);
+        OVRFLOReserve reserve = _wrapWstEth(ovrflo, WRAPPER, WRAP_AMOUNT);
 
         deal(PRIMARY_PT, USER, PT_AMOUNT);
         (uint256 expectedToUser,,,) = ovrflo.previewDeposit(PRIMARY_MARKET, PT_AMOUNT);
@@ -64,23 +67,23 @@ contract OVRFLOWrapUnwrapForkTest is OVRFLOForkBase {
         uint256 startingWstEth = IERC20(WSTETH).balanceOf(USER);
 
         vm.prank(USER);
-        ovrflo.unwrap(unwrapAmount);
+        reserve.unwrap(unwrapAmount);
 
         assertEq(IERC20(WSTETH).balanceOf(USER), startingWstEth + unwrapAmount);
         assertEq(token.balanceOf(USER), toUser - unwrapAmount);
-        assertEq(ovrflo.wrappedUnderlying(), WRAP_AMOUNT - unwrapAmount);
+        assertEq(reserve.wrappedUnderlying(), WRAP_AMOUNT - unwrapAmount);
         assertEq(ovrflo.marketTotalDeposited(PRIMARY_MARKET), PT_AMOUNT);
     }
 
     function test_FactorySweepExcessUnderlying_RecoversDonationAndLeavesReserveUnwrappable() public {
         (OVRFLOFactory factory, OVRFLO ovrflo,) = _deployConfiguredSystem();
-        _wrapWstEth(ovrflo, WRAPPER, WRAP_AMOUNT);
+        OVRFLOReserve reserve = _wrapWstEth(ovrflo, WRAPPER, WRAP_AMOUNT);
 
         uint256 donation = 0.25 ether;
         _seedWstEth(DONOR, donation);
 
         vm.prank(DONOR);
-        assertTrue(IERC20(WSTETH).transfer(address(ovrflo), donation));
+        assertTrue(IERC20(WSTETH).transfer(address(reserve), donation));
 
         uint256 recipientBefore = IERC20(WSTETH).balanceOf(RECIPIENT);
 
@@ -88,14 +91,14 @@ contract OVRFLOWrapUnwrapForkTest is OVRFLOForkBase {
         factory.sweepExcessUnderlying(address(ovrflo), RECIPIENT);
 
         assertEq(IERC20(WSTETH).balanceOf(RECIPIENT), recipientBefore + donation);
-        assertEq(IERC20(WSTETH).balanceOf(address(ovrflo)), WRAP_AMOUNT);
-        assertEq(ovrflo.wrappedUnderlying(), WRAP_AMOUNT);
+        assertEq(IERC20(WSTETH).balanceOf(address(reserve)), WRAP_AMOUNT);
+        assertEq(reserve.wrappedUnderlying(), WRAP_AMOUNT);
 
         vm.prank(WRAPPER);
-        ovrflo.unwrap(WRAP_AMOUNT);
+        reserve.unwrap(WRAP_AMOUNT);
 
-        assertEq(IERC20(WSTETH).balanceOf(address(ovrflo)), 0);
-        assertEq(ovrflo.wrappedUnderlying(), 0);
+        assertEq(IERC20(WSTETH).balanceOf(address(reserve)), 0);
+        assertEq(reserve.wrappedUnderlying(), 0);
     }
 
     function _deployApprovedPrimarySeries(uint16 feeBps)
@@ -110,12 +113,13 @@ contract OVRFLOWrapUnwrapForkTest is OVRFLOForkBase {
         vm.stopPrank();
     }
 
-    function _wrapWstEth(OVRFLO ovrflo, address account, uint256 amount) internal {
+    function _wrapWstEth(OVRFLO ovrflo, address account, uint256 amount) internal returns (OVRFLOReserve reserve) {
+        reserve = OVRFLOReserve(ovrflo.reserve());
         _seedWstEth(account, amount);
 
         vm.startPrank(account);
-        IERC20(WSTETH).approve(address(ovrflo), amount);
-        ovrflo.wrap(amount);
+        IERC20(WSTETH).approve(address(reserve), amount);
+        reserve.wrap(amount);
         vm.stopPrank();
     }
 }

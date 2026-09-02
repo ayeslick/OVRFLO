@@ -12,6 +12,7 @@ import {StringUtils} from "./utils/StringUtils.sol";
 import {EnumerableSet} from "./utils/EnumerableSet.sol";
 import {MockERC20} from "./utils/MockERC20.sol";
 import {OVRFLO} from "../../src/OVRFLO.sol";
+import {OVRFLOReserve} from "../../src/OVRFLOReserve.sol";
 import {OVRFLOToken} from "../../src/OVRFLOToken.sol";
 import {OVRFLOLending} from "../../src/OVRFLOLending.sol";
 import {OVRFLOFactory} from "../../src/OVRFLOFactory.sol";
@@ -135,6 +136,7 @@ abstract contract Base is StringUtils, Clamp, Deployer, Math {
 
     OVRFLOFactory public factory;
     OVRFLO public vault;
+    OVRFLOReserve public reserve;
     OVRFLOToken public ovrfloToken;
     OVRFLOLendingHarness public lending;
     MockERC20 public underlying;
@@ -235,8 +237,10 @@ abstract contract Base is StringUtils, Clamp, Deployer, Math {
         );
         factory.registerOvrflo(address(vault));
         address vaultAddr = address(vault);
+        reserve = OVRFLOReserve(vault.reserve());
         ovrfloToken = OVRFLOToken(vault.ovrfloToken());
         vm.label(vaultAddr, "OVRFLO Vault");
+        vm.label(address(reserve), "OVRFLO Reserve");
         vm.label(address(ovrfloToken), "ovrfloToken");
 
         // 6. Add market (15 min TWAP, 0.1% deposit fee)
@@ -288,12 +292,12 @@ abstract contract Base is StringUtils, Clamp, Deployer, Math {
             // Mint tokens to actor
             underlying.deal(_actor, INITIAL_TOKEN_AMOUNT);
             ptToken.deal(_actor, INITIAL_TOKEN_AMOUNT);
-            // Set approvals: vault (deposit + wrap), lending (supply + repay).
+            // Set approvals: vault (deposit), reserve (wrap), lending (supply + repay).
             // Also approve lending for Sablier NFT transfers — `borrow` escrows the
             // pledged stream via `sablier.transferFrom(msg.sender, ...)`.
             vm.startPrank(_actor);
             ptToken.approve(address(vault), type(uint256).max);
-            underlying.approve(address(vault), type(uint256).max);
+            underlying.approve(address(reserve), type(uint256).max);
             underlying.approve(address(lending), type(uint256).max);
             ovrfloToken.approve(address(lending), type(uint256).max);
             MockSablier(SABLIER_ADDR).setApprovalForAll(address(lending), true);

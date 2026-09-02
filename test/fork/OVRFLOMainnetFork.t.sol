@@ -21,6 +21,7 @@ contract OVRFLOMainnetForkTest is OVRFLOForkBase {
         uint256 expectedToUser = PT_AMOUNT * PRIMARY_RATE_30M / 1e18;
         uint256 expectedToStream = PT_AMOUNT - expectedToUser;
         uint256 expectedFee = expectedToUser * FEE_BPS / 10_000;
+        uint256 expectedNetToUser = expectedToUser - expectedFee;
 
         uint256 rate = ovrflo.previewRate(PRIMARY_MARKET);
         (uint256 previewToUser, uint256 previewToStream, uint256 previewRate) =
@@ -33,7 +34,7 @@ contract OVRFLOMainnetForkTest is OVRFLOForkBase {
         assertEq(depositRate, PRIMARY_RATE_30M);
         assertEq(previewToUser, expectedToUser);
         assertEq(previewToStream, expectedToStream);
-        assertEq(depositToUser, expectedToUser);
+        assertEq(depositToUser, expectedNetToUser, "previewDeposit toUser is net of the ovrfloToken fee");
         assertEq(depositToStream, expectedToStream);
         assertEq(feeAmount, expectedFee);
     }
@@ -43,7 +44,9 @@ contract OVRFLOMainnetForkTest is OVRFLOForkBase {
         (uint256 expectedToUser, uint256 expectedToStream, uint256 feeAmount,) =
             ovrflo.previewDeposit(PRIMARY_MARKET, PT_AMOUNT);
 
-        _seedBalancesAndApprovals(ovrflo, PT_AMOUNT, feeAmount);
+        assertGt(feeAmount, 0);
+        _seedBalancesAndApprovals(ovrflo, PT_AMOUNT);
+        uint256 treasuryWstEthBefore = IERC20(WSTETH).balanceOf(TREASURY);
 
         vm.prank(USER);
         (uint256 toUser, uint256 toStream, uint256 streamId) = ovrflo.deposit(PRIMARY_MARKET, PT_AMOUNT, expectedToUser);
@@ -52,8 +55,11 @@ contract OVRFLOMainnetForkTest is OVRFLOForkBase {
         assertEq(toStream, expectedToStream);
         assertGt(streamId, 0);
         assertEq(IERC20(PRIMARY_PT).balanceOf(address(ovrflo)), PT_AMOUNT);
-        assertEq(IERC20(WSTETH).balanceOf(TREASURY), feeAmount);
+        assertEq(IERC20(WSTETH).balanceOf(TREASURY), treasuryWstEthBefore, "fee is not paid in wstETH");
+        assertEq(IERC20(WSTETH).balanceOf(address(ovrflo)), 0, "vault holds no wstETH");
+        assertEq(token.balanceOf(TREASURY), feeAmount, "fee is minted ovrfloToken");
         assertEq(token.balanceOf(USER), toUser);
+        assertEq(toUser + feeAmount + toStream, PT_AMOUNT);
         assertEq(token.balanceOf(address(ovrflo)), 0);
         assertEq(token.balanceOf(address(ovrflo.sablierLL())), toStream);
         assertEq(token.totalSupply(), PT_AMOUNT);
@@ -64,7 +70,7 @@ contract OVRFLOMainnetForkTest is OVRFLOForkBase {
         (, OVRFLO ovrflo, OVRFLOToken token) = _deployApprovedPrimarySeries(0);
         ISablierV2LockupLinear sablier = ISablierV2LockupLinear(address(ovrflo.sablierLL()));
 
-        _seedBalancesAndApprovals(ovrflo, PT_AMOUNT, 0);
+        _seedBalancesAndApprovals(ovrflo, PT_AMOUNT);
 
         vm.prank(USER);
         (uint256 toUser, uint256 toStream, uint256 streamId) = ovrflo.deposit(PRIMARY_MARKET, PT_AMOUNT, 0);
@@ -101,15 +107,11 @@ contract OVRFLOMainnetForkTest is OVRFLOForkBase {
         vm.stopPrank();
     }
 
-    function _seedBalancesAndApprovals(OVRFLO ovrflo, uint256 ptAmount, uint256 feeAmount) internal {
+    /// @dev The deposit flow needs exactly one approval (PT). The fee is minted ovrfloToken.
+    function _seedBalancesAndApprovals(OVRFLO ovrflo, uint256 ptAmount) internal {
         deal(PRIMARY_PT, USER, ptAmount);
-        if (feeAmount > 0) {
-            _seedWstEth(USER, feeAmount);
-        }
 
-        vm.startPrank(USER);
+        vm.prank(USER);
         IERC20(PRIMARY_PT).approve(address(ovrflo), ptAmount);
-        IERC20(WSTETH).approve(address(ovrflo), feeAmount);
-        vm.stopPrank();
     }
 }

@@ -4,6 +4,7 @@ pragma solidity ^0.8.20;
 import {Test} from "forge-std/Test.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {OVRFLO} from "../src/OVRFLO.sol";
+import {OVRFLOReserve} from "../src/OVRFLOReserve.sol";
 import {OVRFLOToken} from "../src/OVRFLOToken.sol";
 import {StreamPricing} from "../src/StreamPricing.sol";
 import {ISablierV2LockupLinear} from "../interfaces/ISablierV2LockupLinear.sol";
@@ -25,6 +26,7 @@ contract OVRFLOFuzzTest is VaultMockHelpers {
     address internal constant MARKET = address(0x1001);
 
     OVRFLO internal ovrflo;
+    OVRFLOReserve internal reserve;
     OVRFLOToken internal ovrfloToken;
     FuzzMockERC20 internal underlying;
     FuzzMockERC20 internal pt;
@@ -40,6 +42,7 @@ contract OVRFLOFuzzTest is VaultMockHelpers {
 
         _stubLockup();
         ovrflo = new OVRFLO(ADMIN, TREASURY, address(underlying), "OVRFLO UND", "ovrfloUND", PENDLE_ORACLE, SABLIER_LL);
+        reserve = OVRFLOReserve(ovrflo.reserve());
         ovrfloToken = OVRFLOToken(ovrflo.ovrfloToken());
 
         vm.prank(ADMIN);
@@ -60,8 +63,8 @@ contract OVRFLOFuzzTest is VaultMockHelpers {
 
         // Fund wrap reserve
         underlying.mint(address(this), 200 ether);
-        underlying.approve(address(ovrflo), 200 ether);
-        ovrflo.wrap(200 ether);
+        underlying.approve(address(reserve), 200 ether);
+        reserve.wrap(200 ether);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -128,10 +131,10 @@ contract OVRFLOFuzzTest is VaultMockHelpers {
         address user = makeAddr("dustUser");
         underlying.mint(user, amount);
         vm.startPrank(user);
-        underlying.approve(address(ovrflo), amount);
-        ovrflo.wrap(amount);
+        underlying.approve(address(reserve), amount);
+        reserve.wrap(amount);
         assertEq(ovrfloToken.balanceOf(user), amount, "wrap dust failed");
-        ovrflo.unwrap(amount);
+        reserve.unwrap(amount);
         assertEq(underlying.balanceOf(user), amount, "unwrap dust failed");
         vm.stopPrank();
     }

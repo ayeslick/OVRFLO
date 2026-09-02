@@ -3,6 +3,7 @@ pragma solidity ^0.8.20;
 
 import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 import {OVRFLO} from "./OVRFLO.sol";
+import {OVRFLOReserve} from "./OVRFLOReserve.sol";
 import {OVRFLOToken} from "./OVRFLOToken.sol";
 import {OVRFLOLending} from "./OVRFLOLending.sol";
 import {IPendleMarket} from "../interfaces/IPendleMarket.sol";
@@ -275,13 +276,13 @@ contract OVRFLOFactory is Ownable2Step {
         OVRFLO(ovrflo).sweepExcessPt(ptToken, to);
     }
 
-    /// @notice Sweep excess underlying from an OVRFLO
+    /// @notice Sweep excess underlying from an OVRFLO column's reserve
     /// @dev `to` is trusted: the caller is the multisig (factory owner), so zero-address
     ///      validation is intentionally omitted per the project's stance of trusting what
-    ///      the multisig already validates.
+    ///      the multisig already validates. The reserve is read from the registered vault.
     function sweepExcessUnderlying(address ovrflo, address to) external onlyOwner {
         _requireKnownOvrflo(ovrflo);
-        OVRFLO(ovrflo).sweepExcessUnderlying(to);
+        OVRFLOReserve(OVRFLO(ovrflo).reserve()).sweepExcessUnderlying(to);
     }
 
     /// @notice Increase Pendle oracle cardinality for a market (must be done before addMarket)

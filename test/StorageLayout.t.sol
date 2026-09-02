@@ -34,6 +34,12 @@ contract StorageLayoutTest is Test {
         _assertMatchesGolden("out/OVRFLOToken.sol/OVRFLOToken.json", "artifacts/tests/storage-layout/OVRFLOToken.json");
     }
 
+    function test_StorageLayout_OVRFLOReserve_MatchesGolden() public view {
+        _assertMatchesGolden(
+            "out/OVRFLOReserve.sol/OVRFLOReserve.json", "artifacts/tests/storage-layout/OVRFLOReserve.json"
+        );
+    }
+
     function _assertMatchesGolden(string memory artifactRel, string memory goldenRel) internal view {
         string memory artifact = vm.readFile(artifactRel);
         string memory golden = vm.readFile(goldenRel);

@@ -4,13 +4,14 @@ pragma solidity ^0.8.20;
 import {Test} from "forge-std/Test.sol";
 import {OVRFLO} from "../src/OVRFLO.sol";
 import {OVRFLOFactory} from "../src/OVRFLOFactory.sol";
+import {OVRFLOReserve} from "../src/OVRFLOReserve.sol";
 import {OVRFLOToken} from "../src/OVRFLOToken.sol";
 import {TestERC20} from "./mocks/TestERC20.sol";
 import {MockOvrfloAdmin} from "./mocks/MockOvrfloAdmin.sol";
 import {FactoryStreamBind} from "./helpers/FactoryStreamBind.sol";
 
 contract ReentrantUnderlying is TestERC20 {
-    OVRFLO public target;
+    OVRFLOReserve public target;
     uint256 public reenterAmount;
     bool public attackOnTransfer;
     bool public reentered;
@@ -18,7 +19,7 @@ contract ReentrantUnderlying is TestERC20 {
 
     constructor() TestERC20("Reentrant Underlying", "RUND") {}
 
-    function configureAttack(OVRFLO target_, uint256 reenterAmount_) external {
+    function configureAttack(OVRFLOReserve target_, uint256 reenterAmount_) external {
         target = target_;
         reenterAmount = reenterAmount_;
         attackOnTransfer = true;
@@ -29,7 +30,7 @@ contract ReentrantUnderlying is TestERC20 {
     function transfer(address to, uint256 amount) public override returns (bool) {
         if (attackOnTransfer && msg.sender == address(target) && !reentered) {
             reentered = true;
-            (reenterSucceeded,) = address(target).call(abi.encodeCall(OVRFLO.unwrap, (reenterAmount)));
+            (reenterSucceeded,) = address(target).call(abi.encodeCall(OVRFLOReserve.unwrap, (reenterAmount)));
         }
 
         return super.transfer(to, amount);
@@ -44,6 +45,8 @@ contract ShortTransferUnderlying is TestERC20 {
     }
 }
 
+/// @dev Wrap/unwrap lives on the column's OVRFLOReserve. The vault constructs the
+///      reserve; these tests reach it through `ovrflo.reserve()`.
 contract OVRFLOWrapUnwrapTest is Test, FactoryStreamBind {
     event Wrapped(address indexed user, uint256 amount);
     event Unwrapped(address indexed user, uint256 amount);
@@ -54,6 +57,7 @@ contract OVRFLOWrapUnwrapTest is Test, FactoryStreamBind {
     address internal constant DUMMY_ORACLE = address(0x0AAC);
 
     OVRFLO internal ovrflo;
+    OVRFLOReserve internal reserve;
     OVRFLOToken internal ovrfloToken;
     TestERC20 internal underlying;
     MockOvrfloAdmin internal admin;
@@ -78,8 +82,20 @@ contract OVRFLOWrapUnwrapTest is Test, FactoryStreamBind {
             DUMMY_ORACLE,
             address(admin)
         );
+        reserve = OVRFLOReserve(ovrflo.reserve());
         ovrfloToken = OVRFLOToken(ovrflo.ovrfloToken());
         admin.setInfo(TREASURY, address(underlying), address(ovrfloToken));
+    }
+
+    function test_Reserve_ConstructorRevertsForZeroAddresses() public {
+        vm.expectRevert(OVRFLOReserve.ZeroAddress.selector);
+        new OVRFLOReserve(address(0), address(underlying), "n", "s", address(this));
+
+        vm.expectRevert(OVRFLOReserve.ZeroAddress.selector);
+        new OVRFLOReserve(address(admin), address(0), "n", "s", address(this));
+
+        vm.expectRevert(OVRFLOReserve.ZeroAddress.selector);
+        new OVRFLOReserve(address(admin), address(underlying), "n", "s", address(0));
     }
 
     function test_Wrap_MintsOneToOnePullsUnderlyingIncrementsReserveAndEmitsEvent() public {
@@ -87,18 +103,19 @@ contract OVRFLOWrapUnwrapTest is Test, FactoryStreamBind {
         underlying.mint(user, amount);
 
         vm.prank(user);
-        underlying.approve(address(ovrflo), amount);
+        underlying.approve(address(reserve), amount);
 
-        vm.expectEmit(true, false, false, true, address(ovrflo));
+        vm.expectEmit(true, false, false, true, address(reserve));
         emit Wrapped(user, amount);
 
         vm.prank(user);
-        ovrflo.wrap(amount);
+        reserve.wrap(amount);
 
         assertEq(underlying.balanceOf(user), 0);
-        assertEq(underlying.balanceOf(address(ovrflo)), amount);
+        assertEq(underlying.balanceOf(address(reserve)), amount);
+        assertEq(underlying.balanceOf(address(ovrflo)), 0, "vault holds no underlying");
         assertEq(ovrfloToken.balanceOf(user), amount);
-        assertEq(ovrflo.wrappedUnderlying(), amount);
+        assertEq(reserve.wrappedUnderlying(), amount);
     }
 
     function test_Wrap_RevertsWhenUnderlyingTransfersLessThanRequestedAmount() public {
@@ -112,37 +129,38 @@ contract OVRFLOWrapUnwrapTest is Test, FactoryStreamBind {
             DUMMY_ORACLE,
             address(admin)
         );
+        OVRFLOReserve shortReserve = OVRFLOReserve(shortOvrflo.reserve());
         OVRFLOToken shortToken = OVRFLOToken(shortOvrflo.ovrfloToken());
 
         uint256 amount = 10 ether;
         shortUnderlying.mint(user, amount);
 
         vm.startPrank(user);
-        shortUnderlying.approve(address(shortOvrflo), amount);
-        vm.expectRevert(OVRFLO.TransferMismatch.selector);
-        shortOvrflo.wrap(amount);
+        shortUnderlying.approve(address(shortReserve), amount);
+        vm.expectRevert(OVRFLOReserve.TransferMismatch.selector);
+        shortReserve.wrap(amount);
         vm.stopPrank();
 
         assertEq(shortUnderlying.balanceOf(user), amount);
-        assertEq(shortUnderlying.balanceOf(address(shortOvrflo)), 0);
+        assertEq(shortUnderlying.balanceOf(address(shortReserve)), 0);
         assertEq(shortToken.balanceOf(user), 0);
-        assertEq(shortOvrflo.wrappedUnderlying(), 0);
+        assertEq(shortReserve.wrappedUnderlying(), 0);
     }
 
     function test_Unwrap_BurnsOneToOneReturnsUnderlyingDecrementsReserveAndEmitsEvent() public {
         uint256 amount = 10 ether;
         _wrap(user, amount);
 
-        vm.expectEmit(true, false, false, true, address(ovrflo));
+        vm.expectEmit(true, false, false, true, address(reserve));
         emit Unwrapped(user, amount);
 
         vm.prank(user);
-        ovrflo.unwrap(amount);
+        reserve.unwrap(amount);
 
         assertEq(underlying.balanceOf(user), amount);
-        assertEq(underlying.balanceOf(address(ovrflo)), 0);
+        assertEq(underlying.balanceOf(address(reserve)), 0);
         assertEq(ovrfloToken.balanceOf(user), 0);
-        assertEq(ovrflo.wrappedUnderlying(), 0);
+        assertEq(reserve.wrappedUnderlying(), 0);
     }
 
     function test_WrapUnwrap_RoundTripRestoresBalancesAndReserve() public {
@@ -151,15 +169,16 @@ contract OVRFLOWrapUnwrapTest is Test, FactoryStreamBind {
         uint256 startingUnderlying = underlying.balanceOf(user);
 
         vm.startPrank(user);
-        underlying.approve(address(ovrflo), amount);
-        ovrflo.wrap(amount);
-        ovrflo.unwrap(amount);
+        underlying.approve(address(reserve), amount);
+        reserve.wrap(amount);
+        reserve.unwrap(amount);
         vm.stopPrank();
 
         assertEq(underlying.balanceOf(user), startingUnderlying);
         assertEq(ovrfloToken.balanceOf(user), 0);
-        assertEq(underlying.balanceOf(address(ovrflo)), 0);
-        assertEq(ovrflo.wrappedUnderlying(), 0);
+        assertEq(underlying.balanceOf(address(reserve)), 0);
+        assertEq(reserve.wrappedUnderlying(), 0);
+        assertEq(ovrfloToken.totalSupply(), 0);
     }
 
     function test_Unwrap_RevertsWhenReserveIsInsufficientWithoutPartialFill() public {
@@ -168,11 +187,11 @@ contract OVRFLOWrapUnwrapTest is Test, FactoryStreamBind {
         ovrfloToken.mint(user, 1 ether);
 
         vm.prank(user);
-        vm.expectRevert(OVRFLO.InsufficientReserve.selector);
-        ovrflo.unwrap(6 ether);
+        vm.expectRevert(OVRFLOReserve.InsufficientReserve.selector);
+        reserve.unwrap(6 ether);
 
-        assertEq(ovrflo.wrappedUnderlying(), 5 ether);
-        assertEq(underlying.balanceOf(address(ovrflo)), 5 ether);
+        assertEq(reserve.wrappedUnderlying(), 5 ether);
+        assertEq(underlying.balanceOf(address(reserve)), 5 ether);
         assertEq(ovrfloToken.balanceOf(user), 6 ether);
     }
 
@@ -181,21 +200,21 @@ contract OVRFLOWrapUnwrapTest is Test, FactoryStreamBind {
 
         vm.prank(otherUser);
         vm.expectRevert();
-        ovrflo.unwrap(1 ether);
+        reserve.unwrap(1 ether);
 
-        assertEq(ovrflo.wrappedUnderlying(), 5 ether);
-        assertEq(underlying.balanceOf(address(ovrflo)), 5 ether);
+        assertEq(reserve.wrappedUnderlying(), 5 ether);
+        assertEq(underlying.balanceOf(address(reserve)), 5 ether);
         assertEq(ovrfloToken.balanceOf(otherUser), 0);
     }
 
     function test_WrapAndUnwrap_RevertForZeroAmount() public {
         vm.prank(user);
-        vm.expectRevert(OVRFLO.ZeroAmount.selector);
-        ovrflo.wrap(0);
+        vm.expectRevert(OVRFLOReserve.ZeroAmount.selector);
+        reserve.wrap(0);
 
         vm.prank(user);
-        vm.expectRevert(OVRFLO.ZeroAmount.selector);
-        ovrflo.unwrap(0);
+        vm.expectRevert(OVRFLOReserve.ZeroAmount.selector);
+        reserve.unwrap(0);
     }
 
     function test_Unwrap_AllowsDifferentHolderToConsumeSharedReserve() public {
@@ -205,25 +224,25 @@ contract OVRFLOWrapUnwrapTest is Test, FactoryStreamBind {
         assertTrue(ovrfloToken.transfer(otherUser, 4 ether));
 
         vm.prank(otherUser);
-        ovrflo.unwrap(4 ether);
+        reserve.unwrap(4 ether);
 
         assertEq(underlying.balanceOf(otherUser), 4 ether);
-        assertEq(ovrflo.wrappedUnderlying(), 6 ether);
-        assertEq(underlying.balanceOf(address(ovrflo)), 6 ether);
+        assertEq(reserve.wrappedUnderlying(), 6 ether);
+        assertEq(underlying.balanceOf(address(reserve)), 6 ether);
     }
 
     function test_DonatedUnderlyingDoesNotIncreaseUnwrapCapacity() public {
         _wrap(user, 5 ether);
-        underlying.mint(address(ovrflo), 5 ether);
+        underlying.mint(address(reserve), 5 ether);
         vm.prank(address(ovrflo));
         ovrfloToken.mint(user, 1 ether);
 
         vm.prank(user);
-        vm.expectRevert(OVRFLO.InsufficientReserve.selector);
-        ovrflo.unwrap(6 ether);
+        vm.expectRevert(OVRFLOReserve.InsufficientReserve.selector);
+        reserve.unwrap(6 ether);
 
-        assertEq(underlying.balanceOf(address(ovrflo)), 10 ether);
-        assertEq(ovrflo.wrappedUnderlying(), 5 ether);
+        assertEq(underlying.balanceOf(address(reserve)), 10 ether);
+        assertEq(reserve.wrappedUnderlying(), 5 ether);
     }
 
     function test_ReentrantUnderlyingCannotDoubleSpendReserveDuringUnwrap() public {
@@ -237,25 +256,26 @@ contract OVRFLOWrapUnwrapTest is Test, FactoryStreamBind {
             DUMMY_ORACLE,
             address(admin)
         );
+        OVRFLOReserve reentrantReserve = OVRFLOReserve(reentrantOvrflo.reserve());
         OVRFLOToken reentrantToken = OVRFLOToken(reentrantOvrflo.ovrfloToken());
 
         uint256 amount = 10 ether;
         reentrantUnderlying.mint(user, amount);
         vm.startPrank(user);
-        reentrantUnderlying.approve(address(reentrantOvrflo), amount);
-        reentrantOvrflo.wrap(amount);
+        reentrantUnderlying.approve(address(reentrantReserve), amount);
+        reentrantReserve.wrap(amount);
         vm.stopPrank();
 
-        reentrantUnderlying.configureAttack(reentrantOvrflo, 1 ether);
+        reentrantUnderlying.configureAttack(reentrantReserve, 1 ether);
 
         vm.prank(user);
-        reentrantOvrflo.unwrap(amount);
+        reentrantReserve.unwrap(amount);
 
         assertTrue(reentrantUnderlying.reentered());
         assertFalse(reentrantUnderlying.reenterSucceeded());
-        assertEq(reentrantOvrflo.wrappedUnderlying(), 0);
+        assertEq(reentrantReserve.wrappedUnderlying(), 0);
         assertEq(reentrantUnderlying.balanceOf(user), amount);
-        assertEq(reentrantUnderlying.balanceOf(address(reentrantOvrflo)), 0);
+        assertEq(reentrantUnderlying.balanceOf(address(reentrantReserve)), 0);
         assertEq(reentrantToken.balanceOf(user), 0);
     }
 
@@ -264,43 +284,48 @@ contract OVRFLOWrapUnwrapTest is Test, FactoryStreamBind {
         _wrap(user, amount);
 
         vm.prank(user);
-        ovrflo.unwrap(amount);
+        reserve.unwrap(amount);
 
         assertEq(underlying.balanceOf(TREASURY), 0);
+        assertEq(ovrfloToken.balanceOf(TREASURY), 0);
         assertEq(ovrfloToken.balanceOf(address(ovrflo.sablierLL())), 0);
     }
 
     function test_SweepExcessUnderlying_RevertsForNonAdminOrNoExcess() public {
         vm.prank(user);
-        vm.expectRevert(OVRFLO.NotAdmin.selector);
-        ovrflo.sweepExcessUnderlying(recipient);
+        vm.expectRevert(OVRFLOReserve.NotAdmin.selector);
+        reserve.sweepExcessUnderlying(recipient);
+
+        vm.prank(address(ovrflo));
+        vm.expectRevert(OVRFLOReserve.NotAdmin.selector);
+        reserve.sweepExcessUnderlying(recipient);
 
         _wrap(user, 5 ether);
 
         vm.prank(address(admin));
-        vm.expectRevert(OVRFLO.NoExcess.selector);
-        ovrflo.sweepExcessUnderlying(recipient);
+        vm.expectRevert(OVRFLOReserve.NoExcess.selector);
+        reserve.sweepExcessUnderlying(recipient);
     }
 
     function test_SweepExcessUnderlying_SweepsOnlyDonationAndPreservesReserve() public {
         _wrap(user, 5 ether);
-        underlying.mint(address(ovrflo), 2 ether);
+        underlying.mint(address(reserve), 2 ether);
 
-        vm.expectEmit(true, true, false, true, address(ovrflo));
+        vm.expectEmit(true, true, false, true, address(reserve));
         emit ExcessUnderlyingSwept(address(underlying), recipient, 2 ether);
 
         vm.prank(address(admin));
-        ovrflo.sweepExcessUnderlying(recipient);
+        reserve.sweepExcessUnderlying(recipient);
 
         assertEq(underlying.balanceOf(recipient), 2 ether);
-        assertEq(underlying.balanceOf(address(ovrflo)), 5 ether);
-        assertEq(ovrflo.wrappedUnderlying(), 5 ether);
+        assertEq(underlying.balanceOf(address(reserve)), 5 ether);
+        assertEq(reserve.wrappedUnderlying(), 5 ether);
 
         vm.prank(user);
-        ovrflo.unwrap(5 ether);
+        reserve.unwrap(5 ether);
 
         assertEq(underlying.balanceOf(user), 5 ether);
-        assertEq(underlying.balanceOf(address(ovrflo)), 0);
+        assertEq(underlying.balanceOf(address(reserve)), 0);
     }
 
     function test_FactorySweepExcessUnderlying_RevertsForUnauthorizedOrUnknownOvrflo() public {
@@ -326,38 +351,39 @@ contract OVRFLOWrapUnwrapTest is Test, FactoryStreamBind {
         factory.registerOvrflo(address(deployed));
 
         address deployedOvrflo = address(deployed);
+        OVRFLOReserve deployedReserve = OVRFLOReserve(deployed.reserve());
         OVRFLOToken token = OVRFLOToken(deployed.ovrfloToken());
         uint256 amount = 5 ether;
         underlying.mint(user, amount);
 
         vm.startPrank(user);
-        underlying.approve(address(deployed), amount);
-        deployed.wrap(amount);
+        underlying.approve(address(deployedReserve), amount);
+        deployedReserve.wrap(amount);
         vm.stopPrank();
 
         vm.prank(OWNER);
-        vm.expectRevert(OVRFLO.NoExcess.selector);
+        vm.expectRevert(OVRFLOReserve.NoExcess.selector);
         factory.sweepExcessUnderlying(deployedOvrflo, recipient);
 
-        underlying.mint(address(deployed), 2 ether);
+        underlying.mint(address(deployedReserve), 2 ether);
 
-        vm.expectEmit(true, true, false, true, address(deployed));
+        vm.expectEmit(true, true, false, true, address(deployedReserve));
         emit ExcessUnderlyingSwept(address(underlying), recipient, 2 ether);
 
         vm.prank(OWNER);
         factory.sweepExcessUnderlying(deployedOvrflo, recipient);
 
         assertEq(underlying.balanceOf(recipient), 2 ether);
-        assertEq(underlying.balanceOf(address(deployed)), amount);
-        assertEq(deployed.wrappedUnderlying(), amount);
+        assertEq(underlying.balanceOf(address(deployedReserve)), amount);
+        assertEq(deployedReserve.wrappedUnderlying(), amount);
         assertEq(token.balanceOf(user), amount);
     }
 
     function _wrap(address account, uint256 amount) internal {
         underlying.mint(account, amount);
         vm.startPrank(account);
-        underlying.approve(address(ovrflo), amount);
-        ovrflo.wrap(amount);
+        underlying.approve(address(reserve), amount);
+        reserve.wrap(amount);
         vm.stopPrank();
     }
 }

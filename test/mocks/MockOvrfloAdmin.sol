@@ -2,6 +2,7 @@
 pragma solidity ^0.8.20;
 
 import {OVRFLO} from "../../src/OVRFLO.sol";
+import {OVRFLOReserve} from "../../src/OVRFLOReserve.sol";
 
 /// @notice Shared mock OVRFLO admin registry for invariant and wrap/unwrap tests.
 /// @dev Superset of all InvariantOvrfloAdmin and MockOvrfloAdmin variants.
@@ -28,7 +29,7 @@ contract MockOvrfloAdmin {
     }
 
     function sweepExcessUnderlying(OVRFLO ovrflo, address to) external {
-        ovrflo.sweepExcessUnderlying(to);
+        OVRFLOReserve(ovrflo.reserve()).sweepExcessUnderlying(to);
     }
 
     function ovrfloInfo(address) external view returns (address, address, address) {
