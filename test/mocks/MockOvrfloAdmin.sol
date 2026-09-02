@@ -31,10 +31,6 @@ contract MockOvrfloAdmin {
         ovrflo.sweepExcessUnderlying(to);
     }
 
-    function setFlashFeeBps(OVRFLO ovrflo, uint16 feeBps) external {
-        ovrflo.setFlashFeeBps(feeBps);
-    }
-
     function ovrfloInfo(address) external view returns (address, address, address) {
         return (treasury, underlying, ovrfloToken);
     }

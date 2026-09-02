@@ -14,7 +14,7 @@ Spec IDs.
 - `handlers/`: protocol actions exposed to the fuzzers
 - `harness/`: (optional) harness contracts that inherit from target contracts to expose private/internal state needed by properties
 - `utils/`: shared helper libraries, assertions, clamping logic, logging, and mocks
-- `mocks/`: Pendle, Sablier, and flash-borrower stand-ins used by `Base.setup()`
+- `mocks/`: Pendle and Sablier stand-ins used by `Base.setup()`
 - `FuzzTester.sol`: main Echidna/Medusa fuzzing entry point
 - `FoundryTester.sol`: Foundry harness for quick debugging and local repros
 

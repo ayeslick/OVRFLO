@@ -4,7 +4,7 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** resolved
 **Labels:** ready-for-agent
 
 ## Session prompt (paste into a new chat)
@@ -42,15 +42,22 @@ After local verification, mark ticket checkboxes done and set Status: resolved.
 
 ## Acceptance criteria
 
-- [ ] Vault ABI has no `flashLoan`, `flashFeeBps`, `flashLoanPaused`, `setFlashFeeBps`, or `setFlashLoanPaused`
-- [ ] Factory has no flash forwarders
-- [ ] `IFlashBorrower` is deleted
-- [ ] Vault no longer inherits `ReentrancyGuard`
-- [ ] Flash unit, fork, fuzz, attack, invariant, and fizz members listed in KD1 are deleted
-- [ ] Web error-catalog test matches the post-removal vault ABI
-- [ ] Successor *Flash surface gone* holds
-- [ ] `forge build` then `forge test` green; `forge fmt --check` clean
+- [x] Vault ABI has no `flashLoan`, `flashFeeBps`, `flashLoanPaused`, `setFlashFeeBps`, or `setFlashLoanPaused`
+- [x] Factory has no flash forwarders
+- [x] `IFlashBorrower` is deleted
+- [x] Vault no longer inherits `ReentrancyGuard`
+- [x] Flash unit, fork, fuzz, attack, invariant, and fizz members listed in KD1 are deleted
+- [x] Web error-catalog test matches the post-removal vault ABI
+- [x] Successor *Flash surface gone* holds
+- [x] `forge build` then `forge test` green; `forge fmt --check` clean
 
 ## Plan unit
 
 CS1 U1 in `docs/plans/2026-08-22-001-refactor-denomination-switch-border-column-plan.md`
+
+## Deviations
+
+1. Storage goldens update in U1. Dropping `ReentrancyGuard` `_status` and the flash slots shifts vault storage. `forge test` fails unless `artifacts/tests/storage-layout/OVRFLO.json` matches. Goldens were rewritten only via `tools/scripts/check-storage-layout.sh --write`. The plan lists golden regen under U2–U5; this unit still needs it so the suite stays green.
+2. Vault `FeeTooHigh` is deleted with `setFlashFeeBps`. KD1 names `FlashPaused` / `ExceedsDeposited` / `FlashCallbackFailed`. After the setter is gone, `FeeTooHigh` has no vault caller. Factory and lending still declare `FeeTooHigh`, so the catalog entry stays.
+3. Typegen listed `BadLaunchApr` from the live lending ABI. The committed `generated.ts` did not list that error. The catalog gains copy so the ABI-enumerated test matches the regenerated union.
+4. Verification Contract item 7 does not name *Flash surface gone*. This unit treats that successor as the KD1 outcome: vault ABI, factory forwarders, `IFlashBorrower`, and the KD1 test members are gone.

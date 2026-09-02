@@ -1,51 +1,33 @@
 {
   "storage": [
     {
-      "label": "_status",
+      "label": "wrappedUnderlying",
       "offset": 0,
       "slot": "0",
       "type": "t_uint256"
     },
     {
-      "label": "wrappedUnderlying",
-      "offset": 0,
-      "slot": "1",
-      "type": "t_uint256"
-    },
-    {
-      "label": "flashFeeBps",
-      "offset": 0,
-      "slot": "2",
-      "type": "t_uint16"
-    },
-    {
-      "label": "flashLoanPaused",
-      "offset": 2,
-      "slot": "2",
-      "type": "t_bool"
-    },
-    {
       "label": "_series",
       "offset": 0,
-      "slot": "3",
+      "slot": "1",
       "type": "t_mapping(t_address,t_struct(SeriesInfo)_storage)"
     },
     {
       "label": "ptToMarket",
       "offset": 0,
-      "slot": "4",
+      "slot": "2",
       "type": "t_mapping(t_address,t_address)"
     },
     {
       "label": "marketDepositLimits",
       "offset": 0,
-      "slot": "5",
+      "slot": "3",
       "type": "t_mapping(t_address,t_uint256)"
     },
     {
       "label": "marketTotalDeposited",
       "offset": 0,
-      "slot": "6",
+      "slot": "4",
       "type": "t_mapping(t_address,t_uint256)"
     }
   ],
@@ -54,11 +36,6 @@
       "encoding": "inplace",
       "label": "address",
       "numberOfBytes": "20"
-    },
-    "t_bool": {
-      "encoding": "inplace",
-      "label": "bool",
-      "numberOfBytes": "1"
     },
     "t_mapping(t_address,t_address)": {
       "encoding": "mapping",

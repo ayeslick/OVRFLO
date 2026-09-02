@@ -20,7 +20,6 @@ import {MockSablier, MockSablierComptroller} from "./mocks/MockSablier.sol";
 import {MockPendleOracle} from "./mocks/MockPendleOracle.sol";
 import {MockPendleMarket} from "./mocks/MockPendleMarket.sol";
 import {MockStandardizedYield} from "./mocks/MockStandardizedYield.sol";
-import {MockFlashBorrower} from "./mocks/MockFlashBorrower.sol";
 
 /// @notice Base contract with state variables and setup functions
 abstract contract Base is StringUtils, Clamp, Deployer, Math {
@@ -61,9 +60,6 @@ abstract contract Base is StringUtils, Clamp, Deployer, Math {
 
     // Actor starting net worth (underlying + PT), used by Step 9 solvency properties.
     mapping(address => uint256) internal ghost_actorStartValue;
-    // Reentrancy-capable flash-loan borrower, deployed once in setup for the
-    // OVRFLO flashLoan callback path.
-    address public mockFlashBorrowerAddr;
 
     // ―― Per-loan ghosts ――
     /// @dev Hash of every `Loan` field except the three mutable servicing fields, taken
@@ -269,13 +265,6 @@ abstract contract Base is StringUtils, Clamp, Deployer, Math {
         factory.setLendingAprBounds(lendingAddr, 0, 10_000); // 0% to 100% APR, 0 is a legal min
         factory.setLendingFee(lendingAddr, 0); // 0% lending fee
         factory.setLendingTickSpacing(lendingAddr, market, TICK_SPACING);
-
-        // 9. Deploy a flash-loan borrower for the OVRFLO flashLoan reentrancy path.
-        //    Actors can also call flashLoan directly (Actor implements onFlashLoan),
-        //    but this contract exercises the deposit-during-callback path.
-        mockFlashBorrowerAddr = address(new MockFlashBorrower(vaultAddr, address(ptToken), address(underlying), market));
-        underlying.deal(mockFlashBorrowerAddr, INITIAL_TOKEN_AMOUNT);
-        vm.label(mockFlashBorrowerAddr, "MockFlashBorrower");
 
         // Fund this contract for Actor creation (Medusa doesn't fund during construction)
         vm.deal(address(this), INITIAL_ETH_BALANCE * ACTOR_LABELS.length);

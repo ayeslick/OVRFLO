@@ -10,19 +10,12 @@ import {Properties} from "../Properties.sol";
 abstract contract OVRFLOFactoryHandler is Properties {
     // ――――――――――――――――――――――――― Clamped ――――――――――――――――――――――――――
 
-    /// @dev Single admin-tier entry point covering all 8 secondary OVRFLOFactory
+    /// @dev Single admin-tier entry point covering all 6 secondary OVRFLOFactory
     ///      forwarders. `selector` picks which one fires; every call is pranked as the
     ///      factory owner (`admin`) exactly once.
-    function handler_factoryAdmin(uint8 selector, uint256 arg0, uint256 arg1, address addr0, bool flag0)
-        public
-        asAdmin
-    {
-        selector = uint8(selector % 8);
+    function handler_factoryAdmin(uint8 selector, uint256 arg0, uint256 arg1, address addr0) public asAdmin {
+        selector = uint8(selector % 6);
         if (selector == 0) {
-            _factory_setFlashFeeBps(uint16(clampBetween(arg0, 0, vault.FLASH_FEE_MAX_BPS())));
-        } else if (selector == 1) {
-            _factory_setFlashLoanPaused(flag0);
-        } else if (selector == 2) {
             // forge-lint: disable-next-line(divide-before-multiply) — flooring to a spacing multiple is the point.
             uint16 aprMin = uint16((clampBetween(arg0, 0, lending.APR_MAX_CEILING()) / TICK_SPACING) * TICK_SPACING);
             uint16 aprMax =
@@ -30,13 +23,13 @@ abstract contract OVRFLOFactoryHandler is Properties {
             uint16((clampBetween(arg1, aprMin, lending.APR_MAX_CEILING()) / TICK_SPACING) * TICK_SPACING);
             if (aprMax < aprMin) aprMax = aprMin;
             _factory_setLendingAprBounds(aprMin, aprMax);
-        } else if (selector == 3) {
+        } else if (selector == 1) {
             _factory_setLendingFee(uint16(clampBetween(arg0, 0, lending.MAX_FEE_BPS())));
-        } else if (selector == 4) {
+        } else if (selector == 2) {
             _factory_setLendingTreasury(toActor(addr0));
-        } else if (selector == 5) {
+        } else if (selector == 3) {
             _factory_setMarketDepositLimit(clampBetween(arg0, 0, type(uint256).max));
-        } else if (selector == 6) {
+        } else if (selector == 4) {
             _factory_sweepExcessPt(toActor(addr0));
         } else {
             _factory_sweepExcessUnderlying(toActor(addr0));
@@ -46,14 +39,6 @@ abstract contract OVRFLOFactoryHandler is Properties {
     // ―――――――――――――――――――――――― Unclamped ―――――――――――――――――――――――――
     // Secondary-tier calls are internal-only; the dispatcher above is the sole fuzz
     // entry point and already applies the `asAdmin` caller context.
-
-    function _factory_setFlashFeeBps(uint16 feeBps) internal {
-        factory.setFlashFeeBps(address(vault), feeBps);
-    }
-
-    function _factory_setFlashLoanPaused(bool paused) internal {
-        factory.setFlashLoanPaused(address(vault), paused);
-    }
 
     function _factory_setLendingAprBounds(uint16 aprMinBps_, uint16 aprMaxBps_) internal {
         factory.setLendingAprBounds(address(lending), aprMinBps_, aprMaxBps_);

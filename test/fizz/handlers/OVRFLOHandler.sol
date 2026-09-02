@@ -3,7 +3,6 @@ pragma solidity >=0.6.2 <0.9.0;
 
 import "../Base.sol";
 import {Properties} from "../Properties.sol";
-import {MockFlashBorrower} from "../mocks/MockFlashBorrower.sol";
 
 /// @notice Handles the interaction with OVRFLO
 abstract contract OVRFLOHandler is Properties {
@@ -46,22 +45,6 @@ abstract contract OVRFLOHandler is Properties {
         if (balance == 0) return;
         uint256 amount = clampBetween(amountSeed, 1, balance);
         ovrflo_claim(address(ptToken), amount);
-    }
-
-    function ovrflo_flashLoan_clamped(uint256 amountSeed, bytes memory data) public {
-        uint256 deposited = vault.marketTotalDeposited(market);
-        if (deposited == 0) return;
-        uint256 amount = clampBetween(amountSeed, 1, deposited);
-        ovrflo_flashLoan(address(ptToken), amount, data);
-    }
-
-    /// @dev Routes the flash loan through the dedicated MockFlashBorrower contract
-    ///      instead of an Actor, exercising the deposit-during-callback reentrancy path.
-    function ovrflo_flashLoan_viaBorrower_clamped(uint256 amountSeed, bool reenter) public {
-        uint256 deposited = vault.marketTotalDeposited(market);
-        if (deposited == 0) return;
-        uint256 amount = clampBetween(amountSeed, 1, deposited);
-        MockFlashBorrower(mockFlashBorrowerAddr).executeFlashLoan(amount, abi.encode(reenter));
     }
 
     function handler_skipTime(uint256 seed) public {
@@ -131,9 +114,5 @@ abstract contract OVRFLOHandler is Properties {
 
     function ovrflo_claim(address _ptToken, uint256 amount) public asActor {
         vault.claim(_ptToken, amount);
-    }
-
-    function ovrflo_flashLoan(address _ptToken, uint256 amount, bytes memory data) public asActor {
-        vault.flashLoan(_ptToken, amount, data);
     }
 }

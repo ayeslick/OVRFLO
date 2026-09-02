@@ -129,13 +129,12 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     ///         holder set accounts for the entire totalSupply. `ovrfloToken` is
     ///         deliberately excluded — the vault genuinely mints and burns it.
     function property_erc20_supply_conservation() public {
-        address[8] memory holders = [
+        address[7] memory holders = [
             address(this),
             address(vault),
             address(lending),
             address(factory),
             SABLIER_ADDR,
-            mockFlashBorrowerAddr,
             address(mockSY),
             address(mockMarket)
         ];

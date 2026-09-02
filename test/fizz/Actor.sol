@@ -7,12 +7,6 @@ contract Actor {
 
     receive() external payable {}
 
-    // ――――――――――――――――――― Flash loan borrower ――――――――――――――――――――
-
-    function onFlashLoan(address, address, uint256, uint256, bytes calldata) external pure returns (bytes32) {
-        return keccak256("OVRFLO.onFlashLoan");
-    }
-
     // ――――――――――――――――――――― ERC-721 receiver ―――――――――――――――――――――
 
     function onERC721Received(address, address, uint256, bytes calldata) external pure returns (bytes4) {

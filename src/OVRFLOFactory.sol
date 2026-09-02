@@ -284,22 +284,6 @@ contract OVRFLOFactory is Ownable2Step {
         OVRFLO(ovrflo).sweepExcessUnderlying(to);
     }
 
-    /// @notice Set the flash loan fee on an OVRFLO vault
-    /// @param ovrflo The OVRFLO contract address
-    /// @param feeBps The flash loan fee in basis points (max OVRFLO.FLASH_FEE_MAX_BPS)
-    function setFlashFeeBps(address ovrflo, uint16 feeBps) external onlyOwner {
-        _requireKnownOvrflo(ovrflo);
-        OVRFLO(ovrflo).setFlashFeeBps(feeBps);
-    }
-
-    /// @notice Pause or unpause flash loans on an OVRFLO vault
-    /// @param ovrflo The OVRFLO contract address
-    /// @param paused True to pause, false to unpause
-    function setFlashLoanPaused(address ovrflo, bool paused) external onlyOwner {
-        _requireKnownOvrflo(ovrflo);
-        OVRFLO(ovrflo).setFlashLoanPaused(paused);
-    }
-
     /// @notice Increase Pendle oracle cardinality for a market (must be done before addMarket)
     /// @param market The Pendle market address
     /// @param twapDuration TWAP duration in seconds

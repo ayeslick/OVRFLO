@@ -3,12 +3,10 @@ pragma solidity ^0.8.20;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {ReentrancyGuard} from "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {OVRFLOToken} from "./OVRFLOToken.sol";
 import {IPendleOracle} from "../interfaces/IPendleOracle.sol";
 import {ISablierV2LockupLinear} from "../interfaces/ISablierV2LockupLinear.sol";
-import {IFlashBorrower} from "../interfaces/IFlashBorrower.sol";
 import {StreamPricing} from "./StreamPricing.sol";
 
 /// @title OVRFLO
@@ -17,7 +15,7 @@ import {StreamPricing} from "./StreamPricing.sol";
 ///      1. Immediate ovrfloTokens equal to PT's current market value (based on TWAP)
 ///      2. A Sablier stream that vests the remaining discount until PT maturity
 ///      After maturity, users can burn ovrfloTokens 1:1 to claim the underlying PT tokens.
-contract OVRFLO is ReentrancyGuard {
+contract OVRFLO {
     using SafeERC20 for IERC20;
 
     /*//////////////////////////////////////////////////////////////
@@ -26,12 +24,6 @@ contract OVRFLO is ReentrancyGuard {
 
     /// @notice Scale factor for 18-decimal precision math
     uint256 public constant WAD = 1e18;
-
-    /// @notice Maximum flash loan fee in basis points (1%)
-    uint16 public constant FLASH_FEE_MAX_BPS = 100;
-
-    /// @notice EIP-3156-inspired callback success hash for flash loans
-    bytes32 private constant FLASH_CALLBACK_SUCCESS = keccak256("OVRFLO.onFlashLoan");
 
     /*//////////////////////////////////////////////////////////////
                                 ERRORS
@@ -73,15 +65,6 @@ contract OVRFLO is ReentrancyGuard {
     error NotMatured();
     /// @dev `claim` requested more than the market's tracked total deposited.
     error InsufficientDeposited();
-    /// @dev Flash loans are currently paused.
-    error FlashPaused();
-    /// @dev The requested flash loan amount exceeds the market's total deposited PT.
-    error ExceedsDeposited();
-    /// @dev The flash borrower's callback did not return the expected success value.
-    error FlashCallbackFailed();
-    /// @dev `feeBps` exceeds its configured maximum.
-    /// @dev A constructor address argument has no code.
-    error FeeTooHigh();
     /// @dev The market has no configured series (`ptToken == address(0)`).
     error MarketNotApproved();
 
@@ -109,12 +92,6 @@ contract OVRFLO is ReentrancyGuard {
 
     /// @notice Underlying deposited through wrap and reserved for 1:1 unwraps
     uint256 public wrappedUnderlying;
-
-    /// @notice Flash loan fee in basis points (0 = free, max FLASH_FEE_MAX_BPS)
-    uint16 public flashFeeBps;
-
-    /// @notice Whether flash loans are paused (circuit breaker, admin-controlled)
-    bool public flashLoanPaused;
 
     /// @notice OVRFLO Stream lockup used for deposit streams. Getter name stays `sablierLL`.
     ISablierV2LockupLinear public immutable sablierLL;
@@ -234,21 +211,6 @@ contract OVRFLO is ReentrancyGuard {
     /// @param market The Pendle market address
     /// @param limit The new deposit limit (0 = unlimited)
     event MarketDepositLimitSet(address indexed market, uint256 limit);
-
-    /// @notice Emitted when a PT flash loan is executed
-    /// @param borrower The flash loan borrower
-    /// @param ptToken The PT token address lent
-    /// @param amount The amount of PT tokens lent
-    /// @param fee The fee in underlying tokens charged
-    event FlashLoaned(address indexed borrower, address indexed ptToken, uint256 amount, uint256 fee);
-
-    /// @notice Emitted when the flash loan fee is updated
-    /// @param feeBps The new fee in basis points
-    event FlashFeeBpsSet(uint16 feeBps);
-
-    /// @notice Emitted when the flash loan pause state is updated
-    /// @param paused The new pause state
-    event FlashLoanPausedSet(bool paused);
 
     /*//////////////////////////////////////////////////////////////
                                 MODIFIERS
@@ -512,60 +474,6 @@ contract OVRFLO is ReentrancyGuard {
     }
 
     /*//////////////////////////////////////////////////////////////
-                          FLASH LOAN
-    //////////////////////////////////////////////////////////////*/
-
-    /// @notice Flash-loans PT tokens to a borrower contract that implements IFlashBorrower.
-    /// @dev PT is sent before the callback and pulled back via safeTransferFrom after.
-    ///      A fee in underlying is charged to the treasury. nonReentrant blocks nested
-    ///      flash loans but does not block deposit/wrap/unwrap during the callback.
-    ///      Flash fee rate is ceiling-capped at FLASH_FEE_MAX_BPS by setFlashFeeBps (admin-gated).
-    /// @param ptToken The PT token address to flash-loan
-    /// @param amount The amount of PT tokens to lend
-    /// @param data Arbitrary data passed to the borrower's callback
-    function flashLoan(address ptToken, uint256 amount, bytes calldata data) external nonReentrant {
-        address market = ptToMarket[ptToken];
-        if (market == address(0)) revert UnknownPT();
-
-        SeriesInfo storage info = _series[market];
-        if (flashLoanPaused) revert FlashPaused();
-        if (block.timestamp >= info.expiryCached) revert Matured();
-        if (amount == 0) revert ZeroAmount();
-        if (amount > marketTotalDeposited[market]) revert ExceedsDeposited();
-
-        uint256 rateE18 = _freshRate(market, info.twapDurationFixed);
-        uint256 fee = StreamPricing.fee(Math.mulDiv(amount, rateE18, WAD), flashFeeBps);
-
-        IERC20(ptToken).safeTransfer(msg.sender, amount);
-
-        bytes32 ret = IFlashBorrower(msg.sender).onFlashLoan(msg.sender, ptToken, amount, fee, data);
-        if (ret != FLASH_CALLBACK_SUCCESS) revert FlashCallbackFailed();
-
-        IERC20(ptToken).safeTransferFrom(msg.sender, address(this), amount);
-
-        if (fee > 0) {
-            IERC20(underlying).safeTransferFrom(msg.sender, TREASURY_ADDR, fee);
-        }
-
-        emit FlashLoaned(msg.sender, ptToken, amount, fee);
-    }
-
-    /// @notice Sets the flash loan fee in basis points (admin only)
-    /// @param feeBps The new fee in basis points (max FLASH_FEE_MAX_BPS)
-    function setFlashFeeBps(uint16 feeBps) external onlyAdmin {
-        if (feeBps > FLASH_FEE_MAX_BPS) revert FeeTooHigh();
-        flashFeeBps = feeBps;
-        emit FlashFeeBpsSet(feeBps);
-    }
-
-    /// @notice Pauses or unpauses flash loans (admin only)
-    /// @param paused True to pause, false to unpause
-    function setFlashLoanPaused(bool paused) external onlyAdmin {
-        flashLoanPaused = paused;
-        emit FlashLoanPausedSet(paused);
-    }
-
-    /*//////////////////////////////////////////////////////////////
                             VIEW FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
@@ -644,8 +552,7 @@ contract OVRFLO is ReentrancyGuard {
     }
 
     /// @dev Reads the PT-to-SY rate after verifying the oracle has enough history for the
-    ///      market's fixed TWAP window. Used by `_approvedRate` (deposit/preview path) and
-    ///      directly by `flashLoan` (which has its own `ptToMarket` approval gate).
+    ///      market's fixed TWAP window. Used by `_approvedRate` (deposit/preview path).
     function _freshRate(address market, uint32 twapDurationFixed) internal view returns (uint256 rateE18) {
         _requireOracleFresh(market, twapDurationFixed);
         rateE18 = IPendleOracle(oracle).getPtToSyRate(market, twapDurationFixed);

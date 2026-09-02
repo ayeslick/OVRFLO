@@ -19,13 +19,6 @@ export const ovrfloAbi = [
   {
     type: 'function',
     inputs: [],
-    name: 'FLASH_FEE_MAX_BPS',
-    outputs: [{ name: '', internalType: 'uint16', type: 'uint16' }],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [],
     name: 'MIN_PT_AMOUNT',
     outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
     stateMutability: 'view',
@@ -81,31 +74,6 @@ export const ovrfloAbi = [
     inputs: [],
     name: 'factory',
     outputs: [{ name: '', internalType: 'address', type: 'address' }],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [],
-    name: 'flashFeeBps',
-    outputs: [{ name: '', internalType: 'uint16', type: 'uint16' }],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [
-      { name: 'ptToken', internalType: 'address', type: 'address' },
-      { name: 'amount', internalType: 'uint256', type: 'uint256' },
-      { name: 'data', internalType: 'bytes', type: 'bytes' },
-    ],
-    name: 'flashLoan',
-    outputs: [],
-    stateMutability: 'nonpayable',
-  },
-  {
-    type: 'function',
-    inputs: [],
-    name: 'flashLoanPaused',
-    outputs: [{ name: '', internalType: 'bool', type: 'bool' }],
     stateMutability: 'view',
   },
   {
@@ -206,20 +174,6 @@ export const ovrfloAbi = [
       { name: 'oracle_', internalType: 'address', type: 'address' },
     ],
     stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [{ name: 'feeBps', internalType: 'uint16', type: 'uint16' }],
-    name: 'setFlashFeeBps',
-    outputs: [],
-    stateMutability: 'nonpayable',
-  },
-  {
-    type: 'function',
-    inputs: [{ name: 'paused', internalType: 'bool', type: 'bool' }],
-    name: 'setFlashLoanPaused',
-    outputs: [],
-    stateMutability: 'nonpayable',
   },
   {
     type: 'function',
@@ -429,53 +383,6 @@ export const ovrfloAbi = [
     anonymous: false,
     inputs: [
       {
-        name: 'feeBps',
-        internalType: 'uint16',
-        type: 'uint16',
-        indexed: false,
-      },
-    ],
-    name: 'FlashFeeBpsSet',
-  },
-  {
-    type: 'event',
-    anonymous: false,
-    inputs: [
-      { name: 'paused', internalType: 'bool', type: 'bool', indexed: false },
-    ],
-    name: 'FlashLoanPausedSet',
-  },
-  {
-    type: 'event',
-    anonymous: false,
-    inputs: [
-      {
-        name: 'borrower',
-        internalType: 'address',
-        type: 'address',
-        indexed: true,
-      },
-      {
-        name: 'ptToken',
-        internalType: 'address',
-        type: 'address',
-        indexed: true,
-      },
-      {
-        name: 'amount',
-        internalType: 'uint256',
-        type: 'uint256',
-        indexed: false,
-      },
-      { name: 'fee', internalType: 'uint256', type: 'uint256', indexed: false },
-    ],
-    name: 'FlashLoaned',
-  },
-  {
-    type: 'event',
-    anonymous: false,
-    inputs: [
-      {
         name: 'market',
         internalType: 'address',
         type: 'address',
@@ -575,10 +482,6 @@ export const ovrfloAbi = [
   },
   { type: 'error', inputs: [], name: 'BelowMinPT' },
   { type: 'error', inputs: [], name: 'DepositLimitExceeded' },
-  { type: 'error', inputs: [], name: 'ExceedsDeposited' },
-  { type: 'error', inputs: [], name: 'FeeTooHigh' },
-  { type: 'error', inputs: [], name: 'FlashCallbackFailed' },
-  { type: 'error', inputs: [], name: 'FlashPaused' },
   { type: 'error', inputs: [], name: 'InsufficientDeposited' },
   { type: 'error', inputs: [], name: 'InsufficientReserve' },
   { type: 'error', inputs: [], name: 'MarketNotApproved' },
@@ -787,26 +690,6 @@ export const ovrfloFactoryAbi = [
     type: 'function',
     inputs: [],
     name: 'renounceOwnership',
-    outputs: [],
-    stateMutability: 'nonpayable',
-  },
-  {
-    type: 'function',
-    inputs: [
-      { name: 'ovrflo', internalType: 'address', type: 'address' },
-      { name: 'feeBps', internalType: 'uint16', type: 'uint16' },
-    ],
-    name: 'setFlashFeeBps',
-    outputs: [],
-    stateMutability: 'nonpayable',
-  },
-  {
-    type: 'function',
-    inputs: [
-      { name: 'ovrflo', internalType: 'address', type: 'address' },
-      { name: 'paused', internalType: 'bool', type: 'bool' },
-    ],
-    name: 'setFlashLoanPaused',
     outputs: [],
     stateMutability: 'nonpayable',
   },
@@ -2069,6 +1952,7 @@ export const ovrfloLendingAbi = [
   { type: 'error', inputs: [], name: 'AprTooHigh' },
   { type: 'error', inputs: [], name: 'AtCapacity' },
   { type: 'error', inputs: [], name: 'BadAprBounds' },
+  { type: 'error', inputs: [], name: 'BadLaunchApr' },
   { type: 'error', inputs: [], name: 'BelowMinAcceptable' },
   { type: 'error', inputs: [], name: 'BelowMinimum' },
   { type: 'error', inputs: [], name: 'CancelableStream' },

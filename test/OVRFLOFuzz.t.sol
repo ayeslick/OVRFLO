@@ -10,32 +10,12 @@ import {ISablierV2LockupLinear} from "../interfaces/ISablierV2LockupLinear.sol";
 import {VaultMockHelpers} from "./helpers/VaultMockHelpers.sol";
 import {LendingMockFixture} from "./helpers/LendingMockFixture.sol";
 import {OVRFLOLending} from "../src/OVRFLOLending.sol";
-import {IFlashBorrower} from "../interfaces/IFlashBorrower.sol";
 
 contract FuzzMockERC20 is ERC20 {
     constructor(string memory name_, string memory symbol_) ERC20(name_, symbol_) {}
 
     function mint(address to, uint256 amount) external {
         _mint(to, amount);
-    }
-}
-
-contract FuzzFlashBorrower is IFlashBorrower {
-    bytes32 private constant CALLBACK_SUCCESS = keccak256("OVRFLO.onFlashLoan");
-
-    OVRFLO public vault;
-
-    constructor(OVRFLO vault_) {
-        vault = vault_;
-    }
-
-    function executeFlashLoan(address ptToken, uint256 amount, bytes calldata data) external {
-        vault.flashLoan(ptToken, amount, data);
-    }
-
-    function onFlashLoan(address, address, uint256, uint256, bytes calldata) external view returns (bytes32) {
-        require(msg.sender == address(vault), "not vault");
-        return CALLBACK_SUCCESS;
     }
 }
 
@@ -48,7 +28,6 @@ contract OVRFLOFuzzTest is VaultMockHelpers {
     OVRFLOToken internal ovrfloToken;
     FuzzMockERC20 internal underlying;
     FuzzMockERC20 internal pt;
-    FuzzFlashBorrower internal borrower;
 
     uint256 internal constant DEPOSIT_AMOUNT = 100 ether;
     uint256 internal constant RATE_95 = 0.95e18;
@@ -79,14 +58,6 @@ contract OVRFLOFuzzTest is VaultMockHelpers {
         ovrflo.deposit(MARKET, DEPOSIT_AMOUNT, 0);
         vm.stopPrank();
 
-        borrower = new FuzzFlashBorrower(ovrflo);
-
-        underlying.mint(address(borrower), 1_000 ether);
-        vm.startPrank(address(borrower));
-        pt.approve(address(ovrflo), type(uint256).max);
-        underlying.approve(address(ovrflo), type(uint256).max);
-        vm.stopPrank();
-
         // Fund wrap reserve
         underlying.mint(address(this), 200 ether);
         underlying.approve(address(ovrflo), 200 ether);
@@ -108,27 +79,6 @@ contract OVRFLOFuzzTest is VaultMockHelpers {
         assertEq(toUser + toStream, ptAmount, "split doesn't sum to ptAmount");
         assertLe(toUser, ptAmount, "toUser exceeds ptAmount");
         assertGt(toStream, 0, "toStream should be > 0 for rate < 1e18");
-    }
-
-    /*//////////////////////////////////////////////////////////////
-                    R11: FLASH LOAN FEE CORRECTNESS
-    //////////////////////////////////////////////////////////////*/
-
-    function test_Fuzz_FlashLoanFee(uint256 amountSeed, uint256 rateSeed, uint16 feeBpsSeed) public {
-        uint256 amount = bound(amountSeed, 1, DEPOSIT_AMOUNT);
-        uint256 rateE18 = bound(rateSeed, 0, 1.5e18);
-        uint16 feeBps = uint16(bound(uint256(feeBpsSeed), 0, 100));
-
-        _mockRate(MARKET, rateE18);
-        vm.prank(ADMIN);
-        ovrflo.setFlashFeeBps(feeBps);
-
-        uint256 expectedFee = _computeFee(amount, rateE18, feeBps);
-        uint256 treasuryBefore = underlying.balanceOf(TREASURY);
-
-        borrower.executeFlashLoan(address(pt), amount, "");
-
-        assertEq(underlying.balanceOf(TREASURY) - treasuryBefore, expectedFee, "fee mismatch");
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -186,14 +136,6 @@ contract OVRFLOFuzzTest is VaultMockHelpers {
         vm.stopPrank();
     }
 
-    function test_Fuzz_DustFlashLoan(uint256 amountSeed) public {
-        uint256 amount = bound(amountSeed, 1, 100);
-
-        borrower.executeFlashLoan(address(pt), amount, "");
-
-        assertEq(pt.balanceOf(address(ovrflo)), DEPOSIT_AMOUNT, "vault PT changed after dust flash");
-    }
-
     function test_Fuzz_DepositMinAmount(uint256 amountSeed) public {
         uint256 amount = bound(amountSeed, ovrflo.MIN_PT_AMOUNT(), 100e6);
 
@@ -231,43 +173,6 @@ contract OVRFLOFuzzTest is VaultMockHelpers {
         _mockRate(MARKET, 1.1e18);
         vm.expectRevert(OVRFLO.NothingToStream.selector);
         ovrflo.previewDeposit(MARKET, 10 ether);
-    }
-
-    function test_OracleEdge_RateZero_FlashLoanFeeZero() public {
-        _mockRate(MARKET, 0);
-        vm.prank(ADMIN);
-        ovrflo.setFlashFeeBps(50);
-
-        uint256 treasuryBefore = underlying.balanceOf(TREASURY);
-        borrower.executeFlashLoan(address(pt), 10 ether, "");
-        assertEq(underlying.balanceOf(TREASURY), treasuryBefore, "fee should be 0 when rate is 0");
-    }
-
-    function test_OracleEdge_FlashLoanFeeScalesWithRate(uint256 rateSeed) public {
-        uint256 rateE18 = bound(rateSeed, 0.01e18, 1.5e18);
-        uint16 feeBps = 50;
-
-        _mockRate(MARKET, rateE18);
-        vm.prank(ADMIN);
-        ovrflo.setFlashFeeBps(feeBps);
-
-        uint256 amount = 50 ether;
-        uint256 expectedFee = _computeFee(amount, rateE18, feeBps);
-        uint256 treasuryBefore = underlying.balanceOf(TREASURY);
-
-        borrower.executeFlashLoan(address(pt), amount, "");
-
-        assertEq(underlying.balanceOf(TREASURY) - treasuryBefore, expectedFee, "fee doesn't scale with rate");
-    }
-
-    /*//////////////////////////////////////////////////////////////
-                    R10/R14: FLASH LOAN EXCEEDS DEPOSITED
-    //////////////////////////////////////////////////////////////*/
-
-    function test_Fuzz_FlashLoanExceedsDeposited_Reverts(uint256 amountSeed) public {
-        uint256 amount = bound(amountSeed, DEPOSIT_AMOUNT + 1, DEPOSIT_AMOUNT + 100 ether);
-        vm.expectRevert(OVRFLO.ExceedsDeposited.selector);
-        borrower.executeFlashLoan(address(pt), amount, "");
     }
 
     /*//////////////////////////////////////////////////////////////
