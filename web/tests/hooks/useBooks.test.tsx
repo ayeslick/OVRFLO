@@ -6,7 +6,7 @@ import { useState, type ReactNode } from "react";
 import { useLenderBook } from "@/hooks/useLenderBook";
 import { useBorrowerBook } from "@/hooks/useBorrowerBook";
 import { useLadder } from "@/hooks/useLadder";
-import { readyOutcome } from "@/lib/read-outcome";
+import { readyOutcome, partialOutcome, readFailure } from "@/lib/read-outcome";
 
 const LENDING = "0x0000000000000000000000000000000000000a11" as Address;
 const MARKET = "0x0000000000000000000000000000000000000b22" as Address;
@@ -102,6 +102,38 @@ describe("book hooks", () => {
       { timeout: 5_000 },
     );
     expect(result.current.data).toBeUndefined();
+  });
+
+  it("keeps a zero-row partial lender page as partial, not loading", async () => {
+    loadFactoryLenderPage.mockResolvedValue(
+      partialOutcome({ positions: [], sourceCount: 1n }, [
+        readFailure("loadLenderPage", "subcall", "positionState reverted"),
+      ]),
+    );
+    const { result } = renderHook(() => useLenderBook(LENDING, USER), { wrapper });
+    await waitFor(() => {
+      expect(result.current.status).toBe("partial");
+    });
+    if (result.current.status !== "partial") throw new Error("expected partial");
+    expect(result.current.complete).toBe(false);
+    expect(result.current.data.positions).toEqual([]);
+    expect(result.current.failures[0]?.message).toMatch(/positionState/);
+  });
+
+  it("keeps a zero-row partial borrower page as partial, not loading", async () => {
+    loadFactoryBorrowerPage.mockResolvedValue(
+      partialOutcome({ loans: [], sourceCount: 1n }, [
+        readFailure("loadBorrowerPage", "subcall", "loanState reverted"),
+      ]),
+    );
+    const { result } = renderHook(() => useBorrowerBook(LENDING, USER), { wrapper });
+    await waitFor(() => {
+      expect(result.current.status).toBe("partial");
+    });
+    if (result.current.status !== "partial") throw new Error("expected partial");
+    expect(result.current.complete).toBe(false);
+    expect(result.current.data.loans).toEqual([]);
+    expect(result.current.failures[0]?.message).toMatch(/loanState/);
   });
 
   it("does not treat an empty lending list as a first-run zero while markets load", () => {

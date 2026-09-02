@@ -171,3 +171,66 @@ describe("viem-dlc pin", () => {
     expect(VIEM_DLC_RELEASE_COMMIT.startsWith("7ea8e70")).toBe(false);
   });
 });
+
+describe("bounded log reads", () => {
+  it("divides an oversized eth_getLogs range on the public-read wrap", async () => {
+    const ranges: Array<{ fromBlock: string; toBlock: string }> = [];
+    const inner = vi.fn(async (req: { method: string; params?: unknown[] }) => {
+      if (req.method === "eth_blockNumber") return "0x7530";
+      if (req.method === "eth_getLogs") {
+        const filter = req.params?.[0] as { fromBlock: string; toBlock: string };
+        ranges.push({ fromBlock: filter.fromBlock, toBlock: filter.toBlock });
+        return [];
+      }
+      return "0x1";
+    });
+    const transport = wrapPublicReadTransport(custom({ request: inner }), {
+      maxBlockRange: 10_000,
+      maxRequestsPerSecond: 100,
+      maxBurstRequests: 20,
+      maxConcurrentRequests: 20,
+    })({ chain: undefined });
+
+    await transport.request({
+      method: "eth_getLogs",
+      params: [{ fromBlock: "0x0", toBlock: "0x7530" }],
+    });
+
+    expect(ranges.length).toBeGreaterThan(1);
+    for (const range of ranges) {
+      const from = BigInt(range.fromBlock);
+      const to = BigInt(range.toBlock);
+      expect(to - from + 1n).toBeLessThanOrEqual(10_000n);
+    }
+  });
+
+  it("fails over a mid-range provider error until the next URL completes the logs", async () => {
+    let primaryLogs = 0;
+    const primary = vi.fn(async (req: { method: string }) => {
+      if (req.method === "eth_blockNumber") return "0x30d40";
+      if (req.method === "eth_getLogs") {
+        primaryLogs += 1;
+        if (primaryLogs > 1) throw new Error("network unavailable");
+        return [];
+      }
+      throw new Error("network unavailable");
+    });
+    const secondary = vi.fn(async (req: { method: string }) => {
+      if (req.method === "eth_blockNumber") return "0x30d40";
+      if (req.method === "eth_getLogs") return [];
+      return "0x1";
+    });
+    const transport = createOrderedReadTransport([
+      custom({ request: primary }),
+      custom({ request: secondary }),
+    ])({ chain: undefined });
+
+    await expect(
+      transport.request({
+        method: "eth_getLogs",
+        params: [{ fromBlock: "0x0", toBlock: "0x30d40" }],
+      }),
+    ).resolves.toEqual([]);
+    expect(secondary).toHaveBeenCalled();
+  });
+});

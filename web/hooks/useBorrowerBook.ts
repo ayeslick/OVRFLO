@@ -7,7 +7,7 @@ import type { Address } from "viem";
 import { chainId, isConfiguredAddress } from "@/lib/config";
 import { STREAM_PAGE_SIZE } from "@/lib/lending-math";
 import { borrowerBookKeys, readQuery } from "@/lib/query-keys";
-import { bookFields, nextPageParam } from "@/lib/stream-book";
+import { bookFields, nextPageParam, presentBook, unreadBookFailure } from "@/lib/stream-book";
 import {
   loadFactoryBorrowerPage,
   type BorrowerLoanRow,
@@ -73,10 +73,14 @@ export function useBorrowerBook(
       if (outcome.status === "unavailable") {
         throw new Error(outcome.failures[0]?.message ?? "borrower page failed");
       }
-      if (outcome.status !== "ready") {
+      if (outcome.status !== "ready" && outcome.status !== "partial") {
         throw new Error("borrower page did not resolve");
       }
-      return outcome.data;
+      return {
+        loans: outcome.data.loans,
+        sourceCount: outcome.data.sourceCount,
+        failures: [...outcome.failures],
+      };
     },
     initialPageParam: 0n,
     getNextPageParam: (lastPage, _pages, lastPageParam) =>
@@ -140,20 +144,23 @@ export function useBorrowerBook(
     }
     const sourceCount = query.data.pages[0]?.sourceCount ?? 0n;
     const loans = query.data.pages.flatMap((page) => [...page.loans]);
-    const complete = !query.hasNextPage && !query.isFetching;
+    const pageFailures = query.data.pages.flatMap((page) => page.failures);
+    const complete = !query.hasNextPage && !query.isFetching && pageFailures.length === 0;
     const book: BorrowerBook = {
       loans,
       ...bookFields({
         sourceCount,
         renderCount: loans.length,
         complete,
-        unresolvedFailures: false,
+        unresolvedFailures: pageFailures.length > 0,
       }),
     };
-    if (!complete && loans.length === 0) {
+    if (!complete && loans.length === 0 && pageFailures.length === 0) {
       return { ...loadingOutcome(book, meta), ...pager };
     }
-    return { ...readyOutcome(book, meta), ...pager };
+    const failures =
+      pageFailures.length > 0 ? pageFailures : complete ? [] : [unreadBookFailure("useBorrowerBook")];
+    return { ...presentBook(book, failures, meta), ...pager };
   }, [
     configured,
     lendings.length,

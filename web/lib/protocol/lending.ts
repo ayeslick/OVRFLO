@@ -1,8 +1,9 @@
-import type { Address, PublicClient } from "viem";
+import { isAddressEqual, type Address, type PublicClient } from "viem";
 import { ovrfloLendingAbi } from "@/lib/abis";
 import { STREAM_PAGE_SIZE } from "@/lib/lending-math";
 import { nextPageParam, windowStop } from "@/lib/stream-book";
 import {
+  partialOutcome,
   readFailure,
   readyOutcome,
   unavailableOutcome,
@@ -11,6 +12,7 @@ import {
 } from "@/lib/read-outcome";
 
 export const LOANS_OF_PAGE = 64n;
+export const LOANS_OF_FOLLOW_CAP = 1_024;
 
 export type LoanShare = {
   loanId: bigint;
@@ -68,6 +70,13 @@ function abortedFailure(source: string): ReadFailure {
   return readFailure(source, "cancelled", "enumeration aborted", { retryable: true });
 }
 
+function truncatedLoansFailure(source: string, id: bigint): ReadFailure {
+  return readFailure(source, "incomplete", `loansOf truncated for position ${id.toString()}`, {
+    retryable: true,
+    entityId: id.toString(),
+  });
+}
+
 function assertOpen(signal: AbortSignal | undefined, source: string): ReadFailure | null {
   if (signal?.aborted) return abortedFailure(source);
   return null;
@@ -94,7 +103,7 @@ export async function paginateLoansOf(
     }
     used.add(key);
     startSeq = nextSeq;
-    if (used.size > 1_024) return { pairs, truncated: true };
+    if (used.size > LOANS_OF_FOLLOW_CAP) return { pairs, truncated: true };
   }
 }
 
@@ -137,6 +146,7 @@ export async function loadLenderPage(
   }
 
   const positions: LenderPositionRow[] = [];
+  const failures: ReadFailure[] = [];
   for (let index = start; index < clampedStop; index++) {
     const again = assertOpen(options?.signal, "loadLenderPage");
     if (again) return unavailableOutcome([again], {}, { positions, sourceCount });
@@ -182,13 +192,13 @@ export async function loadLenderPage(
         pairs: pairs.pairs,
         pairsTruncated: pairs.truncated,
       });
+      if (pairs.truncated) failures.push(truncatedLoansFailure("loadLenderPage", id));
     } catch (error) {
-      return unavailableOutcome([transportFailure("loadLenderPage", error)], {}, {
-        positions,
-        sourceCount,
-      });
+      failures.push(transportFailure("loadLenderPage", error));
+      return partialOutcome({ positions, sourceCount }, failures);
     }
   }
+  if (failures.length > 0) return partialOutcome({ positions, sourceCount }, failures);
   return readyOutcome({ positions, sourceCount });
 }
 
@@ -242,13 +252,143 @@ export async function loadBorrowerPage(
         outstanding,
       });
     } catch (error) {
-      return unavailableOutcome([transportFailure("loadBorrowerPage", error)], {}, {
-        loans,
-        sourceCount,
-      });
+      return partialOutcome({ loans, sourceCount }, [transportFailure("loadBorrowerPage", error)]);
     }
   }
   return readyOutcome({ loans, sourceCount });
+}
+
+/**
+ * Confirm current loan borrower for log-derived candidate ids on one lending.
+ * Callers group MarketLogCandidate rows by lending before this call.
+ * A Borrowed log that names an old borrower loses to loanState.
+ */
+export async function hydrateLoanCandidates(
+  client: LendingReadClient,
+  lending: Address,
+  account: Address,
+  candidateIds: readonly bigint[],
+  options?: LendingReadOptions,
+): Promise<ReadOutcome<BorrowerPage>> {
+  const unique = uniquePositiveIds(candidateIds);
+  const loans: BorrowerLoanRow[] = [];
+  const failures: ReadFailure[] = [];
+  for (const id of unique) {
+    const aborted = assertOpen(options?.signal, "hydrateLoanCandidates");
+    if (aborted) return partialOutcome({ loans, sourceCount: BigInt(unique.length) }, [aborted]);
+    try {
+      const [stored, outstanding] = await client.readContract({
+        address: lending,
+        abi: ovrfloLendingAbi,
+        functionName: "loanState",
+        args: [id],
+      });
+      if (!isAddressEqual(stored.borrower, account)) continue;
+      loans.push({
+        id,
+        lending,
+        market: stored.market,
+        borrower: stored.borrower,
+        streamId: stored.streamId,
+        obligation: stored.obligation,
+        drawn: stored.drawn,
+        repaid: stored.repaid,
+        closed: stored.closed,
+        outstanding,
+      });
+    } catch (error) {
+      failures.push(
+        readFailure("hydration", "subcall", error, {
+          retryable: true,
+          entityId: id.toString(),
+        }),
+      );
+    }
+  }
+  const page = { loans, sourceCount: BigInt(unique.length) };
+  if (failures.length > 0) return partialOutcome(page, failures);
+  return readyOutcome(page);
+}
+
+/**
+ * Confirm current lender for log-derived candidate ids on one lending.
+ * Callers group MarketLogCandidate rows by lending before this call.
+ * A Supplied log that names an old lender loses to positionState.
+ */
+export async function hydrateLenderCandidates(
+  client: LendingReadClient,
+  lending: Address,
+  account: Address,
+  candidateIds: readonly bigint[],
+  options?: LendingReadOptions,
+): Promise<ReadOutcome<LenderPage>> {
+  const unique = uniquePositiveIds(candidateIds);
+  const positions: LenderPositionRow[] = [];
+  const failures: ReadFailure[] = [];
+  for (const id of unique) {
+    const aborted = assertOpen(options?.signal, "hydrateLenderCandidates");
+    if (aborted) {
+      return partialOutcome({ positions, sourceCount: BigInt(unique.length) }, [aborted]);
+    }
+    try {
+      const [position, intervalStart, intervalEnd, unfilled] = await client.readContract({
+        address: lending,
+        abi: ovrfloLendingAbi,
+        functionName: "positionState",
+        args: [id],
+      });
+      if (!isAddressEqual(position.lender, account)) continue;
+      const pairs = await paginateLoansOf(async (startSeq) => {
+        const [entries, nextSeq] = await client.readContract({
+          address: lending,
+          abi: ovrfloLendingAbi,
+          functionName: "loansOf",
+          args: [id, startSeq, LOANS_OF_PAGE],
+        });
+        return {
+          entries: entries.map((entry) => ({
+            loanId: entry.loanId,
+            contribution: entry.contribution,
+            claimable: entry.claimable,
+          })),
+          nextSeq,
+        };
+      });
+      positions.push({
+        id,
+        lending,
+        lender: position.lender,
+        market: position.market,
+        aprBps: position.aprBps,
+        availableLiquidity: unfilled,
+        intervalStart,
+        intervalEnd,
+        pairs: pairs.pairs,
+        pairsTruncated: pairs.truncated,
+      });
+      if (pairs.truncated) failures.push(truncatedLoansFailure("hydration", id));
+    } catch (error) {
+      failures.push(
+        readFailure("hydration", "subcall", error, {
+          retryable: true,
+          entityId: id.toString(),
+        }),
+      );
+    }
+  }
+  const page = { positions, sourceCount: BigInt(unique.length) };
+  if (failures.length > 0) return partialOutcome(page, failures);
+  return readyOutcome(page);
+}
+
+function uniquePositiveIds(ids: readonly bigint[]): bigint[] {
+  const seen = new Map<string, bigint>();
+  for (const id of ids) {
+    if (id === 0n) continue;
+    const key = id.toString();
+    if (!seen.has(key)) seen.set(key, id);
+  }
+  return [...seen.values()];
 }
 
 export async function loadFactoryLenderPage(
@@ -345,6 +485,7 @@ async function loadFactoryWindow<T extends { sourceCount: bigint }>(input: {
   }
 
   const pages: T[] = [];
+  const windowFailures: ReadFailure[] = [];
   let cursor = 0n;
   for (const [index, lending] of input.lendings.entries()) {
     const count = counts[index] ?? 0n;
@@ -363,16 +504,24 @@ async function loadFactoryWindow<T extends { sourceCount: bigint }>(input: {
       if (page.status === "unavailable") {
         return unavailableOutcome(page.failures, {}, page.data);
       }
-      if (page.status !== "ready") {
-        return unavailableOutcome([
+      if (page.status === "partial") {
+        pages.push(page.data);
+        windowFailures.push(...page.failures);
+      } else if (page.status !== "ready") {
+        windowFailures.push(
           readFailure(input.source, "incomplete", "lending window did not resolve"),
-        ]);
+        );
+      } else {
+        pages.push(page.data);
       }
-      pages.push(page.data);
     }
     cursor += count;
   }
-  return readyOutcome(input.merge(pages, total));
+  const merged = input.merge(pages, total);
+  if (windowFailures.length > 0) {
+    return partialOutcome(merged, windowFailures);
+  }
+  return readyOutcome(merged);
 }
 
 export function lendingNextPageParam(lastPageParam: bigint, sourceCount: bigint): bigint | undefined {

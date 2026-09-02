@@ -3,6 +3,7 @@ import {
   bookFields,
   foldStreamIds,
   nextPageParam,
+  presentBook,
   windowStop,
 } from "@/lib/stream-book";
 import { STREAM_PAGE_SIZE } from "@/lib/lending-math";
@@ -56,5 +57,33 @@ describe("stream-book source cursor", () => {
         unresolvedFailures: false,
       }).confirmedEmpty,
     ).toBe(false);
+  });
+
+  it("never returns ready when the inner book is incomplete", () => {
+    const incomplete = {
+      sourceCount: 40n,
+      renderCount: 25,
+      complete: false,
+      confirmedEmpty: false,
+    };
+    const outcome = presentBook(incomplete, []);
+    expect(outcome.status).toBe("partial");
+    if (outcome.status !== "partial") throw new Error("expected partial");
+    expect(outcome.complete).toBe(false);
+    expect(outcome.data.complete).toBe(false);
+  });
+
+  it("returns ready only when the inner book is complete", () => {
+    const complete = {
+      sourceCount: 2n,
+      renderCount: 2,
+      complete: true,
+      confirmedEmpty: false,
+    };
+    const outcome = presentBook(complete, []);
+    expect(outcome.status).toBe("ready");
+    if (outcome.status !== "ready") throw new Error("expected ready");
+    expect(outcome.complete).toBe(true);
+    expect(outcome.data.complete).toBe(true);
   });
 });

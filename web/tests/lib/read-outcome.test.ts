@@ -120,4 +120,10 @@ describe("read outcomes", () => {
       failures: [failure, { message: "RPC unavailable" }],
     });
   });
+
+  it("keeps complete false on every partial outcome", () => {
+    const outcome = partialOutcome([1], [failure]);
+    expect(outcome.status).toBe("partial");
+    expect(outcome.complete).toBe(false);
+  });
 });

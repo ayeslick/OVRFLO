@@ -10,6 +10,7 @@ import {
   LENS_CREATION_BYTECODE,
   ovrfloStreamLensAbi,
 } from "@/lib/generated/lens-bytecode";
+import { sablierLockupAbi } from "@/lib/abis";
 import { callPin, type BlockPin, type PinMode } from "./pin";
 import {
   protocolPartial,
@@ -323,4 +324,61 @@ export async function loadCompleteStreams(
     );
   }
   return finalizePage(merged, owner, stamp, "complete");
+}
+
+/**
+ * Confirm current lockup ownership for log-derived candidate ids.
+ * A Transfer that names an old owner loses to ownerOf. One failed
+ * ownerOf leaves the rest and returns partialOutcome.
+ */
+export async function hydrateStreamCandidates(
+  client: StreamReadClient,
+  lockup: Address,
+  owner: Address,
+  candidateIds: readonly bigint[],
+  pin: BlockPin,
+  options?: StreamReadOptions,
+): Promise<ReadOutcome<{ streamIds: readonly bigint[] }>> {
+  const unique = uniquePositiveIds(candidateIds);
+  if (unique.length === 0) {
+    return protocolReady({ streamIds: [] }, protocolStamp(pin));
+  }
+
+  const owned: bigint[] = [];
+  const failures: ReadFailure[] = [];
+  for (const streamId of unique) {
+    try {
+      const current = await client.readContract({
+        address: lockup,
+        abi: sablierLockupAbi,
+        functionName: "ownerOf",
+        args: [streamId],
+        ...callPin(pin, options?.pinMode ?? "hash"),
+      });
+      if (isAddressEqual(current, owner)) owned.push(streamId);
+    } catch (error) {
+      failures.push(
+        readFailure("hydration", "subcall", error, {
+          retryable: true,
+          entityId: streamId.toString(),
+        }),
+      );
+    }
+  }
+
+  const stamp = protocolStamp(pin);
+  if (failures.length > 0) {
+    return protocolPartial({ streamIds: owned }, failures, stamp);
+  }
+  return protocolReady({ streamIds: owned }, stamp);
+}
+
+function uniquePositiveIds(ids: readonly bigint[]): bigint[] {
+  const seen = new Map<string, bigint>();
+  for (const id of ids) {
+    if (id === 0n) continue;
+    const key = id.toString();
+    if (!seen.has(key)) seen.set(key, id);
+  }
+  return [...seen.values()];
 }

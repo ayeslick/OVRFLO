@@ -4,7 +4,7 @@
 
 **Blocked by:** 12
 
-**Status:** ready-for-agent
+**Status:** resolved
 **Labels:** ready-for-agent
 
 ## Session prompt (paste into a new chat)
@@ -43,16 +43,62 @@ After local verification, mark ticket checkboxes done and set Status: resolved.
 
 ## Acceptance criteria
 
-- [ ] Scratch intent capsule exists before the first state-touching edit
-- [ ] An oversized log range is divided and merged without duplicate or missing candidate identifiers
-- [ ] One provider failure mid-range yields explicitly partial portfolio output until fallback completes
-- [ ] A log that names an old owner loses to an authoritative current-owner read
-- [ ] Factory discovery fails closed on any required registration leg
-- [ ] A missing page or one failed candidate hydration yields `partialOutcome` and `complete: false`
-- [ ] Banned-pattern fixture rejects `getLogs` outside the named discovery owner
-- [ ] No result can be outer-ready while an inner stream book reports incomplete
-- [ ] Watch E2E never treats logs as ownership authority
+- [x] Scratch intent capsule exists before the first state-touching edit
+- [x] An oversized log range is divided and merged without duplicate or missing candidate identifiers
+- [x] One provider failure mid-range yields explicitly partial portfolio output until fallback completes
+- [x] A log that names an old owner loses to an authoritative current-owner read
+- [x] Factory discovery fails closed on any required registration leg
+- [x] A missing page or one failed candidate hydration yields `partialOutcome` and `complete: false`
+- [x] Banned-pattern fixture rejects `getLogs` outside the named discovery owner
+- [x] No result can be outer-ready while an inner stream book reports incomplete
+- [x] Watch E2E never treats logs as ownership authority
 
 ## Plan unit
 
 CS5-U2 in `docs/plans/2026-08-22-001-refactor-denomination-switch-border-column-plan.md`
+
+## Session notes
+
+### Reuse audit
+
+Reused:
+
+- `logsDivider` from `@morpho-org/viem-dlc/transports` (already a CS5-U1 dependency). It already composes sieve, enricher, and rateLimiter, so the public-read wrap no longer stacks a second rateLimiter.
+- `partialOutcome` / `readyOutcome` / `readFailure` from `web/lib/read-outcome.ts`.
+- `protocolReady` / `protocolPartial` in stream hydration.
+- Existing `ownerOf`, `loanState`, and `positionState` reads. Hydration does not add a new authority.
+- Existing fail-closed `discoverProtocolBootstrap`. This ticket did not add a partial registry.
+- Existing Enumerable watch wall (`useStreams` / `loadStreamPage`). Log candidates are not routed into Watch.
+
+New module: `web/lib/discovery/portfolio-log-candidates.ts`. Needed because AS7 names one `getLogs` owner, and no existing discovery file called `getLogs` after U8 retired the log scan.
+
+New helper: `presentBook` in `web/lib/stream-book.ts`. Needed because `readyOutcome({ complete: false })` was constructible in the hooks. Deriving completeness in one function closes that pair.
+
+### Unit boundary
+
+This ticket owns: bounded `eth_getLogs` on the public-read wrap, the named discovery owner, candidate hydration, progressive `partialOutcome`, StreamBook completeness derived from the outer result, and the banned-pattern fixture.
+
+Ticket 14 owns: deployless `policy(...)` probes in `pin-probe.ts`. This ticket does not call `policy` or change pin-probe.
+
+Ticket 15 owns: Your OVRFLO routing from a complete bounded scan. This ticket exports the candidate contract and `complete: false` on partial scans. Watch still lists from Enumerable. CS4-U2 must stay correct if it never imports this module.
+
+### Deviations
+
+- Capsule listed `web/lib/stream-book.ts` as a read. Implementation writes `presentBook` there so hooks cannot emit outer-ready with an incomplete book.
+- Capsule did not list hook files as writers beyond `useStreams`. `useCompleteStreams`, `useLenderBook`, and `useBorrowerBook` also call `presentBook` so lending books follow the same outer/inner rule.
+- `protocol-bootstrap.ts` is unchanged. Fail-closed coverage is tests only (`lendingCount` revert).
+
+### Reviewer findings applied
+
+Read-only review (`gpt-5.6-sol-medium`) reported three completeness defects. This chat applied all three:
+
+1. Loan and position candidates now carry `{ lending, id }`. Same numeric id on two markets stays two candidates.
+2. Truncated `loansOf` follow (cap 1,024) returns `partialOutcome` with fetched pairs kept.
+3. A zero-row page with failures stays `partial`. Loading is only for unread pages with no failures.
+
+### Verification
+
+- `bash web/scripts/check-banned-patterns.sh` — clean
+- Focused vitest (rpc, read-outcome, banned-patterns, discovery, streams, lending, stream-book, useStreams, useOvrflos, useBooks, loans-of pagination, watch-app) — 128 passed
+- `npm --prefix web run typecheck` — pass
+- Watch E2E scenario added: visible STREAM rows must match lockup `ownerOf`. Playwright not run in this session (no local e2e bootstrap).

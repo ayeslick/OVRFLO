@@ -1,5 +1,13 @@
 import { STREAM_PAGE_SIZE } from "@/lib/lending-math";
-import { readFailure, type ReadFailure } from "@/lib/read-outcome";
+import {
+  partialOutcome,
+  readFailure,
+  readyOutcome,
+  type ReadFailure,
+  type ReadFreshness,
+  type ReadOutcome,
+  type ReadOutcomeMetadata,
+} from "@/lib/read-outcome";
 
 /** Sequential auto-fetch on all-ineligible pages, then LOAD MORE. */
 export const AUTO_INELIGIBLE_PAGE_CAP = 4;
@@ -37,6 +45,27 @@ export function duplicateStreamFailure(streamId: bigint): ReadFailure {
     `duplicate stream id ${streamId.toString()} in one snapshot`,
     { retryable: false, entityId: streamId.toString() },
   );
+}
+
+export function unreadBookFailure(source: string): ReadFailure {
+  return readFailure(source, "incomplete", "book has unread pages", { retryable: true });
+}
+
+/**
+ * Outer ready means the book is complete. An incomplete book is partial.
+ * Ready plus inner complete:false cannot be constructed here.
+ */
+export function presentBook<T extends BookFields>(
+  book: T,
+  failures: readonly ReadFailure[],
+  metadata: ReadOutcomeMetadata = {},
+  freshness: ReadFreshness = "fresh",
+): ReadOutcome<T> {
+  if (book.complete) {
+    return readyOutcome(book, metadata, freshness);
+  }
+  const listed = failures.length > 0 ? failures : [unreadBookFailure("book")];
+  return partialOutcome(book, listed, metadata, freshness);
 }
 
 /**

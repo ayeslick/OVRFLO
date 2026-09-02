@@ -10,6 +10,7 @@ import type { BlockPin } from "@/lib/protocol/pin";
 import {
   COMPLETE_SET_UNBOUNDED_MAX,
   COMPLETE_SET_WINDOW,
+  hydrateStreamCandidates,
   loadCompleteStreams,
   loadStreamPage,
   type StreamReadClient,
@@ -293,5 +294,44 @@ describe("loadCompleteStreams", () => {
     if (outcome.status !== "ready") throw new Error("expected ready");
     expect(outcome.data.streams).toEqual([]);
     expect(calls).toHaveLength(0);
+  });
+});
+
+describe("hydrateStreamCandidates", () => {
+  it("drops a candidate whose ownerOf is not the requested owner", async () => {
+    const client = {
+      async call() {
+        throw new Error("lens must not run during candidate hydration");
+      },
+      async readContract({ args }: { args: readonly unknown[] }) {
+        const streamId = args[0] as bigint;
+        return streamId === 1n ? OWNER : OTHER;
+      },
+    } as unknown as StreamReadClient;
+
+    const outcome = await hydrateStreamCandidates(client, LOCKUP, OWNER, [1n, 2n], PIN);
+    expect(outcome.status).toBe("ready");
+    if (outcome.status !== "ready") throw new Error("expected ready");
+    expect(outcome.data.streamIds).toEqual([1n]);
+  });
+
+  it("returns partial when one ownerOf fails", async () => {
+    const client = {
+      async call() {
+        throw new Error("lens must not run during candidate hydration");
+      },
+      async readContract({ args }: { args: readonly unknown[] }) {
+        const streamId = args[0] as bigint;
+        if (streamId === 2n) throw new Error("ownerOf reverted");
+        return OWNER;
+      },
+    } as unknown as StreamReadClient;
+
+    const outcome = await hydrateStreamCandidates(client, LOCKUP, OWNER, [1n, 2n], PIN);
+    expect(outcome.status).toBe("partial");
+    if (outcome.status !== "partial") throw new Error("expected partial");
+    expect(outcome.complete).toBe(false);
+    expect(outcome.data.streamIds).toEqual([1n]);
+    expect(outcome.failures[0]?.entityId).toBe("2");
   });
 });

@@ -55,3 +55,10 @@ Feature: Watch surface
     And I select the first loan row
     Then the borrowed detail is open
     And I see text matching "EVENTS AS OF|SYNCED|DEGRADED|UNAVAILABLE"
+
+  Scenario: Outcomes — a visible stream row matches lockup ownerOf
+    Given my wallet holds a tracked eligible stream
+    And the frontend re-syncs with chain state
+    When I select the "STREAMS" lens
+    Then I see a stream row for the tracked stream
+    And each visible stream row matches lockup ownerOf

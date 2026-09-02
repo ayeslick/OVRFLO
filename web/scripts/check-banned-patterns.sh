@@ -29,7 +29,8 @@ fi
 # uncompilable regex that reported "clean" for as long as it existed.
 SEPARATOR=':::'
 PATTERNS=(
-  # Historical scans belong only in lib/discovery (plus U1 deployment-anchor verification).
+  # Historical scans belong only in the named discovery owner
+  # (portfolio-log-candidates.ts) plus U1 deployment-anchor verification.
   'FACTORY_FROM_BLOCK:::Ad hoc log-scan anchors are banned; use the verified deployment artifact and centralized discovery scanner.'
   'useApprovedMarkets:::Replaced by useAllMarkets; do not reintroduce an approved-only filter.'
   'parseStreamError:::Superseded by classifyUserError / StreamScanError; remove stragglers.'
@@ -69,7 +70,7 @@ filter_historical_owners() {
   local found=1
   while IFS= read -r line; do
     case "$line" in
-      "$WEB_ROOT/lib/discovery/"*|"$WEB_ROOT/lib/deployment.ts:"*) ;;
+      "$WEB_ROOT/lib/discovery/portfolio-log-candidates.ts:"*|"$WEB_ROOT/lib/deployment.ts:"*) ;;
       *)
         echo "$line"
         found=0
@@ -133,7 +134,7 @@ violations=0
 for entry in "${PATTERNS[@]}"; do
   pattern="${entry%%"$SEPARATOR"*}"
   rationale="${entry#*"$SEPARATOR"}"
-  # The discovery scanner and deployment-anchor verifier are the only
+  # The named discovery owner and the deployment-anchor verifier are the only
   # reviewed owners of historical-log access.  All other guard patterns,
   # including those that happen to be used by discovery projections, apply
   # to every production root.
@@ -148,10 +149,11 @@ for entry in "${PATTERNS[@]}"; do
   fi
 done
 
-# Any new historical-log caller outside the two reviewed owners is a violation,
-# even when it does not mention Deposited on the same line.
+# Any new historical-log caller outside the named discovery owner (and the
+# deployment-anchor verifier) is a violation, even when it does not mention
+# Deposited on the same line.
 if report_violations 'getLogs|eth_getLogs|watchContractEvent|watchEvent' \
-  'ad hoc historical scan (Use web/lib/discovery; deployment.ts is the anchor-verification exception.)' 1; then
+  'ad hoc historical scan (Use web/lib/discovery/portfolio-log-candidates.ts; deployment.ts is the anchor-verification exception.)' 1; then
   violations=$((violations + 1))
 fi
 

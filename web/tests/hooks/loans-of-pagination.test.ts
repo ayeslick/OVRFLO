@@ -33,4 +33,13 @@ describe("paginateLoansOf", () => {
       })),
     ).rejects.toThrow("loansOf nextSeq reused");
   });
+
+  it("marks the result truncated after the follow cap", async () => {
+    const result = await paginateLoansOf(async (startSeq) => ({
+      entries: [{ loanId: startSeq + 1n, contribution: 1n, claimable: 0n }],
+      nextSeq: startSeq + 1n,
+    }));
+    expect(result.truncated).toBe(true);
+    expect(result.pairs.length).toBeGreaterThan(0);
+  });
 });

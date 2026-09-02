@@ -21,6 +21,8 @@ import {
   duplicateStreamFailure,
   foldStreamIds,
   nextPageParam,
+  presentBook,
+  unreadBookFailure,
   windowStop,
 } from "@/lib/stream-book";
 import { loadStreamPage, type StreamView } from "@/lib/protocol/streams";
@@ -455,7 +457,13 @@ export function useStreams(input: {
   const pageFailures = pages.flatMap((page) => page.failures);
   const transportFailed = pages.some((page) => page.transportFailed) || query.isError;
   const okFalse = pages.some((page) => page.views.some((view) => !view.ok));
-  const complete = !query.hasNextPage && !query.isFetching && !transportFailed;
+  const complete =
+    !query.hasNextPage &&
+    !query.isFetching &&
+    !transportFailed &&
+    pageFailures.length === 0 &&
+    folded.duplicate === null &&
+    !okFalse;
   const streams: HydratedStream[] = [];
   for (const page of pages) {
     for (const view of page.views) {
@@ -497,7 +505,7 @@ export function useStreams(input: {
   if (sourceCount === 0n && complete) {
     return { ...readyOutcome(book, meta), ...pager, ...pinControls };
   }
-  if (!complete && streams.length === 0 && !query.isPlaceholderData) {
+  if (!complete && streams.length === 0 && !query.isPlaceholderData && pageFailures.length === 0) {
     return { ...loadingOutcome(book, meta), ...pager, ...pinControls };
   }
   if ((pageFailures.length > 0 || okFalse) && streams.length === 0 && complete) {
@@ -514,5 +522,15 @@ export function useStreams(input: {
     };
   }
   const freshness = query.isPlaceholderData || pinState.stale ? "stale" : "fresh";
-  return { ...readyOutcome(book, meta, freshness), ...pager, ...pinControls };
+  const incompleteFailures =
+    pageFailures.length > 0
+      ? pageFailures
+      : complete
+        ? []
+        : [unreadBookFailure("stream-book")];
+  return {
+    ...presentBook(book, incompleteFailures, meta, freshness),
+    ...pager,
+    ...pinControls,
+  };
 }

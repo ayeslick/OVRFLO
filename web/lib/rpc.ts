@@ -1,5 +1,5 @@
 import { http, type Transport } from "viem";
-import { defaultShouldThrow, failover, rateLimiter } from "@morpho-org/viem-dlc/transports";
+import { defaultShouldThrow, failover, logsDivider } from "@morpho-org/viem-dlc/transports";
 
 // KD18 runtime-dependency exception: @morpho-org/viem-dlc npm 0.0.16 wraps
 // public-read RPC only. Release tag provenance is this commit. 7ea8e70 is later
@@ -35,6 +35,10 @@ export const publicReadProviderPolicy: PublicReadProviderPolicy = {
   maxBurstRequests: 5,
   maxConcurrentRequests: 5,
 };
+
+// Sieve ceiling is far above a Transfer / Deposited / Borrowed / Supplied log.
+// A tight ceiling would drop a candidate identifier.
+export const PUBLIC_READ_LOG_MAX_BYTES = 1_048_576;
 
 type ErrorShape = {
   code?: unknown;
@@ -141,7 +145,12 @@ export function wrapPublicReadTransport(
     throw new Error("Public-read maxBlockRange must be at least 1");
   }
   const noRetryInner: Transport = (opts) => inner({ ...opts, retryCount: 0 });
-  const wrapped = rateLimiter(noRetryInner, [
+  // logsDivider composes sieve, enricher, and rateLimiter. blockTimestamp stays
+  // off on this shared wrap: portfolio enrichment is candidate merge, not headers.
+  const wrapped = logsDivider(noRetryInner, [
+    { maxBlockRange: range.maxBlockRange },
+    { retryCount: 0, retryDelay: 0, blockTimestamp: false },
+    { maxBytes: PUBLIC_READ_LOG_MAX_BYTES },
     {
       maxRequestsPerSecond: sustained.maxRequestsPerSecond,
       maxBurstRequests: burst.maxBurstRequests,

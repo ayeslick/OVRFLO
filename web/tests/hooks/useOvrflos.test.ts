@@ -144,6 +144,23 @@ describe("discoverProtocolBootstrap", () => {
     }
   });
 
+  it("fails closed when lendingCount reverts", async () => {
+    client.multicall
+      .mockResolvedValueOnce([success(STREAM), success(1n)])
+      .mockResolvedValueOnce([success(VAULT_A)])
+      .mockResolvedValueOnce([
+        success([TREASURY, UNDERLYING, OVRFLO_TOKEN]),
+        success(LENDING),
+        success(RESERVE),
+      ])
+      .mockResolvedValueOnce([failure()]);
+    const result = await discoverProtocolBootstrap(client, FACTORY, 1);
+    expect(result.status).toBe("unavailable");
+    if (result.status === "unavailable") {
+      expect(result.failures[0]?.message).toMatch(/lendingCount/);
+    }
+  });
+
   it("fails closed when ovrfloToReserve returns the zero address", async () => {
     client.multicall
       .mockResolvedValueOnce([success(STREAM), success(1n)])

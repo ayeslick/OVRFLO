@@ -488,7 +488,6 @@ function toBook(
 ): EntryBook {
   const sourceCount = outcome.data?.sourceCount ?? 0n;
   const renderCount = outcome.data?.renderCount ?? 0;
-  const complete = outcome.data?.complete ?? false;
   if (outcome.status === "loading") {
     return {
       status: "loading",
@@ -507,11 +506,20 @@ function toBook(
       confirmedEmpty: false,
     };
   }
+  if (outcome.status === "partial") {
+    return {
+      status: "ready",
+      sourceCount,
+      renderCount,
+      complete: false,
+      confirmedEmpty: false,
+    };
+  }
   return {
     status: "ready",
     sourceCount,
     renderCount,
-    complete,
+    complete: true,
     confirmedEmpty: Boolean(outcome.data?.confirmedEmpty),
   };
 }

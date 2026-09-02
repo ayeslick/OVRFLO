@@ -6,7 +6,7 @@ import type { Address, Hash } from "viem";
 import { useStreams } from "@/hooks/useStreams";
 import { AUTO_INELIGIBLE_PAGE_CAP } from "@/lib/stream-book";
 import { MAX_ENUMERATION_IDS, MIN_STREAM_AMOUNT, STREAM_PAGE_SIZE } from "@/lib/lending-math";
-import { readyOutcome, unavailableOutcome, readFailure } from "@/lib/read-outcome";
+import { readyOutcome, unavailableOutcome, partialOutcome, readFailure } from "@/lib/read-outcome";
 import type { StreamView } from "@/lib/protocol/streams";
 import { streamBookKeys } from "@/lib/query-keys";
 import { chainId } from "@/lib/config";
@@ -196,6 +196,20 @@ describe("useStreams lens pager", () => {
     expect(loadStreamPage).not.toHaveBeenCalled();
   });
 
+  it("keeps a zero-row failed page as partial, not loading", async () => {
+    loadStreamPage.mockResolvedValue(
+      partialOutcome({ streams: [] }, [readFailure("loadStreamPage", "subcall", "ownerOf reverted")]),
+    );
+    const { result } = renderHook(() => useStreams(input), { wrapper: wrapper(client()) });
+    await waitFor(() => {
+      expect(result.current.status).toBe("partial");
+    });
+    if (result.current.status !== "partial") throw new Error("expected partial");
+    expect(result.current.complete).toBe(false);
+    expect(result.current.data.streams).toEqual([]);
+    expect(result.current.failures[0]?.message).toMatch(/ownerOf/);
+  });
+
   it("does not refuse a book larger than MAX_ENUMERATION_IDS", async () => {
     publicCall.mockResolvedValue(encodeUint(MAX_ENUMERATION_IDS + 1n));
     loadStreamPage.mockResolvedValue(
@@ -205,9 +219,11 @@ describe("useStreams lens pager", () => {
     );
     const { result } = renderHook(() => useStreams(input), { wrapper: wrapper(client()) });
     await waitFor(() => {
-      expect(result.current.status).toBe("ready");
+      expect(result.current.status).toBe("partial");
     });
-    if (result.current.status !== "ready") throw new Error("expected ready");
+    if (result.current.status !== "partial") throw new Error("expected partial");
+    expect(result.current.complete).toBe(false);
+    expect(result.current.data.complete).toBe(false);
     expect(result.current.data.sourceCount).toBe(MAX_ENUMERATION_IDS + 1n);
     expect(result.current.hasNextPage).toBe(true);
     expect(result.current.status).not.toBe("unavailable");
@@ -222,7 +238,7 @@ describe("useStreams lens pager", () => {
     });
     const { result } = renderHook(() => useStreams(input), { wrapper: wrapper(client()) });
     await waitFor(() => {
-      expect(result.current.status).toBe("ready");
+      expect(result.current.hasNextPage).toBe(true);
     });
     expect(loadStreamPage.mock.calls[0]?.[3]).toBe(0n);
     await result.current.fetchNextPage();
@@ -317,8 +333,10 @@ describe("useStreams lens pager", () => {
     const queryClient = client();
     const { result } = renderHook(() => useStreams(input), { wrapper: wrapper(queryClient) });
     await waitFor(() => {
-      expect(result.current.status).toBe("ready");
+      expect(result.current.data?.streams.some((row) => row.streamId === 5n)).toBe(true);
     });
+    expect(result.current.status).toBe("partial");
+    expect(result.current.complete).toBe(false);
     await result.current.fetchNextPage();
     await waitFor(() => {
       expect(pinCtl.advancePin).toHaveBeenCalled();
@@ -362,8 +380,8 @@ describe("useStreams lens pager", () => {
     expect(result.current.metadata.blockHash?.toLowerCase()).toBe(pinCtl.HASH_A.toLowerCase());
     pinCtl.set({ blockNumber: 11n, blockHash: pinCtl.HASH_B });
     await waitFor(() => {
-      expect(result.current.status).toBe("ready");
-      if (result.current.status !== "ready") throw new Error("expected ready");
+      expect(result.current.status).toBe("partial");
+      if (result.current.status !== "partial") throw new Error("expected partial");
       expect(result.current.freshness).toBe("stale");
     });
     expect(result.current.data?.streams[0]?.streamId).toBe(5n);

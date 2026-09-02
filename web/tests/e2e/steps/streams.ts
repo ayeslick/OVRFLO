@@ -220,6 +220,23 @@ Then("I see a stream row for the tracked stream", async ({ page }) => {
   await expect(streamRow(page, trackedStreamId)).toBeVisible({ timeout: 15_000 });
 });
 
+Then("each visible stream row matches lockup ownerOf", async ({ page }) => {
+  const wall = ui(page, "UI-WATCH-WALL");
+  const rows = wall.getByRole("button", { name: /STREAM #/ });
+  await expect(rows.first()).toBeVisible({ timeout: 15_000 });
+  const labels = await rows.allTextContents();
+  expect(labels.length).toBeGreaterThan(0);
+  for (const label of labels) {
+    const match = label.match(/STREAM #(\d+)/);
+    if (!match) throw new Error(`stream row label had no id: ${label}`);
+    const idText = match[1];
+    if (idText === undefined) throw new Error(`stream row label had no id: ${label}`);
+    const streamId = BigInt(idText);
+    const owner = await streamOwnerOf(streamId);
+    expect(owner?.toLowerCase()).toBe(DEV_WALLET_ADDRESS.toLowerCase());
+  }
+});
+
 Then("the tracked stream row is absent from Streams", async ({ page }) => {
   if (trackedStreamId === null) throw new Error("no tracked stream");
   const tab = ui(page, "UI-WATCH-LENS").getByRole("tab", { name: "STREAMS", exact: true });

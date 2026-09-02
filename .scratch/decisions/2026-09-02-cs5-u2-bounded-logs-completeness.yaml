@@ -1,0 +1,89 @@
+# Scratch decision record — schema: docs/maps/SCHEMAS.md §4
+summary_ref: "docs/plans/2026-08-22-001-refactor-denomination-switch-border-column-plan.md#cs5-u2"
+
+goal: >
+  Bound portfolio eth_getLogs with viem-dlc logsDivider. One discovery owner
+  emits candidate ids. Stream and lending modules hydrate those ids from chain.
+  Missing pages and failed hydration return partialOutcome with complete false.
+  StreamBook.complete follows the outer ReadOutcome so ready cannot carry an
+  incomplete book. Logs stay display-only. Ticket 15 may consume this contract
+  later. This ticket stays correct without CS4 routing.
+
+state_keys_touched: []
+
+writers_readers:
+  - writes: web/lib/rpc.ts
+  - writes: web/lib/discovery/portfolio-log-candidates.ts
+  - writes: web/lib/protocol/streams.ts
+  - writes: web/lib/protocol/lending.ts
+  - writes: web/hooks/useStreams.ts
+  - writes: web/hooks/useCompleteStreams.ts
+  - writes: web/hooks/useLenderBook.ts
+  - writes: web/hooks/useBorrowerBook.ts
+  - writes: web/components/watch/WatchApp.tsx
+  - writes: web/components/borrow/BorrowFlow.tsx
+  - writes: web/scripts/check-banned-patterns.sh
+  - reads: web/lib/protocol-bootstrap.ts
+  - reads: web/lib/read-outcome.ts
+  - reads: web/lib/stream-book.ts
+  - reads: web/tests/e2e/watch.feature
+
+trust_domains:
+  - fact: log-derived stream, loan, and position candidate ids
+    domain: projection
+    moved_from: null
+  - fact: current stream owner, loan borrower, and lender position owner
+    domain: on-chain
+    moved_from: null
+  - fact: factory registry bindings from bootstrap
+    domain: on-chain
+    moved_from: null
+  - fact: StreamBook completeness
+    domain: on-chain
+    moved_from: null
+
+rejected_alternatives:
+  - option: Wrap public reads with cache() and LruStore
+    why_not: KD18 and CS5-U1 forbid a second UI chain-state store.
+  - option: Let stream and lending modules call getLogs
+    why_not: AS7 names one discovery owner. Hydration modules must not scan logs.
+  - option: Keep StreamBook.complete independent of ReadOutcome.complete
+    why_not: Outer ready plus inner incomplete lets writes treat a partial book as done.
+  - option: Wire log candidates into WatchApp routing in this ticket
+    why_not: Ticket 15 owns portfolio routing. CS4-U2 must remain optional.
+  - option: Drop oversized logs through a tight logsSieve maxBytes
+    why_not: A dropped Transfer log would miss a candidate id.
+
+invariants_held:
+  - invariant: Logs never authorize a write
+    how: Discovery returns candidate ids only. Hydration re-reads ownerOf, loanState, and positionState. Action modules do not import the discovery owner.
+  - invariant: One getLogs owner
+    how: Banned-pattern fixture allows getLogs only in portfolio-log-candidates.ts plus the existing deployment.ts anchor verifier.
+  - invariant: Outer ready cannot carry an incomplete StreamBook
+    how: useStreams and useCompleteStreams return partialOutcome when the book is incomplete. StreamBook.complete is true only on ready.
+  - invariant: Factory discovery stays fail-closed
+    how: protocol-bootstrap already reverts the whole boot on any required registration leg. This ticket does not add a partial registry.
+  - invariant: TanStack Query stays the only UI chain-state store
+    how: logsDivider composes range split, sieve, enricher, and rateLimiter. No cache() or LruStore.
+
+risks:
+  - risk: Ticket 15 might route from a provisional candidate count
+    residual: This ticket exports complete false on partial scans. CS4-U2 must wait for ready plus full hydration.
+  - risk: logsSieve still drops a pathological log
+    residual: maxBytes is 1 MiB so a normal Transfer, Deposited, Borrowed, or Supplied log stays.
+  - risk: Watch wall still pages through Enumerable, not this log owner
+    residual: Intended. Ticket 15 consumes the contract. Watch E2E continues to wait on ownerOf.
+
+diff_hints:
+  - path: web/lib/rpc.ts
+    why: logsDivider wrap uses the ordered per-URL policy. Replaces the inner-only rateLimiter wrap.
+  - path: web/lib/discovery/portfolio-log-candidates.ts
+    why: Sole portfolio getLogs owner. Range split, merge, partial on mid-range failure.
+  - path: web/lib/protocol/streams.ts
+    why: Candidate hydration. ownerOf wins over a stale Transfer log.
+  - path: web/lib/protocol/lending.ts
+    why: Candidate hydration. One failed row is partial, not empty-authoritative.
+  - path: web/hooks/useStreams.ts
+    why: StreamBook.complete derived from outer status.
+  - path: web/scripts/check-banned-patterns.sh
+    why: getLogs exception is the named discovery owner, not the whole discovery directory.

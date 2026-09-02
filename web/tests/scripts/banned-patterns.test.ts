@@ -35,13 +35,23 @@ function runGuard(root: string, forceGrep = false) {
 }
 
 describe("banned-pattern guard exception scope", () => {
-  it("allows historical access only in the exact reviewed owners", async () => {
+  it("allows historical access only in the named discovery owner and deployment verifier", async () => {
     const root = await fixture({
-      "lib/discovery/scanner.ts": "const marker = FACTORY_FROM_BLOCK;\n",
+      "lib/discovery/portfolio-log-candidates.ts": "await client.getLogs({ address });\n",
       "lib/deployment.ts": "const marker = FACTORY_FROM_BLOCK;\n",
     });
 
     expect(runGuard(root).status).toBe(0);
+  });
+
+  it("rejects getLogs in stream and lending hydration modules", async () => {
+    const root = await fixture({
+      "lib/protocol/streams.ts": "await client.getLogs({ address });\n",
+    });
+
+    const result = runGuard(root);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("getLogs");
   });
 
   it("still bans generic regressions inside discovery", async () => {
@@ -76,12 +86,12 @@ describe("banned-pattern guard exception scope", () => {
 
   it("uses the same exact exception scope in the grep fallback", async () => {
     const root = await fixture({
-      "hooks/nested/lib/discovery/scanner.ts": "const marker = FACTORY_FROM_BLOCK;\n",
+      "hooks/nested/lib/discovery/portfolio-log-candidates.ts": "await client.getLogs({ address });\n",
     });
 
     const result = runGuard(root, true);
     expect(result.status).toBe(1);
-    expect(result.stderr).toContain("FACTORY_FROM_BLOCK");
+    expect(result.stderr).toContain("getLogs");
   });
 });
 

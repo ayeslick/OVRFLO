@@ -771,10 +771,10 @@ function streamSelectStatus(
     return "loading";
   }
   const eligibleCount =
-    streams.status === "ready"
+    streams.status === "ready" || streams.status === "partial"
       ? streams.data.streams.filter((row) => row.borrowRouteEligible).length
       : 0;
-  if (streams.status === "ready" && !streams.data.complete && eligibleCount === 0) {
+  if ((streams.status === "partial" || (streams.status === "ready" && !streams.data.complete)) && eligibleCount === 0) {
     return "loading";
   }
   if (streams.status === "ready" && streams.data.complete && eligibleCount === 0) {

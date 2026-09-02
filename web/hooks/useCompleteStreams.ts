@@ -15,15 +15,14 @@ import {
 } from "./useStreams";
 import { chainId, isConfiguredAddress, ZERO_ADDRESS } from "@/lib/config";
 import { pinnedQuery, QUERY_RETRY, streamBookKeys } from "@/lib/query-keys";
-import { bookFields } from "@/lib/stream-book";
+import { bookFields, presentBook, unreadBookFailure } from "@/lib/stream-book";
 import { loadCompleteStreams } from "@/lib/protocol/streams";
 import { verifyPinHash } from "@/lib/protocol/pin";
 import {
-  loadingOutcome,
-  readFailure,
-  readyOutcome,
-  unavailableOutcome,
-  type ReadOutcome,
+    loadingOutcome,
+    readFailure,
+    unavailableOutcome,
+    type ReadOutcome,
 } from "@/lib/read-outcome";
 import type { VaultInfo } from "@/lib/types";
 
@@ -181,7 +180,13 @@ export function useCompleteStreams(input: {
       );
     }
     const freshness = query.isPlaceholderData || pinState.stale ? "stale" : "fresh";
-    return readyOutcome(book, { ...meta, ...outcome.metadata }, freshness);
+    const failures =
+      outcome.failures.length > 0
+        ? outcome.failures
+        : unresolved
+          ? [unreadBookFailure("useCompleteStreams")]
+          : [];
+    return presentBook(book, failures, { ...meta, ...outcome.metadata }, freshness);
   }, [
     bootstrap,
     configured,
