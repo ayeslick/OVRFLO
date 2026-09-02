@@ -25,6 +25,13 @@ client bundle includes index.node.js.
 Read Required reading below and the plan sections: KD19, sweep rule 13,
 ### CS6-U2, CS6 Definition of Done, and Verification Contract successor
 *Compression isolation*.
+ce-work overrides (they win over the skill's defaults): skip ce-code-review.
+Branch: work on ticket/22 in this worktree. Do not create another branch or
+ask about branches. Commits: plumbing bypass per
+.cursor/rules/no-commit-attribution.mdc; never run git commit. Review: dispatch
+one read-only reviewer subagent with the slug from spec § Model routing;
+reviewers report, this chat decides. No PR, no ce-commit-push-pr, no branding:
+push the ticket branch and stop.
 After local verification, mark ticket checkboxes done and set Status: resolved.
 ```
 

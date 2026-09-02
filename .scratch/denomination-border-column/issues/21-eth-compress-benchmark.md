@@ -24,6 +24,13 @@ Read Required reading below and the plan sections: KD19, AS8, sweep rule 13,
 ### CS6-U1, CS6 stop conditions, and Verification Contract successor
 *Compression isolation*.
 Write evidence to .scratch/denomination-border-column/cs6-eth-compress-evidence.md.
+ce-work overrides (they win over the skill's defaults): skip ce-code-review.
+Branch: work on ticket/21 in this worktree. Do not create another branch or
+ask about branches. Commits: plumbing bypass per
+.cursor/rules/no-commit-attribution.mdc; never run git commit. Review: dispatch
+one read-only reviewer subagent with the slug from spec § Model routing;
+reviewers report, this chat decides. No PR, no ce-commit-push-pr, no branding:
+push the ticket branch and stop.
 After local verification, mark ticket checkboxes done and set Status: resolved
 with evaluate or do not adopt. If do not adopt, mark ticket 22 cancelled.
 ```

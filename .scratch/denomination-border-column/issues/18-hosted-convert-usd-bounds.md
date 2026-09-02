@@ -26,6 +26,13 @@ Origin in CSP connect-src. Router allowlist
 0x888888888889758F76e7103c6CbF23ABbF58F946 only.
 USD: recipe table keyed by underlying; launch row is wstETH; missing row
 fails closed; never reuse another column's quote.
+ce-work overrides (they win over the skill's defaults): skip ce-code-review.
+Branch: work on ticket/18 in this worktree. Do not create another branch or
+ask about branches. Commits: plumbing bypass per
+.cursor/rules/no-commit-attribution.mdc; never run git commit. Review: dispatch
+one read-only reviewer subagent with the slug from spec § Model routing;
+reviewers report, this chat decides. No PR, no ce-commit-push-pr, no branding:
+push the ticket branch and stop.
 After local verification, mark ticket checkboxes done and set Status: resolved.
 ```
 

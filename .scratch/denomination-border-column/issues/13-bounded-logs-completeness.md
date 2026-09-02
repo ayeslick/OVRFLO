@@ -25,6 +25,13 @@ and ownership*.
 Remove StreamBook.complete or derive it from the outer result so outer-ready and
 inner-incomplete cannot coexist. Update the banned-pattern fixture to permit only
 the named discovery owner.
+ce-work overrides (they win over the skill's defaults): skip ce-code-review.
+Branch: work on ticket/13 in this worktree. Do not create another branch or
+ask about branches. Commits: plumbing bypass per
+.cursor/rules/no-commit-attribution.mdc; never run git commit. Review: dispatch
+one read-only reviewer subagent with the slug from spec § Model routing;
+reviewers report, this chat decides. No PR, no ce-commit-push-pr, no branding:
+push the ticket branch and stop.
 After local verification, mark ticket checkboxes done and set Status: resolved.
 ```
 

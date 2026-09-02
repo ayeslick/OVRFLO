@@ -27,6 +27,13 @@ regenerate goldens only via check-storage-layout.sh --write. Do not run or gate 
 the web build; that is ticket 07's gate. Token suite uses a pranked stand-in reserve; vault
 construction bindings live in later factory/vault tests — do not duplicate both
 directions in every file.
+ce-work overrides (they win over the skill's defaults): skip ce-code-review.
+Branch: work on ticket/02 in this worktree. Do not create another branch or
+ask about branches. Commits: plumbing bypass per
+.cursor/rules/no-commit-attribution.mdc; never run git commit. Review: dispatch
+one read-only reviewer subagent with the slug from spec § Model routing;
+reviewers report, this chat decides. No PR, no ce-commit-push-pr, no branding:
+push the ticket branch and stop.
 After local verification, mark ticket checkboxes done and set Status: resolved.
 ```
 

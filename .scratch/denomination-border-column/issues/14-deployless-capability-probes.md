@@ -21,6 +21,13 @@ Before any code, read Required reading below and the plan sections: KD18 probe
 bullets, AS7, ### CS5-U3, and CS5 Definition of Done.
 Cache capability, not returned chain authority. A provider may pass the hash-pin
 probe and fail one lens policy probe; only that provider/lens pair is disabled.
+ce-work overrides (they win over the skill's defaults): skip ce-code-review.
+Branch: work on ticket/14 in this worktree. Do not create another branch or
+ask about branches. Commits: plumbing bypass per
+.cursor/rules/no-commit-attribution.mdc; never run git commit. Review: dispatch
+one read-only reviewer subagent with the slug from spec § Model routing;
+reviewers report, this chat decides. No PR, no ce-commit-push-pr, no branding:
+push the ticket branch and stop.
 After local verification, mark ticket checkboxes done and set Status: resolved.
 ```
 

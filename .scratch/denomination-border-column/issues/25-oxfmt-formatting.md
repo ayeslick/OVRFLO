@@ -10,7 +10,8 @@
 ## Session prompt (paste into a new chat)
 
 ```text
-/ce-work docs/plans/2026-08-22-001-refactor-denomination-switch-border-column-plan.md
+Implement this ticket directly. Do not run /ce-work; the acceptance criteria
+are the checklist. Plan: docs/plans/2026-08-22-001-refactor-denomination-switch-border-column-plan.md
 
 Scope: CS7-U3 only (= this ticket). Stop when this ticket's acceptance criteria are met.
 Ticket: .scratch/denomination-border-column/issues/25-oxfmt-formatting.md
@@ -21,6 +22,12 @@ Read Required reading below and the plan sections: KD20 Oxfmt paragraph, ### CS7
 and Verification Contract item 8 (formatter output reviewed in a separate diff).
 Run npm --prefix web run fmt:oxfmt twice. Require the second run to produce no
 diff. Prove check mode with fmt:oxfmt:check.
+Branch: work on ticket/25 in this worktree. Do not create another branch or
+ask about branches. Commits: plumbing bypass per
+.cursor/rules/no-commit-attribution.mdc; never run git commit. Review: dispatch
+one read-only reviewer subagent with the slug from spec § Model routing;
+reviewers report, this chat decides. No PR, no ce-commit-push-pr, no branding:
+push the ticket branch and stop.
 After local verification, mark ticket checkboxes done and set Status: resolved.
 ```
 

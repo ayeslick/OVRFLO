@@ -21,7 +21,11 @@ Do **one ticket per chat**. Do not run the whole plan in one session.
 1. Open a **new** agent chat (clear context).
 2. Claim the ticket: set `Status: claimed` near the top of that issue file. Do not claim a ticket whose Status is `needs-info`.
 3. Paste the **Session prompt** block from that ticket (already filled in).
-4. Let `/ce-work` implement only that plan unit; it must read Required reading before code.
+4. Let `/ce-work` implement only that plan unit; it must read Required reading before code. Tickets **01**, **23**, and **25** skip `/ce-work` (deletion, config printed in KD20, formatter output); their acceptance criteria are the checklist. Every Session prompt carries these `/ce-work` overrides, which win over the skill's defaults:
+   - Branch: work on `ticket/<nn>` in this worktree. Do not create another branch or ask about branches.
+   - Commits: plumbing bypass per `.cursor/rules/no-commit-attribution.mdc`. Never `git commit`.
+   - Review: skip `ce-code-review` (it runs on the implementer's model). Dispatch one read-only reviewer subagent with the slug from § Model routing. Reviewers report; the ticket chat decides.
+   - Shipping tail: no PR, no `ce-commit-push-pr`, no branding. Push the ticket branch and stop.
 5. **The plan is the single decision authority for this campaign.** Search the hop table in `docs/agents/system.md` first. Then search Key Decisions, Implementation Units, Sweep Contracts, and the Verification Contract before assuming anything is open. If something genuinely is not pinned, STOP and surface it; do not decide locally. Do not re-litigate settled ground: `docs/audit/rejected-findings-record.md` and the plan's signed decisions are binding.
 6. **Do not edit the plan file** while implementing. Log every deviation on the ticket with its reason.
 7. Before the first code write, record intent (assumptions, predicted blast radius, verification). Solidity: Sequence 6 in `docs/solutions/patterns/solidity-implementation-discipline.md`. State-touching web: scratch YAML under `.scratch/decisions/` per `docs/maps/SCHEMAS.md` §4. Do not reconstruct the record afterward.

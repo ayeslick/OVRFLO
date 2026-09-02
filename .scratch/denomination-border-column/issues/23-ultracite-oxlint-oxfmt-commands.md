@@ -10,7 +10,8 @@
 ## Session prompt (paste into a new chat)
 
 ```text
-/ce-work docs/plans/2026-08-22-001-refactor-denomination-switch-border-column-plan.md
+Implement this ticket directly. Do not run /ce-work; the acceptance criteria
+are the checklist. Plan: docs/plans/2026-08-22-001-refactor-denomination-switch-border-column-plan.md
 
 Scope: CS7-U1 only (= this ticket). Stop when this ticket's acceptance criteria are met.
 Ticket: .scratch/denomination-border-column/issues/23-ultracite-oxlint-oxfmt-commands.md
@@ -25,6 +26,12 @@ Create web/oxlint-eslint-parity.md with the six-column header only.
 Read Required reading below and the plan sections: KD20, AS8, sweep rule 14,
 ### CS7-U1, CS7 stop conditions, and Verification Contract successor
 *Tool parity*.
+Branch: work on ticket/23 in this worktree. Do not create another branch or
+ask about branches. Commits: plumbing bypass per
+.cursor/rules/no-commit-attribution.mdc; never run git commit. Review: dispatch
+one read-only reviewer subagent with the slug from spec § Model routing;
+reviewers report, this chat decides. No PR, no ce-commit-push-pr, no branding:
+push the ticket branch and stop.
 After local verification, mark ticket checkboxes done and set Status: resolved.
 ```
 

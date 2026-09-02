@@ -22,6 +22,13 @@ Read Required reading below and the plan sections: KD20 A–E classes, ### CS7-U
 and CS7 Definition of Done.
 If parity is not achieved, ESLint remains and this ticket records the blocker
 instead of removing ESLint.
+ce-work overrides (they win over the skill's defaults): skip ce-code-review.
+Branch: work on ticket/24 in this worktree. Do not create another branch or
+ask about branches. Commits: plumbing bypass per
+.cursor/rules/no-commit-attribution.mdc; never run git commit. Review: dispatch
+one read-only reviewer subagent with the slug from spec § Model routing;
+reviewers report, this chat decides. No PR, no ce-commit-push-pr, no branding:
+push the ticket branch and stop.
 After local verification, mark ticket checkboxes done and set Status: resolved.
 ```
 

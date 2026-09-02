@@ -10,7 +10,8 @@
 ## Session prompt (paste into a new chat)
 
 ```text
-/ce-work docs/plans/2026-08-22-001-refactor-denomination-switch-border-column-plan.md
+Implement this ticket directly. Do not run /ce-work; the acceptance criteria
+are the checklist. Plan: docs/plans/2026-08-22-001-refactor-denomination-switch-border-column-plan.md
 
 Scope: CS1 U1 only (= this ticket). Stop when this ticket's acceptance criteria are met.
 Ticket: .scratch/denomination-border-column/issues/01-delete-pt-flash.md
@@ -22,6 +23,12 @@ KD1, Sweep rule 8 (error-catalog regeneration rides this unit), Verification
 Contract item 7 successor *Flash surface gone*, and ### CS1 U1.
 This commit is pure removal. Regenerate the ABI-enumerated error catalog in the
 same commit — the catalog test hard-fails when flash errors leave the vault ABI.
+Branch: work on ticket/01 in this worktree. Do not create another branch or
+ask about branches. Commits: plumbing bypass per
+.cursor/rules/no-commit-attribution.mdc; never run git commit. Review: dispatch
+one read-only reviewer subagent with the slug from spec § Model routing;
+reviewers report, this chat decides. No PR, no ce-commit-push-pr, no branding:
+push the ticket branch and stop.
 After local verification, mark ticket checkboxes done and set Status: resolved.
 ```
 

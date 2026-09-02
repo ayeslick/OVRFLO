@@ -27,6 +27,13 @@ that are not hosted/USD, and Verification Contract successors *Composite resume*
 *Finality*, *Unknown-outcome resolution*, *Post-submit throw reconciliation*,
 *Modal close keeps the attempt*, *Reset is resume*.
 Generalize the existing transaction queue. Do not add a second composite executor.
+ce-work overrides (they win over the skill's defaults): skip ce-code-review.
+Branch: work on ticket/17 in this worktree. Do not create another branch or
+ask about branches. Commits: plumbing bypass per
+.cursor/rules/no-commit-attribution.mdc; never run git commit. Review: dispatch
+one read-only reviewer subagent with the slug from spec § Model routing;
+reviewers report, this chat decides. No PR, no ce-commit-push-pr, no branding:
+push the ticket branch and stop.
 After local verification, mark ticket checkboxes done and set Status: resolved.
 ```
 

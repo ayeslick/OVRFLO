@@ -24,6 +24,13 @@ and ### CS1 U4.
 Rewrite the registerOvrflo NatSpec checklist for three creation transactions. Delete
 the stale "Token ownership needs no check" sentence. Flash forwarder residue from 01
 must be absent.
+ce-work overrides (they win over the skill's defaults): skip ce-code-review.
+Branch: work on ticket/04 in this worktree. Do not create another branch or
+ask about branches. Commits: plumbing bypass per
+.cursor/rules/no-commit-attribution.mdc; never run git commit. Review: dispatch
+one read-only reviewer subagent with the slug from spec § Model routing;
+reviewers report, this chat decides. No PR, no ce-commit-push-pr, no branding:
+push the ticket branch and stop.
 After local verification, mark ticket checkboxes done and set Status: resolved.
 ```
 

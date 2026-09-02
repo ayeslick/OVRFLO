@@ -26,6 +26,13 @@ test_Lending_RetainsRuntimeHeadroomCanary fails, drop the hook, keep the asset
 switch, surface, and do not lower LENDING_RUNTIME_CANARY. Do not run or gate on
 the web build; that is ticket 07's gate. Owner reaches setRouter directly until 04 lands —
 both land before merge.
+ce-work overrides (they win over the skill's defaults): skip ce-code-review.
+Branch: work on ticket/03 in this worktree. Do not create another branch or
+ask about branches. Commits: plumbing bypass per
+.cursor/rules/no-commit-attribution.mdc; never run git commit. Review: dispatch
+one read-only reviewer subagent with the slug from spec § Model routing;
+reviewers report, this chat decides. No PR, no ce-commit-push-pr, no branding:
+push the ticket branch and stop.
 After local verification, mark ticket checkboxes done and set Status: resolved.
 ```
 

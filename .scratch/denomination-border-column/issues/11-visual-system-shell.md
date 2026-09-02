@@ -27,6 +27,13 @@ and CS4 Definition of Done navigation bullets.
 DESIGN.md is normative. The boards are acceptance evidence, not a token fallback.
 Map ownership: SHELL owns global navigation and mode reachability. Do not add a
 region slug.
+ce-work overrides (they win over the skill's defaults): skip ce-code-review.
+Branch: work on ticket/11 in this worktree. Do not create another branch or
+ask about branches. Commits: plumbing bypass per
+.cursor/rules/no-commit-attribution.mdc; never run git commit. Review: dispatch
+one read-only reviewer subagent with the slug from spec § Model routing;
+reviewers report, this chat decides. No PR, no ce-commit-push-pr, no branding:
+push the ticket branch and stop.
 After local verification, mark ticket checkboxes done and set Status: resolved.
 ```
 

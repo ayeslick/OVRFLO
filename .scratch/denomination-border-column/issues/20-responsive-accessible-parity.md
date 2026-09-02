@@ -22,6 +22,13 @@ if this ticket touches client state.
 Read Required reading below and the plan sections: KD16 visual foundation, AS4,
 AS9 focus bullets, ### CS4-U6, Verification Contract successor *Responsive access*,
 and CS4 Definition of Done accessibility bullets.
+ce-work overrides (they win over the skill's defaults): skip ce-code-review.
+Branch: work on ticket/20 in this worktree. Do not create another branch or
+ask about branches. Commits: plumbing bypass per
+.cursor/rules/no-commit-attribution.mdc; never run git commit. Review: dispatch
+one read-only reviewer subagent with the slug from spec § Model routing;
+reviewers report, this chat decides. No PR, no ce-commit-push-pr, no branding:
+push the ticket branch and stop.
 After local verification, mark ticket checkboxes done and set Status: resolved.
 ```
 

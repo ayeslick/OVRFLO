@@ -22,6 +22,13 @@ AS10 write-boundary, ### CS5-U1, and CS5 stop conditions.
 Pin npm 0.0.16; release tag provenance is full commit
 0df02a9a79bce8ed0a98974034d34cf5c8de7e11. Keep 7ea8e70… as documentation context
 only. Record the package as an explicit runtime-dependency exception.
+ce-work overrides (they win over the skill's defaults): skip ce-code-review.
+Branch: work on ticket/12 in this worktree. Do not create another branch or
+ask about branches. Commits: plumbing bypass per
+.cursor/rules/no-commit-attribution.mdc; never run git commit. Review: dispatch
+one read-only reviewer subagent with the slug from spec § Model routing;
+reviewers report, this chat decides. No PR, no ce-commit-push-pr, no branding:
+push the ticket branch and stop.
 After local verification, mark ticket checkboxes done and set Status: resolved.
 ```
 

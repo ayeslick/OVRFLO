@@ -21,6 +21,13 @@ behavior. Maps wrap-reserve retarget belongs to 07 — verify it is present, do 
 relitigate it. CS0 already shipped; do not redo it.
 Before any edits, read Required reading below and the plan sections: KD13
 doc consequences, ### CS1 U8, Sweep rule 12, and Definition of Done CS1.
+ce-work overrides (they win over the skill's defaults): skip ce-code-review.
+Branch: work on ticket/08 in this worktree. Do not create another branch or
+ask about branches. Commits: plumbing bypass per
+.cursor/rules/no-commit-attribution.mdc; never run git commit. Review: dispatch
+one read-only reviewer subagent with the slug from spec § Model routing;
+reviewers report, this chat decides. No PR, no ce-commit-push-pr, no branding:
+push the ticket branch and stop.
 After local verification, mark ticket checkboxes done and set Status: resolved.
 ```
 

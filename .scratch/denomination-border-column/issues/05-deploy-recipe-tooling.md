@@ -23,6 +23,13 @@ Sweep rule 2, Verification Contract items 3–5, and ### CS1 U5.
 Positional destructurers of _deployConfiguredSystemAs must break at compile time
 when the reserve member is added. Seed smoke: if MAINNET_RPC_URL is unavailable,
 record an environment-gate result; never fake it.
+ce-work overrides (they win over the skill's defaults): skip ce-code-review.
+Branch: work on ticket/05 in this worktree. Do not create another branch or
+ask about branches. Commits: plumbing bypass per
+.cursor/rules/no-commit-attribution.mdc; never run git commit. Review: dispatch
+one read-only reviewer subagent with the slug from spec § Model routing;
+reviewers report, this chat decides. No PR, no ce-commit-push-pr, no branding:
+push the ticket branch and stop.
 After local verification, mark ticket checkboxes done and set Status: resolved.
 ```
 

@@ -24,6 +24,13 @@ Read Required reading below and the plan sections: KD5 provenance, KD12, Sweep
 rules 2 and 9, Verification Contract item 6 CS1 U7 bullet, and ### CS1 U7.
 Bootstrap gains a third multicall leg; result pairing becomes ×3; VaultInfo gains
 reserve and retiredLendings (KD7 web wind-down pin; enumerate lendings(i)). Maps: assets.md and chain-reads.md wrap-reserve retarget with this ticket.
+ce-work overrides (they win over the skill's defaults): skip ce-code-review.
+Branch: work on ticket/07 in this worktree. Do not create another branch or
+ask about branches. Commits: plumbing bypass per
+.cursor/rules/no-commit-attribution.mdc; never run git commit. Review: dispatch
+one read-only reviewer subagent with the slug from spec § Model routing;
+reviewers report, this chat decides. No PR, no ce-commit-push-pr, no branding:
+push the ticket branch and stop.
 After local verification, mark ticket checkboxes done and set Status: resolved.
 ```
 

@@ -24,6 +24,13 @@ Run the fizz-sync path. Verify each cited GL-nn id against test/fizz/Properties.
 during the sync rather than trusting the plan citation. Recompute TICKS_SLOT and
 packed epoch-slot decode from the regenerated lending golden; keep exposed_epochState
 cross-checks green. Never edit a slot constant to make a vacuous pass.
+ce-work overrides (they win over the skill's defaults): skip ce-code-review.
+Branch: work on ticket/06 in this worktree. Do not create another branch or
+ask about branches. Commits: plumbing bypass per
+.cursor/rules/no-commit-attribution.mdc; never run git commit. Review: dispatch
+one read-only reviewer subagent with the slug from spec § Model routing;
+reviewers report, this chat decides. No PR, no ce-commit-push-pr, no branding:
+push the ticket branch and stop.
 After local verification, mark ticket checkboxes done and set Status: resolved.
 ```
 

@@ -26,6 +26,13 @@ Read Required reading below and the plan sections: KD10, KD14 CS3 bullets
 Verification Contract successors *Request book attribution* and
 *Request book fill-or-rest*.
 Seed must call setLendingRouter after deploy. DeploySize gates the book.
+ce-work overrides (they win over the skill's defaults): skip ce-code-review.
+Branch: work on ticket/10 in this worktree. Do not create another branch or
+ask about branches. Commits: plumbing bypass per
+.cursor/rules/no-commit-attribution.mdc; never run git commit. Review: dispatch
+one read-only reviewer subagent with the slug from spec § Model routing;
+reviewers report, this chat decides. No PR, no ce-commit-push-pr, no branding:
+push the ticket branch and stop.
 After local verification, mark ticket checkboxes done and set Status: resolved.
 ```
 
