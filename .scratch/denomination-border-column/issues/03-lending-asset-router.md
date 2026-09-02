@@ -4,8 +4,8 @@
 
 **Blocked by:** 02
 
-**Status:** ready-for-agent
-**Labels:** ready-for-agent
+**Status:** resolved
+**Labels:** ready-for-human
 
 ## Session prompt (paste into a new chat)
 
@@ -52,20 +52,33 @@ After local verification, mark ticket checkboxes done and set Status: resolved.
 
 ## Acceptance criteria
 
-- [ ] `supply` pulls ovrfloToken; `withdraw` refunds ovrfloToken; no underlying balance changes on those paths
-- [ ] `borrow` pays net ovrfloToken to the attributed borrower and fee ovrfloToken to the treasury
-- [ ] `repay`, `close`, `claim`, `proceeds`, and `received` stay ovrfloToken; `_fillTick` and StreamPricing are unchanged
-- [ ] Constructor still reads `ovrfloInfo` and still reverts on zero underlying; it does not store `underlying`
-- [ ] A non-router caller who passes a wrong `onBehalfOf` still owns the loan
-- [ ] A router call with `onBehalfOf = human` pays, indexes, and (on close) returns the stream to the human
-- [ ] A router call with `onBehalfOf = address(0)` reverts `ZeroAddress`
-- [ ] `Borrowed` indexed `borrower` is the attributed address; no fourth indexed topic is added
-- [ ] `previewBorrow` keeps its four-argument signature
-- [ ] `setRouter` accepts zero or any nonzero address; one event `LendingRouterSet`
-- [ ] Lending runtime canary still holds, or the hook is dropped and the failure is surfaced without lowering the canary
-- [ ] Storage goldens regenerated via `check-storage-layout.sh --write`; raw-slot constants follow the golden
-- [ ] `forge build` then `forge test` green; `forge fmt --check` clean. The web build is not a gate here; `borrow` gains `onBehalfOf` and the web call sites flip in 07
+- [x] `supply` pulls ovrfloToken; `withdraw` refunds ovrfloToken; no underlying balance changes on those paths
+- [x] `borrow` pays net ovrfloToken to the attributed borrower and fee ovrfloToken to the treasury
+- [x] `repay`, `close`, `claim`, `proceeds`, and `received` stay ovrfloToken; `_fillTick` and StreamPricing are unchanged
+- [x] Constructor still reads `ovrfloInfo` and still reverts on zero underlying; it does not store `underlying`
+- [x] A non-router caller who passes a wrong `onBehalfOf` still owns the loan
+- [x] A router call with `onBehalfOf = human` pays, indexes, and (on close) returns the stream to the human
+- [x] A router call with `onBehalfOf = address(0)` reverts `ZeroAddress`
+- [x] `Borrowed` indexed `borrower` is the attributed address; no fourth indexed topic is added
+- [x] `previewBorrow` keeps its four-argument signature
+- [x] `setRouter` accepts zero or any nonzero address; one event `LendingRouterSet`
+- [x] Lending runtime canary still holds, or the hook is dropped and the failure is surfaced without lowering the canary
+- [x] Storage goldens regenerated via `check-storage-layout.sh --write`; raw-slot constants follow the golden
+- [x] `forge build` then `forge test` green; `forge fmt --check` clean. The web build is not a gate here; `borrow` gains `onBehalfOf` and the web call sites flip in 07
 
 ## Plan unit
 
 CS1 U3 in `docs/plans/2026-08-22-001-refactor-denomination-switch-border-column-plan.md`
+
+## Deviation log (ticket/03, 2026-09-02)
+
+Base for the diff: `main` at `1f9deb8`. `router` is slot 17 after `received`. `_ticks` stays slot 6. `test_Lending_RetainsRuntimeHeadroomCanary` passed; the hook stayed.
+
+1. **`_emitBorrowed` helper.** The dual-pipeline goldens compile `borrow` without via-IR. An inline `Borrowed` emit after the extra `onBehalfOf` local was stack-too-deep. The helper is a separate frame only. Event shape and indexed topics are unchanged.
+2. **Fuzz (`test/OVRFLOFuzz.t.sol`, lending contract only).** Extra `borrow` argument `address(0)`. Conservation and payout asserts read `ovrfloToken` instead of `underlying`. No new properties.
+3. **Invariant (`test/OVRFLOLendingInvariant.t.sol`).** After the switch, one token is both escrow and recovery pot. `invariant_EscrowSolvency` and `invariant_TokenCustody` now assert `held == unfilled + proceeds`. `invariant_UnitAlignment` checks `(held - proceeds) % UNIT == 0` because pots can hold 1-wei dust. No GL-nn re-derivation. Default profile only (25 runs / depth 10).
+4. **Fizz (`test/fizz/handlers/OVRFLOLendingHandler.sol`).** Extra `borrow` argument `address(0)` so FoundryTester compiles. GL-02/03/04 and `_accountUnderlyingFlow` were not retargeted.
+5. **Attack, fork, gas, fixture.** Extra `borrow` argument. Hostile/supply/repay paths mint and approve `ovrfloToken`. Fork `_escrowStreamViaBorrow` wraps on the reserve then supplies `ovrfloToken`.
+6. **Review residual (GPT-5.6 Sol, Note):** `src/StreamPricing.sol` `IOVRFLOSeriesRegistry.series` NatSpec still said underlying pays fees. Applied: that return is the column identity asset. `ovrfloInfo` NatSpec was already in the plan unit. No protocol bug.
+
+Verification: `forge build` then `forge test` (default profile) green, 5 fork skips expected; `forge fmt --check` clean. Goldens regenerated only via `bash tools/scripts/check-storage-layout.sh --write`. Web build was not a gate. `FOUNDRY_PROFILE=invariant` and the fizz harness were not run.
