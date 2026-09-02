@@ -2,7 +2,7 @@
 
 **What to build:** Docs describe the nested column and ovrfloToken denomination. Architecture, concepts, onboarding, security, product operating context, critical patterns, rejected-finding pointers, and x-ray match the shipped CS1 surface. This ticket does not rewrite CS4 product UX. CS0 (the two README line fixes) already shipped on 2026-09-01 and is not part of this ticket.
 
-**Blocked by:** 06, 07
+**Blocked by:** 07 (06 is deferred; onboarding §5 describes the invariants as pinned in KD13, not as re-derived)
 
 **Status:** ready-for-agent
 **Labels:** ready-for-agent

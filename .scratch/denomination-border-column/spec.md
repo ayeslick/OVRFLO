@@ -46,9 +46,9 @@ Read `PRODUCT.md`, `DESIGN.md`, `docs/solutions/patterns/ovrflo-web-standard.md`
 ### Parallel start
 
 ```
-01 ── 02 ── 03 ── 04 ──┬── 05 ── 07 ──┬── 08
-                       │              │
-                       └── 06 ────────┘
+01 ── 02 ── 03 ── 04 ──┬── 05 ── 07 ── 08
+                       │
+                       └── 06 (deferred; owner start-OK; blocks nothing)
                                       08 ── 09 (CS2 flash mint)
                                       08 ── 10 (CS3 request book)
 
@@ -64,10 +64,10 @@ Read `PRODUCT.md`, `DESIGN.md`, `docs/solutions/patterns/ovrflo-web-standard.md`
 
 - **01** can start immediately.
 - **Parallel tickets use separate git worktrees.** Two chats must not share one checkout (pattern #24). For each ticket that runs beside another: `git worktree add ../OVRFLO-<nn> -b ticket/<nn> <campaign-branch>`, work there, then merge `ticket/<nn>` into the campaign branch on resolve and remove the worktree. Serial tickets may share the checkout.
-- **05** and **06** run in parallel after **04**.
+- **05** runs after **04**. **06** is deferred (owner 2026-09-02): fuzz and invariant re-derivation runs after the feature tickets. Do not claim **06** until the owner records start-OK on it.
 - **11** and **12** run in parallel after **07**. Do not wait for **08**.
 - **13** and **14** run in parallel after **12**.
-- **06** and **07** do not block each other.
+- **08** waits on **07** only; it no longer waits on **06**.
 - **09** and **10** are ready-for-agent after **08**. Implement them from this plan. Do not mix them into CS1 commits.
 - **18** is ready-for-agent after **17**. USD is a per-underlying recipe table (KD17). Launch ships the wstETH row. A missing row fails closed. Never reuse wstETH for another column.
 - **17** must not wait on **18**. **19** and **20** must not wait on **18**.
@@ -103,6 +103,8 @@ Rules:
 Keep the clean `forge build` then `forge test` order. `forge fmt --check` must be clean.
 
 **Fork-test skips are expected:** `test/fork/` suites self-skip without `MAINNET_RPC_URL`. Do not investigate the skips, set up an RPC, or write fork tests outside the ticket scope. If a ticket names a seed smoke and the RPC is missing, record an environment-gate result; never fake it. Never `forge script --broadcast` against local Anvil (critical pattern #2).
+
+**Fuzz and invariant suites are out of scope until ticket 06 starts (owner 2026-09-02).** Plain `forge test` still compiles and runs `test/OVRFLOFuzz.t.sol`, `test/OVRFLOInvariant.t.sol`, `test/OVRFLOLendingInvariant.t.sol`, `test/OVRFLOWrapUnwrap.invariant.t.sol`, and the `test/fizz/` Foundry harness at the default profile (25 runs / depth 10); they must stay green. If this ticket's change breaks one of those files, make the minimum edit that restores compile and green: rename a call, retarget an address, drop an assertion about a function that no longer exists. Do not re-derive properties, add coverage, port a suite, recompute slot constants beyond what the golden forces, or verify GL-nn ids. Do not run `FOUNDRY_PROFILE=invariant`. Do not run the fizz harness (Echidna, Medusa, or `fizz-sync`). Log each such minimum edit on the ticket so 06 can find it.
 
 **Storage goldens (tickets 02–05):** append new deployables to `CONTRACTS` in `tools/scripts/check-storage-layout.sh` before the first golden. Regenerate goldens **only** via `check-storage-layout.sh --write`. Hand-edited golden files are a logged deviation. Recompute raw-slot test constants from the regenerated lending golden; keep `exposed_epochState` cross-checks as the loud-failure guard.
 
@@ -141,14 +143,14 @@ Run the gates the plan's Verification Contract names for that changeset. Do not 
 
 | # | Title | Plan units | Blocked by | Status at publish |
 |---|---|---|---|---|
-| 01 | Delete PT flash | CS1-U1 | — | ready-for-agent |
-| 02 | Token, reserve, vault constructor chain | CS1-U2 | 01 | ready-for-agent |
+| 01 | Delete PT flash | CS1-U1 | — | resolved |
+| 02 | Token, reserve, vault constructor chain | CS1-U2 | 01 | resolved |
 | 03 | Lending asset switch and router hook | CS1-U3 | 02 | ready-for-agent |
 | 04 | Factory registration, replaceLending, setLendingRouter | CS1-U4 | 03 | ready-for-agent |
 | 05 | Deploy recipe and seed tooling | CS1-U5 | 04 | ready-for-agent |
-| 06 | Invariant and fuzz re-derivation | CS1-U6 | 04 | ready-for-agent |
+| 06 | Invariant and fuzz re-derivation | CS1-U6 | 04, owner start-OK | ready-for-human (deferred 2026-09-02) |
 | 07 | Web denomination sync | CS1-U7 | 05 | ready-for-agent |
-| 08 | Docs sync | CS1-U8 | 06, 07 | ready-for-agent |
+| 08 | Docs sync | CS1-U8 | 07 | ready-for-agent |
 | 09 | CS2: ERC-3156 flash mint | CS2-U1 | 08 | ready-for-agent |
 | 10 | CS3: borrow request book | CS3-U1 | 08 | ready-for-agent |
 | 11 | Shared visual system and Default / Advanced shell | CS4-U1 | 07 | ready-for-agent |
@@ -188,5 +190,6 @@ Stop conditions in the plan Goal Capsule (a)–(p) remain binding. A hit is a st
 Pins for CS6 and CS7 are in KD19 and KD20. Do not invent a substitute. Do not re-research pins.
 
 - **Tickets 21 and 23:** do not start CS6 or CS7 code until the owner records start-OK on that ticket.
+- **Ticket 06:** deferred 2026-09-02. Do not start fuzz or invariant re-derivation until the owner records start-OK on that ticket. Other tickets follow the "Fuzz and invariant suites" rule under Solidity verification.
 - **Ticket 22:** runs only if ticket 21 recorded `evaluate`. Install only npm `eth-compress@0.4.0` per KD19. If artifacts fail, STOP. Do not git-install. Do not wait for `0.5.0`.
 - **A later underlying:** add a reviewed USD recipe row (explorer verification, kind, heartbeat, share-rate) before USD display or USD submit for that column. Token-native flows do not wait. Do not copy the wstETH row.

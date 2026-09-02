@@ -24,6 +24,9 @@ and ### CS1 U4.
 Rewrite the registerOvrflo NatSpec checklist for three creation transactions. Delete
 the stale "Token ownership needs no check" sentence. Flash forwarder residue from 01
 must be absent.
+Fuzz and invariant files: minimum edit to keep plain forge test green, nothing
+more. Do not run FOUNDRY_PROFILE=invariant or the fizz harness. 06 owns the
+re-derivation later; log each minimum edit on this ticket.
 ce-work overrides (they win over the skill's defaults): skip ce-code-review.
 Branch: work on ticket/04 in this worktree. Do not create another branch or
 ask about branches. Commits: plumbing bypass per

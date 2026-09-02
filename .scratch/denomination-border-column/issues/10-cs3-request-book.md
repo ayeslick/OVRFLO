@@ -26,6 +26,9 @@ Read Required reading below and the plan sections: KD10, KD14 CS3 bullets
 Verification Contract successors *Request book attribution* and
 *Request book fill-or-rest*.
 Seed must call setLendingRouter after deploy. DeploySize gates the book.
+Fuzz and invariant files: minimum edit to keep plain forge test green, nothing
+more. Do not run FOUNDRY_PROFILE=invariant or the fizz harness. 06 owns the
+re-derivation later; log each minimum edit on this ticket.
 ce-work overrides (they win over the skill's defaults): skip ce-code-review.
 Branch: work on ticket/10 in this worktree. Do not create another branch or
 ask about branches. Commits: plumbing bypass per

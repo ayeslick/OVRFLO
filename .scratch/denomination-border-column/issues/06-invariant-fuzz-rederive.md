@@ -2,10 +2,12 @@
 
 **What to build:** Solvency and wrap-reserve invariants span vault plus `OVRFLOReserve`. Lending escrow and money-recipient invariants use ovrfloToken. The wrap/unwrap invariant suite ports to `OVRFLOReserve`. Vault underlying-reserve invariants leave the vault suite. Fizz properties flip asset, holder set, span, retarget, and minter shape after a fizz-sync against the live harness. Raw-slot constants are recomputed from the regenerated lending golden.
 
-**Blocked by:** 04 (parallel with 05)
+**Blocked by:** 04, and owner start-OK (deferred 2026-09-02)
 
-**Status:** ready-for-agent
-**Labels:** ready-for-agent
+**Status:** ready-for-human
+**Labels:** ready-for-human
+
+**Owner note (2026-09-02):** fuzz and invariant re-derivation runs after the feature tickets. Do not claim this ticket until the owner records start-OK here. Until then, every other ticket makes only the minimum edit that keeps `forge test` green in the fuzz and invariant files it breaks, and never runs `FOUNDRY_PROFILE=invariant` or the fizz harness (Echidna/Medusa). Ticket 08 no longer waits on this ticket.
 
 ## Session prompt (paste into a new chat)
 

@@ -24,6 +24,9 @@ successors *Flash mint conservation* and *Flash surface gone*.
 Use OZ IERC3156 under lib/openzeppelin-contracts/contracts/interfaces/.
 Launch flashMintMax = 0. Ceiling 1_000_000 * 10**18. FLASH_FEE_MAX_BPS = 9.
 Factory forwarders: setReserveFlashMintMax and setReserveFlashFeeBps.
+Fuzz and invariant files: minimum edit to keep plain forge test green, nothing
+more. Do not run FOUNDRY_PROFILE=invariant or the fizz harness. 06 owns the
+re-derivation later; log each minimum edit on this ticket.
 ce-work overrides (they win over the skill's defaults): skip ce-code-review.
 Branch: work on ticket/09 in this worktree. Do not create another branch or
 ask about branches. Commits: plumbing bypass per

@@ -26,6 +26,9 @@ test_Lending_RetainsRuntimeHeadroomCanary fails, drop the hook, keep the asset
 switch, surface, and do not lower LENDING_RUNTIME_CANARY. Do not run or gate on
 the web build; that is ticket 07's gate. Owner reaches setRouter directly until 04 lands —
 both land before merge.
+Fuzz and invariant files: minimum edit to keep plain forge test green, nothing
+more. Do not run FOUNDRY_PROFILE=invariant or the fizz harness. 06 owns the
+re-derivation later; log each minimum edit on this ticket.
 ce-work overrides (they win over the skill's defaults): skip ce-code-review.
 Branch: work on ticket/03 in this worktree. Do not create another branch or
 ask about branches. Commits: plumbing bypass per
