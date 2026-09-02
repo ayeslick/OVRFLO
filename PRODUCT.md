@@ -10,8 +10,8 @@ web
 
 OVRFLO serves three closely related DeFi participants:
 
-- Lenders supply underlying liquidity at a chosen APR and earn fixed-rate yield from deterministic collateral streams.
-- Borrowers pledge eligible OVRFLO Streams to access underlying liquidity without liquidation risk or health-factor management.
+- Lenders supply ovrfloToken liquidity at a chosen APR and earn fixed-rate yield from deterministic collateral streams.
+- Borrowers pledge eligible OVRFLO Streams to access ovrfloToken liquidity without liquidation risk or health-factor management.
 - Pendle PT holders deposit principal tokens to receive immediate ovrfloToken value plus a stream of the remaining fixed discount, which they can hold, sell, or use as collateral.
 
 Users interact through a wallet-connected application and are expected to understand token approvals, transaction signing, maturities, APRs, and on-chain settlement.
@@ -39,10 +39,10 @@ The primary product is a wallet-connected web application backed by Ethereum-com
 Core workflows include:
 
 - depositing an approved Pendle PT series to create ovrfloTokens and an OVRFLO Stream;
-- supplying standing liquidity at a chosen fixed APR tick, where it rests until matched;
-- borrowing underlying against one stream at one APR tick in a single blind fill, up to the stream's full remaining value (there are no sale listings; a maximum borrow is economically a sale);
+- supplying standing ovrfloToken liquidity at a chosen fixed APR tick, where it rests until matched;
+- borrowing ovrfloToken against one stream at one APR tick in a single blind fill, up to the stream's full remaining value (there are no sale listings; a maximum borrow is economically a sale);
 - claiming lender proceeds on the supplied position that earned them, repaying or closing loans from the borrowed detail, and watching streams, loans, and supplied liquidity on the home wall;
-- wrapping and unwrapping the vault underlying one-to-one with ovrfloToken;
+- wrapping and unwrapping the column underlying one-to-one with ovrfloToken on `OVRFLOReserve`;
 - claiming PT against ovrfloToken after series maturity.
 
 Users evaluate amounts, APR, maturity, stream value, loan obligation, fees, residual value, wallet state, approvals, and transaction status. The Markets app shows amounts in USD by default for the selected column's underlying (wstETH, rETH, sUSDe, or any later underlying). The customer can switch and see the same amounts in token units. Each underlying has its own USD quote. The Markets app must not show another column's dollars on this position. If the USD quote is missing or stale, the Markets app shows token units and does not invent a dollar figure. Transactions stay denominated in token units. USD never enters calldata. There is no indexer backend. Stream discovery is still a two-step browser verified-log scan: Transfer logs yield a candidate set, then ownership and every action-critical fact are verified by direct on-chain reads. Candidates never gate.

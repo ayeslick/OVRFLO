@@ -14,7 +14,7 @@ OVRFLO operates in two layers:
 
 ### Example
 
-1. A borrower **borrows 4 WETH** at 10% APR against deterministic collateral streams
+1. A borrower **borrows 4 ovrfloETH** at 10% APR against deterministic collateral streams
 2. The collateral — an OVRFLO stream vesting **5 ovrfloETH** until PT maturity — was created by depositing **100 PT-stETH** into OVRFLO (the depositor also received **95 ovrfloETH** immediately)
 3. At maturity, the collateral has vested **5 ovrfloETH**; the lender draws the owed **4.4 ovrfloETH** obligation, and the **0.6 ovrfloETH** residual returns to the borrower
 
@@ -68,15 +68,21 @@ OVRFLO operates in two layers:
 │   │               │                          │  (core vault)│            │
 │   │ - register    │                          │ - deposit()  │            │
 │   │   Ovrflo()    │                          │ - claim()    │            │
-│   │ - register    │                          │ - wrap()     │            │
-│   │   Lending()   │                          │ - unwrap()   │            │
-│   │ - prepare     │                          │ - series()   │            │
-│   │   Oracle      │                          └──────┬───────┘            │
-│   └───────┬───────┘                                 │ mints/burns        │
-│           │                                         ▼                    │
+│   │ - ovrfloTo    │     nested construct     │ - series()   │            │
+│   │   Reserve     │                          └──────┬───────┘            │
+│   │ - register    │                                 │ constructs         │
+│   │   Lending()   │                                 ▼                    │
+│   │ - prepare     │                    ┌──────────────────────┐          │
+│   │   Oracle      │                    │   OVRFLOReserve      │          │
+│   └───────┬───────┘                    │ - wrap() / unwrap()  │          │
+│           │                            │ - wrappedUnderlying  │          │
+│           │                            └──────┬───────────────┘          │
+│           │                                   │ constructs               │
+│           │                                   ▼                          │
 │           │                            ┌──────────────────────┐          │
 │           │                            │     OVRFLOToken      │          │
-│           │                            │  (per underlying)    │          │
+│           │                            │  vault + reserve     │          │
+│           │                            │  named minters       │          │
 │           │                            └──────────────────────┘          │
 │           │                                                              │
 │           │         ┌──────────────┐    ┌───────────────────┐            │
@@ -88,9 +94,9 @@ OVRFLO operates in two layers:
 │                     │ - repay      │    │ - requireEligible │            │
 │                     │ - close      │    └───────────────────┘            │
 │                     │ - claim      │    ┌───────────────────┐            │
-│                     │ - tickDepths │───▶│    TickTree       │            │
-│                     └──────────────┘    │ (packed prefix-   │            │
-│                                          │  sum tree lib)    │            │
+│                     │ escrow:      │───▶│    TickTree       │            │
+│                     │ ovrfloToken  │    │ (packed prefix-   │            │
+│                     └──────────────┘    │  sum tree lib)    │            │
 │                                          └───────────────────┘            │
 │                                                                          │
 │   External:                                                              │
@@ -103,6 +109,8 @@ OVRFLO operates in two layers:
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
+Nested deploy: the vault constructs `OVRFLOReserve`; the reserve constructs `OVRFLOToken`. The factory maps `ovrfloToReserve` at `registerOvrflo`. The vault has no wrap path and holds no underlying. Lending escrows ovrfloToken. PT flash is removed.
+
 ## Contracts
 
 ### OVRFLOLending.sol
@@ -111,10 +119,10 @@ Loan-only, fixed-rate tick order book for self-repaying loans. Lenders rest liqu
 
 | Function | Description |
 |----------|-------------|
-| `constructor(factory, core, sablier)` | Deploy lending market bound to one vault and OVRFLO Streams lockup; pulls treasury/underlying/ovrfloToken from factory |
-| `supply(market, aprBps, amount)` | Escrow underlying and append a lender position at an APR tick (exact `UNIT` multiples, `>= MIN_LIQUIDITY_AMOUNT`) |
+| `constructor(factory, core, sablier, launchAprBps)` | Deploy lending market bound to one vault and OVRFLO Streams lockup; pulls treasury/ovrfloToken from factory; `underlying` from `ovrfloInfo` is a zero-check only |
+| `supply(market, aprBps, amount)` | Escrow ovrfloToken and append a lender position at an APR tick (exact `UNIT` multiples, `>= MIN_LIQUIDITY_AMOUNT`) |
 | `withdraw(positionId)` | Refund a position's entire unfilled suffix (lender-only, never market-gated) |
-| `borrow(market, aprBps, targetBorrow, streamId, minAcceptable)` | Pledge an OVRFLO Stream and blind-fill from one tick's oldest live epoch; no position IDs |
+| `borrow(market, aprBps, targetBorrow, streamId, minAcceptable, onBehalfOf)` | Pledge an OVRFLO Stream and blind-fill from one tick's oldest live epoch; `onBehalfOf` applies only when `msg.sender` is the router |
 | `repay(loanId, amount)` | Repay ovrfloToken at face value against a loan's outstanding (permissionless — third-party repay is a donation) |
 | `close(loanId)` | Permissionless: once withdrawable covers outstanding, draw it and return the stream to the borrower |
 | `claim(loanId, positionId, amount)` | Lender claims a contributing position's pro-rata share of a loan's recovered value |
@@ -150,20 +158,22 @@ Also defines `IOVRFLOFactoryRegistry` (vault lookup + market approval) and `IOVR
 
 ### OVRFLOFactory.sol
 
-Registry and admin hub for externally deployed OVRFLO vaults and OVRFLOLending markets. Owned by a timelocked multisig. Deploys nothing itself — children are deployed by any EOA/script, and the factory verifies every constructor-arg binding on-chain before registering a candidate, so the factory embeds no child creation code (EIP-170). The Pendle TWAP oracle address is set as an immutable at construction (singleton, same on all chains).
+Registry and admin hub for externally deployed OVRFLO vaults and OVRFLOLending markets. Owned by a timelocked multisig. Deploys nothing itself — children are deployed by any EOA/script, and the factory verifies every constructor-arg binding on-chain before registering a candidate, so the factory embeds no child creation code (EIP-170). The Pendle TWAP oracle address is set as an immutable at construction (singleton, same on all chains). `ovrfloToReserve` is write-once at `registerOvrflo`. The reserve is not replaceable.
 
 | Function | Description |
 |----------|-------------|
 | `constructor(owner, oracle)` | Deploy factory with multisig owner and Pendle oracle (both immutable) |
-| `registerOvrflo(ovrflo)` | Register an externally deployed OVRFLO vault: verifies `factory()`/`oracle()` immutables match this factory and that its `underlying` has no existing registered vault, then records it |
+| `registerOvrflo(ovrflo)` | Register an externally deployed OVRFLO vault: verifies factory/oracle/stream bindings, one vault per underlying, token minters (`vault()`/`reserve()`), and reserve wiring, then writes `ovrfloInfo` and `ovrfloToReserve` |
 | `registerLending(lending)` | Register an externally deployed OVRFLOLending: verifies its core vault is registered, `factory()`/`owner()` match this factory, stream binding equals `factory.ovrfloStream()` (and matches the vault's `sablierLL`), then records it (1:1 per vault) |
+| `replaceLending(newLending)` | Admit a replacement market for a vault that already has one; the old market stays known for repay/close/claim |
+| `setLendingRouter(lending, router)` | Set or clear the borrow router (`onBehalfOf` path); zero disables |
 | `setOvrfloStream(stream)` | Admit the canonical OVRFLO Streams lockup once (`onlyOwner`); checks lockup `factory()`/`admin()` and comptroller `admin()` |
 | `setStreamNFTDescriptor(descriptor)` | Forward `setNFTDescriptor` to the canonical lockup; only lockup admin forwarder (no `transferAdmin`) |
 | `addMarket(ovrflo, market, twapDuration, feeBps)` | Add a PT maturity; reads PT address and expiry from Pendle market; requires ready oracle and exact underlying match |
 | `prepareOracle(market, twapDuration)` | Increase oracle cardinality before `addMarket`; duration must be 15-30 min (separate transaction) |
 | `setMarketDepositLimit(ovrflo, market, limit)` | Set deposit cap for a market |
-| `sweepExcessPt(ovrflo, ptToken, to)` | Sweep excess PT from an OVRFLO |
-| `sweepExcessUnderlying(ovrflo, to)` | Sweep excess underlying from an OVRFLO |
+| `sweepExcessPt(ovrflo, ptToken, to)` | Sweep excess PT from an OVRFLO vault |
+| `sweepExcessUnderlying(ovrflo, to)` | Sweep excess underlying from that vault's `OVRFLOReserve` |
 | `transferOwnership(newOwner)` | Nominate a new factory owner (two-step; new owner must call `acceptOwnership`) |
 | `acceptOwnership()` | Called by the pending owner to finalize the ownership transfer |
 
@@ -171,38 +181,50 @@ Registry and admin hub for externally deployed OVRFLO vaults and OVRFLOLending m
 
 ### OVRFLO.sol
 
-The core vault that creates collateral from Pendle PT deposits. Depositors receive immediate ovrfloTokens (principal at TWAP value) plus an OVRFLO Stream vesting the remaining discount. After maturity, ovrfloTokens can be burned 1:1 to claim the underlying PT. Vault-level immutables: `underlying`, `ovrfloToken`, `oracle`, `TREASURY_ADDR`, `sablierLL` (constructor-bound lockup; name kept). Constant: `MIN_PT_AMOUNT`.
+The core vault that creates collateral from Pendle PT deposits. Depositors receive immediate ovrfloTokens (principal at TWAP value, net of the mint-split fee) plus an OVRFLO Stream vesting the remaining discount. After maturity, ovrfloTokens can be burned 1:1 to claim the underlying PT. The vault constructs its `OVRFLOReserve` in the constructor; the reserve constructs the token. The vault holds no underlying and has no wrap, unwrap, or PT flash path. Vault-level immutables: `underlying`, `reserve`, `ovrfloToken`, `oracle`, `TREASURY_ADDR`, `sablierLL` (constructor-bound lockup; name kept). Constant: `MIN_PT_AMOUNT`.
 
 | Function | Description |
 |----------|-------------|
-| `constructor(admin, treasury, underlying, name_, symbol_, oracle)` | Initialize vault with factory as admin, treasury, underlying, and Pendle oracle; constructs and permanently owns its own `OVRFLOToken` from `name_`/`symbol_` |
-| `deposit(market, ptAmount, minToUser)` | Deposit PT to receive ovrfloTokens + OVRFLO Stream |
+| `constructor(admin, treasury, underlying, name_, symbol_, oracle, stream)` | Nested deploy: vault constructs the reserve; reserve constructs the token. Last arg is the lockup (`sablierLL`) |
+| `deposit(market, ptAmount, minToUser)` | Deposit PT; fee is minted to treasury in ovrfloToken from the immediate split. Depositor approves PT only |
 | `claim(ptToken, amount)` | Burn ovrfloTokens to claim PT after maturity (1:1) |
-| `wrap(amount)` | Wrap underlying 1:1 into ovrfloToken (permissionless, no fees) |
-| `unwrap(amount)` | Unwrap ovrfloToken 1:1 into underlying (permissionless, no fees) |
 | `setSeriesApproved(market, pt, twapDuration, expiry, feeBps)` | Approve a new PT market series (admin only) |
 | `setMarketDepositLimit(market, limit)` | Set deposit cap for a market (admin only) |
 | `sweepExcessPt(ptToken, to)` | Sweep excess PT above tracked deposits (admin only) |
-| `sweepExcessUnderlying(to)` | Sweep excess underlying above wrap reserve (admin only) |
-| `series(market)` | Returns 8-tuple: `(approved, twapDurationFixed, feeBps, expiryCached, ptToken, ovrfloToken, underlying, oracle)` — last 3 synthesized from vault immutables |
-| `previewDeposit(market, ptAmount)` | Preview deposit outcome: toUser, toStream, fee, rate |
+| `series(market)` | Returns 7-tuple: `(twapDurationFixed, feeBps, expiryCached, ptToken, ovrfloToken, underlying, oracle)` — last 3 synthesized from vault immutables. Approved iff `ptToken != address(0)` |
+| `previewDeposit(market, ptAmount)` | Preview deposit outcome: toUser (net), toStream, fee (ovrfloToken), rate |
 | `previewStream(market, ptAmount)` | Preview immediate vs streamed split |
 | `previewRate(market)` | Get current PT-to-SY TWAP rate |
 | `claimablePt(ptToken)` | Check claimable PT balance for a PT token |
 
+### OVRFLOReserve.sol
+
+Wrap reserve for one column. Holds the underlying that backs 1:1 wrapped ovrfloToken. The vault constructs this contract; this contract constructs the token. Admin is the factory. `wrappedUnderlying` is the tracked unwrap bound. Direct transfers do not increase that counter. PT flash is not on this contract; ERC-3156 flash mint of ovrfloToken is a later unit (CS2).
+
+| Function | Description |
+|----------|-------------|
+| `constructor(admin, underlying, name_, symbol_, vault_)` | Bind factory, underlying, and vault; construct `OVRFLOToken` with `vault = vault_` and `reserve = msg.sender` |
+| `wrap(amount)` | Pull underlying 1:1, mint ovrfloToken (permissionless, no fee, no stream) |
+| `unwrap(amount)` | Burn ovrfloToken 1:1, send underlying, bounded by `wrappedUnderlying` |
+| `sweepExcessUnderlying(to)` | Sweep underlying above `wrappedUnderlying` (factory admin). Sweep `to` is trusted to the multisig (R-02) |
+
 ### OVRFLOToken.sol
 
-ERC20 wrapper token constructed by its OVRFLO vault inside the vault's own constructor, one per underlying asset. Name/symbol are passed straight through to the token's constructor (multisig-reviewed off-chain before registration, following the `OVRFLO ` / `ovrflo` naming convention). Ownership is `immutable`, fixed to the constructing vault for the token's lifetime — no `transferOwnership` exists. Mint and burn are restricted to the owner (the OVRFLO vault).
+ERC20 + Permit receipt token, one per column. The reserve constructs it. Two named immutable minters, fixed at construction: `vault()` (mint on deposit, burn on claim) and `reserve()` (mint on wrap, burn on unwrap). Neither authority can move. Name/symbol are full ERC20 strings, reviewed off-chain before registration (`OVRFLO ` / `ovrflo` prefix). Not OZ Ownable.
+
+### OVRFLOStreamLens.sol
+
+Deployless read lens. The frontend ships creation bytecode and calls via `eth_call` with no `to`. Not a DeploySize deployable. Holds no storage and is never in a transaction path.
 
 ## User Flows
 
 ### Supplying Liquidity
 
-A lender rests underlying at a chosen APR tick. `supply` escrows the amount and appends a permanent lender position on that tick's current epoch tape:
+A lender rests ovrfloToken at a chosen APR tick. `supply` escrows the amount and appends a permanent lender position on that tick's current epoch tape:
 
 ```solidity
-// Lender rests 5 underlying at the 1000bps (10%) tick.
-IERC20(underlying).approve(lending, 5 ether);
+// Lender rests 5 ovrfloToken at the 1000bps (10%) tick.
+IERC20(ovrfloToken).approve(lending, 5 ether);
 uint256 positionId = lending.supply(market, 1000, 5 ether);
 ```
 
@@ -213,12 +235,12 @@ uint256 positionId = lending.supply(market, 1000, 5 ether);
 Borrowing is a single blind fill against one APR tick's cumulative `filled` counter — the borrower names no lender position, so fill gas is flat in how many positions the fill's interval eventually crosses:
 
 ```solidity
-// Borrower pledges a stream and blind-fills up to 1 underlying from the 1000bps tick.
+// Borrower pledges a stream and blind-fills up to 1 ovrfloToken from the 1000bps tick.
 sablier.approve(lending, streamId);
-uint256 loanId = lending.borrow(market, 1000, 1 ether, streamId, minAcceptable);
+uint256 loanId = lending.borrow(market, 1000, 1 ether, streamId, minAcceptable, borrower);
 ```
 
-The borrower receives `actualBorrow - feeAmount` underlying and owes an `obligation` in ovrfloToken at maturity. The stream is escrowed via plain `transferFrom`. The obligation is computed via `StreamPricing.obligationForFill`, capped so `obligation <= remaining` — a max borrow (`targetBorrow` at or above the stream's discounted gross price) is economically a sale, since the whole stream's remaining value becomes the obligation and there is no separate sale mechanism. No liquidations, the stream is deterministic and non-cancelable.
+The borrower receives `actualBorrow - feeAmount` ovrfloToken and owes an `obligation` in ovrfloToken at maturity. The stream is escrowed via plain `transferFrom`. The obligation is computed via `StreamPricing.obligationForFill`, capped so `obligation <= remaining` — a max borrow (`targetBorrow` at or above the stream's discounted gross price) is economically a sale, since the whole stream's remaining value becomes the obligation and there is no separate sale mechanism. No liquidations, the stream is deterministic and non-cancelable. A self-borrow may pass the user address as `onBehalfOf`; a non-router caller is always `msg.sender`.
 
 ### Loan Servicing and Claims
 
@@ -242,14 +264,12 @@ lending.claim(loanId, positionId, amount);
 #### Depositing
 
 1. **Approve** PT token for OVRFLO contract
-2. **Approve** underlying token for fee (if applicable)
-3. **Call** `deposit(market, ptAmount, minToUser)`
-4. **Receive** ovrfloTokens immediately + OVRFLO Stream ID
+2. **Call** `deposit(market, ptAmount, minToUser)` — fee comes from the minted ovrfloToken; no underlying fee approval
+3. **Receive** net ovrfloTokens immediately + OVRFLO Stream ID
 
 ```solidity
 // Example deposit
 IERC20(ptToken).approve(ovrflo, ptAmount);
-IERC20(underlying).approve(ovrflo, expectedFee);
 
 (uint256 toUser, uint256 toStream, uint256 streamId) =
     ovrflo.deposit(market, ptAmount, minToUser);
@@ -278,15 +298,15 @@ Streams are managed by **OVRFLO Streams** (fork of Sablier v2-core v1.1.2; ERC72
 
 #### Wrap / Unwrap
 
-Permissionless 1:1 conversion between underlying and ovrfloToken with no fees or streams. Useful for obtaining ovrfloTokens without depositing PT, or for converting ovrfloTokens back to underlying when the wrap reserve is funded.
+Permissionless 1:1 conversion between underlying and ovrfloToken with no fees or streams. Call `OVRFLOReserve`, not the vault. Useful for obtaining ovrfloTokens without depositing PT, or for converting ovrfloTokens back to underlying when the wrap reserve is funded.
 
 ```solidity
 // Wrap underlying into ovrfloToken
-IERC20(underlying).approve(ovrflo, amount);
-ovrflo.wrap(amount);
+IERC20(underlying).approve(reserve, amount);
+reserve.wrap(amount);
 
 // Unwrap ovrfloToken back to underlying
-ovrflo.unwrap(amount);
+reserve.unwrap(amount);
 ```
 
 ### What's Fixed Will OVRFLO
@@ -296,14 +316,14 @@ The PT discount is fixed at deposit -- the oracle splits principal from yield de
 **With held PT:**
 1. **Deposit 100 PT** (pre-maturity, PT trading at 95% of face) -- receive 95 ovrfloToken + OVRFLO Stream vesting 5 ovrfloToken
 2. **Exit the 95 ovrfloToken** -- `unwrap()` for 95 underlying or swap on a DEX
-3. **Max-borrow against the stream on the lending market**, receive ~4.5 underlying
+3. **Max-borrow against the stream on the lending market**, receive ~4.5 ovrfloToken (unwrap for underlying if wanted)
 
 **With zero capital (flash-loan underlying, available today):**
 1. **Flash-loan 95 underlying** from Aave, Balancer, etc.
 2. **Swap for 100 PT** on the Pendle AMM (at 0.95 rate)
 3. **Deposit 100 PT** -- receive 95 ovrfloToken + OVRFLO Stream vesting 5 ovrfloToken
 4. **Exit the 95 ovrfloToken** -- `unwrap()` for 95 underlying or swap on a DEX
-5. **Max-borrow against the stream on the lending market** -- receive ~4.5 underlying
+5. **Max-borrow against the stream on the lending market** -- receive ~4.5 ovrfloToken
 6. **Repay the flash loan** -- return 95 underlying + fee
 
 **Net result:** ~4.5 underlying of PT yield captured. The flash-loan path works today -- you borrow underlying (widely flash-loanable), not PT, and the Pendle AMM swap replaces the PT acquisition.
@@ -331,7 +351,7 @@ The PT discount is fixed at deposit -- the oracle splits principal from yield de
 │   │ unwrap()   │     │  borrow()    │                                │
 │   │   or swap  │     │  (max fill)  │                                │
 │   │  → ~95     │     │  → ~4.5      │                                │
-│   │  underly   │     │    underly   │                                │
+│   │  underly   │     │  ovrfloToken │                                │
 │   └────┬───────┘     └──────┬───────┘                                │
 │        │                    │                                        │
 │        ▼                    ▼                                        │
@@ -350,7 +370,7 @@ The PT discount is fixed at deposit -- the oracle splits principal from yield de
 |-------------|---------|
 | **Extractor** | Captures ~4.5 underlying of PT yield -- with held PT or zero capital via underlying flash loan |
 | **Wrap reserve funder** | If unwrap is used: reserve drained by 95 underlying, but deposit added 100 PT backing -- can `claim` 100 ovrfloToken for 100 PT at maturity. Economically whole. If swap is used: reserve untouched. |
-| **Lending liquidity lender** | Bought a stream worth 5 ovrfloToken at maturity for ~4.5 underlying today. Fair trade at their chosen APR. |
+| **Lending liquidity lender** | Bought a stream worth 5 ovrfloToken at maturity for ~4.5 ovrfloToken today. Fair trade at their chosen APR. |
 | **Protocol** | Remains solvent (E-1 holds: net ovrfloToken supply = net backing). No funds stolen. |
 
 Any PT holder can do this today, or use a flash loan on the underlying (available on Aave/Balancer) to execute with zero capital -- swap underlying for PT on the Pendle AMM, run the cycle, repay in underlying. See `docs/audit/rejected-findings-record.md` for the full security analysis of why this is accepted by design.
@@ -367,28 +387,30 @@ The factory deploys nothing — children are deployed externally, then registere
 // 1. Deploy factory (one-time, multisig is owner, oracle is singleton)
 OVRFLOFactory factory = new OVRFLOFactory(multisig, PENDLE_ORACLE);
 
-// 2. Deployer EOA/script deploys the vault directly. The vault constructs and
-//    permanently owns its own OVRFLOToken internally — there is no separate
-//    token-deployment or ownership-transfer step.
+// 2. Deployer EOA/script deploys the vault. Nested constructors: the vault
+//    creates OVRFLOReserve; the reserve creates OVRFLOToken. Last arg is the
+//    admitted lockup (`sablierLL`).
 OVRFLO ovrflo = new OVRFLO(
-    address(factory), treasury, WETH, "OVRFLO Wrapped Ether", "ovrfloWETH", PENDLE_ORACLE
+    address(factory), treasury, WETH, "OVRFLO Wrapped Ether", "ovrfloWETH",
+    PENDLE_ORACLE, lockup
 );
 
 // 3. Multisig registers the vault, after off-chain verification that the
-//    deployment transaction's creation code + constructor args match the
-//    audited compiler artifact.
+//    three creation transactions (vault, reserve, token) match the audited
+//    compiler artifacts.
 vm.prank(multisig);
 factory.registerOvrflo(address(ovrflo));
+address reserve = ovrflo.reserve();
 address ovrfloToken = ovrflo.ovrfloToken();
 ```
 
-`registerOvrflo` verifies, on-chain, every constructor-arg binding construction used to fix: the candidate's `factory()` and `oracle()` immutables must match this factory, and its `underlying` must have no existing registered vault (one vault per underlying). Token ownership needs no on-chain check — the vault constructs its own `OVRFLOToken`, so `token.owner() == vault` holds by construction for canonical bytecode. Child deployment is permissionless; only registration is `onlyOwner`.
+`registerOvrflo` verifies, on-chain, every constructor-arg binding construction used to fix: the candidate's `factory()` and `oracle()` immutables must match this factory, `sablierLL() == factory.ovrfloStream()`, its `underlying` must have no existing registered vault, `token.vault() == vault` and `token.reserve() == vault.reserve()`, and the reserve binds this factory, vault, token, and underlying. Code identity for the three creation transactions stays off-chain. Child deployment is permissionless; only registration is `onlyOwner`.
 
 ### Deploying the Lending Market
 
 ```solidity
 // 1. Deployer EOA/script deploys the lending market directly. Its constructor
-//    pulls treasury/underlying/ovrfloToken from the factory registry and
+//    pulls treasury/ovrfloToken from the factory registry and
 //    reverts UnknownCore unless the vault was registered in step 2 above;
 //    the factory is the lending market's owner from construction.
 //    launchAprBps seeds both APR bounds; it must be a multiple of 25 bps and
@@ -433,8 +455,8 @@ factory.addMarket(ovrflo, market, twapDuration, feeBps);
 
 Two separate fees operate at different layers:
 
-- **Core deposit fee**: Charged on the immediate portion (`toUser`), paid in underlying, sent to the vault's treasury. Capped at 1% (`FEE_MAX_BPS = 100` on `OVRFLOFactory`). Set per-market via `addMarket`.
-- **Lending protocol fee**: Charged on the borrow amount, paid in underlying, and sent to the lending market treasury. Capped at 100% (`MAX_FEE_BPS = 10_000` on `OVRFLOLending`). Configure it through `OVRFLOFactory.setLendingFee`. The global `feeBps` is owner-mutable with no per-loan snapshot; `Borrowed` logs the fee actually charged (`feeAmount`) so net proceeds are reconstructible from events alone.
+- **Core deposit fee**: Charged on the immediate portion (`toUser`), taken from the minted ovrfloToken, sent to the vault's treasury. Capped at 1% (`FEE_MAX_BPS = 100` on `OVRFLOFactory`). Set per-market via `addMarket`.
+- **Lending protocol fee**: Charged on the borrow amount, paid in ovrfloToken, and sent to the lending market treasury. Capped at 100% (`MAX_FEE_BPS = 10_000` on `OVRFLOLending`). Configure it through `OVRFLOFactory.setLendingFee`. The global `feeBps` is owner-mutable with no per-loan snapshot; `Borrowed` logs the fee actually charged (`feeAmount`) so net proceeds are reconstructible from events alone.
 
 ## Security
 
@@ -442,7 +464,8 @@ Two separate fees operate at different layers:
 
 - **OVRFLOFactory**: Owned by timelocked multisig, serves as immutable `factory` (admin) for all deployed OVRFLOs
 - **OVRFLO**: Controlled by factory (admin functions gated by `onlyAdmin` modifier)
-- **OVRFLOToken**: Owned by OVRFLO (mint/burn restricted)
+- **OVRFLOToken**: Two named immutable minters (`vault()` and `reserve()`)
+- **OVRFLOReserve**: Controlled by factory (admin functions gated by `onlyAdmin`)
 - **OVRFLOLending**: Owned by `OVRFLOFactory`, bound to one vault and OVRFLO Streams lockup at construction, and administered through factory forwarders
 
 ### Safeguards
@@ -465,10 +488,6 @@ A single `OVRFLOToken` is shared by every PT market that resolves to the same un
 
 - `ovrfloX` is a claim on PTs, which are a claim on the underlying. Fungibility across maturities is what makes it a single liquid asset and usable as collateral — fragmenting into one token per maturity would defeat the point.
 - Per-series accounting still holds: `series[market]`, `marketTotalDeposited[market]`, and `claimablePt[ptToken]` are tracked independently, fees are charged per deposit, and `OVRFLOFactory.addMarket` enforces an exact underlying match so unrelated assets can never share an `ovrfloToken`.
-
-## Roadmap
-
-**The Pool** — passive, closed-end, sealed, pro-rata aggregation of loans over the same StreamPricing core. Many lenders pool underlying, many borrowers each pledge a stream, residuals return per borrower, and lenders own a pro-rata share of the sum of obligations. Built after the lending market establishes an APR.
 
 ## External Dependencies
 
@@ -596,16 +615,16 @@ Use preview functions before deposits:
 // Display to user:
 // - Immediate: toUser ovrfloTokens
 // - Streamed: toStream ovrfloTokens over remaining time
-// - Fee: fee underlying tokens
+// - Fee: fee ovrfloTokens (minted to treasury; depositor never approves underlying)
 // - Rate: rate / 1e18 = PT value as % of face
 ```
 
 ### For Aggregators
 
 ```solidity
-// Check if market is active (8-tuple destructuring)
-(bool approved, , , uint256 expiry, , , , ) = ovrflo.series(market);
-require(approved && block.timestamp < expiry, "Market not active");
+// Check if market is active (7-tuple; approved iff ptToken != address(0))
+(, , uint256 expiry, address ptToken, , , ) = ovrflo.series(market);
+require(ptToken != address(0) && block.timestamp < expiry, "Market not active");
 
 // Check deposit room
 uint256 limit = ovrflo.marketDepositLimits(market);

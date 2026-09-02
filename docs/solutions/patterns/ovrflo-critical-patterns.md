@@ -577,8 +577,9 @@ simplification refactor; do not re-introduce a separate active flag.
 
 **Placement/Context:** Any non-fork or fork test that calls a function
 transferring `underlying`, `ovrfloToken`, or a Sablier stream NFT:
-`sellStreamToLiquidity`, `buyListing`, `createBorrowerLoanPool`,
-`cancel*` functions, `claimLoanPoolShare`, `closeLoan`, `repayLoan`. The four-party
+`supply`, `withdraw`, `borrow`, `repay`, `close`, `claim`, vault `deposit` /
+`claim`, reserve `wrap` / `unwrap`. After CS1, lending money movement is
+ovrfloToken (escrow, borrower proceeds, fill fee). The four-party
 check (actor, counterparty, treasury, lending) is the minimum. For loan
 servicing, also assert `ovrfloToken.balanceOf`, `sablier.getWithdrawnAmount`,
 and `sablier.ownerOf` for the lender and borrower.
@@ -697,15 +698,9 @@ check contradicts the project's simplicity preference.
 
 ### R-02: Sweep functions do not reject `to = address(0)`
 
-**Finding:** `sweepExcessPt` and `sweepExcessUnderlying` in both `OVRFLO` and
-`OVRFLOFactory` don't guard against `to = address(0)`.
+**Finding:** `sweepExcessPt` (vault) and `sweepExcessUnderlying` (reserve) don't guard against `to = address(0)`. Factory forwarders pass `to` through.
 
-**Rejected because:** These are multisig-only admin functions. The multisig is
-trusted to provide a correct recipient. A zero-address guard is
-defense-in-depth that the project explicitly does not want per the "prefer
-off-chain multisig verification over redundant on-chain checks" preference.
-This trust assumption is now explicitly documented in `@dev` natspec on both
-the factory and vault sweep functions.
+**Rejected because:** These are multisig-only admin functions. The multisig is trusted to provide a correct recipient. A zero-address guard is defense-in-depth that the project explicitly does not want per the "prefer off-chain multisig verification over redundant on-chain checks" preference. This trust assumption is now explicitly documented in `@dev` natspec on the vault PT sweep and on `OVRFLOReserve.sweepExcessUnderlying`. Factory `sweepExcessUnderlying` forwards to the reserve, not the vault.
 
 ### R-03: Unchecked downcasts in `OVRFLO.deposit` (`uint128(toStream)`, `uint40(duration)`)
 
@@ -760,7 +755,7 @@ claimed/settled (i.e. when a lender calls `claimLoanPoolShare` to recover pool
 proceeds), in addition to the existing fill-time fee.
 
 **Rejected because:** The lending's fee model is already coherent and optimally
-placed. `feeBps` is taken once, in underlying, at fill time, and consistently
+placed. `feeBps` is taken once, in ovrfloToken, at fill time, and consistently
 taxes the side extracting liquidity or immediacy:
 - `sellStreamToLiquidity` — the seller pays (net of `grossPrice`)
 - `buyListing` — the seller pays (net of `grossPrice`, at the listing's
@@ -1045,7 +1040,7 @@ rg "duplicate or unsorted ids" src/OVRFLOLending.sol
 
 ## 11. `sweepExcessPt` must validate that the passed address is a registered PT (ALWAYS REQUIRED)
 
-### ❌ WRONG (non-PT address drains the wrap reserve)
+### ❌ WRONG (non-PT address sweeps whatever token the vault holds)
 
 ```solidity
 function sweepExcessPt(address ptToken, address to) external onlyAdmin {
@@ -1053,7 +1048,7 @@ function sweepExcessPt(address ptToken, address to) external onlyAdmin {
     // ptToMarket[underlying] == address(0), so deposited == 0
     uint256 deposited = marketTotalDeposited[ptToMarket[ptToken]];
     uint256 excess = balance > deposited ? balance - deposited : 0;
-    // excess == entire underlying balance — wrap reserve drained
+    // excess == entire balance of that token
     IERC20(ptToken).safeTransfer(to, excess);
 }
 ```
@@ -1074,10 +1069,11 @@ function sweepExcessPt(address ptToken, address to) external onlyAdmin {
 **Why:** `sweepExcessPt` uses `ptToMarket[ptToken]` to look up the deposited
 amount. If a non-PT address is passed (e.g. the underlying token), the lookup
 returns `address(0)` and `marketTotalDeposited[address(0)]` is 0, so the
-entire balance of that token is treated as "excess" and swept out. This
-drains the wrap reserve if the underlying address is passed. Note the
-asymmetry with `sweepExcessUnderlying`, which uses the immutable `underlying`
-address and correctly subtracts `wrappedUnderlying` — it cannot be
+entire balance of that token is treated as "excess" and swept out. After CS1
+the wrap reserve lives on `OVRFLOReserve`, so this call cannot drain wrap
+backing. It can still sweep any ERC-20 the vault happens to hold. Note the
+asymmetry with `OVRFLOReserve.sweepExcessUnderlying`, which uses the immutable
+`underlying` and correctly subtracts `wrappedUnderlying` — it cannot be
 mis-targeted.
 
 This is input validation on a token-transfer function, not redundant multisig
@@ -1087,18 +1083,17 @@ validates input (is this actually a PT?). This is distinct from R-02 (rejected
 trusted to the multisig.
 
 **Placement/Context:** `OVRFLO.sweepExcessPt` — the only sweep function that
-accepts a fuzzed token address. `sweepExcessUnderlying` is safe by construction
-(it uses the immutable `underlying`).
+accepts a fuzzed token address. `OVRFLOReserve.sweepExcessUnderlying` is safe
+by construction (it uses the immutable `underlying`). Factory
+`sweepExcessUnderlying` forwards to the reserve.
 
 **How to detect violation:**
 
 ```bash
 rg -n "revert UnknownPT\(\)" src/OVRFLO.sol
-# expected: 4 matches — sweepExcessPt, claim, flashLoan, claimablePt all reuse
-# this error for the analogous market-lookup check; sweepExcessPt is one of
-# four call sites, not the sole one. (Migrated from the "OVRFLO: unknown PT"
-# require-string form to the UnknownPT() custom error, dated user decision
-# 2026-08-10; call-site count unchanged.)
+# expected: 3 matches — sweepExcessPt, claim, claimablePt. PT flash is
+# removed, so flashLoan is no longer a call site. The error declaration
+# itself is a fourth `UnknownPT` hit if counted.
 ```
 
 **Documented in:** Fuzz campaign 2026-07-01 (GL-02 violation), `fizz_data/report.md`

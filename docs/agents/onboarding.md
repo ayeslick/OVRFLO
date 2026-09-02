@@ -9,7 +9,7 @@ Purpose: take a new agent from zero to two jobs:
 1. Ship code that matches the live contracts and the settled design.
 2. Advise what this codebase must do and must not do, for this change and for the mid and long term.
 
-Verified against `src/` on 2026-08-14. Treat every claim below as a hypothesis until the agent re-opens the named file. Line numbers drift. Function names and immutables drift less. This briefing describes **live** `src/`. Wrap still lives on the vault. Lending still escrows underlying. PT flash still exists. The denomination plan is the **target**. Do not blend those two states in one sentence.
+Verified against `src/` on 2026-09-02. Treat every claim below as a hypothesis until the agent re-opens the named file. Line numbers drift. Function names and immutables drift less. This briefing describes **live** `src/` after CS1. Wrap lives on `OVRFLOReserve`. Lending escrows ovrfloToken. PT flash is gone. Nested constructors: the vault creates the reserve; the reserve creates the token. Do not describe the pre-switch column as live.
 
 ---
 
@@ -65,7 +65,7 @@ A grep hit in `docs/` or `CONCEPTS.md` (superseded section) is history. A grep h
 
 OVRFLO turns a Pendle principal token (PT) discount into two usable legs, then lends against the streamed leg.
 
-A PT trades below face before maturity. A depositor puts PT into an OVRFLO vault. The vault mints ovrfloToken for the TWAP value immediately, and streams the remaining discount as a non-cancelable linear lockup in ovrfloToken until PT expiry. That stream is deterministic collateral. A borrower pledges the stream NFT to OVRFLOLending and draws underlying at a fixed APR tick. The stream pays the lender on schedule. There is no health factor and no liquidation, because the collateral cannot underperform.
+A PT trades below face before maturity. A depositor puts PT into an OVRFLO vault. The vault mints ovrfloToken for the TWAP value immediately, and streams the remaining discount as a non-cancelable linear lockup in ovrfloToken until PT expiry. That stream is deterministic collateral. A borrower pledges the stream NFT to OVRFLOLending and draws ovrfloToken at a fixed APR tick. The stream pays the lender on schedule. There is no health factor and no liquidation, because the collateral cannot underperform.
 
 A full borrow (draw the whole discounted price) is economically a sale: obligation equals remaining stream face. There is no separate sale-listing mechanism.
 
@@ -75,24 +75,26 @@ The public statement is: **OVRFLO enables self-repaying loans.**
 
 1. Deposit approved PT. Receive immediate ovrfloToken plus a stream of the discount.
 2. Borrow the stream's discounted value on OVRFLOLending (or hold the stream).
-3. Exit ovrfloToken via unwrap (wrap-reserve path) or via post-maturity `claim` of PT, or via a DEX.
+3. Exit ovrfloToken via unwrap on `OVRFLOReserve` or via post-maturity `claim` of PT, or via a DEX.
 
-The vault stays solvent on the combined check in §5. The deposit adds PT backing. Unwrap consumes wrap-reserve backing. Cross-origin ovrfloToken fungibility is a design feature.
+The vault stays solvent on the combined check in §5. The deposit adds PT backing. Unwrap consumes wrap-reserve backing on `OVRFLOReserve`. Cross-origin ovrfloToken fungibility is a design feature.
 
 ---
 
 ## 2. Live contract map
 
-This table is live `src/` today. Target column wiring (reserve, ovrfloToken lending, no PT flash, request book) is `docs/agents/system.md` plus the denomination plan. Do not treat the target as already in `src/`.
+This table is live `src/` today after CS1. Request book (CS3) and ERC-3156 flash mint (CS2) are later units. Do not treat those as already in `src/`.
 
-Six Solidity files in `src/`. Nothing else is a protocol contract.
+Eight Solidity files in `src/`. Five are DeploySize deployables (factory, vault, reserve, token, lending). Two are libraries (`StreamPricing`, `TickTree`). `OVRFLOStreamLens` is a deployless read lens; it is not a DeploySize deployable.
 
 | File | Role |
 |---|---|
-| `OVRFLOFactory.sol` | Registry and sole admin hub. Deploys nothing. `Ownable2Step`. Owner is a timelocked multisig. |
-| `OVRFLO.sol` | Vault for one underlying. PT deposit, claim, wrap/unwrap, PT flash loan. Admin is the factory. |
-| `OVRFLOToken.sol` | ERC20 the vault constructs and owns. Mint and burn are vault-only. |
-| `OVRFLOLending.sol` | Loan-only fixed-rate tick book. One lending per registered vault. Owner is the factory from construction. |
+| `OVRFLOFactory.sol` | Registry and sole admin hub. Deploys nothing. `Ownable2Step`. Owner is a timelocked multisig. Maps `ovrfloToReserve` write-once at `registerOvrflo`. |
+| `OVRFLO.sol` | Vault for one underlying. PT deposit, claim. Nested constructor creates the reserve. Holds no underlying. No wrap, unwrap, or PT flash. Admin is the factory. |
+| `OVRFLOReserve.sol` | Wrap reserve. Vault constructs it. It constructs the token. Wrap/unwrap and `wrappedUnderlying` live here. Admin is the factory. |
+| `OVRFLOToken.sol` | ERC20 + Permit. Reserve constructs it. Two named immutable minters: `vault()` and `reserve()`. |
+| `OVRFLOLending.sol` | Loan-only fixed-rate tick book. Escrows ovrfloToken. One current lending per registered vault (`replaceLending` keeps old markets known). Owner is the factory from construction. |
+| `OVRFLOStreamLens.sol` | Deployless read lens. Frontend ships creation bytecode and calls via `eth_call` with no `to`. Not a DeploySize deployable. |
 | `StreamPricing.sol` | Pure library: APR factor, gross price, obligation, fee, stream eligibility. |
 | `TickTree.sol` | Packed prefix-sum tree for one tick epoch. Height 4→7. |
 
@@ -107,7 +109,7 @@ Not in this repo's `src/` today:
 - Proxies. This protocol has never deployed a proxy.
 - A second principal-token protocol. Pendle-only.
 
-Interfaces live in `interfaces/`: `IFlashBorrower`, `IPPrincipalToken`, `IPendleMarket`, `IPendleOracle`, `ISablierV2LockupLinear` (name kept; members include fork additions), `IStandardizedYield`.
+Interfaces live in `interfaces/`: `IPPrincipalToken`, `IPendleMarket`, `IPendleOracle`, `ISablierV2LockupLinear` (name kept; members include fork additions), `IStandardizedYield`. `IFlashBorrower` is deleted with PT flash.
 
 ---
 
@@ -119,8 +121,10 @@ flowchart TD
   Factory -->|"register + forward admin"| Vault["OVRFLO vault"]
   Factory -->|"register + owner"| Book["OVRFLOLending"]
   Factory -->|"setOvrfloStream + setStreamNFTDescriptor"| Stream["OVRFLO Streams lockup"]
-  Vault -->|constructs| Token["OVRFLOToken"]
+  Vault -->|constructs| Reserve["OVRFLOReserve"]
+  Reserve -->|constructs| Token["OVRFLOToken"]
   User["User EOA / wallet"] --> Vault
+  User --> Reserve
   User --> Book
   User --> Stream
   Vault -->|createWithDurations via sablierLL| Stream
@@ -131,9 +135,9 @@ flowchart TD
 
 | Actor | Can call | Must not call |
 |---|---|---|
-| User | Vault `deposit` / `claim` / `wrap` / `unwrap` / `flashLoan`. Book `supply` / `withdraw` / `borrow` / `repay` / `close` / `claim` / `advanceEpochCursor`. Stream lockup as NFT owner. | Factory admin. Vault `onlyAdmin`. Book `onlyOwner`. Lockup fee/admin setters. |
-| Safe | Factory `onlyOwner` (register, `setOvrfloStream`, `setStreamNFTDescriptor`, addMarket, prepareOracle, sweeps, flash pause/fee, lending forwarders). | Vault, lending, or lockup directly. Pattern #8. |
-| Factory | Vault admin and lending owner functions, after `_requireKnownOvrflo` / `_requireKnownLending`; lockup `setNFTDescriptor` via forwarder. | User money paths. Lockup `transferAdmin` / fee setters (no forwarder). |
+| User | Vault `deposit` / `claim`. Reserve `wrap` / `unwrap`. Book `supply` / `withdraw` / `borrow` / `repay` / `close` / `claim` / `advanceEpochCursor`. Stream lockup as NFT owner. | Factory admin. Vault `onlyAdmin`. Reserve `onlyAdmin`. Book `onlyOwner`. Lockup fee/admin setters. |
+| Safe | Factory `onlyOwner` (register, `setOvrfloStream`, `setStreamNFTDescriptor`, addMarket, prepareOracle, sweeps, lending forwarders, `replaceLending`, `setLendingRouter`). | Vault, reserve, lending, or lockup directly. Pattern #8. |
+| Factory | Vault admin, reserve admin, and lending owner functions, after `_requireKnownOvrflo` / `_requireKnownLending`; lockup `setNFTDescriptor` via forwarder. | User money paths. Lockup `transferAdmin` / fee setters (no forwarder). |
 | Unregistered vault or lending | Its own bytecode, inert to the protocol. | Factory forwarders refuse unknown addresses. |
 
 Multisig verifies off-chain: creation code vs the audited artifact, token name/symbol prefixes, treasury and underlying intent. The factory re-checks constructor bindings on-chain (factory, oracle, owner, `sablierLL`/`sablier` == `ovrfloStream`, one vault per underlying). Matching vault bytecode alone is not a safe stream-binding predicate after KTD6. Do not duplicate the off-chain checklist as new `require`s.
@@ -146,24 +150,26 @@ The bound lockup preserves Sablier v1.1 `withdraw` ACL byte-for-byte (plan R3): 
 
 Constructor: `OVRFLOFactory(address _owner, address _oracle)`.
 
-The factory embeds no child creation code (EIP-170). Any EOA can `new OVRFLO(...)` and `new OVRFLOLending(...)`. Those candidates are inert until the owner registers them.
+The factory embeds no child creation code (EIP-170). Any EOA can `new OVRFLO(...)` and `new OVRFLOLending(...)`. Those candidates are inert until the owner registers them. `new OVRFLO(...)` constructs the reserve, and the reserve constructs the token, in the same transaction.
 
-**`registerOvrflo`** checks, in order: nonzero, not already registered, `factory.ovrfloStream()` set, `vault.sablierLL() == ovrfloStream`, `vault.factory() == this`, `vault.oracle() == factory.oracle`, no vault already mapped for that underlying. Then writes `ovrfloInfo`, `underlyingToOvrflo`, and the enumerable `ovrflos` list.
+**`registerOvrflo`** checks, in order: nonzero, not already registered, `factory.ovrfloStream()` set, `vault.sablierLL() == ovrfloStream`, `vault.factory() == this`, `vault.oracle() == factory.oracle`, no vault already mapped for that underlying, reserve nonzero and has code, token has code, `token.vault() == vault` and `token.reserve() == vault.reserve()` (`TokenMinterMismatch`), reserve binds this factory, vault, token, and underlying (`ReserveMismatch`). Then writes `ovrfloInfo`, `underlyingToOvrflo`, `ovrfloToReserve`, and the enumerable `ovrflos` list. `ovrfloToReserve` is write-once.
 
-**`registerLending`** checks: core is a known vault, no lending yet for that vault, `lending.factory() == this`, `lending.owner() == this`, `lending.sablier() == vault.sablierLL()`, `lending.sablier() == factory.ovrfloStream()`. The lending constructor already called `_transferOwnership(factory_)` and pulled treasury/underlying/ovrfloToken from `ovrfloInfo(core)`. Registration does not re-check `stream.factory()` / `stream.admin()` / `comptroller.admin()` — those live on `setOvrfloStream` only.
+**`registerLending`** checks: core is a known vault, no lending yet for that vault, `lending.factory() == this`, `lending.owner() == this`, `lending.sablier() == vault.sablierLL()`, `lending.sablier() == factory.ovrfloStream()`. The lending constructor already called `_transferOwnership(factory_)` and pulled treasury/ovrfloToken from `ovrfloInfo(core)`. Registration does not re-check `stream.factory()` / `stream.admin()` / `comptroller.admin()` — those live on `setOvrfloStream` only.
+
+**`replaceLending`** admits a new market for a vault that already has one. The old market stays in `lendingToOvrflo` and `lendings` so admin and repay/close/claim still reach it. The reserve is not replaceable.
 
 Deploy order:
 
 1. `new OVRFLOFactory(multisig, pendleOracle)`
 2. Deploy OVRFLO Streams lockup + comptroller + descriptor (sibling repo artifacts); `setOvrfloStream(lockup)`
-3. `new OVRFLO(factory, treasury, underlying, name, symbol, oracle, stream)` — vault constructs its token; `stream` becomes `sablierLL`
-4. `registerOvrflo(vault)`
+3. `new OVRFLO(factory, treasury, underlying, name, symbol, oracle, stream)` — vault constructs the reserve; reserve constructs the token; `stream` becomes `sablierLL`
+4. `registerOvrflo(vault)` — factory reads `vault.reserve()` and writes `ovrfloToReserve`
 5. `new OVRFLOLending(factory, vault, stream, launchAprBps)` — `aprMaxBps` starts at `launchAprBps` (multiple of 25 bps, capped at `APR_MAX_CEILING`); `aprMinBps` starts at 0
 6. `registerLending(lending)`
 7. `prepareOracle(market, twap)` then `addMarket(vault, market, twap, feeBps)`
 8. `setLendingTickSpacing(lending, market, spacing)` — **once per market**. No on-chain default. Supply and borrow revert `SpacingUnset` until this lands.
 
-TWAP bounds: 15 minutes minimum, 30 minutes maximum. `prepareOracle` and `addMarket` share `_validateTwapBounds`. Deposit fee max is `FEE_MAX_BPS = 100` (1%) on the factory. Flash-loan fee max is `FLASH_FEE_MAX_BPS = 100` on the vault.
+TWAP bounds: 15 minutes minimum, 30 minutes maximum. `prepareOracle` and `addMarket` share `_validateTwapBounds`. Deposit fee max is `FEE_MAX_BPS = 100` (1%) on the factory. PT flash fee and pause forwarders are gone.
 
 `addMarket` reads PT and expiry from the Pendle market, requires `SY.yieldToken() == vault.underlying`, then calls `vault.setSeriesApproved`. Series config is write-once (`SeriesAlreadyConfigured`, `PtAlreadyMapped`). Do not add `disableSeries` / `enableSeries`.
 
@@ -181,7 +187,7 @@ One vault per underlying. One ovrfloToken per vault. Many Pendle series (markets
 
 Pre-maturity only. `ptAmount >= MIN_PT_AMOUNT` (1e6). TWAP-fresh oracle. Optional per-market cap.
 
-Split: immediate `toUser` from the PT→SY rate; remainder `toStream`. Fee is `StreamPricing.fee(toUser, feeBps)` in **underlying**, paid to treasury. Vault mints `toUser` to the depositor and `toStream` to itself, then `sablierLL.createWithDurations`: sender = vault, recipient = user, asset = ovrfloToken, cancelable = false, cliff = 0, end = series expiry.
+Split: immediate `toUser` from the PT→SY rate; remainder `toStream`. Fee is `StreamPricing.fee(toUser, feeBps)` in **ovrfloToken**, minted to treasury from the immediate split (KD2). Vault mints net `toUser` to the depositor, `feeAmount` to treasury when nonzero, and `toStream` to itself, then `sablierLL.createWithDurations`: sender = vault, recipient = user, asset = ovrfloToken, cancelable = false, cliff = 0, end = series expiry. The depositor approves PT only. No party's underlying balance changes during `deposit`. `minToUser` is the net-of-fee bound.
 
 The stream face is the discount, not the PT amount.
 
@@ -191,19 +197,21 @@ Post-maturity. Burn ovrfloToken, transfer PT 1:1. Bounded by `marketTotalDeposit
 
 ### Wrap / unwrap
 
-Permissionless, 1:1, no stream, no fee, no maturity gate. Bounded by tracked `wrappedUnderlying`, not raw `underlying.balanceOf(vault)`. Direct transfers do not increase the wrap reserve. `sweepExcessUnderlying` can recover the gap. `sweepExcessPt` must reject a non-PT address (`UnknownPT`) or a call with the underlying address drains the wrap reserve (pattern #11). Sweep `to` is trusted to the multisig (R-02).
+Permissionless, 1:1, no stream, no fee, no maturity gate. Live on `OVRFLOReserve`, not the vault. Bounded by tracked `wrappedUnderlying`, not raw `underlying.balanceOf(reserve)`. Direct transfers do not increase the wrap reserve. Factory `sweepExcessUnderlying` forwards to the reserve and can recover the gap. `sweepExcessPt` stays on the vault and must reject a non-PT address (`UnknownPT`). Sweep `to` is trusted to the multisig (R-02).
 
-### PT flash loan (`flashLoan`)
+### PT flash loan
 
-EIP-4531. Sends PT, calls `onFlashLoan`, pulls PT back, then pulls an oracle-adjusted fee in underlying. Capped by `marketTotalDeposited`. Pre-maturity. Pausable. **`nonReentrant` on `flashLoan`.** Nested flash loans revert. `deposit` / `wrap` / `unwrap` carry no reentrancy guard, so the callback can still deposit. Several docs say the opposite of this paragraph. Code wins: `OVRFLO.flashLoan` is `external nonReentrant`.
+**Removed.** The vault has no `flashLoan`. Do not describe PT flash as a live vault facility. ERC-3156 flash mint of ovrfloToken on the reserve is CS2 and is not in `src/` yet.
 
 ### Combined solvency
 
+Pinned in KD13 (ticket 06 re-derives the suite later; do not treat these as already re-derived):
+
 ```
-ovrfloToken.totalSupply() <= underlying.balanceOf(vault) + ptToken.balanceOf(vault)
+ovrfloToken.totalSupply() <= Σ_pt.balanceOf(vault) + underlying.balanceOf(reserve)
 ```
 
-Individual checks (`wrappedUnderlying <= underlying.balanceOf`, `marketTotalDeposited <= pt.balanceOf`) can fail after maturity when fungible ovrfloToken exits through the other pool. The combined check is the real invariant. Established in the 2026-07-01 fuzz campaign.
+The PT term sums the vault's PT balance across **every approved series**, not one market's PT. Per-origin equality also holds: `totalSupply == Σ marketTotalDeposited + reserve.wrappedUnderlying`. Wrap reserve: `wrappedUnderlying <= underlying.balanceOf(reserve)`; unwrap never spends PT. Individual per-pool checks can fail after maturity when fungible ovrfloToken exits through the other pool. The combined check is the real invariant.
 
 Underlying for the live design is **wstETH**, not stETH. `ovrfloToken = PT = SY yieldToken = wstETH` at 1:1. stETH rebasing plus the ~22% stETH/wstETH gap would transfer value from depositors to wrappers.
 
@@ -215,9 +223,9 @@ Pendle PT is always 18 decimals. No on-chain `decimals()` check (R-01).
 
 Loan-only tick order book. Bound to one vault and one OVRFLO Streams lockup instance.
 
-Lenders `supply(market, aprBps, amount)`: escrow underlying, append a leaf on that tick's current epoch tape. Amounts are exact `UNIT` (1e12 wei) multiples and at least `MIN_LIQUIDITY_AMOUNT` (1e15). `withdraw` refunds the unfilled suffix only; filled coordinates never move.
+Lenders `supply(market, aprBps, amount)`: escrow ovrfloToken, append a leaf on that tick's current epoch tape. Amounts are exact `UNIT` (1e12 wei) multiples and at least `MIN_LIQUIDITY_AMOUNT` (1e15). `withdraw` refunds the unfilled suffix only; filled coordinates never move.
 
-Borrowers `borrow(market, aprBps, targetBorrow, streamId, minAcceptable)`: pledge the stream NFT, blind-fill one tick by advancing `filled`. No lender IDs. Fill gas does not grow with positions crossed. Net proceeds must meet `minAcceptable`. Fee in underlying at fill time, paid by the borrower, emitted as `Borrowed.feeAmount` because `feeBps` is owner-mutable with no per-loan snapshot (pattern #25).
+Borrowers `borrow(market, aprBps, targetBorrow, streamId, minAcceptable, onBehalfOf)`: pledge the stream NFT, blind-fill one tick by advancing `filled`. No lender IDs. Fill gas does not grow with positions crossed. Net proceeds must meet `minAcceptable`. Fee in ovrfloToken at fill time, paid by the borrower, emitted as `Borrowed.feeAmount` because `feeBps` is owner-mutable with no per-loan snapshot (pattern #25). `onBehalfOf` applies only when `msg.sender` is the router.
 
 A tick is a fixed APR. Spacing is set once per market. Every fill at a tick uses `1 / factor(aprBps, ttm)`.
 
@@ -253,16 +261,17 @@ Use `x-ray/invariants.md` for the numbered lending catalog (I-1 frozen-history t
 
 Vault-side, keep all of:
 
-- Combined solvency.
-- Wrap reserve ≤ underlying balance; unwrap cannot spend PT.
-- `marketTotalDeposited` tracks PT that backs claim and caps flash loans.
+- Combined solvency as pinned in KD13 (vault PT across every series plus reserve underlying).
+- Wrap reserve ≤ underlying balance on the reserve; unwrap cannot spend PT.
+- `marketTotalDeposited` tracks PT that backs claim. It is not a flash-loan cap (PT flash is removed).
 - Series write-once; one PT maps to one market.
-- One registered vault per underlying; one lending per vault.
-- Factory is vault admin and lending owner.
+- One registered vault per underlying; one current lending per vault (`replaceLending` keeps old markets known).
+- Factory is vault admin, reserve admin, and lending owner.
 - Stream sender is the vault; stream asset is ovrfloToken; stream is non-cancelable and cliff-free.
 - `obligation <= remaining` at origination.
 - No tape coordinate below `filled` ever changes.
 - Claim entitlement is pro-rata of cumulative recovery, order-independent.
+- Token mint/burn only from `vault()` and `reserve()`.
 
 ---
 
@@ -277,7 +286,7 @@ Do:
 - Keep Pendle-specific types and checks.
 - Keep Sablier v1.1 ACL semantics.
 - Keep loan-only ticks, blind fill, lazy attribution.
-- Keep wrap reserve separate from PT backing.
+- Keep wrap reserve on `OVRFLOReserve`, separate from PT backing.
 - Keep wstETH as the vault underlying.
 - Add errors and events only from the closed catalog, or with a dated user decision (pattern #21).
 - Narrow through `SafeCast`. Use `Math.mulDiv` for overflow-prone math. No PRB-Math in this repo's `src/` (fork exception).
@@ -292,7 +301,7 @@ Do not:
 - Call vault or lending admin from the Safe.
 - Construct children inside the factory.
 - Add on-chain PT decimal checks, `to == address(0)` sweep guards, `disableSeries`, claim-time fees on lenders, or protocol-level PT→underlying redeem.
-- Re-add sale listings, loan pools, or self-match.
+- Re-add sale listings, loan pools, self-match, or PT flash.
 - Put health factors or liquidations in the UI. OVRFLO has neither.
 - Treat a discovery log or indexer as ownership.
 - `forge script --broadcast` against local Anvil.
@@ -368,9 +377,11 @@ Use this table when two sources collide. Re-verify the "Live" column if `src/` m
 | Topic | Stale / mixed claim | Live |
 |---|---|---|
 | Stream layer name | Stale CONCEPTS rebrand / `setMinter` paragraph (rewritten in U7) | Getter `sablierLL` / interface `ISablierV2LockupLinear` bind the OVRFLO Streams fork (`factory.ovrfloStream()`). Canonical `0xAFb979…` is not the bound address. |
-| Stream discovery | Browser log-scan candidates, then on-chain hydrate (`web/lib/discovery/`). Enumerable is ticket 08 — unbuilt. | Enumerable holder lists in `useStreams` (`balanceOf` + `tokensOfOwnerIn`). Log-scan is not live. |
-| `flashLoan` reentrancy | `CONCEPTS.md` and the discipline doc: no `nonReentrant` | `nonReentrant` on `flashLoan`; deposit during callback still works. |
+| Stream discovery | Browser log-scan candidates, then on-chain hydrate (`web/lib/discovery/`). Older streams-campaign notes said "ticket 08 — unbuilt." | Enumerable holder lists in `useStreams` (`balanceOf` + `tokensOfOwnerIn`). Log-scan is not live. Denomination ticket 08 is docs sync, not Enumerable. |
+| PT flash | `CONCEPTS.md` historical `PT flash loan` entry; discipline doc; old onboarding | Removed in CS1. Vault has no `flashLoan`. ERC-3156 flash mint is CS2, not live. |
 | Factory constructor | Older seed snippets: `(sablier, owner)` | `(owner, oracle)`. Stream address is admitted via `setOvrfloStream`; vault/lending take it as a constructor arg. |
+| Nested deploy | "Vault constructs and owns the token" | Vault constructs `OVRFLOReserve`. Reserve constructs `OVRFLOToken`. Two named minters: `vault()` and `reserve()`. |
+| Lending asset | Supply/borrow in underlying | Escrow, payout, and fee are ovrfloToken. `underlying` stays column identity. |
 | Lending shape | Sale listings, loan pools, `createBorrowerLoanPool` | `supply` / `withdraw` / `borrow` / `repay` / `close` / `claim`. |
 | Pattern #4, #10, #16 | Text still shows old guards | SUPERSEDED-BY-DESIGN. Blind fill has no ID array and no self-match. |
 | Pattern #7 vs named views | "all views return zeros" or "all views revert" | Auto-getters return zeros. `tickState` / `positionState` / `loanState` revert. |
@@ -385,7 +396,7 @@ Use this table when two sources collide. Re-verify the "Live" column if `src/` m
 ## 11. First session
 
 1. Read this file.
-2. Open `src/OVRFLOFactory.sol`, `src/OVRFLO.sol`, `src/OVRFLOLending.sol` headers and external functions. Confirm the live map in §2.
+2. Open `src/OVRFLOFactory.sol`, `src/OVRFLO.sol`, `src/OVRFLOReserve.sol`, `src/OVRFLOLending.sol` headers and external functions. Confirm the live map in §2.
 3. Read `CONCEPTS.md` **v1-lite** entries and skip the superseded lending section.
 4. If the task is a security finding: read the hydra list in `AGENTS.md` and `docs/audit/rejected-findings-record.md` before writing the finding.
 5. If the task is Solidity: read the discipline doc and coding standard, then the active plan if one exists.

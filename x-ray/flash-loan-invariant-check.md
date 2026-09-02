@@ -1,6 +1,10 @@
 # Flash-Loan Invariant Re-Verification
 
-Proposed function: `OVRFLO.flashLoan(ptToken, amount, data)`.
+**Historical.** PT flash (`OVRFLO.flashLoan`) was **removed** in CS1. This file records the pre-removal
+re-verification. Do not treat PT flash as a live vault facility. ERC-3156 flash mint of ovrfloToken on
+`OVRFLOReserve` is CS2 and is not live in `src/` yet.
+
+Proposed function (removed): `OVRFLO.flashLoan(ptToken, amount, data)`.
 
 - Cap: `amount <= marketTotalDeposited[market]` (state variable, not `balanceOf`).
 - Disbursement: `safeTransfer(ptToken, msg.sender, amount)`.

@@ -4,7 +4,7 @@
 
 **Blocked by:** 07 (06 is deferred; onboarding §5 describes the invariants as pinned in KD13, not as re-derived)
 
-**Status:** ready-for-agent
+**Status:** resolved
 **Labels:** ready-for-agent
 
 ## Session prompt (paste into a new chat)
@@ -40,17 +40,35 @@ After local verification, mark ticket checkboxes done and set Status: resolved.
 
 ## Acceptance criteria
 
-- [ ] README architecture sections describe `OVRFLOReserve`, two named minters, ovrfloToken lending escrow, and nested deploy
-- [ ] `CONCEPTS.md` has an `OVRFLOReserve` entry, three labeled exits, and denomination vocabulary
-- [ ] `docs/agents/onboarding.md` §2/§4/§5/§7 combined solvency and live map match KD13. Do not restore an Architecture Overview into `AGENTS.md`; that file stays the session router.
-- [ ] `docs/agents/onboarding.md` §2 file list names every file in `src/`, including `OVRFLOStreamLens.sol` (deployless read lens; not a DeploySize deployable) and the new `OVRFLOReserve.sol`. The "six Solidity files" sentence is corrected to the real count.
-- [ ] Critical patterns fee denomination and sweep-reserve reasoning move to the reserve
-- [ ] `VAULT_SECURITY.md` records two burn authorities
-- [ ] `PRODUCT.md` Operating Context: lender-supply and borrower-proceeds references are ovrfloToken; `underlying` stays column identity
-- [ ] R-02 rejected-finding pointer follows the sweep to the reserve
-- [ ] `x-ray/` refresh matches the post-CS1 contracts
-- [ ] Grep for PT flash as a live vault facility returns hits only in historical plans, audits, or this ticket's "removed" wording
+- [x] README architecture sections describe `OVRFLOReserve`, two named minters, ovrfloToken lending escrow, and nested deploy
+- [x] `CONCEPTS.md` has an `OVRFLOReserve` entry, three labeled exits, and denomination vocabulary
+- [x] `docs/agents/onboarding.md` §2/§4/§5/§7 combined solvency and live map match KD13. Do not restore an Architecture Overview into `AGENTS.md`; that file stays the session router.
+- [x] `docs/agents/onboarding.md` §2 file list names every file in `src/`, including `OVRFLOStreamLens.sol` (deployless read lens; not a DeploySize deployable) and the new `OVRFLOReserve.sol`. The "six Solidity files" sentence is corrected to the real count.
+- [x] Critical patterns fee denomination and sweep-reserve reasoning move to the reserve
+- [x] `VAULT_SECURITY.md` records two burn authorities
+- [x] `PRODUCT.md` Operating Context: lender-supply and borrower-proceeds references are ovrfloToken; `underlying` stays column identity
+- [x] R-02 rejected-finding pointer follows the sweep to the reserve
+- [x] `x-ray/` refresh matches the post-CS1 contracts
+- [x] Grep for PT flash as a live vault facility returns hits only in historical plans, audits, or this ticket's "removed" wording
 
 ## Plan unit
 
 CS1 U8 in `docs/plans/2026-08-22-001-refactor-denomination-switch-border-column-plan.md`
+
+## Session log
+
+Intent recorded 2026-09-02 before the first docs write.
+
+Assumptions: CS1 U1–U7 are on this checkout. Ticket 06 is deferred, so onboarding §5 describes KD13 as pinned, not as re-derived. Maps wrap-reserve retarget shipped in ticket 07. CS2 flash mint and CS3 request book stay later-unit vocabulary. CS0 README two-line fixes stay. `AGENTS.md` stays the session router.
+
+This ticket owns: docs that describe the shipped CS1 column. Ticket 07 owns maps wrap-reserve retarget (verify only). Ticket 09 owns CS2 flash mint. Ticket 10 owns the request book. Ticket 06 owns invariant re-derivation.
+
+Predicted blast radius: `README.md`, `CONCEPTS.md`, `docs/agents/onboarding.md`, `docs/agents/system.md` (live column wiring), `docs/solutions/patterns/ovrflo-critical-patterns.md`, `VAULT_SECURITY.md`, `PRODUCT.md` Operating Context, `docs/audit/rejected-findings-record.md` (R-02), `x-ray/x-ray.md`, `x-ray/entry-points.md`, `x-ray/invariants.md`, `x-ray/flash-loan-invariant-check.md`, this ticket file. No Solidity. No web behavior. No map rewrite.
+
+Deviation (owner 2026-09-02, this session): delete the README `## Roadmap` section. That section named a stale Pool product and still described lenders pooling underlying. CS0 only reworded one line in it; this ticket removes the section.
+
+Deviation (2026-09-02, this session): the spec reviewer subagent (`gpt-5.6-sol-medium`) could not launch (Cursor unpaid-invoice error). This chat reviewed the uncommitted diff against live `src/`. Fixes from that pass: drop `IFlashBorrower` from the onboarding interfaces list; CONCEPTS `ovrfloToken` names both minters; CR-L2 no longer calls the vault the sole minter.
+
+Verification: PT-flash grep as a live vault facility; onboarding §2 file list vs `src/*.sol`; maps wrap-reserve already on `OVRFLOReserve`; `git diff --stat` vs this list. `AGENTS.md` is unchanged.
+
+Reuse: retarget existing README diagram, CONCEPTS entries, onboarding tables, and x-ray templates. No new doc format.

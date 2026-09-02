@@ -1,5 +1,16 @@
 # Vault Security Primer v13.5
 
+## OVRFLO applicability
+
+This primer is generic. Filter it through `docs/agents/onboarding.md` §8.
+
+OVRFLOToken has two named immutable burn (and mint) authorities, fixed at construction:
+
+- the vault (`vault()`): burns on claim
+- the wrap reserve (`reserve()`): burns on unwrap
+
+Neither authority can move. Do not treat a single Ownable minter as the live model. Wrap and unwrap live on `OVRFLOReserve`. PT flash is removed from the vault.
+
 ## Overview
 This primer consolidates critical security patterns and vulnerabilities discovered across multiple vault implementations, including ERC4626 vaults, yield-generating vaults, vault-like protocols, auto-redemption mechanisms, weighted pool implementations, cross-chain vault systems, multi-vault architectures, AMM-integrated vault systems, CDP vault implementations, position action patterns, fee distribution mechanisms, funding rate arbitrage systems, collateralized lending vaults, and stablecoin protocols. Use this as a reference when auditing new vault protocols to ensure comprehensive vulnerability detection.
 

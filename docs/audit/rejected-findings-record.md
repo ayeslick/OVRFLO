@@ -105,20 +105,20 @@ The following findings were raised in a comprehensive review of all non-test `*.
 
 - **Original claim (Low):** `flashLoan` is `nonReentrant` but the other four user functions are not. Defense-in-depth recommends adding it.
 - **Rejection rationale:** Pendle PT tokens and the underlyings used (WETH, wstETH) are standard ERC20s without transfer hooks. They cannot trigger reentrancy during `safeTransferFrom`. The `flashLoan` function needs `nonReentrant` because it sends PT before the callback and pulls it back after — a classic reentrancy vector that doesn't exist in the other functions. CEI ordering is the correct protection for non-hookable tokens, and the `wrap` CEI violation has been fixed (see below).
-- **CEI fix applied:** `wrap()` previously updated `wrappedUnderlying` after `safeTransferFrom` (effect after interaction). Fixed: `wrappedUnderlying += amount` is now before the transfer. This makes the "Reentrancy on vault" row in the "Other probed vectors" table above fully accurate.
-- **Evidence:** `src/OVRFLO.sol` `wrap()` — `wrappedUnderlying += amount` now precedes `safeTransferFrom`; `deposit()`, `claim()`, `unwrap()` already followed CEI.
+- **CEI fix applied:** `wrap()` previously updated `wrappedUnderlying` after `safeTransferFrom` (effect after interaction). Fixed: `wrappedUnderlying += amount` is now before the transfer. After CS1, wrap lives on `OVRFLOReserve` and keeps that order plus an end-of-function peg check.
+- **Evidence:** `src/OVRFLOReserve.sol` `wrap()` — `wrappedUnderlying += amount` precedes `safeTransferFrom`; historical note: the same CEI fix first landed on vault wrap in `src/OVRFLO.sol` before the reserve extract.
 
 ### CR-L2 — Infinite approval to Sablier in OVRFLO constructor — REJECTED (intentional, gas optimization)
 
 - **Original claim (Low):** `IERC20(ovrfloToken).approve(address(sablierLL), type(uint256).max)` contradicts the "never use infinite approvals" guidance.
-- **Rejection rationale:** The approval is to an immutable, trusted Sablier address. The vault is the sole minter of ovrfloToken and does not store ovrfloToken as a balance (minted tokens go to users or directly into Sablier streams). Re-approving per stream would waste gas on every deposit for zero security benefit. The approval is for ovrfloToken only, not for PT or underlying.
+- **Rejection rationale:** The approval is to an immutable, trusted Sablier address. The vault is one of two named minters (`vault()` and `reserve()`). The vault does not store ovrfloToken as a balance on the deposit path (minted tokens go to users or directly into Sablier streams). Re-approving per stream would waste gas on every deposit for zero security benefit. The approval is for ovrfloToken only, not for PT or underlying.
 - **Evidence:** `src/OVRFLO.sol` constructor — `IERC20(ovrfloToken).approve(address(sablierLL), type(uint256).max)`; `sablierLL` is `immutable`.
 
 ### CR-L3 — `sweepExcessPt`/`sweepExcessUnderlying` don't validate `to != address(0)` — REJECTED (admin-controlled)
 
 - **Original claim (Low):** The `to` parameter is not checked for the zero address. Tokens sent to `address(0)` are burned forever.
-- **Rejection rationale:** Both functions are `onlyAdmin` (multisig → factory → vault). The timelocked multisig is the trust boundary for admin operations. Adding a zero-address check duplicates what the multisig already validates off-chain.
-- **Evidence:** `src/OVRFLO.sol` — `sweepExcessPt` and `sweepExcessUnderlying` are `onlyAdmin`.
+- **Rejection rationale:** Both functions are `onlyAdmin` (multisig → factory → child). The timelocked multisig is the trust boundary for admin operations. Adding a zero-address check duplicates what the multisig already validates off-chain.
+- **Evidence after CS1:** `src/OVRFLO.sol` — `sweepExcessPt` is `onlyAdmin`. `src/OVRFLOReserve.sol` — `sweepExcessUnderlying` is `onlyAdmin` (factory). Factory `sweepExcessUnderlying` forwards to the reserve, not the vault. `@dev` natspec on both sweeps records that `to` is trusted. See critical-patterns R-02.
 
 ### CR-L4 — OVRFLOBook fee cap of 100% (`MAX_FEE_BPS = 10_000`) — REJECTED (intentional pause mechanism)
 

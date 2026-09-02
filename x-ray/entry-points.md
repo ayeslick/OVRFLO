@@ -1,10 +1,8 @@
 # Entry Point Map
 
-> OVRFLO | 40 entry points | 10 permissionless | 2 role-gated | 28 admin-only
+> OVRFLO | CS1 column | refreshed 2026-09-02 on `ticket/08`
 
-Regenerated 2026-08-10 at `f0661ab` (`codex/lending-v1-lite`) over the v1-lite lending rewrite; stream-admin
-rows (`setOvrfloStream`, `setStreamNFTDescriptor`) added 2026-08-15 with the OVRFLO Streams rebind. Counts exclude
-inherited OZ surfaces enumerated at the end (ERC20 transfer family, `Ownable2Step`, `Multicall`).
+PT flash (`OVRFLO.flashLoan`) is **removed**. Wrap and unwrap live on `OVRFLOReserve`. Lending value flow is ovrfloToken. Counts exclude inherited OZ surfaces enumerated at the end (ERC20 transfer family, `Ownable2Step`, `Multicall`, `ERC20Permit`).
 
 ---
 
@@ -13,9 +11,10 @@ inherited OZ surfaces enumerated at the end (ERC20 transfer family, `Ownable2Ste
 ### Setup (Multisig → Factory)
 
 `new OVRFLOFactory(...)` → deploy OVRFLO Streams lockup+comptroller+descriptor → `setOvrfloStream()` →
-`new OVRFLO(..., stream)` → `registerOvrflo()` → `new OVRFLOLending(..., stream, launchAprBps)` → `registerLending()` →
+`new OVRFLO(..., stream)` (nested: vault → reserve → token) → `registerOvrflo()` (writes `ovrfloToReserve`) →
+`new OVRFLOLending(..., stream, launchAprBps)` → `registerLending()` →
 `prepareOracle()` → `addMarket()` → `setLendingTickSpacing()`
-                                                                                                     └─→ `setLendingAprBounds()` / `setLendingFee()` / `setLendingTreasury()`
+                                                                                                     └─→ `setLendingAprBounds()` / `setLendingFee()` / `setLendingTreasury()` / `setLendingRouter()`
                                                                                                      └─→ `setStreamNFTDescriptor()` (art swap; only lockup admin forwarder)
 
 ### Vault user flow (depositor)
@@ -25,9 +24,9 @@ inherited OZ surfaces enumerated at the end (ERC20 transfer family, `Ownable2Ste
                        ├─→ `OVRFLO.claim()` ◄── post-maturity only
                        └─→ [stream becomes lending collateral, below]
 
-`OVRFLO.wrap()` ⇄ `OVRFLO.unwrap()` ◄── bounded by the separately tracked wrap reserve, no maturity gate
+### Reserve user flow (wrapper)
 
-`OVRFLO.flashLoan()` ◄── not paused, pre-maturity, amount ≤ marketTotalDeposited
+`OVRFLOReserve.wrap()` ⇄ `OVRFLOReserve.unwrap()` ◄── bounded by `wrappedUnderlying`, no maturity gate. PT flash is removed.
 
 ### Lender flow (book)
 
@@ -59,7 +58,7 @@ inherited OZ surfaces enumerated at the end (ERC20 transfer family, `Ownable2Ste
 | Parameters | `market` (user-controlled), `aprBps` (user-controlled), `amount` (user-controlled) |
 | Call chain | `→ OVRFLOLending._validateTick() → OVRFLOLending._requireMarketActive() → StreamPricing.marketActive() → OVRFLO.series()` then `→ TickTree.append() → IERC20.safeTransferFrom()` |
 | State modified | `ticks[market][aprBps].currentEpoch`, epoch tree nodes/leaves, `positions`, `lenderPositionCount`, `lenderPositionAt`, `nextPositionId` |
-| Value flow | in — underlying: lender → lending |
+| Value flow | in — ovrfloToken: lender → lending |
 | Reentrancy guard | yes |
 
 ### `OVRFLOLending.borrow()`
@@ -68,10 +67,10 @@ inherited OZ surfaces enumerated at the end (ERC20 transfer family, `Ownable2Ste
 |--------|--------|
 | Visibility | external, nonReentrant |
 | Caller | Borrower |
-| Parameters | `market` (user-controlled), `aprBps` (user-controlled), `targetBorrow` (user-controlled), `streamId` (user-controlled), `minAcceptable` (user-controlled) |
+| Parameters | `market` (user-controlled), `aprBps` (user-controlled), `targetBorrow` (user-controlled), `streamId` (user-controlled), `minAcceptable` (user-controlled), `onBehalfOf` (ignored unless `msg.sender` is the router) |
 | Call chain | `→ OVRFLOLending._fillTick() → StreamPricing.requireEligible() → ISablierV2LockupLinear.getStream()` then `→ StreamPricing.grossPrice() → StreamPricing.obligationForFill() → TickTree.root() → ISablierV2LockupLinear.transferFrom() → IERC20.safeTransfer()` |
 | State modified | `ticks[...].epochs[e].filled`, `.loanCount`, `tick.oldestLiveEpoch`, `loans`, `loanAt`, `borrowerLoanCount`, `borrowerLoanAt`, `nextLoanId` |
-| Value flow | in — OVRFLO Stream NFT: borrower → lending; out — underlying: lending → borrower + treasury |
+| Value flow | in — OVRFLO Stream NFT: borrower → lending; out — ovrfloToken: lending → borrower + treasury |
 | Reentrancy guard | yes |
 
 ### `OVRFLOLending.repay()`
@@ -134,41 +133,31 @@ inherited OZ surfaces enumerated at the end (ERC20 transfer family, `Ownable2Ste
 | Value flow | out — PT: vault → claimer (1:1 against burned ovrfloToken) |
 | Reentrancy guard | no |
 
-### `OVRFLO.wrap()`
+### `OVRFLOReserve.wrap()`
 
 | Aspect | Detail |
 |--------|--------|
 | Visibility | external |
 | Caller | Anyone |
 | Parameters | `amount` (user-controlled) |
-| Call chain | `→ IERC20.safeTransferFrom() → OVRFLOToken.mint()` |
+| Call chain | `→ IERC20.safeTransferFrom() → OVRFLOToken.mint() → _requirePeg()` |
 | State modified | `wrappedUnderlying` |
-| Value flow | in — underlying: user → vault; out — ovrfloToken mint |
-| Reentrancy guard | no |
+| Value flow | in — underlying: user → reserve; out — ovrfloToken mint |
+| Reentrancy guard | no (peg check at end) |
 
-### `OVRFLO.unwrap()`
+### `OVRFLOReserve.unwrap()`
 
 | Aspect | Detail |
 |--------|--------|
 | Visibility | external |
 | Caller | ovrfloToken holder |
 | Parameters | `amount` (user-controlled) |
-| Call chain | `→ OVRFLOToken.burn() → IERC20.safeTransfer()` |
+| Call chain | `→ OVRFLOToken.burn() → IERC20.safeTransfer() → _requirePeg()` |
 | State modified | `wrappedUnderlying` |
-| Value flow | out — underlying: vault → user (1:1 against burned ovrfloToken) |
-| Reentrancy guard | no |
+| Value flow | out — underlying: reserve → user (1:1 against burned ovrfloToken) |
+| Reentrancy guard | no (peg check at end) |
 
-### `OVRFLO.flashLoan()`
-
-| Aspect | Detail |
-|--------|--------|
-| Visibility | external, nonReentrant |
-| Caller | Contract implementing `IFlashBorrower` |
-| Parameters | `ptToken` (user-controlled), `amount` (user-controlled), `data` (user-controlled) |
-| Call chain | `→ OVRFLO._freshRate() → IPendleOracle.getOracleState() → IERC20.safeTransfer() → IFlashBorrower.onFlashLoan() → IERC20.safeTransferFrom()` |
-| State modified | none directly (the callback may re-enter `deposit`/`wrap`/`unwrap`, which do write) |
-| Value flow | out then in — PT lent and pulled back; underlying fee → treasury |
-| Reentrancy guard | yes (nested flash loans only; `deposit`/`wrap`/`unwrap` remain callable inside the callback) |
+PT flash (`OVRFLO.flashLoan`) is **removed**. Do not list it as a live vault entry point.
 
 ---
 
@@ -209,16 +198,16 @@ vault functions). No operational timelock exists on the contracts themselves —
 
 | Contract | Function | Parameters | State Modified |
 |----------|----------|------------|----------------|
-| OVRFLOFactory | `registerOvrflo()` | ovrflo (externally deployed) | `ovrflos`, `ovrfloCount`, `ovrfloInfo`, `underlyingToOvrflo`; verifies `factory()`/`oracle()`/`sablierLL()==ovrfloStream` and duplicate-underlying before registering |
+| OVRFLOFactory | `registerOvrflo()` | ovrflo (externally deployed) | `ovrflos`, `ovrfloCount`, `ovrfloInfo`, `underlyingToOvrflo`, `ovrfloToReserve`; verifies factory/oracle/stream, token minters, reserve wiring |
 | OVRFLOFactory | `registerLending()` | lending (externally deployed) | `ovrfloToLending`, `lendingToOvrflo`, `lendings`, `lendingCount`; verifies `factory()`/`owner()`/`sablier()==ovrfloStream` (and vault match) and 1:1 vault mapping before registering |
+| OVRFLOFactory | `replaceLending()` | newLending | `ovrfloToLending` points at the new market; old market stays in `lendings` / `lendingToOvrflo` |
+| OVRFLOFactory | `setLendingRouter()` | lending, router | forwards `setRouter`; zero disables |
 | OVRFLOFactory | `setOvrfloStream()` | stream (once) | `ovrfloStream`; checks lockup `factory()`/`admin()` and comptroller `admin()`; reverts on second call |
 | OVRFLOFactory | `setStreamNFTDescriptor()` | descriptor | forwards `setNFTDescriptor` to `ovrfloStream`; **only** lockup admin forwarder |
 | OVRFLOFactory | `addMarket()` | ovrflo, market, twapDuration, feeBps | `isMarketApproved`, `approvedMarketAt`, `approvedMarketCount`; forwards to `OVRFLO.setSeriesApproved` |
 | OVRFLOFactory | `setMarketDepositLimit()` | ovrflo, market, limit | forwards to vault |
 | OVRFLOFactory | `sweepExcessPt()` | ovrflo, ptToken, to | forwards to vault |
-| OVRFLOFactory | `sweepExcessUnderlying()` | ovrflo, to | forwards to vault |
-| OVRFLOFactory | `setFlashFeeBps()` | ovrflo, feeBps | forwards to vault |
-| OVRFLOFactory | `setFlashLoanPaused()` | ovrflo, paused | forwards to vault |
+| OVRFLOFactory | `sweepExcessUnderlying()` | ovrflo, to | forwards to `OVRFLOReserve` via `ovrfloToReserve` |
 | OVRFLOFactory | `prepareOracle()` | market, twapDuration | calls `IPendleMarket.increaseObservationsCardinalityNext` |
 | OVRFLOFactory | `setLendingAprBounds()` | lending, aprMinBps, aprMaxBps | forwards to lending |
 | OVRFLOFactory | `setLendingFee()` | lending, feeBps | forwards to lending |
@@ -227,16 +216,14 @@ vault functions). No operational timelock exists on the contracts themselves —
 | OVRFLO | `setSeriesApproved()` | market, pt, twapDuration, expiry, feeBps | `_series[market]`, `ptToMarket[pt]` (write-once) |
 | OVRFLO | `setMarketDepositLimit()` | market, limit | `marketDepositLimits[market]` |
 | OVRFLO | `sweepExcessPt()` | ptToken, to | transfers surplus PT above `marketTotalDeposited` |
-| OVRFLO | `sweepExcessUnderlying()` | to | transfers surplus underlying above `wrappedUnderlying` |
-| OVRFLO | `setFlashFeeBps()` | feeBps | `flashFeeBps` |
-| OVRFLO | `setFlashLoanPaused()` | paused | `flashLoanPaused` |
+| OVRFLOReserve | `sweepExcessUnderlying()` | to | transfers surplus underlying above `wrappedUnderlying` |
 | OVRFLOLending | `setAprBounds()` | aprMinBps, aprMaxBps | `aprMinBps`, `aprMaxBps` |
 | OVRFLOLending | `setTickSpacing()` | market, spacing | `tickSpacing[market]` (set-once) |
 | OVRFLOLending | `setFee()` | feeBps | `feeBps` |
 | OVRFLOLending | `setTreasury()` | treasury | `treasury` |
-| OVRFLOToken | `transferOwnership()` | newOwner | `owner` (owner is the vault after deploy) |
-| OVRFLOToken | `mint()` | to, amount | balances, totalSupply |
-| OVRFLOToken | `burn()` | from, amount | balances, totalSupply |
+| OVRFLOLending | `setRouter()` | router | `router` |
+| OVRFLOToken | `mint()` | to, amount | balances, totalSupply (vault or reserve) |
+| OVRFLOToken | `burn()` | from, amount | balances, totalSupply (vault or reserve) |
 
 ### Unreachable lockup / comptroller admin (intentional)
 

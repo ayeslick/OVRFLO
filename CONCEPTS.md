@@ -10,7 +10,9 @@ One underlying plus the vault, receipt token, wrap reserve, lending market, and 
 
 ovrfloToken, streams, loans, and supply positions of that column belong to that underlying only. A USD quote for that column keys by `vault.underlying()`. Never apply another column's quote, backing, or lending book. A later underlying is a new column with its own reviewed recipe row.
 
-Live `src/` still keeps wrap on the vault and lending escrow in underlying. After CS1, wrap lives on `OVRFLOReserve` and lending escrows ovrfloToken.
+### Denomination
+
+Column identity is the underlying (`vault.underlying()`). After CS1, streams, loans, lender supply, borrower proceeds, and the deposit fee are ovrfloToken. Wrap and unwrap stay 1:1 underlying ↔ ovrfloToken on `OVRFLOReserve`.
 
 ### Factory
 
@@ -22,15 +24,29 @@ The factory is owned by a timelocked multisig and is the permanent admin on ever
 
 The protocol vault for a single underlying asset that accepts supported Pendle principal-token positions and manages the corresponding fungible OVRFLO receipt token.
 
-An OVRFLO vault has two backing sources for the same receipt token: matured principal-token claims and underlying wrap reserves. These backing sources must remain separately accounted even though the receipt token is fungible.
+An OVRFLO vault has two backing sources for the same receipt token: matured principal-token claims and underlying wrap reserves. These backing sources must remain separately accounted even though the receipt token is fungible. Wrap reserves live on `OVRFLOReserve`. The vault holds PT backing and holds no underlying.
+
+### OVRFLOReserve
+
+The wrap-reserve contract for one column. The vault constructs it. It constructs the column's ovrfloToken. It holds the underlying that backs 1:1 wrap and unwrap. Admin is the factory. `wrappedUnderlying` is the tracked unwrap bound. Direct transfers do not increase that counter. Excess underlying above the counter can be swept. ERC-3156 flash mint of ovrfloToken is a later unit (CS2) and is not live in `src/` yet.
 
 ### Combined solvency
 
-The real solvency condition for an OVRFLO vault: `ovrfloToken.totalSupply() <= underlying.balanceOf(vault) + ptToken.balanceOf(vault)`. Individual checks (`wrappedUnderlying <= underlying.balanceOf`, `marketTotalDeposited <= ptToken.balanceOf`) are sufficient but not necessary — they hold pre-maturity (claim is blocked, no cross-exit possible) but can break post-maturity when ovrfloToken fungibility allows cross-exits. As long as the combined invariant holds, every holder can exit through some path (unwrap, claim, or DEX). Established during the 2026-07-01 fuzz campaign (GL-02, GL-55, GL-56).
+The real solvency condition for a column, pinned in KD13: `ovrfloToken.totalSupply() <= Σ_pt.balanceOf(vault) + underlying.balanceOf(reserve)`. The PT term sums the vault's PT balance across **every approved series**, not one market's PT. Per-origin equality also holds: `totalSupply == Σ marketTotalDeposited + reserve.wrappedUnderlying`. Individual checks (`wrappedUnderlying <= underlying.balanceOf(reserve)`, `marketTotalDeposited <= ptToken.balanceOf`) are sufficient but not necessary — they hold pre-maturity (claim is blocked, no cross-exit possible) but can break post-maturity when ovrfloToken fungibility allows cross-exits. Ticket 06 re-derives the invariant suite; until then treat these identities as pinned, not as re-derived.
+
+### Three labeled exits
+
+Every ovrfloToken holder can leave through one of three labeled exits, subject to that exit's backing:
+
+1. **Unwrap** — burn ovrfloToken on `OVRFLOReserve` for underlying 1:1, bounded by `wrappedUnderlying`.
+2. **Claim** — burn ovrfloToken on the vault for PT 1:1 after series maturity, bounded by `marketTotalDeposited`.
+3. **DEX** — sell ovrfloToken on an external market. No protocol backing check.
+
+As long as combined solvency holds, every holder can exit through some path.
 
 ### ovrfloToken
 
-The fungible receipt token minted by an OVRFLO vault to represent a one-to-one claim on supported exits for the vault's underlying asset.
+The fungible receipt token for one column. The vault mints it on deposit and burns it on claim. The reserve mints it on wrap and burns it on unwrap. A holder has a one-to-one claim on supported exits for that column's underlying.
 
 ovrfloToken is intentionally fungible across holder origins and supported market series for the same underlying asset. The holder's acquisition path does not restrict whether they can use a supported exit; availability is constrained by that exit's backing pool.
 
@@ -44,7 +60,7 @@ OVRFLO treats Principal Tokens as the backing asset for the post-maturity claim 
 
 The base asset associated with an OVRFLO vault and its receipt token. It is the column's identity.
 
-Underlying assets back the wrap/unwrap path directly. Live `src/` still takes the deposit fee in underlying. After CS1 the deposit fee is ovrfloToken from the mint split. Underlying held as wrap reserve is not interchangeable with Principal Tokens in accounting, even when both are economically one-to-one at maturity.
+Underlying assets back the wrap/unwrap path directly on `OVRFLOReserve`. The deposit fee is ovrfloToken from the mint split. Underlying held as wrap reserve is not interchangeable with Principal Tokens in accounting, even when both are economically one-to-one at maturity.
 
 ## OVRFLO processes
 
@@ -68,21 +84,21 @@ Claim capacity is bounded by principal-token backing, not by underlying reserves
 
 ### Wrap
 
-The permissionless process where a user contributes underlying asset and receives OVRFLO receipt tokens one-to-one without a stream or fee.
+The permissionless process where a user contributes underlying asset to `OVRFLOReserve` and receives OVRFLO receipt tokens one-to-one without a stream or fee.
 
 Wrap increases the underlying reserve by the same amount of receipt tokens minted.
 
 ### Unwrap
 
-The permissionless process where a receipt-token holder burns OVRFLO receipt tokens to receive underlying asset one-to-one.
+The permissionless process where a receipt-token holder burns OVRFLO receipt tokens on `OVRFLOReserve` to receive underlying asset one-to-one.
 
-Unwrap capacity is bounded by underlying reserve, not by the vault's raw underlying token balance or by principal-token backing.
+Unwrap capacity is bounded by underlying reserve on `OVRFLOReserve`, not by the vault's token balance or by principal-token backing.
 
 ### Wrap reserve
 
-The tracked amount of underlying asset that backs the unwrap path.
+The tracked amount of underlying asset that backs the unwrap path. The counter lives on `OVRFLOReserve` as `wrappedUnderlying`.
 
-Direct token transfers or donations do not increase the wrap reserve. Excess underlying above the tracked reserve can be recovered without reducing unwrap capacity. Live `src/` stores this counter on the vault. After CS1 the counter lives on `OVRFLOReserve`.
+Direct token transfers or donations do not increase the wrap reserve. Excess underlying above the tracked reserve can be recovered without reducing unwrap capacity.
 
 ### USD display
 
@@ -90,11 +106,11 @@ A per-column overlay. The Markets app shows amounts in USD by default when that 
 
 ### Flash mint
 
-An atomic ERC-3156 mint of ovrfloToken from `OVRFLOReserve`, repaid in the same transaction. The economic cap is a factory-set per-call `flashMintMax`. Wrap and unwrap stay callable in the callback. Net `totalSupply` does not change.
+An atomic ERC-3156 mint of ovrfloToken from `OVRFLOReserve`, repaid in the same transaction. Later unit (CS2). Not live in `src/` yet. The economic cap is a factory-set per-call `flashMintMax`. Wrap and unwrap stay callable in the callback. Net `totalSupply` does not change.
 
 ### Request book
 
-A thin router that escrows an OVRFLO Stream until lending depth can fill a borrow for the human owner. Core `borrow` uses `onBehalfOf`. The book holds no loan-to-borrower table.
+A thin router that escrows an OVRFLO Stream until lending depth can fill a borrow for the human owner. Later unit (CS3). Not live in `src/` yet. Core `borrow` uses `onBehalfOf`. The book holds no loan-to-borrower table.
 
 ### OVRFLO Stream
 
@@ -154,11 +170,11 @@ The only lending mechanism in the OVRFLOLending: an atomic batch primitive where
 
 ### OVRFLO cycle
 
-The composition of PT deposit, lending, and unwrap or swap that lets the PT discount -- fixed at deposit -- overflow into extractable value. A depositor receives immediate ovrfloToken (principal at TWAP value) plus a Sablier stream (the yield). Borrowing the stream's full discounted price on the lending (economically a sale — see "Loan" above) and exiting the immediate portion via unwrap or a swap pool converts both legs to underlying, capturing the fixed yield. Executable today with held PT, zero capital via an underlying flash loan from an external provider (swap for PT on the Pendle AMM, run the cycle, repay in underlying), or zero capital via a PT flash loan from OVRFLO itself (run the cycle, buy PT on the Pendle AMM for repayment). The protocol remains solvent throughout: the deposit adds PT backing, the unwrap (if used) consumes wrap-reserve backing, and every participant is economically whole. See `README.md` "What's Fixed Will OVRFLO" for the full example.
+The composition of PT deposit, lending, and unwrap or swap that lets the PT discount -- fixed at deposit -- overflow into extractable value. A depositor receives immediate ovrfloToken (principal at TWAP value) plus a Sablier stream (the yield). Borrowing the stream's full discounted price on the lending (economically a sale — see "Loan" above) and exiting the immediate portion via unwrap or a swap pool converts both legs toward underlying, capturing the fixed yield. Executable today with held PT, or zero capital via an underlying flash loan from an external provider (swap for PT on the Pendle AMM, run the cycle, repay in underlying). PT flash from the OVRFLO vault is removed. The protocol remains solvent throughout: the deposit adds PT backing, the unwrap (if used) consumes wrap-reserve backing on `OVRFLOReserve`, and every participant is economically whole. See `README.md` "What's Fixed Will OVRFLO" for the full example.
 
 ### PT flash loan
 
-An atomic loan of deposited PT from the OVRFLO vault, repaid via safeTransferFrom within the same transaction. The borrower implements an EIP-4531 callback that receives PT, executes logic (typically the OVRFLO cycle), and returns PT plus an oracle-adjusted fee in underlying. The fee routes to the treasury, which wraps it to fund the wrap reserve. Capped by marketTotalDeposited, gated pre-maturity, and globally pausable by the multisig. No nonReentrant modifier is applied because the borrower must deposit during the callback to run the cycle.
+**Removed (CS1).** The vault no longer lends deposited PT. Historical EIP-4531 `OVRFLO.flashLoan` is gone. Do not describe PT flash as a live vault facility. ERC-3156 flash mint of ovrfloToken on `OVRFLOReserve` is a later unit (see "Flash mint").
 
 ## OVRFLOLending v1-lite
 

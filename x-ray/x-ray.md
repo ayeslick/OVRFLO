@@ -1,37 +1,43 @@
 # X-Ray Report
 
-> OVRFLO | 1379 nSLOC | `f0661ab` (`codex/lending-v1-lite`) | Foundry | 10/08/26
+> OVRFLO | CS1 column | refreshed 2026-09-02 on `ticket/08` | Foundry
+
+The 2026-08-10 v1-lite snapshot at `f0661ab` is superseded for column wiring. Cite lending tape invariants as `x-ray/invariants.md` plus commit, never as a timeless ID.
 
 ---
 
 ## 1. Protocol Overview
 
 **What it does:** Wraps Pendle Principal Tokens into a liquid ERC20 plus an OVRFLO Stream carrying the PT
-discount, then runs a loan-only fixed-rate order book where lenders rest underlying at APR ticks and borrowers
+discount, then runs a loan-only fixed-rate order book where lenders rest ovrfloToken at APR ticks and borrowers
 draw against those streams as collateral.
 
 - **Users**: PT holders wanting immediate liquidity; lenders wanting a fixed, known payout; borrowers monetizing
   a vesting stream without selling it outright.
-- **Core flow**: deposit PT → receive ovrfloToken + an OVRFLO Stream → pledge that stream to borrow at a chosen
+- **Core flow**: deposit PT → receive ovrfloToken + an OVRFLO Stream → pledge that stream to borrow ovrfloToken at a chosen
   APR tick → the stream self-repays the loan.
 - **Key mechanism**: a per-tick append-only coordinate tape. Borrows are *blind fills* that advance one
   cumulative `filled` counter; lender attribution is computed later as interval overlap rather than written per
   fill.
-- **Token model**: one `OVRFLOToken` (ERC20) per underlying, minted by the vault against PT deposits and 1:1
-  wraps; OVRFLO Stream NFTs (bound lockup: fork of Sablier v2-core v1.1.2; interface `ISablierV2LockupLinear`) act as transferable collateral.
-- **Admin model**: a timelocked multisig owns `OVRFLOFactory`, which is the sole admin of every vault and lending
+- **Token model**: one `OVRFLOToken` (ERC20 + Permit) per underlying, with two named immutable minters — the vault
+  (deposit/claim) and `OVRFLOReserve` (wrap/unwrap). OVRFLO Stream NFTs (bound lockup: fork of Sablier v2-core
+  v1.1.2; interface `ISablierV2LockupLinear`) act as transferable collateral.
+- **Admin model**: a timelocked multisig owns `OVRFLOFactory`, which is the sole admin of every vault, reserve, and lending
   market and is `initialAdmin` on the lockup/comptroller. No contract-level operational timelock — the delay lives entirely in the multisig. Stream protocol fees stay zero by construction (factory forwards only `setNFTDescriptor`).
 
 For a visual overview of the protocol's architecture, see the [architecture diagram](architecture.svg).
 
 ### Contracts in Scope
 
-| Subsystem | Key Contracts | nSLOC | Role |
-|-----------|--------------|------:|------|
-| Lending book | OVRFLOLending, TickTree | 768 | Fixed-rate tick order book: blind fills, lazy interval attribution, epoch rollover |
-| Vault | OVRFLO, OVRFLOToken | 317 | PT custody, TWAP-split deposit, wrap/unwrap reserve, PT flash loans |
-| Admin | OVRFLOFactory | 199 | Registers externally deployed children (no child creation code embedded); single admin entry point for vaults and books |
-| Shared pricing | StreamPricing | 95 | Stream eligibility, discounted gross price, obligation, fee (unchanged by the rewrite) |
+| Subsystem | Key Contracts | Role |
+|-----------|--------------|------|
+| Lending book | OVRFLOLending, TickTree | Fixed-rate tick order book: ovrfloToken escrow, blind fills, lazy interval attribution, epoch rollover |
+| Vault | OVRFLO | PT custody, TWAP-split deposit, fee-from-mint. No wrap, unwrap, or PT flash |
+| Wrap reserve | OVRFLOReserve | Nested-constructed wrap/unwrap; holds `wrappedUnderlying` |
+| Token | OVRFLOToken | Two named minters (`vault()`, `reserve()`); ERC20Permit |
+| Read lens | OVRFLOStreamLens | Deployless `eth_call` hydrator; not a DeploySize deployable |
+| Admin | OVRFLOFactory | Registers externally deployed children; `ovrfloToReserve` write-once; `replaceLending`; `setLendingRouter` |
+| Shared pricing | StreamPricing | Stream eligibility, discounted gross price, obligation, fee |
 
 ### How It Fits Together
 
@@ -47,15 +53,27 @@ OVRFLO.deposit(market, ptAmount, minToUser)
 │  └─ IPendleOracle.getOracleState() → getPtToSyRate()   ← reverts if TWAP window is not yet satisfied
 ├─ IERC20.safeTransferFrom()                              ← PT in
 ├─ OVRFLO._computeSplit()                                 ← toUser capped at face; toStream is the discount
+├─ fee = StreamPricing.fee(toUser, feeBps); toUser -= fee
 ├─ OVRFLOToken.mint(msg.sender, toUser)
+├─ OVRFLOToken.mint(TREASURY_ADDR, fee)                   ← skipped when fee is zero
 ├─ OVRFLOToken.mint(address(this), toStream)
 └─ ISablierV2LockupLinear.createWithDurations()           ← the stream that later becomes collateral
+```
+
+### Wrap on the reserve
+
+```
+OVRFLOReserve.wrap(amount)
+├─ wrappedUnderlying += amount
+├─ IERC20.safeTransferFrom()                              ← underlying in; TransferMismatch if short
+├─ OVRFLOToken.mint(msg.sender, amount)
+└─ _requirePeg()                                          ← wrappedUnderlying <= underlying.balanceOf(reserve)
 ```
 
 ### Blind fill — the load-bearing path
 
 ```
-OVRFLOLending.borrow(market, aprBps, targetBorrow, streamId, minAcceptable)
+OVRFLOLending.borrow(market, aprBps, targetBorrow, streamId, minAcceptable, onBehalfOf)
 ├─ OVRFLOLending._validateTick()                          ← spacing set, tick aligned, inside APR bounds
 ├─ OVRFLOLending._fillTick()
 │  ├─ StreamPricing.requireEligible() → Sablier.getStream()
@@ -64,7 +82,7 @@ OVRFLOLending.borrow(market, aprBps, targetBorrow, streamId, minAcceptable)
 │  ├─ fill = min(target/UNIT, available, grossPrice/UNIT)
 │  └─ epochState.filled = fillEnd; loanCount += 1         ← the entire consumption: ONE packed slot write
 ├─ ISablierV2LockupLinear.transferFrom()                  ← plain transferFrom; no onERC721Received surface
-└─ IERC20.safeTransfer() ×2                               ← borrower net, then treasury fee
+└─ IERC20.safeTransfer() ×2                               ← borrower net ovrfloToken, then treasury fee
 ```
 
 ### Lazy attribution — claim time
@@ -110,12 +128,11 @@ the only oracle dependency lives.
 
 | Actor | Trust Level | Capabilities |
 |-------|-------------|-------------|
-| Timelocked multisig | Trusted | Owns the factory. Delay is external to the contracts — every forwarded action (fee, APR bounds, treasury, deposit limits, flash pause, sweeps, market approval, tick spacing) executes instantly once the multisig acts. Cannot touch user positions, loans, or the tape. |
-| OVRFLOFactory | Trusted (multisig-gated) | Sole `onlyAdmin`/`onlyOwner` principal for both vault and book; deploys them and holds their ownership. |
+| Timelocked multisig | Trusted | Owns the factory. Delay is external to the contracts — every forwarded action (fee, APR bounds, treasury, deposit limits, sweeps, market approval, tick spacing, `replaceLending`, `setLendingRouter`) executes instantly once the multisig acts. Cannot touch user positions, loans, or the tape. |
+| OVRFLOFactory | Trusted (multisig-gated) | Sole `onlyAdmin`/`onlyOwner` principal for vault, reserve, and book; holds their ownership. |
 | Lender (A1) | Untrusted | `supply` at any valid tick; `withdraw` own unfilled remainder; `claim` own positions' pro-rata share. Cannot reach filled capital except through `claim`. |
 | Borrower (A2) | Untrusted | `borrow` against an eligible stream; `repay` at face. Post-origination the borrower can do nothing wrong — collateral settles the loan. |
 | Anyone / keeper (A3) | Untrusted | `close` any covered loan; `repay` any loan (strict donation); `advanceEpochCursor`; trigger tree growth or epoch rollover implicitly by supplying. |
-| Flash borrower | Untrusted | `IFlashBorrower` contract receiving PT mid-transaction; may re-enter the vault's unguarded `deposit`/`wrap`/`unwrap` during the callback. |
 
 **Adversary Ranking** (ordered by threat level for this protocol type, adjusted by git evidence):
 
@@ -125,10 +142,9 @@ the only oracle dependency lives.
    over-vested open stream where live `withdrawable` exceeds the outstanding.
 3. **Oracle manipulator** — relevant only to the vault's deposit split, which is the one TWAP-dependent value
    distribution in the system.
-4. **Flash-loan compositor** — chains the PT flash loan with the vault's unguarded wrap/claim/unwrap paths.
-5. **Book griefer** — inflates leaves or epochs to degrade the book; economically bounded to gas, but the bound
+4. **Book griefer** — inflates leaves or epochs to degrade the book; economically bounded to gas, but the bound
    is what must be verified.
-6. **Compromised admin** — instant fee/treasury/bounds changes with no on-chain delay.
+5. **Compromised admin** — instant fee/treasury/bounds changes with no on-chain delay.
 
 See [entry-points.md](entry-points.md) for the full permissionless entry point map.
 
@@ -169,9 +185,9 @@ See [entry-points.md](entry-points.md) for the full permissionless entry point m
 
 - **Terminal-capacity rollover is only reachable via a virtual override** &nbsp;&#91;[I-18](invariants.md#i-18)&#93; — `_epochAtCapacity` (`:1026-1028`) is `virtual` so the harness can force the branch; 8^7 real appends are prohibitive. Worth confirming the production predicate (`height == MAX_HEIGHT && atCapacity()`) and not merely the overridden one is what ships.
 
-- **Flash loan callback re-enters unguarded vault paths** — `OVRFLO.flashLoan` (`:459`) is `nonReentrant` but `deposit`, `wrap`, and `unwrap` are not, and the callback runs with PT already sent (`:472-474`). Worth tracing wrap/claim/unwrap cycles composed inside the callback window.
+- **Reserve peg is a checked fact after wrap and unwrap** — `OVRFLOReserve._requirePeg` reverts `ReserveExceedsBalance` if `wrappedUnderlying > underlying.balanceOf(reserve)`. Worth confirming every wrap/unwrap path hits it and that `sweepExcessUnderlying` cannot reduce backing below the counter.
 
-- **Admin operational powers carry no on-chain delay** — every `onlyOwner` forwarder in `OVRFLOFactory.sol:283-318` executes immediately. Worth confirming the off-chain timelock is the only thing standing between a key compromise and a fee/treasury redirect.
+- **Admin operational powers carry no on-chain delay** — every `onlyOwner` forwarder in `OVRFLOFactory` executes immediately. Worth confirming the off-chain timelock is the only thing standing between a key compromise and a fee/treasury redirect.
 
 ### Protocol-Type Concerns
 
@@ -213,7 +229,7 @@ See [entry-points.md](entry-points.md) for the full permissionless entry point m
 > - Mutability: immutable at the pinned address (the deliberate reason V2 is retained over V4)
 > - On failure: revert; the book approves no operator and never uses `safeTransferFrom`
 
-> **Pendle (market + TWAP oracle)** — via `OVRFLO.deposit/flashLoan`, `OVRFLOFactory.addMarket`
+> **Pendle (market + TWAP oracle)** — via `OVRFLO.deposit`, `OVRFLOFactory.addMarket`
 > - Assumes: PT is 18 decimals; `getPtToSyRate` reflects fair value over the fixed TWAP window
 > - Validates: `oldestObservationSatisfied` at runtime (`OVRFLO.sol:346`) and cardinality at onboarding
 >   (`OVRFLOFactory.sol:202`)
@@ -272,7 +288,7 @@ See [entry-points.md](entry-points.md) for the full permissionless entry point m
 | Unit | ~300 | All in-scope contracts |
 | Fork | 5 files | Vault, lending, factory, flash loan (self-skip without `MAINNET_RPC_URL`) |
 | Stateless Fuzz | 20 functions | StreamPricing, TickTree (differential vs reference model), vault |
-| Stateful Fuzz (Foundry) | 7 invariant functions | OVRFLO vault, wrap/unwrap |
+| Stateful Fuzz (Foundry) | 7 invariant functions | OVRFLO vault, OVRFLOReserve wrap/unwrap |
 | Stateful Fuzz (Echidna) | 1 config | Pre-rewrite property set |
 | Stateful Fuzz (Medusa) | 1 config | Pre-rewrite property set |
 | Formal Verification | 0 | Not implemented |

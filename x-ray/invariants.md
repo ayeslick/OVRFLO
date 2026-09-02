@@ -1,11 +1,8 @@
 # Invariant Map
 
-> OVRFLO | 68 guards | 31 inferred (24 single-contract, 5 cross-contract, 5 economic — 34 total) | 9 not enforced on-chain
+> OVRFLO | CS1 refresh 2026-09-02 on `ticket/08`. Lending tape IDs I-1..I-23 remain the v1-lite catalog from `f0661ab`. Vault wrap/flash guards below are retargeted: wrap lives on `OVRFLOReserve`; PT flash is **removed**. Cite IDs as `x-ray/invariants.md` plus commit, never as a timeless ID. Ticket 06 re-derives the suite; until then treat KD13 identities as pinned.
 
-Regenerated 2026-08-10 over the v1-lite lending rewrite at `f0661ab` (`codex/lending-v1-lite`). Guard and
-invariant IDs are **renumbered from the pre-rewrite catalog** — the sale-path and loan-pool machinery they
-described no longer exists. Cite IDs as `x-ray/invariants.md@f0661ab` when they matter. The old→new ID map
-lives in `AUDIT.md` ("ID map").
+The old→new lending ID map lives in `AUDIT.md` ("ID map").
 
 ---
 
@@ -45,12 +42,12 @@ belongs to another contract or another suite, with the owner cited.
 | I-21 | ENCODED | `afterInvariant`'s dust bound — a closed, fully drained loan's residual `proceeds` is at most one wei per contributing position |
 | I-22 | OUT-OF-SCOPE | Per-function routing fact, not a state identity. Covered by `test_Supply_RevertsAtAndAfterMaturity`, `test_Withdraw_RemainsAvailableAfterMaturity`, `test_Repay_WorksAfterMaturity`, `test_Close_WorksAfterMaturity`. The wind-down half is additionally exercised by the suite's `_maturityExcursion` (`covMaturityReached`) |
 | I-23 | OUT-OF-SCOPE | Ordering inside one call; unreachable as a cross-call identity. Covered by `test_Borrow_SucceedsOneSecondBeforeMaturityRevertsAtMaturity` |
-| I-24 | OUT-OF-SCOPE | Vault solvency. Covered by `test/OVRFLOInvariant.t.sol` and `test/OVRFLOWrapUnwrap.invariant.t.sol`; the lending suite deploys no vault |
+| I-24 | OUT-OF-SCOPE | Vault+reserve solvency (KD13). Covered by `test/OVRFLOInvariant.t.sol` and `test/OVRFLOWrapUnwrap.invariant.t.sol`; ticket 06 re-derives. The lending suite deploys no vault |
 | X-1 | OUT-OF-SCOPE | Series-config immutability lives in `OVRFLO.setSeriesApproved`. Covered by `test_SetSeriesApproved_RevertsForDuplicateMarketConfiguration` and `test_SetSeriesApproved_RevertsForDuplicatePtRegistration` (`test/OVRFLO.t.sol`) |
 | X-2 | ENCODED | `invariant_EscrowSolvency` + `invariant_TreeIntegrity` read `root() − filled` on every epoch every call; an underflow reverts the invariant, which is the failure |
 | X-3 | OUT-OF-SCOPE | Constructor wiring against a write-once factory mapping; no runtime transition to fuzz. Covered by `test_Constructor_WiresRegistryAndInitialAdminState` |
 | X-4 | COVERED | `test_SetTreasury_RejectsZeroAddress` (`test/OVRFLOLending.t.sol`) pins the enforceable half; "stays a live sink" is an off-chain multisig assumption |
-| X-5 | OUT-OF-SCOPE | Vault/token ownership. Covered by `test/OVRFLOToken.t.sol` |
+| X-5 | OUT-OF-SCOPE | Two named token minters (`vault()`, `reserve()`). Covered by `test/OVRFLOToken.t.sol` |
 | E-1 | ENCODED | `afterInvariant`'s lazy-attribution coverage — Σ overlap over the epoch's positions equals the loan's interval length, forever |
 | E-2 | ENCODED | `invariant_ClaimCaps` + `invariant_ClaimEntitlementCeiling` + `invariant_PotConservation` |
 | E-3 | ENCODED | `invariant_EscrowSolvency` + `invariant_TokenCustody` (both exit paths funded) |
@@ -67,19 +64,21 @@ fee, withdraw refund); open-loan stream custody; and a per-run structural + live
 
 Per-call preconditions. Heading IDs below (`G-N`) are anchor targets from x-ray.md attack surfaces.
 
-### OVRFLO (vault)
+### OVRFLOReserve (wrap) and OVRFLO (vault)
+
+G-2, G-3, G-4, and G-20 moved to `OVRFLOReserve` with CS1. G-15, G-16, G-17, and G-23 described PT flash and are **removed** with that facility.
 
 #### G-1
 `if (msg.sender != factory) revert NotAdmin()` · `OVRFLO.sol:257` · Collapses the vault's entire admin surface onto one address so authorization is the factory's problem, not a per-function role matrix (pattern #8).
 
 #### G-2
-`if (amount == 0) revert ZeroAmount()` · `OVRFLO.sol:362` · Keeps a no-op wrap from emitting a `Wrapped` event that indexers would treat as real flow.
+`if (amount == 0) revert ZeroAmount()` · `OVRFLOReserve.sol` `wrap` · Keeps a no-op wrap from emitting a `Wrapped` event that indexers would treat as real flow.
 
 #### G-3
-`if (balanceAfter - balanceBefore != amount) revert TransferMismatch()` · `OVRFLO.sol:369` · Rejects fee-on-transfer underlying, whose short delivery would credit `wrappedUnderlying` above the reserve actually held.
+`if (balanceAfter - balanceBefore != amount) revert TransferMismatch()` · `OVRFLOReserve.sol` `wrap` · Rejects fee-on-transfer underlying, whose short delivery would credit `wrappedUnderlying` above the reserve actually held.
 
 #### G-4
-`if (reserve < amount) revert InsufficientReserve()` · `OVRFLO.sol:382` · Confines unwrap to the separately tracked wrap reserve so it cannot reach PT-backed deposits.
+`if (reserve < amount) revert InsufficientReserve()` · `OVRFLOReserve.sol` `unwrap` · Confines unwrap to the separately tracked wrap reserve so it cannot reach PT-backed deposits.
 
 #### G-5
 `if (info.ptToken == address(0)) revert MarketNotApproved()` · `OVRFLO.sol:624` · Single approval gate for every priced path; an unapproved market has no oracle or expiry to read.
@@ -109,25 +108,28 @@ Per-call preconditions. Heading IDs below (`G-N`) are anchor targets from x-ray.
 `if (block.timestamp < info.expiryCached) revert NotMatured()` · `OVRFLO.sol:483` · PT is only redeemable at maturity; claiming earlier would hand out collateral still backing live streams.
 
 #### G-14
-`if (currentDeposited < amount) revert InsufficientDeposited()` · `OVRFLO.sol:487` · Stops a claim from driving `marketTotalDeposited` below zero, which would corrupt the flash-loan cap.
+`if (currentDeposited < amount) revert InsufficientDeposited()` · `OVRFLO.sol` `claim` · Stops a claim from driving `marketTotalDeposited` below zero.
 
 #### G-15
-`if (flashLoanPaused) revert FlashPaused()` · `OVRFLO.sol:513` · Multisig circuit breaker for the one entry point that hands out PT before it is repaid.
+
+**Removed with PT flash (CS1).** Historical: `flashLoanPaused` circuit breaker.
 
 #### G-16
-`if (amount > marketTotalDeposited[market]) revert ExceedsDeposited()` · `OVRFLO.sol:516` · Caps the loan at real deposited PT so a flash loan cannot reach the wrap reserve.
+
+**Removed with PT flash (CS1).** Historical: cap `amount <= marketTotalDeposited`.
 
 #### G-17
-`if (ret != FLASH_CALLBACK_SUCCESS) revert FlashCallbackFailed()` · `OVRFLO.sol:524` · Proves the callee is a deliberate `IFlashBorrower`, not an arbitrary address handed free PT.
+
+**Removed with PT flash (CS1).** Historical: `FLASH_CALLBACK_SUCCESS` check.
 
 #### G-18
-`if (market == address(0)) revert UnknownPT()` · `OVRFLO.sol:330` · Input validation on `sweepExcessPt`: passing the underlying address here would sweep the wrap reserve (learned-fact, distinct from the rejected `to == 0` finding R-02).
+`if (market == address(0)) revert UnknownPT()` · `OVRFLO.sol` `sweepExcessPt` · Input validation: a non-PT address would treat the entire balance of that token as excess (learned-fact, distinct from the rejected `to == 0` finding R-02). After CS1 this cannot drain wrap backing on the reserve.
 
 #### G-19
 `if (excess == 0) revert NoExcess()` · `OVRFLO.sol:335` · Sweep is strictly the surplus above tracked deposits; never principal.
 
 #### G-20
-`if (excess == 0) revert NoExcess()` · `OVRFLO.sol:350` · Same for underlying — `wrappedUnderlying` is reserved and unsweepable.
+`if (excess == 0) revert NoExcess()` · `OVRFLOReserve.sol` `sweepExcessUnderlying` · Same for underlying on the reserve — `wrappedUnderlying` is reserved and unsweepable.
 
 #### G-21
 `if (info.ptToken != address(0)) revert SeriesAlreadyConfigured()` · `OVRFLO.sol:301` · Series config is write-once; claims depend on `ptToken`/expiry staying fixed for the life of outstanding deposits.
@@ -136,7 +138,8 @@ Per-call preconditions. Heading IDs below (`G-N`) are anchor targets from x-ray.
 `if (ptToMarket[pt] != address(0)) revert PtAlreadyMapped()` · `OVRFLO.sol:302` · Prevents two markets sharing one PT, which would double-count `marketTotalDeposited`.
 
 #### G-23
-`if (feeBps > FLASH_FEE_MAX_BPS) revert FeeTooHigh()` · `OVRFLO.sol:538` · Hard ceiling the multisig cannot exceed even by mistake.
+
+**Removed with PT flash (CS1).** Historical: `FLASH_FEE_MAX_BPS` ceiling on the vault.
 
 #### G-24
 `if (ptToMarket[ptToken] == address(0)) revert UnknownPT()` · `OVRFLO.sol:578` · View-side approval gate (pattern #7: named views revert on nonexistent entities).
@@ -674,13 +677,9 @@ interpretable `SeriesMatured`.
 
 `Conservation` · On-chain: **No**
 
-> Vault dual-backing solvency: `ovrfloToken.totalSupply() ≤ underlying.balanceOf(vault) + ptToken.balanceOf(vault)`.
+> Column dual-backing solvency (KD13): `ovrfloToken.totalSupply() ≤ Σ_pt.balanceOf(vault) + underlying.balanceOf(reserve)`. Per-origin: `totalSupply == Σ marketTotalDeposited + reserve.wrappedUnderlying`.
 
-**Derivation** — Δ-pair across the four mint/burn sites: `wrap` (`OVRFLO.sol:364` `wrappedUnderlying += amount`
-↔ `:371` mint), `unwrap` (`:384` ↔ `:385` burn), `deposit` (`:435` `marketTotalDeposited` ↔ `:452-453` mint of
-`toUser + toStream == ptAmount`), `claim` (`:488` ↔ `:490` burn). The *combined* form is the correct one — the
-individual legs are too strict post-maturity, where cross-exits are a design feature (established during the
-2026-07-01 fuzz campaign).
+**Derivation** — Δ-pair across the four mint/burn sites: `wrap` (`OVRFLOReserve` `wrappedUnderlying += amount` ↔ mint), `unwrap` (counter ↔ burn), `deposit` (`marketTotalDeposited` ↔ mint of net toUser + fee + toStream == ptAmount), `claim` (deposited ↔ burn). The *combined* form is the correct one — the individual legs are too strict post-maturity, where cross-exits are a design feature. Ticket 06 re-derives the suite; until then this identity is pinned, not re-derived.
 
 **If violated** — Some ovrfloToken holder cannot exit through any path.
 

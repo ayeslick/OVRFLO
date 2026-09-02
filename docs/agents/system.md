@@ -21,13 +21,13 @@ Read from the bottom. Each layer names the layer below. It does not restate that
 | Layer | What it is | Live owner | Target owner (denomination plan) |
 |---|---|---|---|
 | 1. Underlying | Column identity asset (`vault.underlying()`) | `src/` | unchanged |
-| 2. Column wiring | Factory admits vault, token, wrap reserve, lending | Vault constructs token. Wrap lives on the vault. Lending escrows underlying. PT flash exists. | Vault constructs reserve. Reserve constructs token. Wrap lives on `OVRFLOReserve`. Lending escrows ovrfloToken. PT flash is gone. Factory maps `ovrfloToReserve`. Request book is the lending router. |
-| 3. Positions | ovrfloToken, stream, loan, supply, request | `src/` + `x-ray/` | same identities. Request book is CS3. |
+| 2. Column wiring | Factory admits vault, token, wrap reserve, lending | Vault constructs reserve. Reserve constructs token. Wrap lives on `OVRFLOReserve`. Lending escrows ovrfloToken. PT flash is gone. Factory maps `ovrfloToReserve`. | Request book is the lending router (CS3). |
+| 3. Positions | ovrfloToken, stream, loan, supply, request | `src/` + `x-ray/` | Request book is CS3. |
 | 4. Display overlay | USD per underlying. Token units always available. | Optional USD in older product copy | USD default when that column's recipe is live. Calldata stays token-native. Missing recipe hides USD for that column only. |
 | 5. Product modes | What the customer sees | Eight Markets map regions (watch, borrow, supply, rates, …) | `Default` / `Advanced` over one action graph. `DESIGN.md` is normative. The eight regions stay the live control map until CS4 lands. |
 | 6. Agent cockpit | How you drive the repo | this file, then the hop table | unchanged |
 
-`src/` is live. The denomination plan is target. Do not write a sentence that mixes them as if both were true in `src/` today.
+`src/` is live after CS1 for column wiring. CS2 flash mint, CS3 request book, and CS4 product modes remain target. Do not write a sentence that mixes live `src/` with an unbuilt later unit.
 
 ---
 
