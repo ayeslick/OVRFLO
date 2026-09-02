@@ -4,8 +4,8 @@
 
 **Blocked by:** 03
 
-**Status:** ready-for-agent
-**Labels:** ready-for-agent
+**Status:** resolved
+**Labels:** ready-for-human
 
 ## Session prompt (paste into a new chat)
 
@@ -49,20 +49,30 @@ After local verification, mark ticket checkboxes done and set Status: resolved.
 
 ## Acceptance criteria
 
-- [ ] `registerOvrflo` still takes one argument; `ovrfloToReserve(ovrflo)` is nonzero for an admitted column
-- [ ] Missing code reverts `NoCode`; token minter mismatch reverts `TokenMinterMismatch`; reserve binding mismatch reverts `ReserveMismatch`
-- [ ] A hostile vault whose token `reserve()` is not `vault.reserve()` is rejected
-- [ ] A candidate whose reserve reports a foreign factory is rejected
-- [ ] `ovrfloToReserve` is write-once; no `replaceReserve` exists
-- [ ] `replaceLending`: `ovrfloToLending` is the new market; `registerLending` still reverts `LendingExists`; factory admin still reaches the old market; an old-market loan can `repay` / `close` / `claim`; `LendingReplaced` fires
-- [ ] `replaceLending` appends the new market to `lendings` / `lendingCount` and keeps the old entry, so a reader can enumerate every market of a vault (KD7 web wind-down pin)
-- [ ] The `replaceLending` NatSpec or the factory doc names the operator order: deploy the new market, `replaceLending(new)`, then `setLendingRouter` on the new market once a book bound to it exists
-- [ ] `setLendingRouter` forwards to the market; factory re-emits
-- [ ] `sweepExcessUnderlying(ovrflo, to)` calls the registered reserve
-- [ ] `OvrfloInfo` tuple length and field order are unchanged
-- [ ] Storage goldens regenerated via `check-storage-layout.sh --write`
-- [ ] `forge build` then `forge test` green; `forge fmt --check` clean
+- [x] `registerOvrflo` still takes one argument; `ovrfloToReserve(ovrflo)` is nonzero for an admitted column
+- [x] Missing code reverts `NoCode`; token minter mismatch reverts `TokenMinterMismatch`; reserve binding mismatch reverts `ReserveMismatch`
+- [x] A hostile vault whose token `reserve()` is not `vault.reserve()` is rejected
+- [x] A candidate whose reserve reports a foreign factory is rejected
+- [x] `ovrfloToReserve` is write-once; no `replaceReserve` exists
+- [x] `replaceLending`: `ovrfloToLending` is the new market; `registerLending` still reverts `LendingExists`; factory admin still reaches the old market; an old-market loan can `repay` / `close` / `claim`; `LendingReplaced` fires
+- [x] `replaceLending` appends the new market to `lendings` / `lendingCount` and keeps the old entry, so a reader can enumerate every market of a vault (KD7 web wind-down pin)
+- [x] The `replaceLending` NatSpec or the factory doc names the operator order: deploy the new market, `replaceLending(new)`, then `setLendingRouter` on the new market once a book bound to it exists
+- [x] `setLendingRouter` forwards to the market; factory re-emits
+- [x] `sweepExcessUnderlying(ovrflo, to)` calls the registered reserve
+- [x] `OvrfloInfo` tuple length and field order are unchanged
+- [x] Storage goldens regenerated via `check-storage-layout.sh --write`
+- [x] `forge build` then `forge test` green; `forge fmt --check` clean
 
 ## Plan unit
 
 CS1 U4 in `docs/plans/2026-08-22-001-refactor-denomination-switch-border-column-plan.md`
+
+## Session log
+
+Fuzz and invariant files: no minimum edits. Plain `forge test` stayed green without touching those suites.
+
+Deviation: `registerOvrflo` checks `reserve == address(0)` before `code.length`. KD6 listed `NoCode` first. `address(0).code.length` is 0, so that order made `ReserveMismatch` unreachable for a missing reserve. The named error for a missing reserve stays `ReserveMismatch`.
+
+Review: GPT-5.6 Sol reported two lows (dead zero-reserve selector; duplicate `lendings` on repeat replace). Both applied. Grok 4.6 second pass reported no findings.
+
+`test/mocks/MockOvrfloAdmin.sol` already forwarded sweep to the reserve in ticket 02. This ticket did not change that mock.

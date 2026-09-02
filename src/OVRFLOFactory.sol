@@ -84,6 +84,10 @@ contract OVRFLOFactory is Ownable2Step {
     error ComptrollerAdminMismatch();
     /// @dev The supplied address has no code.
     error NoCode();
+    /// @dev The candidate token's `vault()` or `reserve()` does not match the vault.
+    error TokenMinterMismatch();
+    /// @dev The candidate reserve is missing or its bindings do not match the column.
+    error ReserveMismatch();
 
     /// @notice Registry row for one OVRFLO vault.
     /// @dev Field 0 is `treasury` and stays field 0. The off-repo OVRFLO Stream mint
@@ -106,6 +110,11 @@ contract OVRFLOFactory is Ownable2Step {
 
     /// @notice Maps an OVRFLO vault to its deployed OVRFLOLending (1:1).
     mapping(address => address) public ovrfloToLending;
+
+    /// @notice Maps an OVRFLO vault to its wrap reserve. Write-once at `registerOvrflo`.
+    /// @dev A flawed reserve is a new-column plus voluntary migration problem (pattern #9).
+    ///      This mapping has no setter after admission and no `replaceReserve`.
+    mapping(address => address) public ovrfloToReserve;
 
     /// @notice Reverse lookup: OVRFLOLending address => OVRFLO vault address.
     mapping(address => address) public lendingToOvrflo;
@@ -133,10 +142,12 @@ contract OVRFLOFactory is Ownable2Step {
         address indexed ovrflo, address indexed ovrfloToken, address treasury, address indexed underlying
     );
     event LendingRegistered(address indexed ovrflo, address indexed lending);
+    event LendingReplaced(address indexed ovrflo, address indexed oldLending, address indexed newLending);
     event LendingAprBoundsSet(address indexed lending, uint16 aprMinBps, uint16 aprMaxBps);
     event LendingFeeSet(address indexed lending, uint16 feeBps);
     event LendingTreasurySet(address indexed lending, address indexed treasury);
     event LendingTickSpacingSet(address indexed lending, address indexed market, uint16 spacing);
+    event LendingRouterSet(address indexed lending, address indexed router);
     event OvrfloStreamSet(address indexed stream);
     event StreamNFTDescriptorSet(address indexed descriptor);
 
@@ -155,18 +166,20 @@ contract OVRFLOFactory is Ownable2Step {
                               REGISTRATION
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Register an externally deployed OVRFLO vault (and its token) with this factory
-    /// @dev Verifies on-chain every constructor-arg binding the old in-factory deployment
-    ///      fixed by construction; code identity is established off-chain. Multisig checklist
-    ///      before calling (not duplicated on-chain, per the house stance):
-    ///      (1) the vault's deployment transaction (creation code + constructor args) matches
-    ///          the audited compiler artifact — runtime-only comparison masks immutable slots
-    ///          and misses the vault-created token;
+    /// @notice Register an externally deployed OVRFLO vault with this factory
+    /// @dev On-chain checks prove constructor-arg wiring. Code identity stays off-chain.
+    ///      Multisig checklist before calling (not duplicated on-chain):
+    ///      (1) three creation transactions match the audited compiler artifacts — the
+    ///          vault creation tx, the nested reserve creation, and the nested token
+    ///          creation. Runtime-only comparison masks immutable slots and misses the
+    ///          children the vault constructor embeds;
     ///      (2) token name/symbol carry the "OVRFLO "/"ovrflo" prefixes and fit 64/32 bytes;
     ///      (3) treasury and underlying are the intended values.
-    ///      Token minters need no check here: the vault constructs the reserve and the
-    ///      reserve constructs the token, so `token.vault() == ovrflo` and
-    ///      `token.reserve() == vault.reserve()` hold by construction for canonical bytecode.
+    ///      After those off-chain items, this function also checks: token and reserve
+    ///      carry runtime code (`NoCode`); `token.vault() == ovrflo` and
+    ///      `token.reserve() == vault.reserve()` (`TokenMinterMismatch`); reserve binds
+    ///      that token, that underlying, this factory, and this vault (`ReserveMismatch`).
+    ///      `ovrfloToReserve` is write-once. A flawed reserve is a new-column migration.
     /// @param ovrflo The externally deployed OVRFLO vault address
     function registerOvrflo(address ovrflo) external onlyOwner {
         if (ovrflo == address(0)) revert ZeroAddress();
@@ -182,12 +195,29 @@ contract OVRFLOFactory is Ownable2Step {
         if (underlyingToOvrflo[underlying] != address(0)) revert UnderlyingAlreadyDeployed();
 
         address ovrfloToken = vault.ovrfloToken();
+        address reserve = vault.reserve();
         address treasury = vault.TREASURY_ADDR();
+
+        // Zero reserve is a missing binding (`ReserveMismatch`), not an EOA (`NoCode`).
+        if (reserve == address(0)) revert ReserveMismatch();
+        if (ovrfloToken.code.length == 0 || reserve.code.length == 0) revert NoCode();
+
+        OVRFLOToken token_ = OVRFLOToken(ovrfloToken);
+        if (token_.vault() != ovrflo || token_.reserve() != reserve) revert TokenMinterMismatch();
+
+        OVRFLOReserve reserve_ = OVRFLOReserve(reserve);
+        if (
+            reserve_.ovrfloToken() != ovrfloToken || reserve_.underlying() != underlying
+                || reserve_.factory() != address(this) || reserve_.vault() != ovrflo
+        ) {
+            revert ReserveMismatch();
+        }
 
         ovrflos[ovrfloCount] = ovrflo;
         ovrfloCount += 1;
         ovrfloInfo[ovrflo] = OvrfloInfo({treasury: treasury, underlying: underlying, ovrfloToken: ovrfloToken});
         underlyingToOvrflo[underlying] = ovrflo;
+        ovrfloToReserve[ovrflo] = reserve;
 
         emit OvrfloRegistered(ovrflo, ovrfloToken, treasury, underlying);
     }
@@ -204,17 +234,8 @@ contract OVRFLOFactory is Ownable2Step {
     ///      `comptroller.admin()` — `setOvrfloStream` already did.
     /// @param lending The externally deployed OVRFLOLending address
     function registerLending(address lending) external onlyOwner {
-        if (lending == address(0)) revert ZeroAddress();
-
-        OVRFLOLending lendingMarket = OVRFLOLending(lending);
-        address ovrflo = lendingMarket.core();
-        _requireKnownOvrflo(ovrflo);
+        address ovrflo = _verifyLendingCandidate(lending);
         if (ovrfloToLending[ovrflo] != address(0)) revert LendingExists();
-        if (address(lendingMarket.factory()) != address(this)) revert FactoryMismatch();
-        if (lendingMarket.owner() != address(this)) revert OwnerMismatch();
-        if (address(lendingMarket.sablier()) != address(OVRFLO(ovrflo).sablierLL())) revert SablierMismatch();
-        if (ovrfloStream == address(0)) revert OvrfloStreamUnset();
-        if (address(lendingMarket.sablier()) != ovrfloStream) revert StreamNotCanonical();
 
         ovrfloToLending[ovrflo] = lending;
         lendingToOvrflo[lending] = ovrflo;
@@ -222,6 +243,29 @@ contract OVRFLOFactory is Ownable2Step {
         lendingCount += 1;
 
         emit LendingRegistered(ovrflo, lending);
+    }
+
+    /// @notice Admit a new lending market for a vault that already has one.
+    /// @dev Operator order: deploy the new market, call `replaceLending(new)`, then
+    ///      `setLendingRouter` on the new market once a request book bound to it exists.
+    ///      First admission uses `registerLending`. A candidate already in
+    ///      `lendingToOvrflo` reverts `LendingExists` so `lendings` stays unique.
+    ///      The old market stays in `lendingToOvrflo` and `lendings` so factory admin
+    ///      and permissionless `repay`/`close`/`claim` still reach it. The reserve is
+    ///      not replaceable.
+    /// @param newLending The externally deployed replacement OVRFLOLending address
+    function replaceLending(address newLending) external onlyOwner {
+        address ovrflo = _verifyLendingCandidate(newLending);
+        address oldLending = ovrfloToLending[ovrflo];
+        if (oldLending == address(0)) revert UnknownLending();
+        if (lendingToOvrflo[newLending] != address(0)) revert LendingExists();
+
+        ovrfloToLending[ovrflo] = newLending;
+        lendingToOvrflo[newLending] = ovrflo;
+        lendings[lendingCount] = newLending;
+        lendingCount += 1;
+
+        emit LendingReplaced(ovrflo, oldLending, newLending);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -280,10 +324,11 @@ contract OVRFLOFactory is Ownable2Step {
     /// @notice Sweep excess underlying from an OVRFLO column's reserve
     /// @dev `to` is trusted: the caller is the multisig (factory owner), so zero-address
     ///      validation is intentionally omitted per the project's stance of trusting what
-    ///      the multisig already validates. The reserve is read from the registered vault.
+    ///      the multisig already validates. The reserve is the write-once
+    ///      `ovrfloToReserve` row admitted at `registerOvrflo`.
     function sweepExcessUnderlying(address ovrflo, address to) external onlyOwner {
         _requireKnownOvrflo(ovrflo);
-        OVRFLOReserve(OVRFLO(ovrflo).reserve()).sweepExcessUnderlying(to);
+        OVRFLOReserve(ovrfloToReserve[ovrflo]).sweepExcessUnderlying(to);
     }
 
     /// @notice Increase Pendle oracle cardinality for a market (must be done before addMarket)
@@ -343,6 +388,19 @@ contract OVRFLOFactory is Ownable2Step {
         emit LendingTickSpacingSet(lending, market, spacing);
     }
 
+    /// @notice Set or clear the borrow router on an OVRFLOLending
+    /// @dev Accepts zero to disable the on-behalf path and any nonzero Safe-selected
+    ///      address. There is no identity or allowlist check. The Safe validates the
+    ///      selected router off-chain. After `replaceLending`, call this on the new
+    ///      market once a request book bound to that market exists.
+    /// @param lending The OVRFLOLending address
+    /// @param router_ New router; zero disables attribution
+    function setLendingRouter(address lending, address router_) external onlyOwner {
+        _requireKnownLending(lending);
+        OVRFLOLending(lending).setRouter(router_);
+        emit LendingRouterSet(lending, router_);
+    }
+
     /*//////////////////////////////////////////////////////////////
                      OVRFLO STREAM (FACTORY-FORWARDED)
     //////////////////////////////////////////////////////////////*/
@@ -388,6 +446,21 @@ contract OVRFLOFactory is Ownable2Step {
 
     function _requireKnownLending(address lending) internal view {
         if (lendingToOvrflo[lending] == address(0)) revert UnknownLending();
+    }
+
+    /// @dev Shared admission checks for `registerLending` and `replaceLending`.
+    ///      Does not test whether the vault already has a market.
+    function _verifyLendingCandidate(address lending) internal view returns (address ovrflo) {
+        if (lending == address(0)) revert ZeroAddress();
+
+        OVRFLOLending lendingMarket = OVRFLOLending(lending);
+        ovrflo = lendingMarket.core();
+        _requireKnownOvrflo(ovrflo);
+        if (address(lendingMarket.factory()) != address(this)) revert FactoryMismatch();
+        if (lendingMarket.owner() != address(this)) revert OwnerMismatch();
+        if (address(lendingMarket.sablier()) != address(OVRFLO(ovrflo).sablierLL())) revert SablierMismatch();
+        if (ovrfloStream == address(0)) revert OvrfloStreamUnset();
+        if (address(lendingMarket.sablier()) != ovrfloStream) revert StreamNotCanonical();
     }
 
     function _validateTwapBounds(uint32 twapDuration) internal pure {

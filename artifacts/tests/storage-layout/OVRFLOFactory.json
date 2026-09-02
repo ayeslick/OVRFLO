@@ -55,33 +55,39 @@
       "type": "t_mapping(t_address,t_address)"
     },
     {
-      "label": "lendingToOvrflo",
+      "label": "ovrfloToReserve",
       "offset": 0,
       "slot": "9",
       "type": "t_mapping(t_address,t_address)"
     },
     {
-      "label": "lendingCount",
+      "label": "lendingToOvrflo",
       "offset": 0,
       "slot": "10",
+      "type": "t_mapping(t_address,t_address)"
+    },
+    {
+      "label": "lendingCount",
+      "offset": 0,
+      "slot": "11",
       "type": "t_uint256"
     },
     {
       "label": "lendings",
       "offset": 0,
-      "slot": "11",
+      "slot": "12",
       "type": "t_mapping(t_uint256,t_address)"
     },
     {
       "label": "underlyingToOvrflo",
       "offset": 0,
-      "slot": "12",
+      "slot": "13",
       "type": "t_mapping(t_address,t_address)"
     },
     {
       "label": "ovrfloStream",
       "offset": 0,
-      "slot": "13",
+      "slot": "14",
       "type": "t_address"
     }
   ],
