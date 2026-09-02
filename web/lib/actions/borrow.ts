@@ -172,6 +172,7 @@ export const borrowDefinition: ActionDefinition<"borrow"> = {
         parsed.amount,
         intent.streamId,
         quote.minAcceptable,
+        snapshot.identity.account,
       ] as const,
       value: 0n,
     };

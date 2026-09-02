@@ -24,7 +24,7 @@ on-chain contract state. This index does not cover, replace, or summarise it.
 |---|---|
 | Key files | 6 |
 | Keys | 62 |
-| Modules | 94 |
+| Modules | 98 |
 | `on-chain` keys | 23 |
 | `projection` keys | 0 |
 | `pure-client` keys | 39 |
@@ -36,13 +36,14 @@ a `projection` count is a module where a fail-closed mistake can happen.
 
 | Module | on-chain | projection | pure-client |
 |---|---|---|---|
-| `web/app/assets/page.tsx` | 2 | 0 | 3 |
+| `web/app/assets/page.tsx` | 1 | 0 | 3 |
 | `web/app/borrow/page.tsx` | 0 | 0 | 2 |
 | `web/app/page.tsx` | 4 | 0 | 3 |
 | `web/app/risk/page.tsx` | 0 | 0 | 1 |
 | `web/app/supply/page.tsx` | 0 | 0 | 2 |
 | `web/components/assets/AssetsPage.tsx` | 0 | 0 | 1 |
 | `web/components/assets/Converter.tsx` | 2 | 0 | 0 |
+| `web/components/assets/ConverterFlow.tsx` | 1 | 0 | 0 |
 | `web/components/assets/StreamSelectMarket.tsx` | 1 | 0 | 1 |
 | `web/components/borrow/AmountStep.tsx` | 2 | 0 | 1 |
 | `web/components/borrow/BorrowFlow.tsx` | 1 | 0 | 4 |
@@ -108,6 +109,7 @@ a `projection` count is a module where a fail-closed mistake can happen.
 | `web/hooks/useTxQueue.ts` | 0 | 0 | 3 |
 | `web/hooks/useUsdPrice.ts` | 3 | 0 | 0 |
 | `web/hooks/useWalletChangeReset.ts` | 1 | 0 | 1 |
+| `web/hooks/useWatchBalances.ts` | 1 | 0 | 0 |
 | `web/hooks/useWriteFlow.ts` | 2 | 0 | 6 |
 | `web/hooks/useZeroFirstApprove.ts` | 0 | 0 | 2 |
 | `web/lib/actions/borrow.ts` | 0 | 0 | 1 |
@@ -119,8 +121,10 @@ a `projection` count is a module where a fail-closed mistake can happen.
 | `web/lib/ladder.ts` | 2 | 0 | 1 |
 | `web/lib/ledger-card.ts` | 2 | 0 | 1 |
 | `web/lib/lending-math.ts` | 1 | 0 | 0 |
+| `web/lib/live-action-plan.ts` | 1 | 0 | 0 |
 | `web/lib/parse.ts` | 0 | 0 | 2 |
 | `web/lib/payoff.ts` | 2 | 0 | 7 |
+| `web/lib/protocol-bootstrap.ts` | 1 | 0 | 0 |
 | `web/lib/protocol/streams.ts` | 1 | 0 | 0 |
 | `web/lib/query-keys.ts` | 4 | 0 | 0 |
 | `web/lib/query-resource-registry.ts` | 1 | 0 | 0 |
@@ -138,7 +142,6 @@ a `projection` count is a module where a fail-closed mistake can happen.
 | Direction | Key | Trust domain | Role |
 |---|---|---|---|
 | writes | `chain.balances` | `on-chain` | landing U10: underlying / ovrflo / PT balances |
-| writes | `chain.wrap-reserve` | `on-chain` | landing U10: vault wrap-reserve read |
 | reads | `action.amount-raw` | `pure-client` | landing U10: wrap / unwrap / PT deposit amounts |
 | reads | `action.selected-market` | `pure-client` | landing U10: scopes PT / series |
 | reads | `action.wallet-changed` | `pure-client` | landing U10: form reset |
@@ -187,6 +190,12 @@ a `projection` count is a module where a fail-closed mistake can happen.
 |---|---|---|---|
 | reads | `chain.balances` | `on-chain` | landing U10: wrap / unwrap / claim-PT |
 | reads | `chain.wrap-reserve` | `on-chain` | landing U10: unwrap removed when reserve is empty; `UI-ASSETS-CLAIM-PT` replaces it |
+
+### `web/components/assets/ConverterFlow.tsx`
+
+| Direction | Key | Trust domain | Role |
+|---|---|---|---|
+| writes | `chain.wrap-reserve` | `on-chain` | landing U10: `OVRFLOReserve.wrappedUnderlying()` |
 
 ### `web/components/assets/StreamSelectMarket.tsx`
 
@@ -637,7 +646,7 @@ a `projection` count is a module where a fail-closed mistake can happen.
 
 | Direction | Key | Trust domain | Role |
 |---|---|---|---|
-| writes | `chain.vault-registry` | `on-chain` | batched factory reads (`ovrfloCount`, `ovrflos`, `ovrfloInfo`, `ovrfloToLending`) |
+| writes | `chain.vault-registry` | `on-chain` | exposes the bootstrap vault list to the rest of the app |
 | writes | `chain.wagmi-reads` | `on-chain` | registry reads |
 
 ### `web/hooks/useStaleBalanceGuard.ts`
@@ -696,6 +705,12 @@ a `projection` count is a module where a fail-closed mistake can happen.
 |---|---|---|---|
 | writes | `action.wallet-changed` | `pure-client` | raises it on an address or chain change, drops identity-keyed queries, and clears it on explicit acknowledgement |
 | reads | `chain.connection` | `on-chain` | raises `action.wallet-changed` on address change |
+
+### `web/hooks/useWatchBalances.ts`
+
+| Direction | Key | Trust domain | Role |
+|---|---|---|---|
+| writes | `chain.wrap-reserve` | `on-chain` | wrap-reserve read on the discovered reserve |
 
 ### `web/hooks/useWriteFlow.ts`
 
@@ -784,6 +799,12 @@ a `projection` count is a module where a fail-closed mistake can happen.
 |---|---|---|---|
 | reads | `chain.stream-truth` | `on-chain` | eligibility mirror of `requireEligible` |
 
+### `web/lib/live-action-plan.ts`
+
+| Direction | Key | Trust domain | Role |
+|---|---|---|---|
+| writes | `chain.wrap-reserve` | `on-chain` | unwrap capacity from `OVRFLOReserve.wrappedUnderlying()` |
+
 ### `web/lib/parse.ts`
 
 | Direction | Key | Trust domain | Role |
@@ -805,6 +826,12 @@ a `projection` count is a module where a fail-closed mistake can happen.
 | reads | `schedule.clock` | `pure-client` | landing U5: cover-date / countdown inputs |
 | reads | `schedule.skew-offset` | `pure-client` | landing U5: clamp interpolations to the deterministic formula |
 | reads | `schedule.stream-params` | `on-chain` | landing U5: vested / remaining / cover-date |
+
+### `web/lib/protocol-bootstrap.ts`
+
+| Direction | Key | Trust domain | Role |
+|---|---|---|---|
+| writes | `chain.vault-registry` | `on-chain` | factory reads (`ovrfloCount`, `ovrflos`, `ovrfloInfo`, `ovrfloToLending`, `ovrfloToReserve`, `lendings(i)`) |
 
 ### `web/lib/protocol/streams.ts`
 
@@ -897,9 +924,9 @@ full entry, including fail-closed guidance on `projection` keys.
 | `chain.nft-operator` | `on-chain` | `web/hooks/useApprovalWriteFlows.ts` | `web/components/borrow/ReviewHandoff.tsx`<br>`web/components/kit/Receipt.tsx` | `docs/maps/state/keys/chain-reads.md` |
 | `chain.stream-truth` | `on-chain` | `web/hooks/useStreams.ts`<br>`web/hooks/useCompleteStreams.ts`<br>`web/hooks/useEnumerationPin.ts`<br>`web/lib/protocol/streams.ts` | `web/components/watch/WatchApp.tsx`<br>`web/components/watch/Wall.tsx`<br>`web/components/watch/StreamDetail.tsx`<br>`web/components/watch/StreamLedgerCard.tsx`<br>`web/lib/ledger-card.ts`<br>`web/components/borrow/SelectStream.tsx`<br>`web/components/borrow/BorrowFlow.tsx`<br>`web/lib/claim-all.ts`<br>`web/lib/lending-math.ts`<br>`web/lib/stream-book.ts` | `docs/maps/state/keys/chain-reads.md` |
 | `chain.tick-depths` | `on-chain` | `web/hooks/useLadder.ts` | `web/lib/ladder.ts`<br>`web/components/kit/RateWindow.tsx`<br>`web/components/rates/Workspace.tsx`<br>`web/components/borrow/PoolBand.tsx`<br>`web/components/supply/QueueBand.tsx` | `docs/maps/state/keys/chain-reads.md` |
-| `chain.vault-registry` | `on-chain` | `web/hooks/useOvrflos.ts` | `web/hooks/useAllMarkets.ts`<br>`web/hooks/useStreams.ts` | `docs/maps/state/keys/chain-reads.md` |
+| `chain.vault-registry` | `on-chain` | `web/lib/protocol-bootstrap.ts`<br>`web/hooks/useOvrflos.ts` | `web/hooks/useAllMarkets.ts`<br>`web/hooks/useStreams.ts` | `docs/maps/state/keys/chain-reads.md` |
 | `chain.wagmi-reads` | `on-chain` | `web/hooks/useOvrflos.ts`<br>`web/hooks/useAllMarkets.ts`<br>`web/hooks/useMarketSymbols.ts`<br>`web/hooks/useLending.ts`<br>`web/lib/invalidate.ts`<br>`web/lib/query-resource-registry.ts` | `web/lib/invalidate.ts`<br>`web/lib/query-resource-registry.ts`<br>`web/hooks/useWriteFlow.ts` | `docs/maps/state/keys/chain-reads.md` |
-| `chain.wrap-reserve` | `on-chain` | `web/app/assets/page.tsx` | `web/components/assets/Converter.tsx`<br>`web/components/kit/Receipt.tsx` | `docs/maps/state/keys/chain-reads.md` |
+| `chain.wrap-reserve` | `on-chain` | `web/components/assets/ConverterFlow.tsx`<br>`web/hooks/useWatchBalances.ts`<br>`web/lib/live-action-plan.ts` | `web/components/assets/Converter.tsx`<br>`web/components/kit/Receipt.tsx` | `docs/maps/state/keys/chain-reads.md` |
 | `chrome.copy-value.copied` | `pure-client` | `web/components/CopyValue.tsx` | `web/components/CopyValue.tsx` | `docs/maps/state/keys/view-state.md` |
 | `chrome.refetch-notice` | `pure-client` | `web/lib/refetch-notice.ts`<br>`web/hooks/useIdentityQueryReset.ts` | `web/components/kit/RefetchNotice.tsx`<br>`web/components/kit/Shell.tsx` | `docs/maps/state/keys/view-state.md` |
 | `chrome.surface-state` | `pure-client` | `web/lib/surface-state.ts` | `web/components/kit/SurfaceState.tsx`<br>`web/components/watch/WatchApp.tsx`<br>`web/components/supply/SupplyFlow.tsx`<br>`web/components/borrow/BorrowFlow.tsx`<br>`web/components/assets/AssetsPage.tsx` | `docs/maps/state/keys/view-state.md` |

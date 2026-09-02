@@ -11,6 +11,8 @@ const TREASURY = "0x0000000000000000000000000000000000000701" as Address;
 const UNDERLYING = "0x0000000000000000000000000000000000000702" as Address;
 const OVRFLO_TOKEN = "0x0000000000000000000000000000000000000703" as Address;
 const LENDING = "0x0000000000000000000000000000000000000704" as Address;
+const RESERVE = "0x0000000000000000000000000000000000000705" as Address;
+const OLD_LENDING = "0x0000000000000000000000000000000000000706" as Address;
 const BLOCK_HASH = `0x${"11".repeat(32)}` as const;
 
 function success<T>(result: T) {
@@ -102,7 +104,7 @@ describe("discoverProtocolBootstrap", () => {
     client.multicall
       .mockResolvedValueOnce([success(STREAM), success(1n)])
       .mockResolvedValueOnce([success(VAULT_A)])
-      .mockResolvedValueOnce([failure(), success(LENDING)]);
+      .mockResolvedValueOnce([failure(), success(LENDING), success(RESERVE)]);
     const result = await discoverProtocolBootstrap(client, FACTORY, 1);
     expect(result.status).toBe("unavailable");
     if (result.status === "unavailable") {
@@ -117,11 +119,44 @@ describe("discoverProtocolBootstrap", () => {
       .mockResolvedValueOnce([
         success([TREASURY, UNDERLYING, OVRFLO_TOKEN]),
         failure(),
+        success(RESERVE),
       ]);
     const result = await discoverProtocolBootstrap(client, FACTORY, 1);
     expect(result.status).toBe("unavailable");
     if (result.status === "unavailable") {
       expect(result.failures[0]?.message).toMatch(/ovrfloToLending/);
+    }
+  });
+
+  it("fails closed when ovrfloToReserve reverts", async () => {
+    client.multicall
+      .mockResolvedValueOnce([success(STREAM), success(1n)])
+      .mockResolvedValueOnce([success(VAULT_A)])
+      .mockResolvedValueOnce([
+        success([TREASURY, UNDERLYING, OVRFLO_TOKEN]),
+        success(LENDING),
+        failure(),
+      ]);
+    const result = await discoverProtocolBootstrap(client, FACTORY, 1);
+    expect(result.status).toBe("unavailable");
+    if (result.status === "unavailable") {
+      expect(result.failures[0]?.message).toMatch(/ovrfloToReserve/);
+    }
+  });
+
+  it("fails closed when ovrfloToReserve returns the zero address", async () => {
+    client.multicall
+      .mockResolvedValueOnce([success(STREAM), success(1n)])
+      .mockResolvedValueOnce([success(VAULT_A)])
+      .mockResolvedValueOnce([
+        success([TREASURY, UNDERLYING, OVRFLO_TOKEN]),
+        success(LENDING),
+        success(ZERO_ADDRESS),
+      ]);
+    const result = await discoverProtocolBootstrap(client, FACTORY, 1);
+    expect(result.status).toBe("unavailable");
+    if (result.status === "unavailable") {
+      expect(result.failures[0]?.message).toMatch(/zero address/);
     }
   });
 
@@ -144,7 +179,11 @@ describe("discoverProtocolBootstrap", () => {
       .mockResolvedValueOnce([
         success([TREASURY, UNDERLYING, OVRFLO_TOKEN]),
         success(LENDING),
-      ]);
+        success(RESERVE),
+      ])
+      .mockResolvedValueOnce([success(1n)])
+      .mockResolvedValueOnce([success(LENDING)])
+      .mockResolvedValueOnce([success(VAULT_A)]);
     const result = await discoverProtocolBootstrap(client, FACTORY, 1);
     expect(result).toEqual({
       status: "ready",
@@ -157,9 +196,49 @@ describe("discoverProtocolBootstrap", () => {
           treasury: TREASURY,
           underlying: UNDERLYING,
           ovrfloToken: OVRFLO_TOKEN,
+          reserve: RESERVE,
           lending: LENDING,
+          retiredLendings: [],
         },
       ],
     });
+  });
+
+  it("leaves retiredLendings empty when lendingCount is zero", async () => {
+    client.multicall
+      .mockResolvedValueOnce([success(STREAM), success(1n)])
+      .mockResolvedValueOnce([success(VAULT_A)])
+      .mockResolvedValueOnce([
+        success([TREASURY, UNDERLYING, OVRFLO_TOKEN]),
+        success(LENDING),
+        success(RESERVE),
+      ])
+      .mockResolvedValueOnce([success(0n)]);
+    const result = await discoverProtocolBootstrap(client, FACTORY, 1);
+    expect(result.status).toBe("ready");
+    if (result.status === "ready") {
+      expect(result.vaults[0]?.retiredLendings).toEqual([]);
+      expect(result.vaults[0]?.reserve).toBe(RESERVE);
+    }
+  });
+
+  it("fills retiredLendings when a second lending still maps to the vault", async () => {
+    client.multicall
+      .mockResolvedValueOnce([success(STREAM), success(1n)])
+      .mockResolvedValueOnce([success(VAULT_A)])
+      .mockResolvedValueOnce([
+        success([TREASURY, UNDERLYING, OVRFLO_TOKEN]),
+        success(LENDING),
+        success(RESERVE),
+      ])
+      .mockResolvedValueOnce([success(2n)])
+      .mockResolvedValueOnce([success(OLD_LENDING), success(LENDING)])
+      .mockResolvedValueOnce([success(VAULT_A), success(VAULT_A)]);
+    const result = await discoverProtocolBootstrap(client, FACTORY, 1);
+    expect(result.status).toBe("ready");
+    if (result.status === "ready") {
+      expect(result.vaults[0]?.lending).toBe(LENDING);
+      expect(result.vaults[0]?.retiredLendings).toEqual([OLD_LENDING]);
+    }
   });
 });

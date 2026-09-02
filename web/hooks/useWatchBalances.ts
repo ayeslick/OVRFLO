@@ -2,7 +2,7 @@
 
 import { useConnection, useReadContracts } from "wagmi";
 import type { Address } from "viem";
-import { erc20Abi, ovrfloAbi } from "@/lib/abis";
+import { erc20Abi, ovrfloReserveAbi } from "@/lib/abis";
 import type { MoneyRead } from "@/components/assets/helpers";
 import { readQuery } from "@/lib/query-keys";
 import type { MarketInfo } from "@/lib/types";
@@ -28,7 +28,7 @@ function moneyRead(
 }
 
 export function useWatchBalances(
-  market: Pick<MarketInfo, "vault" | "lending" | "underlying" | "ovrfloToken" | "expiryCached"> | null,
+  market: Pick<MarketInfo, "vault" | "reserve" | "lending" | "underlying" | "ovrfloToken" | "expiryCached"> | null,
 ): WatchBalances {
   const connection = useConnection();
   const user = connection.addresses?.[0] as Address | undefined;
@@ -48,7 +48,7 @@ export function useWatchBalances(
               functionName: "allowance",
               args: [user, lending],
             },
-            { address: market.vault, abi: ovrfloAbi, functionName: "wrappedUnderlying" },
+            { address: market.reserve, abi: ovrfloReserveAbi, functionName: "wrappedUnderlying" },
           ]
         : [],
     query: { ...readQuery, enabled },

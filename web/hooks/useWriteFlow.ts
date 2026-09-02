@@ -49,6 +49,7 @@ export function useWriteFlow(
   scope: Pick<
     MarketInfo,
     | "vault"
+    | "reserve"
     | "lending"
     | "market"
     | "underlying"
@@ -548,7 +549,8 @@ function actionTypeFor(functionName: string): ActionType {
 function contractKindFor(functionName: string): ContractKind {
   if (functionName === "approve") return "erc20";
   if (functionName === "withdrawMax") return "sablier";
-  if (["deposit", "claim", "wrap", "unwrap"].includes(functionName)) return "ovrflo";
+  if (["wrap", "unwrap"].includes(functionName)) return "reserve";
+  if (["deposit", "claim"].includes(functionName)) return "ovrflo";
   return "lending";
 }
 
@@ -563,6 +565,7 @@ function legacyReadyAction(
   scope: Pick<
     MarketInfo,
     | "vault"
+    | "reserve"
     | "lending"
     | "market"
     | "underlying"
@@ -619,6 +622,7 @@ function legacyTouchedResources(
   scope: Pick<
     MarketInfo,
     | "vault"
+    | "reserve"
     | "lending"
     | "market"
     | "underlying"
@@ -633,7 +637,7 @@ function legacyTouchedResources(
   const contracts: readonly Address[] = market
     ? stream
       ? marketContracts(market, stream)
-      : [market.vault, market.lending, market.underlying, market.ovrfloToken, market.ptToken].filter(
+      : [market.vault, market.reserve, market.lending, market.underlying, market.ovrfloToken, market.ptToken].filter(
           (address): address is Address => Boolean(address),
         )
     : (scope as readonly Address[]);
@@ -674,10 +678,10 @@ function legacyTouchedResources(
       }
       if (market) {
         resources.push(
-          { kind: "token-balance", token: market.underlying, account: identity.account },
+          { kind: "token-balance", token: market.ovrfloToken, account: identity.account },
           {
             kind: "allowance",
-            token: market.underlying,
+            token: market.ovrfloToken,
             owner: identity.account,
             spender: args.address,
           },
@@ -695,7 +699,7 @@ function legacyTouchedResources(
       if (market) {
         resources.push({
           kind: "token-balance",
-          token: market.underlying,
+          token: market.ovrfloToken,
           account: identity.account,
         });
       }
@@ -717,11 +721,11 @@ function legacyTouchedResources(
       if (market) {
         resources.push(
           { kind: "market", vault: args.address, market: market.market },
-          { kind: "token-balance", token: market.underlying, account: identity.account },
+          { kind: "token-balance", token: market.ptToken, account: identity.account },
           { kind: "token-balance", token: market.ovrfloToken, account: identity.account },
           {
             kind: "allowance",
-            token: market.underlying,
+            token: market.ptToken,
             owner: identity.account,
             spender: args.address,
           },
@@ -731,7 +735,7 @@ function legacyTouchedResources(
     case "wrap":
       if (market) {
         resources.push(
-          { kind: "market", vault: args.address, market: market.market },
+          { kind: "market", vault: market.vault, market: market.market },
           { kind: "token-balance", token: market.underlying, account: identity.account },
           { kind: "token-balance", token: market.ovrfloToken, account: identity.account },
           {
@@ -746,7 +750,7 @@ function legacyTouchedResources(
     case "unwrap":
       if (market) {
         resources.push(
-          { kind: "market", vault: args.address, market: market.market },
+          { kind: "market", vault: market.vault, market: market.market },
           { kind: "token-balance", token: market.underlying, account: identity.account },
           { kind: "token-balance", token: market.ovrfloToken, account: identity.account },
         );
@@ -779,7 +783,7 @@ function legacyTouchedResources(
       if (market) {
         resources.push({
           kind: "token-balance",
-          token: market.underlying,
+          token: market.ovrfloToken,
           account: identity.account,
         });
       }
@@ -812,7 +816,7 @@ function legacyTouchedResources(
       if (market) {
         resources.push({
           kind: "allowance",
-          token: market.underlying,
+          token: market.ovrfloToken,
           owner: identity.account,
           spender: args.address,
         });
@@ -854,6 +858,7 @@ function isMarketScope(
   scope: Pick<
     MarketInfo,
     | "vault"
+    | "reserve"
     | "lending"
     | "market"
     | "underlying"
@@ -864,6 +869,7 @@ function isMarketScope(
 ): scope is Pick<
     MarketInfo,
     | "vault"
+    | "reserve"
     | "lending"
     | "market"
     | "underlying"

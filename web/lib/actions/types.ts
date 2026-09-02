@@ -18,6 +18,7 @@ export type MarketActionContext = {
   sablier: Address;
   expiry: bigint;
   now: bigint;
+  reserve: Address;
 };
 
 type BaseIntent<T extends ActionType> = { type: T };
@@ -283,7 +284,7 @@ export type Erc721Authorization = {
 
 export type Authorization = Erc20Authorization | Erc721Authorization;
 
-export type ContractKind = "erc20" | "ovrflo" | "lending" | "sablier";
+export type ContractKind = "erc20" | "ovrflo" | "lending" | "sablier" | "reserve";
 
 export type FinalCall = {
   target: Address;

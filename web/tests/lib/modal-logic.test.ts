@@ -60,6 +60,7 @@ describe("write-flow decision helpers", () => {
       treasury: testAddress(2),
       underlying: testAddress(3),
       ovrfloToken: testAddress(4),
+      reserve: testAddress(9),
       lending: testAddress(5),
       market: testAddress(6),
       twapDurationFixed: 900,
@@ -67,6 +68,7 @@ describe("write-flow decision helpers", () => {
       expiryCached: 1782345600n,
       ptToken: testAddress(7),
       oracle: testAddress(8),
+      retiredLendings: [],
     };
     const stream = {
       streamId: 1n,

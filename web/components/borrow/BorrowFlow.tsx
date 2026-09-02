@@ -370,7 +370,7 @@ export function BorrowFlow() {
       address: lending,
       abi: ovrfloLendingAbi,
       functionName: "borrow",
-      args: [market.market, selectedAprBps as number, frozen.actualBorrow, selectedStream.streamId, frozen.minAcceptable],
+      args: [market.market, selectedAprBps as number, frozen.actualBorrow, selectedStream.streamId, frozen.minAcceptable, account],
     });
   }
 

@@ -1,5 +1,5 @@
 import { isFreshReady } from "../read-outcome";
-import { bufferedFeeApproveAmount, depositCapStatus } from "../convert";
+import { depositCapStatus } from "../convert";
 import {
   actionError,
   erc20Authorization,
@@ -51,17 +51,6 @@ export const depositDefinition: ActionDefinition<"deposit"> = {
         amount: parsed.amount,
         currentAllowance: state.ptAllowance,
       }),
-      ...(state.preview.fee > 0n
-        ? [
-            erc20Authorization({
-              token: snapshot.market.underlying,
-              spender: snapshot.market.vault,
-              amount: state.preview.fee,
-              approvalAmount: bufferedFeeApproveAmount(state.preview.fee),
-              currentAllowance: state.underlyingAllowance,
-            }),
-          ]
-        : []),
     ];
     const call = {
       target: snapshot.market.vault,
@@ -89,16 +78,6 @@ export const depositDefinition: ActionDefinition<"deposit"> = {
           owner: snapshot.identity.account,
           spender: snapshot.market.vault,
         },
-        ...(state.preview.fee > 0n
-          ? [
-              {
-                kind: "allowance" as const,
-                token: snapshot.market.underlying,
-                owner: snapshot.identity.account,
-                spender: snapshot.market.vault,
-              },
-            ]
-          : []),
       ],
       economics: {
         amount: parsed.amount,
@@ -138,14 +117,14 @@ export const wrapDefinition: ActionDefinition<"wrap"> = {
     const authorizations = [
       erc20Authorization({
         token: snapshot.market.underlying,
-        spender: snapshot.market.vault,
+        spender: snapshot.market.reserve,
         amount: parsed.amount,
         currentAllowance: state.allowance,
       }),
     ];
     const call = {
-      target: snapshot.market.vault,
-      contract: "ovrflo" as const,
+      target: snapshot.market.reserve,
+      contract: "reserve" as const,
       functionName: "wrap",
       args: [parsed.amount] as const,
       value: 0n,
@@ -165,12 +144,12 @@ export const wrapDefinition: ActionDefinition<"wrap"> = {
           kind: "allowance",
           token: snapshot.market.underlying,
           owner: snapshot.identity.account,
-          spender: snapshot.market.vault,
+          spender: snapshot.market.reserve,
         },
       ],
       economics: { amount: parsed.amount },
       receiptSummary: {
-        source: snapshot.market.vault,
+        source: snapshot.market.reserve,
         eventName: "Wrapped",
         label: "WRAPPED",
         expectedIds: [],
@@ -194,8 +173,8 @@ export const unwrapDefinition: ActionDefinition<"unwrap"> = {
       return invalidAction(actionError("amount-over-capacity", "Amount exceeds fresh unwrap capacity"));
     }
     const call = {
-      target: snapshot.market.vault,
-      contract: "ovrflo" as const,
+      target: snapshot.market.reserve,
+      contract: "reserve" as const,
       functionName: "unwrap",
       args: [parsed.amount] as const,
       value: 0n,
@@ -214,7 +193,7 @@ export const unwrapDefinition: ActionDefinition<"unwrap"> = {
       ],
       economics: { amount: parsed.amount, capacity },
       receiptSummary: {
-        source: snapshot.market.vault,
+        source: snapshot.market.reserve,
         eventName: "Unwrapped",
         label: "UNWRAPPED",
         expectedIds: [],

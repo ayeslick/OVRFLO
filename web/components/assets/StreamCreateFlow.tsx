@@ -5,7 +5,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useConnection, useReadContract, useReadContracts } from "wagmi";
 import type { Address } from "viem";
 import { erc20Abi, ovrfloAbi } from "@/lib/abis";
-import { bufferedFeeApproveAmount, convertApprovalNeeds, depositCapStatus } from "@/lib/convert";
+import { convertApprovalNeeds, depositCapStatus } from "@/lib/convert";
 import { formatTokenAmount } from "@/lib/format";
 import { applySlippageDown } from "@/lib/modal-logic";
 import { readQuery } from "@/lib/query-keys";
@@ -44,36 +44,27 @@ export function StreamCreateFlow({
   const [selectedId, setSelectedId] = useState<Address | null>(null);
   const [amountRaw, setAmountRaw] = useState("");
   const [ptApprovedAmount, setPtApprovedAmount] = useState(0n);
-  const [feeApprovedAmount, setFeeApprovedAmount] = useState(0n);
   const [latchedNeedsPt, setLatchedNeedsPt] = useState(false);
-  const [latchedNeedsFee, setLatchedNeedsFee] = useState(false);
   const [ptSubmitting, setPtSubmitting] = useState(false);
-  const [feeSubmitting, setFeeSubmitting] = useState(false);
   const [depositSubmitting, setDepositSubmitting] = useState(false);
 
   const market = markets.find((row) => row.market === selectedId) ?? null;
   const scope = market ?? [];
   const ptApprove = useWriteFlow(user, scope);
-  const feeApprove = useWriteFlow(user, scope);
   const depositTx = useWriteFlow(user, scope);
   const ptZero = useZeroFirstApprove(ptApprove);
-  const feeZero = useZeroFirstApprove(feeApprove);
 
   const reset = useCallback(() => {
     setStage("market");
     setSelectedId(null);
     setAmountRaw("");
     setPtApprovedAmount(0n);
-    setFeeApprovedAmount(0n);
     setLatchedNeedsPt(false);
-    setLatchedNeedsFee(false);
     setPtSubmitting(false);
-    setFeeSubmitting(false);
     setDepositSubmitting(false);
     ptApprove.reset();
-    feeApprove.reset();
     depositTx.reset();
-  }, [depositTx, feeApprove, ptApprove]);
+  }, [depositTx, ptApprove]);
 
   const walletReset = useWalletChangeReset(user, reset, {
     chainId: connection.chainId,
@@ -89,12 +80,6 @@ export function StreamCreateFlow({
             { address: market.ptToken, abi: erc20Abi, functionName: "balanceOf", args: [user] },
             {
               address: market.ptToken,
-              abi: erc20Abi,
-              functionName: "allowance",
-              args: [user, market.vault],
-            },
-            {
-              address: market.underlying,
               abi: erc20Abi,
               functionName: "allowance",
               args: [user, market.vault],
@@ -129,10 +114,9 @@ export function StreamCreateFlow({
 
   const ptBalance = asBig(reads.data?.[0]);
   const ptAllowance = asBig(reads.data?.[1]) ?? 0n;
-  const underlyingAllowance = asBig(reads.data?.[2]) ?? 0n;
-  const capLimit = asBig(reads.data?.[3]);
-  const capUsed = asBig(reads.data?.[4]);
-  const minPt = asBig(reads.data?.[5]) ?? 1_000_000n;
+  const capLimit = asBig(reads.data?.[2]);
+  const capUsed = asBig(reads.data?.[3]);
+  const minPt = asBig(reads.data?.[4]) ?? 1_000_000n;
   const capLoaded = capLimit !== null && capUsed !== null;
   const cap = depositCapStatus({
     mode: "deposit",
@@ -146,7 +130,6 @@ export function StreamCreateFlow({
   const toWallet = previewTuple?.[0];
   const toStream = previewTuple?.[1];
   const fee = previewTuple?.[2] ?? 0n;
-  const bounded = bufferedFeeApproveAmount(fee);
 
   const approval = convertApprovalNeeds({
     mode: "deposit",
@@ -154,8 +137,8 @@ export function StreamCreateFlow({
     feeAmount: fee,
     ptAllowance,
     ptApprovedAmount,
-    underlyingAllowance,
-    underlyingApprovedAmount: feeApprovedAmount,
+    underlyingAllowance: 0n,
+    underlyingApprovedAmount: 0n,
   });
 
   useEffect(() => {
@@ -166,17 +149,9 @@ export function StreamCreateFlow({
   }, [amountWei, ptApprove.isConfirmed]);
 
   useEffect(() => {
-    if (feeApprove.isConfirmed && fee > 0n) {
-      setFeeApprovedAmount(bounded);
-      setFeeSubmitting(false);
-    }
-  }, [bounded, fee, feeApprove.isConfirmed]);
-
-  useEffect(() => {
     if (ptApprove.hasFailed) setPtSubmitting(false);
-    if (feeApprove.hasFailed) setFeeSubmitting(false);
     if (depositTx.hasFailed) setDepositSubmitting(false);
-  }, [depositTx.hasFailed, feeApprove.hasFailed, ptApprove.hasFailed]);
+  }, [depositTx.hasFailed, ptApprove.hasFailed]);
 
   useEffect(() => {
     if (depositTx.isConfirmed) setStage("confirmed");
@@ -185,19 +160,9 @@ export function StreamCreateFlow({
 
   useEffect(() => {
     if (stage === "approve-pt" && !approval.needsPtApproval && ptApprovedAmount > 0n) {
-      setStage(approval.needsUnderlyingApproval ? "approve-fee" : "sign");
-    }
-    if (stage === "approve-fee" && !approval.needsUnderlyingApproval && (fee === 0n || feeApprovedAmount > 0n)) {
       setStage("sign");
     }
-  }, [
-    approval.needsPtApproval,
-    approval.needsUnderlyingApproval,
-    fee,
-    feeApprovedAmount,
-    ptApprovedAmount,
-    stage,
-  ]);
+  }, [approval.needsPtApproval, ptApprovedAmount, stage]);
 
   const openMarkets = markets.filter((row) => now === null || now < row.expiryCached);
   const options: StreamMarketOption[] = openMarkets.map((row) => ({
@@ -251,9 +216,7 @@ export function StreamCreateFlow({
     if (stage !== "amount" && stage !== "market") {
       setStage("amount");
       setPtApprovedAmount(0n);
-      setFeeApprovedAmount(0n);
       ptApprove.reset();
-      feeApprove.reset();
       depositTx.reset();
     }
   }
@@ -266,13 +229,11 @@ export function StreamCreateFlow({
   function continueFromAmount() {
     if (amountError || amountWei === null) return;
     setLatchedNeedsPt(approval.needsPtApproval);
-    setLatchedNeedsFee(approval.needsUnderlyingApproval);
     setStage("review");
   }
 
   function continueFromReview() {
     setLatchedNeedsPt(approval.needsPtApproval);
-    setLatchedNeedsFee(approval.needsUnderlyingApproval);
     if (ack.ready && !ack.acknowledged) {
       setStage("ack");
       return;
@@ -285,10 +246,6 @@ export function StreamCreateFlow({
       setStage("approve-pt");
       return;
     }
-    if (approval.needsUnderlyingApproval) {
-      setStage("approve-fee");
-      return;
-    }
     setStage("sign");
   }
 
@@ -296,12 +253,6 @@ export function StreamCreateFlow({
     if (!market || amountWei === null || chain.wrongChain || !signingAllowed) return;
     setPtSubmitting(true);
     ptZero.submit(market.ptToken, market.vault, amountWei, ptAllowance);
-  }
-
-  function onApproveFee() {
-    if (!market || fee === 0n || chain.wrongChain || !signingAllowed) return;
-    setFeeSubmitting(true);
-    feeZero.submit(market.underlying, market.vault, bounded, underlyingAllowance);
   }
 
   function onDeposit() {
@@ -316,7 +267,7 @@ export function StreamCreateFlow({
   }
 
   const traceStage: StreamStage =
-    stage === "approve-pt" || stage === "approve-fee" || stage === "ack" || stage === "market" || stage === "amount"
+    stage === "approve-pt" || stage === "ack" || stage === "market" || stage === "amount"
       ? stage
       : stage === "sign" || stage === "pending"
         ? stage === "pending"
@@ -328,7 +279,7 @@ export function StreamCreateFlow({
 
   const baseSteps = streamTrace({
     needsPt: latchedNeedsPt || approval.needsPtApproval,
-    needsFee: latchedNeedsFee || approval.needsUnderlyingApproval,
+    needsFee: false,
     ackRequired: false,
     stage: traceStage,
   });
@@ -343,14 +294,7 @@ export function StreamCreateFlow({
           { key: "ALLOWANCE", value: formatTokenAmount(amountWei ?? undefined, "PT") },
           { key: "MATCH", value: "EXACT" },
         ]
-      : stage === "approve-fee"
-        ? [
-            { key: "TOKEN", value: underlyingSymbol },
-            { key: "SPENDER", value: market ? spend(market.vault) : "vault" },
-            { key: "CURRENT FEE", value: formatTokenAmount(fee, underlyingSymbol) },
-            { key: "BOUNDED APPROVAL", value: formatTokenAmount(bounded, underlyingSymbol) },
-          ]
-        : [];
+      : [];
 
   const actionLines = [
     { key: "ACTION", value: "DEPOSIT" },
@@ -360,14 +304,12 @@ export function StreamCreateFlow({
     { key: "FEE", value: formatTokenAmount(fee, underlyingSymbol) },
   ];
 
-  const activeTx =
-    stage === "approve-pt" ? ptApprove : stage === "approve-fee" ? feeApprove : depositTx;
+  const activeTx = stage === "approve-pt" ? ptApprove : depositTx;
   const tx = txStatusCopy(activeTx);
   const streamId = streamIdFromLogs(depositTx.receipt?.logs);
   const skipPermission =
     (stage === "approve-pt" && !(latchedNeedsPt || approval.needsPtApproval)) ||
-    (stage === "approve-fee" && !(latchedNeedsFee || approval.needsUnderlyingApproval)) ||
-    (stage !== "approve-pt" && stage !== "approve-fee" && !latchedNeedsPt && !latchedNeedsFee && !approval.needsPtApproval && !approval.needsUnderlyingApproval);
+    (stage !== "approve-pt" && !latchedNeedsPt && !approval.needsPtApproval);
 
   if (walletReset.walletChanged) {
     return (
@@ -434,11 +376,11 @@ export function StreamCreateFlow({
       minted={toWallet}
       streamAmount={toStream}
       currentFee={fee}
-      boundedApproval={bounded}
+      boundedApproval={undefined}
       maturity={market?.expiryCached}
       capCopy={capCopy}
       permissionLines={permissionCurrent}
-      permissionState={skipPermission ? "skipped" : stage === "approve-pt" || stage === "approve-fee" ? "current" : "ghosted"}
+      permissionState={skipPermission ? "skipped" : stage === "approve-pt" ? "current" : "ghosted"}
       actionLines={actionLines}
       actionState={
         stage === "confirmed" ? "confirmed" : stage === "pending" ? "chain-pending" : stage === "sign" ? "current" : "ghosted"
@@ -451,12 +393,6 @@ export function StreamCreateFlow({
       approvePtBusy={ptSubmitting || ptApprove.isInFlight}
       approvePtDisabled={chain.wrongChain || !signingAllowed || ptApprove.isInFlight}
       approvePtReason={
-        chain.wrongChain ? "SWITCH NETWORK" : !signingAllowed ? "EVENTS STALE — SIGNING DISABLED" : "APPROVAL IN FLIGHT"
-      }
-      onApproveFee={onApproveFee}
-      approveFeeBusy={feeSubmitting || feeApprove.isInFlight}
-      approveFeeDisabled={chain.wrongChain || !signingAllowed || feeApprove.isInFlight}
-      approveFeeReason={
         chain.wrongChain ? "SWITCH NETWORK" : !signingAllowed ? "EVENTS STALE — SIGNING DISABLED" : "APPROVAL IN FLIGHT"
       }
       onDeposit={onDeposit}

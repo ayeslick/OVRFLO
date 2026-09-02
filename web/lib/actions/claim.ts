@@ -62,7 +62,7 @@ export const maturedClaimDefinition: ActionDefinition<"claim_matured"> = {
         { kind: "token-balance", token: snapshot.market.ptToken, account: snapshot.identity.account },
         {
           kind: "token-balance",
-          token: snapshot.market.underlying,
+          token: snapshot.market.ovrfloToken,
           account: snapshot.identity.account,
         },
       ],
@@ -118,7 +118,7 @@ export const streamClaimDefinition: ActionDefinition<"claim_stream"> = {
         { kind: "stream", sablier: snapshot.market.sablier, id: intent.streamId },
         {
           kind: "token-balance",
-          token: snapshot.market.underlying,
+          token: snapshot.market.ovrfloToken,
           account: snapshot.identity.account,
         },
       ],

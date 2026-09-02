@@ -13,6 +13,7 @@ const otherStream = "0x0000000000000000000000000000000000000888" as Address;
 const otherVault = "0x0000000000000000000000000000000000000eee" as Address;
 const market = "0x0000000000000000000000000000000000000c33" as Address;
 const token = "0x0000000000000000000000000000000000000c33" as Address;
+const reserve = "0x0000000000000000000000000000000000000c44" as Address;
 
 const bootstrap: ReadyProtocolBootstrap = {
   status: "ready",
@@ -25,7 +26,9 @@ const bootstrap: ReadyProtocolBootstrap = {
       treasury: token,
       underlying: token,
       ovrfloToken: token,
+      reserve,
       lending,
+      retiredLendings: [],
     },
   ],
 };
@@ -41,7 +44,9 @@ const vaultOnlyBootstrap: ReadyProtocolBootstrap = {
       treasury: token,
       underlying: token,
       ovrfloToken: token,
+      reserve,
       lending: null,
+      retiredLendings: [],
     },
   ],
 };
@@ -61,6 +66,7 @@ const scope = {
   ptToken: token,
   expiryCached: 1_000n,
   sablier: stream,
+  reserve,
 };
 
 describe("createLiveExecutionPlan signing destinations", () => {
@@ -128,7 +134,7 @@ describe("createLiveExecutionPlan signing destinations", () => {
     client.readContract.mockResolvedValue(0n);
     const result = await createLiveExecutionPlan(
       {
-        address: vault,
+        address: reserve,
         functionName: "wrap",
         args: [10n],
       },

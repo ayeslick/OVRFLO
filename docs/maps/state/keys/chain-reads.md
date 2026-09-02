@@ -41,11 +41,12 @@ The wallet connection: status, connected addresses, and chain ID.
 
 ### `chain.vault-registry`
 
-The factory's vault set and each vault's underlying, ovrfloToken, and lending address.
+The factory's vault set and each vault's underlying, ovrfloToken, lending, reserve, and retired lendings.
 
 - **trust_domain:** `on-chain`
 - **writers:**
-  - `web/hooks/useOvrflos.ts` — batched factory reads (`ovrfloCount`, `ovrflos`, `ovrfloInfo`, `ovrfloToLending`)
+  - `web/lib/protocol-bootstrap.ts` — factory reads (`ovrfloCount`, `ovrflos`, `ovrfloInfo`, `ovrfloToLending`, `ovrfloToReserve`, `lendings(i)`)
+  - `web/hooks/useOvrflos.ts` — exposes the bootstrap vault list to the rest of the app
 - **readers:**
   - `web/hooks/useAllMarkets.ts` — the vault list every market enumeration starts from
   - `web/hooks/useStreams.ts` — landing U6: vault set that stream discovery is scoped to, and the readiness precondition for starting it
@@ -56,7 +57,9 @@ The factory's vault set and each vault's underlying, ovrfloToken, and lending ad
   pager only after the registry is ready (`registryComplete`). The wall no
   longer refuses over `MAX_ENUMERATION_IDS`; complete-set consumers use
   `useCompleteStreams`. Truncation of the vault list itself still surfaces
-  through `UI-SHELL-TRUNCATION`.
+  through `UI-SHELL-TRUNCATION`. `retiredLendings` lists factory markets that
+  still map to the vault after `replaceLending`; with no replacement the list
+  is empty.
 
 ### `chain.markets`
 
@@ -289,17 +292,19 @@ Sablier `isApprovedForAll` / `getApproved` for the stream being pledged.
 
 ### `chain.wrap-reserve`
 
-The vault's tracked wrap reserve (not the raw token balance).
+The reserve contract's tracked wrap counter (not the raw token balance and not a vault figure).
 
 - **trust_domain:** `on-chain`
 - **writers:**
-  - `web/app/assets/page.tsx` — landing U10: vault wrap-reserve read
+  - `web/components/assets/ConverterFlow.tsx` — landing U10: `OVRFLOReserve.wrappedUnderlying()`
+  - `web/hooks/useWatchBalances.ts` — wrap-reserve read on the discovered reserve
+  - `web/lib/live-action-plan.ts` — unwrap capacity from `OVRFLOReserve.wrappedUnderlying()`
 - **readers:**
   - `web/components/assets/Converter.tsx` — landing U10: unwrap removed when reserve is empty; `UI-ASSETS-CLAIM-PT` replaces it
   - `web/components/kit/Receipt.tsx` — landing U4: `UI-REVIEW-CLAIM-CONFIRMED` unwrap-enabled vs reserve-insufficient
 - **notes:** Empty reserve is an unavailable unwrap route, not a failed claim
-  and not a failed user balance. Direct transfers to the vault do not increase
-  wrap reserve.
+  and not a failed user balance. Direct transfers to the reserve do not increase
+  wrap reserve. The web learns the reserve address from `factory.ovrfloToReserve`.
 
 ### `chain.block-timestamp`
 

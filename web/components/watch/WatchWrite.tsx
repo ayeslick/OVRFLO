@@ -47,7 +47,7 @@ export function WatchWrite({
   lending: Address;
   market: Pick<
     MarketInfo,
-    "vault" | "lending" | "market" | "underlying" | "ovrfloToken" | "ptToken" | "expiryCached"
+    "vault" | "reserve" | "lending" | "market" | "underlying" | "ovrfloToken" | "ptToken" | "expiryCached"
   >;
   positionId?: bigint;
   loanId?: bigint;

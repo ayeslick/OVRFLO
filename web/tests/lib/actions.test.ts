@@ -30,6 +30,7 @@ const underlying = "0x00000000000000000000000000000000000000f6" as Address;
 const ovrfloToken = "0x0000000000000000000000000000000000000017" as Address;
 const ptToken = "0x0000000000000000000000000000000000000028" as Address;
 const sablier = "0x0000000000000000000000000000000000000039" as Address;
+const reserve = "0x000000000000000000000000000000000000004a" as Address;
 
 const market: MarketActionContext = {
   vault,
@@ -41,6 +42,7 @@ const market: MarketActionContext = {
   sablier,
   expiry: 2_000n,
   now: 1_000n,
+  reserve,
 };
 
 const identity = { account, chainId: 1 };
@@ -371,7 +373,7 @@ describe("Borrow projected-route definitions", () => {
     const action = expectReady(borrow.intent, borrow.snapshot);
     expect(action.call).toMatchObject({
       functionName: "borrow",
-      args: [marketAddress, 1_000, 4n * WAD, 31n, (4n * WAD * 9_925n) / 10_000n],
+      args: [marketAddress, 1_000, 4n * WAD, 31n, (4n * WAD * 9_925n) / 10_000n, account],
     });
     expect(action.review.route).toEqual({
       ids: [4n],
@@ -490,28 +492,70 @@ describe("Borrow projected-route definitions", () => {
 });
 
 describe("authorization planning", () => {
-  it("uses the exact deposit fee for satisfaction and the buffer only for the approval call", () => {
+  it("authorizes only PT for deposit, even when a fee is quoted", () => {
     const deposit = cases.find(({ intent }) => intent.type === "deposit")!;
     if (deposit.snapshot.type !== "deposit") throw new Error("wrong fixture");
-    const fee = deposit.snapshot.state.data!.preview.fee;
     const action = expectReady(deposit.intent, {
       ...deposit.snapshot,
       state: fresh({
         ...deposit.snapshot.state.data!,
         ptAllowance: 10n * WAD,
-        underlyingAllowance: fee,
+        underlyingAllowance: 0n,
       }),
     });
-    expect(action.authorizations).toContainEqual({
-      kind: "erc20",
-      token: underlying,
-      spender: vault,
-      requiredAmount: fee,
-      approvalAmount: (fee * 102n) / 100n,
-      currentAllowance: fee,
-      satisfied: true,
-      strategy: "optimistic-zero-first",
+    expect(action.authorizations).toEqual([
+      expect.objectContaining({
+        kind: "erc20",
+        token: ptToken,
+        spender: vault,
+        requiredAmount: 10n * WAD,
+        satisfied: true,
+      }),
+    ]);
+    expect(action.authorizations).not.toContainEqual(expect.objectContaining({ token: underlying }));
+  });
+
+  it("wraps against the reserve and spends exact underlying", () => {
+    const wrap = cases.find(({ intent }) => intent.type === "wrap")!;
+    const action = expectReady(wrap.intent, wrap.snapshot);
+    expect(action.call).toMatchObject({
+      target: reserve,
+      contract: "reserve",
+      functionName: "wrap",
     });
+    expect(action.authorizations).toEqual([
+      expect.objectContaining({
+        kind: "erc20",
+        token: underlying,
+        spender: reserve,
+        requiredAmount: 2n * WAD,
+      }),
+    ]);
+  });
+
+  it("supplies ovrfloToken, not underlying", () => {
+    const supply = cases.find(({ intent }) => intent.type === "supply")!;
+    const action = expectReady(supply.intent, supply.snapshot);
+    expect(action.authorizations).toEqual([
+      expect.objectContaining({
+        kind: "erc20",
+        token: ovrfloToken,
+        spender: lending,
+      }),
+    ]);
+  });
+
+  it("adjust-rate authorizes ovrfloToken for the nested supply", () => {
+    const adjust = cases.find(({ intent }) => intent.type === "adjust_rate")!;
+    const action = expectReady(adjust.intent, adjust.snapshot);
+    expect(action.authorizations).toEqual([
+      expect.objectContaining({
+        kind: "erc20",
+        token: ovrfloToken,
+        spender: lending,
+      }),
+    ]);
+    expect(action.authorizations).not.toContainEqual(expect.objectContaining({ token: underlying }));
   });
 });
 

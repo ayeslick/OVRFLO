@@ -44,11 +44,11 @@ stream is `borrow.md`.
 - **States.** `ready`, `loading` (never zero), `unavailable`, `empty-reserve`
   (reserve is genuinely zero after a successful read).
 - **Action.** None.
-- **Copy rules.** Reserve is a vault accounting figure, not the user's balance.
-  Empty reserve disables unwrap (`UI-ASSETS-UNWRAP`) and is not a failed user
-  balance. Direct transfers to the vault do not increase wrap reserve — do not
-  imply they do.
-- **Data authority.** `on-chain` — `OVRFLO.wrappedUnderlying()` and token
+- **Copy rules.** Reserve is an OVRFLOReserve accounting figure, not a vault
+  balance and not the user's balance. Empty reserve disables unwrap
+  (`UI-ASSETS-UNWRAP`) and is not a failed user balance. Direct transfers to
+  the reserve do not increase wrap reserve — do not imply they do.
+- **Data authority.** `on-chain` — `OVRFLOReserve.wrappedUnderlying()` and token
   `balanceOf`. The reserve is a gate, so it is never inferred from a token
   balance or a projection.
 
@@ -62,7 +62,7 @@ stream is `borrow.md`.
 - **States.** `empty`, `valid`, `invalid` (insufficient underlying, bad decimals),
   `max` (exact wallet underlying).
 - **Action.** Continue opens `UI-REVIEW-WRAP` → optional
-  `UI-REVIEW-PERMISSION-RECEIPT` (exact underlying to the vault) → `wrap`.
+  `UI-REVIEW-PERMISSION-RECEIPT` (exact underlying to the reserve) → `wrap`.
 - **Copy rules.** Exact `underlying → ovrflo token` 1:1, destination wallet.
   `wrap` charges no protocol fee and creates no stream. `OUTPUT` is deterministic
   1:1, not a quote.

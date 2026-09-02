@@ -14,6 +14,7 @@ const token = "0x0000000000000000000000000000000000000c33" as Address;
 const vault = "0x0000000000000000000000000000000000000d44" as Address;
 const ovrfloToken = "0x0000000000000000000000000000000000000e55" as Address;
 const ptToken = "0x0000000000000000000000000000000000000f66" as Address;
+const reserve = "0x0000000000000000000000000000000000000a77" as Address;
 const hash = `0x${"ab".repeat(32)}` as Hash;
 const blockHash = `0x${"cd".repeat(32)}` as Hash;
 
@@ -43,7 +44,9 @@ vi.mock("@/hooks/useProtocolBootstrap", () => ({
         treasury: "0x0000000000000000000000000000000000000c33" as Address,
         underlying: "0x0000000000000000000000000000000000000c33" as Address,
         ovrfloToken: "0x0000000000000000000000000000000000000e55" as Address,
+        reserve: "0x0000000000000000000000000000000000000a77" as Address,
         lending: "0x0000000000000000000000000000000000000b22" as Address,
+        retiredLendings: [],
       },
     ],
     blockNumber: 1n,
@@ -171,6 +174,7 @@ describe("useWriteFlow executor adapter", () => {
       underlying: token,
       ovrfloToken,
       ptToken,
+      reserve,
       expiryCached: 1_000n,
     };
     const { wrapper } = createWrapper(token);
@@ -352,6 +356,7 @@ describe("useWriteFlow executor adapter", () => {
       underlying: token,
       ovrfloToken,
       ptToken,
+      reserve,
       expiryCached: 1_000n,
     };
     const { wrapper } = createWrapper(token);
@@ -416,6 +421,7 @@ describe("useWriteFlow executor adapter", () => {
       underlying: token,
       ovrfloToken,
       ptToken,
+      reserve,
       expiryCached: 1_000n,
     };
     const { wrapper } = createWrapper(token);
@@ -473,6 +479,7 @@ describe("useWriteFlow executor adapter", () => {
       underlying: token,
       ovrfloToken,
       ptToken,
+      reserve,
       expiryCached: 1_000n,
     };
     const { wrapper } = createWrapper(token);
@@ -524,6 +531,7 @@ describe("useWriteFlow executor adapter", () => {
       underlying: token,
       ovrfloToken,
       ptToken,
+      reserve,
       expiryCached: 1_000n,
     };
     const { wrapper } = createWrapper(token);
@@ -590,6 +598,7 @@ describe("useWriteFlow executor adapter", () => {
       underlying: token,
       ovrfloToken,
       ptToken,
+      reserve,
       expiryCached: 1_000n,
     };
     const { wrapper } = createWrapper(token);

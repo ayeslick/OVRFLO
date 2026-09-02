@@ -8,6 +8,8 @@ export type VaultInfo = {
   /** OVRFLOReserve for this column; wrap/unwrap and the wrapped-underlying balance live here. */
   reserve: Address;
   lending: Address | null;
+  /** Markets still mapped to this vault after replaceLending; empty when none. */
+  retiredLendings: readonly Address[];
 };
 
 export type MarketInfo = VaultInfo & {

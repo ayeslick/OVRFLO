@@ -27,18 +27,9 @@ export function depositCapStatus({
   return { capRemaining, capReached, capExceeded };
 }
 
-// Deposit fee approvals carry 2% headroom so a block-to-block requote of a few
-// wei doesn't strand the form on a second APPROVE after the first one confirmed.
-// Bounded on purpose — never `type(uint256).max`, so a stale allowance can only
-// ever cover one deposit's fee drift, not an unlimited future draw.
-export function bufferedFeeApproveAmount(feeAmount: bigint): bigint {
-  return (feeAmount * 102n) / 100n;
-}
-
 export function convertApprovalNeeds({
   mode,
   amount,
-  feeAmount,
   ptAllowance,
   ptApprovedAmount,
   underlyingAllowance,
@@ -53,12 +44,11 @@ export function convertApprovalNeeds({
   underlyingApprovedAmount: bigint;
 }) {
   const needsPtApproval = mode === "deposit" && amount > 0n && ptAllowance < amount && ptApprovedAmount < amount;
-  const underlyingRequired = mode === "wrap" ? amount : feeAmount;
   const needsUnderlyingApproval =
-    ((mode === "deposit" && feeAmount > 0n) || mode === "wrap") &&
+    mode === "wrap" &&
     amount > 0n &&
-    underlyingAllowance < underlyingRequired &&
-    underlyingApprovedAmount < underlyingRequired;
+    underlyingAllowance < amount &&
+    underlyingApprovedAmount < amount;
   return { needsPtApproval, needsUnderlyingApproval, needsApproval: needsPtApproval || needsUnderlyingApproval };
 }
 

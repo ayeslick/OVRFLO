@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useConnection, useReadContracts } from "wagmi";
 import type { Address } from "viem";
-import { erc20Abi, ovrfloAbi } from "@/lib/abis";
+import { erc20Abi, ovrfloAbi, ovrfloReserveAbi } from "@/lib/abis";
 import { formatTokenAmount } from "@/lib/format";
 import { readQuery } from "@/lib/query-keys";
 import type { MarketInfo } from "@/lib/types";
@@ -83,9 +83,9 @@ export function ConverterFlow({
               address: market.underlying,
               abi: erc20Abi,
               functionName: "allowance",
-              args: [user, market.vault],
+              args: [user, market.reserve],
             },
-            { address: market.vault, abi: ovrfloAbi, functionName: "wrappedUnderlying" },
+            { address: market.reserve, abi: ovrfloReserveAbi, functionName: "wrappedUnderlying" },
           ]
         : [],
     query: { ...readQuery, enabled },
@@ -204,7 +204,7 @@ export function ConverterFlow({
   function onApprove() {
     if (!market || amountWei === null || chain.wrongChain || !signingAllowed) return;
     setApproveSubmitting(true);
-    wrapFlows.zeroFirst.submit(market.underlying, market.vault, amountWei, allowance);
+    wrapFlows.zeroFirst.submit(market.underlying, market.reserve, amountWei, allowance);
   }
 
   function onSubmit() {
@@ -212,16 +212,16 @@ export function ConverterFlow({
     setActionSubmitting(true);
     if (direction === "wrap") {
       wrapFlows.actionTx.writeContract({
-        address: market.vault,
-        abi: ovrfloAbi,
+        address: market.reserve,
+        abi: ovrfloReserveAbi,
         functionName: "wrap",
         args: [amountWei],
       } as never);
       return;
     }
     unwrapTx.writeContract({
-      address: market.vault,
-      abi: ovrfloAbi,
+      address: market.reserve,
+      abi: ovrfloReserveAbi,
       functionName: "unwrap",
       args: [amountWei],
     } as never);

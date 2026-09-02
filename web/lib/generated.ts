@@ -573,6 +573,13 @@ export const ovrfloFactoryAbi = [
   },
   {
     type: 'function',
+    inputs: [{ name: '', internalType: 'address', type: 'address' }],
+    name: 'ovrfloToReserve',
+    outputs: [{ name: '', internalType: 'address', type: 'address' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
     inputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
     name: 'ovrflos',
     outputs: [{ name: '', internalType: 'address', type: 'address' }],
@@ -625,6 +632,13 @@ export const ovrfloFactoryAbi = [
   },
   {
     type: 'function',
+    inputs: [{ name: 'newLending', internalType: 'address', type: 'address' }],
+    name: 'replaceLending',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
     inputs: [
       { name: 'lending', internalType: 'address', type: 'address' },
       { name: 'aprMinBps_', internalType: 'uint16', type: 'uint16' },
@@ -641,6 +655,16 @@ export const ovrfloFactoryAbi = [
       { name: 'feeBps_', internalType: 'uint16', type: 'uint16' },
     ],
     name: 'setLendingFee',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'lending', internalType: 'address', type: 'address' },
+      { name: 'router_', internalType: 'address', type: 'address' },
+    ],
+    name: 'setLendingRouter',
     outputs: [],
     stateMutability: 'nonpayable',
   },
@@ -787,6 +811,50 @@ export const ovrfloFactoryAbi = [
       },
     ],
     name: 'LendingRegistered',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'ovrflo',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'oldLending',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'newLending',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+    ],
+    name: 'LendingReplaced',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'lending',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'router',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+    ],
+    name: 'LendingRouterSet',
   },
   {
     type: 'event',
@@ -940,10 +1008,12 @@ export const ovrfloFactoryAbi = [
   { type: 'error', inputs: [], name: 'OvrfloStreamAlreadySet' },
   { type: 'error', inputs: [], name: 'OvrfloStreamUnset' },
   { type: 'error', inputs: [], name: 'OwnerMismatch' },
+  { type: 'error', inputs: [], name: 'ReserveMismatch' },
   { type: 'error', inputs: [], name: 'SablierMismatch' },
   { type: 'error', inputs: [], name: 'StreamAdminMismatch' },
   { type: 'error', inputs: [], name: 'StreamFactoryMismatch' },
   { type: 'error', inputs: [], name: 'StreamNotCanonical' },
+  { type: 'error', inputs: [], name: 'TokenMinterMismatch' },
   { type: 'error', inputs: [], name: 'TwapTooLong' },
   { type: 'error', inputs: [], name: 'TwapTooShort' },
   { type: 'error', inputs: [], name: 'UnderlyingAlreadyDeployed' },
@@ -1050,6 +1120,7 @@ export const ovrfloLendingAbi = [
       { name: 'targetBorrow', internalType: 'uint128', type: 'uint128' },
       { name: 'streamId', internalType: 'uint256', type: 'uint256' },
       { name: 'minAcceptable', internalType: 'uint128', type: 'uint128' },
+      { name: 'onBehalfOf', internalType: 'address', type: 'address' },
     ],
     name: 'borrow',
     outputs: [{ name: 'loanId', internalType: 'uint256', type: 'uint256' }],
@@ -1360,6 +1431,13 @@ export const ovrfloLendingAbi = [
   {
     type: 'function',
     inputs: [],
+    name: 'router',
+    outputs: [{ name: '', internalType: 'address', type: 'address' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
     name: 'sablier',
     outputs: [
       {
@@ -1384,6 +1462,13 @@ export const ovrfloLendingAbi = [
     type: 'function',
     inputs: [{ name: 'feeBps_', internalType: 'uint16', type: 'uint16' }],
     name: 'setFee',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: 'router_', internalType: 'address', type: 'address' }],
+    name: 'setRouter',
     outputs: [],
     stateMutability: 'nonpayable',
   },
@@ -1464,13 +1549,6 @@ export const ovrfloLendingAbi = [
     type: 'function',
     inputs: [],
     name: 'treasury',
-    outputs: [{ name: '', internalType: 'address', type: 'address' }],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [],
-    name: 'underlying',
     outputs: [{ name: '', internalType: 'address', type: 'address' }],
     stateMutability: 'view',
   },
@@ -1682,6 +1760,19 @@ export const ovrfloLendingAbi = [
       },
     ],
     name: 'LendingFeeSet',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'router',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+    ],
+    name: 'LendingRouterSet',
   },
   {
     type: 'event',

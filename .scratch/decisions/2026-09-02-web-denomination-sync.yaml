@@ -1,0 +1,71 @@
+# Scratch decision record — schema: docs/maps/SCHEMAS.md §4
+summary_ref: "docs/plans/2026-08-22-001-refactor-denomination-switch-border-column-plan.md CS1 U7"
+
+goal: >
+  Markets supply, wrap, unwrap, borrow, and deposit review match the switched
+  column. The web learns reserve from factory.ovrfloToReserve, not env.
+
+state_keys_touched:
+  - chain.vault-registry
+  - chain.wrap-reserve
+  - chain.allowances
+
+writers_readers:
+  - writes: web/lib/protocol-bootstrap.ts
+  - writes: web/hooks/useWatchBalances.ts
+  - writes: web/components/assets/ConverterFlow.tsx
+  - writes: web/lib/live-action-plan.ts
+  - reads: web/components/assets/Converter.tsx
+  - reads: web/components/watch/WatchWrite.tsx
+  - reads: web/lib/actions/convert.ts
+  - reads: web/lib/actions/supply.ts
+  - reads: web/lib/actions/borrow.ts
+
+trust_domains:
+  - fact: column reserve address
+    domain: on-chain
+    moved_from: null
+  - fact: retired lending markets
+    domain: on-chain
+    moved_from: null
+  - fact: wrappedUnderlying counter
+    domain: on-chain
+    moved_from: null
+
+rejected_alternatives:
+  - option: NEXT_PUBLIC_OVRFLO_RESERVE
+    why_not: KD5 and sweep rule 2. A second static anchor mis-targets under multi-vault.
+  - option: Read only ovrfloToLending for the lending set
+    why_not: KD7. A replaced market would vanish from the web while repay still runs.
+  - option: Default / Advanced navigation in this ticket
+    why_not: KD12. Product UX is CS4. This unit is protocol-correctness sync only.
+
+invariants_held:
+  - invariant: Factory is the only static protocol env anchor.
+    how: Bootstrap reads ovrfloToReserve. NEXT_PUBLIC_OVRFLO_RESERVE joins the obsolete list.
+  - invariant: Query keys and destination paths stay KD16.
+    how: This unit does not rewrite them.
+  - invariant: With no replaceLending, retiredLendings is empty.
+    how: A market is retired only when ovrfloToLending[vault] != market.
+  - invariant: Deposit fee comes from the mint split, not an underlying pull.
+    how: Deposit review authorizes PT only.
+
+risks:
+  - risk: Wrap still targets the vault if a call site keeps ovrfloAbi.wrap.
+    residual: ConverterFlow, convert definition, live snapshot, and E2E wrap all retarget the reserve.
+  - risk: Portfolio still ignores retiredLendings.
+    residual: CS4-U2 (ticket 15) hydrates those markets. This unit only fills the field.
+
+diff_hints:
+  - path: web/lib/protocol-bootstrap.ts
+    why: Third binding leg and lendings(i) retired pairing.
+  - path: web/lib/actions/convert.ts
+    why: Wrap/unwrap target the reserve. Deposit drops the fee approval.
+  - path: web/lib/actions/supply.ts
+    why: Supply escrow token is ovrfloToken.
+  - path: web/lib/actions/borrow.ts
+    why: borrow calldata gains onBehalfOf.
+  - path: docs/maps/ui/assets.md
+    why: wrap-reserve authority retarget.
+  - path: docs/maps/state/keys/chain-reads.md
+    why: chain.wrap-reserve writers retarget to the reserve.

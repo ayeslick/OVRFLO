@@ -112,10 +112,12 @@ describe("marketContracts", () => {
       lending: "0x0000000000000000000000000000000000000002" as Address,
       underlying: "0x0000000000000000000000000000000000000003" as Address,
       ovrfloToken: "0x0000000000000000000000000000000000000004" as Address,
+      reserve: "0x0000000000000000000000000000000000000006" as Address,
       ptToken: "0x0000000000000000000000000000000000000005" as Address,
     };
     expect(marketContracts(market, STREAM)).toEqual([
       market.vault,
+      market.reserve,
       market.lending,
       market.underlying,
       market.ovrfloToken,
@@ -131,12 +133,13 @@ describe("marketContracts", () => {
         lending: null,
         underlying: "0x0000000000000000000000000000000000000003" as Address,
         ovrfloToken: "0x0000000000000000000000000000000000000004" as Address,
+        reserve: "0x0000000000000000000000000000000000000006" as Address,
         ptToken: "0x0000000000000000000000000000000000000005" as Address,
       },
       STREAM,
     );
     expect(contracts).not.toContain(null);
-    expect(contracts).toHaveLength(5);
+    expect(contracts).toHaveLength(6);
   });
 });
 

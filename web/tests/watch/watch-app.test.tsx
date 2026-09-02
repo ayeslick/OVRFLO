@@ -39,7 +39,9 @@ const fx = vi.hoisted(() => ({
     treasury: Address;
     underlying: Address;
     ovrfloToken: Address;
+    reserve: Address;
     lending: Address;
+    retiredLendings: readonly Address[];
     market: Address;
     twapDurationFixed: number;
     feeBps: number;
@@ -134,7 +136,9 @@ vi.mock("@/hooks/useAllMarkets", () => ({
             treasury: VAULT,
             underlying: TOKEN,
             ovrfloToken: TOKEN,
+            reserve: TOKEN,
             lending: LENDING,
+            retiredLendings: [],
             market: MARKET,
             twapDurationFixed: 900,
             feeBps: 50,
@@ -507,7 +511,9 @@ describe("watch shell + entry", () => {
         treasury: VAULT,
         underlying: TOKEN,
         ovrfloToken: TOKEN,
+        reserve: TOKEN,
         lending: LENDING,
+        retiredLendings: [],
         market: MARKET,
         twapDurationFixed: 900,
         feeBps: 50,
@@ -520,7 +526,9 @@ describe("watch shell + entry", () => {
         treasury: VAULT,
         underlying: TOKEN_B,
         ovrfloToken: TOKEN_B,
+        reserve: TOKEN_B,
         lending: LENDING_B,
+        retiredLendings: [],
         market: MARKET_B,
         twapDurationFixed: 900,
         feeBps: 50,

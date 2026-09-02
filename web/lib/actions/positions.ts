@@ -46,7 +46,7 @@ export const adjustRateDefinition: ActionDefinition<"adjust_rate"> = {
     }
     const authorizations = [
       erc20Authorization({
-        token: snapshot.market.underlying,
+        token: snapshot.market.ovrfloToken,
         spender: lending,
         amount: position.availableLiquidity,
         currentAllowance: state.allowance,
@@ -105,9 +105,10 @@ export const adjustRateDefinition: ActionDefinition<"adjust_rate"> = {
         { kind: "liquidity-position", lending, id: intent.positionId },
         { kind: "market-depth", lending, market: position.market, aprBps: position.aprBps },
         { kind: "market-depth", lending, market: position.market, aprBps: intent.newAprBps },
+        { kind: "token-balance", token: snapshot.market.ovrfloToken, account: snapshot.identity.account },
         {
           kind: "allowance",
-          token: snapshot.market.underlying,
+          token: snapshot.market.ovrfloToken,
           owner: snapshot.identity.account,
           spender: lending,
         },

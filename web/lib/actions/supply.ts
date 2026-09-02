@@ -48,7 +48,7 @@ export const supplyDefinition: ActionDefinition<"supply"> = {
     }
     const authorizations = [
       erc20Authorization({
-        token: snapshot.market.underlying,
+        token: snapshot.market.ovrfloToken,
         spender: lending,
         amount: parsed.amount,
         currentAllowance: state.allowance,
@@ -70,10 +70,10 @@ export const supplyDefinition: ActionDefinition<"supply"> = {
       call,
       touchedResources: [
         { kind: "market-depth", lending, market: snapshot.market.market, aprBps: intent.aprBps },
-        { kind: "token-balance", token: snapshot.market.underlying, account: snapshot.identity.account },
+        { kind: "token-balance", token: snapshot.market.ovrfloToken, account: snapshot.identity.account },
         {
           kind: "allowance",
-          token: snapshot.market.underlying,
+          token: snapshot.market.ovrfloToken,
           owner: snapshot.identity.account,
           spender: lending,
         },
@@ -124,7 +124,7 @@ export const withdrawDefinition: ActionDefinition<"withdraw"> = {
       touchedResources: [
         { kind: "liquidity-position", lending, id: intent.positionId },
         { kind: "market-depth", lending, market: position.market, aprBps: position.aprBps },
-        { kind: "token-balance", token: snapshot.market.underlying, account: snapshot.identity.account },
+        { kind: "token-balance", token: snapshot.market.ovrfloToken, account: snapshot.identity.account },
       ],
       economics: { positionId: intent.positionId, amount: position.availableLiquidity },
       receiptSummary: {

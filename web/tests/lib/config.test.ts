@@ -17,6 +17,7 @@ const ENV_KEYS = [
   "NEXT_PUBLIC_FACTORY_DEPLOYMENT_BLOCK_HASH",
   "NEXT_PUBLIC_OVRFLO_ADDRESS",
   "NEXT_PUBLIC_OVRFLO_LENDING",
+  "NEXT_PUBLIC_OVRFLO_RESERVE",
   "NEXT_PUBLIC_LENDING_DEPLOYMENT_BLOCK",
   "NEXT_PUBLIC_LENDING_DEPLOYMENT_BLOCK_HASH",
   "NEXT_PUBLIC_SABLIER_LOCKUP_ADDRESS",
@@ -229,6 +230,18 @@ describe("obsolete derived address env vars", () => {
     await loadConfig();
     expect(warn).toHaveBeenCalledWith(
       expect.stringContaining("NEXT_PUBLIC_SABLIER_LOCKUP_ADDRESS is obsolete"),
+    );
+    warn.mockRestore();
+  });
+
+  it("emits a dev-mode warning for NEXT_PUBLIC_OVRFLO_RESERVE", async () => {
+    stubValidProduction();
+    vi.stubEnv("NODE_ENV", "development");
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.stubEnv("NEXT_PUBLIC_OVRFLO_RESERVE", REAL_ADDRESS);
+    await loadConfig();
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("NEXT_PUBLIC_OVRFLO_RESERVE is obsolete"),
     );
     warn.mockRestore();
   });

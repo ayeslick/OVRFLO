@@ -121,6 +121,10 @@ export const errorCatalog = {
     copy: "The reserve holds less underlying than it tracks. Nothing was changed.",
     recovery: refresh,
   },
+  ReserveMismatch: {
+    copy: "The candidate reserve is missing or is not bound to this column.",
+    recovery: none,
+  },
   SablierMismatch: { copy: "This lending market is not bound to the expected Sablier.", recovery: none },
   SeriesAlreadyConfigured: { copy: "This series is already configured.", recovery: none },
   SeriesMatured: { copy: "This market has already matured.", recovery: none },
@@ -130,6 +134,10 @@ export const errorCatalog = {
   StreamAdminMismatch: { copy: "The stream admin is not the factory.", recovery: none },
   StreamFactoryMismatch: { copy: "The stream factory binding does not match.", recovery: none },
   StreamNotCanonical: { copy: "This stream is not the factory's canonical OVRFLOStream.", recovery: none },
+  TokenMinterMismatch: {
+    copy: "The candidate token's vault or reserve does not match this column.",
+    recovery: none,
+  },
   TransferMismatch: { copy: "Token transfer amount did not match the request.", recovery: refresh },
   TwapTooLong: { copy: "TWAP duration is above the allowed maximum.", recovery: none },
   TwapTooShort: { copy: "TWAP duration is below the allowed minimum.", recovery: none },

@@ -25,6 +25,7 @@ export function useApprovalWriteFlows(
   scope?: Pick<
     MarketInfo,
     | "vault"
+    | "reserve"
     | "lending"
     | "market"
     | "underlying"

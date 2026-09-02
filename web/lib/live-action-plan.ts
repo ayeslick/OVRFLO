@@ -6,7 +6,7 @@ import {
   type Hex,
   type PublicClient,
 } from "viem";
-import { erc20Abi, ovrfloAbi, ovrfloLendingAbi, sablierLockupAbi } from "./abis";
+import { erc20Abi, ovrfloAbi, ovrfloLendingAbi, ovrfloReserveAbi, sablierLockupAbi } from "./abis";
 import {
   actionResultToDraft,
   type ActionExecutionDraft,
@@ -33,6 +33,7 @@ import type { LiquidityPosition, Loan, MarketInfo } from "./types";
 export type LiveMarketScope = Pick<
   MarketInfo,
   | "vault"
+  | "reserve"
   | "lending"
   | "market"
   | "underlying"
@@ -332,6 +333,7 @@ function marketContext(
     sablier: scope.sablier,
     expiry: scope.expiryCached,
     now,
+    reserve: scope.reserve,
   };
 }
 
@@ -356,7 +358,7 @@ function verifyRegisteredTarget(
     Boolean(callTarget) &&
     Boolean(scope.lending) &&
     isAddressEqual(callTarget!, scope.lending!);
-  // Vault-only writes (wrap/deposit/unwrap/claim) may run when lending is unset.
+  // Vault-only writes (deposit/claim) and reserve wrap/unwrap may run when lending is unset.
   // Require the mapping when the factory has one, or when the call targets lending.
   if (registered.lending !== null) {
     if (!scope.lending || !isAddressEqual(scope.lending, registered.lending)) {
@@ -369,6 +371,12 @@ function verifyRegisteredTarget(
     return actionError(
       "unregistered-target",
       "Lending is not registered for this vault",
+    );
+  }
+  if (!isAddressEqual(scope.reserve, registered.reserve)) {
+    return actionError(
+      "unregistered-target",
+      "Reserve is not the factory mapping for this vault",
     );
   }
   return null;
@@ -390,13 +398,15 @@ function verifyApproveSpender(
   if (!registered) {
     return actionError("unregistered-target", "Vault is not registered on the factory");
   }
-  const allowed: Address[] = [bootstrap.stream];
+  const allowed: Address[] = [bootstrap.stream, registered.vault];
+  if (registered.reserve) allowed.push(registered.reserve);
   if (registered.lending) allowed.push(registered.lending);
   if (scope.lending) allowed.push(scope.lending);
+  if (scope.reserve) allowed.push(scope.reserve);
   if (!allowed.some((address) => isAddressEqual(address, spenderAddress))) {
     return actionError(
       "unregistered-target",
-      "Approve spender is not the registered lending or discovered stream",
+      "Approve spender is not a registered vault, reserve, lending, or discovered stream",
     );
   }
   return null;
@@ -424,13 +434,13 @@ async function loadSnapshot(
       if (!lending) throw new Error("Lending is not configured");
       const [walletBalance, allowance, aprMinBps, aprMaxBps] = await Promise.all([
         read<bigint>(client, blockNumber, {
-          address: scope.underlying,
+          address: scope.ovrfloToken,
           abi: erc20Abi,
           functionName: "balanceOf",
           args: [identity.account],
         }),
         read<bigint>(client, blockNumber, {
-          address: scope.underlying,
+          address: scope.ovrfloToken,
           abi: erc20Abi,
           functionName: "allowance",
           args: [identity.account, lending],
@@ -643,7 +653,7 @@ async function loadSnapshot(
           address: scope.underlying,
           abi: erc20Abi,
           functionName: "allowance",
-          args: [identity.account, scope.vault],
+          args: [identity.account, scope.reserve],
         }),
       ]);
       return {
@@ -662,8 +672,8 @@ async function loadSnapshot(
           args: [identity.account],
         }),
         read<bigint>(client, blockNumber, {
-          address: scope.vault,
-          abi: ovrfloAbi,
+          address: scope.reserve,
+          abi: ovrfloReserveAbi,
           functionName: "wrappedUnderlying",
         }),
       ]);
@@ -781,7 +791,7 @@ async function loadSnapshot(
       const [position, allowance, aprMinBps, aprMaxBps] = await Promise.all([
         positionAt(client, lending, parsed.intent.positionId, blockNumber),
         read<bigint>(client, blockNumber, {
-          address: scope.underlying,
+          address: scope.ovrfloToken,
           abi: erc20Abi,
           functionName: "allowance",
           args: [identity.account, lending],
@@ -858,6 +868,8 @@ function requestForAction(action: ReadyAction): ExactSimulationRequest {
       ? ovrfloLendingAbi
       : action.call.contract === "ovrflo"
         ? ovrfloAbi
+        : action.call.contract === "reserve"
+          ? ovrfloReserveAbi
         : action.call.contract === "sablier"
           ? sablierLockupAbi
           : erc20Abi;

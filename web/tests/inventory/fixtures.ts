@@ -52,6 +52,7 @@ export const MARKET = "0x1111111111111111111111111111111111111111" as Address;
 export const TOKEN = "0x3333333333333333333333333333333333333333" as Address;
 export const VAULT = "0x2222222222222222222222222222222222222222" as Address;
 export const LENDING = "0x4444444444444444444444444444444444444444" as Address;
+export const RESERVE = "0x5555555555555555555555555555555555555555" as Address;
 export const NOW = 1_800_000_000n;
 export const SCALE = 10n ** 18n;
 export const NOW_MS = Number(NOW) * 1000;
@@ -64,7 +65,9 @@ export const market: MarketInfo = {
   treasury: VAULT,
   underlying: TOKEN,
   ovrfloToken: TOKEN,
+  reserve: RESERVE,
   lending: LENDING,
+  retiredLendings: [],
   market: MARKET,
   twapDurationFixed: 900,
   feeBps: 50,

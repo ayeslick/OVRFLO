@@ -21,7 +21,9 @@ const vault: VaultInfo = {
   treasury: "0x0000000000000000000000000000000000000705" as Address,
   underlying: UNDERLYING,
   ovrfloToken: OVRFLO_TOKEN,
+  reserve: "0x0000000000000000000000000000000000000706" as Address,
   lending: null,
+  retiredLendings: [],
 };
 
 const vaultB: VaultInfo = { ...vault, vault: VAULT_B };

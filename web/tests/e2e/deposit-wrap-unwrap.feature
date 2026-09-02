@@ -42,7 +42,6 @@ Feature: Assets converter and stream creation
     And I click the "CONTINUE" button
     And I acknowledge risk if prompted
     And I click the "APPROVE PT" button
-    And I click the "APPROVE FEE" button
     And I click the "DEPOSIT" button
     Then I see a confirmed action receipt
     And I see a borrow handoff for the new stream

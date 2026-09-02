@@ -29,9 +29,8 @@ Given("my wallet holds ovrfloToken from a deposit of {string}", async ({}, ptAmo
 
 // eslint-disable-next-line no-empty-pattern -- playwright-bdd requires the object-destructuring form for its first argument, even with no fixtures used.
 Given("the wrap reserve holds {string}", async ({}, underlyingAmount: string) => {
-  const deployment = readDeployment();
   const amount = BigInt(Math.round(Number(underlyingAmount) * 1e18));
-  await wrapUnderlying({ account: DEV_WALLET_ADDRESS, ovrflo: deployment.ovrflo, amount });
+  await wrapUnderlying({ account: DEV_WALLET_ADDRESS, amount });
 });
 
 Given("the deposit cap for the active market is reached", async () => {

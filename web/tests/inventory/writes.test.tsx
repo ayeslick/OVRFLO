@@ -126,6 +126,7 @@ function claimedReceipt(positionId: bigint, amount: bigint) {
 
 const watchMarket = {
   vault: VAULT,
+  reserve: TOKEN,
   lending: LENDING,
   market: MARKET,
   underlying: TOKEN,

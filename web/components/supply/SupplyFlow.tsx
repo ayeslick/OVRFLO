@@ -180,9 +180,9 @@ export function SupplyFlow() {
     contracts:
       moneyEnabled && account && market && lending
         ? [
-            { address: market.underlying, abi: erc20Abi, functionName: "balanceOf", args: [account] },
+            { address: market.ovrfloToken, abi: erc20Abi, functionName: "balanceOf", args: [account] },
             {
-              address: market.underlying,
+              address: market.ovrfloToken,
               abi: erc20Abi,
               functionName: "allowance",
               args: [account, lending],
@@ -238,6 +238,7 @@ export function SupplyFlow() {
   }, [ladder, selectedAprBps]);
 
   const underlyingSymbol = market ? symbolFor(symbols, market.underlying) : "underlying";
+  const supplySymbol = market ? symbolFor(symbols, market.ovrfloToken) : "ovrfloToken";
   const parsedAmount = parseDecimalInput(amountRaw);
   const amountWei = parsedAmount.ok ? parsedAmount.value : 0n;
   const amountError = amountFieldError(
@@ -246,7 +247,7 @@ export function SupplyFlow() {
     walletBalance,
     minLiquidity,
     unit,
-    underlyingSymbol,
+    supplySymbol,
   );
   const selectedRung = ladder?.rungs.find((rung) => rung.aprBps === selectedAprBps);
   const ahead = selectedRung?.availableWei ?? 0n;
@@ -292,7 +293,7 @@ export function SupplyFlow() {
 
   const ackTrace = useAcknowledgeRiskTrace(
     supplyTrace({
-      underlyingSymbol,
+      underlyingSymbol: supplySymbol,
       needsApprove: !tokenApproved,
       ackRequired: false,
       checkpoint,
@@ -301,16 +302,16 @@ export function SupplyFlow() {
 
   const liveBalances =
     walletBalance !== null && market
-      ? { [market.underlying.toLowerCase()]: walletBalance }
+      ? { [market.ovrfloToken.toLowerCase()]: walletBalance }
       : null;
   const preTxBalances =
     preTxBalance !== null && market
-      ? { [market.underlying.toLowerCase()]: preTxBalance.toString() }
+      ? { [market.ovrfloToken.toLowerCase()]: preTxBalance.toString() }
       : null;
   const lastKnownPostTx =
     preTxBalance !== null && frozen && market
       ? {
-          [market.underlying.toLowerCase()]:
+          [market.ovrfloToken.toLowerCase()]:
             preTxBalance > frozen.amount ? preTxBalance - frozen.amount : 0n,
         }
       : null;
@@ -323,7 +324,7 @@ export function SupplyFlow() {
   });
   const displayBalance =
     guarded.suppressed && lastKnownPostTx && market
-      ? (lastKnownPostTx[market.underlying.toLowerCase()] ?? walletBalance)
+      ? (lastKnownPostTx[market.ovrfloToken.toLowerCase()] ?? walletBalance)
       : walletBalance;
 
   useEffect(() => {
@@ -477,7 +478,7 @@ export function SupplyFlow() {
   function onApprove() {
     if (!lending || !market || !frozen || chainGuard.wrongChain || !signingAllowed) return;
     setApproveSubmitting(true);
-    zeroFirst.submit(market.underlying, lending, frozen.amount, allowance);
+    zeroFirst.submit(market.ovrfloToken, lending, frozen.amount, allowance);
   }
 
   function onSupply() {
@@ -557,7 +558,7 @@ export function SupplyFlow() {
             <div className="supply-handoff">
               <p className="supply-kicker">SUPPLY</p>
               <h2 className="supply-title">Connect a wallet</h2>
-              <p className="supply-lede">A connected wallet is required to supply underlying liquidity.</p>
+              <p className="supply-lede">A connected wallet is required to supply ovrfloToken liquidity.</p>
             </div>
           ) : null}
           {connected && !walletReset.walletChanged && stage === "select-market" ? (
@@ -594,7 +595,7 @@ export function SupplyFlow() {
               ) : null}
               <AmountStep
                 value={amountRaw}
-                unit={underlyingSymbol}
+                unit={supplySymbol}
                 error={amountError}
                 maxDisabled={balanceLoading || walletBalance === null}
                 minLiquidity={minLiquidity}
@@ -606,14 +607,14 @@ export function SupplyFlow() {
               />
               <TokenUsdSwitch
                 mode={usdMode}
-                tokenLabel={underlyingSymbol}
+                tokenLabel={supplySymbol}
                 usdAvailable={usdAvailable}
                 onChange={setUsdMode}
               />
               {parsedAmount.ok ? (
                 <Amount
                   token={weiToAmountInput(parsedAmount.value)}
-                  symbol={underlyingSymbol}
+                  symbol={supplySymbol}
                   usd={usdDisplay}
                   usdAvailable={usdAvailable}
                   mode={usdMode}
@@ -623,7 +624,7 @@ export function SupplyFlow() {
                 windowState={windowState}
                 window={windowModel}
                 selectedAprBps={selectedAprBps}
-                underlyingSymbol={underlyingSymbol}
+                underlyingSymbol={supplySymbol}
                 allRatesOpen={allRatesOpen}
                 ladder={ladder}
                 onSelect={(apr) => {
@@ -639,7 +640,7 @@ export function SupplyFlow() {
                 onCloseAllRates={() => setAllRatesOpen(false)}
               />
               {parsedAmount.ok && selectedAprBps !== null ? (
-                <QueuePlace ahead={ahead} amount={amountWei} unit={underlyingSymbol} state={queueState} />
+                <QueuePlace ahead={ahead} amount={amountWei} unit={supplySymbol} state={queueState} />
               ) : null}
               {parsedAmount.ok && selectedAprBps !== null && !amountError ? (
                 <SupplyFacts
@@ -647,7 +648,7 @@ export function SupplyFlow() {
                   aprBps={selectedAprBps}
                   expiry={market.expiryCached}
                   ahead={ahead}
-                  underlyingSymbol={underlyingSymbol}
+                  underlyingSymbol={supplySymbol}
                 />
               ) : null}
               {canContinue ? (
@@ -681,7 +682,7 @@ export function SupplyFlow() {
                 drifted={drifted || actionTx.needsReview || stale.staleRecovery}
                 checkpoint={checkpoint}
                 steps={ackTrace.steps}
-                underlyingSymbol={underlyingSymbol}
+                underlyingSymbol={supplySymbol}
                 expiry={market.expiryCached}
                 operator={lending}
                 tokenApproved={tokenApproved}

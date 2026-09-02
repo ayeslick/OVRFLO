@@ -23,7 +23,7 @@ import {
   type Hash,
   type Log,
 } from "viem";
-import { erc20Abi, ovrfloAbi, ovrfloFactoryAbi, ovrfloLendingAbi, sablierLockupAbi } from "@/lib/abis";
+import { erc20Abi, ovrfloAbi, ovrfloFactoryAbi, ovrfloLendingAbi, ovrfloReserveAbi, sablierLockupAbi } from "@/lib/abis";
 import { formatMaturityDate } from "@/lib/format";
 import { UNIT, floorToUnit, MIN_LIQUIDITY_AMOUNT, WAD, BPS, YEAR_SECONDS } from "@/lib/lending-math";
 import { DEV_WALLET_ADDRESS, LENDER_WALLET_ADDRESS } from "./mock-wallet";
@@ -60,6 +60,7 @@ type Deployment = {
   ovrflo: Address;
   token: Address;
   lending: Address;
+  reserve: Address;
   stream?: Address;
   primaryMarket: Address;
   primaryPt: Address;
@@ -319,7 +320,9 @@ export async function supplyLiquidityAs(params: {
   amount: bigint;
 }) {
   const client = walletFor(params.account);
-  await approveIfNeeded(client, WSTETH, params.lending, params.amount);
+  const deployment = readDeployment();
+  await wrapUnderlying({ account: params.account, amount: params.amount });
+  await approveIfNeeded(client, deployment.token, params.lending, params.amount);
   const hash = await client.writeContract({
     address: params.lending,
     abi: ovrfloLendingAbi,
@@ -383,12 +386,16 @@ function decodePositionId(logs: readonly Log[]) {
 // Arranges a wrapped ovrfloToken balance directly — used by unwrap.feature's
 // happy path so it doesn't depend on wrap.feature having run first (every
 // scenario gets its own fresh snapshot).
-export async function wrapUnderlying(params: { account: Address; ovrflo: Address; amount: bigint }) {
+export async function wrapUnderlying(params: { account: Address; amount: bigint }) {
   const client = walletFor(params.account);
-  await approveIfNeeded(client, WSTETH, params.ovrflo, params.amount);
+  const reserve = readDeployment().reserve;
+  if (!reserve || !/^0x[0-9a-fA-F]{40}$/.test(reserve)) {
+    throw new Error("reserve address missing — deployments/local.json must record reserve");
+  }
+  await approveIfNeeded(client, WSTETH, reserve, params.amount);
   const hash = await client.writeContract({
-    address: params.ovrflo,
-    abi: ovrfloAbi,
+    address: reserve,
+    abi: ovrfloReserveAbi,
     functionName: "wrap",
     args: [params.amount],
   });
@@ -398,11 +405,6 @@ export async function wrapUnderlying(params: { account: Address; ovrflo: Address
 export async function depositPtForStream(params: { account: Address; ovrflo: Address; market: Address; ptToken: Address; ptAmount: bigint }) {
   const client = walletFor(params.account);
   await approveIfNeeded(client, params.ptToken, params.ovrflo, params.ptAmount);
-  // Deposit pulls an underlying fee via safeTransferFrom (see OVRFLO.deposit
-  // NatSpec: "User must approve both PT token and underlying (for fee)").
-  // Over-approve by the full ptAmount — fee is feeBps of the immediate
-  // portion only, so this is always enough and avoids a separate quote.
-  await approveIfNeeded(client, WSTETH, params.ovrflo, params.ptAmount);
   const hash = await client.writeContract({
     address: params.ovrflo,
     abi: ovrfloAbi,
@@ -611,13 +613,13 @@ export async function borrowAgainstStream(params: {
     address: params.lending,
     abi: ovrfloLendingAbi,
     functionName: "borrow",
-    args: [params.market, params.aprBps, params.targetBorrow, params.streamId, 0n],
+    args: [params.market, params.aprBps, params.targetBorrow, params.streamId, 0n, params.account],
   });
   const hash = await client.writeContract({
     address: params.lending,
     abi: ovrfloLendingAbi,
     functionName: "borrow",
-    args: [params.market, params.aprBps, params.targetBorrow, params.streamId, 0n],
+    args: [params.market, params.aprBps, params.targetBorrow, params.streamId, 0n, params.account],
     gas: (estimatedGas * 130n) / 100n,
   });
   const receipt = await mineAndGetReceipt(hash);
