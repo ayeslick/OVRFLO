@@ -309,6 +309,18 @@ contract OVRFLOProtocolTest is VaultMockHelpers {
 
         assertGt(feeAmount, 0, "fee-bearing series");
 
+        // Every party starts with a non-zero underlying buffer so a stray underlying
+        // pull or push during deposit shows as a delta, not as a zero-equals-zero pass.
+        address reserveAddr = ovrflo.reserve();
+        underlying.mint(user, 5 ether);
+        underlying.mint(TREASURY, 5 ether);
+        underlying.mint(address(ovrflo), 5 ether);
+        underlying.mint(reserveAddr, 5 ether);
+        uint256 userUnderlyingBefore = underlying.balanceOf(user);
+        uint256 treasuryUnderlyingBefore = underlying.balanceOf(TREASURY);
+        uint256 vaultUnderlyingBefore = underlying.balanceOf(address(ovrflo));
+        uint256 reserveUnderlyingBefore = underlying.balanceOf(reserveAddr);
+
         vm.startPrank(user);
         vm.expectEmit(address(ovrflo));
         emit FeeTaken(user, address(ovrfloToken), feeAmount);
@@ -322,10 +334,11 @@ contract OVRFLOProtocolTest is VaultMockHelpers {
         assertEq(streamId, 77);
         assertEq(ptOne.balanceOf(user), 0);
         assertEq(ptOne.balanceOf(address(ovrflo)), 10 ether);
-        // Fee-from-mint: the treasury gains ovrfloToken, no underlying moves
-        assertEq(underlying.balanceOf(TREASURY), 0, "treasury underlying");
-        assertEq(underlying.balanceOf(user), 0, "user underlying");
-        assertEq(underlying.balanceOf(address(ovrflo)), 0, "vault underlying");
+        // Fee-from-mint: the treasury gains ovrfloToken; no party's underlying moves
+        assertEq(underlying.balanceOf(user), userUnderlyingBefore, "user underlying");
+        assertEq(underlying.balanceOf(TREASURY), treasuryUnderlyingBefore, "treasury underlying");
+        assertEq(underlying.balanceOf(address(ovrflo)), vaultUnderlyingBefore, "vault underlying");
+        assertEq(underlying.balanceOf(reserveAddr), reserveUnderlyingBefore, "reserve underlying");
         assertEq(ovrfloToken.balanceOf(TREASURY), feeAmount, "treasury fee in ovrfloToken");
         assertEq(ovrfloToken.balanceOf(user), toUser, "user net mint");
         assertEq(ovrfloToken.balanceOf(address(ovrflo)), toStream);

@@ -164,8 +164,9 @@ contract OVRFLOFactory is Ownable2Step {
     ///          and misses the vault-created token;
     ///      (2) token name/symbol carry the "OVRFLO "/"ovrflo" prefixes and fit 64/32 bytes;
     ///      (3) treasury and underlying are the intended values.
-    ///      Token ownership needs no check: the vault constructs its token, so
-    ///      `token.owner() == vault` holds by construction for canonical bytecode.
+    ///      Token minters need no check here: the vault constructs the reserve and the
+    ///      reserve constructs the token, so `token.vault() == ovrflo` and
+    ///      `token.reserve() == vault.reserve()` hold by construction for canonical bytecode.
     /// @param ovrflo The externally deployed OVRFLO vault address
     function registerOvrflo(address ovrflo) external onlyOwner {
         if (ovrflo == address(0)) revert ZeroAddress();

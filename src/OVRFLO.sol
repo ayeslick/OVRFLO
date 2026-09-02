@@ -139,7 +139,7 @@ contract OVRFLO {
     /// @param user The depositor's address
     /// @param market The Pendle market address
     /// @param ptAmount Total PT tokens deposited
-    /// @param toUser Amount of ovrfloTokens minted immediately
+    /// @param toUser Net ovrfloTokens minted to the depositor (after the fee)
     /// @param toStream Amount of ovrfloTokens sent to Sablier stream
     /// @param streamId The Sablier stream ID
     event Deposited(

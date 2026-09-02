@@ -163,6 +163,26 @@ contract OVRFLOWrapUnwrapTest is Test, FactoryStreamBind {
         assertEq(reserve.wrappedUnderlying(), 0);
     }
 
+    function test_Unwrap_PartialLeavesCounterAndVaultHoldsNoUnderlyingThroughout() public {
+        assertEq(underlying.balanceOf(address(ovrflo)), 0, "vault underlying before wrap");
+        _wrap(user, 10 ether);
+        assertEq(underlying.balanceOf(address(ovrflo)), 0, "vault underlying after wrap");
+        assertEq(underlying.balanceOf(address(reserve)), 10 ether);
+
+        vm.prank(user);
+        reserve.unwrap(7 ether);
+
+        assertEq(reserve.wrappedUnderlying(), 3 ether, "counter after partial unwrap");
+        assertEq(underlying.balanceOf(address(reserve)), 3 ether);
+        assertEq(underlying.balanceOf(user), 7 ether);
+        assertEq(ovrfloToken.balanceOf(user), 3 ether);
+        assertEq(underlying.balanceOf(address(ovrflo)), 0, "vault underlying after unwrap");
+
+        vm.prank(user);
+        vm.expectRevert(OVRFLOReserve.InsufficientReserve.selector);
+        reserve.unwrap(3 ether + 1);
+    }
+
     function test_WrapUnwrap_RoundTripRestoresBalancesAndReserve() public {
         uint256 amount = 7 ether;
         underlying.mint(user, amount);
