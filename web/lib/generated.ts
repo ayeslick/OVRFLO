@@ -709,6 +709,26 @@ export const ovrfloFactoryAbi = [
   },
   {
     type: 'function',
+    inputs: [
+      { name: 'ovrflo', internalType: 'address', type: 'address' },
+      { name: 'bps', internalType: 'uint16', type: 'uint16' },
+    ],
+    name: 'setReserveFlashFeeBps',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'ovrflo', internalType: 'address', type: 'address' },
+      { name: 'max', internalType: 'uint256', type: 'uint256' },
+    ],
+    name: 'setReserveFlashMintMax',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
     inputs: [{ name: 'descriptor', internalType: 'address', type: 'address' }],
     name: 'setStreamNFTDescriptor',
     outputs: [],
@@ -981,6 +1001,34 @@ export const ovrfloFactoryAbi = [
       },
     ],
     name: 'OwnershipTransferred',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'ovrflo',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      { name: 'bps', internalType: 'uint16', type: 'uint16', indexed: false },
+    ],
+    name: 'ReserveFlashFeeBpsSet',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'ovrflo',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      { name: 'max', internalType: 'uint256', type: 'uint256', indexed: false },
+    ],
+    name: 'ReserveFlashMintMaxSet',
   },
   {
     type: 'event',
@@ -2031,8 +2079,69 @@ export const ovrfloReserveAbi = [
   {
     type: 'function',
     inputs: [],
+    name: 'FLASH_FEE_MAX_BPS',
+    outputs: [{ name: '', internalType: 'uint16', type: 'uint16' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'FLASH_MINT_MAX_CEILING',
+    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
     name: 'factory',
     outputs: [{ name: '', internalType: 'address', type: 'address' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'token', internalType: 'address', type: 'address' },
+      { name: 'amount', internalType: 'uint256', type: 'uint256' },
+    ],
+    name: 'flashFee',
+    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'flashFeeBps',
+    outputs: [{ name: '', internalType: 'uint16', type: 'uint16' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [
+      {
+        name: 'receiver',
+        internalType: 'contract IERC3156FlashBorrower',
+        type: 'address',
+      },
+      { name: 'token', internalType: 'address', type: 'address' },
+      { name: 'amount', internalType: 'uint256', type: 'uint256' },
+      { name: 'data', internalType: 'bytes', type: 'bytes' },
+    ],
+    name: 'flashLoan',
+    outputs: [{ name: '', internalType: 'bool', type: 'bool' }],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'flashMintMax',
+    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: 'token', internalType: 'address', type: 'address' }],
+    name: 'maxFlashLoan',
+    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
     stateMutability: 'view',
   },
   {
@@ -2041,6 +2150,20 @@ export const ovrfloReserveAbi = [
     name: 'ovrfloToken',
     outputs: [{ name: '', internalType: 'address', type: 'address' }],
     stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: 'bps', internalType: 'uint16', type: 'uint16' }],
+    name: 'setFlashFeeBps',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: 'max', internalType: 'uint256', type: 'uint256' }],
+    name: 'setFlashMintMax',
+    outputs: [],
+    stateMutability: 'nonpayable',
   },
   {
     type: 'function',
@@ -2108,6 +2231,48 @@ export const ovrfloReserveAbi = [
     type: 'event',
     anonymous: false,
     inputs: [
+      { name: 'bps', internalType: 'uint16', type: 'uint16', indexed: false },
+    ],
+    name: 'FlashFeeBpsSet',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'receiver',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'initiator',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'amount',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
+      { name: 'fee', internalType: 'uint256', type: 'uint256', indexed: false },
+    ],
+    name: 'FlashLoan',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      { name: 'max', internalType: 'uint256', type: 'uint256', indexed: false },
+    ],
+    name: 'FlashMintMaxSet',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
       { name: 'user', internalType: 'address', type: 'address', indexed: true },
       {
         name: 'amount',
@@ -2132,11 +2297,17 @@ export const ovrfloReserveAbi = [
     ],
     name: 'Wrapped',
   },
+  { type: 'error', inputs: [], name: 'FlashCallbackFailed' },
+  { type: 'error', inputs: [], name: 'FlashExceedsMax' },
+  { type: 'error', inputs: [], name: 'FlashFeeTooHigh' },
+  { type: 'error', inputs: [], name: 'FlashMintMaxTooHigh' },
+  { type: 'error', inputs: [], name: 'FlashSupplyChanged' },
   { type: 'error', inputs: [], name: 'InsufficientReserve' },
   { type: 'error', inputs: [], name: 'NoExcess' },
   { type: 'error', inputs: [], name: 'NotAdmin' },
   { type: 'error', inputs: [], name: 'ReserveExceedsBalance' },
   { type: 'error', inputs: [], name: 'TransferMismatch' },
+  { type: 'error', inputs: [], name: 'UnsupportedFlashToken' },
   { type: 'error', inputs: [], name: 'ZeroAddress' },
   { type: 'error', inputs: [], name: 'ZeroAmount' },
 ] as const

@@ -1,10 +1,16 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+import {Test} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IERC3156FlashBorrower} from "@openzeppelin/contracts/interfaces/IERC3156FlashBorrower.sol";
 import {LendingMockFixture} from "./helpers/LendingMockFixture.sol";
+import {OVRFLO} from "../src/OVRFLO.sol";
 import {OVRFLOLending} from "../src/OVRFLOLending.sol";
+import {OVRFLOReserve} from "../src/OVRFLOReserve.sol";
+import {OVRFLOToken} from "../src/OVRFLOToken.sol";
 import {TestERC20} from "./mocks/TestERC20.sol";
+import {MockOvrfloAdmin} from "./mocks/MockOvrfloAdmin.sol";
 import {MockLendingFactory, MockLendingCore, MockLendingSablier} from "./mocks/LendingMocks.sol";
 
 /// @notice Malicious ERC20 that re-enters the book on an outbound transfer.
@@ -280,5 +286,64 @@ contract OVRFLOAttackScenariosLendingTest is LendingMockFixture {
         book = new OVRFLOLending(address(bookFactory), address(bookCore), address(bookSablier), APR);
         vm.prank(address(bookFactory));
         book.setTickSpacing(MARKET, SPACING);
+    }
+}
+
+/// @dev Nested-flash callback used only by the reserve attack suite.
+contract NestedFlashAttacker is IERC3156FlashBorrower {
+    OVRFLOReserve public immutable reserve;
+    bool public nestedAttempted;
+    bool public nestedSucceeded;
+
+    constructor(OVRFLOReserve reserve_) {
+        reserve = reserve_;
+    }
+
+    function onFlashLoan(address, address token, uint256 amount, uint256 fee, bytes calldata)
+        external
+        returns (bytes32)
+    {
+        nestedAttempted = true;
+        try reserve.flashLoan(this, token, amount, "") {
+            nestedSucceeded = true;
+        } catch {}
+        IERC20(token).approve(address(reserve), amount + fee);
+        return keccak256("ERC3156FlashBorrower.onFlashLoan");
+    }
+}
+
+/// @title Flash-mint attack scenarios (CS2). PT flash attack members stay gone.
+contract OVRFLOAttackScenariosFlashMintTest is Test {
+    address internal constant TREASURY = address(0xBEEF);
+    address internal constant DUMMY_ORACLE = address(0x0AAC);
+
+    function test_Attack_NestedFlashMintCannotInflateSupply() public {
+        TestERC20 underlying = new TestERC20("Underlying", "UND");
+        MockOvrfloAdmin admin = new MockOvrfloAdmin(TREASURY, address(underlying), address(0));
+        OVRFLO ovrflo = new OVRFLO(
+            address(admin),
+            TREASURY,
+            address(underlying),
+            "OVRFLO Underlying",
+            "ovrfloUND",
+            DUMMY_ORACLE,
+            address(admin)
+        );
+        OVRFLOReserve reserve = OVRFLOReserve(ovrflo.reserve());
+        OVRFLOToken token = OVRFLOToken(ovrflo.ovrfloToken());
+        NestedFlashAttacker attacker = new NestedFlashAttacker(reserve);
+
+        vm.prank(address(admin));
+        reserve.setFlashMintMax(10 ether);
+
+        uint256 supplyBefore = token.totalSupply();
+        reserve.flashLoan(attacker, address(token), 1 ether, "");
+
+        assertTrue(attacker.nestedAttempted(), "nested flash was never attempted");
+        assertFalse(attacker.nestedSucceeded(), "nested flash minted a second time");
+        assertEq(token.totalSupply(), supplyBefore);
+        assertEq(token.balanceOf(address(attacker)), 0);
+        assertEq(token.balanceOf(TREASURY), 0);
+        assertEq(token.balanceOf(address(reserve)), 0);
     }
 }

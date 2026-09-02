@@ -5,9 +5,37 @@
       "offset": 0,
       "slot": "0",
       "type": "t_uint256"
+    },
+    {
+      "label": "flashMintMax",
+      "offset": 0,
+      "slot": "1",
+      "type": "t_uint256"
+    },
+    {
+      "label": "flashFeeBps",
+      "offset": 0,
+      "slot": "2",
+      "type": "t_uint16"
+    },
+    {
+      "label": "flashEntered",
+      "offset": 2,
+      "slot": "2",
+      "type": "t_bool"
     }
   ],
   "types": {
+    "t_bool": {
+      "encoding": "inplace",
+      "label": "bool",
+      "numberOfBytes": "1"
+    },
+    "t_uint16": {
+      "encoding": "inplace",
+      "label": "uint16",
+      "numberOfBytes": "2"
+    },
     "t_uint256": {
       "encoding": "inplace",
       "label": "uint256",

@@ -666,6 +666,14 @@ contract OVRFLOFactoryTest is Test, FactoryStreamBind {
         vm.prank(STRANGER);
         vm.expectRevert("Ownable: caller is not the owner");
         factory.sweepExcessUnderlying(address(ovrflo), RECIPIENT);
+
+        vm.prank(STRANGER);
+        vm.expectRevert("Ownable: caller is not the owner");
+        factory.setReserveFlashMintMax(address(ovrflo), 1 ether);
+
+        vm.prank(STRANGER);
+        vm.expectRevert("Ownable: caller is not the owner");
+        factory.setReserveFlashFeeBps(address(ovrflo), 1);
     }
 
     function test_TransferOwnership_TwoStepHandoffUpdatesOwnerAndAllowsNewOwnerActions() public {

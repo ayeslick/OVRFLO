@@ -150,6 +150,8 @@ contract OVRFLOFactory is Ownable2Step {
     event LendingRouterSet(address indexed lending, address indexed router);
     event OvrfloStreamSet(address indexed stream);
     event StreamNFTDescriptorSet(address indexed descriptor);
+    event ReserveFlashMintMaxSet(address indexed ovrflo, uint256 max);
+    event ReserveFlashFeeBpsSet(address indexed ovrflo, uint16 bps);
 
     /*//////////////////////////////////////////////////////////////
                               CONSTRUCTOR
@@ -329,6 +331,29 @@ contract OVRFLOFactory is Ownable2Step {
     function sweepExcessUnderlying(address ovrflo, address to) external onlyOwner {
         _requireKnownOvrflo(ovrflo);
         OVRFLOReserve(ovrfloToReserve[ovrflo]).sweepExcessUnderlying(to);
+    }
+
+    /// @notice Set the per-call flash-mint cap on a registered column's reserve
+    /// @dev Timelock: `onlyOwner` on the factory, which is the timelocked Safe.
+    ///      `max == 0` disables mint. The economic cap is `amount <= flashMintMax`.
+    ///      The reserve reverts above `FLASH_MINT_MAX_CEILING`.
+    /// @param ovrflo Registered vault
+    /// @param max New cap
+    function setReserveFlashMintMax(address ovrflo, uint256 max) external onlyOwner {
+        _requireKnownOvrflo(ovrflo);
+        OVRFLOReserve(ovrfloToReserve[ovrflo]).setFlashMintMax(max);
+        emit ReserveFlashMintMaxSet(ovrflo, max);
+    }
+
+    /// @notice Set the flash-mint fee in bps on a registered column's reserve
+    /// @dev Timelock: `onlyOwner` on the factory, which is the timelocked Safe.
+    ///      The reserve reverts above `FLASH_FEE_MAX_BPS` (9).
+    /// @param ovrflo Registered vault
+    /// @param bps New fee in basis points
+    function setReserveFlashFeeBps(address ovrflo, uint16 bps) external onlyOwner {
+        _requireKnownOvrflo(ovrflo);
+        OVRFLOReserve(ovrfloToReserve[ovrflo]).setFlashFeeBps(bps);
+        emit ReserveFlashFeeBpsSet(ovrflo, bps);
     }
 
     /// @notice Increase Pendle oracle cardinality for a market (must be done before addMarket)

@@ -28,7 +28,7 @@ An OVRFLO vault has two backing sources for the same receipt token: matured prin
 
 ### OVRFLOReserve
 
-The wrap-reserve contract for one column. The vault constructs it. It constructs the column's ovrfloToken. It holds the underlying that backs 1:1 wrap and unwrap. Admin is the factory. `wrappedUnderlying` is the tracked unwrap bound. Direct transfers do not increase that counter. Excess underlying above the counter can be swept. ERC-3156 flash mint of ovrfloToken is a later unit (CS2) and is not live in `src/` yet.
+The wrap-reserve contract for one column. The vault constructs it. It constructs the column's ovrfloToken. It holds the underlying that backs 1:1 wrap and unwrap. Admin is the factory. `wrappedUnderlying` is the tracked unwrap bound. Direct transfers do not increase that counter. Excess underlying above the counter can be swept. ERC-3156 flash mint of ovrfloToken lives here. `flashMintMax` launches at 0. The factory raises it through `setReserveFlashMintMax`. Wrap and unwrap stay callable in the callback. Net `totalSupply` does not change.
 
 ### Combined solvency
 
@@ -106,7 +106,7 @@ A per-column overlay. The Markets app shows amounts in USD by default when that 
 
 ### Flash mint
 
-An atomic ERC-3156 mint of ovrfloToken from `OVRFLOReserve`, repaid in the same transaction. Later unit (CS2). Not live in `src/` yet. The economic cap is a factory-set per-call `flashMintMax`. Wrap and unwrap stay callable in the callback. Net `totalSupply` does not change.
+An atomic ERC-3156 mint of ovrfloToken from `OVRFLOReserve`, repaid in the same transaction. The economic cap is a factory-set per-call `flashMintMax`. Launch `flashMintMax` is 0, so mint is off until the Safe raises it. Wrap and unwrap stay callable in the callback. Nested flash reverts. Net `totalSupply` does not change.
 
 ### Request book
 
