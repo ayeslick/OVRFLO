@@ -13,7 +13,7 @@ import {
   type StreamMarket,
   type HydratedStream,
 } from "./useStreams";
-import { chainId, isConfiguredAddress, ZERO_ADDRESS } from "@/lib/config";
+import { chainId, isConfiguredAddress, rpcUrl, ZERO_ADDRESS } from "@/lib/config";
 import { pinnedQuery, QUERY_RETRY, streamBookKeys } from "@/lib/query-keys";
 import { bookFields, presentBook, unreadBookFailure } from "@/lib/stream-book";
 import { loadCompleteStreams } from "@/lib/protocol/streams";
@@ -67,7 +67,7 @@ export function useCompleteStreams(input: {
         discovered,
         input.account,
         pin,
-        { signal, pinMode: pinState.mode },
+        { signal, pinMode: pinState.mode, providerKey: rpcUrl },
       );
       if (outcome.status === "unavailable") {
         for (const failure of outcome.failures) {

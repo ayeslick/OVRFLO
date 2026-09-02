@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   decodeFunctionData,
   encodeFunctionResult,
@@ -7,6 +7,11 @@ import {
 } from "viem";
 import { LENS_CREATION_BYTECODE, ovrfloStreamLensAbi } from "@/lib/generated/lens-bytecode";
 import type { BlockPin } from "@/lib/protocol/pin";
+import {
+  DEFAULT_DEPLOYLESS_PROVIDER_KEY,
+  resetDeploylessCapabilityCache,
+  setDeploylessCapability,
+} from "@/lib/protocol/pin-probe";
 import {
   COMPLETE_SET_UNBOUNDED_MAX,
   COMPLETE_SET_WINDOW,
@@ -141,6 +146,15 @@ function expectDeploylessLensCall(args: CallArgs | undefined) {
   expect(args!.to).toBeUndefined();
   expectHashPin(args!);
 }
+
+beforeEach(() => {
+  setDeploylessCapability(DEFAULT_DEPLOYLESS_PROVIDER_KEY, "streamsOfOwner", true);
+  setDeploylessCapability(DEFAULT_DEPLOYLESS_PROVIDER_KEY, "streamsOfOwnerIn", true);
+});
+
+afterEach(() => {
+  resetDeploylessCapabilityCache();
+});
 
 describe("loadStreamPage", () => {
   it("returns a ready page stamped with fetchedAtMs, blockNumber, and blockHash", async () => {

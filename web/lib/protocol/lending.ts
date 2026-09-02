@@ -56,6 +56,7 @@ export type BorrowerPage = {
   sourceCount: bigint;
 };
 
+/** Plain market views. Deployless lenses live in streams.ts behind pin-probe. */
 export type LendingReadClient = Pick<PublicClient, "readContract">;
 
 export type LendingReadOptions = {

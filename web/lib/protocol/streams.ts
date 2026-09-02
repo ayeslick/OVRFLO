@@ -11,7 +11,16 @@ import {
   ovrfloStreamLensAbi,
 } from "@/lib/generated/lens-bytecode";
 import { sablierLockupAbi } from "@/lib/abis";
+import { ZERO_ADDRESS } from "@/lib/config";
 import { callPin, type BlockPin, type PinMode } from "./pin";
+import {
+  DEFAULT_DEPLOYLESS_PROVIDER_KEY,
+  ensureDeploylessCapability,
+  isDeploylessCapabilityMiss,
+  lensPolicyOverride,
+  setDeploylessCapability,
+  type DeploylessLensId,
+} from "./pin-probe";
 import {
   protocolPartial,
   protocolReady,
@@ -67,11 +76,12 @@ export type StreamPage = {
   streams: readonly StreamView[];
 };
 
-type LensBatchName = "streamsOfOwner" | "streamsOfOwnerIn";
+type LensBatchName = DeploylessLensId;
 
 export type StreamReadOptions = {
   signal?: AbortSignal;
   pinMode?: PinMode;
+  providerKey?: string;
 };
 
 function transportFailure(source: string, error: unknown): ReadFailure {
@@ -93,6 +103,12 @@ async function lensCall(
   args: readonly unknown[],
   options?: StreamReadOptions,
 ): Promise<{ rows: StreamView[] } | { failure: ReadFailure }> {
+  const providerKey = options?.providerKey ?? DEFAULT_DEPLOYLESS_PROVIDER_KEY;
+  const supported = await ensureDeploylessCapability(client, pin, providerKey, functionName);
+  if (!supported) {
+    return plainLensCall(client, pin, functionName, args, options);
+  }
+
   let data: Hex | undefined;
   try {
     const encoded = encodeFunctionData({
@@ -103,11 +119,16 @@ async function lensCall(
     const result = await client.call({
       code: LENS_CREATION_BYTECODE,
       data: encoded,
+      stateOverride: [lensPolicyOverride(functionName)],
       ...callPin(pin, options?.pinMode ?? "hash"),
       ...(options?.signal ? { requestOptions: { signal: options.signal } } : {}),
     });
     data = result.data;
   } catch (error) {
+    if (isDeploylessCapabilityMiss(error)) {
+      setDeploylessCapability(providerKey, functionName, false);
+      return plainLensCall(client, pin, functionName, args, options);
+    }
     return { failure: transportFailure("lens", error) };
   }
   if (!data || data === "0x") {
@@ -122,6 +143,138 @@ async function lensCall(
     return { rows };
   } catch (error) {
     return { failure: invalidFailure("lens", error instanceof Error ? error.message : String(error)) };
+  }
+}
+
+const LOCKUP_STATUS_CANCELED = 3;
+const LOCKUP_STATUS_DEPLETED = 4;
+
+function failedStreamView(streamId: bigint): StreamView {
+  return {
+    streamId,
+    owner: ZERO_ADDRESS,
+    sender: ZERO_ADDRESS,
+    asset: ZERO_ADDRESS,
+    startTime: 0,
+    cliffTime: 0,
+    endTime: 0,
+    deposited: 0n,
+    withdrawn: 0n,
+    refunded: 0n,
+    withdrawableAmount: 0n,
+    status: 0,
+    isCancelable: false,
+    isDepleted: false,
+    wasCanceled: false,
+    ok: false,
+  };
+}
+
+async function plainHydrateOne(
+  client: StreamReadClient,
+  lockup: Address,
+  streamId: bigint,
+  pin: BlockPin,
+  options?: StreamReadOptions,
+): Promise<StreamView> {
+  const pinArgs = callPin(pin, options?.pinMode ?? "hash");
+  const request = options?.signal ? { requestOptions: { signal: options.signal } } : {};
+  try {
+    const stream = await client.readContract({
+      address: lockup,
+      abi: sablierLockupAbi,
+      functionName: "getStream",
+      args: [streamId],
+      ...pinArgs,
+      ...request,
+    });
+    const owner = await client.readContract({
+      address: lockup,
+      abi: sablierLockupAbi,
+      functionName: "ownerOf",
+      args: [streamId],
+      ...pinArgs,
+      ...request,
+    });
+    const withdrawableAmount = await client.readContract({
+      address: lockup,
+      abi: sablierLockupAbi,
+      functionName: "withdrawableAmountOf",
+      args: [streamId],
+      ...pinArgs,
+      ...request,
+    });
+    const status = await client.readContract({
+      address: lockup,
+      abi: sablierLockupAbi,
+      functionName: "statusOf",
+      args: [streamId],
+      ...pinArgs,
+      ...request,
+    });
+    const statusCode = Number(status);
+    return {
+      streamId,
+      owner,
+      sender: stream.sender,
+      asset: stream.asset,
+      startTime: Number(stream.startTime),
+      cliffTime: Number(stream.cliffTime),
+      endTime: Number(stream.endTime),
+      deposited: stream.amounts.deposited,
+      withdrawn: stream.amounts.withdrawn,
+      refunded: stream.amounts.refunded,
+      withdrawableAmount,
+      status: statusCode,
+      isCancelable: stream.isCancelable,
+      isDepleted: statusCode === LOCKUP_STATUS_DEPLETED,
+      wasCanceled: statusCode === LOCKUP_STATUS_CANCELED,
+      ok: true,
+    };
+  } catch {
+    return failedStreamView(streamId);
+  }
+}
+
+async function plainLensCall(
+  client: StreamReadClient,
+  pin: BlockPin,
+  functionName: LensBatchName,
+  args: readonly unknown[],
+  options?: StreamReadOptions,
+): Promise<{ rows: StreamView[] } | { failure: ReadFailure }> {
+  const lockup = args[0] as Address;
+  const owner = args[1] as Address;
+  const pinArgs = callPin(pin, options?.pinMode ?? "hash");
+  const request = options?.signal ? { requestOptions: { signal: options.signal } } : {};
+  try {
+    let start = 0n;
+    let stop = 0n;
+    if (functionName === "streamsOfOwnerIn") {
+      start = args[2] as bigint;
+      stop = args[3] as bigint;
+    } else {
+      const counted = await readBalance(client, lockup, owner, pin, options);
+      if ("failure" in counted) return counted;
+      if (counted.balance === 0n) return { rows: [] };
+      start = 0n;
+      stop = counted.balance;
+    }
+    const ids = await client.readContract({
+      address: lockup,
+      abi: sablierLockupAbi,
+      functionName: "tokensOfOwnerIn",
+      args: [owner, start, stop],
+      ...pinArgs,
+      ...request,
+    });
+    const rows: StreamView[] = [];
+    for (const streamId of ids) {
+      rows.push(await plainHydrateOne(client, lockup, streamId, pin, options));
+    }
+    return { rows };
+  } catch (error) {
+    return { failure: transportFailure("lockup", error) };
   }
 }
 

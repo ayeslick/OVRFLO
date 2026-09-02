@@ -1,4 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { custom } from "viem";
 import {
   classifyRpcFailure,
@@ -232,5 +235,21 @@ describe("bounded log reads", () => {
       }),
     ).resolves.toEqual([]);
     expect(secondary).toHaveBeenCalled();
+  });
+});
+
+describe("public-read / write boundary", () => {
+  const webRoot = join(dirname(fileURLToPath(import.meta.url)), "../..");
+
+  it("keeps lending hydration on readContract and wallet writes off viem-dlc", () => {
+    const lending = readFileSync(join(webRoot, "lib/protocol/lending.ts"), "utf8");
+    expect(lending).not.toMatch(/stateOverride/);
+    expect(lending).not.toMatch(/\bcode:/);
+    expect(lending).not.toMatch(/from ["']@morpho-org\/viem-dlc/);
+    const writeFlow = readFileSync(join(webRoot, "hooks/useWriteFlow.ts"), "utf8");
+    expect(writeFlow).not.toMatch(/from ["']@morpho-org\/viem-dlc/);
+    expect(writeFlow).toMatch(/getWalletClient/);
+    const wagmi = readFileSync(join(webRoot, "lib/wagmi.ts"), "utf8");
+    expect(wagmi).not.toMatch(/from ["']@morpho-org\/viem-dlc/);
   });
 });

@@ -3,11 +3,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
+  useConfig,
   useConnection,
   usePublicClient,
-  useWalletClient,
   useWriteContract,
 } from "wagmi";
+import { getWalletClient } from "wagmi/actions";
 import { decodeFunctionData, isAddressEqual, type Address, type Log } from "viem";
 import { useTransactionExecutor } from "./useTransactionExecutor";
 import {
@@ -61,8 +62,8 @@ export function useWriteFlow(
   const queryClient = useQueryClient();
   const bootstrap = useProtocolBootstrap();
   const connection = useConnection();
+  const config = useConfig();
   const publicClient = usePublicClient({ chainId: configuredChainId });
-  const wallet = useWalletClient({ chainId: configuredChainId });
   const identityRef = useRef<ActionIdentity | null>(null);
   identityRef.current =
     (connection.addresses?.[0] ?? user) && connection.chainId !== undefined
@@ -101,13 +102,13 @@ export function useWriteFlow(
       getIdentity: async () => identityRef.current,
       authorize: async (authorization, identity) => {
         if (!publicClient) throw new Error("Public client is unavailable");
-        if (!wallet.data) throw new Error("Wallet client is unavailable");
-
         const send = async (
           address: Address,
           abi: typeof erc20Abi | typeof sablierLockupAbi,
           args: readonly [Address, bigint],
         ) => {
+          const walletClient = await getWalletClient(config, { chainId: configuredChainId });
+          if (!walletClient) throw new Error("Wallet client is unavailable");
           const simulated = await publicClient.simulateContract({
             address,
             abi,
@@ -119,7 +120,7 @@ export function useWriteFlow(
           if (!sameActionIdentity(identity, identityRef.current)) {
             throw new Error("Wallet identity changed during authorization simulation");
           }
-          const hash = await wallet.data.writeContract(simulated.request as never);
+          const hash = await walletClient.writeContract(simulated.request as never);
           const receipt = await publicClient.waitForTransactionReceipt({
             hash,
             confirmations: RECEIPT_CONFIRMATIONS,
@@ -175,8 +176,9 @@ export function useWriteFlow(
         return { request: simulated.request as unknown as ExactSimulationRequest };
       },
       submit: async (request) => {
-        if (!wallet.data) throw new Error("Wallet client is unavailable");
-        return wallet.data.writeContract(request as never);
+        const walletClient = await getWalletClient(config, { chainId: configuredChainId });
+        if (!walletClient) throw new Error("Wallet client is unavailable");
+        return walletClient.writeContract(request as never);
       },
       waitForReceipt: async (hash) => {
         if (!publicClient) throw new Error("Public client is unavailable");
@@ -301,7 +303,7 @@ export function useWriteFlow(
         });
       },
     }),
-    [publicClient, queryClient, wallet.data],
+    [config, publicClient, queryClient],
   );
   const executor = useTransactionExecutor(runtime);
   const resetExecutor = executor.reset;

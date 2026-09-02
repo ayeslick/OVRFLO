@@ -26,6 +26,11 @@ const publicClient = {
   getBytecode: vi.fn(),
 };
 const walletClient = { writeContract: vi.fn() };
+const freshWalletClient = { writeContract: vi.fn() };
+const getWalletClientMock = vi.fn(
+  async (_config?: unknown, _parameters?: unknown) => walletClient,
+);
+const wagmiConfig = { id: "write-flow-config" };
 const wagmiState = {
   address: user,
   chainId: 1,
@@ -61,8 +66,14 @@ vi.mock("wagmi", () => ({
   }),
   usePublicClient: () => publicClient,
   useWalletClient: () => ({ data: walletClient }),
+  useConfig: () => wagmiConfig,
   // Imported by useWriteFlow only to preserve its public generic call type.
   useWriteContract: vi.fn(),
+}));
+
+vi.mock("wagmi/actions", () => ({
+  getWalletClient: (config: unknown, parameters?: unknown) =>
+    getWalletClientMock(config, parameters),
 }));
 
 function createWrapper(projectionMarket = token) {
@@ -118,6 +129,12 @@ describe("useWriteFlow executor adapter", () => {
     publicClient.readContract.mockReset();
     publicClient.getBytecode.mockReset();
     walletClient.writeContract.mockReset();
+    freshWalletClient.writeContract.mockReset();
+    getWalletClientMock.mockReset();
+    getWalletClientMock.mockImplementation(
+      async (_config?: unknown, _parameters?: unknown) => walletClient,
+    );
+    freshWalletClient.writeContract.mockResolvedValue(hash);
     publicClient.simulateContract.mockImplementation(async (request) => ({
       request: { ...request, gas: 123n },
     }));
@@ -617,6 +634,7 @@ describe("useWriteFlow executor adapter", () => {
     expect(publicClient.simulateContract).toHaveBeenCalledTimes(4);
     expect(walletClient.writeContract).toHaveBeenCalledTimes(4);
     expect(publicClient.waitForTransactionReceipt).toHaveBeenCalledTimes(4);
+    expect(getWalletClientMock).toHaveBeenCalledTimes(4);
   });
 
   it("resolves a replaced transaction to the new hash (same nonce)", async () => {
@@ -682,5 +700,23 @@ describe("useWriteFlow executor adapter", () => {
     expect(hook.result.current.error?.message).toBe(
       "The transaction failed. Check the entered values and try again.",
     );
+  });
+
+  it("reacquires a fresh wallet client at the prompt after a public-read identity change", async () => {
+    getWalletClientMock.mockImplementation(async () => freshWalletClient);
+    const { wrapper } = createWrapper();
+    const hook = renderHook(() => useWriteFlow(user, [token]), { wrapper });
+
+    act(() => {
+      wagmiState.address = token;
+      hook.rerender();
+    });
+    await submit(hook.result);
+
+    expect(getWalletClientMock).toHaveBeenCalledWith(wagmiConfig, { chainId: 1 });
+    expect(freshWalletClient.writeContract).toHaveBeenCalled();
+    expect(walletClient.writeContract).not.toHaveBeenCalled();
+    const simulated = await publicClient.simulateContract.mock.results[0]!.value;
+    expect(freshWalletClient.writeContract.mock.calls[0]![0]).toBe(simulated.request);
   });
 });

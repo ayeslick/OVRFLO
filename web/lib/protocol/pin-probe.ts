@@ -1,9 +1,12 @@
+import { policy } from "@morpho-org/viem-dlc/actions";
 import {
   decodeFunctionResult,
   encodeFunctionData,
+  type AbiFunction,
   type Hex,
   type PublicClient,
 } from "viem";
+import { ovrfloStreamLensAbi } from "@/lib/generated/lens-bytecode";
 import type { BlockPin } from "./pin";
 
 /**
@@ -109,4 +112,156 @@ export async function selectPastPin(
   const notPast = pastPinError(latest, pin);
   if (notPast) return { skip: notPast };
   return { pin };
+}
+
+export const DEFAULT_DEPLOYLESS_PROVIDER_KEY = "public-read";
+export const DEPLOYLESS_PROBE_TIMEOUT_MS = 5_000;
+
+export type DeploylessLensId = "streamsOfOwner" | "streamsOfOwnerIn";
+export type DeploylessCapabilityId = DeploylessLensId | "hash-pin";
+
+const LENS_POLICY_BATCH = {
+  batchSize: 1 << 15,
+  gas: { constant: 50_000, linear: 30_000, quadratic: 0 },
+} as const;
+
+const capabilityCache = new Map<string, boolean>();
+
+export function capabilityCacheKey(providerKey: string, id: DeploylessCapabilityId) {
+  return `${providerKey}::${id}`;
+}
+
+export function resetDeploylessCapabilityCache() {
+  capabilityCache.clear();
+}
+
+export function getDeploylessCapability(
+  providerKey: string,
+  id: DeploylessCapabilityId,
+): boolean | undefined {
+  return capabilityCache.get(capabilityCacheKey(providerKey, id));
+}
+
+export function setDeploylessCapability(
+  providerKey: string,
+  id: DeploylessCapabilityId,
+  supported: boolean,
+) {
+  capabilityCache.set(capabilityCacheKey(providerKey, id), supported);
+}
+
+export function invalidateDeploylessCapability(providerKey: string, id?: DeploylessCapabilityId) {
+  if (id) {
+    capabilityCache.delete(capabilityCacheKey(providerKey, id));
+    return;
+  }
+  const prefix = `${providerKey}::`;
+  for (const key of [...capabilityCache.keys()]) {
+    if (key.startsWith(prefix)) capabilityCache.delete(key);
+  }
+}
+
+export function lensPolicyAbi(lens: DeploylessLensId): AbiFunction {
+  const entry = ovrfloStreamLensAbi.find((item) => item.type === "function" && item.name === lens);
+  if (!entry || entry.type !== "function") {
+    throw new Error(`Missing lens ABI ${lens}`);
+  }
+  return entry as AbiFunction;
+}
+
+export function lensPolicyOverride(lens: DeploylessLensId) {
+  return policy({
+    abi: lensPolicyAbi(lens),
+    batch: LENS_POLICY_BATCH,
+  });
+}
+
+export function isDeploylessCapabilityMiss(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /state.?override|not supported|invalid params|method not found|timed out|timeout/i.test(
+    message,
+  );
+}
+
+function withTimeout<T>(timeoutMs: number, run: () => Promise<T>): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("probe timed out")), timeoutMs);
+    run().then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
+
+export type LensPolicyClient = Pick<PublicClient, "call">;
+
+/**
+ * Harmless deployless pin call plus real viem-dlc `policy(...)` state override.
+ * Caches only the supported boolean — never the returned height as chain authority.
+ */
+export async function probeLensPolicy(
+  client: LensPolicyClient,
+  pin: BlockPin,
+  lens: DeploylessLensId,
+  options?: { timeoutMs?: number },
+): Promise<PinProbeResult> {
+  const timeoutMs = options?.timeoutMs ?? DEPLOYLESS_PROBE_TIMEOUT_MS;
+  try {
+    const { data } = await withTimeout(timeoutMs, () =>
+      client.call({
+        code: PIN_PROBE_CREATION_BYTECODE,
+        data: encodeFunctionData({ abi: pinProbeAbi, functionName: "blockNumber" }),
+        stateOverride: [lensPolicyOverride(lens)],
+        blockHash: pin.blockHash,
+        requireCanonical: true,
+      }),
+    );
+    if (!data || data === "0x") {
+      return { supported: false, error: "probe returned empty data" };
+    }
+    try {
+      const returnedBlockNumber = decodeFunctionResult({
+        abi: pinProbeAbi,
+        functionName: "blockNumber",
+        data,
+      });
+      return {
+        supported: returnedBlockNumber === pin.blockNumber,
+        returnedBlockNumber,
+      };
+    } catch (error) {
+      return {
+        supported: false,
+        error: error instanceof Error ? error.message : "malformed probe result",
+      };
+    }
+  } catch (error) {
+    return {
+      supported: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+export async function ensureDeploylessCapability(
+  client: LensPolicyClient,
+  pin: BlockPin,
+  providerKey: string,
+  id: DeploylessCapabilityId,
+  options?: { timeoutMs?: number },
+): Promise<boolean> {
+  const cached = getDeploylessCapability(providerKey, id);
+  if (cached !== undefined) return cached;
+  const result =
+    id === "hash-pin"
+      ? await probeHashPin(client as PinProbeClient, pin)
+      : await probeLensPolicy(client, pin, id, options);
+  setDeploylessCapability(providerKey, id, result.supported);
+  return result.supported;
 }

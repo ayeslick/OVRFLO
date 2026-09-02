@@ -1,0 +1,79 @@
+# Scratch decision record — schema: docs/maps/SCHEMAS.md §4
+summary_ref: "docs/plans/2026-08-22-001-refactor-denomination-switch-border-column-plan.md#cs5-u3"
+
+goal: >
+  Gate deployless stream lenses on a real per-provider, per-lens viem-dlc
+  policy() state-override probe. Cache the supported boolean only. On a miss,
+  timeout, or malformed reply, read the same pin through lockup view calls.
+  Reacquire a fresh wallet client at each prompt. Do not transform writes.
+
+state_keys_touched: []
+
+writers_readers:
+  - writes: web/lib/protocol/pin-probe.ts
+  - writes: web/lib/protocol/streams.ts
+  - writes: web/hooks/useWriteFlow.ts
+  - writes: web/lib/wagmi.ts
+  - reads: web/lib/protocol/lending.ts
+  - reads: web/lib/rpc.ts
+  - reads: web/lib/query-client.ts
+  - reads: web/lib/discovery/portfolio-log-candidates.ts
+
+trust_domains:
+  - fact: provider and lens deployless capability
+    domain: pure-client
+    moved_from: null
+  - fact: stream owner, schedule, and withdrawable at a pin
+    domain: on-chain
+    moved_from: null
+  - fact: wallet identity at prompt
+    domain: on-chain
+    moved_from: null
+
+rejected_alternatives:
+  - option: Infer deployless support from client type or chain id
+    why_not: KD18 requires a real probe. Client type is not capability.
+  - option: Wrap public-read transports with viem-dlc deployless()
+    why_not: That wrapper strips the policy sentinel before the provider sees it.
+      The probe would not test the provider.
+  - option: Cache the probe's returned block as query data
+    why_not: The ticket caches capability, not returned chain authority.
+  - option: One passing lens enables every lens on that provider
+    why_not: CS5-U3 scenario 2 and 6 gate each provider/lens pair.
+  - option: Combine eth-compress stateDiff with policy() on one eth_call
+    why_not: KD19 and tickets 21/22 own that split. This ticket must not mix them.
+  - option: Rewrite portfolio-log-candidates as the getLogs owner
+    why_not: Ticket 13 owns that module and runs in parallel.
+
+invariants_held:
+  - invariant: Hash-pin probe and lens policy probes stay separate
+    how: probeHashPin keeps the deployless block.number bytecode. probeLensPolicy
+      attaches real policy() stateOverride and keys the cache by provider plus lens.
+  - invariant: Unsupported or ambiguous probes use the same-pin plain path
+    how: streams.ts retries tokensOfOwnerIn plus getStream at the same BlockPin.
+  - invariant: Writes never go through viem-dlc
+    how: useWriteFlow calls getWalletClient at each prompt. wagmi.ts still does
+      not import the package. Simulation stays an untransformed wallet request.
+  - invariant: TanStack Query stays the only UI chain-state store
+    how: The capability table is a boolean map. It does not store call results.
+  - invariant: One getLogs owner
+    how: This ticket does not edit portfolio-log-candidates.ts.
+
+risks:
+  - risk: Failover may send a deployless call to a URL that failed its own probe
+    residual: A deployless miss invalidates that provider/lens pair and retries
+      the same pin on the plain path.
+  - risk: Plain hydration is N lockup calls instead of one lens call
+    residual: Accepted fallback. Completeness still follows ReadOutcome.
+  - risk: A wallet hook snapshot could still be used if getWalletClient is skipped
+    residual: Tests require getWalletClient at authorize and submit.
+
+diff_hints:
+  - path: web/lib/protocol/pin-probe.ts
+    why: Hash-pin stays. New policy() probe and capability cache live here.
+  - path: web/lib/protocol/streams.ts
+    why: Lens calls run only after a passing probe. Plain reads share the pin.
+  - path: web/hooks/useWriteFlow.ts
+    why: Each prompt reacquires getWalletClient and ignores public-read cache.
+  - path: web/tests/lib/protocol/pin-probe.test.ts
+    why: Named CS5-U3 scenarios 1-6.

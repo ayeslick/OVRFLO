@@ -9,6 +9,8 @@ import { createOrderedReadTransport } from "./rpc";
 
 // Public-read transports only. Wallet connectors stay on the adapter's
 // untransformed write path and must not import @morpho-org/viem-dlc.
+// useWriteFlow reacquires a fresh wallet client at each prompt via
+// getWalletClient. That client never wraps this transport.
 
 // Production wallet stack only. The E2E runtime never imports this module —
 // constructing `WagmiAdapter` performs Reown/WalletConnect setup at module

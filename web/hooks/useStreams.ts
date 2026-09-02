@@ -11,7 +11,7 @@ import {
 } from "viem";
 import { useProtocolBootstrap } from "./useProtocolBootstrap";
 import { useEnumerationPin } from "./useEnumerationPin";
-import { chainId, isConfiguredAddress, ZERO_ADDRESS } from "@/lib/config";
+import { chainId, isConfiguredAddress, rpcUrl, ZERO_ADDRESS } from "@/lib/config";
 import { MIN_STREAM_AMOUNT, STREAM_PAGE_SIZE } from "@/lib/lending-math";
 import { classifyRpcFailure } from "@/lib/rpc";
 import { pinnedQuery, QUERY_RETRY, streamBookKeys } from "@/lib/query-keys";
@@ -291,7 +291,7 @@ export function useStreams(input: {
         start,
         stop,
         pin,
-        { signal, pinMode: pinState.mode },
+        { signal, pinMode: pinState.mode, providerKey: rpcUrl },
       );
       if (pinState.mode === "number" && outcome.status !== "unavailable") {
         const verified = await verifyPinHash(publicClient, pin);

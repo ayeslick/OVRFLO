@@ -53,5 +53,10 @@ describe("CS5 public-read dependency isolation", () => {
     expect(readFileSync(join(webRoot, "components/WalletRuntime.tsx"), "utf8")).not.toMatch(dlcImport);
     expect(readFileSync(join(webRoot, "tests/e2e/support/WalletRuntime.tsx"), "utf8")).not.toMatch(dlcImport);
     expect(readFileSync(join(webRoot, "tests/e2e/fixtures/chain.ts"), "utf8")).not.toMatch(dlcImport);
+    const pinProbe = readFileSync(join(webRoot, "lib/protocol/pin-probe.ts"), "utf8");
+    expect(pinProbe).toMatch(/from ["']@morpho-org\/viem-dlc\/actions["']/);
+    expect(pinProbe).toMatch(/\bpolicy\(/);
+    expect(readFileSync(join(webRoot, "lib/protocol/lending.ts"), "utf8")).not.toMatch(dlcImport);
+    expect(readFileSync(join(webRoot, "hooks/useWriteFlow.ts"), "utf8")).toMatch(/getWalletClient/);
   });
 });
