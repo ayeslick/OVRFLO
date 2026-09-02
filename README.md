@@ -174,6 +174,8 @@ Registry and admin hub for externally deployed OVRFLO vaults and OVRFLOLending m
 | `setMarketDepositLimit(ovrflo, market, limit)` | Set deposit cap for a market |
 | `sweepExcessPt(ovrflo, ptToken, to)` | Sweep excess PT from an OVRFLO vault |
 | `sweepExcessUnderlying(ovrflo, to)` | Sweep excess underlying from that vault's `OVRFLOReserve` |
+| `setReserveFlashMintMax(ovrflo, max)` | Set that column's per-call flash-mint cap. Launch 0. Ceiling 100 billion whole tokens |
+| `setReserveFlashFeeBps(ovrflo, bps)` | Set that column's flash-mint fee. Launch 0. Cap 9 bps |
 | `transferOwnership(newOwner)` | Nominate a new factory owner (two-step; new owner must call `acceptOwnership`) |
 | `acceptOwnership()` | Called by the pending owner to finalize the ownership transfer |
 
@@ -199,7 +201,7 @@ The core vault that creates collateral from Pendle PT deposits. Depositors recei
 
 ### OVRFLOReserve.sol
 
-Wrap reserve for one column. Holds the underlying that backs 1:1 wrapped ovrfloToken. The vault constructs this contract; this contract constructs the token. Admin is the factory. `wrappedUnderlying` is the tracked unwrap bound. Direct transfers do not increase that counter. PT flash is not on this contract; ERC-3156 flash mint of ovrfloToken is a later unit (CS2).
+Wrap reserve for one column. Holds the underlying that backs 1:1 wrapped ovrfloToken. The vault constructs this contract; this contract constructs the token. Admin is the factory. `wrappedUnderlying` is the tracked unwrap bound. Direct transfers do not increase that counter. PT flash is not on this contract. ERC-3156 flash mint of ovrfloToken lives here. Launch `flashMintMax` is 0.
 
 | Function | Description |
 |----------|-------------|
@@ -207,6 +209,8 @@ Wrap reserve for one column. Holds the underlying that backs 1:1 wrapped ovrfloT
 | `wrap(amount)` | Pull underlying 1:1, mint ovrfloToken (permissionless, no fee, no stream) |
 | `unwrap(amount)` | Burn ovrfloToken 1:1, send underlying, bounded by `wrappedUnderlying` |
 | `sweepExcessUnderlying(to)` | Sweep underlying above `wrappedUnderlying` (factory admin). Sweep `to` is trusted to the multisig (R-02) |
+| `maxFlashLoan(token)` / `flashFee(token, amount)` / `flashLoan(receiver, token, amount, data)` | ERC-3156 flash mint of ovrfloToken. Launch cap is 0. Nested flash reverts. Net `totalSupply` does not change |
+| `setFlashMintMax(max)` / `setFlashFeeBps(bps)` | Factory admin. Ceiling 100 billion whole tokens. Fee cap 9 bps |
 
 ### OVRFLOToken.sol
 

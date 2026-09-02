@@ -174,7 +174,7 @@ The composition of PT deposit, lending, and unwrap or swap that lets the PT disc
 
 ### PT flash loan
 
-**Removed (CS1).** The vault no longer lends deposited PT. Historical EIP-4531 `OVRFLO.flashLoan` is gone. Do not describe PT flash as a live vault facility. ERC-3156 flash mint of ovrfloToken on `OVRFLOReserve` is a later unit (see "Flash mint").
+**Removed (CS1).** The vault no longer lends deposited PT. Historical EIP-4531 `OVRFLO.flashLoan` is gone. Do not describe PT flash as a live vault facility. ERC-3156 flash mint of ovrfloToken lives on `OVRFLOReserve` (see "Flash mint").
 
 ## OVRFLOLending v1-lite
 

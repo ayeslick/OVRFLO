@@ -95,3 +95,5 @@ Fuzz and invariant files: no minimum edits. Plain `forge test` compiled and went
 Extra vs predicted blast radius: `test/OVRFLOFactory.t.sol` (two stranger-call rows on the owner-gating census). `test/DeploySize.t.sol`, `wagmi.config.ts`, and `check-storage-layout.sh` needed no edit.
 
 Reuse: OZ IERC3156, factory `_requireKnownOvrflo` plus `ovrfloToReserve`, tiny local `IVaultTreasury` so `OVRFLO.sol` is not imported.
+
+Review (gpt-5.6-sol-medium, report only): no build or protocol bug. Two live-status leftovers said CS2 was still later. This chat applied those plus the same class of leftover in `README.md` and `x-ray/flash-loan-invariant-check.md`.

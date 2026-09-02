@@ -27,7 +27,7 @@ Read from the bottom. Each layer names the layer below. It does not restate that
 | 5. Product modes | What the customer sees | Eight Markets map regions (watch, borrow, supply, rates, …) | `Default` / `Advanced` over one action graph. `DESIGN.md` is normative. The eight regions stay the live control map until CS4 lands. |
 | 6. Agent cockpit | How you drive the repo | this file, then the hop table | unchanged |
 
-`src/` is live after CS1 for column wiring. CS2 flash mint, CS3 request book, and CS4 product modes remain target. Do not write a sentence that mixes live `src/` with an unbuilt later unit.
+`src/` is live after CS1 column wiring and CS2 flash mint. CS3 request book and CS4 product modes remain target. Do not write a sentence that mixes live `src/` with an unbuilt later unit.
 
 ---
 
