@@ -176,7 +176,7 @@ contract OVRFLOLendingGas is LendingMockFixture {
 
         // The attacker holds exactly one atom — never more — for the whole campaign.
         _fundLender(GRIEFER, atom);
-        uint256 startBalance = underlying.balanceOf(GRIEFER);
+        uint256 startBalance = ovrfloToken.balanceOf(GRIEFER);
         assertEq(startBalance, atom, "attacker starts with exactly one atom");
 
         uint256 firstId = lending.nextPositionId();
@@ -196,8 +196,8 @@ contract OVRFLOLendingGas is LendingMockFixture {
         console2.log("gas per cycle                     :", gasUsed / cycles);
 
         // Capital-neutral: the atom comes back, so the deterrent is gas and only gas.
-        assertEq(underlying.balanceOf(GRIEFER), startBalance, "griefing must not consume capital");
-        assertEq(underlying.balanceOf(address(lending)), 0, "no residue escrowed after the cycle");
+        assertEq(ovrfloToken.balanceOf(GRIEFER), startBalance, "griefing must not consume capital");
+        assertEq(ovrfloToken.balanceOf(address(lending)), 0, "no residue escrowed after the cycle");
 
         // Leaves are permanent: every cycle appended a coordinate that will never be
         // reclaimed. This is the state cost the gas price is buying.
@@ -237,7 +237,7 @@ contract OVRFLOLendingGas is LendingMockFixture {
         lending.supply(MARKET, APR_WARMUP, 1 ether);
         _createStream(99, BORROWER, _faceForGross(100 ether));
         vm.prank(BORROWER);
-        lending.borrow(MARKET, APR_WARMUP, 1 ether, 99, 0);
+        lending.borrow(MARKET, APR_WARMUP, 1 ether, 99, 0, address(0));
     }
 
     /// @dev Measures one `borrow` in isolation. `gasleft()` is the GAS opcode, not an
@@ -245,7 +245,7 @@ contract OVRFLOLendingGas is LendingMockFixture {
     function _measureBorrow(uint16 aprBps, uint128 target, uint256 streamId) internal returns (uint256 gasUsed) {
         vm.prank(BORROWER);
         uint256 gasBefore = gasleft();
-        lending.borrow(MARKET, aprBps, target, streamId, 0);
+        lending.borrow(MARKET, aprBps, target, streamId, 0, address(0));
         gasUsed = gasBefore - gasleft();
     }
 

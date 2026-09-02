@@ -435,7 +435,7 @@ abstract contract OVRFLOLendingHandler is Properties {
         (, snap.filledCurrentBefore,,,,) = lending.fizz_epochState(_market, aprBps, snap.currentBefore);
         (snap.positionsSampled, snap.positionsHashBefore) = _samplePositionsHash();
 
-        uint256 loanId = lending.borrow(_market, aprBps, targetBorrow, streamId, minAcceptable);
+        uint256 loanId = lending.borrow(_market, aprBps, targetBorrow, streamId, minAcceptable, address(0));
         loanIds.push(loanId);
 
         {

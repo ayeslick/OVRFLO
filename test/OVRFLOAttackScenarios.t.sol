@@ -95,20 +95,20 @@ contract OVRFLOAttackScenariosLendingTest is LendingMockFixture {
 
         // Half two: one atom, recycled. The attacker never needs a second one.
         uint256 cycles = 10;
-        uint256 startBalance = underlying.balanceOf(GRIEFER);
+        uint256 startBalance = ovrfloToken.balanceOf(GRIEFER);
         uint256 firstId = lending.nextPositionId();
 
         for (uint256 i = 0; i < cycles; ++i) {
             vm.prank(GRIEFER);
             uint256 positionId = lending.supply(MARKET, APR, atom);
             // Exactly one atom is escrowed per leaf — never less.
-            assertEq(underlying.balanceOf(address(lending)), atom, "escrow is not one atom");
+            assertEq(ovrfloToken.balanceOf(address(lending)), atom, "escrow is not one atom");
             vm.prank(GRIEFER);
             lending.withdraw(positionId);
         }
 
-        assertEq(underlying.balanceOf(GRIEFER), startBalance, "spam consumed capital");
-        assertEq(underlying.balanceOf(address(lending)), 0, "escrow residue after spam");
+        assertEq(ovrfloToken.balanceOf(GRIEFER), startBalance, "spam consumed capital");
+        assertEq(ovrfloToken.balanceOf(address(lending)), 0, "escrow residue after spam");
 
         // The state cost is permanent: every cycle left a leaf behind that no withdraw
         // reclaims. This is the damage the gas price is buying, and it is why the
@@ -136,7 +136,7 @@ contract OVRFLOAttackScenariosLendingTest is LendingMockFixture {
 
         uint128 stake = 10 ether;
         _fundLender(SELF_FILLER, stake);
-        uint256 startBalance = underlying.balanceOf(SELF_FILLER);
+        uint256 startBalance = ovrfloToken.balanceOf(SELF_FILLER);
 
         vm.prank(SELF_FILLER);
         uint256 positionId = lending.supply(MARKET, APR, stake);
@@ -144,19 +144,19 @@ contract OVRFLOAttackScenariosLendingTest is LendingMockFixture {
         // The same actor pledges a stream and consumes its own resting liquidity.
         _createStream(1, SELF_FILLER, _faceForGross(100 ether));
         vm.prank(SELF_FILLER);
-        uint256 loanId = lending.borrow(MARKET, APR, stake, 1, 0);
+        uint256 loanId = lending.borrow(MARKET, APR, stake, 1, 0, address(0));
 
         (OVRFLOLending.Loan memory loan, uint128 outstanding) = lending.loanState(loanId);
         uint128 actualBorrow = uint128(uint256(loan.fillEnd - loan.fillStart) * lending.UNIT());
         assertEq(actualBorrow, stake, "self-fill did not consume the full stake");
 
-        uint256 feePaid = underlying.balanceOf(LENDING_TREASURY);
+        uint256 feePaid = ovrfloToken.balanceOf(LENDING_TREASURY);
         assertGt(feePaid, 0, "fee-zero market makes this test vacuous");
 
         // All-party balances (pattern #6): the round trip cost exactly the fee.
-        assertEq(underlying.balanceOf(SELF_FILLER), startBalance - feePaid, "self-fill was not fee-neutral");
-        assertEq(underlying.balanceOf(address(lending)), 0, "underlying stranded in the book");
-        assertEq(underlying.balanceOf(SELF_FILLER) + feePaid, startBalance, "underlying created or destroyed");
+        assertEq(ovrfloToken.balanceOf(SELF_FILLER), startBalance - feePaid, "self-fill was not fee-neutral");
+        assertEq(ovrfloToken.balanceOf(address(lending)), 0, "ovrfloToken stranded in the book");
+        assertEq(ovrfloToken.balanceOf(SELF_FILLER) + feePaid, startBalance, "ovrfloToken created or destroyed");
 
         // And the actor is strictly worse off in every other dimension: the stream is
         // escrowed and a debt is outstanding against it.
@@ -190,33 +190,32 @@ contract OVRFLOAttackScenariosLendingTest is LendingMockFixture {
     ///      the `withdraw`-targeted version of this test still passed. It fails as it
     ///      should against the target below.
     function test_Attack_ReentrancyBlockedOnBorrowPayoutPath() public {
-        ReentrantLendingUnderlying hostileUnderlying = new ReentrantLendingUnderlying("Hostile UND", "hUND");
-        (OVRFLOLending book, MockLendingSablier bookSablier, TestERC20 bookOvrflo) =
-            _deployBookWith(address(hostileUnderlying), address(0));
+        ReentrantLendingUnderlying hostileOvrflo = new ReentrantLendingUnderlying("Hostile OVRFLO", "hOVR");
+        TestERC20 plainUnderlying = new TestERC20("Underlying", "UND");
+        (OVRFLOLending book, MockLendingSablier bookSablier,) =
+            _deployBookWith(address(plainUnderlying), address(hostileOvrflo));
 
-        hostileUnderlying.mint(LENDER, 100 ether);
+        hostileOvrflo.mint(LENDER, 100 ether);
         vm.startPrank(LENDER);
-        hostileUnderlying.approve(address(book), type(uint256).max);
+        hostileOvrflo.approve(address(book), type(uint256).max);
         book.supply(MARKET, APR, 100 ether);
         vm.stopPrank();
 
         // Arm only now: the supply above must not trip it (that path is `transferFrom`).
-        hostileUnderlying.configureAttack(
-            address(book), abi.encodeCall(OVRFLOLending.advanceEpochCursor, (MARKET, APR, 1))
-        );
+        hostileOvrflo.configureAttack(address(book), abi.encodeCall(OVRFLOLending.advanceEpochCursor, (MARKET, APR, 1)));
 
         bookSablier.setStream(
-            500, BORROWER, address(bookCore), IERC20(address(bookOvrflo)), uint40(expiry), 0, false, 102 ether, 0
+            500, BORROWER, address(bookCore), IERC20(address(hostileOvrflo)), uint40(expiry), 0, false, 102 ether, 0
         );
         vm.prank(BORROWER);
         bookSablier.approve(address(book), 500);
 
-        // `_payUnderlying` calls `transfer` with the book as msg.sender — the attack fires.
+        // `_payToken` calls `transfer` with the book as msg.sender — the attack fires.
         vm.prank(BORROWER);
-        book.borrow(MARKET, APR, 10 ether, 500, 0);
+        book.borrow(MARKET, APR, 10 ether, 500, 0, address(0));
 
-        assertTrue(hostileUnderlying.reentered(), "reentry was never attempted - test is vacuous");
-        assertFalse(hostileUnderlying.reenterSucceeded(), "reentry succeeded - guard failed");
+        assertTrue(hostileOvrflo.reentered(), "reentry was never attempted - test is vacuous");
+        assertFalse(hostileOvrflo.reenterSucceeded(), "reentry succeeded - guard failed");
     }
 
     /// @notice The `nonReentrant` guard blocks reentry through `claim`'s harvest payout.
@@ -231,9 +230,9 @@ contract OVRFLOAttackScenariosLendingTest is LendingMockFixture {
         (OVRFLOLending book, MockLendingSablier bookSablier,) =
             _deployBookWith(address(plainUnderlying), address(hostileOvrflo));
 
-        plainUnderlying.mint(LENDER, 100 ether);
+        hostileOvrflo.mint(LENDER, 100 ether);
         vm.startPrank(LENDER);
-        plainUnderlying.approve(address(book), type(uint256).max);
+        hostileOvrflo.approve(address(book), type(uint256).max);
         uint256 positionId = book.supply(MARKET, APR, 100 ether);
         vm.stopPrank();
 
@@ -243,7 +242,7 @@ contract OVRFLOAttackScenariosLendingTest is LendingMockFixture {
         vm.prank(BORROWER);
         bookSablier.approve(address(book), 500);
         vm.prank(BORROWER);
-        uint256 loanId = book.borrow(MARKET, APR, 10 ether, 500, 0);
+        uint256 loanId = book.borrow(MARKET, APR, 10 ether, 500, 0, address(0));
 
         // Vest some accrual so the claim has a deficit to harvest.
         bookSablier.setWithdrawable(500, 5 ether);

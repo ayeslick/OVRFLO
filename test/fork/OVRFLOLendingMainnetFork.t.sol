@@ -235,7 +235,7 @@ contract OVRFLOLendingMainnetForkTest is OVRFLOForkBase {
         internal
         returns (OVRFLOLending lending, ISablierV2LockupLinear sablier, uint256 streamId, uint256 loanId)
     {
-        (OVRFLOFactory factory, OVRFLO ovrflo,) = _deployApprovedPrimarySeries(0);
+        (OVRFLOFactory factory, OVRFLO ovrflo, OVRFLOToken token) = _deployApprovedPrimarySeries(0);
         lending = _deployLending(factory, ovrflo);
         sablier = ISablierV2LockupLinear(address(ovrflo.sablierLL()));
         (,, streamId) = _depositPrimary(ovrflo, PT_AMOUNT);
@@ -247,14 +247,16 @@ contract OVRFLOLendingMainnetForkTest is OVRFLOForkBase {
 
         _seedWstEth(LENDER, target);
         vm.startPrank(LENDER);
-        IERC20(WSTETH).approve(address(lending), target);
+        IERC20(WSTETH).approve(address(ovrflo.reserve()), target);
+        OVRFLOReserve(ovrflo.reserve()).wrap(target);
+        token.approve(address(lending), target);
         lending.supply(PRIMARY_MARKET, APR, target);
         vm.stopPrank();
 
         vm.prank(USER);
         _approveStream(address(sablier), address(lending), streamId);
         vm.prank(USER);
-        loanId = lending.borrow(PRIMARY_MARKET, APR, target, streamId, 0);
+        loanId = lending.borrow(PRIMARY_MARKET, APR, target, streamId, 0, address(0));
     }
 
     /// @dev Half the stream's discounted gross price, floored onto the UNIT lattice and

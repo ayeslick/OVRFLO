@@ -56,19 +56,17 @@ abstract contract LendingMockFixture is Test {
         lending.setTickSpacing(MARKET, SPACING);
     }
 
-    /// @notice Mints underlying to `who` and grants the book an unlimited allowance.
-    function _fundLender(address who, uint256 amount) internal {
-        underlying.mint(who, amount);
-        vm.prank(who);
-        underlying.approve(address(lending), type(uint256).max);
-    }
-
     /// @notice Mints ovrfloToken to `who` and grants the book an unlimited allowance.
-    /// @dev Repayment is denominated in ovrfloToken, so repay-path suites fund here.
-    function _fundRepayer(address who, uint256 amount) internal {
+    /// @dev Supply, withdraw, and repay all move ovrfloToken after the denomination switch.
+    function _fundLender(address who, uint256 amount) internal {
         ovrfloToken.mint(who, amount);
         vm.prank(who);
         ovrfloToken.approve(address(lending), type(uint256).max);
+    }
+
+    /// @notice Alias of `_fundLender` — repay uses the same ovrfloToken path.
+    function _fundRepayer(address who, uint256 amount) internal {
+        _fundLender(who, amount);
     }
 
     /// @notice Creates a `requireEligible`-passing stream owned by `owner`.

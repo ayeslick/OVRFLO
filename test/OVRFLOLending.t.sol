@@ -67,6 +67,8 @@ contract OVRFLOLendingTest is Test {
     address internal constant THIRD_LENDER = address(0xC0C);
     address internal constant BORROWER = address(0xD0C);
     address internal constant SECOND_BORROWER = address(0xD0D);
+    address internal constant ROUTER = address(0x8087);
+    address internal constant HUMAN = address(0x808A);
 
     uint16 internal constant APR = 1000;
     uint16 internal constant SPACING = 25;
@@ -88,6 +90,7 @@ contract OVRFLOLendingTest is Test {
     );
     event Withdrawn(uint256 indexed positionId, address indexed lender, uint128 refund, uint128 remainingLeaf);
     event TickSpacingSet(address indexed market, uint16 spacing);
+    event LendingRouterSet(address indexed router);
     event Borrowed(
         uint256 indexed loanId,
         address indexed borrower,
@@ -131,15 +134,18 @@ contract OVRFLOLendingTest is Test {
         core.setSeries(MARKET, expiry, address(ovrfloToken), address(underlying));
         lending = new LendingInternalHarness(address(factory), address(core), address(sablier));
 
+        ovrfloToken.mint(LENDER, 1_000 ether);
+        ovrfloToken.mint(SECOND_LENDER, 1_000 ether);
+        ovrfloToken.mint(THIRD_LENDER, 1_000 ether);
         underlying.mint(LENDER, 1_000 ether);
         underlying.mint(SECOND_LENDER, 1_000 ether);
         underlying.mint(THIRD_LENDER, 1_000 ether);
         vm.prank(LENDER);
-        underlying.approve(address(lending), type(uint256).max);
+        ovrfloToken.approve(address(lending), type(uint256).max);
         vm.prank(SECOND_LENDER);
-        underlying.approve(address(lending), type(uint256).max);
+        ovrfloToken.approve(address(lending), type(uint256).max);
         vm.prank(THIRD_LENDER);
-        underlying.approve(address(lending), type(uint256).max);
+        ovrfloToken.approve(address(lending), type(uint256).max);
     }
 
     function test_Constructor_WiresRegistryAndInitialAdminState() public view {
@@ -147,8 +153,8 @@ contract OVRFLOLendingTest is Test {
         assertEq(lending.core(), address(core));
         assertEq(address(lending.sablier()), address(sablier));
         assertEq(lending.treasury(), TREASURY);
-        assertEq(lending.underlying(), address(underlying));
         assertEq(lending.ovrfloToken(), address(ovrfloToken));
+        assertEq(lending.router(), address(0));
         assertEq(lending.aprMinBps(), 0);
         assertEq(lending.aprMaxBps(), APR);
         assertEq(lending.UNIT(), 1e12);
@@ -181,6 +187,13 @@ contract OVRFLOLendingTest is Test {
         OVRFLOLending atCap = new OVRFLOLending(address(factory), address(core), address(sablier), ceiling);
         assertEq(atCap.aprMinBps(), 0);
         assertEq(atCap.aprMaxBps(), ceiling);
+    }
+
+    function test_Constructor_ReadsOvrfloInfoAndRejectsZeroUnderlyingWithoutStoringIt() public {
+        factory.setInfo(address(core), TREASURY, address(0), address(ovrfloToken));
+        vm.expectRevert(OVRFLOLending.ZeroAddress.selector);
+        new OVRFLOLending(address(factory), address(core), address(sablier), APR);
+        factory.setInfo(address(core), TREASURY, address(underlying), address(ovrfloToken));
     }
 
     function test_SetTickSpacing_SetsOnceAndEmits() public {
@@ -248,6 +261,83 @@ contract OVRFLOLendingTest is Test {
         assertEq(lending.treasury(), STRANGER);
     }
 
+    function test_SetRouter_AcceptsZeroAndAnyNonzeroAndEmits() public {
+        vm.expectRevert("Ownable: caller is not the owner");
+        vm.prank(STRANGER);
+        lending.setRouter(ROUTER);
+
+        vm.expectEmit(true, false, false, true, address(lending));
+        emit LendingRouterSet(ROUTER);
+        vm.prank(address(factory));
+        lending.setRouter(ROUTER);
+        assertEq(lending.router(), ROUTER);
+
+        vm.expectEmit(true, false, false, true, address(lending));
+        emit LendingRouterSet(address(0));
+        vm.prank(address(factory));
+        lending.setRouter(address(0));
+        assertEq(lending.router(), address(0));
+    }
+
+    function test_Borrow_NonRouterWrongOnBehalfOfStillOwnsTheLoan() public {
+        vm.prank(address(factory));
+        lending.setTickSpacing(MARKET, SPACING);
+        _supply(LENDER, 10 ether, APR);
+        _createStream(STREAM_ONE, BORROWER, 10.2 ether);
+
+        vm.prank(BORROWER);
+        uint256 loanId = lending.borrow(MARKET, APR, 5 ether, STREAM_ONE, 5 ether, HUMAN);
+
+        assertEq(_loan(loanId).borrower, BORROWER);
+        assertEq(ovrfloToken.balanceOf(BORROWER), 5 ether);
+        assertEq(ovrfloToken.balanceOf(HUMAN), 0);
+        assertEq(lending.borrowerLoanCount(BORROWER), 1);
+        assertEq(lending.borrowerLoanAt(BORROWER, 0), loanId);
+        assertEq(lending.borrowerLoanCount(HUMAN), 0);
+        assertEq(sablier.ownerOf(STREAM_ONE), address(lending));
+    }
+
+    function test_Borrow_RouterOnBehalfOfHumanPaysIndexesAndReturnsStream() public {
+        vm.prank(address(factory));
+        lending.setTickSpacing(MARKET, SPACING);
+        vm.prank(address(factory));
+        lending.setRouter(ROUTER);
+        _supply(LENDER, 10 ether, APR);
+        _createStream(STREAM_ONE, ROUTER, 10.2 ether);
+
+        vm.expectEmit(true, true, true, true, address(lending));
+        emit Borrowed(1, HUMAN, MARKET, APR, 0, 0, 0, 5_000_000, 5 ether, 0, 5.1 ether, STREAM_ONE);
+
+        vm.prank(ROUTER);
+        uint256 loanId = lending.borrow(MARKET, APR, 5 ether, STREAM_ONE, 5 ether, HUMAN);
+
+        assertEq(_loan(loanId).borrower, HUMAN);
+        assertEq(ovrfloToken.balanceOf(HUMAN), 5 ether);
+        assertEq(ovrfloToken.balanceOf(ROUTER), 0);
+        assertEq(lending.borrowerLoanCount(HUMAN), 1);
+        assertEq(lending.borrowerLoanAt(HUMAN, 0), loanId);
+        assertEq(lending.borrowerLoanCount(ROUTER), 0);
+        assertEq(sablier.ownerOf(STREAM_ONE), address(lending));
+
+        sablier.setWithdrawable(STREAM_ONE, 5.1 ether);
+        lending.close(loanId);
+        assertEq(sablier.ownerOf(STREAM_ONE), HUMAN);
+        assertTrue(_loan(loanId).closed);
+    }
+
+    function test_Borrow_RouterOnBehalfOfZeroReverts() public {
+        vm.prank(address(factory));
+        lending.setTickSpacing(MARKET, SPACING);
+        vm.prank(address(factory));
+        lending.setRouter(ROUTER);
+        _supply(LENDER, 10 ether, APR);
+        _createStream(STREAM_ONE, ROUTER, 10.2 ether);
+
+        vm.prank(ROUTER);
+        vm.expectRevert(OVRFLOLending.ZeroAddress.selector);
+        lending.borrow(MARKET, APR, 5 ether, STREAM_ONE, 0, address(0));
+    }
+
     function test_Supply_RevertsBeforeSpacingIsSet() public {
         vm.prank(LENDER);
         vm.expectRevert(OVRFLOLending.SpacingUnset.selector);
@@ -266,8 +356,10 @@ contract OVRFLOLendingTest is Test {
         uint256 positionId = lending.supply(MARKET, APR, amount);
 
         assertEq(positionId, 1);
-        assertEq(underlying.balanceOf(LENDER), 1_000 ether - amount);
-        assertEq(underlying.balanceOf(address(lending)), amount);
+        assertEq(ovrfloToken.balanceOf(LENDER), 1_000 ether - amount);
+        assertEq(ovrfloToken.balanceOf(address(lending)), amount);
+        assertEq(underlying.balanceOf(LENDER), 1_000 ether);
+        assertEq(underlying.balanceOf(address(lending)), 0);
 
         (address lender, address market, uint16 aprBps, uint32 epoch, uint32 leafIndex) = lending.positions(positionId);
         assertEq(lender, LENDER);
@@ -363,7 +455,7 @@ contract OVRFLOLendingTest is Test {
         vm.prank(address(factory));
         lending.setTickSpacing(MARKET, SPACING);
         uint128 amount = uint128((uint256(type(uint64).max) + 1) * lending.UNIT());
-        underlying.mint(LENDER, amount);
+        ovrfloToken.mint(LENDER, amount);
 
         vm.prank(LENDER);
         vm.expectRevert("SafeCast: value doesn't fit in 64 bits");
@@ -396,8 +488,8 @@ contract OVRFLOLendingTest is Test {
         vm.prank(LENDER);
         lending.withdraw(positionId);
 
-        assertEq(underlying.balanceOf(LENDER), 1_000 ether);
-        assertEq(underlying.balanceOf(address(lending)), 0);
+        assertEq(ovrfloToken.balanceOf(LENDER), 1_000 ether);
+        assertEq(ovrfloToken.balanceOf(address(lending)), 0);
         (uint64 root,,,,) = lending.exposed_epochState(MARKET, APR, 0);
         assertEq(root, 0);
 
@@ -420,9 +512,9 @@ contract OVRFLOLendingTest is Test {
         vm.prank(LENDER);
         lending.withdraw(positionId);
 
-        assertEq(underlying.balanceOf(LENDER), 998 ether);
-        assertEq(underlying.balanceOf(SECOND_LENDER), 990 ether);
-        assertEq(underlying.balanceOf(address(lending)), 12 ether);
+        assertEq(ovrfloToken.balanceOf(LENDER), 998 ether);
+        assertEq(ovrfloToken.balanceOf(SECOND_LENDER), 990 ether);
+        assertEq(ovrfloToken.balanceOf(address(lending)), 12 ether);
         (uint64 root, uint64 filled,,,) = lending.exposed_epochState(MARKET, APR, 0);
         assertEq(root, 12 ether / lending.UNIT());
         assertEq(filled, 12 ether / lending.UNIT());
@@ -451,7 +543,7 @@ contract OVRFLOLendingTest is Test {
         vm.prank(LENDER);
         lending.withdraw(positionId);
 
-        assertEq(underlying.balanceOf(LENDER), 1_000 ether);
+        assertEq(ovrfloToken.balanceOf(LENDER), 1_000 ether);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -471,9 +563,13 @@ contract OVRFLOLendingTest is Test {
 
         assertEq(loanId, 1);
         assertEq(lending.nextLoanId(), 2);
-        assertEq(underlying.balanceOf(BORROWER), 5 ether);
-        assertEq(underlying.balanceOf(LENDER), 980 ether);
-        assertEq(underlying.balanceOf(address(lending)), 15 ether);
+        assertEq(ovrfloToken.balanceOf(BORROWER), 5 ether);
+        assertEq(ovrfloToken.balanceOf(LENDER), 980 ether);
+        assertEq(ovrfloToken.balanceOf(address(lending)), 15 ether);
+        assertEq(ovrfloToken.balanceOf(TREASURY), 0);
+        assertEq(underlying.balanceOf(BORROWER), 0);
+        assertEq(underlying.balanceOf(LENDER), 1_000 ether);
+        assertEq(underlying.balanceOf(address(lending)), 0);
         assertEq(underlying.balanceOf(TREASURY), 0);
         assertEq(sablier.ownerOf(STREAM_ONE), address(lending));
 
@@ -516,7 +612,7 @@ contract OVRFLOLendingTest is Test {
         _createStream(STREAM_ONE, BORROWER, 10.2 ether);
 
         vm.prank(BORROWER);
-        uint256 loanId = lending.borrow(MARKET, 1025, 5 ether, STREAM_ONE, 5 ether);
+        uint256 loanId = lending.borrow(MARKET, 1025, 5 ether, STREAM_ONE, 5 ether, address(0));
 
         LoanView memory loan = _loan(loanId);
         assertEq(loan.aprBps, 1025);
@@ -539,12 +635,12 @@ contract OVRFLOLendingTest is Test {
         uint256 firstLoan = _borrow(BORROWER, 12 ether, STREAM_ONE, 12 ether);
         uint256 secondLoan = _borrow(SECOND_BORROWER, 12 ether, STREAM_TWO, 4 ether);
 
-        assertEq(underlying.balanceOf(BORROWER), 12 ether);
-        assertEq(underlying.balanceOf(SECOND_BORROWER), 4 ether);
-        assertEq(underlying.balanceOf(LENDER), 990 ether);
-        assertEq(underlying.balanceOf(SECOND_LENDER), 994 ether);
-        assertEq(underlying.balanceOf(address(lending)), 0);
-        assertEq(underlying.balanceOf(TREASURY), 0);
+        assertEq(ovrfloToken.balanceOf(BORROWER), 12 ether);
+        assertEq(ovrfloToken.balanceOf(SECOND_BORROWER), 4 ether);
+        assertEq(ovrfloToken.balanceOf(LENDER), 990 ether);
+        assertEq(ovrfloToken.balanceOf(SECOND_LENDER), 994 ether);
+        assertEq(ovrfloToken.balanceOf(address(lending)), 0);
+        assertEq(ovrfloToken.balanceOf(TREASURY), 0);
         assertEq(sablier.ownerOf(STREAM_ONE), address(lending));
         assertEq(sablier.ownerOf(STREAM_TWO), address(lending));
 
@@ -579,7 +675,7 @@ contract OVRFLOLendingTest is Test {
 
         vm.prank(SECOND_BORROWER);
         vm.expectRevert(OVRFLOLending.BelowMinAcceptable.selector);
-        lending.borrow(MARKET, APR, 12 ether, STREAM_TWO, 12 ether);
+        lending.borrow(MARKET, APR, 12 ether, STREAM_TWO, 12 ether, address(0));
     }
 
     /// Covers AE7. A borrower's own resting liquidity is consumable like any other
@@ -606,9 +702,9 @@ contract OVRFLOLendingTest is Test {
         (address positionLender,,,,) = lending.positions(1);
         assertEq(positionLender, LENDER);
 
-        assertEq(underlying.balanceOf(LENDER), 999.9 ether);
-        assertEq(underlying.balanceOf(TREASURY), 0.1 ether);
-        assertEq(underlying.balanceOf(address(lending)), 0);
+        assertEq(ovrfloToken.balanceOf(LENDER), 999.9 ether);
+        assertEq(ovrfloToken.balanceOf(TREASURY), 0.1 ether);
+        assertEq(ovrfloToken.balanceOf(address(lending)), 0);
         assertEq(sablier.ownerOf(STREAM_ONE), address(lending));
     }
 
@@ -624,7 +720,7 @@ contract OVRFLOLendingTest is Test {
 
         vm.prank(BORROWER);
         vm.expectRevert(OVRFLOLending.BelowMinAcceptable.selector);
-        lending.borrow(MARKET, APR, 10 ether, STREAM_ONE, 9.95 ether);
+        lending.borrow(MARKET, APR, 10 ether, STREAM_ONE, 9.95 ether, address(0));
     }
 
     /// Max borrow = sale (R11): a target above the stream's discounted value fills
@@ -641,9 +737,9 @@ contract OVRFLOLendingTest is Test {
         assertEq(obligation, 10.2 ether);
         assertEq(obligation, sablier.getDepositedAmount(STREAM_ONE) - sablier.getWithdrawnAmount(STREAM_ONE));
 
-        assertEq(underlying.balanceOf(BORROWER), 10 ether);
-        assertEq(underlying.balanceOf(address(lending)), 10 ether);
-        assertEq(underlying.balanceOf(TREASURY), 0);
+        assertEq(ovrfloToken.balanceOf(BORROWER), 10 ether);
+        assertEq(ovrfloToken.balanceOf(address(lending)), 10 ether);
+        assertEq(ovrfloToken.balanceOf(TREASURY), 0);
         (, uint64 filled,,,) = lending.exposed_epochState(MARKET, APR, 0);
         assertEq(filled, 10_000_000);
     }
@@ -656,7 +752,7 @@ contract OVRFLOLendingTest is Test {
 
         _borrow(BORROWER, 5 ether + (1e12 - 1), STREAM_ONE, 0);
 
-        assertEq(underlying.balanceOf(BORROWER), 5 ether);
+        assertEq(ovrfloToken.balanceOf(BORROWER), 5 ether);
         (, uint64 filled,,,) = lending.exposed_epochState(MARKET, APR, 0);
         assertEq(filled, 5_000_000);
     }
@@ -675,7 +771,7 @@ contract OVRFLOLendingTest is Test {
 
         vm.prank(SECOND_BORROWER);
         vm.expectRevert(OVRFLOLending.EmptyTick.selector);
-        lending.borrow(MARKET, APR, 1 ether, STREAM_TWO, 0);
+        lending.borrow(MARKET, APR, 1 ether, STREAM_TWO, 0, address(0));
     }
 
     /// The fill consumption is one storage slot: `filled` and `loanCount` are
@@ -714,12 +810,12 @@ contract OVRFLOLendingTest is Test {
 
         vm.warp(expiry - 1);
         _borrow(BORROWER, 1 ether, STREAM_ONE, 0);
-        assertEq(underlying.balanceOf(BORROWER), 1 ether);
+        assertEq(ovrfloToken.balanceOf(BORROWER), 1 ether);
 
         vm.warp(expiry);
         vm.prank(SECOND_BORROWER);
         vm.expectRevert(StreamPricing.SeriesMatured.selector);
-        lending.borrow(MARKET, APR, 1 ether, STREAM_TWO, 0);
+        lending.borrow(MARKET, APR, 1 ether, STREAM_TWO, 0, address(0));
     }
 
     function test_Borrow_ZeroTargetReverts() public {
@@ -728,13 +824,13 @@ contract OVRFLOLendingTest is Test {
 
         vm.prank(BORROWER);
         vm.expectRevert(OVRFLOLending.ZeroTarget.selector);
-        lending.borrow(MARKET, APR, 0, STREAM_ONE, 0);
+        lending.borrow(MARKET, APR, 0, STREAM_ONE, 0, address(0));
     }
 
     function test_Borrow_SpacingUnsetReverts() public {
         vm.prank(BORROWER);
         vm.expectRevert(OVRFLOLending.SpacingUnset.selector);
-        lending.borrow(BARE_MARKET, APR, 1 ether, STREAM_ONE, 0);
+        lending.borrow(BARE_MARKET, APR, 1 ether, STREAM_ONE, 0, address(0));
     }
 
     function test_Borrow_InvalidTickReverts() public {
@@ -743,7 +839,7 @@ contract OVRFLOLendingTest is Test {
 
         vm.prank(BORROWER);
         vm.expectRevert(OVRFLOLending.InvalidTick.selector);
-        lending.borrow(MARKET, 1025, 1 ether, STREAM_ONE, 0);
+        lending.borrow(MARKET, 1025, 1 ether, STREAM_ONE, 0, address(0));
     }
 
     function test_Borrow_NeverSuppliedTickRevertsEmptyTick() public {
@@ -753,7 +849,7 @@ contract OVRFLOLendingTest is Test {
 
         vm.prank(BORROWER);
         vm.expectRevert(OVRFLOLending.EmptyTick.selector);
-        lending.borrow(MARKET, APR, 1 ether, STREAM_ONE, 0);
+        lending.borrow(MARKET, APR, 1 ether, STREAM_ONE, 0, address(0));
     }
 
     function test_Borrow_TargetBelowFillFloorReverts() public {
@@ -764,7 +860,7 @@ contract OVRFLOLendingTest is Test {
 
         vm.prank(BORROWER);
         vm.expectRevert(OVRFLOLending.BelowMinimum.selector);
-        lending.borrow(MARKET, APR, 0.5e15, STREAM_ONE, 0);
+        lending.borrow(MARKET, APR, 0.5e15, STREAM_ONE, 0, address(0));
     }
 
     function test_Borrow_ResidueBelowFillFloorReverts() public {
@@ -778,7 +874,7 @@ contract OVRFLOLendingTest is Test {
 
         vm.prank(SECOND_BORROWER);
         vm.expectRevert(OVRFLOLending.BelowMinimum.selector);
-        lending.borrow(MARKET, APR, 1 ether, STREAM_TWO, 0);
+        lending.borrow(MARKET, APR, 1 ether, STREAM_TWO, 0, address(0));
     }
 
     function test_Borrow_IneligibleStreamReverts() public {
@@ -791,7 +887,7 @@ contract OVRFLOLendingTest is Test {
 
         vm.prank(BORROWER);
         vm.expectRevert(StreamPricing.CancelableStream.selector);
-        lending.borrow(MARKET, APR, 1 ether, STREAM_ONE, 0);
+        lending.borrow(MARKET, APR, 1 ether, STREAM_ONE, 0, address(0));
     }
 
     /// A stream minted by a rogue vault (any sender other than this lending's core)
@@ -810,7 +906,7 @@ contract OVRFLOLendingTest is Test {
 
         vm.prank(BORROWER);
         vm.expectRevert(StreamPricing.WrongSender.selector);
-        lending.borrow(MARKET, APR, 1 ether, STREAM_ONE, 0);
+        lending.borrow(MARKET, APR, 1 ether, STREAM_ONE, 0, address(0));
     }
 
     /// The MIN_STREAM_AMOUNT wrapper rejects dust streams before any fill math runs.
@@ -822,7 +918,7 @@ contract OVRFLOLendingTest is Test {
 
         vm.prank(BORROWER);
         vm.expectRevert(OVRFLOLending.BelowMinimum.selector);
-        lending.borrow(MARKET, APR, 1 ether, STREAM_ONE, 0);
+        lending.borrow(MARKET, APR, 1 ether, STREAM_ONE, 0, address(0));
     }
 
     /// A stream backing an open loan is owned by the lending contract, so a second
@@ -839,7 +935,7 @@ contract OVRFLOLendingTest is Test {
 
         vm.prank(BORROWER);
         vm.expectRevert(bytes("wrong from"));
-        lending.borrow(MARKET, APR, 1 ether, STREAM_ONE, 0);
+        lending.borrow(MARKET, APR, 1 ether, STREAM_ONE, 0, address(0));
     }
 
     /// Informal gas-flatness check (measured properly in U7): a fill spanning one
@@ -866,12 +962,12 @@ contract OVRFLOLendingTest is Test {
 
         vm.prank(BORROWER);
         uint256 checkpoint = gasleft();
-        lending.borrow(MARKET, 1200, 12 ether, STREAM_TWO, 0);
+        lending.borrow(MARKET, 1200, 12 ether, STREAM_TWO, 0, address(0));
         uint256 gasSinglePosition = checkpoint - gasleft();
 
         vm.prank(BORROWER);
         checkpoint = gasleft();
-        lending.borrow(MARKET, 1300, 12 ether, STREAM_THREE, 0);
+        lending.borrow(MARKET, 1300, 12 ether, STREAM_THREE, 0, address(0));
         uint256 gasTwelvePositions = checkpoint - gasleft();
 
         assertApproxEqAbs(gasSinglePosition, gasTwelvePositions, 5_000);
@@ -956,7 +1052,7 @@ contract OVRFLOLendingTest is Test {
         vm.prank(LENDER);
         lending.claim(loanId, positionA, type(uint128).max);
 
-        assertEq(ovrfloToken.balanceOf(LENDER), 3.06 ether);
+        assertEq(ovrfloToken.balanceOf(LENDER), 1_000 ether - 6 ether + 3.06 ether);
         assertEq(_loan(loanId).drawn, 3.06 ether);
         assertEq(sablier.getWithdrawnAmount(STREAM_ONE), 3.06 ether);
         assertEq(lending.received(loanId, positionA), 3.06 ether);
@@ -966,7 +1062,7 @@ contract OVRFLOLendingTest is Test {
         vm.prank(SECOND_LENDER);
         lending.claim(loanId, positionB, type(uint128).max);
 
-        assertEq(ovrfloToken.balanceOf(SECOND_LENDER), 2.04 ether);
+        assertEq(ovrfloToken.balanceOf(SECOND_LENDER), 1_000 ether - 4 ether + 2.04 ether);
         assertEq(_loan(loanId).drawn, 5.1 ether);
         assertEq(sablier.getWithdrawnAmount(STREAM_ONE), 5.1 ether);
         assertEq(ovrfloToken.balanceOf(address(lending)), 0);
@@ -1003,7 +1099,7 @@ contract OVRFLOLendingTest is Test {
         vm.prank(SECOND_LENDER);
         lending.claim(loanId, positionB, type(uint128).max);
 
-        assertEq(ovrfloToken.balanceOf(SECOND_LENDER), 2.04 ether);
+        assertEq(ovrfloToken.balanceOf(SECOND_LENDER), 1_000 ether - 4 ether + 2.04 ether);
         assertEq(_loan(loanId).drawn, 2.04 ether);
         assertEq(sablier.getWithdrawnAmount(STREAM_ONE), 2.04 ether);
 
@@ -1015,13 +1111,15 @@ contract OVRFLOLendingTest is Test {
         vm.prank(LENDER);
         lending.claim(loanId, positionA, type(uint128).max);
 
-        assertEq(ovrfloToken.balanceOf(LENDER), 3.06 ether);
+        assertEq(ovrfloToken.balanceOf(LENDER), 1_000 ether - 6 ether + 3.06 ether);
         assertEq(_loan(loanId).drawn, 5.1 ether);
 
         // Identical totals to the ascending-order run: 2.04 + 3.06 = 5.1 drawn, nothing
         // left over, and neither order leaves the other lender short.
         assertEq(sablier.getWithdrawnAmount(STREAM_ONE), 5.1 ether);
-        assertEq(ovrfloToken.balanceOf(LENDER) + ovrfloToken.balanceOf(SECOND_LENDER), 5.1 ether);
+        assertEq(
+            ovrfloToken.balanceOf(LENDER) + ovrfloToken.balanceOf(SECOND_LENDER), 2_000 ether - 10 ether + 5.1 ether
+        );
         assertEq(lending.proceeds(loanId), 0);
         assertEq(ovrfloToken.balanceOf(address(lending)), 0);
     }
@@ -1061,20 +1159,22 @@ contract OVRFLOLendingTest is Test {
         // A's share = 6e18/10e18 * 10.2e18 = 6.12e18 (NOT 6/10 of 20.4 = 12.24).
         vm.prank(LENDER);
         lending.claim(loanId, positionA, type(uint128).max);
-        assertEq(ovrfloToken.balanceOf(LENDER), 6.12 ether);
+        assertEq(ovrfloToken.balanceOf(LENDER), 1_000 ether - 6 ether + 6.12 ether);
 
         // recovered = 6.12 + min(20.4 - 6.12, 10.2 - 6.12) = 6.12 + min(14.28, 4.08) = 10.2;
         // B's share = 4e18/10e18 * 10.2e18 = 4.08e18, still fully available.
         vm.prank(SECOND_LENDER);
         lending.claim(loanId, positionB, type(uint128).max);
-        assertEq(ovrfloToken.balanceOf(SECOND_LENDER), 4.08 ether);
+        assertEq(ovrfloToken.balanceOf(SECOND_LENDER), 1_000 ether - 4 ether + 4.08 ether);
 
         // The harvest never exceeded the obligation: 6.12 + 4.08 = 10.2 drawn out of a
         // 20.4 stream, leaving 10.2 of over-vested value untouched for the borrower.
         assertEq(sablier.getWithdrawnAmount(STREAM_ONE), 10.2 ether);
         assertEq(_loan(loanId).drawn, 10.2 ether);
         assertEq(sablier.withdrawableAmountOf(STREAM_ONE), 10.2 ether);
-        assertEq(ovrfloToken.balanceOf(LENDER) + ovrfloToken.balanceOf(SECOND_LENDER), 10.2 ether);
+        assertEq(
+            ovrfloToken.balanceOf(LENDER) + ovrfloToken.balanceOf(SECOND_LENDER), 2_000 ether - 10 ether + 10.2 ether
+        );
         assertEq(lending.proceeds(loanId), 0);
         assertEq(ovrfloToken.balanceOf(address(lending)), 0);
     }
@@ -1126,13 +1226,13 @@ contract OVRFLOLendingTest is Test {
 
         vm.prank(SECOND_LENDER);
         lending.claim(loanId, positionB, type(uint128).max);
-        assertEq(ovrfloToken.balanceOf(SECOND_LENDER), 4.08 ether);
+        assertEq(ovrfloToken.balanceOf(SECOND_LENDER), 1_000 ether - 4 ether + 4.08 ether);
         assertEq(sablier.getWithdrawnAmount(STREAM_ONE), 10.2 ether);
         assertEq(_loan(loanId).drawn, 10.2 ether);
 
         vm.prank(LENDER);
         lending.claim(loanId, positionA, type(uint128).max);
-        assertEq(ovrfloToken.balanceOf(LENDER), 6.12 ether);
+        assertEq(ovrfloToken.balanceOf(LENDER), 1_000 ether - 6 ether + 6.12 ether);
         assertEq(sablier.getWithdrawnAmount(STREAM_ONE), 10.2 ether);
 
         // recovered = drawn + repaid = 10.2, fully distributed 6.12 + 4.08.
@@ -1194,8 +1294,10 @@ contract OVRFLOLendingTest is Test {
         assertEq(lending.proceeds(firstLoan), 1);
         assertEq(lending.proceeds(secondLoan), 1);
         assertEq(ovrfloToken.balanceOf(address(lending)), 2);
-        assertEq(ovrfloToken.balanceOf(LENDER) + ovrfloToken.balanceOf(SECOND_LENDER), 12.24 ether);
-        assertEq(ovrfloToken.balanceOf(THIRD_LENDER), 8.16 ether);
+        assertEq(
+            ovrfloToken.balanceOf(LENDER) + ovrfloToken.balanceOf(SECOND_LENDER), 2_000 ether - 12 ether + 12.24 ether
+        );
+        assertEq(ovrfloToken.balanceOf(THIRD_LENDER), 1_000 ether - 8 ether + 8.16 ether);
 
         // The stranded wei is nobody's: the caps are exhausted.
         vm.prank(LENDER);
@@ -1240,7 +1342,7 @@ contract OVRFLOLendingTest is Test {
         sablier.setWithdrawable(STREAM_TWO, 10.2 ether);
         vm.prank(SECOND_LENDER);
         lending.claim(epochOneLoan, epochOnePosition, type(uint128).max);
-        assertEq(ovrfloToken.balanceOf(SECOND_LENDER), 10.2 ether);
+        assertEq(ovrfloToken.balanceOf(SECOND_LENDER), 1_000 ether - 10 ether + 10.2 ether);
     }
 
     /// Covers AE9. A position posted entirely after the fill window has zero overlap,
@@ -1281,7 +1383,7 @@ contract OVRFLOLendingTest is Test {
         _createStream(STREAM_ONE, BORROWER, 10.2 ether);
 
         uint256 loanId = _borrow(BORROWER, 10 ether, STREAM_ONE, 9.9 ether);
-        assertEq(underlying.balanceOf(TREASURY), 0.1 ether);
+        assertEq(ovrfloToken.balanceOf(TREASURY), 0.1 ether);
 
         sablier.setWithdrawable(STREAM_ONE, 10.2 ether);
         lending.close(loanId);
@@ -1289,8 +1391,8 @@ contract OVRFLOLendingTest is Test {
         vm.prank(LENDER);
         lending.claim(loanId, positionId, type(uint128).max);
 
-        assertEq(ovrfloToken.balanceOf(LENDER), 10.2 ether);
-        assertEq(ovrfloToken.balanceOf(TREASURY), 0);
+        assertEq(ovrfloToken.balanceOf(LENDER), 1_000 ether - 10 ether + 10.2 ether);
+        assertEq(ovrfloToken.balanceOf(TREASURY), 0.1 ether);
         assertEq(ovrfloToken.balanceOf(address(lending)), 0);
     }
 
@@ -1341,8 +1443,8 @@ contract OVRFLOLendingTest is Test {
         assertEq(_loan(loanId).drawn, 0);
         assertEq(lending.proceeds(loanId), 4.08 ether);
         assertEq(sablier.ownerOf(STREAM_ONE), BORROWER);
-        assertEq(ovrfloToken.balanceOf(BORROWER), 0);
-        assertEq(ovrfloToken.balanceOf(address(lending)), 4.08 ether);
+        assertEq(ovrfloToken.balanceOf(BORROWER), 4 ether);
+        assertEq(ovrfloToken.balanceOf(address(lending)), 6 ether + 4.08 ether);
 
         vm.prank(BORROWER);
         vm.expectRevert(OVRFLOLending.LoanClosed.selector);
@@ -1431,7 +1533,7 @@ contract OVRFLOLendingTest is Test {
         assertEq(lending.proceeds(loanId), 5.1 ether);
         assertEq(sablier.getWithdrawnAmount(STREAM_ONE), 5.1 ether);
         assertEq(sablier.ownerOf(STREAM_ONE), BORROWER);
-        assertEq(ovrfloToken.balanceOf(address(lending)), 5.1 ether);
+        assertEq(ovrfloToken.balanceOf(address(lending)), 5 ether + 5.1 ether);
 
         vm.prank(STRANGER);
         vm.expectRevert(OVRFLOLending.LoanClosed.selector);
@@ -1462,7 +1564,7 @@ contract OVRFLOLendingTest is Test {
         vm.prank(LENDER);
         lending.claim(loanId, positionId, type(uint128).max);
 
-        assertEq(ovrfloToken.balanceOf(LENDER), 10.2 ether);
+        assertEq(ovrfloToken.balanceOf(LENDER), 1_000 ether - 10 ether + 10.2 ether);
         assertEq(_loan(loanId).drawn, 10.2 ether);
         assertEq(sablier.getWithdrawnAmount(STREAM_ONE), 10.2 ether);
 
@@ -1630,7 +1732,7 @@ contract OVRFLOLendingTest is Test {
         vm.prank(LENDER);
         lending.claim(firstLoan, positionId, type(uint128).max);
         assertEq(lending.received(firstLoan, positionId), 5.1 ether);
-        assertEq(ovrfloToken.balanceOf(LENDER), 10.2 ether);
+        assertEq(ovrfloToken.balanceOf(LENDER), 1_000 ether - 20 ether + 10.2 ether);
 
         vm.prank(LENDER);
         vm.expectRevert(OVRFLOLending.NothingToClaim.selector);
@@ -1647,14 +1749,14 @@ contract OVRFLOLendingTest is Test {
         _createStream(STREAM_ONE, BORROWER, 10.2 ether);
 
         uint256 loanId = _borrow(BORROWER, 10 ether, STREAM_ONE, 10 ether);
-        assertEq(underlying.balanceOf(BORROWER), 10 ether);
-        assertEq(underlying.balanceOf(address(lending)), 0);
+        assertEq(ovrfloToken.balanceOf(BORROWER), 10 ether);
+        assertEq(ovrfloToken.balanceOf(address(lending)), 0);
 
         // Partial claim of a bounded amount rather than the whole entitlement.
         sablier.setWithdrawable(STREAM_ONE, 5.1 ether);
         vm.prank(LENDER);
         lending.claim(loanId, positionA, 1 ether);
-        assertEq(ovrfloToken.balanceOf(LENDER), 1 ether);
+        assertEq(ovrfloToken.balanceOf(LENDER), 1_000 ether - 6 ether + 1 ether);
         assertEq(_loan(loanId).drawn, 1 ether);
 
         sablier.setWithdrawable(STREAM_ONE, 10.2 ether);
@@ -1667,12 +1769,12 @@ contract OVRFLOLendingTest is Test {
         _claim(LENDER, loanId, positionA);
         _claim(SECOND_LENDER, loanId, positionB);
 
-        assertEq(ovrfloToken.balanceOf(LENDER), 6.12 ether);
-        assertEq(ovrfloToken.balanceOf(SECOND_LENDER), 4.08 ether);
+        assertEq(ovrfloToken.balanceOf(LENDER), 1_000 ether - 6 ether + 6.12 ether);
+        assertEq(ovrfloToken.balanceOf(SECOND_LENDER), 1_000 ether - 4 ether + 4.08 ether);
         assertEq(lending.proceeds(loanId), 0);
         assertEq(ovrfloToken.balanceOf(address(lending)), 0);
-        assertEq(underlying.balanceOf(LENDER), 994 ether);
-        assertEq(underlying.balanceOf(SECOND_LENDER), 996 ether);
+        assertEq(underlying.balanceOf(LENDER), 1_000 ether);
+        assertEq(underlying.balanceOf(SECOND_LENDER), 1_000 ether);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -1778,12 +1880,12 @@ contract OVRFLOLendingTest is Test {
         uint256 first = _borrow(BORROWER, 10 ether, STREAM_ONE, 0);
         // Single-epoch rule: only the 0.002 ether residual fills, not 10.
         assertEq(_loan(first).epoch, 0);
-        assertEq(underlying.balanceOf(BORROWER), 2e15);
+        assertEq(ovrfloToken.balanceOf(BORROWER), 2e15);
 
         _createStream(STREAM_TWO, SECOND_BORROWER, 15.3 ether);
         uint256 second = _borrow(SECOND_BORROWER, 10 ether, STREAM_TWO, 0);
         assertEq(_loan(second).epoch, 1);
-        assertEq(underlying.balanceOf(SECOND_BORROWER), 10 ether);
+        assertEq(ovrfloToken.balanceOf(SECOND_BORROWER), 10 ether);
         (uint32 oldest,,) = lending.tickState(MARKET, APR);
         assertEq(oldest, 1); // advancement persisted
     }
@@ -1805,14 +1907,14 @@ contract OVRFLOLendingTest is Test {
         uint256 loanId = _borrow(SECOND_BORROWER, 10 ether, STREAM_TWO, 0);
         // Dust skipped in one transaction: cursor 0 -> 1, full 10 ether fill.
         assertEq(_loan(loanId).epoch, 1);
-        assertEq(underlying.balanceOf(SECOND_BORROWER), 10 ether);
+        assertEq(ovrfloToken.balanceOf(SECOND_BORROWER), 10 ether);
         (uint32 oldest,,) = lending.tickState(MARKET, APR);
         assertEq(oldest, 1);
 
         // 1000 - 2e15 supplied + 0.5e15 dust refund = 1000 ether - 1.5e15.
         vm.prank(LENDER);
         lending.withdraw(dustPos);
-        assertEq(underlying.balanceOf(LENDER), 1_000 ether - 1.5e15);
+        assertEq(ovrfloToken.balanceOf(LENDER), 1_000 ether - 1.5e15);
     }
 
     /// A borrow facing every epoch drained reverts the interpretable EmptyTick,
@@ -1833,7 +1935,7 @@ contract OVRFLOLendingTest is Test {
         _createStream(STREAM_THREE, BORROWER, 15.3 ether);
         vm.prank(BORROWER);
         vm.expectRevert(OVRFLOLending.EmptyTick.selector);
-        lending.borrow(MARKET, APR, 1 ether, STREAM_THREE, 0);
+        lending.borrow(MARKET, APR, 1 ether, STREAM_THREE, 0, address(0));
     }
 
     /// A backlog deeper than CURSOR_CAP blocks borrows until the permissionless,
@@ -1848,7 +1950,7 @@ contract OVRFLOLendingTest is Test {
         _createStream(STREAM_ONE, BORROWER, 15.3 ether);
         vm.prank(BORROWER);
         vm.expectRevert(OVRFLOLending.EpochBacklog.selector);
-        lending.borrow(MARKET, APR, 10 ether, STREAM_ONE, 0);
+        lending.borrow(MARKET, APR, 10 ether, STREAM_ONE, 0, address(0));
 
         vm.expectRevert(OVRFLOLending.ZeroSteps.selector);
         lending.advanceEpochCursor(MARKET, APR, 0);
@@ -1867,7 +1969,7 @@ contract OVRFLOLendingTest is Test {
 
         uint256 loanId = _borrow(BORROWER, 10 ether, STREAM_ONE, 0);
         assertEq(_loan(loanId).epoch, 40);
-        assertEq(underlying.balanceOf(BORROWER), 10 ether);
+        assertEq(ovrfloToken.balanceOf(BORROWER), 10 ether);
     }
 
     /// The cursor never passes an epoch holding at least one minimum fill.
@@ -2025,11 +2127,11 @@ contract OVRFLOLendingTest is Test {
 
         vm.prank(LENDER);
         lending.withdraw(positionId);
-        assertEq(underlying.balanceOf(LENDER), 994 ether); // 1000 - 10 + 4 unfilled
+        assertEq(ovrfloToken.balanceOf(LENDER), 994 ether); // 1000 - 10 + 4 unfilled
 
         sablier.setWithdrawable(STREAM_ONE, 6.12 ether);
         _claim(LENDER, loanId, positionId);
-        assertEq(ovrfloToken.balanceOf(LENDER), 6.12 ether);
+        assertEq(ovrfloToken.balanceOf(LENDER), 994 ether + 6.12 ether);
     }
 
     /// Pins CURSOR_CAP at exactly 32: a backlog of precisely the cap succeeds.
@@ -2043,7 +2145,7 @@ contract OVRFLOLendingTest is Test {
         _createStream(STREAM_ONE, BORROWER, 15.3 ether);
         uint256 loanId = _borrow(BORROWER, 10 ether, STREAM_ONE, 0);
         assertEq(_loan(loanId).epoch, 32);
-        assertEq(underlying.balanceOf(BORROWER), 10 ether);
+        assertEq(ovrfloToken.balanceOf(BORROWER), 10 ether);
     }
 
     /// Pins CURSOR_CAP at exactly 32: one epoch past the cap reverts.
@@ -2056,7 +2158,7 @@ contract OVRFLOLendingTest is Test {
         _createStream(STREAM_ONE, BORROWER, 15.3 ether);
         vm.prank(BORROWER);
         vm.expectRevert(OVRFLOLending.EpochBacklog.selector);
-        lending.borrow(MARKET, APR, 10 ether, STREAM_ONE, 0);
+        lending.borrow(MARKET, APR, 10 ether, STREAM_ONE, 0, address(0));
     }
 
     /// The recovery valve's own copy of the dust predicate skips a genuine dust
@@ -2248,7 +2350,7 @@ contract OVRFLOLendingTest is Test {
 
         vm.prank(BORROWER);
         vm.expectRevert(OVRFLOLending.BelowMinimum.selector);
-        lending.borrow(MARKET, APR, 0.5e15, STREAM_ONE, 0);
+        lending.borrow(MARKET, APR, 0.5e15, STREAM_ONE, 0, address(0));
     }
 
     function test_PreviewBorrow_DeadEpochSkip_MatchesBorrowedEvent() public {
@@ -2311,7 +2413,7 @@ contract OVRFLOLendingTest is Test {
 
         vm.prank(BORROWER);
         vm.expectRevert(OVRFLOLending.EpochBacklog.selector);
-        lending.borrow(MARKET, APR, 10 ether, STREAM_ONE, 0);
+        lending.borrow(MARKET, APR, 10 ether, STREAM_ONE, 0, address(0));
     }
 
     function test_PreviewBorrow_MaturityBoundary_MatchesThenReverts() public {
@@ -2333,7 +2435,7 @@ contract OVRFLOLendingTest is Test {
         lending.previewBorrow(MARKET, APR, 1 ether, STREAM_TWO);
         vm.prank(SECOND_BORROWER);
         vm.expectRevert(StreamPricing.SeriesMatured.selector);
-        lending.borrow(MARKET, APR, 1 ether, STREAM_TWO, 0);
+        lending.borrow(MARKET, APR, 1 ether, STREAM_TWO, 0, address(0));
     }
 
     function test_PreviewBorrow_PackedSlotUnchangedThenBorrowMutates() public {
@@ -2443,7 +2545,7 @@ contract OVRFLOLendingTest is Test {
         returns (uint256 loanId)
     {
         vm.prank(borrower);
-        loanId = lending.borrow(MARKET, APR, target, streamId, minAcceptable);
+        loanId = lending.borrow(MARKET, APR, target, streamId, minAcceptable, address(0));
     }
 
     function _claim(address lender, uint256 loanId, uint256 positionId) internal {
@@ -2537,7 +2639,7 @@ contract OVRFLOLendingTest is Test {
         (actualBorrow, feeAmount, obligation) = lending.previewBorrow(MARKET, aprBps, target, streamId);
         vm.recordLogs();
         vm.prank(borrower);
-        lending.borrow(MARKET, aprBps, target, streamId, minAcceptable);
+        lending.borrow(MARKET, aprBps, target, streamId, minAcceptable, address(0));
         (uint128 borrowedActual, uint128 borrowedFee, uint128 borrowedObligation) =
             _decodeBorrowed(vm.getRecordedLogs());
         assertEq(actualBorrow, borrowedActual, "preview actualBorrow != Borrowed");

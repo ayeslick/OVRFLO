@@ -889,12 +889,12 @@ contract LendingInvariantHandler is Test {
         (,, uint64 filledBefore) = _epochNumbers(aprBps, epoch);
         (uint64 startBefore,) = _interval(positionId);
 
-        uint256 lendingBefore = underlying.balanceOf(address(lending));
-        uint256 lenderBefore = underlying.balanceOf(lender);
+        uint256 lendingBefore = ovrfloToken.balanceOf(address(lending));
+        uint256 lenderBefore = ovrfloToken.balanceOf(lender);
         vm.prank(lender);
         try lending.withdraw(positionId) {
-            uint256 released = lendingBefore - underlying.balanceOf(address(lending));
-            uint256 credited = underlying.balanceOf(lender) - lenderBefore;
+            uint256 released = lendingBefore - ovrfloToken.balanceOf(address(lending));
+            uint256 credited = ovrfloToken.balanceOf(lender) - lenderBefore;
             if (released != credited) {
                 ++refundRecipientMismatches;
                 lastRefundExpected = released;
@@ -911,14 +911,14 @@ contract LendingInvariantHandler is Test {
 
         uint128 remainingBefore = sablier.getDepositedAmount(streamId) - sablier.getWithdrawnAmount(streamId);
         uint128 withdrawnBefore = sablier.getWithdrawnAmount(streamId);
-        uint256 borrowerBefore = underlying.balanceOf(actor);
-        uint256 treasuryBefore = underlying.balanceOf(treasury);
+        uint256 borrowerBefore = ovrfloToken.balanceOf(actor);
+        uint256 treasuryBefore = ovrfloToken.balanceOf(treasury);
         // Saturating: warpAndVest can cross maturity, and a post-maturity borrow attempt must reach
         // the contract's own gate (caught below) instead of underflowing here in the handler.
         uint256 timeToMaturity = block.timestamp < expiry ? expiry - block.timestamp : 0;
 
         vm.prank(actor);
-        try lending.borrow(market, aprBps, target, streamId, 0) returns (uint256 loanId) {
+        try lending.borrow(market, aprBps, target, streamId, 0, address(0)) returns (uint256 loanId) {
             _recordBorrow(loanId, aprBps, streamId, remainingBefore, withdrawnBefore);
             _checkBorrowMoney(loanId, actor, borrowerBefore, treasuryBefore);
             _checkObligation(loanId, remainingBefore, aprBps, timeToMaturity);
@@ -1031,7 +1031,7 @@ contract LendingInvariantHandler is Test {
         uint256 expectedFee = (actualBorrow * lending.feeBps()) / BPS;
         uint256 expectedNet = actualBorrow - expectedFee;
 
-        uint256 paidNet = underlying.balanceOf(borrower) - borrowerBefore;
+        uint256 paidNet = ovrfloToken.balanceOf(borrower) - borrowerBefore;
         if (paidNet != expectedNet) {
             ++borrowPayoutMismatches;
             lastBorrowExpected = expectedNet;
@@ -1039,7 +1039,7 @@ contract LendingInvariantHandler is Test {
         }
 
         ghostFeeSum += expectedFee;
-        ghostTreasuryReceived += underlying.balanceOf(treasury) - treasuryBefore;
+        ghostTreasuryReceived += ovrfloToken.balanceOf(treasury) - treasuryBefore;
     }
 
     /// @dev Recomputes the obligation from the four inputs that determine it, mirroring `StreamPricing`'s
@@ -1466,8 +1466,27 @@ contract OVRFLOLendingInvariantTest is Test {
         }
     }
 
-    /// @notice AC3 / I-3. Escrow solvency: the underlying held equals the unfilled depth summed across
-    ///         every tick epoch, priced in wei (pattern #6's all-party balance rule, extended to the tape).
+    /// @notice Unfilled tape depth in wei. Ticket 03 minimum retarget: one token is both escrow and pot.
+    function _unfilledWei() internal view returns (uint256 unfilledWei) {
+        uint16[2] memory aprs = [APR_LOW, APR_HIGH];
+        for (uint256 t = 0; t < aprs.length; ++t) {
+            uint32 maxEpoch = handler.maxEpochSeen(aprs[t]);
+            for (uint32 epoch = 0; epoch <= maxEpoch; ++epoch) {
+                (uint64 root, uint64 filled,,,) = lending.exposed_epochState(MARKET, aprs[t], epoch);
+                unfilledWei += uint256(root - filled) * UNIT;
+            }
+        }
+    }
+
+    /// @notice Summed loan pots in wei. Ticket 03 minimum retarget; 06 re-derives the identities.
+    function _proceedsWei() internal view returns (uint256 potTotal) {
+        uint256 loanTotal = handler.loanCount();
+        for (uint256 i = 0; i < loanTotal; ++i) {
+            potTotal += lending.proceeds(handler.loanIds(i));
+        }
+    }
+
+    /// @notice AC3 / I-3. Escrow solvency: held ovrfloToken equals unfilled depth plus summed pots.
     function invariant_EscrowSolvency() public view {
         uint256 unfilledWei;
         uint16[2] memory aprs = [APR_LOW, APR_HIGH];
@@ -1479,7 +1498,11 @@ contract OVRFLOLendingInvariantTest is Test {
                 unfilledWei += uint256(root - filled) * UNIT;
             }
         }
-        assertEq(underlying.balanceOf(address(lending)), unfilledWei, "escrow: held underlying != unfilled depth");
+        assertEq(
+            ovrfloToken.balanceOf(address(lending)),
+            unfilledWei + _proceedsWei(),
+            "escrow: held ovrfloToken != unfilled + proceeds"
+        );
     }
 
     /// @notice AC4 / I-18, I-13. Tree integrity across growth and rollover. Three independent checks: the
@@ -1586,14 +1609,13 @@ contract OVRFLOLendingInvariantTest is Test {
         }
     }
 
-    /// @notice I-5. Every ovrfloToken the market holds is accounted to some loan's pot.
+    /// @notice I-5. Every ovrfloToken the market holds is unfilled escrow or a loan pot.
     function invariant_TokenCustody() public view {
-        uint256 potTotal;
-        uint256 loanTotal = handler.loanCount();
-        for (uint256 i = 0; i < loanTotal; ++i) {
-            potTotal += lending.proceeds(handler.loanIds(i));
-        }
-        assertEq(ovrfloToken.balanceOf(address(lending)), potTotal, "custody: token balance != summed proceeds");
+        assertEq(
+            ovrfloToken.balanceOf(address(lending)),
+            _proceedsWei() + _unfilledWei(),
+            "custody: token balance != proceeds + unfilled"
+        );
     }
 
     /// @notice Risk #6 / GL-70 custody half. An open loan's collateral is held by the market — nothing else
@@ -1631,10 +1653,14 @@ contract OVRFLOLendingInvariantTest is Test {
         }
     }
 
-    /// @notice I-10, plus a view/tape differential. Escrowed wei never carries sub-UNIT residue, and the
+    /// @notice I-10, plus a view/tape differential. Unfilled escrow never carries sub-UNIT residue, and the
     ///         `positionState` named view reports exactly the refundable remainder the tape itself holds.
+    ///         Proceeds can hold 1-wei dust, so the check is on held minus pots, not the whole balance.
     function invariant_UnitAlignment() public view {
-        assertEq(underlying.balanceOf(address(lending)) % UNIT, 0, "units: escrow carries sub-UNIT residue");
+        uint256 held = ovrfloToken.balanceOf(address(lending));
+        uint256 pot = _proceedsWei();
+        assertGe(held, pot, "units: proceeds exceed held balance");
+        assertEq((held - pot) % UNIT, 0, "units: escrow carries sub-UNIT residue");
 
         uint256 count = handler.positionCount();
         for (uint256 i = 0; i < count; ++i) {
@@ -1706,7 +1732,7 @@ contract OVRFLOLendingInvariantTest is Test {
         assertEq(handler.refundRecipientMismatches(), 0, "recipients: withdraw refund missed the lender");
 
         assertEq(handler.ghostTreasuryReceived(), handler.ghostFeeSum(), "recipients: treasury credit != summed fees");
-        assertEq(underlying.balanceOf(TREASURY), handler.ghostFeeSum(), "recipients: treasury balance != summed fees");
+        assertEq(ovrfloToken.balanceOf(TREASURY), handler.ghostFeeSum(), "recipients: treasury balance != summed fees");
     }
 
     /// @notice I-20. Every stored obligation equals an obligation recomputed from `(actualBorrow,
@@ -1890,9 +1916,9 @@ contract OVRFLOLendingInvariantTest is Test {
         address lender = makeAddr("boundaryLender");
         address borrower = makeAddr("boundaryBorrower");
 
-        underlying.mint(lender, 200 ether);
+        ovrfloToken.mint(lender, 200 ether);
         vm.prank(lender);
-        underlying.approve(address(lending), type(uint256).max);
+        ovrfloToken.approve(address(lending), type(uint256).max);
         vm.prank(lender);
         lending.supply(MARKET, APR_LOW, 100 ether);
 
@@ -1907,7 +1933,7 @@ contract OVRFLOLendingInvariantTest is Test {
         sablier.setApprovalForAll(address(lending), true);
 
         vm.prank(borrower);
-        uint256 loanId = lending.borrow(MARKET, APR_LOW, type(uint128).max, streamId, 0);
+        uint256 loanId = lending.borrow(MARKET, APR_LOW, type(uint128).max, streamId, 0, address(0));
 
         (OVRFLOLending.Loan memory loan,) = lending.loanState(loanId);
 

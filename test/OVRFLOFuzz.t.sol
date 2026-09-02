@@ -247,17 +247,17 @@ contract OVRFLOFuzzLendingTest is LendingMockFixture {
 
         uint128 refunded;
         if (withdrawFirst) {
-            uint256 before = underlying.balanceOf(LENDER);
+            uint256 before = ovrfloToken.balanceOf(LENDER);
             vm.prank(LENDER);
             lending.withdraw(positionA);
-            refunded = uint128(underlying.balanceOf(LENDER) - before);
+            refunded = uint128(ovrfloToken.balanceOf(LENDER) - before);
         }
 
         uint128 target = uint128(bound(uint256(targetSeed), minLiquidity, uint256(amountA) + amountB));
         _createStream(1, BORROWER, _faceForGross(100 ether));
 
         vm.prank(BORROWER);
-        uint256 loanId = lending.borrow(MARKET, APR, target, 1, 0);
+        uint256 loanId = lending.borrow(MARKET, APR, target, 1, 0, address(0));
 
         (OVRFLOLending.Loan memory loan,) = lending.loanState(loanId);
         uint128 actualBorrow = uint128(uint256(loan.fillEnd - loan.fillStart) * unit);
@@ -268,15 +268,15 @@ contract OVRFLOFuzzLendingTest is LendingMockFixture {
         assertGe(actualBorrow, minLiquidity, "fill landed below the borrow atom");
 
         // Principal is split between borrower and treasury with nothing left over.
-        uint256 borrowerGot = underlying.balanceOf(BORROWER);
-        uint256 treasuryGot = underlying.balanceOf(LENDING_TREASURY);
+        uint256 borrowerGot = ovrfloToken.balanceOf(BORROWER);
+        uint256 treasuryGot = ovrfloToken.balanceOf(LENDING_TREASURY);
         assertEq(borrowerGot + treasuryGot, actualBorrow, "principal leaked across the payout split");
 
         // All-party conservation: everything supplied is still accounted for.
         assertEq(
-            underlying.balanceOf(address(lending)) + refunded + borrowerGot + treasuryGot,
+            ovrfloToken.balanceOf(address(lending)) + refunded + borrowerGot + treasuryGot,
             uint256(amountA) + amountB,
-            "underlying was created or stranded"
+            "ovrfloToken was created or stranded"
         );
 
         // Frozen history: the loan's interval sits entirely at or below the tape's
@@ -325,12 +325,12 @@ contract OVRFLOFuzzLendingTest is LendingMockFixture {
         _createStream(1, BORROWER, _faceForGross(100 ether));
 
         vm.prank(BORROWER);
-        try lending.borrow(MARKET, APR, target, 1, minAcceptable) returns (uint256 loanId) {
+        try lending.borrow(MARKET, APR, target, 1, minAcceptable, address(0)) returns (uint256 loanId) {
             (OVRFLOLending.Loan memory loan,) = lending.loanState(loanId);
             uint128 actualBorrow = uint128(uint256(loan.fillEnd - loan.fillStart) * unit);
 
             // Success is only legitimate if the borrower's floor was honoured.
-            assertGe(underlying.balanceOf(BORROWER), minAcceptable, "net proceeds below minAcceptable");
+            assertGe(ovrfloToken.balanceOf(BORROWER), minAcceptable, "net proceeds below minAcceptable");
             // The withdrawn position contributed nothing, so the fill cannot exceed
             // what actually remained resting at the tick.
             assertLe(actualBorrow, amountB, "fill drew on withdrawn liquidity");
@@ -363,7 +363,7 @@ contract OVRFLOFuzzLendingTest is LendingMockFixture {
         _createStream(1, BORROWER, _faceForGross(100 ether));
 
         vm.prank(BORROWER);
-        uint256 loanId = lending.borrow(MARKET, APR, target, 1, 0);
+        uint256 loanId = lending.borrow(MARKET, APR, target, 1, 0, address(0));
 
         (OVRFLOLending.Loan memory loan,) = lending.loanState(loanId);
         uint128 actualBorrow = uint128(uint256(loan.fillEnd - loan.fillStart) * unit);

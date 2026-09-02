@@ -10,7 +10,7 @@ interface IOVRFLOFactoryRegistry {
     /// @notice Returns the treasury, underlying, and ovrfloToken wired to a given OVRFLO core vault.
     /// @param ovrflo The OVRFLO core vault address.
     /// @return treasury Fee treasury for the vault.
-    /// @return underlying Underlying ERC20 used for fee payment.
+    /// @return underlying Column identity asset bound at vault registration.
     /// @return ovrfloToken The vault's wrap token.
     function ovrfloInfo(address ovrflo)
         external
@@ -30,7 +30,7 @@ interface IOVRFLOSeriesRegistry {
     /// @return expiryCached Cached PT maturity timestamp (also the stream end time).
     /// @return ptToken The Pendle PT token address.
     /// @return ovrfloToken The series' ovrflo token address.
-    /// @return underlying The underlying asset used for fee payment.
+    /// @return underlying Column identity asset bound at series approval.
     /// @return oracle Oracle used for PT-to-SY rate lookups.
     function series(address market)
         external

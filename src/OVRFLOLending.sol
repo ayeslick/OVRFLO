@@ -14,7 +14,7 @@ import {TickTree} from "./TickTree.sol";
 
 /// @title OVRFLOLending
 /// @notice Loan-only fixed-rate order book for OVRFLO collateral streams.
-/// @dev Lenders append underlying-denominated liquidity to per-market APR ticks.
+/// @dev Lenders append ovrfloToken-denominated liquidity to per-market APR ticks.
 ///      Quantities are stored as UNIT-denominated tree leaves; the borrower side
 ///      advances an epoch's cumulative `filled` coordinate without enumerating
 ///      positions.
@@ -113,10 +113,8 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
     IOVRFLOFactoryRegistry public immutable factory;
     /// @notice The OVRFLO core vault this lending market serves.
     address public immutable core;
-    /// @notice The ovrfloToken paid by collateral streams.
+    /// @notice The ovrfloToken paid by collateral streams and escrowed as lender liquidity.
     address public immutable ovrfloToken;
-    /// @notice The underlying ERC20 escrowed as lender liquidity.
-    address public immutable underlying;
     /// @notice Sablier V2 Lockup Linear instance used for collateral-stream custody and withdrawal.
     ISablierV2LockupLinear public immutable sablier;
 
@@ -239,6 +237,8 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
     ///      attribution unit, so the pro-rata cap is independent of address reuse
     ///      across positions (KTD9).
     mapping(uint256 loanId => mapping(uint256 positionId => uint128 amount)) public received;
+    /// @notice Address allowed to attribute `borrow` via `onBehalfOf`. Zero disables the path.
+    address public router;
 
     /*//////////////////////////////////////////////////////////////
                                   EVENTS
@@ -250,9 +250,11 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
     event LendingFeeSet(uint16 feeBps);
     /// @notice Emitted when the owner changes the fee treasury.
     event LendingTreasurySet(address indexed treasury);
+    /// @notice Emitted when the owner sets or clears the borrow router.
+    event LendingRouterSet(address indexed router);
     /// @notice Emitted when a market's immutable APR tick spacing is configured.
     event TickSpacingSet(address indexed market, uint16 spacing);
-    /// @notice Emitted when underlying liquidity is appended to a tick tape.
+    /// @notice Emitted when ovrfloToken liquidity is appended to a tick tape.
     event Supplied(
         uint256 indexed positionId,
         address indexed lender,
@@ -340,7 +342,6 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
         core = core_;
         sablier = ISablierV2LockupLinear(sablier_);
         treasury = treasury_;
-        underlying = underlying_;
         ovrfloToken = ovrfloToken_;
         aprMinBps = 0;
         aprMaxBps = launchAprBps_;
@@ -394,16 +395,26 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
         emit LendingTreasurySet(treasury_);
     }
 
+    /// @notice Sets the address allowed to attribute `borrow` via `onBehalfOf`.
+    /// @dev Accepts zero to disable the on-behalf path and any nonzero address the
+    ///      owner selects. There is no identity or allowlist check. The factory is
+    ///      the owner; the Safe validates the selected router off-chain.
+    /// @param router_ New router; zero disables attribution.
+    function setRouter(address router_) external onlyOwner {
+        router = router_;
+        emit LendingRouterSet(router_);
+    }
+
     /*//////////////////////////////////////////////////////////////
                             LENDER LIFECYCLE
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Escrows underlying and appends a lender position at an APR tick.
+    /// @notice Escrows ovrfloToken and appends a lender position at an APR tick.
     /// @dev Amounts are exact UNIT multiples. New supplies are forbidden at or
     ///      after maturity. Positions append to the tick's current epoch.
     /// @param market Pendle market identifying the collateral series.
     /// @param aprBps APR tick in basis points.
-    /// @param amount Underlying liquidity to escrow, in wei.
+    /// @param amount ovrfloToken liquidity to escrow, in wei.
     /// @return positionId Newly allocated lender position id.
     function supply(address market, uint16 aprBps, uint128 amount) external nonReentrant returns (uint256 positionId) {
         if (amount == 0) revert ZeroAmount();
@@ -433,7 +444,7 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
         lenderPositionAt[msg.sender][lenderIndex] = positionId;
         lenderPositionCount[msg.sender] = lenderIndex + 1;
 
-        _pullExact(IERC20(underlying), msg.sender, address(this), amount);
+        _pullExact(IERC20(ovrfloToken), msg.sender, address(this), amount);
 
         emit Supplied(positionId, msg.sender, market, aprBps, epoch, leafIndex, amount);
     }
@@ -464,7 +475,7 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
 
         uint128 refund = _toWei(unfilled);
         uint128 remainingLeaf = _toWei(filledHistory);
-        IERC20(underlying).safeTransfer(msg.sender, refund);
+        IERC20(ovrfloToken).safeTransfer(msg.sender, refund);
 
         emit Withdrawn(positionId, msg.sender, refund, remainingLeaf);
     }
@@ -486,26 +497,37 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
     ///      (no bespoke guard, user decision 2026-08-08). The stream NFT is escrowed
     ///      with plain `transferFrom` — never `safeTransferFrom` — leaving no
     ///      `onERC721Received` callback surface.
+    ///      Attribution: `borrower = msg.sender == router ? onBehalfOf : msg.sender`.
+    ///      A non-router caller is always the borrower, even with a leftover
+    ///      `onBehalfOf`. The router pulls the stream from its own escrow. Pay, index,
+    ///      and `Borrowed`'s indexed borrower topic use the attributed address.
     /// @param market Pendle market identifying the collateral series.
     /// @param aprBps APR tick in basis points to fill from.
     /// @param targetBorrow Desired principal in wei; floored to UNIT, filled up to depth.
     /// @param streamId Sablier stream pledged as collateral.
     /// @param minAcceptable Minimum net proceeds (after fee) the borrower accepts, in wei.
+    /// @param onBehalfOf Attributed borrower when `msg.sender == router`; ignored otherwise.
     /// @return loanId Newly allocated loan id.
-    function borrow(address market, uint16 aprBps, uint128 targetBorrow, uint256 streamId, uint128 minAcceptable)
-        external
-        nonReentrant
-        returns (uint256 loanId)
-    {
+    function borrow(
+        address market,
+        uint16 aprBps,
+        uint128 targetBorrow,
+        uint256 streamId,
+        uint128 minAcceptable,
+        address onBehalfOf
+    ) external nonReentrant returns (uint256 loanId) {
         if (targetBorrow == 0) revert ZeroTarget();
         _validateTick(market, aprBps);
+
+        address borrower = msg.sender == router ? onBehalfOf : msg.sender;
+        if (borrower == address(0)) revert ZeroAddress();
 
         FillOutcome memory outcome = _fillTick(market, aprBps, targetBorrow, streamId, true);
         if (outcome.actualBorrow - outcome.feeAmount < minAcceptable) revert BelowMinAcceptable();
 
         loanId = nextLoanId++;
         loans[loanId] = Loan({
-            borrower: msg.sender,
+            borrower: borrower,
             aprBps: aprBps,
             epoch: outcome.epoch,
             closed: false,
@@ -520,27 +542,13 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
         });
         loanAt[market][aprBps][outcome.epoch][outcome.seq] = loanId;
 
-        borrowerLoanAt[msg.sender][borrowerLoanCount[msg.sender]] = loanId;
-        borrowerLoanCount[msg.sender] += 1;
+        borrowerLoanAt[borrower][borrowerLoanCount[borrower]] = loanId;
+        borrowerLoanCount[borrower] += 1;
 
         sablier.transferFrom(msg.sender, address(this), streamId);
-        _payUnderlying(msg.sender, outcome.actualBorrow - outcome.feeAmount);
-        _payUnderlying(treasury, outcome.feeAmount);
-
-        emit Borrowed(
-            loanId,
-            msg.sender,
-            market,
-            aprBps,
-            outcome.epoch,
-            outcome.seq,
-            outcome.fillStart,
-            outcome.fillEnd,
-            outcome.actualBorrow,
-            outcome.feeAmount,
-            outcome.obligation,
-            streamId
-        );
+        _payToken(borrower, outcome.actualBorrow - outcome.feeAmount);
+        _payToken(treasury, outcome.feeAmount);
+        _emitBorrowed(loanId, borrower, market, aprBps, streamId, outcome);
     }
 
     /// @notice Quotes a borrow through the real fill path without consuming liquidity.
@@ -1227,11 +1235,36 @@ contract OVRFLOLending is Ownable2Step, ReentrancyGuard, Multicall {
         return SafeCast.toUint128(uint256(amount) * UNIT);
     }
 
-    /// @dev Pays `amount` underlying to `to`, skipping the transfer when zero.
-    function _payUnderlying(address to, uint256 amount) internal {
+    /// @dev Pays `amount` ovrfloToken to `to`, skipping the transfer when zero.
+    function _payToken(address to, uint256 amount) internal {
         if (amount > 0) {
-            IERC20(underlying).safeTransfer(to, amount);
+            IERC20(ovrfloToken).safeTransfer(to, amount);
         }
+    }
+
+    /// @dev Separate frame so `borrow` stays under the legacy pipeline's stack limit.
+    function _emitBorrowed(
+        uint256 loanId,
+        address borrower,
+        address market,
+        uint16 aprBps,
+        uint256 streamId,
+        FillOutcome memory outcome
+    ) internal {
+        emit Borrowed(
+            loanId,
+            borrower,
+            market,
+            aprBps,
+            outcome.epoch,
+            outcome.seq,
+            outcome.fillStart,
+            outcome.fillEnd,
+            outcome.actualBorrow,
+            outcome.feeAmount,
+            outcome.obligation,
+            streamId
+        );
     }
 
     /// @dev Pulls an exact amount and rejects fee-on-transfer behavior.

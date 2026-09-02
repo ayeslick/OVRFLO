@@ -119,6 +119,12 @@
       "offset": 0,
       "slot": "16",
       "type": "t_mapping(t_uint256,t_mapping(t_uint256,t_uint128))"
+    },
+    {
+      "label": "router",
+      "offset": 0,
+      "slot": "17",
+      "type": "t_address"
     }
   ],
   "types": {
