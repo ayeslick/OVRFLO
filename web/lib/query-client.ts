@@ -13,6 +13,9 @@ import { QUERY_RETRY, READ_INTERVAL_MS } from "./query-keys";
 // cache across users, and `output: "export"` means there is no server process.
 // Custom query factories stringify entity IDs so TanStack's hashKey never sees
 // a bigint (mixed `5n`/`"5"` cannot sneak in).
+//
+// This module remains the only UI chain-state store (KTD9 / KD18). Public-read
+// transport wrapping in lib/rpc.ts must not add a parallel observable store.
 
 export const queryClient = new QueryClient({
   defaultOptions: {

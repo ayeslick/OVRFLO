@@ -159,6 +159,10 @@ Walk this ladder before `useState`. Stop at the first home that fits. MUST.
   amendment with the ponytail-ladder justification written down. MUST.
   (Source: KTD11; ponytail ladder rungs 3–5; mcfunley "Choose Boring
   Technology".)
+  Exception (KD18): `@morpho-org/viem-dlc` npm `0.0.16`, release commit
+  `0df02a9a79bce8ed0a98974034d34cf5c8de7e11`, wraps public-read RPC only.
+  Wallet writes and TanStack Query stay outside that package. `7ea8e70` is
+  documentation context only.
 - **D2.** Ribbons are hand-drawn canvas; formatting is `Intl.*`; dialogs are
   native `<dialog>` where a modal is needed. MUST. (Source: KTD11; WIG;
   ponytail platform-native.)

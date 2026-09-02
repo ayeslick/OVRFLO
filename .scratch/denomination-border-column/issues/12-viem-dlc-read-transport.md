@@ -4,7 +4,7 @@
 
 **Blocked by:** 07
 
-**Status:** ready-for-agent
+**Status:** resolved
 **Labels:** ready-for-agent
 
 ## Session prompt (paste into a new chat)
@@ -40,15 +40,40 @@ After local verification, mark ticket checkboxes done and set Status: resolved.
 
 ## Acceptance criteria
 
-- [ ] Installed dependency resolves to npm `0.0.16` and commit `0df02a9a79bce8ed0a98974034d34cf5c8de7e11`
-- [ ] Public reads fail over to the next configured provider after a retryable provider failure
-- [ ] Per-provider rate limiting prevents one endpoint from consuming another endpoint's budget
-- [ ] Each configured RPC URL applies the four policy values in order and does not share concurrency or burst budget with another URL
-- [ ] `shouldThrow` preserves stop behavior for `execution_reverted` and `unknown_block`
-- [ ] Wallet client creation and writes do not import, wrap, or invoke viem-dlc
-- [ ] Query cache ownership remains in the existing query-client module; transport enrichment does not expose a parallel observable store
-- [ ] RPC and performance-contract tests prove bounded failover and dependency isolation
+- [x] Installed dependency resolves to npm `0.0.16` and commit `0df02a9a79bce8ed0a98974034d34cf5c8de7e11`
+- [x] Public reads fail over to the next configured provider after a retryable provider failure
+- [x] Per-provider rate limiting prevents one endpoint from consuming another endpoint's budget
+- [x] Each configured RPC URL applies the four policy values in order and does not share concurrency or burst budget with another URL
+- [x] `shouldThrow` preserves stop behavior for `execution_reverted` and `unknown_block`
+- [x] Wallet client creation and writes do not import, wrap, or invoke viem-dlc
+- [x] Query cache ownership remains in the existing query-client module; transport enrichment does not expose a parallel observable store
+- [x] RPC and performance-contract tests prove bounded failover and dependency isolation
 
 ## Plan unit
 
 CS5-U1 in `docs/plans/2026-08-22-001-refactor-denomination-switch-border-column-plan.md`
+
+## Comments
+
+### Unit boundary (2026-09-02)
+
+This ticket owns the npm pin, the public-read RPC wrap, ordered per-URL policy, failover, `shouldThrow`, query-cache ownership, and write isolation.
+
+Ticket 13 owns `logsDivider`, the single `getLogs` owner, progressive completeness, and `StreamBook.complete`.
+
+Ticket 14 owns deployless `policy(...)` probes and fresh wallet reacquisition at the prompt.
+
+Seam: `web/lib/rpc.ts` exports the ordered per-URL policy. Later tickets consume that policy. They do not reopen wallet writes.
+
+### Reuse audit (2026-09-02)
+
+Reused `createOrderedReadTransport`, `classifyRpcFailure`, the query-client singleton, and the existing RPC stop-set tests.
+
+New wrap: viem-dlc `rateLimiter` per URL, then `failover`. KD18 is the runtime-dependency exception.
+
+Not reused: `cache()` / `LruStore` (second store), `logsDivider` (ticket 13), `policy()` (ticket 14).
+
+### Review (2026-09-02)
+
+Read-only reviewer ([GPT-5.6 Sol](84f2a34c-48d5-4f57-bb86-279e55e302b3)) reported no findings. This chat keeps the wrap as shipped.
+

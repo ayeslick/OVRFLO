@@ -7,6 +7,9 @@ import { http, type Config } from "wagmi";
 import { reownProjectId, rpcUrls } from "./config";
 import { createOrderedReadTransport } from "./rpc";
 
+// Public-read transports only. Wallet connectors stay on the adapter's
+// untransformed write path and must not import @morpho-org/viem-dlc.
+
 // Production wallet stack only. The E2E runtime never imports this module —
 // constructing `WagmiAdapter` performs Reown/WalletConnect setup at module
 // scope, which a sandboxed test runner cannot always reach. See

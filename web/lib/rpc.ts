@@ -1,9 +1,12 @@
-import {
-  fallback,
-  http,
-  shouldThrow,
-  type Transport,
-} from "viem";
+import { http, type Transport } from "viem";
+import { defaultShouldThrow, failover, rateLimiter } from "@morpho-org/viem-dlc/transports";
+
+// KD18 runtime-dependency exception: @morpho-org/viem-dlc npm 0.0.16 wraps
+// public-read RPC only. Release tag provenance is this commit. 7ea8e70 is later
+// reviewed documentation context and is not package provenance. Wallet writes,
+// historical HTTP, and TanStack Query stay outside this package.
+export const VIEM_DLC_NPM_VERSION = "0.0.16" as const;
+export const VIEM_DLC_RELEASE_COMMIT = "0df02a9a79bce8ed0a98974034d34cf5c8de7e11" as const;
 
 export type RpcFailureKind =
   | "forbidden"
@@ -16,6 +19,23 @@ export type RpcFailureKind =
   | "transport_unavailable"
   | "unknown";
 
+export type PublicReadProviderPolicy = {
+  maxBlockRange: number;
+  maxRequestsPerSecond: number;
+  maxBurstRequests: number;
+  maxConcurrentRequests: number;
+};
+
+// Same numeric policy for every URL. Isolation comes from one rateLimiter
+// instance per URL, not from different numbers. Ticket 13 consumes
+// maxBlockRange for bounded log-range reads.
+export const publicReadProviderPolicy: PublicReadProviderPolicy = {
+  maxBlockRange: 100_000,
+  maxRequestsPerSecond: 10,
+  maxBurstRequests: 5,
+  maxConcurrentRequests: 5,
+};
+
 type ErrorShape = {
   code?: unknown;
   message?: unknown;
@@ -25,6 +45,8 @@ type ErrorShape = {
   details?: unknown;
   shortMessage?: unknown;
 };
+
+const publicReadPolicies = new WeakMap<Transport, PublicReadProviderPolicy>();
 
 export function classifyRpcFailure(error: unknown): RpcFailureKind {
   if (typeof error === "string") return classifyRpcFailure({ message: error });
@@ -88,21 +110,64 @@ function errorChain(error: unknown): ErrorShape[] {
   return found;
 }
 
+export function orderedPublicReadPolicy(policy: PublicReadProviderPolicy) {
+  return [
+    { maxBlockRange: policy.maxBlockRange },
+    { maxRequestsPerSecond: policy.maxRequestsPerSecond },
+    { maxBurstRequests: policy.maxBurstRequests },
+    { maxConcurrentRequests: policy.maxConcurrentRequests },
+  ] as const;
+}
+
+export function getPublicReadPolicy(transport: Transport): PublicReadProviderPolicy {
+  const policy = publicReadPolicies.get(transport);
+  if (!policy) {
+    throw new Error("Transport has no public-read provider policy");
+  }
+  return policy;
+}
+
+function publicReadShouldThrow(error: unknown): boolean {
+  const kind = classifyRpcFailure(error);
+  return kind === "execution_reverted" || kind === "unknown_block" || defaultShouldThrow(error);
+}
+
+export function wrapPublicReadTransport(
+  inner: Transport,
+  policy: PublicReadProviderPolicy = publicReadProviderPolicy,
+): Transport {
+  const [range, sustained, burst, concurrency] = orderedPublicReadPolicy(policy);
+  if (range.maxBlockRange < 1) {
+    throw new Error("Public-read maxBlockRange must be at least 1");
+  }
+  const noRetryInner: Transport = (opts) => inner({ ...opts, retryCount: 0 });
+  const wrapped = rateLimiter(noRetryInner, [
+    {
+      maxRequestsPerSecond: sustained.maxRequestsPerSecond,
+      maxBurstRequests: burst.maxBurstRequests,
+      maxConcurrentRequests: concurrency.maxConcurrentRequests,
+    },
+  ]);
+  // viem-dlc types the transport value as unknown. wagmi's Transport requires Record.
+  publicReadPolicies.set(wrapped as Transport, {
+    maxBlockRange: range.maxBlockRange,
+    maxRequestsPerSecond: sustained.maxRequestsPerSecond,
+    maxBurstRequests: burst.maxBurstRequests,
+    maxConcurrentRequests: concurrency.maxConcurrentRequests,
+  });
+  return wrapped as Transport;
+}
+
 export function createOrderedReadTransport<const T extends readonly Transport[]>(
   transports: T,
 ) {
   if (transports.length === 0) {
     throw new Error("At least one ordinary-read RPC transport is required");
   }
-  return fallback(transports, {
-    rank: false,
-    retryCount: 0,
-    shouldThrow(error) {
-      return classifyRpcFailure(error) === "execution_reverted" ||
-        classifyRpcFailure(error) === "unknown_block" ||
-        shouldThrow(error);
-    },
-  });
+  return failover(
+    transports.map((transport) => wrapPublicReadTransport(transport)),
+    { shouldThrow: publicReadShouldThrow },
+  ) as Transport;
 }
 
 export function createHistoricalTransport(url: string) {

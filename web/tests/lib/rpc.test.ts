@@ -4,6 +4,12 @@ import {
   classifyRpcFailure,
   createHistoricalTransport,
   createOrderedReadTransport,
+  getPublicReadPolicy,
+  orderedPublicReadPolicy,
+  publicReadProviderPolicy,
+  wrapPublicReadTransport,
+  VIEM_DLC_NPM_VERSION,
+  VIEM_DLC_RELEASE_COMMIT,
 } from "@/lib/rpc";
 
 describe("RPC failure classification", () => {
@@ -28,6 +34,13 @@ describe("RPC failure classification", () => {
 });
 
 describe("ordered transports", () => {
+  it("dispatches public reads through viem-dlc failover", () => {
+    const transport = createOrderedReadTransport([
+      custom({ request: async () => "0x1" }),
+    ])({ chain: undefined });
+    expect(transport.config.type).toBe("viem-dlc-failover");
+  });
+
   it("uses the secondary ordinary-read transport after a primary transport failure", async () => {
     const primary = vi.fn().mockRejectedValue(new Error("network unavailable"));
     const secondary = vi.fn().mockResolvedValue("0x1");
@@ -73,5 +86,88 @@ describe("ordered transports", () => {
     const transport = createHistoricalTransport("https://history.example.com")({ chain: undefined });
     expect(transport.config.type).toBe("http");
     expect("transports" in (transport.value ?? {})).toBe(false);
+  });
+});
+
+describe("per-URL public-read policy", () => {
+  const tightPolicy = {
+    maxBlockRange: 10_000,
+    maxRequestsPerSecond: 10,
+    maxBurstRequests: 1,
+    maxConcurrentRequests: 1,
+  } as const;
+
+  it("applies the four policy values in order", () => {
+    expect(Object.keys(publicReadProviderPolicy)).toEqual([
+      "maxBlockRange",
+      "maxRequestsPerSecond",
+      "maxBurstRequests",
+      "maxConcurrentRequests",
+    ]);
+    expect(orderedPublicReadPolicy(publicReadProviderPolicy)).toEqual([
+      { maxBlockRange: publicReadProviderPolicy.maxBlockRange },
+      { maxRequestsPerSecond: publicReadProviderPolicy.maxRequestsPerSecond },
+      { maxBurstRequests: publicReadProviderPolicy.maxBurstRequests },
+      { maxConcurrentRequests: publicReadProviderPolicy.maxConcurrentRequests },
+    ]);
+  });
+
+  it("binds the same ordered policy to each URL without sharing the limiter", () => {
+    const primary = wrapPublicReadTransport(custom({ request: async () => "0xa" }));
+    const secondary = wrapPublicReadTransport(custom({ request: async () => "0xb" }));
+    expect(getPublicReadPolicy(primary)).toEqual(publicReadProviderPolicy);
+    expect(getPublicReadPolicy(secondary)).toEqual(publicReadProviderPolicy);
+    expect(getPublicReadPolicy(primary)).not.toBe(getPublicReadPolicy(secondary));
+  });
+
+  it("keeps one URL's in-flight request from consuming another URL's concurrency budget", async () => {
+    let releasePrimary: ((value: string) => void) | undefined;
+    const primaryHang = new Promise<string>((resolve) => {
+      releasePrimary = resolve;
+    });
+    const primary = vi.fn(() => primaryHang);
+    const secondary = vi.fn().mockResolvedValue("0xb");
+    const primaryTransport = wrapPublicReadTransport(custom({ request: primary }), tightPolicy)({
+      chain: undefined,
+    });
+    const secondaryTransport = wrapPublicReadTransport(custom({ request: secondary }), tightPolicy)({
+      chain: undefined,
+    });
+
+    const primaryPending = primaryTransport.request({ method: "eth_chainId" });
+    await expect(secondaryTransport.request({ method: "eth_chainId" })).resolves.toBe("0xb");
+    expect(secondary).toHaveBeenCalledOnce();
+    releasePrimary!("0xa");
+    await expect(primaryPending).resolves.toBe("0xa");
+  });
+
+  it("queues a second request on the same URL when that URL's concurrency budget is full", async () => {
+    let releaseFirst: ((value: string) => void) | undefined;
+    const firstHang = new Promise<string>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const inner = vi.fn();
+    inner.mockImplementationOnce(() => firstHang);
+    inner.mockResolvedValueOnce("0x2");
+    const transport = wrapPublicReadTransport(custom({ request: inner }), tightPolicy)({
+      chain: undefined,
+    });
+
+    const first = transport.request({ method: "eth_chainId" });
+    const second = transport.request({ method: "eth_blockNumber" });
+    await Promise.resolve();
+    expect(inner).toHaveBeenCalledOnce();
+    releaseFirst!("0x1");
+    await expect(first).resolves.toBe("0x1");
+    await expect(second).resolves.toBe("0x2");
+    expect(inner).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("viem-dlc pin", () => {
+  it("records npm 0.0.16 provenance and not the later docs commit", () => {
+    expect(VIEM_DLC_NPM_VERSION).toBe("0.0.16");
+    expect(VIEM_DLC_RELEASE_COMMIT).toBe("0df02a9a79bce8ed0a98974034d34cf5c8de7e11");
+    expect(VIEM_DLC_RELEASE_COMMIT.startsWith("7ea8e70")).toBe(false);
   });
 });

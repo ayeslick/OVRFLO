@@ -36,6 +36,7 @@
     "bootstrap:e2e": "cd .. && ./tools/scripts/bootstrap-e2e.sh"
   },
   "dependencies": {
+    "@morpho-org/viem-dlc": "0.0.16",
     "@reown/appkit": "1.8.23",
     "@reown/appkit-adapter-wagmi": "1.8.23",
     "@tanstack/query-core": "5.90.12",
