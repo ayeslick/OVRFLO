@@ -529,10 +529,9 @@ export function SupplyFlow() {
 
   return (
     <Shell
-      currentNav="supply"
+      currentNav="create"
       wallet={<WalletButton />}
       status={<StatusLine status={freshness.kind} asOf={asOf} usdUnavailable={usdUnavailable} />}
-      onHome={() => router.push("/")}
     >
       <ModalErrorBoundary control="UI-REVIEW-ERROR-BOUNDARY" onReset={() => setBodyKey((key) => key + 1)}>
         <div className="supply-flow" data-split={stage === "review" ? "true" : "false"} key={bodyKey}>
@@ -724,7 +723,9 @@ export function SupplyFlow() {
                   }
                 }}
                 onViewPosition={(positionId) =>
-                  router.push(`/?lens=supplied&position=${positionId.toString()}`)
+                  router.push(
+                    lending ? `/?lending=${lending}&position=${positionId.toString()}` : "/",
+                  )
                 }
               />
             </>

@@ -114,14 +114,15 @@ empty meter wall.
 ## `UI-FIRST-RUN-CHOOSER`
 
 - **ID.** `UI-FIRST-RUN-CHOOSER`
-- **Purpose.** After dismiss, offer Borrow, Supply, and Assets as plain launches
-  — still not a watch wall, still not disconnected entry.
+- **Purpose.** After dismiss, offer the two Default position types as plain
+  launches — still not a watch wall, still not disconnected entry.
 - **Visible when.** `UI-FIRST-RUN-SURFACE` is `chooser` (dismissed, still
   confirmed empty).
 - **States.** One: rendered.
-- **Action.** Same launches as `UI-SHELL-NAV`.
-- **Copy rules.** `BORROW`, `SUPPLY`, `ASSETS`. No protocol metrics. No
-  demonstration instruments.
+- **Action.** Self-Repaying Loan goes to `/borrow/`. Fixed Return goes to
+  `/supply/`. These are typed create paths, not Default nav items.
+- **Copy rules.** `Self-Repaying Loan`, `Fixed Return`. No protocol metrics. No
+  demonstration instruments. Do not add Dashboard or Markets.
 - **Data authority.** `pure-client` layout. Emptiness still confirmed as for the
   surface.
 

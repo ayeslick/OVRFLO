@@ -16,7 +16,8 @@ import {
 describe("URL / localStorage parsers", () => {
   it("accepts well-formed watch search params", () => {
     expect(parseWatchSearch("?lens=borrowed&loan=14")).toEqual({
-      lens: "borrowed",
+      lens: null,
+      type: null,
       lending: null,
       position: null,
       loan: 14n,
@@ -35,13 +36,23 @@ describe("URL / localStorage parsers", () => {
     expect(parseEntityId("0x01")).toBeNull();
     expect(parseWatchSearch("%%%not-a-query")).toEqual({
       lens: null,
+      type: null,
       lending: null,
       position: null,
       loan: null,
       stream: null,
     });
     expect(parseWatchSearch("lens=supplied&position=abc")).toEqual({
-      lens: "supplied",
+      lens: null,
+      type: null,
+      lending: null,
+      position: null,
+      loan: null,
+      stream: null,
+    });
+    expect(parseWatchSearch("?type=loan&foo=1")).toEqual({
+      lens: null,
+      type: "loan",
       lending: null,
       position: null,
       loan: null,

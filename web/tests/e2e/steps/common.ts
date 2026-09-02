@@ -222,12 +222,14 @@ Then("the {string} lens is visible", async ({ page }, label: string) => {
   await expect(ui(page, "UI-WATCH-LENS").getByRole("tab", { name: label, exact: true })).toBeVisible();
 });
 
-Then("the URL carries the borrowed lens and a loan id", async ({ page }) => {
-  await expect(page).toHaveURL(/\?lens=borrowed&loan=\d+/);
+Then("the URL carries a loan identity", async ({ page }) => {
+  await expect(page).toHaveURL(/\?lending=0x[0-9a-fA-F]+&loan=\d+/);
+  expect(page.url()).not.toMatch(/[?&]lens=/);
 });
 
-Then("the URL carries the supplied lens and a position id", async ({ page }) => {
-  await expect(page).toHaveURL(/\?lens=supplied&position=\d+/);
+Then("the URL carries a position identity", async ({ page }) => {
+  await expect(page).toHaveURL(/\?lending=0x[0-9a-fA-F]+&position=\d+/);
+  expect(page.url()).not.toMatch(/[?&]lens=/);
 });
 
 Then("I see a confirmed action receipt", async ({ page }) => {

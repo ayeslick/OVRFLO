@@ -1,6 +1,6 @@
 Feature: Borrow against a stream
   Entry: /borrow. Decision: stream → amount+rate → review → NFT approve →
-  confirm. Exit: /?lens=borrowed&loan= on the watch wall. There is no sale
+  confirm. Exit: /?lending=<market>&loan= on Your OVRFLO. There is no sale
   listing; a max borrow is economically a sale.
 
   Background:
@@ -24,7 +24,7 @@ Feature: Borrow against a stream
     And I click the "BORROW" button
     Then I see a confirmed action receipt
     When I click the "VIEW LOAN" button
-    Then the URL carries the borrowed lens and a loan id
+    Then the URL carries a loan identity
     And the borrowed detail is open
 
   Scenario: Error state — no eligible stream offers Assets, not a fake empty book

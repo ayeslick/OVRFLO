@@ -1,4 +1,10 @@
+import { afterEach } from "vitest";
 import "@testing-library/jest-dom/vitest";
+import { resetDisclosure } from "@/lib/disclosure";
+
+afterEach(() => {
+  resetDisclosure();
+});
 
 // Unit tests import `@/lib/config` at module load. A missing factory address
 // must fail the real boot; tests that are not exercising that gate get a

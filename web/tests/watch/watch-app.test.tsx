@@ -323,11 +323,12 @@ describe("watch shell + entry", () => {
     render(<WatchApp />);
     expect(screen.getByRole("heading", { name: "OVRFLO" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "CONNECT WALLET" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "BORROW" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "SUPPLY" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "ASSETS" })).toBeInTheDocument();
-    expect(screen.getAllByRole("link", { name: "RISK" }).length).toBeGreaterThan(0);
-    expect(screen.getByText(/earnings rolling up/i)).toBeInTheDocument();
+    const nav = document.querySelector('[data-ui="UI-SHELL-NAV"]');
+    expect(nav).not.toBeNull();
+    expect(nav?.textContent).toContain("Your OVRFLO");
+    expect(nav?.textContent).toContain("Create");
+    expect(nav?.textContent).toContain("Activity");
+    expect(screen.getByText(/Your OVRFLO: positions/i)).toBeInTheDocument();
     expect(screen.queryByText(/TVL/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/you have no positions/i)).not.toBeInTheDocument();
   });
@@ -399,12 +400,13 @@ describe("watch shell + entry", () => {
     expect(screen.getByRole("button", { name: "Back to supplied" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Back to supplied" }));
     expect(window.location.search).not.toMatch(/position=/);
-    expect(window.location.search).toMatch(/lens=supplied/);
+    expect(window.location.search).not.toMatch(/lens=/);
   });
 
-  it("does not mark a nav item current on home", () => {
+  it("marks Your OVRFLO current on home", () => {
     render(<WatchApp />);
-    expect(screen.getByRole("link", { name: "BORROW" })).not.toHaveAttribute("aria-current");
+    const nav = document.querySelector('[data-ui="UI-SHELL-NAV"]');
+    expect(nav?.querySelector('[href="/"]')).toHaveAttribute("aria-current", "page");
   });
 
   it("does not paint STREAM CLOSED when an open loan exists for the selected stream", async () => {
@@ -602,8 +604,9 @@ describe("watch shell + entry", () => {
         market: MARKET,
       },
     ];
-    writeWatchSearch({ lens: "streams", selection: { kind: "none" } }, "replace");
+    writeWatchSearch({ selection: { kind: "none" } }, "replace");
     render(<WatchApp />);
+    fireEvent.click(screen.getByRole("tab", { name: "STREAMS" }));
     expect(screen.getByText(/STREAM DISCOVERY IS UNAVAILABLE/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /STREAM #5/ })).toBeInTheDocument();
   });
@@ -634,8 +637,9 @@ describe("watch shell + entry", () => {
         market: MARKET,
       },
     ];
-    writeWatchSearch({ lens: "streams", selection: { kind: "none" } }, "replace");
+    writeWatchSearch({ selection: { kind: "none" } }, "replace");
     const { rerender } = render(<WatchApp />);
+    fireEvent.click(screen.getByRole("tab", { name: "STREAMS" }));
     expect(screen.getByRole("button", { name: /STREAM #5/ })).toBeInTheDocument();
 
     fx.streamStatus = "unavailable";
@@ -686,8 +690,9 @@ describe("watch shell + entry", () => {
         outstanding: SCALE,
       },
     ];
-    writeWatchSearch({ lens: "borrowed", selection: { kind: "none" } }, "replace");
+    writeWatchSearch({ selection: { kind: "none" } }, "replace");
     render(<WatchApp />);
+    fireEvent.click(screen.getByRole("tab", { name: "BORROWED" }));
     expect(screen.getByRole("button", { name: /LOAN #12/ })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /STREAM #5/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("tab", { name: "STREAMS" })).not.toBeInTheDocument();

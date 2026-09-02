@@ -1,6 +1,6 @@
 Feature: Supply liquidity
   Entry: /supply. Decision: SELECT_MARKET → amount → rate → review → approve
-  (if needed) → confirm. Exit: /?lens=supplied&position= on the watch wall.
+  (if needed) → confirm. Exit: /?lending=<market>&position= on Your OVRFLO.
 
   Background:
     Given I am on the supply flow
@@ -20,7 +20,7 @@ Feature: Supply liquidity
     And I click the "SUPPLY" button
     Then I see a confirmed action receipt
     When I click the "VIEW POSITION" button
-    Then the URL carries the supplied lens and a position id
+    Then the URL carries a position identity
     And the supplied detail is open
 
   @UI-SUPPLY-AMOUNT

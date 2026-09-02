@@ -6,10 +6,12 @@ export type ParseErr = { ok: false; reason: "malformed" | "empty" | "negative" |
 export type ParseResult<T> = ParseOk<T> | ParseErr;
 
 export type WatchLens = "supplied" | "borrowed" | "streams";
+export type PortfolioType = "loan" | "fixed";
 export type UsdMode = "token" | "usd";
 
 export type WatchSearch = {
   lens: WatchLens | null;
+  type: PortfolioType | null;
   lending: Address | null;
   position: bigint | null;
   loan: bigint | null;
@@ -25,6 +27,7 @@ export type FlowDraft = {
 
 const BIGINT_TAG = "$ovrflo/bigint";
 const LENSES = new Set<WatchLens>(["supplied", "borrowed", "streams"]);
+const PORTFOLIO_TYPES = new Set<PortfolioType>(["loan", "fixed"]);
 const USD_MODES = new Set<UsdMode>(["token", "usd"]);
 
 function ok<T>(value: T): ParseOk<T> {
@@ -42,6 +45,11 @@ function asRecord(value: unknown): value is Record<string, unknown> {
 export function parseWatchLens(raw: string | null | undefined): WatchLens | null {
   if (raw === null || raw === undefined || raw === "") return null;
   return LENSES.has(raw as WatchLens) ? (raw as WatchLens) : null;
+}
+
+export function parsePortfolioType(raw: string | null | undefined): PortfolioType | null {
+  if (raw === null || raw === undefined || raw === "") return null;
+  return PORTFOLIO_TYPES.has(raw as PortfolioType) ? (raw as PortfolioType) : null;
 }
 
 export function parseUsdMode(raw: string | null | undefined): UsdMode | null {
@@ -63,14 +71,15 @@ export function parseWatchSearch(source: URLSearchParams | string): WatchSearch 
   try {
     const params = typeof source === "string" ? new URLSearchParams(source.replace(/^\?/, "")) : source;
     return {
-      lens: parseWatchLens(params.get("lens")),
+      lens: null,
+      type: parsePortfolioType(params.get("type")),
       lending: parseAddressParam(params.get("lending")),
       position: parseEntityId(params.get("position")),
       loan: parseEntityId(params.get("loan")),
       stream: parseEntityId(params.get("stream")),
     };
   } catch {
-    return { lens: null, lending: null, position: null, loan: null, stream: null };
+    return { lens: null, type: null, lending: null, position: null, loan: null, stream: null };
   }
 }
 

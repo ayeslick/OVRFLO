@@ -187,7 +187,7 @@ describe("StreamCreate flow", () => {
         boundedApproval={(102n * WAD) / 100n}
         streamId={42n}
         borrowHref="/borrow/?stream=42"
-        viewStreamHref="/?lens=streams&stream=42"
+        viewStreamHref="/?stream=42"
         permissionLines={[]}
         permissionState="skipped"
         actionLines={[{ key: "ACTION", value: "DEPOSIT" }]}
@@ -200,7 +200,7 @@ describe("StreamCreate flow", () => {
     );
     expect(screen.getByRole("link", { name: "VIEW STREAM" })).toHaveAttribute(
       "href",
-      "/?lens=streams&stream=42",
+      "/?stream=42",
     );
     expect(screen.getByText("#42")).toBeInTheDocument();
   });

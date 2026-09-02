@@ -32,10 +32,11 @@ export function AssetsPage() {
   const flowParam = params.get("flow");
   const flow = flowParam === "stream" ? "stream" : "convert";
   const returnLoan = params.get("loan");
+  const returnLending = parseAddressParam(params.get("lending"));
   const repayHref =
     params.get("return") === "repay"
-      ? returnLoan && /^(0|[1-9][0-9]*)$/.test(returnLoan)
-        ? `/?lens=borrowed&loan=${returnLoan}`
+      ? returnLending && returnLoan && /^(0|[1-9][0-9]*)$/.test(returnLoan)
+        ? `/?lending=${returnLending}&loan=${returnLoan}`
         : "/"
       : undefined;
   const requestedMarket = parseAddressParam(params.get("market"));
@@ -82,7 +83,7 @@ export function AssetsPage() {
 
   return (
     <Shell
-      currentNav="assets"
+      currentNav={null}
       wallet={<WalletButton />}
       status={
         <StatusLine
@@ -90,7 +91,6 @@ export function AssetsPage() {
           asOf={asOfClock(freshness.freshness.asOf)}
         />
       }
-      onHome={() => router.push("/")}
     >
       <div className="assets-page">
         <SurfaceState

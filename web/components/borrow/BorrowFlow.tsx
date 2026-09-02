@@ -428,10 +428,9 @@ export function BorrowFlow() {
 
   return (
     <Shell
-      currentNav="borrow"
+      currentNav="create"
       wallet={<WalletButton />}
       status={<StatusLine status={freshness.kind} asOf={asOf} usdUnavailable={usdUnavailable} />}
-      onHome={() => router.push("/")}
     >
       <ModalErrorBoundary control="UI-REVIEW-ERROR-BOUNDARY" onReset={() => setBodyKey((key) => key + 1)}>
         <div className="borrow-flow" data-split={stage === "review" ? "true" : "false"} key={bodyKey}>
@@ -584,7 +583,11 @@ export function BorrowFlow() {
                     onRelatch();
                   }
                 }}
-                onViewLoan={(loanId) => router.push(`/?lens=borrowed&loan=${loanId.toString()}`)}
+                onViewLoan={(loanId) =>
+                  router.push(
+                    lending ? `/?lending=${lending}&loan=${loanId.toString()}` : "/",
+                  )
+                }
               />
             </>
           ) : null}

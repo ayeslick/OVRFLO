@@ -7,27 +7,76 @@ it is chain truth, and none of it may gate an action.
 
 Entry format and rules: `README.md`.
 
+## Destination URLs (KD16)
+
+Paths use a trailing slash. Advanced writes no path and no query param.
+Refresh on a destination lands in Default. `?lens=` is ignored and stripped.
+Unknown query keys must not crash. Pre-CS4 shapes have no compatibility redirects.
+
+| Destination | URL | Notes |
+|---|---|---|
+| Your OVRFLO hub, empty, or incomplete scan | `/` | Incomplete scan does not change the path and does not write matrix query params from a provisional count |
+| Self-Repaying Loan collection | `/?type=loan` | Written only after complete hydration on `/` |
+| Self-Repaying Loan detail | `/?lending=<market>&loan=<id>` | Identity stays `(lending, id)` |
+| Fixed Return collection | `/?type=fixed` | Written only after complete hydration on `/` |
+| Fixed Return detail | `/?lending=<market>&position=<id>` | Same identity rule as today |
+| Create (type not yet chosen) | `/create/` | Empty-portfolio Create and the Create nav item land here |
+| Create Self-Repaying Loan | `/borrow/` | Existing page. `?stream=` and `?step=` stay |
+| Create Fixed Return | `/supply/` | Existing page. `?step=` stays |
+| Activity | `/activity/` | The portfolio matrix on `/` does not apply here |
+| Wrap, unwrap, PT deposit | `/assets/` | Existing page |
+| Risk | `/risk/` | Unchanged |
+| Default vs Advanced | no path or query change | Disclosure only. `Return to Default` is the control. Browser Back does not toggle disclosure. Refresh lands in Default on the same destination |
+
+Query keys that survive: `?lending=`, `?loan=`, `?position=`, `?stream=`, `?step=`, `?type=` (`loan` or `fixed` only). Transaction checkpoints remain unenterable from history.
+
 ---
 
 ### `watch.lens`
 
-Which role lens is active: `supplied` · `borrowed` · `streams`.
+Which role lens is active on the incumbent wall: `supplied` · `borrowed` · `streams`.
+The URL no longer carries this key.
 
 - **trust_domain:** `pure-client`
 - **writers:**
-  - `web/components/kit/LensTabs.tsx` — landing U4: APG tablist writes URL `?lens=` and per-wallet localStorage
-  - `web/app/page.tsx` — resolution order: URL param → per-wallet memory → supplied default
+  - `web/components/kit/LensTabs.tsx` — local wall tabs; does not write `?lens=`
+  - `web/components/watch/WatchApp.tsx` — per-wallet localStorage only
 - **readers:**
-  - `web/components/watch/Wall.tsx` — landing U7: which row set to render
-  - `web/components/kit/LensTabs.tsx` — landing U4: selected tab
-- **notes:** Resolution order is URL → per-wallet memory → supplied (dual-role
-  wallets; lenders visit most, on claim cadence). An invalid URL value is
-  ignored. Memory is keyed by lowercased address; a different account never
-  inherits the previous account's lens. A lens whose **confirmed** count is
-  zero is hidden; a pending or failed book read is not a confirmed zero
-  (`UI-WATCH-LENS`). Client-only: apply in an effect after first paint, never
-  a render-read of localStorage (static-export hydration). Throw-tolerant
-  storage wrapper (U6).
+  - `web/components/watch/Wall.tsx` — which row set to render
+  - `web/components/kit/LensTabs.tsx` — selected tab
+- **notes:** `?lens=` is ignored and stripped (`web/lib/watch-url.ts`
+  `stripLensFromLocation`). Ticket 15 replaces this wall with hub / collection /
+  detail. An invalid historical URL value is ignored. Memory is keyed by
+  lowercased address. Client-only: apply in an effect after first paint.
+
+### `watch.portfolio-type`
+
+Collection type on `/` after complete hydration: `loan` · `fixed` · none.
+
+- **trust_domain:** `pure-client`
+- **writers:**
+  - `web/lib/watch-url.ts` — serializes `?type=` only when asked; CS4-U2 writes
+    after complete hydration
+- **readers:**
+  - `web/lib/watch-url.ts` — parse of surviving query keys
+- **notes:** Written only after complete hydration on `/`. Incomplete scan
+  must not write this key. Detail identity params take precedence over type.
+
+### `chrome.disclosure`
+
+Default vs Advanced disclosure over the current destination.
+
+- **trust_domain:** `pure-client`
+- **writers:**
+  - `web/lib/disclosure.ts` — in-memory store; `setDisclosure` / `toggleDisclosure`
+  - `web/components/kit/Shell.tsx` — `UI-SHELL-MODE`
+  - `web/components/kit/DefaultHub.tsx` — hub help duplicate
+- **readers:**
+  - `web/components/kit/Shell.tsx` — `data-disclosure` and mode label
+  - `web/components/kit/DefaultHub.tsx` — hub help duplicate
+- **notes:** Never a URL param. Refresh returns Default. Browser Back does not
+  toggle it. Switching preserves the current object or task because the
+  destination URL does not change.
 
 ### `watch.selected-entity`
 

@@ -178,9 +178,9 @@ describe("guided first run (AE5)", () => {
     expect(onDismiss).toHaveBeenCalledOnce();
     unmount();
     render(<Chooser />);
-    expect(screen.getByRole("link", { name: "BORROW" })).toHaveAttribute("href", "/borrow");
-    expect(screen.getByRole("link", { name: "SUPPLY" })).toHaveAttribute("href", "/supply");
-    expect(screen.getByRole("link", { name: "ASSETS" })).toHaveAttribute("href", "/assets");
+    expect(screen.getByRole("link", { name: "Self-Repaying Loan" })).toHaveAttribute("href", "/borrow/");
+    expect(screen.getByRole("link", { name: "Fixed Return" })).toHaveAttribute("href", "/supply/");
+    expect(screen.queryByRole("link", { name: "ASSETS" })).not.toBeInTheDocument();
     expect(screen.queryByText(TEACHING_SENTENCES[0])).not.toBeInTheDocument();
     expect(screen.queryByRole("meter")).not.toBeInTheDocument();
   });

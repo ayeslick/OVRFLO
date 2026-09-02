@@ -148,11 +148,6 @@ export function WatchApp() {
         ? borrowedFreshness
         : suppliedFreshness;
 
-  useEffect(() => {
-    if (entry !== "watch" && entry !== "watch-streams-degraded") return;
-    if (url.lens === resolvedLens) return;
-    writeWatchSearch({ lens: resolvedLens, selection: url.selection }, "replace");
-  }, [entry, resolvedLens, url.lens, url.selection]);
 
   const lastReadAt =
     resolvedLens === "streams" && streams.metadata.blockTimestamp !== undefined
@@ -169,11 +164,10 @@ export function WatchApp() {
   function onSelectLens(id: WatchLens) {
     if (account) storageSet(lensKey(chainId, account), id);
     setMemoryLens(id);
-    url.setLens(id);
   }
 
   function onSelect(selection: WatchSelection) {
-    writeWatchSearch({ lens: resolvedLens, selection }, "push");
+    writeWatchSearch({ selection }, "push");
   }
 
   const selectedStreamId = url.selection.kind === "stream" ? url.selection.id : null;
@@ -245,7 +239,6 @@ export function WatchApp() {
     }
     writeWatchSearch(
       {
-        lens: "borrowed",
         selection: { kind: "loan", lending: matchingOpenLoanLending, id: matchingOpenLoanId },
       },
       "replace",
@@ -259,7 +252,7 @@ export function WatchApp() {
 
   return (
     <Shell
-      currentNav={null}
+      currentNav="home"
       wallet={<WalletButton />}
       status={
         <div className="watch-status-row">
@@ -283,9 +276,6 @@ export function WatchApp() {
           />
         </div>
       }
-      onHome={() => {
-        url.goHome();
-      }}
     >
       <div className="watch-milestone" aria-live="polite" />
       {entry === "disconnected" ? <DisconnectedEntry /> : null}
@@ -466,10 +456,10 @@ function DisconnectedEntry() {
     <section className="watch-entry" data-ui="UI-WATCH-ENTRY-DISCONNECTED" data-region="entry-disconnected">
       <p className="watch-kicker">ENTRY</p>
       <p>
-        Once a wallet is connected, this home becomes the instruments you can watch:
-        earnings rolling up, debt rolling down to a known done-date, and streams vesting.
+        Once a wallet is connected, this home becomes Your OVRFLO: positions
+        you can watch.
       </p>
-      <p>Borrow and Supply launch from here. They do not require a book to start.</p>
+      <p>Create launches Self-Repaying Loans and Fixed Returns from here. They do not require a book to start.</p>
     </section>
   );
 }

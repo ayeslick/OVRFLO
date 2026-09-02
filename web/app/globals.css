@@ -1,14 +1,45 @@
 :root {
-  --paper: #FDFDFC;
-  --ink: #0A0A0A;
-  --dim: #6B6B6B;
-  --halftone: #EFEFEC;
-  --gold: #E8930C;
-  --gold-ink: #FFB84D;
-  --ok: #177245;
-  --err: #C22F2F;
+  --canvas: #F6F8FC;
+  --surface: #FFFFFF;
+  --ink: #0B1F3A;
+  --muted: #627187;
+  --border: #D9E2EF;
+  --control-border: #8094AD;
+  --primary: #1769E0;
+  --primary-hover: #0F56C2;
+  --primary-soft: #EAF2FF;
+  --loan: #2B7DE9;
+  --loan-soft: #E8F2FF;
+  --fixed-return: #218A62;
+  --fixed-return-soft: #E8F6F0;
+  --success: #16815C;
+  --success-soft: #E8F6F0;
+  --warning: #9A5A00;
+  --warning-soft: #FFF4DF;
+  --error: #C93737;
+  --error-soft: #FDECEC;
+  --disabled-surface: #EEF2F7;
+  --focus: #2563EB;
+  --radius-control: 10px;
+  --radius-card: 16px;
+  --radius-panel: 20px;
+  --space-xs: 8px;
+  --space-sm: 12px;
+  --space-md: 16px;
+  --space-lg: 24px;
+  --space-xl: 32px;
+  --space-xxl: 48px;
+  --shadow-card: 0 10px 32px rgba(15, 39, 74, 0.08);
+  --hub-max: 1160px;
+  --focused-max: 720px;
   --font-decision: var(--font-schibsted), ui-sans-serif, system-ui, sans-serif;
   --font-receipt: var(--font-martian), ui-monospace, SFMono-Regular, Menlo, monospace;
+  --paper: var(--canvas);
+  --dim: var(--muted);
+  --gold: var(--primary);
+  --gold-ink: var(--surface);
+  --ok: var(--success);
+  --err: var(--error);
 }
 
 * {
@@ -19,7 +50,7 @@ html,
 body {
   margin: 0;
   min-height: 100%;
-  background: var(--paper);
+  background: var(--canvas);
   color: var(--ink);
 }
 
@@ -35,7 +66,7 @@ select {
 }
 
 button {
-  border-radius: 0;
+  border-radius: var(--radius-control);
 }
 
 .mono {
@@ -59,8 +90,6 @@ table {
      for engines without it. */
   min-height: 100vh;
   min-height: 100dvh;
-  border-left: 1px solid var(--ink);
-  border-right: 1px solid var(--ink);
   padding: 0 2rem 4rem;
 }
 
@@ -69,7 +98,7 @@ table {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  border-bottom: 1px solid var(--ink);
+  border-bottom: 1px solid var(--border);
 }
 
 .brand {
@@ -103,17 +132,17 @@ table {
 }
 
 .button {
-  background: transparent;
-  border: 1px solid var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--control-border);
   color: var(--ink);
   padding: 0.65rem 0.85rem;
   cursor: pointer;
-  border-radius: 0;
+  border-radius: var(--radius-control);
 }
 
 .button:hover:not(:disabled) {
-  background: var(--ink);
-  color: var(--paper);
+  background: var(--primary-soft);
+  color: var(--primary);
 }
 
 .button:disabled {
@@ -123,15 +152,15 @@ table {
 }
 
 .button-gold {
-  background: var(--gold);
-  border-color: var(--gold);
-  color: var(--ink);
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--surface);
 }
 
 .button-gold:hover:not(:disabled) {
-  background: var(--ink);
-  border-color: var(--ink);
-  color: var(--paper);
+  background: var(--primary-hover);
+  border-color: var(--primary-hover);
+  color: var(--surface);
 }
 
 h2,
@@ -169,7 +198,7 @@ h3 {
 .button:focus-visible,
 .modal-close:focus-visible,
 .copy-value:focus-visible {
-  outline: 2px solid var(--ink);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 
@@ -191,7 +220,7 @@ h3 {
 }
 
 .status-warning {
-  color: var(--gold);
+  color: var(--warning);
 }
 
 .copy-value {
@@ -204,11 +233,11 @@ h3 {
   gap: 0.4rem;
   padding: 0.25rem 0.4rem;
   min-height: 24px;
-  border-radius: 0;
+  border-radius: var(--radius-control);
 }
 
 .copy-value:hover {
-  border-color: var(--ink);
+  border-color: var(--control-border);
 }
 
 .copy-value-icon {
@@ -234,9 +263,9 @@ h3 {
 }
 
 .modal-panel {
-  background: var(--paper);
-  border: 1px solid var(--ink);
-  border-radius: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-panel);
   max-width: 500px;
   width: 100%;
   padding: 1.5rem;

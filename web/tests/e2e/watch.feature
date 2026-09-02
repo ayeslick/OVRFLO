@@ -15,7 +15,7 @@ Feature: Watch surface
     And I see a loan row
     When I select the first loan row
     Then the borrowed detail is open
-    And the URL carries the borrowed lens and a loan id
+    And the URL carries a loan identity
 
   @UI-WATCH-SUPPLIED-DETAIL
   Scenario: Happy path — claim in place on a supplied position
@@ -43,7 +43,7 @@ Feature: Watch surface
     Then the borrowed detail is open
     When the frontend re-syncs with chain state
     Then the borrowed detail is open
-    And the URL carries the borrowed lens and a loan id
+    And the URL carries a loan identity
 
   Scenario: Degraded reads — zero-count supplied lens is hidden
     Then I see a loan row

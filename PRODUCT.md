@@ -34,7 +34,7 @@ The broader OVRFLO cycle lets a Pendle PT holder make its fixed discount immedia
 
 ## Operating Context
 
-The primary product is a wallet-connected web application backed by Ethereum-compatible smart contracts. The Markets app's home is the watch surface: a connected wallet holding any protocol object lands on a role-lens wall of those entities. Borrow, Supply, and Assets launch as flows from home and from navigation. A wallet confirmed empty of positions, loans, and streams lands on a guided first run.
+The primary product is a wallet-connected web application backed by Ethereum-compatible smart contracts. The Markets app's Default home is `Your OVRFLO`. Navigation is `Your OVRFLO`, `Create`, and `Activity` on `/`, `/create/`, and `/activity/`. Create offers two position types: Self-Repaying Loan at `/borrow/` and Fixed Return at `/supply/`. Advanced is a disclosure level over the current destination. It does not add a second home, a Dashboard, or a Markets destination. Wallet and network stay visible and secondary. A wallet confirmed empty of positions, loans, and streams lands on a guided first run, then the Create chooser.
 
 Core workflows include:
 

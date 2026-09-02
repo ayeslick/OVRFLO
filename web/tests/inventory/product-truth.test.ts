@@ -76,7 +76,7 @@ describe("inventory — product truth", () => {
     const slice = source.slice(start, start + 1200);
     expect(slice).not.toMatch(/TVL/i);
     expect(slice).not.toMatch(/health factor/i);
-    expect(slice).toMatch(/earnings rolling up/i);
+    expect(slice).toMatch(/Your OVRFLO: positions/i);
   });
 
   it("projection never appears as a write gate in watch writes or action builders", () => {

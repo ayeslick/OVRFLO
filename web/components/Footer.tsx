@@ -14,8 +14,8 @@ export function Footer() {
       : null;
 
   return (
-    <footer className="watch-footer">
-      <a href="/risk">RISK</a>
+    <footer className="kit-footer">
+      <a href="/risk/">Risk</a>
       {factoryLink ? (
         <a href={factoryLink} rel="noopener noreferrer" target="_blank">
           FACTORY ↗

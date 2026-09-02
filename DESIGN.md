@@ -137,6 +137,25 @@ Default navigation labels are exactly `Your OVRFLO`, `Create`, and `Activity`. `
 
 `Go to Advanced` is available from desktop account navigation and the mobile menu on every Default route. The hub help panel may repeat it. Advanced exposes `Return to Default` in the same global location. A mode change preserves the current object or task when the destination supports it. Otherwise it routes to the closest truthful parent and explains the change.
 
+Destination URLs use a trailing slash. Advanced writes no path and no query param. Refresh on a destination lands in Default. `?lens=` is ignored and stripped. Unknown query keys must not crash. Pre-CS4 shapes have no compatibility redirects.
+
+| Destination | URL | Notes |
+|---|---|---|
+| Your OVRFLO hub, empty, or incomplete scan | `/` | Incomplete scan does not change the path and does not write matrix query params from a provisional count |
+| Self-Repaying Loan collection | `/?type=loan` | Written only after complete hydration on `/` |
+| Self-Repaying Loan detail | `/?lending=<market>&loan=<id>` | Identity stays `(lending, id)` |
+| Fixed Return collection | `/?type=fixed` | Written only after complete hydration on `/` |
+| Fixed Return detail | `/?lending=<market>&position=<id>` | Same identity rule as today |
+| Create (type not yet chosen) | `/create/` | Empty-portfolio Create and the Create nav item land here |
+| Create Self-Repaying Loan | `/borrow/` | Existing page. `?stream=` and `?step=` stay |
+| Create Fixed Return | `/supply/` | Existing page. `?step=` stays |
+| Activity | `/activity/` | The portfolio matrix on `/` does not apply here |
+| Wrap, unwrap, PT deposit | `/assets/` | Existing page |
+| Risk | `/risk/` | Unchanged |
+| Default vs Advanced | no path or query change | Disclosure only. `Return to Default` is the control. Browser Back does not toggle disclosure. Refresh lands in Default on the same destination |
+
+Query keys that survive: `?lending=`, `?loan=`, `?position=`, `?stream=`, `?step=`, `?type=` (`loan` or `fixed` only). Transaction checkpoints remain unenterable from history.
+
 After route or stage navigation, focus moves to the new surface heading. Inline refresh, validation, and transaction-status updates retain focus and announce through a concise live region. Back returns focus to the control that opened the prior surface.
 
 ### Portfolio routing and trust

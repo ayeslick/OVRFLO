@@ -32,11 +32,11 @@ describe("inventory — entry, lenses, watch index, first-run, degraded, narrow 
     render(<WatchApp />);
     expect(screen.getByRole("heading", { name: "OVRFLO" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "CONNECT WALLET" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "BORROW" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "SUPPLY" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "ASSETS" })).toBeInTheDocument();
-    expect(screen.getAllByRole("link", { name: "RISK" }).length).toBeGreaterThan(0);
-    expect(screen.getByText(/earnings rolling up/i)).toBeInTheDocument();
+    const nav = document.querySelector('[data-ui="UI-SHELL-NAV"]');
+    expect(nav?.textContent).toContain("Your OVRFLO");
+    expect(nav?.textContent).toContain("Create");
+    expect(nav?.textContent).toContain("Activity");
+    expect(screen.getByText(/Your OVRFLO: positions/i)).toBeInTheDocument();
     expect(document.querySelector("[data-ui='UI-WATCH-ENTRY-DISCONNECTED']")).not.toBeNull();
     expect(screen.queryByText(/TVL/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/you have no positions/i)).not.toBeInTheDocument();
@@ -238,6 +238,6 @@ describe("inventory — entry, lenses, watch index, first-run, degraded, narrow 
     expect(screen.getByRole("button", { name: "Back to supplied" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Back to supplied" }));
     expect(window.location.search).not.toMatch(/position=/);
-    expect(window.location.search).toMatch(/lens=supplied/);
+    expect(window.location.search).not.toMatch(/lens=/);
   });
 });

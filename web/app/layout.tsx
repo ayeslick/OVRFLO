@@ -37,11 +37,11 @@ export const metadata: Metadata = {
 };
 
 const DIRECTION_CONTRACT = `<!--
-THESIS: A new financial mechanism inside a familiar machine — one decision per viewport, receipts before signatures; the category's dark casino is refused.
-OWN-WORLD: One-bit instrument workbench — paper white, hard black rules, bitmap texture, square controls; Schibsted Grotesk decisions over Martian Mono receipts; a single gold active-operation accent.
-STORY: The home is the watch surface. Borrow and Supply are launchable flows. Watch earnings grow or debt shrink to a known done-date; sign with a receipt. No engagement mechanics.
-FIRST VIEWPORT: Watch wall with role lens and gold accent.
-FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, and DESIGN.md
+THESIS: A calm path through one economic choice at a time — exact consequences before signing.
+OWN-WORLD: Cool near-white canvas, white bordered cards, deep navy text, cobalt actions; Schibsted Grotesk; Default and Advanced share one token system.
+STORY: Default home is Your OVRFLO. Create and Activity are the other destinations. Advanced is disclosure, not a second home.
+FIRST VIEWPORT: Your OVRFLO, Create, and Activity. Wallet and network stay secondary.
+FINISH: DESIGN.md is normative; boards are acceptance evidence.
 -->`;
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

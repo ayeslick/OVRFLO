@@ -1,11 +1,11 @@
 "use client";
 
-import { useCallback, useSyncExternalStore } from "react";
-import type { WatchLens } from "@/lib/parse";
+import { useCallback, useEffect, useSyncExternalStore } from "react";
 import {
   getWatchSearchServerSnapshot,
   getWatchSearchSnapshot,
   parseWatchUrl,
+  stripLensFromLocation,
   subscribeWatchUrl,
   writeWatchSearch,
   type WatchSelection,
@@ -13,7 +13,6 @@ import {
 } from "@/lib/watch-url";
 
 export function useWatchUrl(): WatchUrlState & {
-  setLens: (lens: WatchLens) => void;
   select: (selection: WatchSelection) => void;
   deselect: () => void;
   goHome: () => void;
@@ -25,24 +24,22 @@ export function useWatchUrl(): WatchUrlState & {
   );
   const parsed = parseWatchUrl(search);
 
-  const setLens = useCallback((lens: WatchLens) => {
-    writeWatchSearch({ lens, selection: { kind: "none" } }, "push");
-  }, []);
+  useEffect(() => {
+    stripLensFromLocation();
+  }, [search]);
 
   const select = useCallback((selection: WatchSelection) => {
-    const current = parseWatchUrl(getWatchSearchSnapshot());
-    writeWatchSearch({ lens: current.lens, selection }, "push");
+    writeWatchSearch({ selection }, "push");
   }, []);
 
   const deselect = useCallback(() => {
     const current = parseWatchUrl(getWatchSearchSnapshot());
-    writeWatchSearch({ lens: current.lens, selection: { kind: "none" } }, "push");
+    writeWatchSearch({ type: current.type, selection: { kind: "none" } }, "push");
   }, []);
 
   const goHome = useCallback(() => {
-    const current = parseWatchUrl(getWatchSearchSnapshot());
-    writeWatchSearch({ lens: current.lens, selection: { kind: "none" } }, "push");
+    writeWatchSearch({ selection: { kind: "none" } }, "push");
   }, []);
 
-  return { ...parsed, setLens, select, deselect, goHome };
+  return { ...parsed, select, deselect, goHome };
 }

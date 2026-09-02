@@ -424,7 +424,7 @@ export function StreamCreateFlow({
       streamId={streamId}
       borrowHref={streamId !== null ? `/borrow/?stream=${streamId.toString()}` : "/borrow/"}
       viewStreamHref={
-        streamId !== null ? `/?lens=streams&stream=${streamId.toString()}` : "/?lens=streams"
+        streamId !== null ? `/?stream=${streamId.toString()}` : "/"
       }
     />
   );

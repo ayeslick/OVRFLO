@@ -9,10 +9,11 @@
 `web/components/{ModalErrorBoundary,TruncationNotice}.tsx`.
 U7 lands `Footer`. Wallet connect/disconnect is `WalletButton` from `wallet-runtime` (`web/components/WalletRuntime.tsx`).
 
-**Purpose of the region.** Identify the application, connect a wallet, navigate to
-Borrow / Supply / Assets / Risk, and own every app-wide honesty surface: disconnected
-entry, syncing, status, route crashes, the write-path network gate, and the token/USD
-display switch. The shell holds no market figure of its own.
+**Purpose of the region.** Identify the application, connect a wallet, navigate
+to Your OVRFLO, Create, and Activity, expose Default / Advanced disclosure, and
+own every app-wide honesty surface: disconnected entry, syncing, status, route
+crashes, the write-path network gate, and the token/USD display switch. The shell
+holds no market figure of its own.
 
 **Boundary.** The watch surface, first-run, and every flow render *inside* the shell.
 Disconnected entry copy is this brief's (R12, reframed `ENTRY.DISCONNECTED`). Connected
@@ -32,9 +33,7 @@ counts) anywhere in this region.
   contract read, or projection.
 - **States.** One: rendered. It has no loading, error, or empty state. The mark is
   decorative (`alt=""`); the accessible name is the heading text.
-- **Action.** Activating the wordmark returns to home: disconnected stays on
-  `UI-SHELL-ENTRY-DISCONNECTED`; connected follows R12 (watch, first-run, or degraded
-  watch). It submits nothing.
+- **Action.** Activating the wordmark returns to `/`. It submits nothing.
 - **Copy rules.** The wordmark is exactly `OVRFLO`. Never `OVFL`, never `Ovrflo`, never
   `Overflow`. No tagline, no version string, no "self-repaying loans" strapline in the
   masthead — the public product statement belongs to marketing surfaces, not to app
@@ -89,47 +88,84 @@ counts) anywhere in this region.
 ## `UI-SHELL-NAV`
 
 - **ID.** `UI-SHELL-NAV`
-- **Purpose.** Reach Borrow, Supply, Assets, and Risk from any connected or disconnected
-  surface, without implying those destinations are the home.
-- **Visible when.** Always, alongside the wallet control.
+- **Purpose.** Reach Your OVRFLO, Create, and Activity from any connected or
+  disconnected surface.
+- **Visible when.** Always, alongside the wallet control. Desktop shows the
+  three links. Compact width uses `UI-SHELL-MENU` for the same destinations.
 - **States.**
   - `idle` — links present, none current.
-  - `current` — the open flow or `/risk` is marked current. Home (watch, first-run, or
-    disconnected entry) does not mark a nav item current: the wordmark is home.
-  - Links stay enabled while disconnected; following Borrow or Supply still lands on
-    that flow's first decision, which then asks for a wallet where a write would need
-    one.
-- **Action.** Navigates to `/borrow`, `/supply`, `/assets`, or `/risk`. Submits nothing.
-  Switching between Borrow and Supply preserves each flow's selections independently for
-  the current wallet and chain (flow-spec navigation rule). Quotes always rebuild from
-  live reads.
-- **Copy rules.** Labels: `BORROW`, `SUPPLY`, `ASSETS`, `RISK`. Do not add a `POSITIONS`
-  or `PORTFOLIO` item — the watch surface absorbed that index. Do not style these as the
-  product's home. Do not show counts, badges, or "needs you" markers on nav.
-- **Data authority.** `pure-client` — which route is open. Account-scoped enablement of
-  *writes* inside those routes is `on-chain` and belongs to those briefs.
+  - `current` — `/` marks Your OVRFLO; `/create/`, `/borrow/`, and `/supply/`
+    mark Create; `/activity/` marks Activity. `/assets/` and `/risk/` mark none.
+- **Action.** Navigates to `/`, `/create/`, or `/activity/`. Submits nothing.
+  Do not invent Dashboard or Markets destinations. `/borrow/` and `/supply/`
+  remain typed create paths, not Default nav items.
+- **Copy rules.** Labels: `Your OVRFLO`, `Create`, `Activity`. Do not alternate
+  Your OVRFLO with Portfolio. Do not show counts, badges, or "needs you"
+  markers on nav. Sentence case for the labels as written.
+- **Data authority.** `pure-client` — which route is open.
+
+## `UI-SHELL-MENU`
+
+- **ID.** `UI-SHELL-MENU`
+- **Purpose.** Reach the same Default destinations and the mode switch when the
+  compact layout hides the desktop nav.
+- **Visible when.** Compact width (767px and below). The logo stays visible.
+- **States.** `closed`, `open`.
+- **Action.** Opens the menu. Links match `UI-SHELL-NAV`. The mode control
+  inside the menu is `UI-SHELL-MODE`.
+- **Copy rules.** Summary label `Menu`. Same destination labels as
+  `UI-SHELL-NAV`.
+- **Data authority.** `pure-client`.
+
+## `UI-SHELL-MODE`
+
+- **ID.** `UI-SHELL-MODE`
+- **Purpose.** Switch Default and Advanced disclosure over the current destination
+  without changing the path or query.
+- **Visible when.** Always. Desktop account navigation shows it. The mobile
+  menu repeats it. The hub help panel may duplicate `Go to Advanced`.
+- **States.** `default`, `advanced`. Refresh returns to `default`. Browser Back
+  does not toggle this control.
+- **Action.** `Go to Advanced` sets disclosure to Advanced. `Return to Default`
+  returns to Default. The current object or task stays on the same destination
+  URL. No query param is written.
+- **Copy rules.** `Go to Advanced` / `Return to Default`. Do not name Dashboard
+  or Markets. Do not describe Advanced as a second theme.
+- **Data authority.** `pure-client` — `chrome.disclosure`. Never on-chain.
+
+## `UI-SHELL-NETWORK`
+
+- **ID.** `UI-SHELL-NETWORK`
+- **Purpose.** Name the deployment network so wallet and network stay visible
+  without competing with the primary page action.
+- **Visible when.** Always, in the account cluster, in both disclosure levels.
+- **States.** One: rendered with the configured chain label.
+- **Action.** None. Wrong-chain writes still go through `UI-SHELL-NETWORK-GATE`.
+- **Copy rules.** Chain name only (`Ethereum`, `Local`, or `Chain <id>`). No
+  TVL. No "switch" copy here.
+- **Data authority.** `on-chain` — the configured deployment chain id.
 
 ## `UI-SHELL-ENTRY-DISCONNECTED`
 
 - **ID.** `UI-SHELL-ENTRY-DISCONNECTED`
-- **Purpose.** Explain what home becomes once a wallet is connected, and offer Borrow and
-  Supply as launchable flows, without pretending the visitor already has a book.
+- **Purpose.** Explain what home becomes once a wallet is connected, and offer
+  Create as the launch into Self-Repaying Loans and Fixed Returns, without
+  pretending the visitor already has a book.
 - **Visible when.** No wallet is connected. This is the flow spec's `ENTRY.DISCONNECTED`
   render, reframed to the watch-surface model (R12). It replaces the main surface; it
   does not render on top of a watch wall.
 - **States.** One: rendered. There is no loading, empty, or error variant — nothing
   account-scoped has been asked yet. Connecting transitions out of this control into
   `UI-SHELL-ENTRY-SYNCING`, then to watch or first-run per R12.
-- **Action.** `CONNECT WALLET` is `UI-SHELL-WALLET`. `BORROW` and `SUPPLY` are
-  `UI-SHELL-NAV` launches — they do not connect the wallet by themselves. Connecting
-  from this surface does not preserve a fictional destination; R12 decides the landing.
-- **Copy rules.** One sentence each for what the home becomes (instruments you can watch:
-  earnings rolling up, debt rolling down to a known done-date, streams vesting) and for
-  Borrow and Supply as the two launchable flows. No protocol metrics: no TVL, no
-  aggregate APR range, no visitor counts, no demonstration loan, no synthetic
-  instrument. Disconnected is not empty and not an error. Never say "you have no
-  positions". Never use health-factor or liquidation language to explain why a visitor
-  should connect.
+- **Action.** `CONNECT WALLET` is `UI-SHELL-WALLET`. Create is `UI-SHELL-NAV`.
+  Connecting from this surface does not preserve a fictional destination; R12
+  decides the landing.
+- **Copy rules.** One sentence each for what the home becomes (Your OVRFLO:
+  positions you can watch) and for Create as the launch into Self-Repaying
+  Loans and Fixed Returns. No protocol metrics: no TVL, no aggregate APR range,
+  no visitor counts, no demonstration loan, no synthetic instrument. Disconnected
+  is not empty and not an error. Never say "you have no positions". Never use
+  health-factor or liquidation language to explain why a visitor should connect.
 - **Data authority.** `pure-client` — static copy. No chain read backs this surface.
 
 ## `UI-SHELL-ENTRY-SYNCING`

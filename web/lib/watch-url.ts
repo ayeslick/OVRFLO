@@ -1,6 +1,7 @@
 import { isAddressEqual, type Address } from "viem";
 import {
   parseWatchSearch,
+  type PortfolioType,
   type WatchLens,
   type WatchSearch,
 } from "./parse";
@@ -18,6 +19,7 @@ export type WatchSelection =
 
 export type WatchUrlState = {
   lens: WatchLens | null;
+  type: PortfolioType | null;
   selection: WatchSelection;
 };
 
@@ -53,6 +55,7 @@ export function parseWatchUrl(search: string): WatchUrlState {
   const parsed = parseWatchSearch(search);
   return {
     lens: parsed.lens,
+    type: parsed.type,
     selection: selectionFromSearch(parsed),
   };
 }
@@ -70,26 +73,48 @@ export function selectionFromSearch(parsed: WatchSearch): WatchSelection {
 
 export function serializeWatchSearch(state: {
   lens?: WatchLens | null;
+  type?: PortfolioType | null;
   selection?: WatchSelection;
 }): string {
   const params = new URLSearchParams();
-  if (state.lens) params.set("lens", state.lens);
   const selection = state.selection ?? { kind: "none" };
   if (selection.kind === "position") {
     params.set("lending", selection.lending);
     params.set("position", selection.id.toString());
-  }
-  if (selection.kind === "loan") {
+  } else if (selection.kind === "loan") {
     params.set("lending", selection.lending);
     params.set("loan", selection.id.toString());
+  } else if (selection.kind === "stream") {
+    params.set("stream", selection.id.toString());
+  } else if (state.type === "loan" || state.type === "fixed") {
+    params.set("type", state.type);
   }
-  if (selection.kind === "stream") params.set("stream", selection.id.toString());
   const query = params.toString();
   return query ? `?${query}` : "";
 }
 
+export function stripLensSearch(search: string): { search: string; stripped: boolean } {
+  const params = new URLSearchParams(search.replace(/^\?/, ""));
+  if (!params.has("lens")) {
+    const query = params.toString();
+    return { search: query ? `?${query}` : "", stripped: false };
+  }
+  params.delete("lens");
+  const query = params.toString();
+  return { search: query ? `?${query}` : "", stripped: true };
+}
+
+export function stripLensFromLocation() {
+  if (typeof window === "undefined") return;
+  const { search, stripped } = stripLensSearch(window.location.search);
+  if (!stripped) return;
+  const next = `${window.location.pathname}${search}${window.location.hash}`;
+  window.history.replaceState(null, "", next);
+  notify();
+}
+
 export function writeWatchSearch(
-  state: { lens?: WatchLens | null; selection?: WatchSelection },
+  state: { lens?: WatchLens | null; type?: PortfolioType | null; selection?: WatchSelection },
   mode: "push" | "replace" = "push",
 ) {
   if (typeof window === "undefined") return;

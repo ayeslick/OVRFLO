@@ -23,11 +23,11 @@ on-chain contract state. This index does not cover, replace, or summarise it.
 | | Count |
 |---|---|
 | Key files | 6 |
-| Keys | 62 |
-| Modules | 98 |
+| Keys | 64 |
+| Modules | 101 |
 | `on-chain` keys | 23 |
 | `projection` keys | 0 |
-| `pure-client` keys | 39 |
+| `pure-client` keys | 41 |
 
 ## Trust-domain exposure by module
 
@@ -38,7 +38,7 @@ a `projection` count is a module where a fail-closed mistake can happen.
 |---|---|---|---|
 | `web/app/assets/page.tsx` | 1 | 0 | 3 |
 | `web/app/borrow/page.tsx` | 0 | 0 | 2 |
-| `web/app/page.tsx` | 4 | 0 | 3 |
+| `web/app/page.tsx` | 4 | 0 | 2 |
 | `web/app/risk/page.tsx` | 0 | 0 | 1 |
 | `web/app/supply/page.tsx` | 0 | 0 | 2 |
 | `web/components/assets/AssetsPage.tsx` | 0 | 0 | 1 |
@@ -59,6 +59,7 @@ a `projection` count is a module where a fail-closed mistake can happen.
 | `web/components/kit/ActionButton.tsx` | 1 | 0 | 3 |
 | `web/components/kit/Amount.tsx` | 3 | 0 | 1 |
 | `web/components/kit/AmountField.tsx` | 1 | 0 | 1 |
+| `web/components/kit/DefaultHub.tsx` | 0 | 0 | 1 |
 | `web/components/kit/LensTabs.tsx` | 0 | 0 | 1 |
 | `web/components/kit/RateWindow.tsx` | 2 | 0 | 1 |
 | `web/components/kit/Receipt.tsx` | 3 | 0 | 4 |
@@ -66,7 +67,7 @@ a `projection` count is a module where a fail-closed mistake can happen.
 | `web/components/kit/Ribbon.tsx` | 1 | 0 | 1 |
 | `web/components/kit/RollingNumber.tsx` | 1 | 0 | 4 |
 | `web/components/kit/SettlementTrace.tsx` | 1 | 0 | 3 |
-| `web/components/kit/Shell.tsx` | 0 | 0 | 1 |
+| `web/components/kit/Shell.tsx` | 0 | 0 | 2 |
 | `web/components/kit/StatusLine.tsx` | 1 | 0 | 1 |
 | `web/components/kit/SurfaceState.tsx` | 0 | 0 | 1 |
 | `web/components/kit/TokenUsdSwitch.tsx` | 2 | 0 | 1 |
@@ -84,7 +85,7 @@ a `projection` count is a module where a fail-closed mistake can happen.
 | `web/components/watch/StreamLedgerCard.tsx` | 1 | 0 | 0 |
 | `web/components/watch/SuppliedDetail.tsx` | 3 | 0 | 5 |
 | `web/components/watch/Wall.tsx` | 5 | 0 | 7 |
-| `web/components/watch/WatchApp.tsx` | 1 | 0 | 1 |
+| `web/components/watch/WatchApp.tsx` | 1 | 0 | 2 |
 | `web/hooks/useAcknowledgment.ts` | 0 | 0 | 1 |
 | `web/hooks/useAllMarkets.ts` | 3 | 0 | 0 |
 | `web/hooks/useApprovalWriteFlows.ts` | 2 | 0 | 4 |
@@ -115,6 +116,7 @@ a `projection` count is a module where a fail-closed mistake can happen.
 | `web/lib/actions/borrow.ts` | 0 | 0 | 1 |
 | `web/lib/actions/claim.ts` | 1 | 0 | 1 |
 | `web/lib/claim-all.ts` | 1 | 0 | 0 |
+| `web/lib/disclosure.ts` | 0 | 0 | 1 |
 | `web/lib/flow-history.ts` | 0 | 0 | 1 |
 | `web/lib/freshness.ts` | 0 | 0 | 1 |
 | `web/lib/invalidate.ts` | 5 | 0 | 0 |
@@ -134,6 +136,7 @@ a `projection` count is a module where a fail-closed mistake can happen.
 | `web/lib/stream-book.ts` | 1 | 0 | 0 |
 | `web/lib/surface-state.ts` | 0 | 0 | 1 |
 | `web/lib/usd.ts` | 2 | 0 | 0 |
+| `web/lib/watch-url.ts` | 0 | 0 | 1 |
 
 ## Modules
 
@@ -157,7 +160,6 @@ a `projection` count is a module where a fail-closed mistake can happen.
 
 | Direction | Key | Trust domain | Role |
 |---|---|---|---|
-| writes | `watch.lens` | `pure-client` | resolution order: URL param → per-wallet memory → supplied default |
 | writes | `watch.selected-entity` | `pure-client` | hydrates from the URL; clears on disconnect |
 | reads | `chain.borrower-loans` | `on-chain` | R12: any loan → watch |
 | reads | `chain.connection` | `on-chain` | R12 entry: disconnected vs syncing vs watch vs first-run |
@@ -304,12 +306,19 @@ a `projection` count is a module where a fail-closed mistake can happen.
 | writes | `action.amount-raw` | `pure-client` | landing U4: `inputmode="decimal"`; never blocks paste |
 | reads | `chain.balances` | `on-chain` | landing U4: MAX and insufficient-balance |
 
+### `web/components/kit/DefaultHub.tsx`
+
+| Direction | Key | Trust domain | Role |
+|---|---|---|---|
+| writes | `chrome.disclosure` | `pure-client` | hub help duplicate |
+| reads | `chrome.disclosure` | `pure-client` | hub help duplicate |
+
 ### `web/components/kit/LensTabs.tsx`
 
 | Direction | Key | Trust domain | Role |
 |---|---|---|---|
-| writes | `watch.lens` | `pure-client` | landing U4: APG tablist writes URL `?lens=` and per-wallet localStorage |
-| reads | `watch.lens` | `pure-client` | landing U4: selected tab |
+| writes | `watch.lens` | `pure-client` | local wall tabs; does not write `?lens=` |
+| reads | `watch.lens` | `pure-client` | selected tab |
 
 ### `web/components/kit/RateWindow.tsx`
 
@@ -368,6 +377,8 @@ a `projection` count is a module where a fail-closed mistake can happen.
 
 | Direction | Key | Trust domain | Role |
 |---|---|---|---|
+| writes | `chrome.disclosure` | `pure-client` | `UI-SHELL-MODE` |
+| reads | `chrome.disclosure` | `pure-client` | `data-disclosure` and mode label |
 | reads | `chrome.refetch-notice` | `pure-client` | landing U12: notice lives in the shell body, not Providers |
 
 ### `web/components/kit/StatusLine.tsx`
@@ -513,7 +524,7 @@ a `projection` count is a module where a fail-closed mistake can happen.
 | reads | `schedule.interpolated-earnings` | `pure-client` | landing U7: supplied-row decisive number |
 | reads | `schedule.interpolated-outstanding` | `pure-client` | landing U7: borrowed-row decisive number |
 | reads | `schedule.interpolated-vested` | `pure-client` | landing U7: stream-row decisive number |
-| reads | `watch.lens` | `pure-client` | landing U7: which row set to render |
+| reads | `watch.lens` | `pure-client` | which row set to render |
 | reads | `watch.narrow-nav` | `pure-client` | landing U7: `UI-WATCH-NARROW-NAV` return affordance |
 | reads | `watch.selected-entity` | `pure-client` | landing U7: which row reads as selected |
 
@@ -521,6 +532,7 @@ a `projection` count is a module where a fail-closed mistake can happen.
 
 | Direction | Key | Trust domain | Role |
 |---|---|---|---|
+| writes | `watch.lens` | `pure-client` | per-wallet localStorage only |
 | reads | `chain.stream-truth` | `on-chain` | R12 entry book + Streams lens (factory-wide lendings) |
 | reads | `chrome.surface-state` | `pure-client` | landing U12: watch wall |
 
@@ -754,6 +766,12 @@ a `projection` count is a module where a fail-closed mistake can happen.
 |---|---|---|---|
 | reads | `chain.stream-truth` | `on-chain` | complete-set stream claims |
 
+### `web/lib/disclosure.ts`
+
+| Direction | Key | Trust domain | Role |
+|---|---|---|---|
+| writes | `chrome.disclosure` | `pure-client` | in-memory store; `setDisclosure` / `toggleDisclosure` |
+
 ### `web/lib/flow-history.ts`
 
 | Direction | Key | Trust domain | Role |
@@ -893,6 +911,13 @@ a `projection` count is a module where a fail-closed mistake can happen.
 | writes | `usd.price` | `on-chain` | landing U5: pure product + classification |
 | writes | `usd.staleness` | `on-chain` | landing U5: non-positive answer, heartbeat-plus-grace, 24h absolute cutoff |
 
+### `web/lib/watch-url.ts`
+
+| Direction | Key | Trust domain | Role |
+|---|---|---|---|
+| writes | `watch.portfolio-type` | `pure-client` | serializes `?type=` only when asked; CS4-U2 writes |
+| reads | `watch.portfolio-type` | `pure-client` | parse of surviving query keys |
+
 ## Keys
 
 Reverse lookup — the *who reads X?* direction. Follow the source file for the
@@ -928,6 +953,7 @@ full entry, including fail-closed guidance on `projection` keys.
 | `chain.wagmi-reads` | `on-chain` | `web/hooks/useOvrflos.ts`<br>`web/hooks/useAllMarkets.ts`<br>`web/hooks/useMarketSymbols.ts`<br>`web/hooks/useLending.ts`<br>`web/lib/invalidate.ts`<br>`web/lib/query-resource-registry.ts` | `web/lib/invalidate.ts`<br>`web/lib/query-resource-registry.ts`<br>`web/hooks/useWriteFlow.ts` | `docs/maps/state/keys/chain-reads.md` |
 | `chain.wrap-reserve` | `on-chain` | `web/components/assets/ConverterFlow.tsx`<br>`web/hooks/useWatchBalances.ts`<br>`web/lib/live-action-plan.ts` | `web/components/assets/Converter.tsx`<br>`web/components/kit/Receipt.tsx` | `docs/maps/state/keys/chain-reads.md` |
 | `chrome.copy-value.copied` | `pure-client` | `web/components/CopyValue.tsx` | `web/components/CopyValue.tsx` | `docs/maps/state/keys/view-state.md` |
+| `chrome.disclosure` | `pure-client` | `web/lib/disclosure.ts`<br>`web/components/kit/Shell.tsx`<br>`web/components/kit/DefaultHub.tsx` | `web/components/kit/Shell.tsx`<br>`web/components/kit/DefaultHub.tsx` | `docs/maps/state/keys/view-state.md` |
 | `chrome.refetch-notice` | `pure-client` | `web/lib/refetch-notice.ts`<br>`web/hooks/useIdentityQueryReset.ts` | `web/components/kit/RefetchNotice.tsx`<br>`web/components/kit/Shell.tsx` | `docs/maps/state/keys/view-state.md` |
 | `chrome.surface-state` | `pure-client` | `web/lib/surface-state.ts` | `web/components/kit/SurfaceState.tsx`<br>`web/components/watch/WatchApp.tsx`<br>`web/components/supply/SupplyFlow.tsx`<br>`web/components/borrow/BorrowFlow.tsx`<br>`web/components/assets/AssetsPage.tsx` | `docs/maps/state/keys/view-state.md` |
 | `executor.registry` | `pure-client` | `web/hooks/useTransactionExecutor.ts` | `web/hooks/useTransactionExecutor.ts` | `docs/maps/state/keys/execution-state.md` |
@@ -958,7 +984,8 @@ full entry, including fail-closed guidance on `projection` keys.
 | `usd.mode` | `pure-client` | `web/components/kit/TokenUsdSwitch.tsx` | `web/components/kit/Amount.tsx`<br>`web/components/kit/Receipt.tsx`<br>`web/components/watch/SuppliedDetail.tsx` | `docs/maps/state/keys/view-state.md` |
 | `usd.price` | `on-chain` | `web/hooks/useUsdPrice.ts`<br>`web/lib/usd.ts` | `web/components/kit/Amount.tsx`<br>`web/components/kit/TokenUsdSwitch.tsx`<br>`web/components/watch/SuppliedDetail.tsx` | `docs/maps/state/keys/chain-reads.md` |
 | `usd.staleness` | `on-chain` | `web/lib/usd.ts`<br>`web/hooks/useUsdPrice.ts` | `web/components/kit/TokenUsdSwitch.tsx`<br>`web/components/kit/StatusLine.tsx`<br>`web/components/kit/Amount.tsx` | `docs/maps/state/keys/chain-reads.md` |
-| `watch.lens` | `pure-client` | `web/components/kit/LensTabs.tsx`<br>`web/app/page.tsx` | `web/components/watch/Wall.tsx`<br>`web/components/kit/LensTabs.tsx` | `docs/maps/state/keys/view-state.md` |
+| `watch.lens` | `pure-client` | `web/components/kit/LensTabs.tsx`<br>`web/components/watch/WatchApp.tsx` | `web/components/watch/Wall.tsx`<br>`web/components/kit/LensTabs.tsx` | `docs/maps/state/keys/view-state.md` |
 | `watch.narrow-nav` | `pure-client` | `web/components/watch/Wall.tsx` | `web/components/watch/Wall.tsx` | `docs/maps/state/keys/view-state.md` |
+| `watch.portfolio-type` | `pure-client` | `web/lib/watch-url.ts` | `web/lib/watch-url.ts` | `docs/maps/state/keys/view-state.md` |
 | `watch.selected-entity` | `pure-client` | `web/components/watch/Wall.tsx`<br>`web/app/page.tsx` | `web/components/watch/SuppliedDetail.tsx`<br>`web/components/watch/BorrowedDetail.tsx`<br>`web/components/watch/StreamDetail.tsx`<br>`web/components/watch/ClosedLoanDetail.tsx`<br>`web/components/watch/Wall.tsx` | `docs/maps/state/keys/view-state.md` |
 | `writeflow.is-preparing` | `pure-client` | `web/hooks/useWriteFlow.ts` | `web/hooks/useWriteFlow.ts`<br>`web/hooks/useApprovalWriteFlows.ts` | `docs/maps/state/keys/execution-state.md` |

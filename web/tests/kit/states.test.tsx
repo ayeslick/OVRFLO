@@ -1,4 +1,4 @@
-import { createEvent, fireEvent, render, screen } from "@testing-library/react";
+import { createEvent, fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { ActionButton } from "@/components/kit/ActionButton";
 import { AddressChip } from "@/components/kit/AddressChip";
@@ -16,16 +16,28 @@ import { TokenUsdSwitch } from "@/components/kit/TokenUsdSwitch";
 describe("kit labels, roles, and state classes", () => {
   it("Shell names the product and peer nav items", () => {
     render(
-      <Shell currentNav="borrow" wallet="CONNECT WALLET" status={<StatusLine status="synced" asOf="12:34:56" />}>
+      <Shell currentNav="home" wallet="CONNECT WALLET" status={<StatusLine status="synced" asOf="12:34:56" />}>
         home
       </Shell>,
     );
     expect(screen.getByRole("heading", { name: "OVRFLO" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "BORROW" })).toHaveAttribute("aria-current", "page");
-    expect(screen.getByRole("link", { name: "SUPPLY" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "ASSETS" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "RISK" })).toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: "POSITIONS" })).not.toBeInTheDocument();
+    const nav = document.querySelector('[data-ui="UI-SHELL-NAV"]');
+    expect(nav).not.toBeNull();
+    expect(within(nav as HTMLElement).getByRole("link", { name: "Your OVRFLO" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    expect(within(nav as HTMLElement).getByRole("link", { name: "Create" })).toHaveAttribute(
+      "href",
+      "/create/",
+    );
+    expect(within(nav as HTMLElement).getByRole("link", { name: "Activity" })).toHaveAttribute(
+      "href",
+      "/activity/",
+    );
+    expect(screen.queryByRole("link", { name: "PORTFOLIO" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Dashboard" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Markets" })).not.toBeInTheDocument();
   });
 
   it("StatusLine distinguishes SYNCED, RECONNECTING, and DEGRADED", () => {

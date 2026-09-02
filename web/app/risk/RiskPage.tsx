@@ -6,13 +6,7 @@ import { RiskNote } from "./RiskNote";
 
 export function RiskPage() {
   return (
-    <Shell
-      currentNav="risk"
-      wallet={<WalletButton />}
-      onHome={() => {
-        window.location.href = "/";
-      }}
-    >
+    <Shell currentNav={null} wallet={<WalletButton />}>
       <RiskNote />
     </Shell>
   );

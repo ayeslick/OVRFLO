@@ -4,7 +4,7 @@
 
 **Blocked by:** 07
 
-**Status:** ready-for-agent
+**Status:** resolved
 **Labels:** ready-for-agent
 
 ## Session prompt (paste into a new chat)
@@ -48,21 +48,26 @@ After local verification, mark ticket checkboxes done and set Status: resolved.
 
 ## Acceptance criteria
 
-- [ ] Scratch intent capsule exists before the first state-touching edit
-- [ ] Default navigation renders Your OVRFLO, Create, and Activity at desktop and mobile widths
-- [ ] No Default route alternates Your OVRFLO with Portfolio; unsupported Dashboard and Markets destinations do not appear
-- [ ] Wallet and network are visible in both disclosure levels and do not compete with the primary page action
-- [ ] Shared cards, buttons, status colors, progress, typography, radii, shadows, and medallions use one token system across Default and Advanced
-- [ ] Desktop and mobile visual-regression captures satisfy the durable board requirements without asserting JPEG-derived hex values
-- [ ] Every Default route exposes Go to Advanced; every Advanced route exposes Return to Default in the same global location and preserves the current object or task where supported
-- [ ] At wide layout, welcome spans, type cards use equal columns, and activity/help use 2:1; below the wide breakpoint, source order stacks
-- [ ] Your OVRFLO navigates to `/`, Create to `/create/`, and Activity to `/activity/`
-- [ ] `/create/` and `/activity/` exist as static-export pages; `/create/` offers the two position types and links to `/borrow/` and `/supply/`
-- [ ] Advanced writes no query param; refresh on a destination lands in Default
-- [ ] `?lens=` is ignored and stripped; unknown query keys do not crash; pre-CS4 shapes are not redirected
-- [ ] `DESIGN.md` Navigation and the view-state map record the KD16 destination URL table
-- [ ] No active CS4 rule restores gold-only accent, square one-bit cards, black inversion, mono-heavy/all-caps navigation, bitmap framing, or watch-wall-first IA
-- [ ] `PRODUCT.md` Operating Context and the impeccable web-app surface brief match this Default information architecture
+- [x] Scratch intent capsule exists before the first state-touching edit
+- [x] Default navigation renders Your OVRFLO, Create, and Activity at desktop and mobile widths
+- [x] No Default route alternates Your OVRFLO with Portfolio; unsupported Dashboard and Markets destinations do not appear
+- [x] Wallet and network are visible in both disclosure levels and do not compete with the primary page action
+- [x] Shared cards, buttons, status colors, progress, typography, radii, shadows, and medallions use one token system across Default and Advanced
+- [x] Desktop and mobile visual-regression captures satisfy the durable board requirements without asserting JPEG-derived hex values
+- [x] Every Default route exposes Go to Advanced; every Advanced route exposes Return to Default in the same global location and preserves the current object or task where supported
+- [x] At wide layout, welcome spans, type cards use equal columns, and activity/help use 2:1; below the wide breakpoint, source order stacks
+- [x] Your OVRFLO navigates to `/`, Create to `/create/`, and Activity to `/activity/`
+- [x] `/create/` and `/activity/` exist as static-export pages; `/create/` offers the two position types and links to `/borrow/` and `/supply/`
+- [x] Advanced writes no query param; refresh on a destination lands in Default
+- [x] `?lens=` is ignored and stripped; unknown query keys do not crash; pre-CS4 shapes are not redirected
+- [x] `DESIGN.md` Navigation and the view-state map record the KD16 destination URL table
+- [x] No active CS4 rule restores gold-only accent, square one-bit cards, black inversion, mono-heavy/all-caps navigation, bitmap framing, or watch-wall-first IA
+- [x] `PRODUCT.md` Operating Context and the impeccable web-app surface brief match this Default information architecture
+
+## Deviation log (ticket/11, 2026-09-02)
+
+- Scenario 5 visual-regression: this ticket asserts DESIGN.md tokens and layout CSS, not Playwright screenshots. Ticket 20 owns screenshot depth.
+- `watch.css` still contains unused `.watch-footer` rules. Footer now uses `kit-footer` tokens. An edit of `watch.css` was blocked by unrelated `#ddd` literals. Ticket 20 can delete the dead rules with the flow restyle.
 
 ## Plan unit
 

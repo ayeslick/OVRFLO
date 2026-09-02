@@ -35,7 +35,7 @@ describe("freshness degraded and one refetch notice", () => {
   it("surfaces one global notice rather than per-hook toasts", () => {
     setBackgroundRefetchFailed(true);
     render(
-      <Shell currentNav="borrow" wallet="CONNECT" status={<StatusLine status="degraded" />}>
+      <Shell currentNav="create" wallet="CONNECT" status={<StatusLine status="degraded" />}>
         body
       </Shell>,
     );

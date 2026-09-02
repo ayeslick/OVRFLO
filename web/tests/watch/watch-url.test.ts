@@ -6,6 +6,7 @@ import {
   selectionMatchesRow,
   serializeWatchSearch,
   selectionFromSearch,
+  stripLensSearch,
 } from "@/lib/watch-url";
 import { parseWatchSearch } from "@/lib/parse";
 
@@ -13,22 +14,46 @@ const LENDING = "0x4444444444444444444444444444444444444444" as Address;
 const OTHER = "0x5555555555555555555555555555555555555555" as Address;
 
 describe("watch URL", () => {
-  it("round-trips lens, lending, and a single entity kind", () => {
+  it("round-trips identity params and never writes lens", () => {
     const search = serializeWatchSearch({
       lens: "borrowed",
       selection: { kind: "loan", lending: LENDING, id: 12n },
     });
-    expect(search).toBe(`?lens=borrowed&lending=${LENDING}&loan=12`);
+    expect(search).toBe(`?lending=${LENDING}&loan=12`);
     expect(parseWatchUrl(search)).toEqual({
-      lens: "borrowed",
+      lens: null,
+      type: null,
       selection: { kind: "loan", lending: LENDING, id: 12n },
     });
   });
 
-  it("ignores a position without lending", () => {
-    expect(parseWatchUrl("?lens=dashboard&position=3")).toEqual({
+  it("writes type only when selection is none", () => {
+    expect(serializeWatchSearch({ type: "loan", selection: { kind: "none" } })).toBe("?type=loan");
+    expect(serializeWatchSearch({ type: "fixed", selection: { kind: "none" } })).toBe("?type=fixed");
+    expect(
+      serializeWatchSearch({
+        type: "loan",
+        selection: { kind: "loan", lending: LENDING, id: 12n },
+      }),
+    ).toBe(`?lending=${LENDING}&loan=12`);
+  });
+
+  it("ignores a position without lending and unknown keys", () => {
+    expect(parseWatchUrl("?lens=dashboard&position=3&foo=1")).toEqual({
       lens: null,
+      type: null,
       selection: { kind: "none" },
+    });
+  });
+
+  it("strips a historical lens query without inventing a redirect", () => {
+    expect(stripLensSearch(`?lens=borrowed&lending=${LENDING}&loan=12`)).toEqual({
+      search: `?lending=${LENDING}&loan=12`,
+      stripped: true,
+    });
+    expect(stripLensSearch(`?lending=${LENDING}&loan=12`)).toEqual({
+      search: `?lending=${LENDING}&loan=12`,
+      stripped: false,
     });
   });
 

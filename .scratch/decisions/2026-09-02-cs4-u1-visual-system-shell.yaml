@@ -1,0 +1,85 @@
+# Scratch decision record — schema: docs/maps/SCHEMAS.md §4
+summary_ref: "docs/plans/2026-08-22-001-refactor-denomination-switch-border-column-plan.md#cs4-u1"
+
+goal: >
+  Establish the DESIGN.md visual foundation and KD16 Default / Advanced shell.
+  Default nav is Your OVRFLO, Create, and Activity on /, /create/, and /activity/.
+  Advanced is in-memory disclosure only. Strip ?lens=. Do not add redirects.
+
+state_keys_touched:
+  - chrome.disclosure
+  - watch.lens
+  - watch.selected-entity
+  - watch.portfolio-type
+
+writers_readers:
+  - writes: web/lib/disclosure.ts
+  - writes: web/components/kit/Shell.tsx
+  - writes: web/lib/watch-url.ts
+  - writes: web/lib/parse.ts
+  - reads: web/components/kit/Shell.tsx
+  - reads: web/components/watch/WatchApp.tsx
+  - reads: web/components/watch/useWatchUrl.ts
+  - reads: web/app/create/page.tsx
+  - reads: web/app/activity/page.tsx
+
+trust_domains:
+  - fact: Default vs Advanced disclosure
+    domain: pure-client
+    moved_from: null
+  - fact: destination path and surviving query keys
+    domain: pure-client
+    moved_from: null
+  - fact: dead ?lens= query
+    domain: pure-client
+    moved_from: null
+
+rejected_alternatives:
+  - option: Put Advanced in ?mode= or ?lens=
+    why_not: KD16 forbids a path or query change for disclosure. Refresh must land in Default.
+  - option: Keep BORROW SUPPLY ASSETS RISK as Default nav
+    why_not: KD16 replaces that watch-wall-first IA. Dashboard and Markets destinations are not authorized.
+  - option: Redirect /?lens=borrowed&loan= to the new detail URL
+    why_not: KD16 forbids compatibility redirects from pre-CS4 shapes.
+  - option: Build hub/collection/detail routing and activity rows in this ticket
+    why_not: CS4-U2 (ticket 15) owns the matrix and the activity list.
+  - option: Sample hex from the JPEG boards
+    why_not: AS1. DESIGN.md tokens are normative. Boards are acceptance evidence only.
+
+invariants_held:
+  - invariant: Advanced writes no query param
+    how: chrome.disclosure lives in an in-memory store. serializeWatchSearch never writes a disclosure key.
+  - invariant: Surviving query keys stay lending, loan, position, stream, step, type
+    how: parse ignores unknown keys. serialize writes only the KD16 table.
+  - invariant: ?lens= is ignored and stripped
+    how: parseWatchSearch returns lens null. writeWatchSearch deletes lens.
+  - invariant: SHELL owns nav and mode reachability with no new region slug
+    how: UI-SHELL-NAV, UI-SHELL-MODE, UI-SHELL-NETWORK, UI-SHELL-MENU. Create and Activity are pages, not regions.
+  - invariant: One visual token system
+    how: globals.css encodes DESIGN.md colors, type, radii, and elevation. Advanced changes density only.
+
+risks:
+  - risk: Watch tests still assert ?lens= in the URL
+    residual: This ticket updates parse/serialize tests and URL assertions. Lens tabs stay until ticket 15.
+  - risk: Empty /activity/ copy could look like a confirmed empty book
+    residual: Stub copy names the page and does not claim a completed scan.
+  - risk: Unmigrated flow CSS still names --gold
+    residual: :root aliases --gold to --primary so those sheets pick up cobalt, not a gold hex.
+
+diff_hints:
+  - path: web/components/kit/Shell.tsx
+    why: Default labels, mobile menu, mode switch, wallet/network cluster.
+  - path: web/lib/watch-url.ts
+    why: Stop writing lens. Write type. Strip lens on replace.
+  - path: web/lib/parse.ts
+    why: Ignore lens. Parse type=loan|fixed. Unknown keys must not throw.
+  - path: web/lib/disclosure.ts
+    why: In-memory Default/Advanced. Refresh returns Default.
+  - path: web/app/globals.css
+    why: DESIGN.md tokens. No gold hex. No one-bit canvas.
+  - path: web/app/create/page.tsx
+    why: Type chooser to /borrow/ and /supply/. Wide hub grid.
+  - path: DESIGN.md
+    why: Destination URL table under Navigation.
+  - path: docs/maps/ui/shell.md
+    why: Nav, mode, network, menu controls.
