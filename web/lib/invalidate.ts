@@ -77,8 +77,8 @@ export function keyMentionsAny(
  *
  * The transaction's `to` address is not the whole answer: `supply`
  * targets the lending market but pulls the underlying ERC-20, `deposit` targets
- * the vault but pulls PT and mints ovrfloToken, and `repay` moves underlying
- * back. Those balance/allowance reads are keyed by *token* address, so scoping
+ * the vault but pulls PT and mints ovrfloToken, `wrap` targets the reserve but
+ * pulls underlying, and `repay` moves underlying back. Those balance/allowance reads are keyed by *token* address, so scoping
  * to `to` alone leaves the balance the user is about to act on next showing a
  * pre-transaction number — and with window-focus refetching off, it stays that
  * way until the view remounts.
@@ -87,11 +87,12 @@ export function keyMentionsAny(
  * staying proportional: one market's reads refresh, not every market's.
  */
 export function marketContracts(
-  market: Pick<MarketInfo, "vault" | "lending" | "underlying" | "ovrfloToken" | "ptToken">,
+  market: Pick<MarketInfo, "vault" | "reserve" | "lending" | "underlying" | "ovrfloToken" | "ptToken">,
   stream: Address,
 ) {
   return [
     market.vault,
+    market.reserve,
     market.lending,
     market.underlying,
     market.ovrfloToken,

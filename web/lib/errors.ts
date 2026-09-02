@@ -1,5 +1,5 @@
 import { BaseError, ContractFunctionRevertedError, ExecutionRevertedError, UserRejectedRequestError } from "viem";
-import { ovrfloAbi, ovrfloFactoryAbi, ovrfloLendingAbi } from "./generated";
+import { ovrfloAbi, ovrfloFactoryAbi, ovrfloLendingAbi, ovrfloReserveAbi } from "./generated";
 import { MIN_LIQUIDITY_AMOUNT, MIN_STREAM_AMOUNT } from "./lending-math";
 
 type AbiErrorName<T extends readonly { type?: string; name?: string }[]> = Extract<
@@ -10,7 +10,8 @@ type AbiErrorName<T extends readonly { type?: string; name?: string }[]> = Extra
 export type ContractErrorName =
   | AbiErrorName<typeof ovrfloAbi>
   | AbiErrorName<typeof ovrfloFactoryAbi>
-  | AbiErrorName<typeof ovrfloLendingAbi>;
+  | AbiErrorName<typeof ovrfloLendingAbi>
+  | AbiErrorName<typeof ovrfloReserveAbi>;
 
 export type RecoveryAction = {
   id:
@@ -72,6 +73,10 @@ export const errorCatalog = {
     recovery: none,
   },
   DepositLimitExceeded: { copy: "This deposit would exceed the market's deposit limit.", recovery: changeAmount },
+  DepositedExceedsBalance: {
+    copy: "The PT delivered to the vault is less than the deposit recorded. Nothing was changed.",
+    recovery: refresh,
+  },
   EmptyTick: { copy: "This rate has no resting liquidity. Pick a live tick.", recovery: changeTick },
   EpochBacklog: { copy: "This tick has an epoch backlog. Refresh and try again.", recovery: refresh },
   EpochMismatch: { copy: "Tick state changed since your quote. Refreshing market depth.", recovery: refresh },
@@ -88,7 +93,7 @@ export const errorCatalog = {
   MarketNotApproved: { copy: "This market is not approved for OVRFLO.", recovery: changeStream },
   Matured: { copy: "This series has already matured.", recovery: none },
   NoCode: { copy: "The target contract has no code.", recovery: none },
-  NoExcess: { copy: "There is no excess PT to sweep.", recovery: none },
+  NoExcess: { copy: "There is no excess to sweep.", recovery: none },
   NoOverlap: { copy: "This position does not overlap that loan.", recovery: refresh },
   NodeOverflow: { copy: "The tick tree cannot accept this supply.", recovery: changeAmount },
   NotAdmin: { copy: "Only the factory admin can run this call.", recovery: none },
@@ -112,6 +117,10 @@ export const errorCatalog = {
   PtAlreadyMapped: { copy: "This PT is already mapped to a series.", recovery: none },
   RemainingZero: { copy: "This stream has nothing remaining.", recovery: changeStream },
   RepayExceedsOutstanding: { copy: "Repayment cannot exceed outstanding debt.", recovery: changeAmount },
+  ReserveExceedsBalance: {
+    copy: "The reserve holds less underlying than it tracks. Nothing was changed.",
+    recovery: refresh,
+  },
   SablierMismatch: { copy: "This lending market is not bound to the expected Sablier.", recovery: none },
   SeriesAlreadyConfigured: { copy: "This series is already configured.", recovery: none },
   SeriesMatured: { copy: "This market has already matured.", recovery: none },
@@ -153,6 +162,7 @@ export const generatedErrorNames: readonly ContractErrorName[] = Array.from(
     ...errorNamesFromAbi(ovrfloAbi),
     ...errorNamesFromAbi(ovrfloFactoryAbi),
     ...errorNamesFromAbi(ovrfloLendingAbi),
+    ...errorNamesFromAbi(ovrfloReserveAbi),
   ]),
 ) as ContractErrorName[];
 

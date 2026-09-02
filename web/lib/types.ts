@@ -5,6 +5,8 @@ export type VaultInfo = {
   treasury: Address;
   underlying: Address;
   ovrfloToken: Address;
+  /** OVRFLOReserve for this column; wrap/unwrap and the wrapped-underlying balance live here. */
+  reserve: Address;
   lending: Address | null;
 };
 
