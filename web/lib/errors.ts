@@ -1,5 +1,5 @@
 import { BaseError, ContractFunctionRevertedError, ExecutionRevertedError, UserRejectedRequestError } from "viem";
-import { ovrfloAbi, ovrfloFactoryAbi, ovrfloLendingAbi, ovrfloReserveAbi } from "./generated";
+import { ovrfloAbi, ovrfloFactoryAbi, ovrfloLendingAbi, ovrfloRequestBookAbi, ovrfloReserveAbi } from "./generated";
 import { MIN_LIQUIDITY_AMOUNT, MIN_STREAM_AMOUNT } from "./lending-math";
 
 type AbiErrorName<T extends readonly { type?: string; name?: string }[]> = Extract<
@@ -11,6 +11,7 @@ export type ContractErrorName =
   | AbiErrorName<typeof ovrfloAbi>
   | AbiErrorName<typeof ovrfloFactoryAbi>
   | AbiErrorName<typeof ovrfloLendingAbi>
+  | AbiErrorName<typeof ovrfloRequestBookAbi>
   | AbiErrorName<typeof ovrfloReserveAbi>;
 
 export type RecoveryAction = {
@@ -105,7 +106,9 @@ export const errorCatalog = {
   NoOverlap: { copy: "This position does not overlap that loan.", recovery: refresh },
   NodeOverflow: { copy: "The tick tree cannot accept this supply.", recovery: changeAmount },
   NotAdmin: { copy: "Only the factory admin can run this call.", recovery: none },
+  NotBorrower: { copy: "Only the borrower can cancel this request.", recovery: none },
   NotCovered: { copy: "The stream has not vested enough to close this loan.", recovery: waitCover },
+  NotCurrentRouter: { copy: "This request book is no longer the lending router. Reclaim the stream.", recovery: reclaim },
   NotLender: { copy: "Only the lender can withdraw this position.", recovery: none },
   NotMatured: { copy: "PT claims open at maturity.", recovery: none },
   NotUnitAligned: { copy: "Amount must be an exact UNIT multiple.", recovery: changeAmount },
@@ -125,6 +128,7 @@ export const errorCatalog = {
   PtAlreadyMapped: { copy: "This PT is already mapped to a series.", recovery: none },
   RemainingZero: { copy: "This stream has nothing remaining.", recovery: changeStream },
   RepayExceedsOutstanding: { copy: "Repayment cannot exceed outstanding debt.", recovery: changeAmount },
+  RequestMissing: { copy: "This borrow request does not exist.", recovery: refresh },
   ReserveExceedsBalance: {
     copy: "The reserve holds less underlying than it tracks. Nothing was changed.",
     recovery: refresh,
@@ -179,6 +183,7 @@ export const generatedErrorNames: readonly ContractErrorName[] = Array.from(
     ...errorNamesFromAbi(ovrfloAbi),
     ...errorNamesFromAbi(ovrfloFactoryAbi),
     ...errorNamesFromAbi(ovrfloLendingAbi),
+    ...errorNamesFromAbi(ovrfloRequestBookAbi),
     ...errorNamesFromAbi(ovrfloReserveAbi),
   ]),
 ) as ContractErrorName[];

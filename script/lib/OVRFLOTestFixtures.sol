@@ -6,6 +6,8 @@ import {StdCheats} from "forge-std/StdCheats.sol";
 import {IERC721Metadata} from "@openzeppelin/contracts/token/ERC721/extensions/IERC721Metadata.sol";
 import {OVRFLO} from "../../src/OVRFLO.sol";
 import {OVRFLOFactory} from "../../src/OVRFLOFactory.sol";
+import {OVRFLOLending} from "../../src/OVRFLOLending.sol";
+import {OVRFLORequestBook} from "../../src/OVRFLORequestBook.sol";
 import {OVRFLOReserve} from "../../src/OVRFLOReserve.sol";
 import {OVRFLOToken} from "../../src/OVRFLOToken.sol";
 import {IPendleOracle} from "../../interfaces/IPendleOracle.sol";
@@ -113,6 +115,20 @@ abstract contract OVRFLOTestFixtures is StdCheats {
         require(token.vault() == address(ovrflo), "OVRFLOTestFixtures: token vault");
         require(token.reserve() == address(reserve), "OVRFLOTestFixtures: token reserve");
         require(factory.ovrfloToReserve(address(ovrflo)) == address(reserve), "OVRFLOTestFixtures: ovrfloToReserve");
+    }
+
+    /// @notice Deploy the request book after `registerLending`. Caller must already
+    ///         hold `owner` because `setLendingRouter` is onlyOwner.
+    function _deployRequestBookAs(OVRFLOFactory factory, OVRFLOLending lending)
+        internal
+        returns (OVRFLORequestBook book)
+    {
+        address stream = address(lending.sablier());
+        book = new OVRFLORequestBook(address(factory), address(lending), stream);
+        require(address(book.lending()) == address(lending), "OVRFLOTestFixtures: book lending");
+        require(address(book.sablier()) == stream, "OVRFLOTestFixtures: book sablier");
+        factory.setLendingRouter(address(lending), address(book));
+        require(lending.router() == address(book), "OVRFLOTestFixtures: lending router");
     }
 
     /// @notice Clear the oracle cardinality requirement for a Pendle market.

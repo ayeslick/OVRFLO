@@ -21,7 +21,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
 GOLDEN_DIR="$ROOT/artifacts/tests/storage-layout"
-CONTRACTS=(OVRFLOFactory OVRFLO OVRFLOLending OVRFLOToken OVRFLOReserve)
+CONTRACTS=(OVRFLOFactory OVRFLO OVRFLOLending OVRFLOToken OVRFLOReserve OVRFLORequestBook)
 
 WRITE=0
 if [[ "${1:-}" == "--write" ]]; then

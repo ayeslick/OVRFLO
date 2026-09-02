@@ -80,6 +80,7 @@ abstract contract OVRFLOSeedRunner is Script, StdCheats, OVRFLOTestFixtures {
         factory.addMarket(address(ovrflo), PRIMARY_MARKET, MIN_TWAP_DURATION, 25);
         factory.addMarket(address(ovrflo), SECONDARY_MARKET, MIN_TWAP_DURATION, 10);
         OVRFLOLending lending = _deployAndRegisterLending(factory, ovrflo);
+        _deployRequestBookAs(factory, lending);
 
         deal(PRIMARY_PT, devWallet, PT_SEED_AMOUNT);
         deal(SECONDARY_PT, devWallet, PT_SEED_AMOUNT);
@@ -131,6 +132,7 @@ abstract contract OVRFLOSeedRunner is Script, StdCheats, OVRFLOTestFixtures {
         vm.serializeAddress(obj, "token", address(token));
         vm.serializeAddress(obj, "reserve", ovrflo.reserve());
         vm.serializeAddress(obj, "lending", address(lending));
+        vm.serializeAddress(obj, "requestBook", lending.router());
         vm.serializeAddress(obj, "devWallet", devWallet);
         string memory out = vm.serializeUint(obj, "chainId", block.chainid);
         vm.writeJson(out, string.concat("deployments/", networkKey, ".json"));
@@ -154,6 +156,7 @@ abstract contract OVRFLOSeedRunner is Script, StdCheats, OVRFLOTestFixtures {
         console.log("token:    ", address(token));
         console.log("reserve:  ", ovrflo.reserve());
         console.log("lending:  ", address(lending));
+        console.log("requestBook:", lending.router());
         console.log("devWallet:", devWallet);
     }
 }

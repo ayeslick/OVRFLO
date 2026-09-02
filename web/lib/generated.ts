@@ -2061,6 +2061,229 @@ export const ovrfloLendingAbi = [
 ] as const
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// OVRFLORequestBook
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+export const ovrfloRequestBookAbi = [
+  {
+    type: 'constructor',
+    inputs: [
+      { name: 'factory_', internalType: 'address', type: 'address' },
+      { name: 'lending_', internalType: 'address', type: 'address' },
+      { name: 'sablier_', internalType: 'address', type: 'address' },
+    ],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: 'requestId', internalType: 'uint256', type: 'uint256' }],
+    name: 'cancel',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: 'requestId', internalType: 'uint256', type: 'uint256' }],
+    name: 'execute',
+    outputs: [{ name: 'loanId', internalType: 'uint256', type: 'uint256' }],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'factory',
+    outputs: [{ name: '', internalType: 'address', type: 'address' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'lending',
+    outputs: [
+      { name: '', internalType: 'contract OVRFLOLending', type: 'address' },
+    ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'nextRequestId',
+    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'streamId', internalType: 'uint256', type: 'uint256' },
+      { name: 'market', internalType: 'address', type: 'address' },
+      { name: 'aprBps', internalType: 'uint16', type: 'uint16' },
+      { name: 'targetBorrow', internalType: 'uint128', type: 'uint128' },
+      { name: 'minAcceptable', internalType: 'uint128', type: 'uint128' },
+    ],
+    name: 'post',
+    outputs: [{ name: 'requestId', internalType: 'uint256', type: 'uint256' }],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: 'requestId', internalType: 'uint256', type: 'uint256' }],
+    name: 'requests',
+    outputs: [
+      { name: 'borrower', internalType: 'address', type: 'address' },
+      { name: 'market', internalType: 'address', type: 'address' },
+      { name: 'aprBps', internalType: 'uint16', type: 'uint16' },
+      { name: 'targetBorrow', internalType: 'uint128', type: 'uint128' },
+      { name: 'minAcceptable', internalType: 'uint128', type: 'uint128' },
+      { name: 'streamId', internalType: 'uint256', type: 'uint256' },
+    ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'sablier',
+    outputs: [
+      {
+        name: '',
+        internalType: 'contract ISablierV2LockupLinear',
+        type: 'address',
+      },
+    ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'vault',
+    outputs: [{ name: '', internalType: 'address', type: 'address' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'requestId',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: true,
+      },
+      {
+        name: 'borrower',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+    ],
+    name: 'RequestCancelled',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'requestId',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: true,
+      },
+      {
+        name: 'loanId',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: true,
+      },
+      {
+        name: 'actualBorrow',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
+    ],
+    name: 'RequestFilled',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'requestId',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: true,
+      },
+      {
+        name: 'borrower',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'market',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'streamId',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
+      {
+        name: 'aprBps',
+        internalType: 'uint16',
+        type: 'uint16',
+        indexed: false,
+      },
+      {
+        name: 'targetBorrow',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
+      {
+        name: 'minAcceptable',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
+    ],
+    name: 'RequestPosted',
+  },
+  { type: 'error', inputs: [], name: 'BelowMinimum' },
+  { type: 'error', inputs: [], name: 'CancelableStream' },
+  { type: 'error', inputs: [], name: 'CliffPresent' },
+  { type: 'error', inputs: [], name: 'MarketNotApproved' },
+  {
+    type: 'error',
+    inputs: [
+      { name: 'caller', internalType: 'address', type: 'address' },
+      { name: 'borrower', internalType: 'address', type: 'address' },
+    ],
+    name: 'NotBorrower',
+  },
+  {
+    type: 'error',
+    inputs: [{ name: 'current', internalType: 'address', type: 'address' }],
+    name: 'NotCurrentRouter',
+  },
+  { type: 'error', inputs: [], name: 'RemainingZero' },
+  {
+    type: 'error',
+    inputs: [{ name: 'requestId', internalType: 'uint256', type: 'uint256' }],
+    name: 'RequestMissing',
+  },
+  { type: 'error', inputs: [], name: 'SablierMismatch' },
+  { type: 'error', inputs: [], name: 'SeriesMatured' },
+  { type: 'error', inputs: [], name: 'UnknownLending' },
+  { type: 'error', inputs: [], name: 'WrongAsset' },
+  { type: 'error', inputs: [], name: 'WrongEndTime' },
+  { type: 'error', inputs: [], name: 'WrongSender' },
+  { type: 'error', inputs: [], name: 'ZeroAddress' },
+] as const
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // OVRFLOReserve
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 

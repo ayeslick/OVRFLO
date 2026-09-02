@@ -28,25 +28,26 @@ contract DeploySizeTest is Test {
     ///      silently.
     uint256 internal constant LENDING_RUNTIME_CANARY = 24_064;
 
-    function _artifacts() internal pure returns (string[5] memory a) {
+    function _artifacts() internal pure returns (string[6] memory a) {
         a = [
             string("OVRFLOFactory.sol:OVRFLOFactory"),
             "OVRFLO.sol:OVRFLO",
             "OVRFLOLending.sol:OVRFLOLending",
             "OVRFLOToken.sol:OVRFLOToken",
-            "OVRFLOReserve.sol:OVRFLOReserve"
+            "OVRFLOReserve.sol:OVRFLOReserve",
+            "OVRFLORequestBook.sol:OVRFLORequestBook"
         ];
     }
 
     function test_AllDeployables_FitEip3860InitcodeCap() public view {
-        string[5] memory a = _artifacts();
+        string[6] memory a = _artifacts();
         for (uint256 i = 0; i < a.length; i++) {
             assertLe(vm.getCode(a[i]).length, EIP3860_INITCODE_CAP, a[i]);
         }
     }
 
     function test_AllDeployables_FitEip170RuntimeCap() public view {
-        string[5] memory a = _artifacts();
+        string[6] memory a = _artifacts();
         for (uint256 i = 0; i < a.length; i++) {
             assertLe(vm.getDeployedCode(a[i]).length, EIP170_RUNTIME_CAP, a[i]);
         }

@@ -40,6 +40,12 @@ contract StorageLayoutTest is Test {
         );
     }
 
+    function test_StorageLayout_OVRFLORequestBook_MatchesGolden() public view {
+        _assertMatchesGolden(
+            "out/OVRFLORequestBook.sol/OVRFLORequestBook.json", "artifacts/tests/storage-layout/OVRFLORequestBook.json"
+        );
+    }
+
     function _assertMatchesGolden(string memory artifactRel, string memory goldenRel) internal view {
         string memory artifact = vm.readFile(artifactRel);
         string memory golden = vm.readFile(goldenRel);

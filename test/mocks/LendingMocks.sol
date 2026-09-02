@@ -13,9 +13,14 @@ contract MockLendingFactory {
     }
 
     mapping(address => Info) internal infos;
+    mapping(address => address) public lendingToOvrflo;
 
     function setInfo(address core, address treasury, address underlying, address ovrfloToken) external {
         infos[core] = Info({treasury: treasury, underlying: underlying, ovrfloToken: ovrfloToken});
+    }
+
+    function setLendingToOvrflo(address lending, address ovrflo) external {
+        lendingToOvrflo[lending] = ovrflo;
     }
 
     function ovrfloInfo(address core)
@@ -312,6 +317,12 @@ contract MockLendingSablier {
     }
 
     function withdraw(uint256 streamId, address to, uint128 amount) external {
+        address owner = owners[streamId];
+        require(
+            msg.sender == owner || msg.sender == streams[streamId].sender || getApproved[streamId] == msg.sender
+                || isApprovedForAll[owner][msg.sender],
+            "not authorized"
+        );
         require(amount > 0, "amount zero");
         uint128 withdrawable = this.withdrawableAmountOf(streamId);
         require(amount <= withdrawable, "amount too high");

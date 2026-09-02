@@ -11,7 +11,8 @@
 #
 # HTD Deploy sequence: Factory → comptroller → descriptor → lockup →
 # setOvrfloStream → vault → registerOvrflo → wiring reads → binding reads →
-# lending → registerLending → oracle/market/spacing → write artifact. Fork
+# lending → registerLending → oracle/market/spacing → request book →
+# setLendingRouter → write artifact. Fork
 # contracts use `cast send --create` from committed artifacts. After each
 # deploy, read named getters and fail on mismatch (SC23).
 #
@@ -202,7 +203,7 @@ echo "seed-local: dev wallet = $DEV_WALLET"
 echo "seed-local: lender     = $LENDER_WALLET"
 echo
 
-echo "[1/13] deploy OVRFLOFactory"
+echo "[1/14] deploy OVRFLOFactory"
 FACTORY_JSON=$(
   forge create \
     --rpc-url "$RPC" --private-key "$OWNER_PK" --broadcast --legacy --json \
@@ -219,7 +220,7 @@ require_eq "$(call_addr "$FACTORY" 'owner()(address)')" "$OWNER" "factory.owner 
 require_eq "$(call_addr "$FACTORY" 'oracle()(address)')" "$ORACLE" "factory.oracle mismatch"
 echo "      factory = $FACTORY"
 
-echo "[2/13] deploy SablierV2Comptroller (admin=factory, fees 0)"
+echo "[2/14] deploy SablierV2Comptroller (admin=factory, fees 0)"
 COMPTROLLER=$(deploy_from_artifact "$COMPTROLLER_ARTIFACT" "constructor(address)" "$FACTORY")
 require_code "$COMPTROLLER" "comptroller"
 require_eq "$(call_addr "$COMPTROLLER" 'admin()(address)')" "$FACTORY" "comptroller.admin mismatch"
@@ -227,12 +228,12 @@ require_eq "$(call_uint "$COMPTROLLER" 'flashFee()(uint256)')" "0" "comptroller.
 require_eq "$(call_uint "$COMPTROLLER" 'protocolFees(address)(uint256)' "$WSTETH")" "0" "comptroller.protocolFees must be 0"
 echo "      comptroller = $COMPTROLLER"
 
-echo "[3/13] deploy OVRFLOStreamDescriptor"
+echo "[3/14] deploy OVRFLOStreamDescriptor"
 DESCRIPTOR=$(deploy_from_artifact "$DESCRIPTOR_ARTIFACT")
 require_code "$DESCRIPTOR" "descriptor"
 echo "      descriptor = $DESCRIPTOR"
 
-echo "[4/13] deploy OVRFLOStream lockup (admin=factory, factory=factory)"
+echo "[4/14] deploy OVRFLOStream lockup (admin=factory, factory=factory)"
 SABLIER=$(deploy_from_artifact "$LOCKUP_ARTIFACT" "constructor(address,address,address)" \
   "$FACTORY" "$COMPTROLLER" "$DESCRIPTOR")
 require_code "$SABLIER" "lockup"
@@ -242,12 +243,12 @@ require_eq "$(call_addr "$SABLIER" 'factory()(address)')" "$FACTORY" "lockup.fac
 require_eq "$(call_addr "$SABLIER" 'comptroller()(address)')" "$COMPTROLLER" "lockup.comptroller mismatch"
 echo "      stream  = $SABLIER"
 
-echo "[5/13] factory.setOvrfloStream"
+echo "[5/14] factory.setOvrfloStream"
 send "$FACTORY" 'setOvrfloStream(address)' "$SABLIER"
 require_eq "$(call_addr "$FACTORY" 'ovrfloStream()(address)')" "$SABLIER" "factory.ovrfloStream mismatch"
 echo "      factory.ovrfloStream = $SABLIER"
 
-echo "[6/13] deploy OVRFLO vault (factory admin, stream last)"
+echo "[6/14] deploy OVRFLO vault (factory admin, stream last)"
 OVRFLO_JSON=$(
   forge create \
     --rpc-url "$RPC" --private-key "$OWNER_PK" --broadcast --legacy --json \
@@ -266,7 +267,7 @@ echo "      ovrflo  = $OVRFLO"
 echo "      token   = $TOKEN"
 echo "      reserve = $RESERVE"
 
-echo "[7/13] registerOvrflo"
+echo "[7/14] registerOvrflo"
 send "$FACTORY" 'registerOvrflo(address)' "$OVRFLO"
 REGISTERED_OVRFLO=$(call_addr "$FACTORY" 'ovrflos(uint256)(address)' 0)
 REGISTERED_TOKEN=$(cast call --rpc-url "$RPC" "$FACTORY" \
@@ -281,18 +282,18 @@ fi
 require_eq "$REGISTERED_RESERVE" "$RESERVE" "factory.ovrfloToReserve mismatch after registerOvrflo"
 echo "      registered vault $OVRFLO"
 
-echo "[8/13] creation-wiring reads"
+echo "[8/14] creation-wiring reads"
 require_eq "$(call_addr "$OVRFLO" 'reserve()(address)')" "$RESERVE" "vault.reserve mismatch"
 require_eq "$(call_addr "$RESERVE" 'ovrfloToken()(address)')" "$TOKEN" \
   "reserve.ovrfloToken must equal vault.ovrfloToken"
 echo "      reserve.ovrfloToken == vault.ovrfloToken"
 
-echo "[9/13] minter-binding reads"
+echo "[9/14] minter-binding reads"
 require_eq "$(call_addr "$TOKEN" 'vault()(address)')" "$OVRFLO" "token.vault must equal vault"
 require_eq "$(call_addr "$TOKEN" 'reserve()(address)')" "$RESERVE" "token.reserve must equal reserve"
 echo "      token.vault == vault; token.reserve == reserve"
 
-echo "[10/13] deploy OVRFLOLending"
+echo "[10/14] deploy OVRFLOLending"
 LENDING_SABLIER=$(call_addr "$OVRFLO" 'sablierLL()(address)')
 require_eq "$LENDING_SABLIER" "$SABLIER" "lending constructor stream must equal vault.sablierLL"
 LENDING_JSON=$(
@@ -306,13 +307,13 @@ require_eq "$(call_addr "$LENDING" 'owner()(address)')" "$FACTORY" "lending.owne
 require_eq "$(call_addr "$LENDING" 'sablier()(address)')" "$SABLIER" "lending.sablier mismatch"
 echo "      lending = $LENDING"
 
-echo "[11/13] registerLending (no re-check of stream factory/admin)"
+echo "[11/14] registerLending (no re-check of stream factory/admin)"
 LENDING_RECEIPT=$(cast send --rpc-url "$RPC" --private-key "$OWNER_PK" --legacy --json \
   "$FACTORY" 'registerLending(address)' "$LENDING")
 REGISTERED_LENDING=$(call_addr "$FACTORY" 'ovrfloToLending(address)(address)' "$OVRFLO")
 require_eq "$REGISTERED_LENDING" "$LENDING" "factory.ovrfloToLending mismatch after registerLending"
 
-echo "[12/13] prepareOracle, addMarket, setLendingTickSpacing"
+echo "[12/14] prepareOracle, addMarket, setLendingTickSpacing"
 send "$FACTORY" 'prepareOracle(address,uint32)' \
   "$PRIMARY_MARKET" "$TWAP"
 send "$FACTORY" 'prepareOracle(address,uint32)' \
@@ -333,6 +334,21 @@ send "$FACTORY" 'setLendingTickSpacing(address,address,uint16)' \
   "$LENDING" "$PRIMARY_MARKET" "$LENDING_TICK_SPACING"
 send "$FACTORY" 'setLendingTickSpacing(address,address,uint16)' \
   "$LENDING" "$SECONDARY_MARKET" "$LENDING_TICK_SPACING"
+
+echo "[13/14] deploy OVRFLORequestBook and setLendingRouter"
+BOOK_JSON=$(
+  forge create \
+    --rpc-url "$RPC" --private-key "$OWNER_PK" --broadcast --legacy --json \
+    src/OVRFLORequestBook.sol:OVRFLORequestBook \
+    --constructor-args "$FACTORY" "$LENDING" "$SABLIER"
+)
+BOOK=$(echo "$BOOK_JSON" | jq -r '.deployedTo')
+require_eq "$(call_addr "$BOOK" 'lending()(address)')" "$LENDING" "book.lending mismatch"
+require_eq "$(call_addr "$BOOK" 'sablier()(address)')" "$SABLIER" "book.sablier mismatch"
+require_eq "$(call_addr "$BOOK" 'vault()(address)')" "$OVRFLO" "book.vault mismatch"
+send "$FACTORY" 'setLendingRouter(address,address)' "$LENDING" "$BOOK"
+require_eq "$(call_addr "$LENDING" 'router()(address)')" "$BOOK" "lending.router must equal the request book"
+echo "      requestBook = $BOOK"
 
 echo "      seed dev + lender wallets with PT + wstETH"
 # Pendle PT inherits OZ ERC20, so balances live in mapping at slot 0.
@@ -423,7 +439,7 @@ echo "      unregistered create* reverted"
 echo "      mining 80 blocks so seed transactions sit behind finalized"
 cast rpc anvil_mine 80 --rpc-url "$RPC" >/dev/null
 
-echo "[13/13] write deployments/local.json"
+echo "[14/14] write deployments/local.json"
 # Do not write an unverified stream field. write-deployment-artifact.mjs
 # derives it from the vault and cross-checks lending (SC24). Artifact `reserve`
 # joins the ovrflo/lending paired-optional consume rule.
@@ -433,6 +449,7 @@ jq -n \
   --arg token     "$TOKEN" \
   --arg reserve   "$RESERVE" \
   --arg lending   "$LENDING" \
+  --arg requestBook "$BOOK" \
   --arg devWallet "$DEV_WALLET" \
   --arg lenderWallet "$LENDER_WALLET" \
   --arg primaryMarket "$PRIMARY_MARKET" \
@@ -459,6 +476,7 @@ jq -n \
     token: $token,
     reserve: $reserve,
     lending: $lending,
+    requestBook: $requestBook,
     lendingTransactionHash: $lendingTransactionHash,
     devWallet: $devWallet,
     lenderWallet: $lenderWallet,
@@ -484,6 +502,7 @@ echo "ovrflo:    $OVRFLO"
 echo "token:     $TOKEN"
 echo "reserve:   $RESERVE"
 echo "lending:   $LENDING"
+echo "requestBook: $BOOK"
 echo "stream:    $SABLIER"
 echo "devWallet: $DEV_WALLET"
 echo "lender:    $LENDER_WALLET"

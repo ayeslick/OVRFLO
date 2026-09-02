@@ -6,7 +6,7 @@ Shared domain vocabulary for this project — entities, named processes, and sta
 
 ### Column
 
-One underlying plus the vault, receipt token, wrap reserve, lending market, and (after CS3) request book that serve it. The factory admits at most one column per underlying.
+One underlying plus the vault, receipt token, wrap reserve, lending market, and request book that serve it. The factory admits at most one column per underlying.
 
 ovrfloToken, streams, loans, and supply positions of that column belong to that underlying only. A USD quote for that column keys by `vault.underlying()`. Never apply another column's quote, backing, or lending book. A later underlying is a new column with its own reviewed recipe row.
 
@@ -110,7 +110,7 @@ An atomic ERC-3156 mint of ovrfloToken from `OVRFLOReserve`, repaid in the same 
 
 ### Request book
 
-A thin router that escrows an OVRFLO Stream until lending depth can fill a borrow for the human owner. Later unit (CS3). Not live in `src/` yet. Core `borrow` uses `onBehalfOf`. The book holds no loan-to-borrower table.
+A thin router (`OVRFLORequestBook`) that escrows an OVRFLO Stream until lending depth can fill a borrow for the human owner. The borrower posts the exact `aprBps` they chose. The book fills at that tick only and never searches ticks. Core `borrow` uses `onBehalfOf` equal to the human. The book holds no loan-to-borrower table and takes no fee. The factory does not register the book; seed sets it as `lending.router` after deploy.
 
 ### OVRFLO Stream
 

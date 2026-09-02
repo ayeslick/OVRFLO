@@ -2,6 +2,7 @@ export {
   ovrfloAbi,
   ovrfloFactoryAbi,
   ovrfloLendingAbi,
+  ovrfloRequestBookAbi,
   ovrfloReserveAbi,
   ovrfloStreamAbi,
 } from "./generated";
