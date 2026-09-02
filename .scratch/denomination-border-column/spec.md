@@ -72,27 +72,27 @@ Read `PRODUCT.md`, `DESIGN.md`, `docs/solutions/patterns/ovrflo-web-standard.md`
 - Tickets **21** and **23** also wait for owner start-OK. Pins are already in KD19/KD20. Do not re-research pins.
 - Ticket **26** is coordinator-executed, not a fresh-chat cheap-model ticket.
 
-### Model routing (updated 2026-09-01; supersedes `ori-eval/routing-recommendation.md`)
+### Model routing (updated 2026-09-02; supersedes `ori-eval/routing-recommendation.md`)
 
-All model slugs are available. The per-ticket chat is both orchestrator and implementer; it dispatches one read-only reviewer subagent and disposes the findings itself. Do not keep a standing orchestrator chat across tickets; context cost grows with every ticket. The main cost lever is the Required reading rule: read the named plan sections only, never the whole plan.
+All model slugs are available. Fable seats use `claude-fable-5-1-thinking-high` (2026-09-02): Anthropic lists Fable 5.1 at the same input/output price as Fable 5 with cache reads at one quarter, and 55.8% vs 42.0% on Terminal-Bench 4.0. The in-repo eval measured Fable 5; treat its pass rate as a floor for 5.1, not a measurement of it. The per-ticket chat is both orchestrator and implementer; it dispatches one read-only reviewer subagent and disposes the findings itself. Do not keep a standing orchestrator chat across tickets; context cost grows with every ticket. The main cost lever is the Required reading rule: read the named plan sections only, never the whole plan.
 
 | Tickets | Implementer (UI pick for the chat) | Reviewer subagent (read-only) |
 |---|---|---|
-| 02, 03, 04, 06, 09, 10 (custody, admission, invariants, flash mint, request book) | `claude-fable-5-thinking-medium` | `gpt-5.6-sol-medium`; second pass `cursor-grok-4.6-xhigh` on **02** and **04** only. Reviewers read https://ethskills.com/SKILL.md (security and audit branches) and `docs/audit/rejected-findings-record.md`, then use their own judgment. Do not use the `solidity-security-auditor` subagent or any other review persona. |
+| 02, 03, 04, 06, 09, 10 (custody, admission, invariants, flash mint, request book) | `claude-fable-5-1-thinking-high` | `gpt-5.6-sol-medium`; second pass `cursor-grok-4.6-xhigh` on **02** and **04** only. Reviewers read https://ethskills.com/SKILL.md (security and audit branches) and `docs/audit/rejected-findings-record.md`, then use their own judgment. Do not use the `solidity-security-auditor` subagent or any other review persona. |
 | 01, 05 (deletion, deploy scripts) | `cursor-grok-4.6-xhigh` | `gpt-5.6-sol-medium` |
-| 17, 18 (recovery runtime, hosted response validation, USD execution bounds) | `claude-fable-5-thinking-medium` | `gpt-5.6-sol-medium` |
+| 17, 18 (recovery runtime, hosted response validation, USD execution bounds) | `claude-fable-5-1-thinking-high` | `gpt-5.6-sol-medium` |
 | 07, 11, 12, 13, 14, 15, 16, 19, 20, 22, 24 (web bulk) | `cursor-grok-4.6-xhigh` | `gpt-5.6-sol-medium` |
 | 21 (bench harness and measurement) | `gpt-5.6-sol-medium` | `cursor-grok-4.6-xhigh` |
 | 23, 25 (config files printed in KD20; formatter output) | `composer-2.5-fast` | `gpt-5.6-sol-medium`, diff-only |
-| 08 (docs) | `claude-fable-5-thinking-medium` | `gpt-5.6-sol-medium` |
-| 26 (compound) | coordinator chat, `claude-fable-5-thinking-medium` | none |
+| 08 (docs) | `claude-fable-5-1-thinking-high` | `gpt-5.6-sol-medium` |
+| 26 (compound) | coordinator chat, `claude-fable-5-1-thinking-high` | none |
 
 Rules:
 
 - The reviewer is a different model family from the implementer. Fable implements, GPT reviews; Grok implements, GPT reviews; GPT implements (21 only), Grok reviews.
 - One reviewer per ticket. No panels. Two reviewers only on **02** and **04**.
 - Reviewers report findings (severity, `file:line`, evidence, suggested fix). They do not edit, commit, or pick verdicts. The ticket chat decides.
-- Prices are not pinned here. Check the Cursor pricing page before the first ticket. If Fable medium costs no more than Grok xhigh per request, put Fable on every implementer seat; the in-repo eval scored it higher on these briefs.
+- Prices are not pinned here. Check the Cursor pricing page before the first ticket. If Fable 5.1 high costs no more than Grok xhigh per request, put Fable on every implementer seat; the in-repo eval scored Fable higher on these briefs.
 
 ### Solidity verification (tickets 01–06)
 
