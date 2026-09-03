@@ -6,6 +6,7 @@ import { LensTabs, type LensId, type LensTab } from "@/components/kit/LensTabs";
 import { RollingNumber } from "@/components/kit/RollingNumber";
 import type { BorrowerLoanRow } from "@/hooks/useBorrowerBook";
 import type { LenderPositionRow } from "@/hooks/useLenderBook";
+import type { RestingRequestRow } from "@/lib/protocol/request-book";
 import type { BookPager, HydratedStream } from "@/hooks/useStreams";
 import { formatAddress, formatTruncatedDecimal } from "@/lib/format";
 import type { StreamSchedule } from "@/lib/payoff";
@@ -59,6 +60,7 @@ export function Wall({
   onSort,
   retired,
   totals,
+  waitingRequests = [],
 }: {
   tabs: readonly WallTab[];
   lens: LensId;
@@ -82,6 +84,7 @@ export function Wall({
   onSort?: (sort: CollectionSort) => void;
   retired?: ReadonlySet<string>;
   totals?: readonly UnderlyingTotal[];
+  waitingRequests?: readonly RestingRequestRow[];
 }) {
   const collection = mode === "collection";
   const shownLoans = collection
@@ -125,7 +128,7 @@ export function Wall({
         <div className="watch-collection-head">
           <p className="watch-kicker">
             {collectionType === "loan" ? "Self-Repaying Loans" : "Fixed Returns"} ·{" "}
-            {collectionType === "loan" ? loans.length : positions.length}
+            {collectionType === "loan" ? loans.length + waitingRequests.length : positions.length}
           </p>
           {onSort ? (
             <label className="watch-collection-sort">
@@ -160,6 +163,16 @@ export function Wall({
                 onSelect={() =>
                   onSelect({ kind: "position", lending: position.lending, id: position.id })
                 }
+              />
+            ))
+          : null}
+        {panelStatus === "ready" && showLoans
+          ? waitingRequests.map((request) => (
+              <WaitingRequestRow
+                key={`${request.book}-${request.requestId.toString()}`}
+                request={request}
+                selected={selection.kind === "stream" && selection.id === request.streamId}
+                onSelect={() => onSelect({ kind: "stream", id: request.streamId })}
               />
             ))
           : null}
@@ -237,6 +250,28 @@ function SuppliedRow({
       selected={selected}
       miniband={{ filled: fraction01(filled, supplied) }}
       badge={retired ? "retired market" : match === "resting" ? "Waiting" : undefined}
+      onSelect={onSelect}
+    />
+  );
+}
+
+function WaitingRequestRow({
+  request,
+  selected,
+  onSelect,
+}: {
+  request: RestingRequestRow;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  return (
+    <EntityRow
+      state="resting"
+      identity={`WAITING · STREAM #${request.streamId.toString()}`}
+      stateLine="Waiting for liquidity"
+      decisive={formatTruncatedDecimal(request.targetBorrow, 18, 5)}
+      selected={selected}
+      badge="Waiting"
       onSelect={onSelect}
     />
   );

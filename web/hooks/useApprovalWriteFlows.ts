@@ -32,7 +32,7 @@ export function useApprovalWriteFlows(
     | "ovrfloToken"
     | "ptToken"
     | "expiryCached"
-  > | readonly Address[],
+  > & { requestBook?: Address | null } | readonly Address[],
 ) {
   const approveTx = useWriteFlow(user, scope);
   const actionTx = useWriteFlow(user, scope);

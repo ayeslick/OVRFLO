@@ -2,7 +2,13 @@ import type { QueryClient } from "@tanstack/react-query";
 import type { Address } from "viem";
 import type { ActionIdentity, TouchedResource } from "./actions/types";
 import { factoryAddress } from "./config";
-import { borrowerBookKeys, lenderBookKeys, protocolBootstrapKeys, streamBookKeys } from "./query-keys";
+import {
+  borrowerBookKeys,
+  lenderBookKeys,
+  protocolBootstrapKeys,
+  requestBookKeys,
+  streamBookKeys,
+} from "./query-keys";
 import type { MarketInfo } from "./types";
 
 // wagmi v3 roots useReadContract / useReadContracts keys at these string
@@ -118,6 +124,8 @@ function resourceContracts(resource: TouchedResource): Address[] {
     case "token-balance":
     case "allowance":
       return [resource.token];
+    case "request":
+      return [resource.book];
   }
 }
 
@@ -149,6 +157,11 @@ export function invalidateTouchedResources(
   if (kinds.has("stream") || kinds.has("nft-approval")) {
     queryClient.invalidateQueries({ queryKey: streamBookKeys.all });
   }
+  if (kinds.has("request")) {
+    queryClient.invalidateQueries({ queryKey: requestBookKeys.all });
+    queryClient.invalidateQueries({ queryKey: borrowerBookKeys.all });
+    queryClient.invalidateQueries({ queryKey: streamBookKeys.all });
+  }
   // Append-only factory registry: refresh discovery after a registration write.
   if (contracts.has(factoryAddress.toLowerCase())) {
     queryClient.invalidateQueries({ queryKey: protocolBootstrapKeys.all });
@@ -174,6 +187,7 @@ export function invalidateAllOnChainReads(queryClient: QueryClient, user?: Addre
   queryClient.invalidateQueries({ queryKey: streamBookKeys.all });
   queryClient.invalidateQueries({ queryKey: lenderBookKeys.all });
   queryClient.invalidateQueries({ queryKey: borrowerBookKeys.all });
+  queryClient.invalidateQueries({ queryKey: requestBookKeys.all });
 }
 
 /**

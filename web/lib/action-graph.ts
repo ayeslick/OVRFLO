@@ -7,6 +7,7 @@ export const GRAPH_STEP_SET_ALLOWANCE = "auth-set-allowance";
 export const GRAPH_STEP_SET_APPROVAL = "auth-set-approval";
 export const GRAPH_STEP_DEPOSIT = "deposit";
 export const GRAPH_STEP_BORROW = "borrow";
+export const GRAPH_STEP_POST = "post-request";
 export const GRAPH_STEP_SUPPLY = "supply";
 
 export type GraphSemanticId =
@@ -15,6 +16,7 @@ export type GraphSemanticId =
   | typeof GRAPH_STEP_SET_APPROVAL
   | typeof GRAPH_STEP_DEPOSIT
   | typeof GRAPH_STEP_BORROW
+  | typeof GRAPH_STEP_POST
   | typeof GRAPH_STEP_SUPPLY;
 
 export type GraphKind = "deposit-plus-borrow" | "borrow" | "supply";
@@ -154,9 +156,14 @@ export function compileActionGraph(input: CompileActionGraphInput): CompileActio
     }
     steps.push(
       step(
-        GRAPH_STEP_BORROW,
+        input.borrowExecutable ? GRAPH_STEP_BORROW : GRAPH_STEP_POST,
         lastId(steps),
-        identity(GRAPH_STEP_BORROW, input.chainId, token, input.amount),
+        identity(
+          input.borrowExecutable ? GRAPH_STEP_BORROW : GRAPH_STEP_POST,
+          input.chainId,
+          token,
+          input.amount,
+        ),
       ),
     );
   } else if (input.kind === "borrow") {
@@ -171,9 +178,14 @@ export function compileActionGraph(input: CompileActionGraphInput): CompileActio
     }
     steps.push(
       step(
-        GRAPH_STEP_BORROW,
+        input.borrowExecutable || !input.cs3Available ? GRAPH_STEP_BORROW : GRAPH_STEP_POST,
         lastId(steps),
-        identity(GRAPH_STEP_BORROW, input.chainId, token, input.amount),
+        identity(
+          input.borrowExecutable || !input.cs3Available ? GRAPH_STEP_BORROW : GRAPH_STEP_POST,
+          input.chainId,
+          token,
+          input.amount,
+        ),
       ),
     );
   } else {

@@ -138,6 +138,18 @@ export const streamBookKeys = {
     ] as const,
 };
 
+export const requestBookKeys = {
+  all: ["request-book"] as const,
+  factory: (chainId: number, account?: Address | null, lendings?: readonly Address[]) =>
+    [
+      ...requestBookKeys.all,
+      "factory",
+      chainId,
+      addr(account),
+      (lendings ?? []).map((value) => value.toLowerCase()).join(","),
+    ] as const,
+};
+
 export const usdKeys = {
   all: ["usd"] as const,
   price: (chainId: number, underlying?: Address | null, feed?: Address | null) =>

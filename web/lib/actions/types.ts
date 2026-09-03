@@ -47,6 +47,13 @@ export type HostedConvertIntent = AmountIntent<"hosted_convert"> & {
   slippageBps: number;
   enableAggregator: boolean;
 };
+export type PostRequestIntent = AmountIntent<"post_request"> & {
+  streamId: bigint;
+  aprBps: number;
+  minAcceptable: string;
+};
+export type ExecuteRequestIntent = BaseIntent<"execute_request"> & { requestId: bigint };
+export type CancelRequestIntent = BaseIntent<"cancel_request"> & { requestId: bigint };
 
 export type ActionIntent =
   | SupplyIntent
@@ -62,7 +69,10 @@ export type ActionIntent =
   | AdjustRateIntent
   | RepayIntent
   | CloseIntent
-  | HostedConvertIntent;
+  | HostedConvertIntent
+  | PostRequestIntent
+  | ExecuteRequestIntent
+  | CancelRequestIntent;
 
 type BaseSnapshot<T extends ActionType> = {
   type: T;
@@ -225,6 +235,36 @@ export type HostedConvertState = {
 
 export type HostedConvertSnapshot = StateSnapshot<"hosted_convert", HostedConvertState>;
 
+export type RequestBookBinding = {
+  book: Address;
+  router: Address;
+};
+
+export type RestingRequestState = {
+  requestId: bigint;
+  borrower: Address;
+  market: Address;
+  aprBps: number;
+  targetBorrow: bigint;
+  minAcceptable: bigint;
+  streamId: bigint;
+};
+
+export type PostRequestSnapshot = BaseSnapshot<"post_request"> & {
+  stream: ReadOutcome<BorrowStreamState>;
+  book: ReadOutcome<RequestBookBinding>;
+};
+
+export type ExecuteRequestSnapshot = BaseSnapshot<"execute_request"> & {
+  request: ReadOutcome<RestingRequestState | null>;
+  book: ReadOutcome<RequestBookBinding>;
+};
+
+export type CancelRequestSnapshot = BaseSnapshot<"cancel_request"> & {
+  request: ReadOutcome<RestingRequestState | null>;
+  book: ReadOutcome<{ book: Address }>;
+};
+
 export type ActionSnapshot =
   | SupplySnapshot
   | WithdrawSnapshot
@@ -239,7 +279,10 @@ export type ActionSnapshot =
   | AdjustRateSnapshot
   | RepaySnapshot
   | CloseSnapshot
-  | HostedConvertSnapshot;
+  | HostedConvertSnapshot
+  | PostRequestSnapshot
+  | ExecuteRequestSnapshot
+  | CancelRequestSnapshot;
 
 export type IntentByType = {
   [T in ActionType]: Extract<ActionIntent, { type: T }>;
@@ -284,7 +327,10 @@ export type ActionErrorCode =
   | "hosted-bounds"
   | "hosted-deadline"
   | "hosted-impact"
-  | "hosted-response";
+  | "hosted-response"
+  | "request-missing"
+  | "request-not-borrower"
+  | "not-current-router";
 
 export type ActionError = {
   code: ActionErrorCode;
@@ -312,7 +358,14 @@ export type Erc721Authorization = {
 
 export type Authorization = Erc20Authorization | Erc721Authorization;
 
-export type ContractKind = "erc20" | "ovrflo" | "lending" | "sablier" | "reserve" | "pendle_router";
+export type ContractKind =
+  | "erc20"
+  | "ovrflo"
+  | "lending"
+  | "sablier"
+  | "reserve"
+  | "pendle_router"
+  | "request_book";
 
 export type FinalCall = {
   target: Address;
@@ -343,7 +396,8 @@ export type TouchedResource =
       tokenId: bigint;
     }
   | { kind: "token-balance"; token: Address; account: Address }
-  | { kind: "allowance"; token: Address; owner: Address; spender: Address };
+  | { kind: "allowance"; token: Address; owner: Address; spender: Address }
+  | { kind: "request"; book: Address; id: bigint };
 
 export type FrozenRoute = {
   ids: readonly bigint[];

@@ -410,6 +410,20 @@ Declared TanStack query key for the borrower book.
   in this book as SETTLED; invalidation after close must also refresh streams
   so the freed stream reappears on the same reconciling read (R9).
 
+### `query.request-book`
+
+Declared TanStack query key for resting request-book rows per account and lending set.
+
+- **trust_domain:** `on-chain`
+- **writers:**
+  - `web/lib/query-keys.ts` — `requestBookKeys.factory`
+- **readers:**
+  - `web/hooks/useRequestBook.ts` — registers the factory query
+  - `web/lib/invalidate.ts` — post-write invalidation after post / execute / cancel
+- **notes:** Rows come from `requests(id)` while `borrower == account` and
+  `streamId != 0`. Completeness is distinct from empty. A failed read never
+  paints an empty portfolio. Waiting-request identity stays on `?stream=`.
+
 ### `query.ladder`
 
 Declared TanStack query key for `tickDepths(market)`.

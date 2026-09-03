@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
-import { useConnection, usePublicClient, useReadContracts } from "wagmi";
+import { useConnection, usePublicClient, useReadContract, useReadContracts } from "wagmi";
 import { CreateStageFrame } from "@/components/create/CreateStageFrame";
 import { compileCreateIntent } from "@/lib/create-intent";
 import {
@@ -44,15 +44,18 @@ import { useCompleteStreams } from "@/hooks/useCompleteStreams";
 import { type HydratedStream } from "@/hooks/useStreams";
 import { useUsdPrice } from "@/hooks/useUsdPrice";
 import { useWalletChangeReset } from "@/hooks/useWalletChangeReset";
-import { ovrfloLendingAbi, sablierLockupAbi } from "@/lib/abis";
+import { ovrfloLendingAbi, ovrfloRequestBookAbi, sablierLockupAbi } from "@/lib/abis";
 import {
   compileActionGraph,
   GRAPH_STEP_BORROW,
+  GRAPH_STEP_POST,
   GRAPH_STEP_SET_APPROVAL,
   sameStepEconomics,
   withGraphId,
   type ActionGraph,
 } from "@/lib/action-graph";
+import { WAITING_FOR_LIQUIDITY_COPY } from "@/lib/named-surface-state";
+import { suppressStaleSubmit } from "@/lib/named-surface-state";
 import { classifyBorrowError } from "@/lib/borrow";
 import { assertBorrowRebuildInputs } from "@/lib/borrow-rebuild";
 import { chainId, factoryAddress, ZERO_ADDRESS } from "@/lib/config";
@@ -86,6 +89,7 @@ import {
   quoteDrift,
   snapshotQuote,
   tickDepthWei,
+  waitingPostQuote,
   useBorrowPreview,
   weiToAmountInput,
   type BorrowQuote,
@@ -155,7 +159,18 @@ export function BorrowFlow() {
   const usd = useUsdPrice(market?.underlying);
   const lending = market?.lending ?? null;
   const ladderOutcome = useLadder(lending, market?.market);
-  const { approveTx, actionTx } = useApprovalWriteFlows(account, market ?? []);
+  const routerRead = useReadContract({
+    address: lending ?? ZERO_ADDRESS,
+    abi: ovrfloLendingAbi,
+    functionName: "router",
+    query: { enabled: Boolean(lending) },
+  });
+  const routerAddress = routerRead.data ?? null;
+  const cs3Available = cs3ContinuationAvailable(routerAddress);
+  const { approveTx, actionTx } = useApprovalWriteFlows(
+    account,
+    market ? { ...market, requestBook: routerAddress } : [],
+  );
   // Borrow signing uses the streams lens truth; ladder is a separate gate in continue.
   const { freshness, signingAllowed } = useFreshness([sourceFromOutcome(streams)]);
   const stale = useStaleRecovery(actionTx.error, classifyBorrowError, queryClient, account);
@@ -269,11 +284,6 @@ export function BorrowFlow() {
               functionName: "isApprovedForAll",
               args: [account, lending],
             },
-            {
-              address: lending,
-              abi: ovrfloLendingAbi,
-              functionName: "router",
-            },
           ]
         : [],
     query: { enabled: nftEnabled },
@@ -281,9 +291,25 @@ export function BorrowFlow() {
   const approvedOperator =
     nftReads.data?.[0]?.status === "success" ? (nftReads.data[0].result as Address) : ZERO_ADDRESS;
   const approvedForAll = nftReads.data?.[1]?.status === "success" ? Boolean(nftReads.data[1].result) : false;
-  const routerAddress =
-    nftReads.data?.[2]?.status === "success" ? (nftReads.data[2].result as Address) : null;
-  const streamApproved =
+  const bookApprovalReads = useReadContracts({
+    contracts:
+      account && selectedStream && routerAddress && cs3Available
+        ? [
+            {
+              address: lockup,
+              abi: sablierLockupAbi,
+              functionName: "isApprovedForAll",
+              args: [account, routerAddress],
+            },
+          ]
+        : [],
+    query: { enabled: Boolean(account && selectedStream && routerAddress && cs3Available) },
+  });
+  const bookApprovedForAll =
+    bookApprovalReads.data?.[0]?.status === "success"
+      ? Boolean(bookApprovalReads.data[0].result)
+      : false;
+  const lendingApproved =
     Boolean(lending) &&
     (approvedForAll || isAddressEqual(approvedOperator, lending ?? ZERO_ADDRESS));
 
@@ -347,6 +373,24 @@ export function BorrowFlow() {
           : "ready";
   const selectedRung = ladder?.rungs.find((rung) => rung.aprBps === selectedAprBps);
   const emptyTick = Boolean(preview.emptyTick || quote?.emptyTick || selectedRung?.kind === "empty");
+  const borrowExecutable =
+    Boolean(quote) &&
+    !emptyTick &&
+    quote !== null &&
+    !quote.partial &&
+    quote.fill > 0n &&
+    quote.fill >= quote.target;
+  const posting = cs3Available && !borrowExecutable && selectedAprBps !== null;
+  const reviewQuote = quote
+    ? posting
+      ? waitingPostQuote(quote, market?.feeBps ?? 0)
+      : quote
+    : null;
+  const nftSpender = posting && routerAddress ? routerAddress : lending;
+  const streamApproved = posting
+    ? Boolean(routerAddress) &&
+      (bookApprovedForAll || isAddressEqual(approvedOperator, routerAddress ?? ZERO_ADDRESS))
+    : lendingApproved;
   const liveCopy = ladder ? liveTickCopy(ladder) : "NO LIVE TICKS HAVE RESTING LIQUIDITY";
   const emptyTickCopy =
     emptyTick && selectedAprBps !== null && windowState === "ready"
@@ -368,12 +412,18 @@ export function BorrowFlow() {
 
   useEffect(() => {
     if (stage !== "review" || frozen !== null) return;
-    if (!quote || emptyTick || amountError || preview.isStale || quote.fill <= 0n) return;
-    setFrozen(snapshotQuote(quote));
-  }, [amountError, emptyTick, frozen, preview.isStale, quote, stage]);
+    if (!reviewQuote || amountError || preview.isStale) return;
+    if (!posting && (emptyTick || reviewQuote.fill <= 0n)) return;
+    setFrozen(snapshotQuote(reviewQuote));
+  }, [amountError, emptyTick, frozen, posting, preview.isStale, reviewQuote, stage]);
 
-  const drifted = Boolean(frozen && quote && quoteDrift(frozen, quote));
-  const receipt = parseBorrowed(actionTx.receipt?.logs, lending);
+  const drifted = Boolean(frozen && reviewQuote && quoteDrift(frozen, reviewQuote));
+  const borrowedReceipt = parseBorrowed(actionTx.receipt?.logs, lending);
+  const postedReceipt = parseRequestPosted(actionTx.receipt?.logs, routerAddress);
+  const filledReceipt = parseRequestFilled(actionTx.receipt?.logs, routerAddress);
+  const receipt =
+    borrowedReceipt ??
+    (filledReceipt ? { loanId: filledReceipt.loanId, net: 0n, obligation: 0n } : null);
   const graphQueue = useCreateGraphQueue({
     identity,
     factory: factoryAddress,
@@ -384,17 +434,49 @@ export function BorrowFlow() {
     rebuild: async (tx, nextIdentity) => {
       if (tx.kind !== "graph-step") throw new Error("Borrow queue accepts graph steps only");
       if (tx.semanticId === GRAPH_STEP_SET_APPROVAL) {
-        if (!lending || !selectedStream) throw new Error("NFT approval rebuild is missing the stream");
+        if (!nftSpender || !selectedStream) throw new Error("NFT approval rebuild is missing the stream");
         return {
           status: "ready",
           plan: buildAuthStepPlan({
             identity: nextIdentity,
             semanticId: GRAPH_STEP_SET_APPROVAL,
-            actionType: "borrow",
+            actionType: posting ? "post_request" : "borrow",
             token: lockup,
-            spender: lending,
+            spender: nftSpender,
             amount: selectedStream.streamId,
             contract: "sablier",
+          }),
+        };
+      }
+      if (tx.semanticId === GRAPH_STEP_POST) {
+        if (!routerAddress || !market || !selectedStream || !frozen || selectedAprBps === null) {
+          throw new Error("Request post rebuild inputs are missing");
+        }
+        const rebuildRead = assertBorrowRebuildInputs({
+          routedDepth: depth,
+          eligibility: selectedStream.borrowRouteEligible ? "eligible" : "ineligible",
+          router: routerAddress,
+          request: { book: routerAddress },
+        });
+        if (rebuildRead.status === "invalid") {
+          throw new Error(`Borrow rebuild used a placeholder (${rebuildRead.reason})`);
+        }
+        return {
+          status: "ready",
+          plan: buildCallStepPlan({
+            identity: nextIdentity,
+            actionType: "post_request",
+            semanticId: GRAPH_STEP_POST,
+            target: routerAddress,
+            contract: "request_book",
+            functionName: "post",
+            callArgs: [
+              selectedStream.streamId,
+              market.market,
+              selectedAprBps,
+              frozen.target,
+              frozen.minAcceptable,
+            ],
           }),
         };
       }
@@ -440,7 +522,9 @@ export function BorrowFlow() {
     isSigning: actionTx.isSigning || graphQueue.running,
     isConfirming: actionTx.isConfirming,
     isConfirmed: actionTx.isConfirmed,
-    unknown: graphQueue.unknown,
+    isRejected: actionTx.isRejected,
+    isReverted: actionTx.isReverted,
+    isUnknown: actionTx.isUnknown || graphQueue.unknown,
   });
 
   const belowMinContext = {
@@ -455,7 +539,9 @@ export function BorrowFlow() {
       ? decodeContractError(approveTx.error, belowMinContext)
       : null;
 
-  const ackTrace = useAcknowledgeRiskTrace(borrowTrace(checkpoint, streamApproved, true));
+  const ackTrace = useAcknowledgeRiskTrace(
+    borrowTrace(checkpoint, streamApproved, true, posting ? "post" : "borrow"),
+  );
 
   useEffect(() => {
     if (!graph || !account) {
@@ -486,11 +572,11 @@ export function BorrowFlow() {
     writeReceipt(factoryAddress, {
       hash: actionTx.hash,
       status: actionTx.isConfirmed ? "confirmed" : "pending",
-      entityKind: "loan",
-      entityId: receipt?.loanId?.toString() ?? null,
+      entityKind: receipt?.loanId !== undefined ? "loan" : "stream",
+      entityId: receipt?.loanId?.toString() ?? postedReceipt?.streamId?.toString() ?? null,
       preTxBalances: {},
     });
-  }, [actionTx.hash, actionTx.isConfirmed, actionTx.isConfirming, receipt?.loanId]);
+  }, [actionTx.hash, actionTx.isConfirmed, actionTx.isConfirming, postedReceipt?.streamId, receipt?.loanId]);
 
   function onSelectStream(id: bigint) {
     setSelectedStreamId(id);
@@ -517,8 +603,9 @@ export function BorrowFlow() {
   }
 
   function onReview() {
-    if (!quote || emptyTick || amountError || preview.isStale || quote.fill <= 0n) return;
-    setFrozen(snapshotQuote(quote));
+    if (!reviewQuote || amountError || preview.isStale) return;
+    if (!posting && (emptyTick || reviewQuote.fill <= 0n)) return;
+    setFrozen(snapshotQuote(reviewQuote));
     const intent = compileCreateIntent({
       positionType: "loan",
       disclosure,
@@ -538,8 +625,8 @@ export function BorrowFlow() {
     );
     if (kind === "deposit-plus-borrow") {
       const gate = depositPlusBorrowLiquidityGate({
-        borrowExecutable: depth >= quote.fill,
-        cs3Available: cs3ContinuationAvailable(),
+        borrowExecutable,
+        cs3Available,
       });
       if (gate.status === "blocked") {
         setLiquidityBlocked(true);
@@ -552,19 +639,19 @@ export function BorrowFlow() {
       chainId,
       kind,
       token: market?.underlying ?? selectedStream?.asset ?? ZERO_ADDRESS,
-      amount: quote.fill.toString(),
+      amount: reviewQuote.target.toString(),
       allowance: null,
       nftApproval:
-        selectedStream && lending
+        selectedStream && nftSpender
           ? {
               token: lockup,
-              spender: lending,
+              spender: nftSpender,
               tokenId: selectedStream.streamId.toString(),
               needed: !streamApproved,
             }
           : undefined,
-      borrowExecutable: depth >= quote.fill,
-      cs3Available: cs3ContinuationAvailable(),
+      borrowExecutable,
+      cs3Available,
     });
     if (compiled.status === "blocked") {
       setLiquidityBlocked(true);
@@ -593,14 +680,17 @@ export function BorrowFlow() {
   }
 
   function onRelatch() {
-    if (!quote || preview.isStale) return;
-    setFrozen(snapshotQuote(quote));
+    if (!reviewQuote || preview.isStale) return;
+    setFrozen(snapshotQuote(reviewQuote));
     stale.setStaleRecovery(false);
   }
 
   function onApprove() {
-    if (!lending || !selectedStream || chainGuard.wrongChain || !signingAllowed) return;
-    if (graphQueue.unknown) return;
+    if (!nftSpender || !selectedStream || chainGuard.wrongChain || !signingAllowed) return;
+    if (graphQueue.unknown || actionTx.isUnknown) return;
+    if (suppressStaleSubmit({ refreshing: preview.isStale, pending: actionTx.isConfirming, marketMoved: drifted })) {
+      return;
+    }
     if (graph) {
       graphQueue.startRemaining();
       return;
@@ -609,17 +699,31 @@ export function BorrowFlow() {
       address: lockup,
       abi: sablierLockupAbi,
       functionName: "approve",
-      args: [lending, selectedStream.streamId],
+      args: [nftSpender, selectedStream.streamId],
     });
   }
 
   function onBorrow() {
-    if (!lending || !market || !selectedStream || !quote || !frozen || drifted || preview.isStale || chainGuard.wrongChain || !signingAllowed) return;
-    if (graphQueue.unknown) return;
+    if (!market || !selectedStream || !reviewQuote || !frozen || drifted || preview.isStale || chainGuard.wrongChain || !signingAllowed) return;
+    if (graphQueue.unknown || actionTx.isUnknown) return;
+    if (suppressStaleSubmit({ refreshing: preview.isStale, pending: actionTx.isConfirming, marketMoved: drifted })) {
+      return;
+    }
     if (graph) {
       graphQueue.startRemaining();
       return;
     }
+    if (posting) {
+      if (!routerAddress) return;
+      actionTx.writeContract({
+        address: routerAddress,
+        abi: ovrfloRequestBookAbi,
+        functionName: "post",
+        args: [selectedStream.streamId, market.market, selectedAprBps as number, frozen.target, frozen.minAcceptable],
+      });
+      return;
+    }
+    if (!lending) return;
     actionTx.writeContract({
       address: lending,
       abi: ovrfloLendingAbi,
@@ -645,21 +749,32 @@ export function BorrowFlow() {
       : undefined;
 
   const streamSelectState = streamSelectStatus(marketsResult.status, ovrflos.isLoading, streams);
+  const minFill = lendingConfig?.minLiquidityAmount ?? MIN_LIQUIDITY_AMOUNT;
   const canContinue =
-    Boolean(quote) &&
+    Boolean(reviewQuote) &&
     !amountError &&
-    !emptyTick &&
     !preview.isStale &&
     windowState === "ready" &&
-    quote !== null &&
-    quote.fill >= (lendingConfig?.minLiquidityAmount ?? MIN_LIQUIDITY_AMOUNT);
+    (posting
+      ? parsedAmount.ok && parsedAmount.value >= minFill
+      : !emptyTick && reviewQuote !== null && reviewQuote.fill >= minFill);
 
   let signingBlocked: string | undefined;
-  if (preview.isStale || stale.staleRecovery) signingBlocked = "QUOTE UPDATED — REVIEW AGAIN";
+  if (
+    suppressStaleSubmit({
+      refreshing: preview.isStale || stale.staleRecovery,
+      pending: actionTx.isConfirming,
+      marketMoved: drifted,
+    })
+  ) {
+    signingBlocked = actionTx.isConfirming
+      ? "TRANSACTION PENDING"
+      : "QUOTE UPDATED — REVIEW AGAIN";
+  }
   if (!signingAllowed) signingBlocked = "EVENTS STALE — SIGNING DISABLED";
   if (chainGuard.wrongChain) signingBlocked = "SWITCH NETWORK";
-  if (graphQueue.unknown) signingBlocked = "A TRANSACTION MAY ALREADY BE IN PROGRESS";
-  if (liquidityBlocked) signingBlocked = "NO DEPTH FOR THIS LOAN";
+  if (graphQueue.unknown || actionTx.isUnknown) signingBlocked = "A TRANSACTION MAY ALREADY BE IN PROGRESS";
+  if (liquidityBlocked && !posting) signingBlocked = "NO DEPTH FOR THIS LOAN";
 
   const usdUnavailable =
     usd.status === "unavailable" || (usd.status === "ready" && usd.data.status === "unavailable");
@@ -688,7 +803,12 @@ export function BorrowFlow() {
       wallet={<WalletButton />}
       status={<StatusLine status={freshness.kind} asOf={asOf} usdUnavailable={usdUnavailable} />}
     >
-      <ModalErrorBoundary control="UI-REVIEW-ERROR-BOUNDARY" onReset={() => setBodyKey((key) => key + 1)}>
+      <ModalErrorBoundary
+        control="UI-REVIEW-ERROR-BOUNDARY"
+        region="borrow"
+        executionPhase={checkpoint === "sign" || checkpoint === "pending" ? "sign" : "render"}
+        onReset={() => setBodyKey((key) => key + 1)}
+      >
         <div className="borrow-flow" data-split={stage === "review" ? "true" : "false"} data-graph-id={attemptId ?? undefined} key={bodyKey}>
           <SurfaceState
             state={surface}
@@ -822,13 +942,14 @@ export function BorrowFlow() {
                   onCloseAllRates={() => setAllRatesOpen(false)}
                   onToggleFee={() => setFeeOpen((open) => !open)}
                   onReview={onReview}
+                  reviewLabel={posting ? "REVIEW REQUEST" : "REVIEW BORROW"}
                   hideAmount
                   hideUsd={disclosure === "default"}
                 />
               ) : null}
               {stage === "review" &&
               selectedStream &&
-              quote &&
+              reviewQuote &&
               frozen &&
               selectedAprBps !== null &&
               market?.lending ? (
@@ -839,7 +960,7 @@ export function BorrowFlow() {
                     </ActionButton>
                   ) : null}
                   <ReviewHandoff
-                    quote={quote}
+                    quote={reviewQuote}
                     frozen={frozen}
                     drifted={drifted || actionTx.needsReview}
                     checkpoint={checkpoint}
@@ -848,7 +969,9 @@ export function BorrowFlow() {
                     ovrfloSymbol={ovrfloSymbol}
                     aprBps={selectedAprBps}
                     streamId={selectedStream.streamId}
-                    operator={market.lending}
+                    operator={nftSpender ?? market.lending}
+                    mode={receipt || filledReceipt ? "borrow" : posting ? "post" : "borrow"}
+                    waitingCopy={posting ? WAITING_FOR_LIQUIDITY_COPY : undefined}
                     cover={cover}
                     repayCurrent={repayDates.current}
                     repayNext={repayDates.next}
@@ -898,6 +1021,7 @@ export function BorrowFlow() {
                         lending ? `/?lending=${lending}&loan=${loanId.toString()}` : "/",
                       )
                     }
+                    onViewWaiting={(streamId) => router.push(`/?stream=${streamId.toString()}`)}
                   />
                 </>
               ) : null}
@@ -942,6 +1066,7 @@ function AmountRateBody({
   onCloseAllRates,
   onToggleFee,
   onReview,
+  reviewLabel = "REVIEW BORROW",
   hideAmount = false,
   hideUsd = false,
 }: {
@@ -977,6 +1102,7 @@ function AmountRateBody({
   onCloseAllRates: () => void;
   onToggleFee: () => void;
   onReview: () => void;
+  reviewLabel?: string;
   hideAmount?: boolean;
   hideUsd?: boolean;
 }) {
@@ -1040,11 +1166,11 @@ function AmountRateBody({
       ) : null}
       {canContinue ? (
         <ActionButton variant="primary" onClick={onReview}>
-          REVIEW BORROW
+          {reviewLabel}
         </ActionButton>
       ) : (
         <ActionButton disabled disabledReason={continueReason(windowState, emptyTickCopy, amountError, quoteStale)}>
-          REVIEW BORROW
+          {reviewLabel}
         </ActionButton>
       )}
     </>
@@ -1111,11 +1237,15 @@ function deriveCheckpoint(input: {
   isSigning: boolean;
   isConfirming: boolean;
   isConfirmed: boolean;
-  unknown?: boolean;
+  isRejected?: boolean;
+  isReverted?: boolean;
+  isUnknown?: boolean;
 }): BorrowCheckpoint {
   if (input.stage !== "review") return "review";
   if (input.isConfirmed) return "confirmed";
-  if (input.unknown) return "pending";
+  if (input.isRejected) return "rejected";
+  if (input.isReverted) return "reverted";
+  if (input.isUnknown) return "unknown";
   if (input.isConfirming) return "pending";
   if (input.isSigning) return "sign";
   if (!input.ackReady) return "review";
@@ -1141,6 +1271,36 @@ function parseBorrowed(
     net: created.args.actualBorrow - created.args.feeAmount,
     obligation: created.args.obligation,
   };
+}
+
+function parseRequestPosted(
+  logs: readonly Log[] | undefined,
+  book: Address | null,
+): { requestId: bigint; streamId: bigint } | null {
+  if (!logs || !book) return null;
+  const bookKey = book.toLowerCase();
+  const [posted] = parseEventLogs({
+    abi: ovrfloRequestBookAbi,
+    eventName: "RequestPosted",
+    logs: logs.filter((log) => log.address.toLowerCase() === bookKey),
+  });
+  if (!posted) return null;
+  return { requestId: posted.args.requestId, streamId: posted.args.streamId };
+}
+
+function parseRequestFilled(
+  logs: readonly Log[] | undefined,
+  book: Address | null,
+): { loanId: bigint; net: bigint; obligation: bigint } | null {
+  if (!logs || !book) return null;
+  const bookKey = book.toLowerCase();
+  const [filled] = parseEventLogs({
+    abi: ovrfloRequestBookAbi,
+    eventName: "RequestFilled",
+    logs: logs.filter((log) => log.address.toLowerCase() === bookKey),
+  });
+  if (!filled) return null;
+  return { loanId: filled.args.loanId, net: filled.args.actualBorrow, obligation: filled.args.actualBorrow };
 }
 
 function subscribeCompact(listener: () => void) {

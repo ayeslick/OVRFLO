@@ -1,5 +1,6 @@
 "use client";
 
+import { StatusIcon } from "./StatusIcon";
 import "./kit.css";
 
 export type StatusKind = "synced" | "reconnecting" | "degraded" | "unavailable";
@@ -22,7 +23,10 @@ export function StatusLine({
         : null;
   return (
     <div className="kit-status" data-state={status} role="status">
-      <span>{copy}</span>
+      <span className="kit-status-copy">
+        <StatusIcon name={status} />
+        {copy}
+      </span>
       {schedules ? <span>{schedules}</span> : null}
     </div>
   );

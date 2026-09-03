@@ -4,6 +4,7 @@ import {
   GRAPH_STEP_BORROW,
   GRAPH_STEP_CLEAR_TO_ZERO,
   GRAPH_STEP_DEPOSIT,
+  GRAPH_STEP_POST,
   GRAPH_STEP_SET_ALLOWANCE,
   immediateTotal,
   sameEconomicIdentity,
@@ -70,6 +71,41 @@ describe("action graph compile", () => {
     expect(result.graph.graphId).toBe("g3");
     expect(result.graph.steps.map((step) => step.stepId)).toEqual([GRAPH_STEP_DEPOSIT, GRAPH_STEP_BORROW]);
     expect(result.graph.steps[1]!.dependsOn).toEqual([GRAPH_STEP_DEPOSIT]);
+  });
+
+  it("emits a post step when CS3 is live and borrow is not executable", () => {
+    const result = compileActionGraph({
+      graphId: "g4",
+      chainId: 1,
+      kind: "borrow",
+      token,
+      amount: "10",
+      allowance: null,
+      borrowExecutable: false,
+      cs3Available: true,
+    });
+    expect(result.status).toBe("ready");
+    if (result.status !== "ready") throw new Error("expected graph");
+    expect(result.graph.steps.map((step) => step.stepId)).toEqual([GRAPH_STEP_POST]);
+  });
+
+  it("emits deposit then post when CS3 continues a no-liquidity composition", () => {
+    const result = compileActionGraph({
+      graphId: "g5",
+      chainId: 1,
+      kind: "deposit-plus-borrow",
+      token,
+      amount: "10",
+      allowance: null,
+      borrowExecutable: false,
+      cs3Available: true,
+    });
+    expect(result.status).toBe("ready");
+    if (result.status !== "ready") throw new Error("expected graph");
+    expect(result.graph.steps.map((step) => step.stepId)).toEqual([
+      GRAPH_STEP_DEPOSIT,
+      GRAPH_STEP_POST,
+    ]);
   });
 
   it("hides immediate total when borrow is not executable", () => {

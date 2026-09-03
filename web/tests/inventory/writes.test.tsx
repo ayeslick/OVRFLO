@@ -209,8 +209,8 @@ describe.each(TRANSACTING_WIDTHS)("inventory — claim / unwrap / wrap / repay /
     expect(screen.getByText(/RECEIVED 0\.25000 ovrfloTEST/)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "UNWRAP TO UNDERLYING" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: `KEEP ${SYMBOL}` })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "CLAIM PT" })).toBeDisabled();
-    expect(screen.getByText(/different assets/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "CLAIM PT" })).not.toBeInTheDocument();
+    expect(screen.getByText(/separate exits/i)).toBeInTheDocument();
     expect(screen.queryByText(/CLAIM ALL/i)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "DONE" })).toBeInTheDocument();
   });
@@ -235,10 +235,10 @@ describe.each(TRANSACTING_WIDTHS)("inventory — claim / unwrap / wrap / repay /
     );
     const confirmed = document.querySelector("[data-ui='UI-REVIEW-CLAIM-CONFIRMED']");
     expect(confirmed).toHaveAttribute("data-state", "reserve-insufficient");
-    expect(screen.getByRole("button", { name: "UNWRAP TO UNDERLYING" })).toBeDisabled();
-    expect(screen.getByText(/NOT A FAILED CLAIM/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "UNWRAP TO UNDERLYING" })).not.toBeInTheDocument();
+    expect(screen.getByText(/UNWRAP STAYS CLOSED/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: `KEEP ${SYMBOL}` })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "CLAIM PT" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "CLAIM PT" })).not.toBeInTheDocument();
   });
 
   it("21 UNWRAP_REVIEW + UNWRAP_CONFIRMED — no approval; 1:1 received", () => {

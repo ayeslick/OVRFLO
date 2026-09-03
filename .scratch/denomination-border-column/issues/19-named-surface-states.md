@@ -4,7 +4,7 @@
 
 **Blocked by:** 10, 15, 16, 17
 
-**Status:** ready-for-agent
+**Status:** resolved
 **Labels:** ready-for-agent
 
 ## Session prompt (paste into a new chat)
@@ -45,22 +45,29 @@ After local verification, mark ticket checkboxes done and set Status: resolved.
 
 ## Acceptance criteria
 
-- [ ] Scratch intent capsule exists before the first state-touching edit
-- [ ] Every named state renders no more than one primary and one secondary action; quote refreshing and pending may render no primary
-- [ ] Quote refreshing and transaction pending suppress all stale submit paths
-- [ ] Transaction rejected, reverted, pending, confirmed, and unknown remain distinct and announce the correct next action
-- [ ] Liquidity unavailable can post a request only when CS3 is available; the confirmed request becomes waiting for liquidity
-- [ ] No borrower demand yet remains reachable as an unmatched Fixed Return supply state with a valid next action and withdrawable funds
-- [ ] Market moved requires refreshed review before submission
-- [ ] Retired-router state disables execute and preserves cancel
-- [ ] Retired-market position offers repay, close, claim, and liquidity withdraw; never offers supply, borrow, or request post; `Default` copy is the KD7 sentence
-- [ ] Waiting-for-liquidity copy states that vested ovrfloToken stays in the stream until cancel or loan close, and that a request past series maturity cannot fill and must be cancelled
-- [ ] The request-post authorization leg names the book as ERC-721 spender, not the lending market
-- [ ] Completed position exposes detail; PT claim appears only with maturity and PT backing; unwrap appears whenever `OVRFLOReserve` and wallet ovrfloToken balance permit
-- [ ] Network/read failure never renders authoritative zero or empty portfolio
-- [ ] Caught render error records region and execution phase and offers persisted-attempt resume rather than a blind restart
-- [ ] Status uses text and icon; color is supplementary
+- [x] Scratch intent capsule exists before the first state-touching edit
+- [x] Every named state renders no more than one primary and one secondary action; quote refreshing and pending may render no primary
+- [x] Quote refreshing and transaction pending suppress all stale submit paths
+- [x] Transaction rejected, reverted, pending, confirmed, and unknown remain distinct and announce the correct next action
+- [x] Liquidity unavailable can post a request only when CS3 is available; the confirmed request becomes waiting for liquidity
+- [x] No borrower demand yet remains reachable as an unmatched Fixed Return supply state with a valid next action and withdrawable funds
+- [x] Market moved requires refreshed review before submission
+- [x] Retired-router state disables execute and preserves cancel
+- [x] Retired-market position offers repay, close, claim, and liquidity withdraw; never offers supply, borrow, or request post; `Default` copy is the KD7 sentence
+- [x] Waiting-for-liquidity copy states that vested ovrfloToken stays in the stream until cancel or loan close, and that a request past series maturity cannot fill and must be cancelled
+- [x] The request-post authorization leg names the book as ERC-721 spender, not the lending market
+- [x] Completed position exposes detail; PT claim appears only with maturity and PT backing; unwrap appears whenever `OVRFLOReserve` and wallet ovrfloToken balance permit
+- [x] Network/read failure never renders authoritative zero or empty portfolio
+- [x] Caught render error records region and execution phase and offers persisted-attempt resume rather than a blind restart
+- [x] Status uses text and icon; color is supplementary
 
 ## Plan unit
 
 CS4-U5 in `docs/plans/2026-08-22-001-refactor-denomination-switch-border-column-plan.md`
+
+## Deviations
+
+- Request discovery enumerates `1..nextRequestId-1` and sets the same incomplete
+  flag as `loansOf` when the cap is hit. The session does not add a log scan.
+- Post rebuild sets `eligible: true` the same way the existing borrow snapshot
+  load does. The book contract still rejects an ineligible stream on `post`.

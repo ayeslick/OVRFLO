@@ -84,8 +84,8 @@ stripped, then the matrix applies. Stream inventory stays Advanced density on
 - **Purpose.** Mark a position whose lending is in `VaultInfo.retiredLendings`.
 - **Visible when.** The row or detail hydrates from a retired lending. Ticket 19 owns the retired-market action set; this control is the marker only.
 - **States.** Present or absent. Type and status stay the live values.
-- **Action.** None on this ticket.
-- **Copy rules.** Marker copy is `retired market`. Do not hide the position or drop it from the matrix count.
+- **Action.** Repay, close, claim, and liquidity withdraw stay available. Supply, borrow, and request post stay closed.
+- **Copy rules.** Default marker copy is the KD7 sentence: this position continues on a replaced market; the user can finish or withdraw it; new positions use the current market. Do not hide the position or drop it from the matrix count.
 - **Data authority.** `on-chain` from factory retired lendings. The marker is display-only.
 
 ## `UI-WATCH-LENS`

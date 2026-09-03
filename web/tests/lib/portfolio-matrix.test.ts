@@ -157,6 +157,21 @@ describe("applyPortfolioSearch", () => {
     });
   });
 
+  it("routes one waiting request to stream detail", () => {
+    expect(
+      matrixFromCounts([], [], [{ lending: LENDING, requestId: 3n, streamId: 9n }]),
+    ).toEqual({
+      kind: "detail",
+      selection: { kind: "stream", id: 9n },
+    });
+  });
+
+  it("counts waiting requests as loan-type positions", () => {
+    expect(
+      matrixFromCounts([loan(1n)], [], [{ lending: LENDING, requestId: 3n, streamId: 9n }]),
+    ).toEqual({ kind: "collection", type: "loan" });
+  });
+
   it("does not treat a stale loan as owned", () => {
     expect(ownsIdentity([loan(1n)], OTHER, 1n)).toBe(false);
     expect(ownsIdentity([loan(1n)], LENDING, 1n)).toBe(true);

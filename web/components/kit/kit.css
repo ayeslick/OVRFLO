@@ -174,6 +174,54 @@
   color: var(--muted);
 }
 
+.kit-status-copy,
+.kit-surface-state-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.kit-status-icon {
+  display: inline-block;
+  width: 0.7rem;
+  height: 0.7rem;
+  border: 1.5px solid currentColor;
+  flex-shrink: 0;
+}
+
+.kit-status-icon[data-icon="synced"],
+.kit-status-icon[data-icon="READY"],
+.kit-status-icon[data-icon="confirmed"],
+.kit-status-icon[data-icon="CONFIRMED"],
+.kit-status-icon[data-icon="complete"] {
+  border-radius: 2px;
+}
+
+.kit-status-icon[data-icon="pending"],
+.kit-status-icon[data-icon="CHAIN_PENDING"],
+.kit-status-icon[data-icon="WALLET_PENDING"],
+.kit-status-icon[data-icon="reconnecting"],
+.kit-status-icon[data-icon="LOADING"],
+.kit-status-icon[data-icon="refresh"] {
+  border-radius: 50%;
+}
+
+.kit-status-icon[data-icon="rejected"],
+.kit-status-icon[data-icon="reverted"],
+.kit-status-icon[data-icon="error"],
+.kit-status-icon[data-icon="ERROR"],
+.kit-status-icon[data-icon="failure"],
+.kit-status-icon[data-icon="unavailable"] {
+  transform: rotate(45deg);
+}
+
+.kit-status-icon[data-icon="degraded"],
+.kit-status-icon[data-icon="STALE"],
+.kit-status-icon[data-icon="unknown"],
+.kit-status-icon[data-icon="incomplete"] {
+  border-style: dashed;
+}
+
 .kit-status[data-state="degraded"],
 .kit-status[data-state="unavailable"] {
   color: var(--ink);

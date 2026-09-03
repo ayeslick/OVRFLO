@@ -24,7 +24,7 @@ import type {
   ReadyAction,
   TouchedResource,
 } from "@/lib/actions/types";
-import { erc20Abi, ovrfloAbi, ovrfloLendingAbi, sablierLockupAbi } from "@/lib/abis";
+import { erc20Abi, ovrfloAbi, ovrfloLendingAbi, ovrfloRequestBookAbi, sablierLockupAbi } from "@/lib/abis";
 import { chainId as configuredChainId } from "@/lib/config";
 import { useProtocolBootstrap } from "./useProtocolBootstrap";
 import { buildRefreshPlan, refreshQueryResources } from "@/lib/query-resource-registry";
@@ -58,7 +58,7 @@ export function useWriteFlow(
     | "ovrfloToken"
     | "ptToken"
     | "expiryCached"
-  > | readonly Address[] = EMPTY,
+  > & { requestBook?: Address | null } | readonly Address[] = EMPTY,
 ) {
   const queryClient = useQueryClient();
   const bootstrap = useProtocolBootstrap();
@@ -320,6 +320,15 @@ export function useWriteFlow(
                   args: [resource.owner, resource.spender],
                   blockNumber,
                 });
+                return;
+              case "request":
+                await publicClient.readContract({
+                  address: resource.book,
+                  abi: ovrfloRequestBookAbi,
+                  functionName: "requests",
+                  args: [resource.id],
+                  blockNumber,
+                });
             }
           },
         });
@@ -520,6 +529,7 @@ export function useWriteFlow(
     isInFlight: isPreparing || executor.isInFlight,
     isConfirmed: executor.isConfirmed,
     isReverted: executor.isReverted,
+    isRejected: executor.isRejected,
     isUnknown: executor.isUnknown,
     refreshFailed: executor.refreshFailed,
     needsReview: executor.needsReview,
@@ -566,6 +576,12 @@ function actionTypeFor(functionName: string): ActionType {
       return "close";
     case "hostedConvert":
       return "hosted_convert";
+    case "post":
+      return "post_request";
+    case "execute":
+      return "execute_request";
+    case "cancel":
+      return "cancel_request";
     default:
       // ERC-20/ERC-721 approval requests use the same executor transport but
       // are not themselves a reviewed domain action.
@@ -579,6 +595,9 @@ function contractKindFor(functionName: string): ContractKind {
   if (["wrap", "unwrap"].includes(functionName)) return "reserve";
   if (["deposit", "claim"].includes(functionName)) return "ovrflo";
   if (functionName === "hostedConvert") return "pendle_router";
+  if (functionName === "post" || functionName === "execute" || functionName === "cancel") {
+    return "request_book";
+  }
   return "lending";
 }
 

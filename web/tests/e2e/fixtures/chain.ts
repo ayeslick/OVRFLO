@@ -69,6 +69,7 @@ type Deployment = {
   secondaryPt: Address;
   secondaryExpiry: number;
   factoryDeploymentBlock: string;
+  requestBook?: Address;
 };
 
 let cachedDeployment: Deployment | null = null;

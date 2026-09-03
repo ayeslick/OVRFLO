@@ -19,7 +19,12 @@ export type BorrowCheckpoint =
   | "approve"
   | "sign"
   | "pending"
-  | "confirmed";
+  | "confirmed"
+  | "rejected"
+  | "reverted"
+  | "unknown";
+
+export type ReviewMode = "borrow" | "post";
 
 export function ReviewHandoff({
   quote,
@@ -53,6 +58,9 @@ export function ReviewHandoff({
   onRelatch,
   onRecovery,
   onViewLoan,
+  onViewWaiting,
+  mode = "borrow",
+  waitingCopy,
 }: {
   quote: BorrowQuote;
   frozen: BorrowQuoteSnapshot;
@@ -86,10 +94,13 @@ export function ReviewHandoff({
   onRelatch: () => void;
   onRecovery?: () => void;
   onViewLoan: (loanId: bigint) => void;
+  onViewWaiting?: (streamId: bigint) => void;
+  mode?: ReviewMode;
+  waitingCopy?: string;
 }) {
   const [feeOpen, setFeeOpen] = useState(true);
   const [repayOpen, setRepayOpen] = useState(true);
-  const trace = steps ? [...steps] : settlementSteps(checkpoint, streamApproved, acknowledged);
+  const trace = steps ? [...steps] : settlementSteps(checkpoint, streamApproved, acknowledged, mode);
   const ackRequired = !acknowledged && (checkpoint === "acknowledge" || checkpoint === "review");
   const permissionState: ReceiptState =
     checkpoint === "approve" ? "current" : streamApproved ? "skipped" : "ghosted";
@@ -99,7 +110,8 @@ export function ReviewHandoff({
   return (
     <div className="borrow-split" data-ui="UI-REVIEW-SPLIT" data-state={checkpoint}>
       <div>
-        <p className="borrow-kicker">REVIEW BORROW</p>
+        <p className="borrow-kicker">{mode === "post" ? "REVIEW REQUEST" : "REVIEW BORROW"}</p>
+        {mode === "post" && waitingCopy ? <p className="borrow-lede">{waitingCopy}</p> : null}
         <BorrowFacts
           quote={quote}
           underlyingSymbol={underlyingSymbol}
@@ -148,7 +160,7 @@ export function ReviewHandoff({
           <Receipt
             kind="permission"
             state={permissionState}
-            lines={permissionLines(streamId, operator)}
+            lines={permissionLines(streamId, operator, mode)}
           />
         ) : null}
         <Receipt
@@ -214,31 +226,51 @@ export function ReviewHandoff({
           ) : null}
           {checkpoint === "sign" && drifted ? (
             <ActionButton disabled disabledReason="QUOTE UPDATED — REVIEW AGAIN">
-              BORROW
+              {mode === "post" ? "POST REQUEST" : "BORROW"}
             </ActionButton>
           ) : null}
           {checkpoint === "sign" && !drifted && signingBlockedReason ? (
             <ActionButton disabled disabledReason={signingBlockedReason}>
-              BORROW
+              {mode === "post" ? "POST REQUEST" : "BORROW"}
             </ActionButton>
           ) : null}
           {checkpoint === "sign" && !drifted && !signingBlockedReason ? (
             borrowBusy ? (
               <ActionButton variant="primary" busy>
-                BORROW
+                {mode === "post" ? "POST REQUEST" : "BORROW"}
               </ActionButton>
             ) : (
               <ActionButton variant="primary" onClick={onBorrow}>
-                BORROW
+                {mode === "post" ? "POST REQUEST" : "BORROW"}
               </ActionButton>
             )
           ) : null}
           {checkpoint === "pending" ? (
-            <p className="borrow-status">
+            <p className="borrow-status" data-named-state="transaction-pending">
               TRANSACTION {txHash ? truncateHash(txHash) : "SUBMITTED"} — SAFE TO LEAVE
             </p>
           ) : null}
-          {checkpoint === "confirmed" && loanId !== undefined ? (
+          {checkpoint === "rejected" ? (
+            <ActionButton variant="primary" onClick={onBorrow}>
+              RETRY
+            </ActionButton>
+          ) : null}
+          {checkpoint === "reverted" ? (
+            <ActionButton variant="primary" onClick={onRelatch}>
+              REVIEW AGAIN
+            </ActionButton>
+          ) : null}
+          {checkpoint === "unknown" ? (
+            <p className="borrow-status" data-named-state="transaction-unknown">
+              TRANSACTION OUTCOME UNKNOWN — DO NOT SUBMIT AGAIN
+            </p>
+          ) : null}
+          {checkpoint === "confirmed" && mode === "post" && onViewWaiting ? (
+            <ActionButton variant="primary" onClick={() => onViewWaiting(streamId)}>
+              VIEW WAITING REQUEST
+            </ActionButton>
+          ) : null}
+          {checkpoint === "confirmed" && mode === "borrow" && loanId !== undefined ? (
             <ActionButton variant="primary" onClick={() => onViewLoan(loanId)}>
               VIEW LOAN
             </ActionButton>
@@ -253,14 +285,16 @@ export function borrowTrace(
   checkpoint: BorrowCheckpoint,
   streamApproved: boolean,
   acknowledged: boolean,
+  mode: ReviewMode = "borrow",
 ): TraceStep[] {
-  return settlementSteps(checkpoint, streamApproved, acknowledged);
+  return settlementSteps(checkpoint, streamApproved, acknowledged, mode);
 }
 
 function settlementSteps(
   checkpoint: BorrowCheckpoint,
   streamApproved: boolean,
   acknowledged: boolean,
+  mode: ReviewMode = "borrow",
 ): TraceStep[] {
   const stream: TraceStepState = "done";
   const amount: TraceStepState = "done";
@@ -274,7 +308,11 @@ function settlementSteps(
         ? "pending"
         : "done";
   const borrow: TraceStepState =
-    checkpoint === "sign" ? "active" : checkpoint === "pending" || checkpoint === "confirmed" ? "done" : "pending";
+    checkpoint === "sign" || checkpoint === "rejected" || checkpoint === "reverted" || checkpoint === "unknown"
+      ? "active"
+      : checkpoint === "pending" || checkpoint === "confirmed"
+        ? "done"
+        : "pending";
   const settled: TraceStepState = checkpoint === "confirmed" ? "done" : "pending";
   const steps: TraceStep[] = [
     { id: "stream", label: "STREAM", state: stream },
@@ -285,14 +323,22 @@ function settlementSteps(
   }
   steps.push(
     { id: "approve", label: "APPROVE STREAM", state: approve },
-    { id: "borrow", label: "BORROW", state: borrow },
+    { id: "borrow", label: mode === "post" ? "POST REQUEST" : "BORROW", state: borrow },
     { id: "settled", label: "SETTLED", state: settled },
   );
   return steps;
 }
 
 function pastAck(checkpoint: BorrowCheckpoint) {
-  return checkpoint === "approve" || checkpoint === "sign" || checkpoint === "pending" || checkpoint === "confirmed";
+  return (
+    checkpoint === "approve" ||
+    checkpoint === "sign" ||
+    checkpoint === "pending" ||
+    checkpoint === "confirmed" ||
+    checkpoint === "rejected" ||
+    checkpoint === "reverted" ||
+    checkpoint === "unknown"
+  );
 }
 
 function actionReceiptState(checkpoint: BorrowCheckpoint): ReceiptState {
@@ -303,11 +349,17 @@ function actionReceiptState(checkpoint: BorrowCheckpoint): ReceiptState {
   return "frozen-review";
 }
 
-function permissionLines(streamId: bigint, operator: string): ReceiptLine[] {
+function permissionLines(streamId: bigint, operator: string, mode: ReviewMode = "borrow"): ReceiptLine[] {
   return [
     { key: "ASSET", value: "Sablier stream NFT" },
     { key: "STREAM", value: formatId(streamId) },
-    { key: "OPERATOR", value: `OVRFLO LENDING · ${formatAddress(operator as `0x${string}`)}` },
+    {
+      key: "OPERATOR",
+      value:
+        mode === "post"
+          ? `REQUEST BOOK · ${formatAddress(operator as `0x${string}`)}`
+          : `OVRFLO LENDING · ${formatAddress(operator as `0x${string}`)}`,
+    },
     { key: "SCOPE", value: "SINGLE STREAM" },
     { key: "MATCH", value: "MATCH EXACT" },
   ];

@@ -18,6 +18,7 @@ import { useFixedReturnTerms } from "@/hooks/useFixedReturnTerms";
 import { useLenderBook } from "@/hooks/useLenderBook";
 import { symbolFor, useMarketSymbols } from "@/hooks/useMarketSymbols";
 import { useOvrflos } from "@/hooks/useOvrflos";
+import { useRequestBook } from "@/hooks/useRequestBook";
 import { useStreams, type BookPager, type HydratedStream } from "@/hooks/useStreams";
 import { useUsdPrice } from "@/hooks/useUsdPrice";
 import { chainId } from "@/lib/config";
@@ -61,6 +62,7 @@ import {
 } from "./PortfolioViews";
 import { StreamClosedDetail, StreamDetail } from "./StreamDetail";
 import { SuppliedDetail } from "./SuppliedDetail";
+import { WaitingRequestDetail } from "./WaitingRequestDetail";
 import { useLoanStreams } from "./useLoanStreams";
 import { useNarrowViewport } from "./useNarrowViewport";
 import { useWatchUrl } from "./useWatchUrl";
@@ -89,6 +91,7 @@ export function WatchApp() {
 
   const lender = useLenderBook(lendings, account, { enabled: registryComplete });
   const borrower = useBorrowerBook(lendings, account, { enabled: registryComplete });
+  const requestBook = useRequestBook(lendings, account, { enabled: registryComplete });
   const streams = useStreams({
     account,
     vaults: readyVaults,
@@ -129,10 +132,24 @@ export function WatchApp() {
   const positionBook = toBook(lender);
   const loanBook = toBook(borrower);
   const streamBook = toBook(streams);
+  const requestBookComplete =
+    requestBook.status === "ready" && requestBook.data.complete && !requestBook.data.incomplete;
+  const requestBookFailed = requestBook.status === "unavailable";
+  const waitingRequests = requestBook.data?.requests ?? [];
+  const loanBookWithWaiting = {
+    ...loanBook,
+    renderCount: loanBook.renderCount + waitingRequests.length,
+    confirmedEmpty:
+      loanBook.confirmedEmpty &&
+      waitingRequests.length === 0 &&
+      requestBookComplete &&
+      !requestBookFailed,
+    complete: loanBook.complete && requestBookComplete && !requestBookFailed,
+  };
   const entry = classifyEntry({
     connected,
     positions: positionBook,
-    loans: loanBook,
+    loans: loanBookWithWaiting,
     streams: streamBook,
     protocolUnavailable:
       ovrflos.status === "unavailable" || markets.status === "unavailable",
@@ -141,7 +158,13 @@ export function WatchApp() {
   const booksComplete = positionBook.complete && loanBook.complete;
   const streamsComplete =
     streamBook.complete && streamBook.status !== "loading" && streamBook.status !== "unavailable";
-  const portfolioComplete = connected && registryComplete && booksComplete && streamsComplete;
+  const portfolioComplete =
+    connected &&
+    registryComplete &&
+    booksComplete &&
+    streamsComplete &&
+    requestBookComplete &&
+    !requestBookFailed;
 
   const streamsFreshness = useFreshness([sourceFromOutcome(streams)]);
   const borrowedFreshness = useFreshness([sourceFromOutcome(borrower)]);
@@ -164,7 +187,7 @@ export function WatchApp() {
 
   const tabs = visibleLensTabs({
     positions: positionBook,
-    loans: loanBook,
+    loans: loanBookWithWaiting,
     streams: streamBook,
   });
   const visibleIds = tabs.filter((tab) => tab.visible).map((tab) => tab.id);
@@ -174,8 +197,13 @@ export function WatchApp() {
       complete: portfolioComplete,
       loans: loans.map((row) => ({ lending: row.lending, id: row.id })),
       positions: positions.map((row) => ({ lending: row.lending, id: row.id })),
+      waitingRequests: waitingRequests.map((row) => ({
+        lending: row.lending,
+        requestId: row.requestId,
+        streamId: row.streamId,
+      })),
     }),
-    [portfolioComplete, loans, positions],
+    [portfolioComplete, loans, positions, waitingRequests],
   );
   const surface = classifyPortfolio(hydration, url);
 
@@ -274,7 +302,7 @@ export function WatchApp() {
   const matchingOpenLoanLending = matchingOpenLoan?.lending;
 
   const wallBook =
-    resolvedLens === "supplied" ? positionBook : resolvedLens === "borrowed" ? loanBook : streamBook;
+    resolvedLens === "supplied" ? positionBook : resolvedLens === "borrowed" ? loanBookWithWaiting : streamBook;
   const wallPager =
     resolvedLens === "supplied" ? lender : resolvedLens === "borrowed" ? borrower : streams;
   const wallSurface = classifySurfaceState({
@@ -284,11 +312,16 @@ export function WatchApp() {
     stale: !surfaceFreshness.signingAllowed,
     signingAllowed: surfaceFreshness.signingAllowed,
   });
+  const selectedWaiting =
+    selectedStreamId !== null
+      ? waitingRequests.find((row) => row.streamId === selectedStreamId)
+      : undefined;
   const streamBookReady = streamBook.status === "ready" || streamBook.status === "unavailable";
   const showStreamClosed =
     selectedStreamId !== null &&
     !selectedStream &&
     !matchingOpenLoan &&
+    !selectedWaiting &&
     streamBook.complete &&
     streamBookReady &&
     Boolean(streamData || streamBook.status === "ready");
@@ -305,7 +338,8 @@ export function WatchApp() {
     Boolean(selectedPosition) ||
     Boolean(streamForDetail) ||
     showStreamClosed;
-  const canLeaveDetail = isAdvanced || loans.length + positions.length > 1;
+  const canLeaveDetail =
+    isAdvanced || loans.length + positions.length + waitingRequests.length > 1;
 
   useEffect(() => {
     if (!connected) return;
@@ -421,7 +455,7 @@ export function WatchApp() {
           retired={isRetiredLending(markets.markets, selectedLoan.lending)}
         />
       ) : null}
-      {streamForDetail ? (
+      {streamForDetail && !selectedWaiting ? (
         <StreamDetail
           stream={streamForDetail}
           symbol={symbolFor(symbols, streamForDetail.asset)}
@@ -442,6 +476,23 @@ export function WatchApp() {
               if (loan) onSelect({ kind: "loan", lending: loan.lending, id: loan.id });
             }
           }}
+        />
+      ) : null}
+      {selectedWaiting && !selectedLoan ? (
+        <WaitingRequestDetail
+          request={selectedWaiting}
+          market={marketForLending(markets.markets, selectedWaiting.lending, selectedWaiting.market)}
+          symbol={
+            marketForLending(markets.markets, selectedWaiting.lending, selectedWaiting.market)
+              ? symbolFor(
+                  symbols,
+                  marketForLending(markets.markets, selectedWaiting.lending, selectedWaiting.market)!
+                    .ovrfloToken,
+                )
+              : tokenLabel
+          }
+          signingAllowed={surfaceFreshness.signingAllowed}
+          disclosure={disclosure}
         />
       ) : null}
       {showStreamClosed && selectedStreamId !== null ? (
@@ -473,6 +524,7 @@ export function WatchApp() {
         fetchNextPage: wallPager.fetchNextPage,
       }}
       retired={retired}
+      waitingRequests={waitingRequests}
     />
   );
 
@@ -499,6 +551,7 @@ export function WatchApp() {
       onSort={setSort}
       retired={retired}
       totals={type === "loan" ? loanTotals : supplyTotals}
+      waitingRequests={waitingRequests}
     />
   );
 
@@ -521,7 +574,7 @@ export function WatchApp() {
     <PortfolioEmpty />
   ) : surface.kind === "hub" ? (
     <PortfolioHub
-      loanCount={loans.length}
+      loanCount={loans.length + waitingRequests.length}
       fixedCount={positions.length}
       onOpenCollection={onOpenCollection}
     />

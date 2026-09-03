@@ -66,7 +66,10 @@ export type ActionType =
   | "adjust_rate"
   | "repay"
   | "close"
-  | "hosted_convert";
+  | "hosted_convert"
+  | "post_request"
+  | "execute_request"
+  | "cancel_request";
 
 export type ActiveAction = {
   type: ActionType;

@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 import type { PortfolioType } from "@/lib/parse";
 import { formatTruncatedDecimal } from "@/lib/format";
+import { KD7_RETIRED_MARKET_COPY } from "@/lib/named-surface-state";
 import type { UnderlyingTotal } from "@/lib/portfolio-status";
 
 export function PortfolioEmpty() {
@@ -97,8 +98,8 @@ export function CollectionTotals({ totals }: { totals: readonly UnderlyingTotal[
 
 export function RetiredMarketMarker() {
   return (
-    <p className="watch-retired" data-ui="UI-WATCH-RETIRED">
-      retired market
+    <p className="watch-retired" data-ui="UI-WATCH-RETIRED" data-named-state="retired-market">
+      {KD7_RETIRED_MARKET_COPY}
     </p>
   );
 }

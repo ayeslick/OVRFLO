@@ -1,0 +1,125 @@
+# Scratch decision record — schema: docs/maps/SCHEMAS.md §4
+summary_ref: "docs/plans/2026-08-22-001-refactor-denomination-switch-border-column-plan.md#cs4-u5"
+
+goal: >
+  CS4-U5 named surface states only. Every named product state has at most
+  one primary action and one secondary recovery action. The request-book
+  UI consumes CS3 post, execute, wait, and cancel. Quote refresh and
+  pending suppress stale submit. Closing the modal is not cancel.
+
+state_keys_touched:
+  - query.request-book
+  - query.books.borrower
+  - query.books.lender
+  - chain.nft-operator
+  - chain.borrower-loans
+  - chain.lender-positions
+  - executor.status
+  - persist.attempt
+  - form-state.borrow.draft
+
+writers_readers:
+  - writes: web/lib/named-surface-state.ts
+  - writes: web/lib/protocol/request-book.ts
+  - writes: web/lib/actions/request-book.ts
+  - writes: web/lib/actions/types.ts
+  - writes: web/lib/actions/registry.ts
+  - writes: web/lib/types.ts
+  - writes: web/lib/action-graph.ts
+  - writes: web/lib/graph-step-plan.ts
+  - writes: web/lib/live-action-plan.ts
+  - writes: web/lib/no-liquidity-gate.ts
+  - writes: web/lib/query-keys.ts
+  - writes: web/lib/portfolio-matrix.ts
+  - writes: web/hooks/useRequestBook.ts
+  - writes: web/hooks/useWriteFlow.ts
+  - writes: web/components/borrow/BorrowFlow.tsx
+  - writes: web/components/borrow/ReviewHandoff.tsx
+  - writes: web/components/watch/WatchApp.tsx
+  - writes: web/components/watch/WatchWrite.tsx
+  - writes: web/components/watch/WaitingRequestDetail.tsx
+  - writes: web/components/kit/SurfaceState.tsx
+  - writes: web/components/kit/StatusLine.tsx
+  - writes: web/components/ModalErrorBoundary.tsx
+  - reads: web/lib/resume-contract.ts
+  - reads: web/lib/composite-recovery.ts
+  - reads: web/lib/surface-state.ts
+  - reads: web/lib/generated.ts
+
+trust_domains:
+  - fact: Resting request row from requests(id)
+    domain: on-chain
+    moved_from: null
+  - fact: CS3 available when lending.router() is nonzero
+    domain: on-chain
+    moved_from: null
+  - fact: Named product state and action cardinality
+    domain: pure-client
+    moved_from: null
+  - fact: Request-id candidates from RequestPosted logs
+    domain: projection
+    moved_from: null
+  - fact: ERC-721 spender for a request post
+    domain: on-chain
+    moved_from: null
+  - fact: Executor rejected, reverted, pending, confirmed, unknown
+    domain: on-chain
+    moved_from: null
+
+rejected_alternatives:
+  - option: Replace the eight-state data grammar
+    why_not: LOADING through ERROR is data and write lifecycle. Named product states sit on top.
+  - option: Add a ?request= query key
+    why_not: KD16 surviving keys are lending, loan, position, stream, step, type only.
+  - option: Put request IDs into hydration.loans
+    why_not: A resting request is not a loan. Loan-type count includes waiting requests.
+  - option: Invent book fill, tick search, or settle
+    why_not: Ticket 10 owns the book. This ticket consumes post, execute, wait, cancel.
+  - option: Treat modal close as cancel
+    why_not: Closing is not cancel. Every reset path is resume from ticket 17.
+  - option: Wait on ticket 18
+    why_not: Spec and unit boundary forbid waiting. Hosted Convert stays closed.
+
+invariants_held:
+  - invariant: At most one primary and one secondary action per named state.
+    how: named-surface-state catalog enforces cardinality. Explorer and learning stay text.
+  - invariant: Quote refresh and pending suppress stale submit.
+    how: suppressSubmit stays true while isRefreshing or pending.
+  - invariant: CS3 post is offered only when lending.router() is nonzero.
+    how: cs3ContinuationAvailable takes the router. Graph emits post, not borrow.
+  - invariant: Request-post NFT approval names the book, not the lending market.
+    how: compileActionGraph and ReviewHandoff set spender to the book.
+  - invariant: cancel never consults the router slot. execute requires router == book.
+    how: UI consumes CS3 cancel and execute. Retired-router hides execute.
+  - invariant: Retired market never offers supply, borrow, or request post.
+    how: Watch action set is repay, close, claim, withdraw. Default copy is the KD7 sentence.
+  - invariant: Network or read failure never paints empty or zero as authority.
+    how: Incomplete hydration stays incomplete. Empty requires confirmed complete.
+  - invariant: Caught render error resumes a persisted attempt.
+    how: ModalErrorBoundary records region and phase and offers ticket 17 resume.
+
+risks:
+  - risk: Request discovery by 1..nextRequestId-1 can hit the loansOf cap.
+    residual: Same incomplete flag as loansOf. Logs remain candidates only.
+  - risk: One waiting request and no loans could look like a loan identity.
+    residual: Detail writes ?stream= for the escrowed stream. Requests stay out of hydration.loans.
+  - risk: ClaimConfirmedExits currently shows three buttons.
+    residual: Split into named states. At most one primary and one secondary. Third is text.
+
+diff_hints:
+  - path: web/lib/named-surface-state.ts
+    why: Named catalog, cardinality, suppress-submit, distinct tx next-actions.
+  - path: web/lib/no-liquidity-gate.ts
+    why: cs3ContinuationAvailable flips from hard false to router != 0.
+  - path: web/lib/action-graph.ts
+    why: GRAPH_STEP_POST when CS3 is live and borrow is not executable.
+  - path: web/lib/actions/request-book.ts
+    why: Canonical post, execute, cancel. No invented book behavior.
+  - path: web/lib/live-action-plan.ts
+    why: parseAction for post/execute/cancel. Approve spender may be the book.
+  - path: web/components/borrow/BorrowFlow.tsx
+    why: Liquidity unavailable posts a request. Tx states stay distinct.
+  - path: web/components/watch/WaitingRequestDetail.tsx
+    why: Waiting copy, cancel, retired-router execute disabled.
+  - path: web/components/ModalErrorBoundary.tsx
+    why: Region plus execution phase. Resume, not restart.

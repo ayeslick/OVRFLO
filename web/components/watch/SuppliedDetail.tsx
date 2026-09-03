@@ -21,6 +21,7 @@ import {
   describeFixedReturnCompletion,
   type FixedReturnLoanTerm,
 } from "@/lib/fixed-return-completion";
+import { namedSurfaceSpec } from "@/lib/named-surface-state";
 import { RetiredMarketMarker } from "./PortfolioViews";
 import { WatchWrite } from "./WatchWrite";
 import "./watch.css";
@@ -68,6 +69,11 @@ export function SuppliedDetail({
   return (
     <article data-ui="UI-WATCH-SUPPLIED-DETAIL" data-region="supplied-detail" data-state={match}>
       {retired ? <RetiredMarketMarker /> : null}
+      {filled === 0n && unfilled > 0n ? (
+        <p className="watch-note" data-named-state="no-borrower-demand-yet">
+          {namedSurfaceSpec("no-borrower-demand-yet").copy}
+        </p>
+      ) : null}
       {filled > 0n ? (
         <div className="kit-hero">
           <span className="kit-hero-kicker">YOUR EARNINGS</span>

@@ -1,3 +1,6 @@
+import type { Address } from "viem";
+import { ZERO_ADDRESS } from "./config";
+
 /**
  * CS4 may run deposit-plus-borrow without CS3 only when immediate borrow
  * is executable before the first wallet prompt. Without CS3, a no-liquidity
@@ -22,7 +25,7 @@ export function depositPlusBorrowLiquidityGate(args: {
   return { status: "blocked", reason: "no-liquidity-without-cs3" };
 }
 
-/** Web has no request-book post/execute actions yet. Ticket 19 owns that UI. */
-export function cs3ContinuationAvailable(): boolean {
-  return false;
+/** CS3 is live when lending.router() is a nonzero book address. */
+export function cs3ContinuationAvailable(router?: Address | null): boolean {
+  return Boolean(router && router.toLowerCase() !== ZERO_ADDRESS.toLowerCase());
 }

@@ -216,6 +216,20 @@ export function snapshotQuote(quote: BorrowQuote): BorrowQuoteSnapshot {
   };
 }
 
+/**
+ * Default request post is full-or-wait. The book compares net proceeds
+ * (`actualBorrow - fee`) to `minAcceptable`, so the floor is the net of a
+ * full target fill, not the gross target.
+ */
+export function waitingPostQuote(quote: BorrowQuote, feeBps = 0): BorrowQuote {
+  const fee =
+    quote.actualBorrow > 0n
+      ? (quote.feeAmount * quote.target) / quote.actualBorrow
+      : (quote.target * BigInt(feeBps)) / 10_000n;
+  const net = quote.target > fee ? quote.target - fee : 0n;
+  return { ...quote, minAcceptable: net };
+}
+
 /** Compares actualBorrow, feeAmount, and obligation only — never block number. */
 export function quoteDrift(frozen: BorrowQuoteSnapshot, live: BorrowQuoteSnapshot): boolean {
   return (

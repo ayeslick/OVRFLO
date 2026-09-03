@@ -32,6 +32,18 @@ const fx = vi.hoisted(() => ({
   positions: [] as LenderPositionRow[],
   loans: [] as BorrowerLoanRow[],
   streams: [] as HydratedStream[],
+  requests: [] as {
+    requestId: bigint;
+    book: Address;
+    lending: Address;
+    borrower: Address;
+    market: Address;
+    aprBps: number;
+    targetBorrow: bigint;
+    minAcceptable: bigint;
+    streamId: bigint;
+  }[],
+  requestStatus: "ready" as "ready" | "loading" | "unavailable",
   signingAllowed: true,
   freshnessKind: "synced" as "synced" | "degraded" | "unavailable",
   streamUpdatedAt: 0,
@@ -64,6 +76,7 @@ vi.mock("wagmi", () => ({
   }),
   useDisconnect: () => ({ disconnect: vi.fn() }),
   useReadContracts: () => ({ data: undefined, isLoading: false }),
+  useReadContract: () => ({ data: undefined, isLoading: false }),
   useBlock: () => ({ data: { timestamp: NOW } }),
   useSwitchChain: () => ({
     switchChain: vi.fn(),
@@ -220,6 +233,19 @@ vi.mock("@/hooks/useBorrowerBook", () => ({
   },
 }));
 
+vi.mock("@/hooks/useRequestBook", () => ({
+  useRequestBook: () => {
+    const rows = { requests: fx.requests, complete: fx.requestStatus === "ready", incomplete: false };
+    if (fx.requestStatus === "loading") {
+      return loadingOutcome(undefined);
+    }
+    if (fx.requestStatus === "unavailable") {
+      return unavailableOutcome([readFailure("useRequestBook", "transport", "down")]);
+    }
+    return readyOutcome(rows);
+  },
+}));
+
 vi.mock("@/hooks/useStreams", () => ({
   useStreams: () => {
     const meta = fx.streamUpdatedAt > 0 ? { dataUpdatedAt: fx.streamUpdatedAt } : {};
@@ -335,6 +361,8 @@ function resetFx() {
   fx.positions = [];
   fx.loans = [];
   fx.streams = [];
+  fx.requests = [];
+  fx.requestStatus = "ready";
   fx.signingAllowed = true;
   fx.freshnessKind = "synced";
   fx.streamUpdatedAt = 0;
@@ -405,6 +433,14 @@ describe("watch shell + entry", () => {
     expect(screen.queryByRole("tab", { name: "STREAMS" })).not.toBeInTheDocument();
     goToAdvanced();
     expect(screen.getByRole("tab", { name: "STREAMS" })).toBeInTheDocument();
+  });
+
+  it("renders incomplete Your OVRFLO, never empty, when the request book could-not-ask", () => {
+    fx.connected = true;
+    fx.requestStatus = "unavailable";
+    render(<WatchApp />);
+    expect(document.querySelector("[data-ui='UI-WATCH-EMPTY']")).toBeNull();
+    expect(document.querySelector("[data-ui='UI-WATCH-INCOMPLETE']")).not.toBeNull();
   });
 
   it("routes one supply to detail and writes the identity URL", async () => {
@@ -820,7 +856,7 @@ describe("watch shell + entry", () => {
     await waitFor(() => {
       expect(window.location.search).toMatch(/loan=12/);
     });
-    expect(screen.getByText("retired market")).toBeInTheDocument();
+    expect(screen.getByText(/This position continues on a replaced market/)).toBeInTheDocument();
     expect(document.querySelector("[data-ui='UI-WATCH-RETIRED']")).not.toBeNull();
   });
 

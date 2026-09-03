@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 import { SURFACE_STATE_LABEL, type SurfaceStateKind } from "@/lib/surface-state";
 import { ActionButton } from "./ActionButton";
+import { StatusIcon } from "./StatusIcon";
 import "./kit.css";
 
 export function SurfaceState({
@@ -25,7 +26,10 @@ export function SurfaceState({
       data-topology={topology}
       role={role}
     >
-      <span className="kit-surface-state-label">{label}</span>
+      <span className="kit-surface-state-label">
+        <StatusIcon name={state} />
+        {label}
+      </span>
       {state === "STALE" && onRefresh ? (
         <ActionButton onClick={onRefresh}>REFRESH</ActionButton>
       ) : null}

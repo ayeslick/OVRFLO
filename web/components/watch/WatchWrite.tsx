@@ -268,7 +268,9 @@ export function WatchWrite({
           underlyingSymbol={underlyingSymbol}
           payout={claimedPayout}
           wrapReserve={balances.wrapReserve}
+          walletOvrflo={balances.walletOvrflo}
           matured={balances.matured}
+          ptBacked={Boolean(market.ptToken)}
           onKeep={onClose}
         />
       ) : null}
@@ -313,18 +315,26 @@ function ClaimConfirmedExits({
   underlyingSymbol,
   payout,
   wrapReserve,
+  walletOvrflo,
   matured,
+  ptBacked,
   onKeep,
 }: {
   symbol: string;
   underlyingSymbol: string;
   payout: bigint | null;
   wrapReserve: WatchBalances["wrapReserve"];
+  walletOvrflo: WatchBalances["walletOvrflo"];
   matured: boolean;
+  ptBacked: boolean;
   onKeep: () => void;
 }) {
   const unwrapEnabled =
-    payout !== null && wrapReserve.status === "ready" && wrapReserve.value >= payout;
+    payout !== null &&
+    wrapReserve.status === "ready" &&
+    wrapReserve.value >= payout &&
+    walletOvrflo.status === "ready" &&
+    walletOvrflo.value >= payout;
   const reserveLabel =
     wrapReserve.status === "ready"
       ? formatTruncatedDecimal(wrapReserve.value, 18, 5)
@@ -333,35 +343,29 @@ function ClaimConfirmedExits({
         : "UNAVAILABLE";
   const state = unwrapEnabled ? "unwrap-enabled" : "reserve-insufficient";
   return (
-    <div data-ui="UI-REVIEW-CLAIM-CONFIRMED" data-state={state}>
+    <div data-ui="UI-REVIEW-CLAIM-CONFIRMED" data-state={state} data-named-state="transaction-confirmed">
       <p>
         {payout === null
           ? "RECEIVED CHECKING…"
           : `RECEIVED ${formatTruncatedDecimal(payout, 18, 5)} ${symbol}`}
-        . Unwrap, keep, and claim PT are different assets.
+        . Unwrap and claim PT are separate exits.
       </p>
+      <ActionButton variant="primary" onClick={onKeep}>{`KEEP ${symbol}`}</ActionButton>
       {unwrapEnabled ? (
-        <div className="kit-action-wrap">
+        <div className="kit-action-wrap" data-named-state="unwrap-available">
           <a className="kit-action" href="/assets/">
             UNWRAP TO UNDERLYING
           </a>
         </div>
       ) : (
-        <ActionButton disabled disabledReason={`RESERVE ${reserveLabel} ${underlyingSymbol} — NOT A FAILED CLAIM`}>
-          UNWRAP TO UNDERLYING
-        </ActionButton>
+        <p className="watch-note">{`RESERVE ${reserveLabel} ${underlyingSymbol} — UNWRAP STAYS CLOSED`}</p>
       )}
-      <ActionButton onClick={onKeep}>{`KEEP ${symbol}`}</ActionButton>
-      {matured ? (
-        <div className="kit-action-wrap">
-          <a className="kit-action" href="/assets/">
-            CLAIM PT
-          </a>
-        </div>
+      {matured && ptBacked ? (
+        <p className="watch-note" data-named-state="pt-claim-available">
+          Claim PT is available on Assets after series maturity.
+        </p>
       ) : (
-        <ActionButton disabled disabledReason="CLAIM PT OPENS AT SERIES MATURITY">
-          CLAIM PT
-        </ActionButton>
+        <p className="watch-note">Claim PT opens at series maturity when PT backing is present.</p>
       )}
     </div>
   );

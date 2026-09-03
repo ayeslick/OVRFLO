@@ -1,5 +1,5 @@
 import type { Address } from "viem";
-import { erc20Abi, ovrfloAbi, ovrfloLendingAbi, sablierLockupAbi } from "./abis";
+import { erc20Abi, ovrfloAbi, ovrfloLendingAbi, ovrfloRequestBookAbi, sablierLockupAbi } from "./abis";
 import type { ActionGraph, GraphSemanticId } from "./action-graph";
 import { graphToQueuedTx } from "./action-graph";
 import type { ActionExecutionDraft, ExecutionPlan } from "./action-runtime";
@@ -116,7 +116,7 @@ export function buildCallStepPlan(args: {
   actionType: ActionType;
   semanticId: GraphSemanticId;
   target: Address;
-  contract: "lending" | "ovrflo";
+  contract: "lending" | "ovrflo" | "request_book";
   functionName: string;
   callArgs: readonly unknown[];
 }): ExecutionPlan {
@@ -134,9 +134,11 @@ export function buildCallStepPlan(args: {
     authorizations: [],
     call,
     touchedResources:
-      args.contract === "lending"
-        ? [{ kind: "market-depth", lending: args.target, market: args.target }]
-        : [{ kind: "market", vault: args.target, market: args.target }],
+      args.contract === "request_book"
+        ? [{ kind: "request", book: args.target, id: 0n }]
+        : args.contract === "lending"
+          ? [{ kind: "market-depth", lending: args.target, market: args.target }]
+          : [{ kind: "market", vault: args.target, market: args.target }],
     review: {
       actionType: args.actionType,
       title: args.semanticId,
@@ -157,7 +159,12 @@ export function buildCallStepPlan(args: {
     action,
     request: {
       address: call.target,
-      abi: args.contract === "lending" ? ovrfloLendingAbi : ovrfloAbi,
+      abi:
+        args.contract === "request_book"
+          ? ovrfloRequestBookAbi
+          : args.contract === "lending"
+            ? ovrfloLendingAbi
+            : ovrfloAbi,
       functionName: call.functionName,
       args: call.args,
     },

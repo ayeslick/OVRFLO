@@ -43,6 +43,9 @@ export function ClosedLoanDetail({
         <Fact label="REPAID" value={`${formatTruncatedDecimal(loan.repaid, 18, 5)} ${symbol}`} />
         <Fact label="STREAM" value={`#${loan.streamId.toString()}`} />
       </dl>
+      <p className="watch-note" data-named-state="completed-position">
+        This settled loan stays on Your OVRFLO. Unwrap and claim PT are separate exits on Assets.
+      </p>
       <p className="watch-freshness">{freshnessCaption(freshness)}</p>
     </article>
   );

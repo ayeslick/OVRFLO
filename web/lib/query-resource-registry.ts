@@ -72,6 +72,8 @@ function resourceContracts(resource: TouchedResource): Address[] {
     case "token-balance":
     case "allowance":
       return [resource.token];
+    case "request":
+      return [resource.book];
   }
 }
 

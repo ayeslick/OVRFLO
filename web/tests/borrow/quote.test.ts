@@ -11,6 +11,7 @@ import {
   quoteDrift,
   snapshotQuote,
   tickDepthWei,
+  waitingPostQuote,
   weiToAmountInput,
   type PreviewBorrowOutcome,
 } from "@/components/borrow/quote";
@@ -116,6 +117,15 @@ describe("borrow quote", () => {
     expect(quoteDrift(frozen, { ...live, actualBorrow: live.actualBorrow - 1n })).toBe(true);
     expect(quoteDrift(frozen, { ...live, feeAmount: live.feeAmount + 1n })).toBe(true);
     expect(quoteDrift(frozen, { ...live, obligation: live.obligation + 1n })).toBe(true);
+  });
+
+  it("sets request minAcceptable to the net of a full target fill", () => {
+    const live = quoteFromPreview(preview({ actualBorrow: 10n * ETHER, feeAmount: ETHER / 10n }), {
+      target: 10n * ETHER,
+    });
+    const waiting = waitingPostQuote(live, 50);
+    expect(waiting.minAcceptable).toBe(live.target - live.feeAmount);
+    expect(waiting.minAcceptable).toBeLessThan(live.target);
   });
 
   it("round-trips MAX through the amount input", () => {

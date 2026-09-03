@@ -6,7 +6,14 @@ import {
   type Hex,
   type PublicClient,
 } from "viem";
-import { erc20Abi, ovrfloAbi, ovrfloLendingAbi, ovrfloReserveAbi, sablierLockupAbi } from "./abis";
+import {
+  erc20Abi,
+  ovrfloAbi,
+  ovrfloLendingAbi,
+  ovrfloRequestBookAbi,
+  ovrfloReserveAbi,
+  sablierLockupAbi,
+} from "./abis";
 import type { DisclosureLevel } from "./disclosure";
 import { PENDLE_ROUTER_V4 } from "./hosted-convert";
 import {
@@ -45,6 +52,8 @@ export type LiveMarketScope = Pick<
 > & {
   /** Discovered factory stream lockup — never an env constant. */
   sablier: Address;
+  /** Current lending.router() when CS3 is live. Never a factory registry entry. */
+  requestBook?: Address | null;
 };
 
 export type LiveWriteArgs = {
@@ -236,6 +245,33 @@ function parseAction(raw: LiveWriteArgs): ParsedAction | null {
         },
         raw,
       };
+    case "post":
+      return {
+        intent: {
+          type: "post_request",
+          streamId: requireBigint(args[0], "stream ID"),
+          amount: amount(requireBigint(args[3], "target borrow")),
+          aprBps: requireNumber(args[2], "APR"),
+          minAcceptable: amount(requireBigint(args[4], "minimum acceptable")),
+        },
+        raw,
+      };
+    case "execute":
+      return {
+        intent: {
+          type: "execute_request",
+          requestId: requireBigint(args[0], "request ID"),
+        },
+        raw,
+      };
+    case "cancel":
+      return {
+        intent: {
+          type: "cancel_request",
+          requestId: requireBigint(args[0], "request ID"),
+        },
+        raw,
+      };
     case "hostedConvert": {
       const inputToken = args[0];
       const outputToken = args[1];
@@ -381,8 +417,31 @@ function verifyRegisteredTarget(
     Boolean(callTarget) &&
     Boolean(scope.lending) &&
     isAddressEqual(callTarget!, scope.lending!);
+  const targetsBook =
+    Boolean(callTarget) &&
+    Boolean(scope.requestBook) &&
+    isAddressEqual(callTarget!, scope.requestBook!);
   // Vault-only writes (deposit/claim) and reserve wrap/unwrap may run when lending is unset.
   // Require the mapping when the factory has one, or when the call targets lending.
+  if (targetsBook) {
+    const knownLending =
+      Boolean(scope.lending) &&
+      ((registered.lending !== null && isAddressEqual(scope.lending!, registered.lending)) ||
+        registered.retiredLendings.some((row) => isAddressEqual(row, scope.lending!)));
+    if (!knownLending) {
+      return actionError(
+        "unregistered-target",
+        "Lending is not a factory market for this vault",
+      );
+    }
+    if (!isAddressEqual(scope.reserve, registered.reserve)) {
+      return actionError(
+        "unregistered-target",
+        "Reserve is not the factory mapping for this vault",
+      );
+    }
+    return null;
+  }
   if (registered.lending !== null) {
     if (!scope.lending || !isAddressEqual(scope.lending, registered.lending)) {
       return actionError(
@@ -426,6 +485,7 @@ function verifyApproveSpender(
   if (registered.lending) allowed.push(registered.lending);
   if (scope.lending) allowed.push(scope.lending);
   if (scope.reserve) allowed.push(scope.reserve);
+  if (scope.requestBook) allowed.push(scope.requestBook);
   allowed.push(PENDLE_ROUTER_V4);
   if (!allowed.some((address) => isAddressEqual(address, spenderAddress))) {
     return actionError(
@@ -883,6 +943,132 @@ async function loadSnapshot(
         state: readyOutcome({ loan, withdrawable }, metadata),
       };
     }
+    case "post_request": {
+      if (!lending) throw new Error("Lending is not configured");
+      const book = scope.requestBook;
+      if (!book) throw new Error("Request book is not configured");
+      const streamId = parsed.intent.streamId;
+      const [recipient, approved, approvedForAll, router] = await Promise.all([
+        read<Address>(client, blockNumber, {
+          address: market.sablier,
+          abi: sablierLockupAbi,
+          functionName: "getRecipient",
+          args: [streamId],
+        }),
+        read<Address>(client, blockNumber, {
+          address: market.sablier,
+          abi: sablierLockupAbi,
+          functionName: "getApproved",
+          args: [streamId],
+        }),
+        read<boolean>(client, blockNumber, {
+          address: market.sablier,
+          abi: sablierLockupAbi,
+          functionName: "isApprovedForAll",
+          args: [identity.account, book],
+        }),
+        read<Address>(client, blockNumber, {
+          address: lending,
+          abi: ovrfloLendingAbi,
+          functionName: "router",
+        }),
+      ]);
+      return {
+        type: "post_request",
+        identity,
+        market,
+        stream: readyOutcome(
+          {
+            streamId,
+            recipient,
+            approved: isAddressEqual(approved, ZERO_ADDRESS) ? null : approved,
+            approvedForAll,
+            eligible: true,
+          },
+          metadata,
+        ),
+        book: readyOutcome({ book, router }, metadata),
+      };
+    }
+    case "execute_request": {
+      if (!lending) throw new Error("Lending is not configured");
+      const book = scope.requestBook;
+      if (!book) throw new Error("Request book is not configured");
+      const requestId = parsed.intent.requestId;
+      const [row, router] = await Promise.all([
+        read<
+          [
+            Address,
+            Address,
+            number,
+            bigint,
+            bigint,
+            bigint,
+          ]
+        >(client, blockNumber, {
+          address: book,
+          abi: ovrfloRequestBookAbi,
+          functionName: "requests",
+          args: [requestId],
+        }),
+        read<Address>(client, blockNumber, {
+          address: lending,
+          abi: ovrfloLendingAbi,
+          functionName: "router",
+        }),
+      ]);
+      const resting =
+        row[5] === 0n
+          ? null
+          : {
+              requestId,
+              borrower: row[0],
+              market: row[1],
+              aprBps: row[2],
+              targetBorrow: row[3],
+              minAcceptable: row[4],
+              streamId: row[5],
+            };
+      return {
+        type: "execute_request",
+        identity,
+        market,
+        request: readyOutcome(resting, metadata),
+        book: readyOutcome({ book, router }, metadata),
+      };
+    }
+    case "cancel_request": {
+      const book = scope.requestBook;
+      if (!book) throw new Error("Request book is not configured");
+      const requestId = parsed.intent.requestId;
+      const row = await read<
+        [Address, Address, number, bigint, bigint, bigint]
+      >(client, blockNumber, {
+        address: book,
+        abi: ovrfloRequestBookAbi,
+        functionName: "requests",
+        args: [requestId],
+      });
+      const resting =
+        row[5] === 0n
+          ? null
+          : {
+              requestId,
+              borrower: row[0],
+              market: row[1],
+              aprBps: row[2],
+              targetBorrow: row[3],
+              minAcceptable: row[4],
+              streamId: row[5],
+            };
+      return {
+        type: "cancel_request",
+        identity,
+        market,
+        request: readyOutcome(resting, metadata),
+        book: readyOutcome({ book }, metadata),
+      };
+    }
     case "hosted_convert": {
       const inputToken = parsed.intent.inputToken;
       const [walletBalance, allowance] = await Promise.all([
@@ -937,6 +1123,8 @@ function requestForAction(action: ReadyAction): ExactSimulationRequest {
           ? ovrfloReserveAbi
         : action.call.contract === "sablier"
           ? sablierLockupAbi
+        : action.call.contract === "request_book"
+          ? ovrfloRequestBookAbi
           : erc20Abi;
   return {
     address: action.call.target,

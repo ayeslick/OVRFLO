@@ -33,6 +33,7 @@ const ovrfloToken = "0x0000000000000000000000000000000000000017" as Address;
 const ptToken = "0x0000000000000000000000000000000000000028" as Address;
 const sablier = "0x0000000000000000000000000000000000000039" as Address;
 const reserve = "0x000000000000000000000000000000000000004a" as Address;
+const book = "0x000000000000000000000000000000000000005b" as Address;
 
 const market: MarketActionContext = {
   vault,
@@ -283,6 +284,64 @@ const cases: Array<{ intent: ActionIntent; snapshot: ActionSnapshot }> = [
       }),
     },
   },
+  {
+    intent: {
+      type: "post_request",
+      amount: "4",
+      streamId: 31n,
+      aprBps: 1_000,
+      minAcceptable: "4",
+    },
+    snapshot: {
+      type: "post_request",
+      identity,
+      market,
+      stream: fresh({
+        streamId: 31n,
+        recipient: account,
+        approved: book,
+        approvedForAll: false,
+        eligible: true,
+      }),
+      book: fresh({ book, router: book }),
+    },
+  },
+  {
+    intent: { type: "execute_request", requestId: 9n },
+    snapshot: {
+      type: "execute_request",
+      identity,
+      market,
+      request: fresh({
+        requestId: 9n,
+        borrower: account,
+        market: marketAddress,
+        aprBps: 1_000,
+        targetBorrow: 4n * WAD,
+        minAcceptable: 4n * WAD,
+        streamId: 31n,
+      }),
+      book: fresh({ book, router: book }),
+    },
+  },
+  {
+    intent: { type: "cancel_request", requestId: 9n },
+    snapshot: {
+      type: "cancel_request",
+      identity,
+      market,
+      request: fresh({
+        requestId: 9n,
+        borrower: account,
+        market: marketAddress,
+        aprBps: 1_000,
+        targetBorrow: 4n * WAD,
+        minAcceptable: 4n * WAD,
+        streamId: 31n,
+      }),
+      book: fresh({ book }),
+    },
+  },
 ];
 
 function expectReady(intent: ActionIntent, snapshot: ActionSnapshot): ReadyAction {
@@ -293,7 +352,7 @@ function expectReady(intent: ActionIntent, snapshot: ActionSnapshot): ReadyActio
 }
 
 describe("pure action registry", () => {
-  it("resolves all fourteen ActionType values exactly once", () => {
+  it("resolves all seventeen ActionType values exactly once", () => {
     expect(ACTION_TYPES).toEqual([
       "supply",
       "withdraw",
@@ -309,9 +368,12 @@ describe("pure action registry", () => {
       "repay",
       "close",
       "hosted_convert",
+      "post_request",
+      "execute_request",
+      "cancel_request",
     ]);
     expect(Object.keys(actionRegistry).sort()).toEqual([...ACTION_TYPES].sort());
-    expect(new Set(Object.values(actionRegistry).map((definition) => definition.type)).size).toBe(14);
+    expect(new Set(Object.values(actionRegistry).map((definition) => definition.type)).size).toBe(17);
   });
 
   it("builds one ready pure action for every existing action type", () => {
@@ -728,6 +790,39 @@ describe("per-position claim", () => {
     expect(action.call.functionName).toBe("multicall");
     expect((action.call.args[0] as readonly unknown[]).length).toBe(CLAIM_PAIRS_PER_TX);
     expect(action.review.economics.truncated).toBe(true);
+  });
+});
+
+describe("request-book actions", () => {
+  it("names the book as the ERC-721 spender on post", () => {
+    const posted = cases.find(({ intent }) => intent.type === "post_request")!;
+    const action = expectReady(posted.intent, posted.snapshot);
+    expect(action.call.target).toBe(book);
+    expect(action.call.functionName).toBe("post");
+    const authorization = action.authorizations[0];
+    if (!authorization || authorization.kind !== "erc721") throw new Error("expected erc721 auth");
+    expect(authorization.spender).toBe(book);
+  });
+
+  it("refuses execute when the book is not the current router", () => {
+    const execute = cases.find(({ intent }) => intent.type === "execute_request")!;
+    if (execute.snapshot.type !== "execute_request") throw new Error("wrong fixture");
+    const result = buildAction(execute.intent, {
+      ...execute.snapshot,
+      book: fresh({ book, router: other }),
+    });
+    expect(result).toMatchObject({
+      status: "invalid",
+      errors: [{ code: "not-current-router" }],
+    });
+  });
+
+  it("cancels without a router-is-book gate", () => {
+    const cancel = cases.find(({ intent }) => intent.type === "cancel_request")!;
+    const action = expectReady(cancel.intent, cancel.snapshot);
+    expect(action.call.target).toBe(book);
+    expect(action.call.functionName).toBe("cancel");
+    expect(action.preconditions).not.toContain("router-is-book");
   });
 });
 
