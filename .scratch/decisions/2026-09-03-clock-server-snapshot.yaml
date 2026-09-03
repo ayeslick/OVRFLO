@@ -1,0 +1,38 @@
+# Scratch decision record — schema: docs/maps/SCHEMAS.md §4
+summary_ref: "docs/plans/2026-08-22-001-refactor-denomination-switch-border-column-plan.md#cs4-u12"
+
+goal: >
+  Cache the hydration-safe clock server snapshot. React 19 loops when
+  getServerSnapshot returns a new object on every call.
+
+state_keys_touched: []
+
+writers_readers:
+  - writes: web/hooks/useClock.ts
+  - writes: web/tests/hooks/useClock.test.tsx
+  - reads: web/components/watch/WatchApp.tsx
+
+trust_domains:
+  - fact: Local-clock interpolation until the first client tick
+    domain: pure-client
+    moved_from: null
+
+rejected_alternatives:
+  - option: Build { localNow: 0n, skew: 0n } inside getServerSnapshot
+    why_not: >
+      React compares snapshots with Object.is. A new object every call
+      looks like a store change and re-renders forever.
+
+invariants_held:
+  - invariant: Hydration-safe clock is null while localNow is 0n.
+    how: SERVER_SNAPSHOT stays { localNow: 0n, skew: 0n }.
+  - invariant: getServerSnapshot returns one cached object.
+    how: Module-level SERVER_SNAPSHOT. Test asserts reference equality.
+
+risks:
+  - risk: resetClockStoreForTests replaces the live client snapshot.
+    residual: SERVER_SNAPSHOT is a separate object and is never replaced.
+
+diff_hints:
+  - path: web/hooks/useClock.ts
+    why: SERVER_SNAPSHOT is the only getServerSnapshot return.

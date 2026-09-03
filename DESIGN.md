@@ -127,13 +127,13 @@ Martian Mono is allowed only for narrow technical identifiers in Advanced, such 
 
 The application uses a centered hub container up to 1160px and a focused task container up to 720px. Compact gutters are 16px. Wide gutters are 24px. Grid gaps are 16px.
 
-At 1024px and wider, the welcome banner spans the hub. The two position-type cards occupy equal columns. Activity and help use a 2:1 column ratio. Below 1024px, these regions stack in source order. At 767px and below, controls and collections use the compact single-column treatment without horizontal page overflow.
+At 1024px and wider, the welcome banner spans the hub. The two position-type cards occupy equal columns. Help sits below the type cards. Below 1024px, these regions stack in source order. At 767px and below, controls and collections use the compact single-column treatment without horizontal page overflow.
 
 Desktop create flows show the active decision surface plus a compact summary of completed choices. The six-card board documents sequence. It is not a simultaneous production layout. Mobile shows one decision surface at a time, full-width controls, a clear Back action, and safe-area padding where content meets viewport edges. Review remains its own step.
 
 ### Navigation and modes
 
-Default navigation labels are exactly `Your OVRFLO`, `Create`, and `Activity`. `Portfolio` is not an alternate Default label. Wallet and network remain visible but secondary.
+Default navigation labels are exactly `Your OVRFLO` and `Create`. `Portfolio` is not an alternate Default label. Wallet and network remain visible but secondary.
 
 `Go to Advanced` is available from desktop account navigation and the mobile menu on every Default route. The hub help panel may repeat it. Advanced exposes `Return to Default` in the same global location. A mode change preserves the current object or task when the destination supports it. Otherwise it routes to the closest truthful parent and explains the change.
 
@@ -149,7 +149,6 @@ Destination URLs use a trailing slash. Advanced writes no path and no query para
 | Create (type not yet chosen) | `/create/` | Empty-portfolio Create and the Create nav item land here |
 | Create Self-Repaying Loan | `/borrow/` | Existing page. `?stream=` and `?step=` stay |
 | Create Fixed Return | `/supply/` | Existing page. `?step=` stays |
-| Activity | `/activity/` | The portfolio matrix on `/` does not apply here |
 | Wrap, unwrap, PT deposit | `/assets/` | Existing page |
 | Risk | `/risk/` | Unchanged |
 | Default vs Advanced | no path or query change | Disclosure only. `Return to Default` is the control. Browser Back does not toggle disclosure. Refresh lands in Default on the same destination |
@@ -160,9 +159,9 @@ After route or stage navigation, focus moves to the new surface heading. Inline 
 
 ### Portfolio routing and trust
 
-A bounded discovery scan projects aggregate count and completeness. Each candidate becomes a position only after direct on-chain hydration confirms ownership, type, status, and amount.
+On-chain enumerable books supply stream, loan, supply, and resting-request ids. Each id becomes a position only after direct on-chain hydration confirms ownership, type, status, and amount.
 
-Route to empty, detail, collection, or mixed-type hub only after the bounded scan is complete and every candidate is hydrated. While discovery is partial or retrying, keep a stable incomplete `Your OVRFLO` surface. Preserve confirmed cards. Never route from a provisional count.
+Route to empty, detail, collection, or mixed-type hub only after those books are complete and every row is hydrated. While a book is partial or retrying, keep a stable incomplete `Your OVRFLO` surface. Preserve confirmed cards. Never route from a provisional count.
 
 After complete hydration:
 
@@ -172,8 +171,6 @@ After complete hydration:
 4. Multiple position types show the `Your OVRFLO` hub.
 
 Never sum positions with different token symbols. Aggregate only positions with the same underlying. When underlyings differ, show the count and group collection totals by underlying.
-
-Activity lists chain-confirmed, user-meaningful protocol actions newest first under the verified-log and direct-read contract. Pending and rejected wallet attempts remain transaction status, not activity. Partial history is labeled incomplete. Empty activity appears only after the bounded scan completes.
 
 ## Elevation & Depth
 

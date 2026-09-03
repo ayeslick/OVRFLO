@@ -28,10 +28,6 @@ function addr(value?: Address | null): string | null {
   return value ? value.toLowerCase() : null;
 }
 
-function addrList(values?: readonly Address[]): string {
-  return (values ?? []).map((value) => value.toLowerCase()).join(",");
-}
-
 function id(value: bigint | number | string): string {
   return String(value);
 }
@@ -140,13 +136,19 @@ export const streamBookKeys = {
 
 export const requestBookKeys = {
   all: ["request-book"] as const,
-  factory: (chainId: number, account?: Address | null, lendings?: readonly Address[]) =>
+  factory: (
+    chainId: number,
+    account?: Address | null,
+    lendings?: readonly Address[],
+    blockHash?: string | null,
+  ) =>
     [
       ...requestBookKeys.all,
       "factory",
       chainId,
       addr(account),
       (lendings ?? []).map((value) => value.toLowerCase()).join(","),
+      blockHash ? blockHash.toLowerCase() : null,
     ] as const,
 };
 
@@ -166,29 +168,6 @@ export const protocolBootstrapKeys = {
   all: ["protocolBootstrap"] as const,
   root: (factoryAddress: Address, chainId: number) =>
     [...protocolBootstrapKeys.all, addr(factoryAddress), chainId] as const,
-};
-
-export const activityKeys = {
-  all: ["portfolio-activity"] as const,
-  account: (
-    chainId: number,
-    account?: Address | null,
-    fromBlock?: bigint | null,
-    toBlock?: bigint | null,
-    lockup?: Address | null,
-    vaults?: readonly Address[],
-    lendings?: readonly Address[],
-  ) =>
-    [
-      ...activityKeys.all,
-      chainId,
-      addr(account),
-      fromBlock == null ? null : id(fromBlock),
-      toBlock == null ? null : id(toBlock),
-      addr(lockup),
-      addrList(vaults),
-      addrList(lendings),
-    ] as const,
 };
 
 export const DISCOVERY_SCHEMA_VERSION = 1;

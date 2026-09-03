@@ -110,7 +110,7 @@ An atomic ERC-3156 mint of ovrfloToken from `OVRFLOReserve`, repaid in the same 
 
 ### Request book
 
-A thin router (`OVRFLORequestBook`) that escrows an OVRFLO Stream until lending depth can fill a borrow for the human owner. The borrower posts the exact `aprBps` they chose. The book fills at that tick only and never searches ticks. Core `borrow` uses `onBehalfOf` equal to the human. The book holds no loan-to-borrower table and takes no fee. The factory does not register the book; seed sets it as `lending.router` after deploy.
+A thin router (`OVRFLORequestBook`) that escrows an OVRFLO Stream until lending depth can fill a borrow for the human owner. The borrower posts the exact `aprBps` they chose. The book fills at that tick only and never searches ticks. Core `borrow` uses `onBehalfOf` equal to the human. Resting ids sit in `requestCount` / `requestAt` for that borrower and leave the list on fill or cancel. The book holds no loan-to-borrower table and takes no fee. The factory does not register the book; seed sets it as `lending.router` after deploy. `setLendingRouter` records each outgoing nonzero router in `priorRouterAt`. Your OVRFLO pages the current router and that history so `cancel` stays reachable after a swap or a clear.
 
 ### OVRFLO Stream
 

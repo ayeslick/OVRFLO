@@ -10,7 +10,7 @@
 U7 lands `Footer`. Wallet connect/disconnect is `WalletButton` from `wallet-runtime` (`web/components/WalletRuntime.tsx`).
 
 **Purpose of the region.** Identify the application, connect a wallet, navigate
-to Your OVRFLO, Create, and Activity, expose Default / Advanced disclosure, and
+to Your OVRFLO and Create, expose Default / Advanced disclosure, and
 own every app-wide honesty surface: disconnected entry, syncing, status, route
 crashes, the write-path network gate, and the token/USD display switch. The shell
 holds no market figure of its own.
@@ -88,18 +88,18 @@ counts) anywhere in this region.
 ## `UI-SHELL-NAV`
 
 - **ID.** `UI-SHELL-NAV`
-- **Purpose.** Reach Your OVRFLO, Create, and Activity from any connected or
+- **Purpose.** Reach Your OVRFLO and Create from any connected or
   disconnected surface.
 - **Visible when.** Always, alongside the wallet control. Desktop shows the
-  three links. Compact width uses `UI-SHELL-MENU` for the same destinations.
+  two links. Compact width uses `UI-SHELL-MENU` for the same destinations.
 - **States.**
   - `idle` — links present, none current.
   - `current` — `/` marks Your OVRFLO; `/create/`, `/borrow/`, and `/supply/`
-    mark Create; `/activity/` marks Activity. `/assets/` and `/risk/` mark none.
-- **Action.** Navigates to `/`, `/create/`, or `/activity/`. Submits nothing.
-  Do not invent Dashboard or Markets destinations. `/borrow/` and `/supply/`
-  remain typed create paths, not Default nav items.
-- **Copy rules.** Labels: `Your OVRFLO`, `Create`, `Activity`. Do not alternate
+    mark Create. `/assets/` and `/risk/` mark none.
+- **Action.** Navigates to `/` or `/create/`. Submits nothing.
+  Do not invent Dashboard, Markets, or Activity destinations. `/borrow/` and
+  `/supply/` remain typed create paths, not Default nav items.
+- **Copy rules.** Labels: `Your OVRFLO`, `Create`. Do not alternate
   Your OVRFLO with Portfolio. Do not show counts, badges, or "needs you"
   markers on nav. Sentence case for the labels as written.
 - **Data authority.** `pure-client` — which route is open.

@@ -23,7 +23,6 @@ Unknown query keys must not crash. Pre-CS4 shapes have no compatibility redirect
 | Create (type not yet chosen) | `/create/` | Empty-portfolio Create and the Create nav item land here |
 | Create Self-Repaying Loan | `/borrow/` | Existing page. `?stream=` and `?step=` stay |
 | Create Fixed Return | `/supply/` | Existing page. `?step=` stays |
-| Activity | `/activity/` | The portfolio matrix on `/` does not apply here |
 | Wrap, unwrap, PT deposit | `/assets/` | Existing page |
 | Risk | `/risk/` | Unchanged |
 | Default vs Advanced | no path or query change | Disclosure only. `Return to Default` is the control. Browser Back does not toggle disclosure. Refresh lands in Default on the same destination |

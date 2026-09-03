@@ -235,14 +235,25 @@ vi.mock("@/hooks/useBorrowerBook", () => ({
 
 vi.mock("@/hooks/useRequestBook", () => ({
   useRequestBook: () => {
-    const rows = { requests: fx.requests, complete: fx.requestStatus === "ready", incomplete: false };
+    const pager = { hasNextPage: false, isFetchingNextPage: false, fetchNextPage: () => undefined };
+    const rows = {
+      requests: fx.requests,
+      sourceCount: BigInt(fx.requests.length),
+      renderCount: fx.requests.length,
+      complete: fx.requestStatus === "ready",
+      confirmedEmpty: fx.requestStatus === "ready" && fx.requests.length === 0,
+    };
     if (fx.requestStatus === "loading") {
-      return loadingOutcome(undefined);
+      return { ...loadingOutcome(undefined), ...pager, advancePin: async () => undefined };
     }
     if (fx.requestStatus === "unavailable") {
-      return unavailableOutcome([readFailure("useRequestBook", "transport", "down")]);
+      return {
+        ...unavailableOutcome([readFailure("useRequestBook", "transport", "down")]),
+        ...pager,
+        advancePin: async () => undefined,
+      };
     }
-    return readyOutcome(rows);
+    return { ...readyOutcome(rows), ...pager, advancePin: async () => undefined };
   },
 }));
 
@@ -404,7 +415,7 @@ describe("watch shell + entry", () => {
     expect(nav).not.toBeNull();
     expect(nav?.textContent).toContain("Your OVRFLO");
     expect(nav?.textContent).toContain("Create");
-    expect(nav?.textContent).toContain("Activity");
+    expect(nav?.textContent).not.toContain("Activity");
     expect(screen.getByText(/Your OVRFLO: positions/i)).toBeInTheDocument();
     expect(screen.queryByText(/TVL/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/you have no positions/i)).not.toBeInTheDocument();

@@ -201,7 +201,7 @@ vault functions). No operational timelock exists on the contracts themselves —
 | OVRFLOFactory | `registerOvrflo()` | ovrflo (externally deployed) | `ovrflos`, `ovrfloCount`, `ovrfloInfo`, `underlyingToOvrflo`, `ovrfloToReserve`; verifies factory/oracle/stream, token minters, reserve wiring |
 | OVRFLOFactory | `registerLending()` | lending (externally deployed) | `ovrfloToLending`, `lendingToOvrflo`, `lendings`, `lendingCount`; verifies `factory()`/`owner()`/`sablier()==ovrfloStream` (and vault match) and 1:1 vault mapping before registering |
 | OVRFLOFactory | `replaceLending()` | newLending | `ovrfloToLending` points at the new market; old market stays in `lendings` / `lendingToOvrflo` |
-| OVRFLOFactory | `setLendingRouter()` | lending, router | forwards `setRouter`; zero disables |
+| OVRFLOFactory | `setLendingRouter()` | lending, router | forwards `setRouter`; records outgoing nonzero router in `priorRouterCount` / `priorRouterAt` / `isPriorRouter`; zero disables |
 | OVRFLOFactory | `setOvrfloStream()` | stream (once) | `ovrfloStream`; checks lockup `factory()`/`admin()` and comptroller `admin()`; reverts on second call |
 | OVRFLOFactory | `setStreamNFTDescriptor()` | descriptor | forwards `setNFTDescriptor` to `ovrfloStream`; **only** lockup admin forwarder |
 | OVRFLOFactory | `addMarket()` | ovrflo, market, twapDuration, feeBps | `isMarketApproved`, `approvedMarketAt`, `approvedMarketCount`; forwards to `OVRFLO.setSeriesApproved` |

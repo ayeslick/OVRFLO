@@ -48,13 +48,11 @@ describe("CS4-U1 visual tokens", () => {
     expect(css).not.toMatch(/text-transform:\s*uppercase/);
   });
 
-  it("ships static-export create and activity pages", () => {
+  it("ships a static-export create page", () => {
     const createPage = readFileSync(join(WEB_ROOT, "app/create/page.tsx"), "utf8");
-    const activityPage = readFileSync(join(WEB_ROOT, "app/activity/page.tsx"), "utf8");
     expect(createPage).toContain('currentNav="create"');
     expect(createPage).toContain("DefaultHub");
-    expect(activityPage).toContain('currentNav="activity"');
-    expect(activityPage).toContain("Activity");
+    expect(createPage).not.toContain("/activity/");
   });
 
   it("does not add compatibility redirects for pre-CS4 URL shapes", () => {

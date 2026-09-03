@@ -1,0 +1,59 @@
+# Scratch decision record — schema: docs/maps/SCHEMAS.md §4
+summary_ref: "docs/plans/2026-08-22-001-refactor-denomination-switch-border-column-plan.md#cs3-u1"
+
+goal: >
+  Fail closed when a live request book cannot be identified. Pin every
+  request-book page to one block so swap-compact cancel cannot hide a
+  later row.
+
+state_keys_touched:
+  - query.request-book
+
+writers_readers:
+  - writes: web/lib/protocol/request-book.ts
+  - writes: web/hooks/useRequestBook.ts
+  - writes: web/lib/query-keys.ts
+  - writes: web/components/watch/WatchApp.tsx
+  - writes: web/tests/lib/protocol/request-book.test.ts
+  - writes: web/tests/lib/query-keys.test.ts
+  - reads: web/hooks/useEnumerationPin.ts
+
+trust_domains:
+  - fact: Resting request ids for one wallet at one block
+    domain: on-chain
+    moved_from: null
+  - fact: Book identity from getCode plus book.lending()
+    domain: on-chain
+    moved_from: null
+
+rejected_alternatives:
+  - option: Skip every book.lending() failure
+    why_not: >
+      A live book whose lending() call fails then drops out of
+      requestCount. The hook can paint a complete empty list.
+  - option: Keep unpinned loan-style paging
+    why_not: >
+      requestAt swap-compacts. borrowerLoanAt does not. A cancel
+      between page 1 and page 2 can hide a live id.
+
+invariants_held:
+  - invariant: A failed read never paints a confident empty waiting list.
+    how: >
+      No code skips the address. Code plus a failed lending() read
+      returns unavailable.
+  - invariant: One page walk sees one block.
+    how: >
+      useEnumerationPin plus callPin on every read. Query key includes
+      the pin hash. STALE refresh advances the request-book pin.
+
+risks:
+  - risk: Two useEnumerationPin instances can advance on different clicks.
+    residual: >
+      WatchApp STALE refresh calls streams.advancePin and
+      requestBook.advancePin. useBlock still adopts the same head.
+
+diff_hints:
+  - path: web/lib/protocol/request-book.ts
+    why: getCode gate and pinned readContract / getCode.
+  - path: web/hooks/useRequestBook.ts
+    why: Pin in configured, query key, and verifyPinHash.

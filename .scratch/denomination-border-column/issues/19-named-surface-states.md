@@ -67,7 +67,9 @@ CS4-U5 in `docs/plans/2026-08-22-001-refactor-denomination-switch-border-column-
 
 ## Deviations
 
-- Request discovery enumerates `1..nextRequestId-1` and sets the same incomplete
-  flag as `loansOf` when the cap is hit. The session does not add a log scan.
+- Request discovery enumerated `1..nextRequestId-1` and set incomplete at 500.
+  User-directed follow-up (2026-09-03): the book now exposes `requestCount` /
+  `requestAt`. The web reader pages that list. No browser log scan for live
+  waiting rows.
 - Post rebuild sets `eligible: true` the same way the existing borrow snapshot
   load does. The book contract still rejects an ineligible stream on `post`.

@@ -165,8 +165,8 @@ Registry and admin hub for externally deployed OVRFLO vaults and OVRFLOLending m
 | `constructor(owner, oracle)` | Deploy factory with multisig owner and Pendle oracle (both immutable) |
 | `registerOvrflo(ovrflo)` | Register an externally deployed OVRFLO vault: verifies factory/oracle/stream bindings, one vault per underlying, token minters (`vault()`/`reserve()`), and reserve wiring, then writes `ovrfloInfo` and `ovrfloToReserve` |
 | `registerLending(lending)` | Register an externally deployed OVRFLOLending: verifies its core vault is registered, `factory()`/`owner()` match this factory, stream binding equals `factory.ovrfloStream()` (and matches the vault's `sablierLL`), then records it (1:1 per vault) |
-| `replaceLending(newLending)` | Admit a replacement market for a vault that already has one; the old market stays known for repay/close/claim |
-| `setLendingRouter(lending, router)` | Set or clear the borrow router (`onBehalfOf` path); zero disables |
+| `replaceLending(newLending)` | Admit a replacement market for a vault that already has one; the old market stays known for repay/close/claim. Then call `setLendingRouter(oldLending, address(0))` so the old book stops filling |
+| `setLendingRouter(lending, router)` | Set or clear the borrow router (`onBehalfOf` path); zero disables. Records the outgoing nonzero router in `priorRouterAt` |
 | `setOvrfloStream(stream)` | Admit the canonical OVRFLO Streams lockup once (`onlyOwner`); checks lockup `factory()`/`admin()` and comptroller `admin()` |
 | `setStreamNFTDescriptor(descriptor)` | Forward `setNFTDescriptor` to the canonical lockup; only lockup admin forwarder (no `transferAdmin`) |
 | `addMarket(ovrflo, market, twapDuration, feeBps)` | Add a PT maturity; reads PT address and expiry from Pendle market; requires ready oracle and exact underlying match |

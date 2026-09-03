@@ -4,6 +4,7 @@ import {
   useClock,
   useClockHydrationSafe,
   clockIsArmed,
+  clockServerSnapshotForTests,
   clockSubscriberCount,
   emitClockForTests,
   resetClockStoreForTests,
@@ -16,6 +17,11 @@ vi.mock("wagmi", () => ({
 
 describe("useClock", () => {
   afterEach(() => resetClockStoreForTests());
+
+  it("caches the server snapshot so React does not loop", () => {
+    expect(clockServerSnapshotForTests()).toBe(clockServerSnapshotForTests());
+    expect(clockServerSnapshotForTests().localNow).toBe(0n);
+  });
 
   it("eager variant returns a value immediately", () => {
     const { result, unmount } = renderHook(() => useClock());

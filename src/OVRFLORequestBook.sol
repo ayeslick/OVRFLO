@@ -76,6 +76,18 @@ contract OVRFLORequestBook is ReentrancyGuard {
     /// @notice Request id => resting terms. Zeroed after fill or cancel.
     mapping(uint256 requestId => Request request) public requests;
 
+    /// @notice Borrower => number of resting requests that borrower still holds.
+    /// @dev Immediate fill never increments. Execute and cancel decrement.
+    mapping(address borrower => uint256 count) public requestCount;
+
+    /// @notice Borrower => zero-based index => resting request id.
+    /// @dev Compacted on unlist. `requestAt(borrower, i)` for `i < requestCount`
+    ///      is always a live `requests[id]` row for that borrower.
+    mapping(address borrower => mapping(uint256 index => uint256 requestId)) public requestAt;
+
+    /// @dev requestId => index in `requestAt[borrower]` plus one. Zero means unlisted.
+    mapping(uint256 requestId => uint256 indexPlusOne) private requestIndex;
+
     /*//////////////////////////////////////////////////////////////
                                   EVENTS
     //////////////////////////////////////////////////////////////*/
@@ -175,6 +187,7 @@ contract OVRFLORequestBook is ReentrancyGuard {
 
         loanId = lending.borrow(req.market, req.aprBps, req.targetBorrow, req.streamId, req.minAcceptable, req.borrower);
         delete requests[requestId];
+        _unlist(requestId, req.borrower);
         emit RequestFilled(requestId, loanId, _actualBorrow(loanId));
     }
 
@@ -188,6 +201,7 @@ contract OVRFLORequestBook is ReentrancyGuard {
         if (msg.sender != req.borrower) revert NotBorrower(msg.sender, req.borrower);
 
         delete requests[requestId];
+        _unlist(requestId, req.borrower);
         sablier.transferFrom(address(this), req.borrower, req.streamId);
         emit RequestCancelled(requestId, req.borrower);
     }
@@ -231,8 +245,35 @@ contract OVRFLORequestBook is ReentrancyGuard {
     /// @dev Writes resting storage, then pulls the stream (CEI). Emits `RequestPosted`.
     function _rest(uint256 requestId, Request memory req) internal {
         requests[requestId] = req;
+        _list(requestId, req.borrower);
         _escrowFrom(req.borrower, req.streamId);
         _emitPosted(requestId, req);
+    }
+
+    /// @dev Append `requestId` to the borrower's resting list.
+    function _list(uint256 requestId, address borrower) internal {
+        uint256 index = requestCount[borrower];
+        requestAt[borrower][index] = requestId;
+        requestIndex[requestId] = index + 1;
+        requestCount[borrower] = index + 1;
+    }
+
+    /// @dev Remove `requestId` from the borrower's resting list. Swap-compacts.
+    ///      A missing index is a no-op so cancel still returns the stream if
+    ///      the list and `requests` ever disagree.
+    function _unlist(uint256 requestId, address borrower) internal {
+        uint256 stored = requestIndex[requestId];
+        if (stored == 0) return;
+        uint256 index = stored - 1;
+        uint256 last = requestCount[borrower] - 1;
+        if (index != last) {
+            uint256 moved = requestAt[borrower][last];
+            requestAt[borrower][index] = moved;
+            requestIndex[moved] = index + 1;
+        }
+        delete requestAt[borrower][last];
+        delete requestIndex[requestId];
+        requestCount[borrower] = last;
     }
 
     /// @dev Core `borrow` for an already-escrowed stream. Re-checks the router slot

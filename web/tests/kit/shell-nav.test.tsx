@@ -25,13 +25,13 @@ describe("CS4-U1 Default shell navigation", () => {
     resetDisclosure();
   });
 
-  it("renders Your OVRFLO, Create, and Activity in desktop nav and the mobile menu", () => {
+  it("renders Your OVRFLO and Create in desktop nav and the mobile menu", () => {
     render(
       <Shell currentNav="home" wallet="CONNECT WALLET" network="Ethereum">
         body
       </Shell>,
     );
-    const labels = ["Your OVRFLO", "Create", "Activity"];
+    const labels = ["Your OVRFLO", "Create"];
     for (const label of labels) {
       expect(desktopNav().getByRole("link", { name: label })).toBeInTheDocument();
     }
@@ -42,7 +42,7 @@ describe("CS4-U1 Default shell navigation", () => {
     }
     expect(desktopNav().getByRole("link", { name: "Your OVRFLO" })).toHaveAttribute("href", "/");
     expect(desktopNav().getByRole("link", { name: "Create" })).toHaveAttribute("href", "/create/");
-    expect(desktopNav().getByRole("link", { name: "Activity" })).toHaveAttribute("href", "/activity/");
+    expect(desktopNav().queryByRole("link", { name: "Activity" })).not.toBeInTheDocument();
   });
 
   it("does not offer Portfolio, Dashboard, or Markets destinations", () => {
@@ -109,12 +109,12 @@ describe("CS4-U1 hub layout and create chooser", () => {
     resetDisclosure();
   });
 
-  it("encodes welcome span, equal type columns, and 2:1 activity/help at the wide breakpoint", () => {
+  it("encodes welcome span and equal type columns at the wide breakpoint", () => {
     const css = readFileSync(join(WEB_ROOT, "components/kit/kit.css"), "utf8");
     expect(css).toMatch(/@media \(min-width: 1024px\)/);
     expect(css).toMatch(/\.default-hub-welcome\s*\{\s*grid-column:\s*1\s*\/\s*-1;/);
     expect(css).toMatch(/\.default-hub-types\s*\{\s*grid-template-columns:\s*1fr 1fr;/);
-    expect(css).toMatch(/\.default-hub-lower\s*\{\s*grid-template-columns:\s*2fr 1fr;/);
+    expect(css).not.toMatch(/\.default-hub-lower\s*\{\s*grid-template-columns:\s*2fr 1fr;/);
     expect(css).toMatch(/@media \(max-width: 767px\)/);
     expect(css).toMatch(/\.kit-nav\s*\{\s*display:\s*none;/);
   });
@@ -123,5 +123,6 @@ describe("CS4-U1 hub layout and create chooser", () => {
     render(<DefaultHub welcome="Choose a position type" />);
     expect(screen.getByRole("link", { name: /Self-Repaying Loan/ })).toHaveAttribute("href", "/borrow/");
     expect(screen.getByRole("link", { name: /Fixed Return/ })).toHaveAttribute("href", "/supply/");
+    expect(screen.queryByRole("link", { name: "Open Activity" })).not.toBeInTheDocument();
   });
 });

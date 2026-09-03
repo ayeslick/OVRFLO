@@ -35,13 +35,22 @@ function runGuard(root: string, forceGrep = false) {
 }
 
 describe("banned-pattern guard exception scope", () => {
-  it("allows historical access only in the named discovery owner and deployment verifier", async () => {
+  it("allows historical access only in the deployment verifier", async () => {
     const root = await fixture({
-      "lib/discovery/portfolio-log-candidates.ts": "await client.getLogs({ address });\n",
-      "lib/deployment.ts": "const marker = FACTORY_FROM_BLOCK;\n",
+      "lib/deployment.ts": "const marker = FACTORY_FROM_BLOCK;\nawait client.getLogs({ address });\n",
     });
 
     expect(runGuard(root).status).toBe(0);
+  });
+
+  it("rejects getLogs in a portfolio discovery module", async () => {
+    const root = await fixture({
+      "lib/discovery/portfolio-log-candidates.ts": "await client.getLogs({ address });\n",
+    });
+
+    const result = runGuard(root);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("getLogs");
   });
 
   it("rejects getLogs in stream and lending hydration modules", async () => {

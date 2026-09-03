@@ -76,3 +76,16 @@ Deviation: `registerOvrflo` checks `reserve == address(0)` before `code.length`.
 Review: GPT-5.6 Sol reported two lows (dead zero-reserve selector; duplicate `lendings` on repeat replace). Both applied. Grok 4.6 second pass reported no findings.
 
 `test/mocks/MockOvrfloAdmin.sol` already forwarded sweep to the reserve in ticket 02. This ticket did not change that mock.
+
+## Follow-up (2026-09-03) — prior router history
+
+User-directed. `setLendingRouter` now appends the outgoing nonzero router to
+`priorRouterCount` / `priorRouterAt` / `isPriorRouter`. No `book.lending()`
+match check. Current pointer stays `lending.router()`.
+
+Deviation: plan line 204 says `execute` on the old book reverts after the Safe
+sets the new market's router. Code: `replaceLending` never writes
+`oldLending.router`, and `OVRFLOLending.borrow` reads only `router`. The
+runbook now requires `setLendingRouter(oldLending, address(0))` after
+`replaceLending` so the old book stops filling and stays listed for `cancel`.
+The plan file was not edited.

@@ -15,7 +15,6 @@ import "./kit.css";
 const NAV = [
   { href: "/", label: "Your OVRFLO", id: "home" },
   { href: "/create/", label: "Create", id: "create" },
-  { href: "/activity/", label: "Activity", id: "activity" },
 ] as const;
 
 export type ShellNavId = (typeof NAV)[number]["id"];

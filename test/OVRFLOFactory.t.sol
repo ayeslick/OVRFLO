@@ -9,6 +9,7 @@ import {OVRFLOFactory} from "../src/OVRFLOFactory.sol";
 import {OVRFLOReserve} from "../src/OVRFLOReserve.sol";
 import {OVRFLOToken} from "../src/OVRFLOToken.sol";
 import {OVRFLOLending} from "../src/OVRFLOLending.sol";
+import {OVRFLORequestBook} from "../src/OVRFLORequestBook.sol";
 import {IPPrincipalToken} from "../interfaces/IPPrincipalToken.sol";
 import {IPendleMarket} from "../interfaces/IPendleMarket.sol";
 import {ISablierV2LockupLinear} from "../interfaces/ISablierV2LockupLinear.sol";
@@ -1276,6 +1277,113 @@ contract OVRFLOFactoryTest is Test, FactoryStreamBind {
         assertEq(factory.lendingToOvrflo(address(oldLending)), address(ovrflo));
     }
 
+    /* ---------- priorRouter history ---------- */
+
+    function test_SetLendingRouter_FirstSetRecordsNoPrior() public {
+        (OVRFLO ovrflo,) = _deployConfiguredSystem();
+        OVRFLOLending lending = _deployRegisteredLending(ovrflo);
+
+        vm.prank(OWNER);
+        factory.setLendingRouter(address(lending), STRANGER);
+
+        assertEq(lending.router(), STRANGER);
+        assertEq(factory.priorRouterCount(address(lending)), 0);
+        assertFalse(factory.isPriorRouter(address(lending), STRANGER));
+    }
+
+    function test_SetLendingRouter_SwapRecordsOutgoingOnce() public {
+        (OVRFLO ovrflo,) = _deployConfiguredSystem();
+        OVRFLOLending lending = _deployRegisteredLending(ovrflo);
+
+        vm.startPrank(OWNER);
+        factory.setLendingRouter(address(lending), STRANGER);
+        factory.setLendingRouter(address(lending), NEW_OWNER);
+        factory.setLendingRouter(address(lending), NEW_OWNER);
+        vm.stopPrank();
+
+        assertEq(lending.router(), NEW_OWNER);
+        assertEq(factory.priorRouterCount(address(lending)), 1);
+        assertEq(factory.priorRouterAt(address(lending), 0), STRANGER);
+        assertTrue(factory.isPriorRouter(address(lending), STRANGER));
+        assertFalse(factory.isPriorRouter(address(lending), NEW_OWNER));
+    }
+
+    function test_SetLendingRouter_ClearThenRestoreListsOnce() public {
+        (OVRFLO ovrflo,) = _deployConfiguredSystem();
+        OVRFLOLending lending = _deployRegisteredLending(ovrflo);
+
+        vm.startPrank(OWNER);
+        factory.setLendingRouter(address(lending), STRANGER);
+        factory.setLendingRouter(address(lending), address(0));
+        factory.setLendingRouter(address(lending), STRANGER);
+        vm.stopPrank();
+
+        assertEq(lending.router(), STRANGER);
+        assertEq(factory.priorRouterCount(address(lending)), 1);
+        assertEq(factory.priorRouterAt(address(lending), 0), STRANGER);
+        assertTrue(factory.isPriorRouter(address(lending), STRANGER));
+    }
+
+    function test_SetLendingRouter_PriorListIsPerLending() public {
+        (OVRFLO ovrflo1,) = _deployConfiguredSystem();
+        MockERC20Metadata dai = new MockERC20Metadata("Dai", "DAI", 18);
+        OVRFLO ovrflo2 = new OVRFLO(
+            address(factory), TREASURY, address(dai), "OVRFLO Dai Stablecoin", "ovrfloDAI", PENDLE_ORACLE, stream
+        );
+        vm.prank(OWNER);
+        factory.registerOvrflo(address(ovrflo2));
+        OVRFLOLending lending1 = _deployRegisteredLending(ovrflo1);
+        OVRFLOLending lending2 = _deployRegisteredLending(ovrflo2);
+
+        vm.startPrank(OWNER);
+        factory.setLendingRouter(address(lending1), STRANGER);
+        factory.setLendingRouter(address(lending1), NEW_OWNER);
+        factory.setLendingRouter(address(lending2), NEW_OWNER);
+        vm.stopPrank();
+
+        assertEq(factory.priorRouterCount(address(lending1)), 1);
+        assertEq(factory.priorRouterAt(address(lending1), 0), STRANGER);
+        assertEq(factory.priorRouterCount(address(lending2)), 0);
+        assertFalse(factory.isPriorRouter(address(lending2), STRANGER));
+    }
+
+    function test_ReplaceLending_ClearOldRouterKeepsCancelBlocksExecute() public {
+        (OVRFLO ovrflo, OVRFLOToken token) = _deployConfiguredSystem();
+        OVRFLOLending oldLending = _deployRegisteredLending(ovrflo);
+        (address market, uint256 expiry) = _onboardLendingSeries(ovrflo, oldLending);
+        OVRFLORequestBook oldBook = _newBook(oldLending);
+        vm.prank(OWNER);
+        factory.setLendingRouter(address(oldLending), address(oldBook));
+
+        address borrower = address(0xD0C);
+        (uint256 requestId,) = _restFactoryRequest(ovrflo, token, oldBook, market, expiry, borrower);
+
+        OVRFLOLending newLending = _newLending(ovrflo);
+        vm.startPrank(OWNER);
+        factory.replaceLending(address(newLending));
+        vm.stopPrank();
+        OVRFLORequestBook newBook = _newBook(newLending);
+        vm.startPrank(OWNER);
+        factory.setLendingRouter(address(newLending), address(newBook));
+        factory.setLendingRouter(address(oldLending), address(0));
+        vm.stopPrank();
+
+        assertEq(oldLending.router(), address(0));
+        assertEq(newLending.router(), address(newBook));
+        assertEq(factory.priorRouterCount(address(oldLending)), 1);
+        assertEq(factory.priorRouterAt(address(oldLending), 0), address(oldBook));
+        assertEq(oldBook.requestCount(borrower), 1);
+        assertEq(oldBook.requestAt(borrower, 0), requestId);
+
+        vm.expectRevert(abi.encodeWithSelector(OVRFLORequestBook.NotCurrentRouter.selector, address(0)));
+        oldBook.execute(requestId);
+
+        vm.prank(borrower);
+        oldBook.cancel(requestId);
+        assertEq(canonicalStream.ownerOf(1), borrower);
+        assertEq(oldBook.requestCount(borrower), 0);
+    }
+
     /* ---------- OVRFLO Stream admission ---------- */
 
     function test_SetOvrfloStream_RevertsOnSecondCall() public {
@@ -1469,6 +1577,43 @@ contract OVRFLOFactoryTest is Test, FactoryStreamBind {
 
     function _newLending(OVRFLO ovrflo) internal returns (OVRFLOLending) {
         return new OVRFLOLending(address(factory), address(ovrflo), address(ovrflo.sablierLL()), 1000);
+    }
+
+    function _newBook(OVRFLOLending lending) internal returns (OVRFLORequestBook) {
+        return new OVRFLORequestBook(address(factory), address(lending), address(canonicalStream));
+    }
+
+    /// @dev Post with no tick depth so `previewBorrow` rests on `EmptyTick`.
+    function _restFactoryRequest(
+        OVRFLO ovrflo,
+        OVRFLOToken token,
+        OVRFLORequestBook book,
+        address market,
+        uint256 expiry,
+        address borrower
+    ) internal returns (uint256 requestId, uint256 streamId) {
+        uint128 amount = 10.2 ether;
+        vm.prank(address(ovrflo));
+        token.mint(address(ovrflo), amount);
+        ISablierV2LockupLinear.CreateWithDurations memory params = ISablierV2LockupLinear.CreateWithDurations({
+            sender: address(ovrflo),
+            recipient: borrower,
+            totalAmount: amount,
+            asset: IERC20(address(token)),
+            cancelable: false,
+            transferable: true,
+            durations: ISablierV2LockupLinear.Durations({cliff: 0, total: uint40(expiry - block.timestamp)}),
+            broker: ISablierV2LockupLinear.Broker({account: address(0), fee: 0})
+        });
+        vm.prank(address(ovrflo));
+        streamId = canonicalStream.createWithDurations(params);
+        vm.prank(borrower);
+        canonicalStream.approve(address(book), streamId);
+        vm.prank(borrower);
+        requestId = book.post(streamId, market, 1000, 5 ether, 5 ether);
+        (address stored,,,,,) = book.requests(requestId);
+        assertEq(stored, borrower);
+        assertEq(book.requestCount(borrower), 1);
     }
 
     function _deployConfiguredSystem() internal returns (OVRFLO ovrflo, OVRFLOToken token) {

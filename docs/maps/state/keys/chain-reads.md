@@ -420,9 +420,15 @@ Declared TanStack query key for resting request-book rows per account and lendin
 - **readers:**
   - `web/hooks/useRequestBook.ts` — registers the factory query
   - `web/lib/invalidate.ts` — post-write invalidation after post / execute / cancel
-- **notes:** Rows come from `requests(id)` while `borrower == account` and
-  `streamId != 0`. Completeness is distinct from empty. A failed read never
-  paints an empty portfolio. Waiting-request identity stays on `?stream=`.
+- **notes:** The book list is `requestCount(account)` then `requestAt(account, i)`.
+  Those ids swap-compact, so the hook pins every read to one block the same
+  way the stream wall does. Each id hydrates through `requests(id)`.
+  Completeness follows this wallet's count, not `nextRequestId`. The factory
+  walk unions `lending.router()` with `priorRouterAt(lending, i)`. An address
+  with no code is skipped. A contract whose `lending()` call fails stays
+  unavailable. `row.lending` comes from `book.lending()`. A failed factory
+  prior-list read never paints an empty portfolio. Waiting-request identity
+  stays on `?stream=`.
 
 ### `query.ladder`
 

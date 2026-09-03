@@ -134,6 +134,19 @@ contract OVRFLOFactory is Ownable2Step {
     /// @notice Canonical OVRFLO Stream lockup. Set once via `setOvrfloStream`.
     address public ovrfloStream;
 
+    /// @notice Number of routers that once held `lending.router()` and were swapped out or cleared.
+    /// @dev History, not admission. The factory does not register a book. A listed router can
+    ///      hold the slot again after a later `setLendingRouter`; readers compare against
+    ///      `lending.router()` to learn which book is live. Append-only. Never pruned.
+    mapping(address lending => uint256 count) public priorRouterCount;
+
+    /// @notice `lending` => zero-based index => outgoing router recorded at swap or clear time.
+    mapping(address lending => mapping(uint256 index => address router)) public priorRouterAt;
+
+    /// @notice `lending` => router => already listed in `priorRouterAt`.
+    /// @dev O(1) dedupe so an A -> B -> A cycle lists each address once.
+    mapping(address lending => mapping(address router => bool listed)) public isPriorRouter;
+
     /*//////////////////////////////////////////////////////////////
                                 EVENTS
     //////////////////////////////////////////////////////////////*/
@@ -248,8 +261,11 @@ contract OVRFLOFactory is Ownable2Step {
     }
 
     /// @notice Admit a new lending market for a vault that already has one.
-    /// @dev Operator order: deploy the new market, call `replaceLending(new)`, then
-    ///      `setLendingRouter` on the new market once a request book bound to it exists.
+    /// @dev Operator order: deploy the new market, call `replaceLending(new)`, call
+    ///      `setLendingRouter(new, book)` once a request book bound to the new market
+    ///      exists, then call `setLendingRouter(old, address(0))` so the old book stops
+    ///      filling. The old book stays in `priorRouterAt(old, ·)` so `cancel` stays
+    ///      discoverable.
     ///      First admission uses `registerLending`. A candidate already in
     ///      `lendingToOvrflo` reverts `LendingExists` so `lendings` stays unique.
     ///      The old market stays in `lendingToOvrflo` and `lendings` so factory admin
@@ -416,13 +432,20 @@ contract OVRFLOFactory is Ownable2Step {
     /// @notice Set or clear the borrow router on an OVRFLOLending
     /// @dev Accepts zero to disable the on-behalf path and any nonzero Safe-selected
     ///      address. There is no identity or allowlist check. The Safe validates the
-    ///      selected router off-chain. After `replaceLending`, call this on the new
-    ///      market once a request book bound to that market exists.
+    ///      selected router off-chain. When the current slot is nonzero and differs from
+    ///      `router_`, the outgoing router is appended once to `priorRouterAt(lending, ·)`
+    ///      so Your OVRFLO can still find resting requests on it. `lending.router()` is
+    ///      the only current pointer. After `replaceLending`, call this on the new market
+    ///      once a request book bound to that market exists, and call
+    ///      `setLendingRouter(oldLending, address(0))` so the old book stops filling.
     /// @param lending The OVRFLOLending address
     /// @param router_ New router; zero disables attribution
     function setLendingRouter(address lending, address router_) external onlyOwner {
         _requireKnownLending(lending);
-        OVRFLOLending(lending).setRouter(router_);
+        OVRFLOLending market = OVRFLOLending(lending);
+        address outgoing = market.router();
+        if (outgoing != address(0) && outgoing != router_) _recordPriorRouter(lending, outgoing);
+        market.setRouter(router_);
         emit LendingRouterSet(lending, router_);
     }
 
@@ -471,6 +494,14 @@ contract OVRFLOFactory is Ownable2Step {
 
     function _requireKnownLending(address lending) internal view {
         if (lendingToOvrflo[lending] == address(0)) revert UnknownLending();
+    }
+
+    /// @dev Append `router` to the lending's prior list once. History, not admission.
+    function _recordPriorRouter(address lending, address router) internal {
+        if (isPriorRouter[lending][router]) return;
+        isPriorRouter[lending][router] = true;
+        priorRouterAt[lending][priorRouterCount[lending]] = router;
+        priorRouterCount[lending] += 1;
     }
 
     /// @dev Shared admission checks for `registerLending` and `replaceLending`.

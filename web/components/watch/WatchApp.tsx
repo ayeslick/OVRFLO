@@ -46,7 +46,7 @@ import {
   uniqueLendings,
 } from "@/lib/watch-lendings";
 import { positionFilled, sortBorrowedLoans } from "@/lib/watch-rows";
-import { streamBookKeys } from "@/lib/query-keys";
+import { requestBookKeys, streamBookKeys } from "@/lib/query-keys";
 import {
   inferredLens,
   selectionMatchesRow,
@@ -103,6 +103,7 @@ export function WatchApp() {
 
   useDrainPager(connected && registryComplete, lender);
   useDrainPager(connected && registryComplete, borrower);
+  useDrainPager(connected && registryComplete, requestBook);
   useDrainPager(connected && registryComplete, streams);
 
   const lenderData = useLastKnown(lender, account);
@@ -132,8 +133,7 @@ export function WatchApp() {
   const positionBook = toBook(lender);
   const loanBook = toBook(borrower);
   const streamBook = toBook(streams);
-  const requestBookComplete =
-    requestBook.status === "ready" && requestBook.data.complete && !requestBook.data.incomplete;
+  const requestBookComplete = requestBook.status === "ready" && requestBook.data.complete;
   const requestBookFailed = requestBook.status === "unavailable";
   const waitingRequests = requestBook.data?.requests ?? [];
   const loanBookWithWaiting = {
@@ -664,8 +664,11 @@ export function WatchApp() {
                 defaultSurfaceState === "STALE"
                   ? () => {
                       void streams.advancePin();
+                      void requestBook.advancePin();
                       void queryClient.invalidateQueries({
-                        predicate: (query) => query.queryKey[0] !== streamBookKeys.all[0],
+                        predicate: (query) =>
+                          query.queryKey[0] !== streamBookKeys.all[0] &&
+                          query.queryKey[0] !== requestBookKeys.all[0],
                       });
                     }
                   : undefined
@@ -696,8 +699,11 @@ export function WatchApp() {
                 wallSurface === "STALE"
                   ? () => {
                       void streams.advancePin();
+                      void requestBook.advancePin();
                       void queryClient.invalidateQueries({
-                        predicate: (query) => query.queryKey[0] !== streamBookKeys.all[0],
+                        predicate: (query) =>
+                          query.queryKey[0] !== streamBookKeys.all[0] &&
+                          query.queryKey[0] !== requestBookKeys.all[0],
                       });
                     }
                   : undefined

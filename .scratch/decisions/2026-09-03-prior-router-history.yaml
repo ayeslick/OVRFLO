@@ -1,0 +1,67 @@
+# Scratch decision record — schema: docs/maps/SCHEMAS.md §4
+summary_ref: "docs/plans/2026-08-22-001-refactor-denomination-switch-border-column-plan.md#cs1-u4"
+
+goal: >
+  Factory setLendingRouter records each outgoing nonzero router on
+  priorRouterCount / priorRouterAt. Your OVRFLO pages lending.router()
+  and every prior book so cancel stays reachable after a swap or a clear.
+
+state_keys_touched:
+  - query.request-book
+
+writers_readers:
+  - writes: src/OVRFLOFactory.sol
+  - writes: test/OVRFLOFactory.t.sol
+  - writes: artifacts/tests/storage-layout/OVRFLOFactory.json
+  - writes: web/lib/generated.ts
+  - writes: web/lib/protocol/request-book.ts
+  - writes: web/hooks/useRequestBook.ts
+  - writes: web/components/watch/WaitingRequestDetail.tsx
+  - reads: web/lib/watch-lendings.ts
+
+trust_domains:
+  - fact: Current router from lending.router()
+    domain: on-chain
+    moved_from: null
+  - fact: Prior routers from factory.priorRouterAt
+    domain: on-chain
+    moved_from: null
+  - fact: Resting rows from requestCount / requestAt / requests(id)
+    domain: on-chain
+    moved_from: null
+
+rejected_alternatives:
+  - option: Require book.lending() == lending in setLendingRouter
+    why_not: >
+      The book already refuses post and execute unless it is the current
+      router. The plan allows any nonzero Safe-selected address. Two
+      factory tests set an EOA as router.
+  - option: Store a factory currentRouter pointer
+    why_not: lending.router() is the only slot execute and post read.
+  - option: Put books in lendings[]
+    why_not: KD14. The factory does not register the book.
+
+invariants_held:
+  - invariant: cancel never reads the router slot.
+    how: OVRFLORequestBook.cancel is unchanged.
+  - invariant: executeAllowed is lending.router() == row.book.
+    how: WaitingRequestDetail keeps that compare. No current-market gate.
+  - invariant: A zero router does not hide prior books.
+    how: resolveBookTargets unions router and priorRouterAt. It skips a zero address, not the lending.
+
+risks:
+  - risk: replaceLending alone leaves oldLending.router() set, so execute still fills.
+    residual: >
+      Runbook calls setLendingRouter(oldLending, 0). That appends the old
+      book and stops fill. Plan line 204 stays wrong in the plan file.
+  - risk: A prior address that is not a book fails book.lending().
+    residual: >
+      Closed by 2026-09-03-request-book-pin-and-code.yaml. getCode skips
+      an address with no code. A contract whose lending() call fails
+      stays unavailable.
+
+diff_hints:
+  - path: src/OVRFLOFactory.sol
+    why: priorRouter mappings and _recordPriorRouter in setLendingRouter.
+  - path: web/lib/protocol/request-book.ts
+    why: Union current router with priorRouterAt. Dedupe by book address.

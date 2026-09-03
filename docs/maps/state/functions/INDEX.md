@@ -23,10 +23,10 @@ on-chain contract state. This index does not cover, replace, or summarise it.
 | | Count |
 |---|---|
 | Key files | 6 |
-| Keys | 68 |
-| Modules | 109 |
-| `on-chain` keys | 23 |
-| `projection` keys | 2 |
+| Keys | 67 |
+| Modules | 107 |
+| `on-chain` keys | 24 |
+| `projection` keys | 0 |
 | `pure-client` keys | 43 |
 
 ## Trust-domain exposure by module
@@ -36,7 +36,6 @@ a `projection` count is a module where a fail-closed mistake can happen.
 
 | Module | on-chain | projection | pure-client |
 |---|---|---|---|
-| `web/app/activity/page.tsx` | 0 | 1 | 0 |
 | `web/app/assets/page.tsx` | 1 | 0 | 3 |
 | `web/app/borrow/page.tsx` | 0 | 0 | 2 |
 | `web/app/page.tsx` | 4 | 0 | 2 |
@@ -86,7 +85,7 @@ a `projection` count is a module where a fail-closed mistake can happen.
 | `web/components/watch/StreamLedgerCard.tsx` | 1 | 0 | 0 |
 | `web/components/watch/SuppliedDetail.tsx` | 3 | 0 | 5 |
 | `web/components/watch/Wall.tsx` | 5 | 0 | 7 |
-| `web/components/watch/WatchApp.tsx` | 2 | 1 | 4 |
+| `web/components/watch/WatchApp.tsx` | 2 | 0 | 4 |
 | `web/hooks/useAcknowledgment.ts` | 0 | 0 | 1 |
 | `web/hooks/useAllMarkets.ts` | 3 | 0 | 0 |
 | `web/hooks/useApprovalWriteFlows.ts` | 2 | 0 | 4 |
@@ -105,7 +104,7 @@ a `projection` count is a module where a fail-closed mistake can happen.
 | `web/hooks/useLending.ts` | 2 | 0 | 0 |
 | `web/hooks/useMarketSymbols.ts` | 3 | 0 | 0 |
 | `web/hooks/useOvrflos.ts` | 2 | 0 | 0 |
-| `web/hooks/usePortfolioActivity.ts` | 0 | 2 | 0 |
+| `web/hooks/useRequestBook.ts` | 1 | 0 | 0 |
 | `web/hooks/useStaleBalanceGuard.ts` | 0 | 0 | 1 |
 | `web/hooks/useStaleRecovery.ts` | 0 | 0 | 2 |
 | `web/hooks/useStreams.ts` | 3 | 0 | 0 |
@@ -121,10 +120,9 @@ a `projection` count is a module where a fail-closed mistake can happen.
 | `web/lib/claim-all.ts` | 1 | 0 | 0 |
 | `web/lib/composite-recovery.ts` | 0 | 0 | 1 |
 | `web/lib/disclosure.ts` | 0 | 0 | 1 |
-| `web/lib/discovery/portfolio-log-candidates.ts` | 0 | 2 | 0 |
 | `web/lib/flow-history.ts` | 0 | 0 | 1 |
 | `web/lib/freshness.ts` | 0 | 0 | 1 |
-| `web/lib/invalidate.ts` | 5 | 0 | 0 |
+| `web/lib/invalidate.ts` | 6 | 0 | 0 |
 | `web/lib/ladder.ts` | 2 | 0 | 1 |
 | `web/lib/ledger-card.ts` | 2 | 0 | 1 |
 | `web/lib/lending-math.ts` | 1 | 0 | 0 |
@@ -134,7 +132,7 @@ a `projection` count is a module where a fail-closed mistake can happen.
 | `web/lib/portfolio-matrix.ts` | 0 | 0 | 1 |
 | `web/lib/protocol-bootstrap.ts` | 1 | 0 | 0 |
 | `web/lib/protocol/streams.ts` | 1 | 0 | 0 |
-| `web/lib/query-keys.ts` | 4 | 0 | 0 |
+| `web/lib/query-keys.ts` | 5 | 0 | 0 |
 | `web/lib/query-resource-registry.ts` | 1 | 0 | 0 |
 | `web/lib/receipts.ts` | 0 | 0 | 1 |
 | `web/lib/refetch-notice.ts` | 0 | 0 | 1 |
@@ -147,12 +145,6 @@ a `projection` count is a module where a fail-closed mistake can happen.
 | `web/lib/watch-url.ts` | 0 | 0 | 1 |
 
 ## Modules
-
-### `web/app/activity/page.tsx`
-
-| Direction | Key | Trust domain | Role |
-|---|---|---|---|
-| reads | `projection.activity` | `projection` | list only; does not apply the portfolio matrix |
 
 ### `web/app/assets/page.tsx`
 
@@ -556,7 +548,6 @@ a `projection` count is a module where a fail-closed mistake can happen.
 | reads | `chain.stream-truth` | `on-chain` | R12 entry book + Streams lens (factory-wide lendings) |
 | reads | `chrome.disclosure` | `pure-client` | Default matrix vs Advanced wall |
 | reads | `chrome.surface-state` | `pure-client` | landing U12: watch wall |
-| reads | `projection.portfolio-candidates` | `projection` | does not route from these counts |
 | reads | `watch.portfolio-type` | `pure-client` | hub vs collection vs detail |
 
 ### `web/hooks/useAcknowledgment.ts`
@@ -690,12 +681,11 @@ a `projection` count is a module where a fail-closed mistake can happen.
 | writes | `chain.vault-registry` | `on-chain` | exposes the bootstrap vault list to the rest of the app |
 | writes | `chain.wagmi-reads` | `on-chain` | registry reads |
 
-### `web/hooks/usePortfolioActivity.ts`
+### `web/hooks/useRequestBook.ts`
 
 | Direction | Key | Trust domain | Role |
 |---|---|---|---|
-| writes | `projection.activity` | `projection` | TanStack query keyed by account, block range, lockup, vaults, and lendings |
-| reads | `projection.portfolio-candidates` | `projection` | activity rows from the same scan |
+| reads | `query.request-book` | `on-chain` | registers the factory query |
 
 ### `web/hooks/useStaleBalanceGuard.ts`
 
@@ -815,13 +805,6 @@ a `projection` count is a module where a fail-closed mistake can happen.
 |---|---|---|---|
 | writes | `chrome.disclosure` | `pure-client` | in-memory store; `setDisclosure` / `toggleDisclosure` |
 
-### `web/lib/discovery/portfolio-log-candidates.ts`
-
-| Direction | Key | Trust domain | Role |
-|---|---|---|---|
-| writes | `projection.activity` | `projection` | same scan as candidates; newest-first |
-| writes | `projection.portfolio-candidates` | `projection` | only `getLogs` owner for portfolio candidates |
-
 ### `web/lib/flow-history.ts`
 
 | Direction | Key | Trust domain | Role |
@@ -844,6 +827,7 @@ a `projection` count is a module where a fail-closed mistake can happen.
 | reads | `query.books.borrower` | `on-chain` | post-write invalidation after borrow / repay / close |
 | reads | `query.books.lender` | `on-chain` | post-write invalidation via `touchedResources` |
 | reads | `query.ladder` | `on-chain` | re-quote at every checkpoint and after supply / borrow |
+| reads | `query.request-book` | `on-chain` | post-write invalidation after post / execute / cancel |
 
 ### `web/lib/ladder.ts`
 
@@ -921,6 +905,7 @@ a `projection` count is a module where a fail-closed mistake can happen.
 | writes | `query.books.borrower` | `on-chain` | landing U6: `bookKeys.borrower` factory |
 | writes | `query.books.lender` | `on-chain` | landing U6: `bookKeys.lender` factory |
 | writes | `query.ladder` | `on-chain` | landing U6: `ladderKeys.market` factory |
+| writes | `query.request-book` | `on-chain` | `requestBookKeys.factory` |
 | writes | `query.usd.price` | `on-chain` | landing U6: `usdKeys.price` factory |
 
 ### `web/lib/query-resource-registry.ts`
@@ -1036,11 +1021,10 @@ full entry, including fail-closed guidance on `projection` keys.
 | `persist.drafts` | `pure-client` | `web/lib/storage.ts`<br>`web/lib/parse.ts` | `web/components/supply/SupplyFlow.tsx`<br>`web/components/borrow/BorrowFlow.tsx` | `docs/maps/state/keys/form-state.md` |
 | `persist.receipts` | `pure-client` | `web/lib/receipts.ts`<br>`web/components/supply/SupplyFlow.tsx`<br>`web/components/borrow/BorrowFlow.tsx` | `web/lib/receipts.ts`<br>`web/hooks/useStaleBalanceGuard.ts` | `docs/maps/state/keys/execution-state.md` |
 | `persist.step-evidence` | `pure-client` | `web/lib/step-evidence.ts`<br>`web/hooks/useTxQueue.ts` | `web/lib/composite-recovery.ts`<br>`web/lib/resume-contract.ts` | `docs/maps/state/keys/execution-state.md` |
-| `projection.activity` | `projection` | `web/lib/discovery/portfolio-log-candidates.ts`<br>`web/hooks/usePortfolioActivity.ts` | `web/app/activity/page.tsx` | `docs/maps/state/keys/projection.md` |
-| `projection.portfolio-candidates` | `projection` | `web/lib/discovery/portfolio-log-candidates.ts` | `web/hooks/usePortfolioActivity.ts`<br>`web/components/watch/WatchApp.tsx` | `docs/maps/state/keys/projection.md` |
 | `query.books.borrower` | `on-chain` | `web/lib/query-keys.ts` | `web/hooks/useBorrowerBook.ts`<br>`web/lib/invalidate.ts` | `docs/maps/state/keys/chain-reads.md` |
 | `query.books.lender` | `on-chain` | `web/lib/query-keys.ts` | `web/hooks/useLenderBook.ts`<br>`web/lib/invalidate.ts` | `docs/maps/state/keys/chain-reads.md` |
 | `query.ladder` | `on-chain` | `web/lib/query-keys.ts` | `web/hooks/useLadder.ts`<br>`web/lib/invalidate.ts` | `docs/maps/state/keys/chain-reads.md` |
+| `query.request-book` | `on-chain` | `web/lib/query-keys.ts` | `web/hooks/useRequestBook.ts`<br>`web/lib/invalidate.ts` | `docs/maps/state/keys/chain-reads.md` |
 | `query.usd.price` | `on-chain` | `web/lib/query-keys.ts` | `web/hooks/useUsdPrice.ts` | `docs/maps/state/keys/chain-reads.md` |
 | `queue.rows` | `pure-client` | `web/hooks/useTxQueue.ts` | `web/hooks/useTxQueue.ts`<br>`web/hooks/useCreateGraphQueue.ts`<br>`web/lib/actions/claim.ts` | `docs/maps/state/keys/execution-state.md` |
 | `queue.running` | `pure-client` | `web/hooks/useTxQueue.ts` | `web/hooks/useTxQueue.ts`<br>`web/components/kit/ActionButton.tsx` | `docs/maps/state/keys/execution-state.md` |

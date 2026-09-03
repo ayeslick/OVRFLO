@@ -156,7 +156,9 @@ The factory embeds no child creation code (EIP-170). Any EOA can `new OVRFLO(...
 
 **`registerLending`** checks: core is a known vault, no lending yet for that vault, `lending.factory() == this`, `lending.owner() == this`, `lending.sablier() == vault.sablierLL()`, `lending.sablier() == factory.ovrfloStream()`. The lending constructor already called `_transferOwnership(factory_)` and pulled treasury/ovrfloToken from `ovrfloInfo(core)`. Registration does not re-check `stream.factory()` / `stream.admin()` / `comptroller.admin()` — those live on `setOvrfloStream` only.
 
-**`replaceLending`** admits a new market for a vault that already has one. The old market stays in `lendingToOvrflo` and `lendings` so admin and repay/close/claim still reach it. The reserve is not replaceable.
+**`replaceLending`** admits a new market for a vault that already has one. The old market stays in `lendingToOvrflo` and `lendings` so admin and repay/close/claim still reach it. The reserve is not replaceable. `replaceLending` does not write `oldLending.router()`. After the swap, the Safe calls `setLendingRouter` on the new market, then `setLendingRouter(oldLending, address(0))` so the old book stops filling.
+
+**`setLendingRouter`** writes `lending.router()` and, when the outgoing slot is nonzero and differs from the new value, appends that outgoing address once to `priorRouterAt`. The list is history, not admission. The factory does not check `book.lending()`. Your OVRFLO pages `lending.router()` and every prior book.
 
 Deploy order:
 

@@ -47,7 +47,7 @@ export function WaitingRequestDetail({
   });
   const { actionTx } = useApprovalWriteFlows(
     account,
-    market ? { ...market, requestBook: request.book } : [],
+    market ? { ...market, lending: request.lending, requestBook: request.book } : [],
   );
   const pending = actionTx.isConfirming;
   const stale = !signingAllowed;

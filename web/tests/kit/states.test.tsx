@@ -31,10 +31,7 @@ describe("kit labels, roles, and state classes", () => {
       "href",
       "/create/",
     );
-    expect(within(nav as HTMLElement).getByRole("link", { name: "Activity" })).toHaveAttribute(
-      "href",
-      "/activity/",
-    );
+    expect(within(nav as HTMLElement).queryByRole("link", { name: "Activity" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "PORTFOLIO" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Dashboard" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Markets" })).not.toBeInTheDocument();

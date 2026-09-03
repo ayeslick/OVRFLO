@@ -367,13 +367,11 @@ button.kit-type-card {
   letter-spacing: -0.025em;
 }
 
-.default-hub-types,
-.default-hub-lower {
+.default-hub-types {
   display: grid;
   gap: var(--space-md);
 }
 
-.default-hub-activity,
 .default-hub-help {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -382,13 +380,11 @@ button.kit-type-card {
   box-shadow: var(--shadow-card);
 }
 
-.default-hub-activity h3,
 .default-hub-help h3 {
   margin: 0 0 var(--space-sm);
   font-size: 20px;
 }
 
-.default-hub-activity p,
 .default-hub-help p {
   margin: 0 0 var(--space-sm);
   color: var(--muted);
@@ -946,7 +942,6 @@ button.kit-type-card {
 }
 
 .kit-shell[data-disclosure="advanced"] .kit-card,
-.kit-shell[data-disclosure="advanced"] .default-hub-activity,
 .kit-shell[data-disclosure="advanced"] .default-hub-help {
   padding: var(--space-md);
 }
@@ -958,10 +953,6 @@ button.kit-type-card {
 
   .default-hub-types {
     grid-template-columns: 1fr 1fr;
-  }
-
-  .default-hub-lower {
-    grid-template-columns: 2fr 1fr;
   }
 }
 

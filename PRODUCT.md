@@ -34,7 +34,7 @@ The broader OVRFLO cycle lets a Pendle PT holder make its fixed discount immedia
 
 ## Operating Context
 
-The primary product is a wallet-connected web application backed by Ethereum-compatible smart contracts. The Markets app's Default home is `Your OVRFLO`. Navigation is `Your OVRFLO`, `Create`, and `Activity` on `/`, `/create/`, and `/activity/`. Create offers two position types: Self-Repaying Loan at `/borrow/` and Fixed Return at `/supply/`. Advanced is a disclosure level over the current destination. It does not add a second home, a Dashboard, or a Markets destination. Wallet and network stay visible and secondary. A wallet confirmed empty of positions, loans, and streams lands on a guided first run, then the Create chooser.
+The primary product is a wallet-connected web application backed by Ethereum-compatible smart contracts. The Markets app's Default home is `Your OVRFLO`. Navigation is `Your OVRFLO` and `Create` on `/` and `/create/`. Create offers two position types: Self-Repaying Loan at `/borrow/` and Fixed Return at `/supply/`. Advanced is a disclosure level over the current destination. It does not add a second home, a Dashboard, a Markets destination, or an Activity destination. Wallet and network stay visible and secondary. A wallet confirmed empty of positions, loans, and streams lands on a guided first run, then the Create chooser.
 
 Core workflows include:
 
@@ -45,7 +45,7 @@ Core workflows include:
 - wrapping and unwrapping the column underlying one-to-one with ovrfloToken on `OVRFLOReserve`;
 - claiming PT against ovrfloToken after series maturity.
 
-Users evaluate amounts, APR, maturity, stream value, loan obligation, fees, residual value, wallet state, approvals, and transaction status. The Markets app shows amounts in USD by default for the selected column's underlying (wstETH, rETH, sUSDe, or any later underlying). The customer can switch and see the same amounts in token units. Each underlying has its own USD quote. The Markets app must not show another column's dollars on this position. If the USD quote is missing or stale, the Markets app shows token units and does not invent a dollar figure. Transactions stay denominated in token units. USD never enters calldata. There is no indexer backend. Stream discovery is still a two-step browser verified-log scan: Transfer logs yield a candidate set, then ownership and every action-critical fact are verified by direct on-chain reads. Candidates never gate.
+Users evaluate amounts, APR, maturity, stream value, loan obligation, fees, residual value, wallet state, approvals, and transaction status. The Markets app shows amounts in USD by default for the selected column's underlying (wstETH, rETH, sUSDe, or any later underlying). The customer can switch and see the same amounts in token units. Each underlying has its own USD quote. The Markets app must not show another column's dollars on this position. If the USD quote is missing or stale, the Markets app shows token units and does not invent a dollar figure. Transactions stay denominated in token units. USD never enters calldata. There is no indexer backend. Held streams, loans, supplies, and resting requests come from on-chain enumerable lists. The browser does not scan logs for portfolio history.
 
 ## Capabilities and Constraints
 

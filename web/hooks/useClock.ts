@@ -16,6 +16,11 @@ let snapshot: ClockSnapshot = {
   localNow: 0n,
   skew: 0n,
 };
+/** Cached SSR snapshot. React 19 loops if getServerSnapshot allocates. */
+const SERVER_SNAPSHOT: ClockSnapshot = {
+  localNow: 0n,
+  skew: 0n,
+};
 let intervalId: ReturnType<typeof setInterval> | null = null;
 const listeners = new Set<() => void>();
 
@@ -53,7 +58,7 @@ function getSnapshot(): ClockSnapshot {
 }
 
 function getServerSnapshot(): ClockSnapshot {
-  return { localNow: 0n, skew: 0n };
+  return SERVER_SNAPSHOT;
 }
 
 export function setClockSkew(skew: bigint) {
@@ -68,6 +73,10 @@ export function clockSubscriberCount() {
 
 export function clockIsArmed() {
   return intervalId !== null;
+}
+
+export function clockServerSnapshotForTests(): ClockSnapshot {
+  return getServerSnapshot();
 }
 
 export function resetClockStoreForTests() {

@@ -4,13 +4,12 @@
 
 **Incumbent code:** `web/app/page.tsx` mounts `WatchApp`. Default home is
 hub / collection / detail / empty / incomplete from complete hydration.
-Advanced disclosure keeps the role wall (`Wall`, details). Activity lives at
-`/activity/` and does not use the portfolio matrix.
+Advanced disclosure keeps the role wall (`Wall`, details).
 
-**Purpose of the region.** Home for a connected wallet. After the bounded scan
-and full hydration complete, Your OVRFLO shows only the surface the count/type
-matrix justifies: empty plus Create, one identity's detail, one type's
-collection, or a mixed hub. Waiting and completed positions stay reachable.
+**Purpose of the region.** Home for a connected wallet. After full hydration
+completes, Your OVRFLO shows only the surface the count/type matrix
+justifies: empty plus Create, one identity's detail, one type's collection,
+or a mixed hub. Waiting and completed positions stay reachable.
 Actions live on the entities that own them. There is no aggregate attention
 strip.
 
@@ -18,7 +17,7 @@ strip.
 zero loans and Fixed Returns plus a complete stream book is `UI-WATCH-EMPTY`,
 not first-run. Write checkpoints, SETTLEMENT trace, and receipts are
 `review.md`. Borrow / Supply / Assets flows launch from Create and from
-`UI-SHELL-NAV`. `/activity/` is this region and does not apply the matrix.
+`UI-SHELL-NAV`.
 
 **Entry (R12 / KD16).** After connect: incomplete scan stays on
 `UI-WATCH-INCOMPLETE` and never writes matrix query params from a provisional
@@ -67,16 +66,6 @@ stripped, then the matrix applies. Stream inventory stays Advanced density on
 - **Action.** A row writes that identity and opens detail. Sort does not change counts or hide rows.
 - **Copy rules.** Status stays meaningful (waiting, working, active, completed). Retired-market rows carry `retired market`.
 - **Data authority.** `on-chain` for rows. Sort is `pure-client` and is not a URL key.
-
-## `UI-WATCH-ACTIVITY`
-
-- **ID.** `UI-WATCH-ACTIVITY`
-- **Purpose.** List chain-confirmed Deposited, Borrowed, and Supplied events newest first.
-- **Visible when.** The path is `/activity/`. The portfolio matrix does not apply.
-- **States.** `incomplete` while the bounded scan is partial or failed, and while market discovery is not ready. `empty` only after the scan completes with zero rows. `ready` with newest-first rows. Wallet rejection is not a row.
-- **Action.** None. Rows are display data.
-- **Copy rules.** Label partial history `INCOMPLETE`. Empty copy only after a complete scan. Do not treat Transfers as activity.
-- **Data authority.** `projection` for log rows. Completeness is distinct from empty. Rows never gate a write.
 
 ## `UI-WATCH-RETIRED`
 

@@ -94,6 +94,7 @@ contract OVRFLORequestBookTest is LendingMockFixture {
         assertEq(lending.borrowerLoanCount(HUMAN), 1);
         assertEq(lending.borrowerLoanAt(HUMAN, 0), 1);
         assertEq(lending.borrowerLoanCount(address(book)), 0);
+        assertEq(book.requestCount(HUMAN), 0);
 
         sablier.setWithdrawable(STREAM_ONE, 5.1 ether);
         lending.close(1);
@@ -118,6 +119,8 @@ contract OVRFLORequestBookTest is LendingMockFixture {
         assertEq(streamId, STREAM_ONE);
         assertEq(sablier.ownerOf(STREAM_ONE), address(book));
         assertEq(ovrfloToken.balanceOf(HUMAN), 0);
+        assertEq(book.requestCount(HUMAN), 1);
+        assertEq(book.requestAt(HUMAN, 0), requestId);
 
         _supply(LENDER, 10 ether, APR);
 
@@ -134,6 +137,7 @@ contract OVRFLORequestBookTest is LendingMockFixture {
         assertEq(sablier.ownerOf(STREAM_ONE), address(lending));
         assertEq(ovrfloToken.balanceOf(HUMAN), 5 ether);
         assertEq(ovrfloToken.balanceOf(address(book)), 0);
+        assertEq(book.requestCount(HUMAN), 0);
     }
 
     function test_Execute_RetiredRouterRevertsAndCancelReturnsStream() public {
@@ -159,6 +163,7 @@ contract OVRFLORequestBookTest is LendingMockFixture {
         assertEq(sablier.ownerOf(STREAM_ONE), HUMAN);
         (address borrower,,,,,) = book.requests(requestId);
         assertEq(borrower, address(0));
+        assertEq(book.requestCount(HUMAN), 0);
     }
 
     function test_Execute_CheaperTickDepthDoesNotFill() public {
@@ -179,6 +184,8 @@ contract OVRFLORequestBookTest is LendingMockFixture {
         assertEq(sablier.ownerOf(STREAM_ONE), address(book));
         assertEq(ovrfloToken.balanceOf(HUMAN), 0);
         assertEq(lending.borrowerLoanCount(HUMAN), 0);
+        assertEq(book.requestCount(HUMAN), 1);
+        assertEq(book.requestAt(HUMAN, 0), requestId);
     }
 
     function test_Cancel_NonBorrowerRevertsAndBorrowerRegainsStream() public {
@@ -193,6 +200,7 @@ contract OVRFLORequestBookTest is LendingMockFixture {
         vm.prank(HUMAN);
         book.cancel(requestId);
         assertEq(sablier.ownerOf(STREAM_ONE), HUMAN);
+        assertEq(book.requestCount(HUMAN), 0);
     }
 
     function test_Post_OnBehalfOfIsHumanNeverTheBook() public {
@@ -207,6 +215,7 @@ contract OVRFLORequestBookTest is LendingMockFixture {
         assertEq(lending.borrowerLoanCount(address(book)), 0);
         assertEq(ovrfloToken.balanceOf(address(book)), 0);
         assertEq(ovrfloToken.balanceOf(HUMAN), 5 ether);
+        assertEq(book.requestCount(HUMAN), 0);
     }
 
     function test_Post_TargetAboveRemainingFaceFillsAtLivePriceCap() public {
@@ -225,6 +234,7 @@ contract OVRFLORequestBookTest is LendingMockFixture {
         assertEq(ovrfloToken.balanceOf(HUMAN), 10 ether);
         (address resting,,,,,) = book.requests(1);
         assertEq(resting, address(0));
+        assertEq(book.requestCount(HUMAN), 0);
     }
 
     function test_Execute_DoesNotDrawEscrowedStream() public {
@@ -383,6 +393,32 @@ contract OVRFLORequestBookTest is LendingMockFixture {
     function test_Execute_MissingRequestReverts() public {
         vm.expectRevert(abi.encodeWithSelector(OVRFLORequestBook.RequestMissing.selector, 1));
         book.execute(1);
+    }
+
+    function test_RequestList_CancelCompactsAndLeavesTheOtherResting() public {
+        uint256 streamTwo = 2;
+        _createBookStream(STREAM_ONE, HUMAN, 10.2 ether);
+        _createBookStream(streamTwo, HUMAN, 10.2 ether);
+
+        vm.startPrank(HUMAN);
+        uint256 first = book.post(STREAM_ONE, MARKET, APR, 5 ether, 5 ether);
+        uint256 second = book.post(streamTwo, MARKET, APR, 5 ether, 5 ether);
+        vm.stopPrank();
+
+        assertEq(book.requestCount(HUMAN), 2);
+        assertEq(book.requestAt(HUMAN, 0), first);
+        assertEq(book.requestAt(HUMAN, 1), second);
+
+        vm.prank(HUMAN);
+        book.cancel(first);
+
+        assertEq(book.requestCount(HUMAN), 1);
+        assertEq(book.requestAt(HUMAN, 0), second);
+        assertEq(book.requestAt(HUMAN, 1), 0);
+        (address remaining,,,,,) = book.requests(second);
+        assertEq(remaining, HUMAN);
+        (address gone,,,,,) = book.requests(first);
+        assertEq(gone, address(0));
     }
 
     function _createBookStream(uint256 streamId, address owner, uint128 deposited) internal {

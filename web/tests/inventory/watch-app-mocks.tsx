@@ -103,6 +103,13 @@ vi.mock("@/hooks/useStreams", () => ({
   }),
 }));
 
+vi.mock("@/hooks/useRequestBook", () => ({
+  useRequestBook: () => ({
+    ...mockBookOutcome("ready", { requests: [] }),
+    advancePin: async () => undefined,
+  }),
+}));
+
 vi.mock("@/hooks/useUsdPrice", () => ({
   useUsdPrice: () => unavailableOutcome([readFailure("useUsdPrice", "transport", "usd down")]),
 }));

@@ -32,12 +32,6 @@ Feature: Watch surface
     Then I see the Your OVRFLO hub
     And the URL has no matrix query
 
-  @UI-WATCH-ACTIVITY
-  Scenario: Activity lists on /activity/ and does not apply the portfolio matrix
-    Given I am on the activity page
-    Then I see the activity list
-    And the URL has no matrix query
-
   @UI-WATCH-WALL
   Scenario: Happy path — borrowed lens opens a loan detail in place
     When I select the "BORROWED" lens

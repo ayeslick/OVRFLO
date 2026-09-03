@@ -513,6 +513,16 @@ export const ovrfloFactoryAbi = [
   },
   {
     type: 'function',
+    inputs: [
+      { name: 'lending', internalType: 'address', type: 'address' },
+      { name: 'router', internalType: 'address', type: 'address' },
+    ],
+    name: 'isPriorRouter',
+    outputs: [{ name: 'listed', internalType: 'bool', type: 'bool' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
     inputs: [],
     name: 'lendingCount',
     outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
@@ -608,6 +618,23 @@ export const ovrfloFactoryAbi = [
     name: 'prepareOracle',
     outputs: [],
     stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'lending', internalType: 'address', type: 'address' },
+      { name: 'index', internalType: 'uint256', type: 'uint256' },
+    ],
+    name: 'priorRouterAt',
+    outputs: [{ name: 'router', internalType: 'address', type: 'address' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: 'lending', internalType: 'address', type: 'address' }],
+    name: 'priorRouterCount',
+    outputs: [{ name: 'count', internalType: 'uint256', type: 'uint256' }],
+    stateMutability: 'view',
   },
   {
     type: 'function',
@@ -2123,6 +2150,23 @@ export const ovrfloRequestBookAbi = [
     name: 'post',
     outputs: [{ name: 'requestId', internalType: 'uint256', type: 'uint256' }],
     stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'borrower', internalType: 'address', type: 'address' },
+      { name: 'index', internalType: 'uint256', type: 'uint256' },
+    ],
+    name: 'requestAt',
+    outputs: [{ name: 'requestId', internalType: 'uint256', type: 'uint256' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: 'borrower', internalType: 'address', type: 'address' }],
+    name: 'requestCount',
+    outputs: [{ name: 'count', internalType: 'uint256', type: 'uint256' }],
+    stateMutability: 'view',
   },
   {
     type: 'function',

@@ -39,8 +39,8 @@ export const metadata: Metadata = {
 const DIRECTION_CONTRACT = `<!--
 THESIS: A calm path through one economic choice at a time — exact consequences before signing.
 OWN-WORLD: Cool near-white canvas, white bordered cards, deep navy text, cobalt actions; Schibsted Grotesk; Default and Advanced share one token system.
-STORY: Default home is Your OVRFLO. Create and Activity are the other destinations. Advanced is disclosure, not a second home.
-FIRST VIEWPORT: Your OVRFLO, Create, and Activity. Wallet and network stay secondary.
+STORY: Default home is Your OVRFLO. Create is the other destination. Advanced is disclosure, not a second home.
+FIRST VIEWPORT: Your OVRFLO and Create. Wallet and network stay secondary.
 FINISH: DESIGN.md is normative; boards are acceptance evidence.
 -->`;
 

@@ -270,14 +270,6 @@ Then("I see the Your OVRFLO hub", async ({ page }) => {
   await expect(ui(page, "UI-WATCH-HUB")).toBeVisible({ timeout: 15_000 });
 });
 
-Then("I see the activity list", async ({ page }) => {
-  await expect(ui(page, "UI-WATCH-ACTIVITY")).toBeVisible({ timeout: 15_000 });
-});
-
-Given("I am on the activity page", async ({ page }) => {
-  await page.goto("/activity/");
-});
-
 Then("I see a confirmed action receipt", async ({ page }) => {
   await expect(
     page.locator('[data-state="confirmed"], [data-surface-state="CONFIRMED"]').first(),

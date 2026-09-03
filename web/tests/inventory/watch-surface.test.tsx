@@ -37,7 +37,7 @@ describe("inventory — entry, lenses, watch index, first-run, degraded, narrow 
     const nav = document.querySelector('[data-ui="UI-SHELL-NAV"]');
     expect(nav?.textContent).toContain("Your OVRFLO");
     expect(nav?.textContent).toContain("Create");
-    expect(nav?.textContent).toContain("Activity");
+    expect(nav?.textContent).not.toContain("Activity");
     expect(screen.getByText(/Your OVRFLO: positions/i)).toBeInTheDocument();
     expect(document.querySelector("[data-ui='UI-WATCH-ENTRY-DISCONNECTED']")).not.toBeNull();
     expect(screen.queryByText(/TVL/i)).not.toBeInTheDocument();

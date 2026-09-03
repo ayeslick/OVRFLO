@@ -1,0 +1,67 @@
+# Scratch decision record — schema: docs/maps/SCHEMAS.md §4
+summary_ref: "docs/plans/2026-08-22-001-refactor-denomination-switch-border-column-plan.md#cs4-u2"
+
+goal: >
+  Remove the Activity page and the in-browser portfolio log scanner.
+  Your OVRFLO already reads live books on chain. Activity is not needed
+  now. Do not leave a stub route or a nav link.
+
+state_keys_touched:
+  - projection.activity
+  - projection.portfolio-candidates
+
+writers_readers:
+  - writes: web/app/activity/page.tsx
+  - writes: web/app/activity/layout.tsx
+  - writes: web/hooks/usePortfolioActivity.ts
+  - writes: web/lib/discovery/portfolio-log-candidates.ts
+  - writes: web/lib/query-keys.ts
+  - writes: web/components/kit/Shell.tsx
+  - writes: web/components/kit/DefaultHub.tsx
+  - writes: web/scripts/check-banned-patterns.sh
+  - writes: docs/maps/state/keys/projection.md
+  - writes: docs/maps/ui/watch.md
+  - writes: docs/maps/ui/shell.md
+  - reads: web/lib/deployment.ts
+
+trust_domains:
+  - fact: Chain-confirmed Deposited, Borrowed, and Supplied history
+    domain: projection
+    moved_from: projection
+  - fact: Log-derived stream, loan, and supply candidate ids
+    domain: projection
+    moved_from: projection
+
+rejected_alternatives:
+  - option: Stub /activity/ and hide the nav link
+    why_not: >
+      A hidden route is still a product surface. The user asked to
+      remove Activity and every associated path.
+  - option: Keep the browser getLogs scanner for a later index
+    why_not: >
+      Activity was the only consumer. A live book already uses
+      requestCount / requestAt. A future Activity page can read an
+      offline index.
+
+invariants_held:
+  - invariant: /activity/ is not a shipped destination.
+    how: Delete the page. Remove the Shell and hub links.
+  - invariant: Browser getLogs is not a portfolio reader.
+    how: Delete portfolio-log-candidates.ts. Only deployment.ts may call getLogs.
+  - invariant: Deployment-anchor verification still uses getLogs.
+    how: Keep web/lib/deployment.ts on the banned-pattern allowlist.
+
+risks:
+  - risk: A later agent re-adds a browser historical scan.
+    residual: >
+      check-banned-patterns.sh fails any getLogs outside deployment.ts.
+  - risk: Live maps still name Activity.
+    residual: Update DESIGN.md, PRODUCT.md, shell, watch, view-state, projection.
+
+diff_hints:
+  - path: web/components/kit/Shell.tsx
+    why: NAV has Your OVRFLO and Create only.
+  - path: web/scripts/check-banned-patterns.sh
+    why: Only deployment.ts may call getLogs.
+  - path: docs/maps/state/keys/projection.md
+    why: Retire projection.activity and projection.portfolio-candidates.
