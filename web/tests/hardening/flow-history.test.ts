@@ -23,6 +23,7 @@ describe("flow decision history", () => {
     expect(parseFlowDecision("confirmed")).toBe("review");
     expect(parseFlowDecision("approve")).toBe("review");
     expect(parseFlowDecision("acknowledge")).toBe("review");
+    expect(writeFlowDecisionSearch("?step=sign", "review")).toBe("?step=review");
   });
 
   it("round-trips decision stages and preserves sibling search params", () => {

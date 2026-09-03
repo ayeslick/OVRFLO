@@ -9,6 +9,7 @@ import { acceptCreateAttempt } from "@/lib/create-intent";
 import {
   autoFillChoices,
   firstRequiredOrBlockingStage,
+  previousVisibleStage,
   stageVisibility,
   type CreateChoices,
   type CreateStage,
@@ -102,6 +103,7 @@ export function BorrowFlow() {
   const [allRatesOpen, setAllRatesOpen] = useState(false);
   const [feeOpen, setFeeOpen] = useState(false);
   const [frozen, setFrozen] = useState<BorrowQuoteSnapshot | null>(null);
+  const [attemptId, setAttemptId] = useState<string | null>(null);
   const [draftReady, setDraftReady] = useState(false);
   const [bodyKey, setBodyKey] = useState(0);
 
@@ -326,6 +328,12 @@ export function BorrowFlow() {
   const repayDates =
     quote && schedule ? fullRepayCoverPreview(schedule, quote.obligation, now) : { current: cover, next: cover };
 
+  useEffect(() => {
+    if (stage !== "review" || frozen !== null) return;
+    if (!quote || emptyTick || amountError || preview.isStale || quote.fill <= 0n) return;
+    setFrozen(snapshotQuote(quote));
+  }, [amountError, emptyTick, frozen, preview.isStale, quote, stage]);
+
   const drifted = Boolean(frozen && quote && quoteDrift(frozen, quote));
   const receipt = parseBorrowed(actionTx.receipt?.logs, lending);
   const checkpoint = deriveCheckpoint({
@@ -397,7 +405,7 @@ export function BorrowFlow() {
   function onReview() {
     if (!quote || emptyTick || amountError || preview.isStale || quote.fill <= 0n) return;
     setFrozen(snapshotQuote(quote));
-    acceptCreateAttempt({
+    const attempt = acceptCreateAttempt({
       positionType: "loan",
       disclosure,
       context: createContext,
@@ -406,6 +414,7 @@ export function BorrowFlow() {
       amount: amountRaw,
       aprBps: selectedAprBps ?? undefined,
     });
+    setAttemptId(attempt.graphId);
     setStage("review");
   }
 
@@ -494,7 +503,7 @@ export function BorrowFlow() {
       status={<StatusLine status={freshness.kind} asOf={asOf} usdUnavailable={usdUnavailable} />}
     >
       <ModalErrorBoundary control="UI-REVIEW-ERROR-BOUNDARY" onReset={() => setBodyKey((key) => key + 1)}>
-        <div className="borrow-flow" data-split={stage === "review" ? "true" : "false"} key={bodyKey}>
+        <div className="borrow-flow" data-split={stage === "review" ? "true" : "false"} data-graph-id={attemptId ?? undefined} key={bodyKey}>
           <SurfaceState
             state={surface}
             topology="borrow"
@@ -530,6 +539,16 @@ export function BorrowFlow() {
                 outcomeId: selectedAprBps === null ? undefined : formatAprBps(selectedAprBps),
               }}
               compact={compact}
+              onBack={
+                previousVisibleStage(stage, visibility)
+                  ? () => {
+                      const previous = previousVisibleStage(stage, visibility);
+                      if (!previous) return;
+                      setFrozen(null);
+                      setStage(previous);
+                    }
+                  : undefined
+              }
             >
               {stage === "source" ? (
                 <>

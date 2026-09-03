@@ -14,6 +14,7 @@ import { useAllMarkets } from "@/hooks/useAllMarkets";
 import { useBorrowerBook } from "@/hooks/useBorrowerBook";
 import { useClockHydrationSafe } from "@/hooks/useClock";
 import { sourceFromOutcome, useFreshness } from "@/hooks/useFreshness";
+import { useFixedReturnTerms } from "@/hooks/useFixedReturnTerms";
 import { useLenderBook } from "@/hooks/useLenderBook";
 import { symbolFor, useMarketSymbols } from "@/hooks/useMarketSymbols";
 import { useOvrflos } from "@/hooks/useOvrflos";
@@ -231,6 +232,12 @@ export function WatchApp() {
   const selectedPositionMarket = selectedPosition
     ? marketForLending(markets.markets, selectedPosition.lending, selectedPosition.market)
     : null;
+  const lockup = ovrflos.status === "ready" ? ovrflos.stream : null;
+  const loanTerms = useFixedReturnTerms(
+    selectedPosition?.lending ?? null,
+    lockup,
+    selectedPosition?.pairs ?? [],
+  );
   const selectedLoanFromUrl =
     url.selection.kind === "loan"
       ? loans.find((row) => selectionMatchesRow(url.selection, "loan", row))
@@ -364,6 +371,7 @@ export function WatchApp() {
           usdAvailable={usdAvailable}
           usdText={usdTextFor(positionClaimableSafe(selectedPosition), usdQuote)}
           retired={isRetiredLending(markets.markets, selectedPosition.lending)}
+          loanTerms={loanTerms}
         />
       ) : null}
       {selectedLoan && (selectedLoan.closed || selectedLoan.outstanding === 0n) ? (

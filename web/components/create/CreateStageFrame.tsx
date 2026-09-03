@@ -20,6 +20,7 @@ export function CreateStageFrame({
   choices,
   labels,
   compact,
+  onBack,
   children,
 }: {
   stage: CreateStage;
@@ -27,12 +28,19 @@ export function CreateStageFrame({
   choices: CreateChoices;
   labels: Partial<Record<keyof CreateChoices, string>>;
   compact: boolean;
+  onBack?: () => void;
   children: ReactNode;
 }) {
   const headingRef = useRef<HTMLHeadingElement>(null);
   const openerRef = useRef<HTMLElement | null>(null);
+  const backPendingRef = useRef(false);
 
   useEffect(() => {
+    if (backPendingRef.current) {
+      backPendingRef.current = false;
+      restoreOpenerFocus(openerRef.current);
+      return;
+    }
     openerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     headingRef.current?.focus();
   }, [stage]);
@@ -51,6 +59,18 @@ export function CreateStageFrame({
             </li>
           ))}
         </ol>
+      ) : null}
+      {onBack ? (
+        <button
+          type="button"
+          className="create-stage-back"
+          onClick={() => {
+            backPendingRef.current = true;
+            onBack();
+          }}
+        >
+          Back
+        </button>
       ) : null}
       <section className="create-stage-decision">
         <h2 ref={headingRef} tabIndex={-1} className="create-stage-heading">

@@ -13,5 +13,6 @@ describe("Default create disclosure", () => {
     expect(container.querySelector("[data-type=loan]")).toHaveAttribute("href", "/borrow/");
     expect(container.querySelector("[data-type=fixed]")).toHaveAttribute("href", "/supply/");
     expect(cards?.textContent ?? "").not.toMatch(FORBIDDEN);
+    expect(container.textContent ?? "").not.toMatch(FORBIDDEN);
   });
 });

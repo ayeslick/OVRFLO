@@ -357,6 +357,18 @@ describe("Facts and review", () => {
     );
     expect(screen.getByRole("button", { name: "← CHANGE MARKET" })).toBeInTheDocument();
   });
+
+  it("uses CHANGE TERM on Default", () => {
+    render(
+      <MarketContext
+        underlyingSymbol="wstETH"
+        expiry={EXPIRY}
+        onChange={() => undefined}
+        disclosure="default"
+      />,
+    );
+    expect(screen.getByRole("button", { name: "← CHANGE TERM" })).toBeInTheDocument();
+  });
 });
 
 describe("supplyTrace skip-without-renumber", () => {

@@ -66,8 +66,8 @@ export function NoStream() {
       <p className="borrow-kicker">NO ELIGIBLE STREAM</p>
       <h2 className="borrow-title">Borrow needs a stream</h2>
       <p className="borrow-lede">
-        Borrow requires an eligible, transferable OVRFLO-created Sablier stream. Create one
-        from Assets, or start from the guided path if this wallet is new to the protocol.
+        Borrow requires an eligible stream that this wallet can transfer. Create one
+        from Assets, or start from the guided path if this wallet has no stream yet.
       </p>
       <p>
         <a href="/assets">CREATE A STREAM</a>

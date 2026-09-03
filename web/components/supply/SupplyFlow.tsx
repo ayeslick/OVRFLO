@@ -10,6 +10,7 @@ import { CreateStageFrame } from "@/components/create/CreateStageFrame";
 import { acceptCreateAttempt } from "@/lib/create-intent";
 import {
   autoFillChoices,
+  previousVisibleStage,
   stageVisibility,
   type CreateChoices,
   type CreateStage,
@@ -95,6 +96,7 @@ export function SupplyFlow() {
   const [selectedAprBps, setSelectedAprBps] = useState<number | null>(null);
   const [allRatesOpen, setAllRatesOpen] = useState(false);
   const [frozen, setFrozen] = useState<SupplySnapshot | null>(null);
+  const [attemptId, setAttemptId] = useState<string | null>(null);
   const [draftReady, setDraftReady] = useState(false);
   const [bodyKey, setBodyKey] = useState(0);
   const [approvedAmount, setApprovedAmount] = useState(0n);
@@ -475,6 +477,12 @@ export function SupplyFlow() {
     windowState === "ready" &&
     amountWei >= minLiquidity;
 
+  useEffect(() => {
+    if (stage !== "review" || frozen !== null) return;
+    if (!liveSnapshot || amountError || !canContinue) return;
+    setFrozen(snapshotSupply(liveSnapshot));
+  }, [amountError, canContinue, frozen, liveSnapshot, stage]);
+
   let signingBlocked: string | undefined;
   if (!signingAllowed) signingBlocked = "EVENTS STALE — SIGNING DISABLED";
   if (chainGuard.wrongChain) signingBlocked = "SWITCH NETWORK";
@@ -504,7 +512,7 @@ export function SupplyFlow() {
   function onReview() {
     if (!liveSnapshot || amountError || !canContinue) return;
     setFrozen(snapshotSupply(liveSnapshot));
-    acceptCreateAttempt({
+    const attempt = acceptCreateAttempt({
       positionType: "fixed",
       disclosure,
       context: createContext,
@@ -512,6 +520,7 @@ export function SupplyFlow() {
       amount: amountRaw,
       aprBps: selectedAprBps ?? undefined,
     });
+    setAttemptId(attempt.graphId);
     setStage("review");
   }
 
@@ -580,7 +589,7 @@ export function SupplyFlow() {
       status={<StatusLine status={freshness.kind} asOf={asOf} usdUnavailable={usdUnavailable} />}
     >
       <ModalErrorBoundary control="UI-REVIEW-ERROR-BOUNDARY" onReset={() => setBodyKey((key) => key + 1)}>
-        <div className="supply-flow" data-split={stage === "review" ? "true" : "false"} key={bodyKey}>
+        <div className="supply-flow" data-split={stage === "review" ? "true" : "false"} data-graph-id={attemptId ?? undefined} key={bodyKey}>
           <SurfaceState
             state={surface}
             topology="supply"
@@ -615,6 +624,16 @@ export function SupplyFlow() {
                 outcomeId: selectedAprBps === null ? undefined : String(selectedAprBps),
               }}
               compact={compact}
+              onBack={
+                previousVisibleStage(stage, visibility)
+                  ? () => {
+                      const previous = previousVisibleStage(stage, visibility);
+                      if (!previous) return;
+                      setFrozen(null);
+                      setStage(previous);
+                    }
+                  : undefined
+              }
             >
           {(stage === "source" || stage === "underlying" || stage === "term") ? (
             <>
@@ -624,6 +643,7 @@ export function SupplyFlow() {
                 selected={selectedMarket}
                 unavailable={unavailable}
                 onSelect={onSelectMarket}
+                disclosure={disclosure}
               />
               {marketSelectState === "ready" ? (
                 selectedMarket ? (
@@ -631,7 +651,7 @@ export function SupplyFlow() {
                     CONTINUE
                   </ActionButton>
                 ) : (
-                  <ActionButton disabled disabledReason="SELECT A MARKET">
+                  <ActionButton disabled disabledReason={disclosure === "default" ? "SELECT A TERM" : "SELECT A MARKET"}>
                     CONTINUE
                   </ActionButton>
                 )
@@ -644,9 +664,14 @@ export function SupplyFlow() {
                 underlyingSymbol={underlyingSymbol}
                 expiry={market.expiryCached}
                 onChange={onChangeMarket}
+                disclosure={disclosure}
               />
               {unavailable?.reason === "tick-config-changed" ? (
-                <MarketUnavailable name={unavailable.name} reason={unavailable.reason} />
+                <MarketUnavailable
+                  name={unavailable.name}
+                  reason={unavailable.reason}
+                  disclosure={disclosure}
+                />
               ) : null}
               <AmountStep
                 value={amountRaw}

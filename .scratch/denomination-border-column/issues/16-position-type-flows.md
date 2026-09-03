@@ -4,7 +4,7 @@
 
 **Blocked by:** 11, 15
 
-**Status:** claimed
+**Status:** resolved
 **Labels:** ready-for-agent
 
 ## Session prompt (paste into a new chat)
@@ -45,24 +45,24 @@ After local verification, mark ticket checkboxes done and set Status: resolved.
 
 ## Acceptance criteria
 
-- [ ] Scratch intent capsule exists before the first state-touching edit
-- [ ] Self-Repaying Loans and Fixed Returns appear as separate position types
-- [ ] Fixed Return is absent from Self-Repaying Loan OUTCOME choices
-- [ ] A fixed eligible existing stream skips AMOUNT; fresh capital with a selectable value shows AMOUNT
-- [ ] REVIEW appears for every valid flow, including an all-fixed direct route
-- [ ] Zero supported underlyings, zero valid terms, or zero valid outcomes shows a named blocking state
-- [ ] TERM stays hidden for one valid term and appears for multiple valid terms
-- [ ] OUTCOME stays hidden for one valid outcome and appears for multiple outcomes within the selected type
-- [ ] Changing an upstream choice preserves only valid dependents, clears invalid ones, and moves to the first newly required or blocking stage
-- [ ] Default DOM contains no APY, protocol, router, PT, market, or route labels
-- [ ] Advanced may expose supported protocol bindings and compiles the same typed supply or borrow intent as Default
-- [ ] A canonical action contains no USD or UI-stage field
-- [ ] A Fixed Return submits ovrfloToken supply at the selected APR tick; unmatched supply is Waiting and withdrawable without a promised return
-- [ ] Matched Fixed Return return/date values render only after authoritative reads establish both
-- [ ] A partially filled Fixed Return that matched across multiple loans shows exact per-loan amounts and dates under a Multiple completion dates summary; the unfilled suffix stays Waiting and withdrawable
-- [ ] Desktop renders one active decision plus completed-choice summary; mobile renders one decision surface
-- [ ] Route/stage transitions and Back satisfy the heading/opener focus contract
-- [ ] Self-Repaying Loan create stays on `/borrow/`; Fixed Return create stays on `/supply/`; `/create/` is only the type chooser; `?step=` round-trips a decision stage and a transaction-checkpoint value is not enterable
+- [x] Scratch intent capsule exists before the first state-touching edit
+- [x] Self-Repaying Loans and Fixed Returns appear as separate position types
+- [x] Fixed Return is absent from Self-Repaying Loan OUTCOME choices
+- [x] A fixed eligible existing stream skips AMOUNT; fresh capital with a selectable value shows AMOUNT
+- [x] REVIEW appears for every valid flow, including an all-fixed direct route
+- [x] Zero supported underlyings, zero valid terms, or zero valid outcomes shows a named blocking state
+- [x] TERM stays hidden for one valid term and appears for multiple valid terms
+- [x] OUTCOME stays hidden for one valid outcome and appears for multiple outcomes within the selected type
+- [x] Changing an upstream choice preserves only valid dependents, clears invalid ones, and moves to the first newly required or blocking stage
+- [x] Default DOM contains no APY, protocol, router, PT, market, or route labels
+- [x] Advanced may expose supported protocol bindings and compiles the same typed supply or borrow intent as Default
+- [x] A canonical action contains no USD or UI-stage field
+- [x] A Fixed Return submits ovrfloToken supply at the selected APR tick; unmatched supply is Waiting and withdrawable without a promised return
+- [x] Matched Fixed Return return/date values render only after authoritative reads establish both
+- [x] A partially filled Fixed Return that matched across multiple loans shows exact per-loan amounts and dates under a Multiple completion dates summary; the unfilled suffix stays Waiting and withdrawable
+- [x] Desktop renders one active decision plus completed-choice summary; mobile renders one decision surface
+- [x] Route/stage transitions and Back satisfy the heading/opener focus contract
+- [x] Self-Repaying Loan create stays on `/borrow/`; Fixed Return create stays on `/supply/`; `/create/` is only the type chooser; `?step=` round-trips a decision stage and a transaction-checkpoint value is not enterable
 
 ## Plan unit
 

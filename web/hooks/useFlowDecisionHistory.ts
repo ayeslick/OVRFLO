@@ -3,8 +3,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { CreateChoices, CreateStageContext } from "@/lib/create-stages";
 import {
+  isFlowCheckpoint,
   parseFlowDecision,
   revalidateDecision,
+  serializeFlowDecision,
   writeFlowDecisionSearch,
   type FlowDecision,
 } from "@/lib/flow-history";
@@ -28,10 +30,15 @@ export function useFlowDecisionHistory(options: {
   useEffect(() => {
     if (typeof window === "undefined") return;
     const apply = () => {
-      const parsed = parseFlowDecision(new URLSearchParams(window.location.search).get("step"));
-      setDecision(
-        revalidateDecision(parsed, frozenRef.current, contextRef.current, choicesRef.current),
-      );
+      const params = new URLSearchParams(window.location.search);
+      const raw = params.get("step");
+      const parsed = parseFlowDecision(raw);
+      const next = revalidateDecision(parsed, frozenRef.current, contextRef.current, choicesRef.current);
+      if (isFlowCheckpoint(raw) || raw !== serializeFlowDecision(next)) {
+        const search = writeFlowDecisionSearch(window.location.search, next);
+        window.history.replaceState(null, "", `${window.location.pathname}${search}${window.location.hash}`);
+      }
+      setDecision(next);
     };
     apply();
     window.addEventListener("popstate", apply);

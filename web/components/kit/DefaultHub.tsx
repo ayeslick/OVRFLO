@@ -33,12 +33,12 @@ export function DefaultHub({
       <div className="default-hub-lower">
         <section className="default-hub-activity">
           <h3>Activity</h3>
-          <p>Confirmed protocol actions appear here after the scan completes.</p>
+          <p>Confirmed activity appears here after the scan completes.</p>
           <a href="/activity/">Open Activity</a>
         </section>
         <aside className="default-hub-help">
           <h3>Help</h3>
-          <p>{help ?? "Need exact protocol controls for this destination?"}</p>
+          <p>{help ?? "Need exact controls for this destination?"}</p>
           <button type="button" className="kit-mode" data-ui="UI-SHELL-MODE" data-location="help" onClick={toggleDisclosure}>
             {modeLabel}
           </button>

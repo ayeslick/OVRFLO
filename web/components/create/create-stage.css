@@ -40,6 +40,16 @@
   box-shadow: 0 0 0 2px var(--focus, #2563eb);
 }
 
+.create-stage-back {
+  justify-self: start;
+  min-height: 44px;
+  padding: 0 12px;
+  border: none;
+  background: transparent;
+  color: var(--ink, #0b1f3a);
+  text-decoration: underline;
+}
+
 .create-stage-block {
   margin: 0;
   padding: 16px;
