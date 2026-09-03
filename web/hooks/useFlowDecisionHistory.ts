@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { CreateChoices, CreateStageContext } from "@/lib/create-stages";
 import {
   parseFlowDecision,
   revalidateDecision,
@@ -10,27 +11,38 @@ import {
 
 export function useFlowDecisionHistory(options: {
   hasFrozenSnapshot: boolean;
-  hasSelection: boolean;
+  context: CreateStageContext;
+  choices: CreateChoices;
 }): {
   decision: FlowDecision;
   go: (next: FlowDecision, mode?: "push" | "replace") => void;
 } {
-  const [decision, setDecision] = useState<FlowDecision>("select");
+  const [decision, setDecision] = useState<FlowDecision>("source");
   const frozenRef = useRef(options.hasFrozenSnapshot);
-  const selectionRef = useRef(options.hasSelection);
+  const contextRef = useRef(options.context);
+  const choicesRef = useRef(options.choices);
   frozenRef.current = options.hasFrozenSnapshot;
-  selectionRef.current = options.hasSelection;
+  contextRef.current = options.context;
+  choicesRef.current = options.choices;
 
   useEffect(() => {
     if (typeof window === "undefined") return;
     const apply = () => {
       const parsed = parseFlowDecision(new URLSearchParams(window.location.search).get("step"));
-      setDecision(revalidateDecision(parsed, frozenRef.current, selectionRef.current));
+      setDecision(
+        revalidateDecision(parsed, frozenRef.current, contextRef.current, choicesRef.current),
+      );
     };
     apply();
     window.addEventListener("popstate", apply);
     return () => window.removeEventListener("popstate", apply);
   }, []);
+
+  useEffect(() => {
+    setDecision((current) =>
+      revalidateDecision(current, options.hasFrozenSnapshot, options.context, options.choices),
+    );
+  }, [options.choices, options.context, options.hasFrozenSnapshot]);
 
   const go = useCallback((next: FlowDecision, mode: "push" | "replace" = "push") => {
     if (typeof window === "undefined") {

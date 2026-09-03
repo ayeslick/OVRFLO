@@ -43,8 +43,8 @@ When("I select the first available stream", async ({ page }) => {
   await ui(page, "UI-BORROW-SELECT-STREAM").locator(".kit-entity-row").first().click();
 });
 
-Then("the borrow amount step is open", async ({ page }) => {
-  await expect(ui(page, "UI-BORROW-AMOUNT")).toBeVisible();
+Then("the borrow outcome step is open", async ({ page }) => {
+  await expect(page.locator(".create-stage")).toHaveAttribute("data-stage", "outcome");
 });
 
 Then("the borrow review is open", async ({ page }) => {

@@ -3,8 +3,18 @@
  * review and are never enterable from a stale URL or popstate.
  */
 
-export const FLOW_DECISIONS = ["select", "amount-rate", "review"] as const;
-export type FlowDecision = (typeof FLOW_DECISIONS)[number];
+import {
+  CREATE_STAGES,
+  firstRequiredOrBlockingStage,
+  previousVisibleStage,
+  stageVisibility,
+  type CreateChoices,
+  type CreateStage,
+  type CreateStageContext,
+} from "./create-stages";
+
+export const FLOW_DECISIONS = CREATE_STAGES;
+export type FlowDecision = CreateStage;
 
 export const FLOW_CHECKPOINTS = [
   "acknowledge",
@@ -27,42 +37,53 @@ export function isFlowDecision(value: string | null | undefined): value is FlowD
 }
 
 /**
- * Map a URL / history token onto a decision. Checkpoint names and unknown
- * tokens fall back to review (then the caller drops to amount-rate when no
- * frozen snapshot exists).
+ * Map a URL / history token onto a decision. Checkpoint names are never
+ * enterable: they fall back to review.
  */
 export function parseFlowDecision(raw: string | null | undefined): FlowDecision {
-  if (raw === "amount" || raw === "amount-rate") return "amount-rate";
-  if (raw === "market" || raw === "stream" || raw === "select") return "select";
-  if (raw === "review" || isFlowCheckpoint(raw)) return "review";
-  return "select";
+  if (raw === "amount-rate") return "amount";
+  if (raw === "select" || raw === "market" || raw === "stream") return "source";
+  if (raw && DECISION_SET.has(raw)) return raw as FlowDecision;
+  if (isFlowCheckpoint(raw)) return "review";
+  return "source";
 }
 
-export function serializeFlowDecision(decision: FlowDecision): string | null {
-  if (decision === "select") return null;
-  if (decision === "amount-rate") return "amount";
-  return "review";
+export function serializeFlowDecision(decision: FlowDecision): string {
+  return decision;
 }
 
-export function previousDecision(decision: FlowDecision): FlowDecision | null {
-  if (decision === "review") return "amount-rate";
-  if (decision === "amount-rate") return "select";
-  return null;
+export function previousDecision(
+  decision: FlowDecision,
+  context?: CreateStageContext,
+  choices?: CreateChoices,
+): FlowDecision | null {
+  if (!context || !choices) {
+    const index = FLOW_DECISIONS.indexOf(decision);
+    return index > 0 ? FLOW_DECISIONS[index - 1]! : null;
+  }
+  return previousVisibleStage(decision, stageVisibility(context, choices));
 }
 
 /**
- * Review requires a frozen snapshot. Without one, history that names review
- * (or a checkpoint) falls back to the nearest safe selection.
+ * Review requires a frozen snapshot. A named checkpoint cannot stay in the URL.
+ * Hidden or unsatisfied stages fall back to the first required or blocking stage.
  */
 export function revalidateDecision(
   decision: FlowDecision,
   hasFrozenSnapshot: boolean,
-  hasSelection: boolean,
+  context: CreateStageContext,
+  choices: CreateChoices,
 ): FlowDecision {
-  if (decision === "review" && !hasFrozenSnapshot) {
-    return hasSelection ? "amount-rate" : "select";
+  const required = firstRequiredOrBlockingStage(context, choices);
+  if (decision === "review") {
+    return hasFrozenSnapshot ? "review" : required;
   }
-  if (decision === "amount-rate" && !hasSelection) return "select";
+  const visibility = stageVisibility(context, choices);
+  if (visibility[decision] === "hidden") return required;
+  if (visibility[decision] === "block") return decision;
+  const order = FLOW_DECISIONS.indexOf(decision);
+  const gate = FLOW_DECISIONS.indexOf(required);
+  if (order > gate) return required;
   return decision;
 }
 
@@ -71,9 +92,7 @@ export function writeFlowDecisionSearch(
   decision: FlowDecision,
 ): string {
   const params = new URLSearchParams(search.startsWith("?") ? search.slice(1) : search);
-  const token = serializeFlowDecision(decision);
-  if (token === null) params.delete("step");
-  else params.set("step", token);
+  params.set("step", serializeFlowDecision(decision));
   const query = params.toString();
   return query ? `?${query}` : "";
 }

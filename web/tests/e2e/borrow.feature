@@ -1,7 +1,7 @@
 Feature: Borrow against a stream
-  Entry: /borrow. Decision: stream → amount+rate → review → NFT approve →
-  confirm. Exit: /?lending=<market>&loan= on Your OVRFLO. There is no sale
-  listing; a max borrow is economically a sale.
+  Entry: /borrow/. Decision stages follow SOURCE → UNDERLYING → AMOUNT → TERM →
+  OUTCOME → REVIEW. An eligible stream fixes AMOUNT. Typed create stays on
+  /borrow/. Exit: /?lending=<market>&loan= on Your OVRFLO.
 
   Background:
     Given I am on the borrow flow
@@ -14,8 +14,7 @@ Feature: Borrow against a stream
     And the frontend re-syncs with chain state
     When I select the first available stream
     And I click the "CONTINUE" button
-    Then the borrow amount step is open
-    When I fill the amount field with "1"
+    Then the borrow outcome step is open
     And I select the first available rate
     And I click the "REVIEW BORROW" button
     Then the borrow review is open
@@ -44,7 +43,6 @@ Feature: Borrow against a stream
     And the frontend re-syncs with chain state
     When I select the first available stream
     And I click the "CONTINUE" button
-    And I fill the amount field with "1"
     And I select the first available rate
     And I click the "REVIEW BORROW" button
     And I acknowledge risk if prompted
@@ -59,7 +57,6 @@ Feature: Borrow against a stream
     And the frontend re-syncs with chain state
     When I select the first available stream
     And I click the "CONTINUE" button
-    And I fill the amount field with "1"
     And I select the first available rate
     And I click the "REVIEW BORROW" button
     Then the borrow review is open
@@ -72,6 +69,5 @@ Feature: Borrow against a stream
     And the frontend re-syncs with chain state
     When I select the first available stream
     And I click the "CONTINUE" button
-    And I fill the amount field with "1"
     When I reload the page
-    Then the borrow amount step is open
+    Then the borrow outcome step is open

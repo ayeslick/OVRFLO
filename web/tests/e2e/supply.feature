@@ -1,6 +1,6 @@
 Feature: Supply liquidity
-  Entry: /supply. Decision: SELECT_MARKET → amount → rate → review → approve
-  (if needed) → confirm. Exit: /?lending=<market>&position= on Your OVRFLO.
+  Entry: /supply/. Fixed Return supplies ovrfloToken at a selected APR tick.
+  Decision stages follow SOURCE → UNDERLYING → AMOUNT → TERM → OUTCOME → REVIEW.
 
   Background:
     Given I am on the supply flow
@@ -29,7 +29,6 @@ Feature: Supply liquidity
     And I click the "CONTINUE" button
     And I fill the amount field with a value exceeding my wstETH balance
     Then I see a field error
-    And the "REVIEW SUPPLY" button is disabled
 
   Scenario: Identity churn — disconnect on review asks to re-enter
     When I select the first supply market

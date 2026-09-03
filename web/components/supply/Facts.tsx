@@ -37,7 +37,7 @@ export function SupplyFacts({
         </div>
         <div className="supply-fact">
           <span>UNFILLED</span>
-          <span>Withdrawable until filled</span>
+          <span>Waiting. Withdrawable until filled. No return is promised before match.</span>
         </div>
       </div>
       <p className="supply-notice" data-kind="filled">

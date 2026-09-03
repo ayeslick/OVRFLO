@@ -4,7 +4,7 @@
 
 **Blocked by:** 11, 15
 
-**Status:** ready-for-agent
+**Status:** claimed
 **Labels:** ready-for-agent
 
 ## Session prompt (paste into a new chat)

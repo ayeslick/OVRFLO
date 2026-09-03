@@ -1,0 +1,90 @@
+# Scratch decision record — schema: docs/maps/SCHEMAS.md §4
+summary_ref: "docs/plans/2026-08-22-001-refactor-denomination-switch-border-column-plan.md#cs4-u3"
+
+goal: >
+  CS4-U3 adaptive create flows. Self-Repaying Loan stays on /borrow/.
+  Fixed Return stays on /supply/. Stage grammar is SOURCE → UNDERLYING →
+  AMOUNT → TERM → OUTCOME → REVIEW. Default and Advanced compile the
+  same typed borrow or supply intent. Graph ID is allocated on accept.
+  Resume persistence stays ticket 17.
+
+state_keys_touched:
+  - view-state.flow.step
+  - form-state.borrow.draft
+  - form-state.supply.draft
+
+writers_readers:
+  - writes: web/lib/create-stages.ts
+  - writes: web/lib/create-intent.ts
+  - writes: web/lib/flow-history.ts
+  - writes: web/hooks/useFlowDecisionHistory.ts
+  - writes: web/components/borrow/BorrowFlow.tsx
+  - writes: web/components/supply/SupplyFlow.tsx
+  - writes: web/components/create/CreateStageFrame.tsx
+  - writes: web/components/watch/SuppliedDetail.tsx
+  - writes: web/lib/fixed-return-completion.ts
+  - reads: web/hooks/useCompleteStreams.ts
+  - reads: web/hooks/useAllMarkets.ts
+  - reads: web/hooks/useLadder.ts
+  - reads: web/lib/actions/borrow.ts
+  - reads: web/lib/actions/supply.ts
+  - reads: web/lib/live-action-plan.ts
+
+trust_domains:
+  - fact: eligible stream remaining and ownership
+    domain: on-chain
+    moved_from: null
+  - fact: supported underlyings, terms, and APR ticks
+    domain: on-chain
+    moved_from: null
+  - fact: create stage and ?step= decision token
+    domain: pure-client
+    moved_from: null
+  - fact: Fixed Return match, per-loan amount, and completion date
+    domain: on-chain
+    moved_from: null
+  - fact: Default versus Advanced disclosure
+    domain: pure-client
+    moved_from: null
+
+rejected_alternatives:
+  - option: Keep select → amount-rate → review as the live grammar
+    why_not: KD16 names six stages and exact hide, block, and REVIEW rules.
+  - option: Put Fixed Return in loan OUTCOME
+    why_not: AS2. Fixed Return is OVRFLOLending supply, a separate type.
+  - option: Persist confirmed-step resume in this ticket
+    why_not: Ticket 17 owns resume. This ticket only allocates a graph ID.
+  - option: Put USD or UI stage fields on ActionIntent
+    why_not: KD17. Canonical actions stay token-native and mode-neutral.
+
+invariants_held:
+  - invariant: REVIEW never hides. An all-fixed route opens REVIEW.
+    how: resolveCreateStage always returns review when prior stages are hidden or filled.
+  - invariant: Zero underlyings, terms, or outcomes block with named copy.
+    how: Stage visibility uses block, never hide, when the option set is empty.
+  - invariant: Upstream change keeps only still-valid dependents.
+    how: applyUpstreamChange clears invalid choices and jumps to the first required or blocking stage.
+  - invariant: parseAction stays compatibility-only.
+    how: Create compiles ActionIntent. createLiveExecutionPlan still consumes it.
+  - invariant: Checkpoints are not enterable from ?step=.
+    how: parseFlowDecision maps acknowledge, approve, sign, pending, confirmed to review.
+
+risks:
+  - risk: Existing E2E still clicks amount after a stream that now skips AMOUNT.
+    residual: Unit tests own the grammar. E2E steps follow the new visible stages.
+  - risk: Loan dates for a Fixed Return stay unread and the UI hides return copy.
+    residual: That is required. Exact dates render only after authoritative loan reads.
+
+diff_hints:
+  - path: web/lib/create-stages.ts
+    why: Visibility, invalidation, and first required or blocking stage.
+  - path: web/lib/create-intent.ts
+    why: Default and Advanced compile the same borrow or supply intent.
+  - path: web/lib/flow-history.ts
+    why: ?step= tokens for the six stages. Checkpoints stay unenterable.
+  - path: web/components/borrow/BorrowFlow.tsx
+    why: Loan create uses the grammar. Fixed Return is absent from OUTCOME.
+  - path: web/components/supply/SupplyFlow.tsx
+    why: Fixed Return supplies ovrfloToken at the selected APR tick.
+  - path: web/lib/fixed-return-completion.ts
+    why: Waiting unmatched suffix and multiple completion dates.

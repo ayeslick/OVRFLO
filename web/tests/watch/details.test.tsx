@@ -125,6 +125,42 @@ describe("watch details", () => {
     expect(screen.getByRole("button", { name: /CLAIM / })).toBeInTheDocument();
   });
 
+  it("hides matched return until loan reads exist and then names multiple dates", () => {
+    const { rerender } = render(
+      <SuppliedDetail
+        position={position}
+        symbol="ovrfloTEST"
+        market={market}
+        lending={LENDING}
+        nowMs={NOW_MS}
+        freshness={synced}
+        signingAllowed
+        usdMode="token"
+        usdAvailable={false}
+        loanTerms={null}
+      />,
+    );
+    expect(screen.queryByText("Multiple completion dates")).not.toBeInTheDocument();
+    rerender(
+      <SuppliedDetail
+        position={position}
+        symbol="ovrfloTEST"
+        market={market}
+        lending={LENDING}
+        nowMs={NOW_MS}
+        freshness={synced}
+        signingAllowed
+        usdMode="token"
+        usdAvailable={false}
+        loanTerms={[
+          { loanId: 1n, matchedAmount: 20n * 10n ** 17n, completionDate: NOW + 10n },
+          { loanId: 2n, matchedAmount: 11n * 10n ** 17n, completionDate: NOW + 20n },
+        ]}
+      />,
+    );
+    expect(screen.getByText("Multiple completion dates")).toBeInTheDocument();
+  });
+
   it("launches claim in place with SETTLEMENT trace", () => {
     render(
       <SuppliedDetail

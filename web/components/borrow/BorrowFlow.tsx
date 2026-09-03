@@ -1,9 +1,21 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { useConnection, useReadContracts } from "wagmi";
+import { CreateStageFrame } from "@/components/create/CreateStageFrame";
+import { acceptCreateAttempt } from "@/lib/create-intent";
+import {
+  autoFillChoices,
+  firstRequiredOrBlockingStage,
+  stageVisibility,
+  type CreateChoices,
+  type CreateStage,
+} from "@/lib/create-stages";
+import { buildLoanCreateContext, parseStreamSourceId, streamSourceId } from "@/lib/create-flow-context";
+import { getDisclosure, subscribeDisclosure } from "@/lib/disclosure";
+import { formatAprBps, formatUsd } from "@/lib/format";
 import { isAddressEqual, parseEventLogs, type Address, type Log } from "viem";
 import { WalletButton } from "wallet-runtime";
 import { ActionButton } from "@/components/kit/ActionButton";
@@ -35,8 +47,7 @@ import { classifyBorrowError } from "@/lib/borrow";
 import { chainId, factoryAddress, ZERO_ADDRESS } from "@/lib/config";
 import { useProtocolBootstrap } from "@/hooks/useProtocolBootstrap";
 import { decodeContractError, isUserRejection } from "@/lib/errors";
-import { formatAprBps, formatUsd } from "@/lib/format";
-import { bestDepthTick, stepWindow, tickWindow, type LadderModel } from "@/lib/ladder";
+import { stepWindow, tickWindow, type LadderModel } from "@/lib/ladder";
 import { MIN_LIQUIDITY_AMOUNT, MIN_STREAM_AMOUNT } from "@/lib/lending-math";
 import { borrowKeys } from "@/lib/query-keys";
 import { parseDecimalInput, parseEntityId } from "@/lib/parse";
@@ -64,8 +75,6 @@ import {
   type BorrowQuoteSnapshot,
 } from "./quote";
 import "./borrow.css";
-
-type Stage = "select-stream" | "amount-rate" | "review";
 
 function draftKey(account: string) {
   return flowDraftKey("borrow", factoryAddress, chainId, account);
@@ -124,25 +133,48 @@ export function BorrowFlow() {
   // Borrow signing uses the streams lens truth; ladder is a separate gate in continue.
   const { freshness, signingAllowed } = useFreshness([sourceFromOutcome(streams)]);
   const stale = useStaleRecovery(actionTx.error, classifyBorrowError, queryClient, account);
+  const disclosure = useSyncExternalStore(subscribeDisclosure, getDisclosure, getDisclosure);
+  const compact = useSyncExternalStore(subscribeCompact, getCompact, () => false);
 
+  const ladder: LadderModel | null = ladderOutcome.status === "ready" ? ladderOutcome.data.model : null;
+  const pickableKey = ladder?.pickable.map((rung) => rung.aprBps).join(",") ?? "";
+  const createContext = useMemo(
+    () =>
+      buildLoanCreateContext({
+        streams: eligible,
+        markets: selectedStream
+          ? marketsResult.markets.filter((row) => selectedStream.market && isAddressEqual(row.market, selectedStream.market))
+          : marketsResult.markets,
+        selectedUnderlying: market?.underlying.toLowerCase() ?? null,
+        pickableAprs: pickableKey === "" ? [] : pickableKey.split(",").map(Number),
+        now,
+      }),
+    [eligible, market?.underlying, marketsResult.markets, now, pickableKey, selectedStream],
+  );
+  const createChoices: CreateChoices = {
+    sourceId: selectedStreamId === null ? null : streamSourceId(selectedStreamId),
+    underlyingId: market?.underlying.toLowerCase() ?? null,
+    amount: selectedStream ? "fixed" : amountRaw || null,
+    termId: market?.market.toLowerCase() ?? null,
+    outcomeId: selectedAprBps === null ? null : String(selectedAprBps),
+  };
+  const filledChoices = autoFillChoices(createContext, createChoices);
+  const visibility = stageVisibility(createContext, filledChoices);
   const { decision, go: goDecision } = useFlowDecisionHistory({
     hasFrozenSnapshot: frozen !== null,
-    hasSelection: selectedStreamId !== null,
+    context: createContext,
+    choices: filledChoices,
   });
-  const stage: Stage =
-    decision === "select" ? "select-stream" : decision === "amount-rate" ? "amount-rate" : "review";
+  const stage: CreateStage = decision;
   const setStage = useCallback(
-    (next: Stage, mode: "push" | "replace" = "push") => {
-      goDecision(
-        next === "select-stream" ? "select" : next === "amount-rate" ? "amount-rate" : "review",
-        mode,
-      );
+    (next: CreateStage, mode: "push" | "replace" = "push") => {
+      goDecision(next, mode);
     },
     [goDecision],
   );
 
   const resetForm = useCallback(() => {
-    goDecision("select", "replace");
+    goDecision("source", "replace");
     setSelectedStreamId(null);
     setAmountRaw("");
     setSelectedAprBps(null);
@@ -215,7 +247,6 @@ export function BorrowFlow() {
     Boolean(lending) &&
     (approvedForAll || isAddressEqual(approvedOperator, lending ?? ZERO_ADDRESS));
 
-  const ladder: LadderModel | null = ladderOutcome.status === "ready" ? ladderOutcome.data.model : null;
   const lendingConfig = ladderOutcome.status === "ready" ? ladderOutcome.data.config : null;
   const bounds = {
     aprMin: lendingConfig?.aprMinBps ?? 0,
@@ -226,9 +257,21 @@ export function BorrowFlow() {
     : tickWindow({ rungs: [], pickable: [], emptyLadder: true, bestDepth: null }, null, bounds);
 
   useEffect(() => {
+    if (createContext.sources.length === 1 && selectedStreamId === null) {
+      const only = parseStreamSourceId(createContext.sources[0]!.id);
+      if (only !== null) setSelectedStreamId(only);
+    }
+  }, [createContext.sources, selectedStreamId]);
+
+  useEffect(() => {
+    if (!selectedStream) return;
+    if (amountRaw === "") setAmountRaw(weiToAmountInput(selectedStream.remaining));
+  }, [amountRaw, selectedStream]);
+
+  useEffect(() => {
     if (selectedAprBps !== null || !ladder) return;
-    const best = bestDepthTick(ladder);
-    if (best !== null) setSelectedAprBps(best);
+    if (ladder.pickable.length !== 1) return;
+    setSelectedAprBps(ladder.pickable[0]!.aprBps);
   }, [ladder, selectedAprBps]);
 
   const ovrfloSymbol = market ? symbolFor(symbols, market.ovrfloToken) : "the market's ovrflo token";
@@ -334,7 +377,7 @@ export function BorrowFlow() {
   }
 
   function onChangeStream() {
-    setStage("select-stream");
+    setStage("source");
     setFrozen(null);
   }
 
@@ -342,9 +385,27 @@ export function BorrowFlow() {
     if (cap !== undefined && cap > 0n) setAmountRaw(weiToAmountInput(cap));
   }
 
+  function goNextStage() {
+    const next = firstRequiredOrBlockingStage(createContext, filledChoices);
+    if (next === "review") {
+      onReview();
+      return;
+    }
+    setStage(next);
+  }
+
   function onReview() {
     if (!quote || emptyTick || amountError || preview.isStale || quote.fill <= 0n) return;
     setFrozen(snapshotQuote(quote));
+    acceptCreateAttempt({
+      positionType: "loan",
+      disclosure,
+      context: createContext,
+      choices: filledChoices,
+      streamId: selectedStreamId ?? 0n,
+      amount: amountRaw,
+      aprBps: selectedAprBps ?? undefined,
+    });
     setStage("review");
   }
 
@@ -459,137 +520,172 @@ export function BorrowFlow() {
               <p className="borrow-lede">A connected wallet is required to list eligible streams.</p>
             </div>
           ) : null}
-          {connected && !walletReset.walletChanged && stage === "select-stream" ? (
-            <>
-              {streamSelectState === "empty" ? (
-                <NoStream />
-              ) : (
-                <SelectStream
-                  state={streamSelectState}
-                  streams={eligible}
-                  selectedId={selectedStreamId}
-                  ovrfloSymbol={ovrfloSymbol}
-                  onSelect={onSelectStream}
-                />
-              )}
-              {streamSelectState === "ready" ? (
-                selectedStreamId ? (
-                  <ActionButton variant="primary" onClick={() => setStage("amount-rate")}>
-                    CONTINUE
-                  </ActionButton>
-                ) : (
-                  <ActionButton disabled disabledReason="SELECT A STREAM">
-                    CONTINUE
-                  </ActionButton>
-                )
-              ) : null}
-            </>
-          ) : null}
-          {connected && !walletReset.walletChanged && stage === "amount-rate" && selectedStream ? (
-            <AmountRateBody
-              stream={selectedStream}
-              ovrfloSymbol={ovrfloSymbol}
-              underlyingSymbol={underlyingSymbol}
-              amountRaw={amountRaw}
-              amountError={amountError}
-              usdMode={usdMode}
-              usdAvailable={usdAvailable}
-              usdDisplay={usdDisplay}
-              windowState={windowState}
-              window={windowModel}
-              selectedAprBps={selectedAprBps}
-              allRatesOpen={allRatesOpen}
-              ladder={ladder}
-              emptyTickCopy={emptyTickCopy}
-              quote={quote}
-              quoteStale={preview.isStale}
-              quoteDashes={preview.showDashes}
-              cover={cover}
-              feeOpen={feeOpen}
-              draw={parsedAmount.ok ? parsedAmount.value : 0n}
-              depth={depth}
-              canContinue={canContinue}
-              onChangeStream={onChangeStream}
-              onAmount={setAmountRaw}
-              onMax={onMax}
-              onUsdMode={setUsdMode}
-              onSelectTick={setSelectedAprBps}
-              onStep={(direction) => {
-                if (!ladder || selectedAprBps === null) return;
-                const next = stepWindow(ladder, selectedAprBps, direction, bounds);
-                if (next.selected !== null) setSelectedAprBps(next.selected);
+          {connected && !walletReset.walletChanged ? (
+            <CreateStageFrame
+              stage={stage}
+              visibility={visibility}
+              choices={filledChoices}
+              labels={{
+                sourceId: selectedStream ? `Stream ${selectedStream.streamId.toString()}` : undefined,
+                outcomeId: selectedAprBps === null ? undefined : formatAprBps(selectedAprBps),
               }}
-              onOpenAllRates={() => setAllRatesOpen(true)}
-              onCloseAllRates={() => setAllRatesOpen(false)}
-              onToggleFee={() => setFeeOpen((open) => !open)}
-              onReview={onReview}
-            />
-          ) : null}
-          {connected &&
-          !walletReset.walletChanged &&
-          stage === "review" &&
-          selectedStream &&
-          quote &&
-          frozen &&
-          selectedAprBps !== null &&
-          market?.lending ? (
-            <>
-              {chainGuard.wrongChain ? (
-                <ActionButton variant="primary" onClick={chainGuard.switchChain} busy={chainGuard.isSwitching}>
-                  SWITCH NETWORK
-                </ActionButton>
+              compact={compact}
+            >
+              {stage === "source" ? (
+                <>
+                  {streamSelectState === "empty" || createContext.sources.length === 0 ? (
+                    <NoStream />
+                  ) : (
+                    <SelectStream
+                      state={streamSelectState}
+                      streams={eligible}
+                      selectedId={selectedStreamId}
+                      ovrfloSymbol={ovrfloSymbol}
+                      onSelect={onSelectStream}
+                    />
+                  )}
+                  {streamSelectState === "ready" && createContext.sources.length > 0 ? (
+                    selectedStreamId ? (
+                      <ActionButton
+                        variant="primary"
+                        onClick={goNextStage}
+                      >
+                        CONTINUE
+                      </ActionButton>
+                    ) : (
+                      <ActionButton disabled disabledReason="SELECT A STREAM">
+                        CONTINUE
+                      </ActionButton>
+                    )
+                  ) : null}
+                </>
               ) : null}
-              <ReviewHandoff
-                quote={quote}
-                frozen={frozen}
-                drifted={drifted || actionTx.needsReview}
-                checkpoint={checkpoint}
-                steps={ackTrace.steps}
-                underlyingSymbol={underlyingSymbol}
-                ovrfloSymbol={ovrfloSymbol}
-                aprBps={selectedAprBps}
-                streamId={selectedStream.streamId}
-                operator={market.lending}
-                cover={cover}
-                repayCurrent={repayDates.current}
-                repayNext={repayDates.next}
-                acknowledged={ack.acknowledged}
-                streamApproved={streamApproved}
-                signingBlockedReason={signingBlocked}
-                approveBusy={approveTx.isSigning || approveTx.isConfirming || approveTx.isInFlight}
-                borrowBusy={actionTx.isSigning || actionTx.isConfirming || actionTx.isInFlight}
-                txHash={actionTx.hash ? String(actionTx.hash) : undefined}
-                loanId={receipt?.loanId}
-                actualNet={receipt?.net}
-                actualObligation={receipt?.obligation}
-                confirmedCover={receipt && schedule ? loanCover(schedule, receipt.obligation, now) : undefined}
-                errorCopy={
-                  decoded && !isUserRejection(actionTx.error) && !isUserRejection(approveTx.error)
-                    ? decoded.copy
-                    : undefined
-                }
-                recoveryLabel={decoded?.recovery.label}
-                onAcknowledge={ack.acknowledge}
-                onApprove={onApprove}
-                onBorrow={onBorrow}
-                onRelatch={onRelatch}
-                onRecovery={() => {
-                  if (decoded?.recovery.id === "change-tick" || decoded?.recovery.id === "change-amount") {
-                    setStage("amount-rate");
-                    setFrozen(null);
-                  } else if (decoded?.recovery.id === "change-stream") {
-                    onChangeStream();
-                  } else {
-                    onRelatch();
-                  }
-                }}
-                onViewLoan={(loanId) =>
-                  router.push(
-                    lending ? `/?lending=${lending}&loan=${loanId.toString()}` : "/",
-                  )
-                }
-              />
-            </>
+              {stage === "amount" && selectedStream ? (
+                <>
+                  <AmountStep
+                    value={amountRaw}
+                    unit={underlyingSymbol}
+                    error={amountError}
+                    onChange={setAmountRaw}
+                    onMax={onMax}
+                  />
+                  <ActionButton
+                    variant="primary"
+                    onClick={goNextStage}
+                  >
+                    CONTINUE
+                  </ActionButton>
+                </>
+              ) : null}
+              {stage === "outcome" && selectedStream ? (
+                <AmountRateBody
+                  stream={selectedStream}
+                  ovrfloSymbol={ovrfloSymbol}
+                  underlyingSymbol={underlyingSymbol}
+                  amountRaw={amountRaw}
+                  amountError={amountError}
+                  usdMode={usdMode}
+                  usdAvailable={usdAvailable}
+                  usdDisplay={usdDisplay}
+                  windowState={windowState}
+                  window={windowModel}
+                  selectedAprBps={selectedAprBps}
+                  allRatesOpen={disclosure === "advanced" && allRatesOpen}
+                  ladder={disclosure === "advanced" ? ladder : null}
+                  emptyTickCopy={emptyTickCopy}
+                  quote={quote}
+                  quoteStale={preview.isStale}
+                  quoteDashes={preview.showDashes}
+                  cover={cover}
+                  feeOpen={feeOpen}
+                  draw={parsedAmount.ok ? parsedAmount.value : 0n}
+                  depth={depth}
+                  canContinue={canContinue}
+                  onChangeStream={onChangeStream}
+                  onAmount={setAmountRaw}
+                  onMax={onMax}
+                  onUsdMode={setUsdMode}
+                  onSelectTick={setSelectedAprBps}
+                  onStep={(direction) => {
+                    if (!ladder || selectedAprBps === null) return;
+                    const next = stepWindow(ladder, selectedAprBps, direction, bounds);
+                    if (next.selected !== null) setSelectedAprBps(next.selected);
+                  }}
+                  onOpenAllRates={() => {
+                    if (disclosure === "advanced") setAllRatesOpen(true);
+                  }}
+                  onCloseAllRates={() => setAllRatesOpen(false)}
+                  onToggleFee={() => setFeeOpen((open) => !open)}
+                  onReview={onReview}
+                  hideAmount
+                  hideUsd={disclosure === "default"}
+                />
+              ) : null}
+              {stage === "review" &&
+              selectedStream &&
+              quote &&
+              frozen &&
+              selectedAprBps !== null &&
+              market?.lending ? (
+                <>
+                  {chainGuard.wrongChain ? (
+                    <ActionButton variant="primary" onClick={chainGuard.switchChain} busy={chainGuard.isSwitching}>
+                      SWITCH NETWORK
+                    </ActionButton>
+                  ) : null}
+                  <ReviewHandoff
+                    quote={quote}
+                    frozen={frozen}
+                    drifted={drifted || actionTx.needsReview}
+                    checkpoint={checkpoint}
+                    steps={ackTrace.steps}
+                    underlyingSymbol={underlyingSymbol}
+                    ovrfloSymbol={ovrfloSymbol}
+                    aprBps={selectedAprBps}
+                    streamId={selectedStream.streamId}
+                    operator={market.lending}
+                    cover={cover}
+                    repayCurrent={repayDates.current}
+                    repayNext={repayDates.next}
+                    acknowledged={ack.acknowledged}
+                    streamApproved={streamApproved}
+                    signingBlockedReason={signingBlocked}
+                    approveBusy={approveTx.isSigning || approveTx.isConfirming || approveTx.isInFlight}
+                    borrowBusy={actionTx.isSigning || actionTx.isConfirming || actionTx.isInFlight}
+                    txHash={actionTx.hash ? String(actionTx.hash) : undefined}
+                    loanId={receipt?.loanId}
+                    actualNet={receipt?.net}
+                    actualObligation={receipt?.obligation}
+                    confirmedCover={receipt && schedule ? loanCover(schedule, receipt.obligation, now) : undefined}
+                    errorCopy={
+                      decoded && !isUserRejection(actionTx.error) && !isUserRejection(approveTx.error)
+                        ? decoded.copy
+                        : undefined
+                    }
+                    recoveryLabel={decoded?.recovery.label}
+                    onAcknowledge={ack.acknowledge}
+                    onApprove={onApprove}
+                    onBorrow={onBorrow}
+                    onRelatch={onRelatch}
+                    onRecovery={() => {
+                      if (decoded?.recovery.id === "change-tick" || decoded?.recovery.id === "change-amount") {
+                        setStage("outcome");
+                        setFrozen(null);
+                      } else if (decoded?.recovery.id === "change-stream") {
+                        onChangeStream();
+                      } else {
+                        onRelatch();
+                      }
+                    }}
+                    onViewLoan={(loanId) =>
+                      router.push(
+                        lending ? `/?lending=${lending}&loan=${loanId.toString()}` : "/",
+                      )
+                    }
+                  />
+                </>
+              ) : null}
+            </CreateStageFrame>
           ) : null}
         </div>
       </ModalErrorBoundary>
@@ -630,6 +726,8 @@ function AmountRateBody({
   onCloseAllRates,
   onToggleFee,
   onReview,
+  hideAmount = false,
+  hideUsd = false,
 }: {
   stream: HydratedStream;
   ovrfloSymbol: string;
@@ -663,6 +761,8 @@ function AmountRateBody({
   onCloseAllRates: () => void;
   onToggleFee: () => void;
   onReview: () => void;
+  hideAmount?: boolean;
+  hideUsd?: boolean;
 }) {
   const poolState =
     windowState === "loading"
@@ -679,8 +779,12 @@ function AmountRateBody({
   return (
     <>
       <StreamContext stream={stream} ovrfloSymbol={ovrfloSymbol} onChange={onChangeStream} />
-      <AmountStep value={amountRaw} unit={underlyingSymbol} error={amountError} onChange={onAmount} onMax={onMax} />
-      <TokenUsdSwitch mode={usdMode} tokenLabel={underlyingSymbol} usdAvailable={usdAvailable} onChange={onUsdMode} />
+      {hideAmount ? null : (
+        <AmountStep value={amountRaw} unit={underlyingSymbol} error={amountError} onChange={onAmount} onMax={onMax} />
+      )}
+      {hideUsd ? null : (
+        <TokenUsdSwitch mode={usdMode} tokenLabel={underlyingSymbol} usdAvailable={usdAvailable} onChange={onUsdMode} />
+      )}
       {preview.ok ? (
         <Amount
           token={weiToAmountInput(preview.value)}
@@ -784,7 +888,7 @@ function streamSelectStatus(
 }
 
 function deriveCheckpoint(input: {
-  stage: Stage;
+  stage: CreateStage;
   ackReady: boolean;
   acknowledged: boolean;
   streamApproved: boolean;
@@ -819,4 +923,16 @@ function parseBorrowed(
     net: created.args.actualBorrow - created.args.feeAmount,
     obligation: created.args.obligation,
   };
+}
+
+function subscribeCompact(listener: () => void) {
+  if (typeof window === "undefined") return () => undefined;
+  const media = window.matchMedia("(max-width: 767px)");
+  media.addEventListener("change", listener);
+  return () => media.removeEventListener("change", listener);
+}
+
+function getCompact() {
+  if (typeof window === "undefined") return false;
+  return window.matchMedia("(max-width: 767px)").matches;
 }

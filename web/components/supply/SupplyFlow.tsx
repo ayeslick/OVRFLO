@@ -1,11 +1,21 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { useConnection, useReadContracts } from "wagmi";
 import { isAddressEqual, parseEventLogs, type Address, type Log } from "viem";
 import { WalletButton } from "wallet-runtime";
+import { CreateStageFrame } from "@/components/create/CreateStageFrame";
+import { acceptCreateAttempt } from "@/lib/create-intent";
+import {
+  autoFillChoices,
+  stageVisibility,
+  type CreateChoices,
+  type CreateStage,
+} from "@/lib/create-stages";
+import { buildFixedCreateContext, marketByTerm } from "@/lib/create-flow-context";
+import { getDisclosure, subscribeDisclosure } from "@/lib/disclosure";
 import { ActionButton } from "@/components/kit/ActionButton";
 import { Amount } from "@/components/kit/Amount";
 import { Shell } from "@/components/kit/Shell";
@@ -61,8 +71,6 @@ import { ReviewHandoff } from "./ReviewHandoff";
 import { MarketUnavailable, SelectMarket, type SupplyMarketOption } from "./SelectMarket";
 import "./supply.css";
 
-type Stage = "select-market" | "amount-rate" | "review";
-
 const APPROVE_COOLDOWN_MS = 4000;
 
 function draftKey(account: string) {
@@ -109,25 +117,44 @@ export function SupplyFlow() {
   const { approveTx, actionTx, zeroFirst } = useApprovalWriteFlows(account, market ?? []);
   const { freshness, signingAllowed } = useFreshness([sourceFromOutcome(ladderOutcome)]);
   const stale = useStaleRecovery(actionTx.error, classifySupplyError, queryClient, account);
-
+  const disclosure = useSyncExternalStore(subscribeDisclosure, getDisclosure, getDisclosure);
+  const compact = useSyncExternalStore(subscribeCompact, getCompact, () => false);
+  const ladderModel = ladderOutcome.status === "ready" ? ladderOutcome.data.model : null;
+  const pickableKey = ladderModel?.pickable.map((rung) => rung.aprBps).join(",") ?? "";
+  const createContext = useMemo(
+    () =>
+      buildFixedCreateContext({
+        markets: marketsResult.markets,
+        selectedUnderlying: market?.underlying.toLowerCase() ?? null,
+        pickableAprs: pickableKey === "" ? [] : pickableKey.split(",").map(Number),
+        now,
+      }),
+    [market?.underlying, marketsResult.markets, now, pickableKey],
+  );
+  const createChoices: CreateChoices = {
+    sourceId: "wallet",
+    underlyingId: market?.underlying.toLowerCase() ?? null,
+    amount: amountRaw || null,
+    termId: market?.market.toLowerCase() ?? null,
+    outcomeId: selectedAprBps === null ? null : String(selectedAprBps),
+  };
+  const filledChoices = autoFillChoices(createContext, createChoices);
+  const visibility = stageVisibility(createContext, filledChoices);
   const { decision, go: goDecision } = useFlowDecisionHistory({
     hasFrozenSnapshot: frozen !== null,
-    hasSelection: selectedMarket !== null,
+    context: createContext,
+    choices: filledChoices,
   });
-  const stage: Stage =
-    decision === "select" ? "select-market" : decision === "amount-rate" ? "amount-rate" : "review";
+  const stage: CreateStage = decision;
   const setStage = useCallback(
-    (next: Stage, mode: "push" | "replace" = "push") => {
-      goDecision(
-        next === "select-market" ? "select" : next === "amount-rate" ? "amount-rate" : "review",
-        mode,
-      );
+    (next: CreateStage, mode: "push" | "replace" = "push") => {
+      goDecision(next, mode);
     },
     [goDecision],
   );
 
   const resetForm = useCallback(() => {
-    goDecision("select", "replace");
+    goDecision("source", "replace");
     setSelectedMarket(null);
     setAmountRaw("");
     setSelectedAprBps(null);
@@ -149,6 +176,17 @@ export function SupplyFlow() {
     queryClient,
   });
   useClearOnConfirm(actionTx.isConfirmed, () => setAmountRaw(""));
+
+  useEffect(() => {
+    const auto = marketByTerm(marketsResult.markets, filledChoices.termId);
+    if (auto && selectedMarket === null) setSelectedMarket(auto.market);
+  }, [filledChoices.termId, marketsResult.markets, selectedMarket]);
+
+  useEffect(() => {
+    if (selectedAprBps !== null || !ladderModel) return;
+    if (ladderModel.pickable.length !== 1) return;
+    setSelectedAprBps(ladderModel.pickable[0]!.aprBps);
+  }, [ladderModel, selectedAprBps]);
 
   useEffect(() => {
     if (!account) {
@@ -340,17 +378,17 @@ export function SupplyFlow() {
   }, [actionTx.hash, actionTx.isConfirmed, actionTx.isConfirming, market, preTxBalances, receipt?.positionId]);
 
   useEffect(() => {
-    if (!market || stage === "select-market") return;
+    if (!market || stage === "underlying" || stage === "term" || stage === "source") return;
     if (now >= market.expiryCached) {
       setUnavailable({ name: underlyingSymbol, reason: "matured-or-inactive" });
-      setStage("select-market");
+      setStage("term");
       setFrozen(null);
       setSelectedAprBps(null);
     }
   }, [market, now, stage, underlyingSymbol]);
 
   useEffect(() => {
-    if (stage === "select-market") return;
+    if (stage === "source" || stage === "underlying" || stage === "term") return;
     if (selectedAprBps === null) return;
     if (ladderOutcome.status !== "ready" || tickSpacing <= 0) return;
     if (
@@ -361,7 +399,7 @@ export function SupplyFlow() {
       })
     ) {
       setUnavailable({ name: underlyingSymbol, reason: "tick-config-changed" });
-      setStage("amount-rate");
+      setStage("outcome");
       setFrozen(null);
     }
   }, [bounds.aprMax, bounds.aprMin, ladderOutcome.status, selectedAprBps, stage, tickSpacing, underlyingSymbol]);
@@ -454,7 +492,7 @@ export function SupplyFlow() {
   }
 
   function onChangeMarket() {
-    setStage("select-market");
+    setStage("term");
     setFrozen(null);
     setApprovedAmount(0n);
   }
@@ -466,6 +504,14 @@ export function SupplyFlow() {
   function onReview() {
     if (!liveSnapshot || amountError || !canContinue) return;
     setFrozen(snapshotSupply(liveSnapshot));
+    acceptCreateAttempt({
+      positionType: "fixed",
+      disclosure,
+      context: createContext,
+      choices: filledChoices,
+      amount: amountRaw,
+      aprBps: selectedAprBps ?? undefined,
+    });
     setStage("review");
   }
 
@@ -494,7 +540,7 @@ export function SupplyFlow() {
   }
 
   function goRateSelect() {
-    setStage("amount-rate");
+    setStage("outcome");
     setFrozen(null);
     setApprovedAmount(0n);
     stale.setStaleRecovery(false);
@@ -560,7 +606,17 @@ export function SupplyFlow() {
               <p className="supply-lede">A connected wallet is required to supply ovrfloToken liquidity.</p>
             </div>
           ) : null}
-          {connected && !walletReset.walletChanged && stage === "select-market" ? (
+          {connected && !walletReset.walletChanged ? (
+            <CreateStageFrame
+              stage={stage}
+              visibility={visibility}
+              choices={filledChoices}
+              labels={{
+                outcomeId: selectedAprBps === null ? undefined : String(selectedAprBps),
+              }}
+              compact={compact}
+            >
+          {(stage === "source" || stage === "underlying" || stage === "term") ? (
             <>
               <SelectMarket
                 state={marketSelectState}
@@ -571,7 +627,7 @@ export function SupplyFlow() {
               />
               {marketSelectState === "ready" ? (
                 selectedMarket ? (
-                  <ActionButton variant="primary" onClick={() => setStage("amount-rate")}>
+                  <ActionButton variant="primary" onClick={() => setStage("amount")}>
                     CONTINUE
                   </ActionButton>
                 ) : (
@@ -582,7 +638,7 @@ export function SupplyFlow() {
               ) : null}
             </>
           ) : null}
-          {connected && !walletReset.walletChanged && stage === "amount-rate" && market ? (
+          {connected && !walletReset.walletChanged && (stage === "amount" || stage === "outcome") && market ? (
             <>
               <MarketContext
                 underlyingSymbol={underlyingSymbol}
@@ -604,12 +660,19 @@ export function SupplyFlow() {
                 }}
                 onMax={onMax}
               />
+              {stage === "amount" ? (
+                <ActionButton variant="primary" onClick={() => setStage("outcome")}>
+                  CONTINUE
+                </ActionButton>
+              ) : null}
+              {stage === "outcome" && disclosure !== "default" ? (
               <TokenUsdSwitch
                 mode={usdMode}
                 tokenLabel={supplySymbol}
                 usdAvailable={usdAvailable}
                 onChange={setUsdMode}
               />
+              ) : null}
               {parsedAmount.ok ? (
                 <Amount
                   token={weiToAmountInput(parsedAmount.value)}
@@ -619,13 +682,14 @@ export function SupplyFlow() {
                   mode={usdMode}
                 />
               ) : null}
+              {stage === "outcome" ? (
               <RateStep
                 windowState={windowState}
                 window={windowModel}
                 selectedAprBps={selectedAprBps}
                 underlyingSymbol={supplySymbol}
-                allRatesOpen={allRatesOpen}
-                ladder={ladder}
+                allRatesOpen={disclosure === "advanced" && allRatesOpen}
+                ladder={disclosure === "advanced" ? ladder : null}
                 onSelect={(apr) => {
                   setSelectedAprBps(apr);
                   if (unavailable?.reason === "tick-config-changed") setUnavailable(null);
@@ -638,6 +702,7 @@ export function SupplyFlow() {
                 onOpenAllRates={() => setAllRatesOpen(true)}
                 onCloseAllRates={() => setAllRatesOpen(false)}
               />
+              ) : null}
               {parsedAmount.ok && selectedAprBps !== null ? (
                 <QueuePlace ahead={ahead} amount={amountWei} unit={supplySymbol} state={queueState} />
               ) : null}
@@ -714,7 +779,7 @@ export function SupplyFlow() {
                     goRateSelect();
                   } else if (decoded?.name === "SeriesMatured" || decoded?.name === "MarketExpired") {
                     setUnavailable({ name: underlyingSymbol, reason: "matured-or-inactive" });
-                    setStage("select-market");
+                    setStage("term");
                     setFrozen(null);
                   } else if (decoded?.recovery.id === "change-amount") {
                     goRateSelect();
@@ -729,6 +794,8 @@ export function SupplyFlow() {
                 }
               />
             </>
+          ) : null}
+            </CreateStageFrame>
           ) : null}
         </div>
       </ModalErrorBoundary>
@@ -754,7 +821,7 @@ function marketSelectStatus(
 }
 
 function deriveCheckpoint(input: {
-  stage: Stage;
+  stage: CreateStage;
   ackReady: boolean;
   acknowledged: boolean;
   tokenApproved: boolean;
@@ -789,4 +856,16 @@ function parseSupplied(
     amount: created.args.amount,
     aprBps: created.args.aprBps,
   };
+}
+
+function subscribeCompact(listener: () => void) {
+  if (typeof window === "undefined") return () => undefined;
+  const media = window.matchMedia("(max-width: 767px)");
+  media.addEventListener("change", listener);
+  return () => media.removeEventListener("change", listener);
+}
+
+function getCompact() {
+  if (typeof window === "undefined") return false;
+  return window.matchMedia("(max-width: 767px)").matches;
 }

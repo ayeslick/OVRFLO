@@ -8,7 +8,7 @@ import { CapitalBand } from "@/components/kit/CapitalBand";
 import { Ribbon } from "@/components/kit/Ribbon";
 import { RollingNumber } from "@/components/kit/RollingNumber";
 import type { LenderPositionRow } from "@/hooks/useLenderBook";
-import { formatAprBps, formatAsOf, formatMaturityDate, formatTruncatedDecimal } from "@/lib/format";
+import { formatAprBps, formatAsOf, formatCoverDate, formatMaturityDate, formatTruncatedDecimal } from "@/lib/format";
 import type { Freshness } from "@/lib/freshness";
 import type { MarketInfo } from "@/lib/types";
 import {
@@ -17,6 +17,10 @@ import {
   positionFilled,
   suppliedMatchState,
 } from "@/lib/watch-rows";
+import {
+  describeFixedReturnCompletion,
+  type FixedReturnLoanTerm,
+} from "@/lib/fixed-return-completion";
 import { RetiredMarketMarker } from "./PortfolioViews";
 import { WatchWrite } from "./WatchWrite";
 import "./watch.css";
@@ -34,6 +38,7 @@ export function SuppliedDetail({
   usdAvailable,
   usdText,
   retired = false,
+  loanTerms = null,
 }: {
   position: LenderPositionRow;
   symbol: string;
@@ -47,6 +52,7 @@ export function SuppliedDetail({
   usdAvailable: boolean;
   usdText?: string;
   retired?: boolean;
+  loanTerms?: readonly FixedReturnLoanTerm[] | null;
 }) {
   const [write, setWrite] = useState<"claim" | "withdraw" | null>(null);
   const filled = positionFilled(position);
@@ -54,6 +60,7 @@ export function SuppliedDetail({
   const supplied = filled + unfilled;
   const claimable = positionClaimable(position);
   const match = suppliedMatchState(filled, unfilled);
+  const completion = describeFixedReturnCompletion({ filled, unfilled, loans: loanTerms });
   const resting = match === "resting";
   const stale = !signingAllowed;
   const ribbonState = stale ? "degraded" : resting ? "inert" : "edge";
@@ -143,6 +150,30 @@ export function SuppliedDetail({
         <Fact label="UNFILLED" value={`${formatTruncatedDecimal(unfilled, 18, 5)} ${symbol}`} />
         <Fact label="CLAIMABLE" value={`${formatTruncatedDecimal(claimable, 18, 5)} ${symbol}`} />
         <Fact label="APR" value={formatAprBps(position.aprBps)} />
+        {completion.status === "waiting" ? (
+          <Fact label="STATUS" value="Waiting. Unmatched funds stay withdrawable." />
+        ) : null}
+        {completion.status === "single-term" ? (
+          <Fact
+            label="RETURN DATE"
+            value={formatCoverDate(completion.completionDate)}
+          />
+        ) : null}
+        {completion.status === "multiple-dates" ? (
+          <Fact label="DATES" value={completion.summary} />
+        ) : null}
+        {completion.status === "multiple-dates"
+          ? completion.loans.map((loan) => (
+              <Fact
+                key={loan.loanId.toString()}
+                label={`LOAN ${loan.loanId.toString()}`}
+                value={`${formatTruncatedDecimal(loan.matchedAmount, 18, 5)} · ${formatCoverDate(loan.completionDate)}`}
+              />
+            ))
+          : null}
+        {completion.status === "multiple-dates" && completion.withdrawableUnfilled ? (
+          <Fact label="UNFILLED SUFFIX" value="Waiting. Withdrawable." />
+        ) : null}
         {market ? <Fact label="MATURITY" value={formatMaturityDate(market.expiryCached).toUpperCase()} /> : null}
       </dl>
       <p className="watch-freshness">{freshnessCaption(freshness)}</p>
