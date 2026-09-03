@@ -3,9 +3,9 @@
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
-import { useConnection, useReadContracts } from "wagmi";
+import { useConnection, usePublicClient, useReadContracts } from "wagmi";
 import { CreateStageFrame } from "@/components/create/CreateStageFrame";
-import { acceptCreateAttempt } from "@/lib/create-intent";
+import { compileCreateIntent } from "@/lib/create-intent";
 import {
   autoFillChoices,
   firstRequiredOrBlockingStage,
@@ -28,6 +28,7 @@ import { ModalErrorBoundary } from "@/components/ModalErrorBoundary";
 import { SurfaceState } from "@/components/kit/SurfaceState";
 import { useAcknowledgeRiskTrace } from "@/components/first-run/useAcknowledgeRiskTrace";
 import { useAcknowledgment } from "@/hooks/useAcknowledgment";
+import { useCreateGraphQueue } from "@/hooks/useCreateGraphQueue";
 import { useAllMarkets } from "@/hooks/useAllMarkets";
 import { useApprovalWriteFlows } from "@/hooks/useApprovalWriteFlows";
 import { useChainGuard } from "@/hooks/useChainGuard";
@@ -44,8 +45,23 @@ import { type HydratedStream } from "@/hooks/useStreams";
 import { useUsdPrice } from "@/hooks/useUsdPrice";
 import { useWalletChangeReset } from "@/hooks/useWalletChangeReset";
 import { ovrfloLendingAbi, sablierLockupAbi } from "@/lib/abis";
+import {
+  compileActionGraph,
+  GRAPH_STEP_BORROW,
+  GRAPH_STEP_SET_APPROVAL,
+  sameStepEconomics,
+  withGraphId,
+  type ActionGraph,
+} from "@/lib/action-graph";
 import { classifyBorrowError } from "@/lib/borrow";
+import { assertBorrowRebuildInputs } from "@/lib/borrow-rebuild";
 import { chainId, factoryAddress, ZERO_ADDRESS } from "@/lib/config";
+import { confirmedStepIds } from "@/lib/composite-recovery";
+import { allocateGraphId } from "@/lib/graph-id";
+import { buildAuthStepPlan, buildCallStepPlan, reuseOrAllocateGraphId } from "@/lib/graph-step-plan";
+import { cs3ContinuationAvailable, depositPlusBorrowLiquidityGate } from "@/lib/no-liquidity-gate";
+import { defaultRecoveryCopy, type RecoveryCopy } from "@/lib/recovery-copy";
+import { listStepEvidence, readCurrentAttempt, writeCurrentAttempt } from "@/lib/step-evidence";
 import { useProtocolBootstrap } from "@/hooks/useProtocolBootstrap";
 import { decodeContractError, isUserRejection } from "@/lib/errors";
 import { stepWindow, tickWindow, type LadderModel } from "@/lib/ladder";
@@ -104,8 +120,16 @@ export function BorrowFlow() {
   const [feeOpen, setFeeOpen] = useState(false);
   const [frozen, setFrozen] = useState<BorrowQuoteSnapshot | null>(null);
   const [attemptId, setAttemptId] = useState<string | null>(null);
+  const [graph, setGraph] = useState<ActionGraph | null>(null);
+  const [recoveryCopy, setRecoveryCopy] = useState<RecoveryCopy | null>(null);
+  const [liquidityBlocked, setLiquidityBlocked] = useState(false);
   const [draftReady, setDraftReady] = useState(false);
   const [bodyKey, setBodyKey] = useState(0);
+  const publicClient = usePublicClient({ chainId });
+  const identity =
+    account && connection.chainId !== undefined
+      ? { account, chainId: connection.chainId }
+      : null;
 
   const streams = useCompleteStreams({
     account,
@@ -207,6 +231,13 @@ export function BorrowFlow() {
     }
     const seeded = parseEntityId(new URLSearchParams(window.location.search).get("stream"));
     if (seeded !== null) setSelectedStreamId(seeded);
+    const storedAttempt =
+      readCurrentAttempt(factoryAddress, chainId, account, "borrow") ??
+      readCurrentAttempt(factoryAddress, chainId, account, "deposit-plus-borrow");
+    if (storedAttempt?.accepted) {
+      setAttemptId(storedAttempt.graphId);
+      if (storedAttempt.graph) setGraph(storedAttempt.graph);
+    }
     setDraftReady(true);
   }, [account]);
 
@@ -238,6 +269,11 @@ export function BorrowFlow() {
               functionName: "isApprovedForAll",
               args: [account, lending],
             },
+            {
+              address: lending,
+              abi: ovrfloLendingAbi,
+              functionName: "router",
+            },
           ]
         : [],
     query: { enabled: nftEnabled },
@@ -245,6 +281,8 @@ export function BorrowFlow() {
   const approvedOperator =
     nftReads.data?.[0]?.status === "success" ? (nftReads.data[0].result as Address) : ZERO_ADDRESS;
   const approvedForAll = nftReads.data?.[1]?.status === "success" ? Boolean(nftReads.data[1].result) : false;
+  const routerAddress =
+    nftReads.data?.[2]?.status === "success" ? (nftReads.data[2].result as Address) : null;
   const streamApproved =
     Boolean(lending) &&
     (approvedForAll || isAddressEqual(approvedOperator, lending ?? ZERO_ADDRESS));
@@ -336,14 +374,73 @@ export function BorrowFlow() {
 
   const drifted = Boolean(frozen && quote && quoteDrift(frozen, quote));
   const receipt = parseBorrowed(actionTx.receipt?.logs, lending);
+  const graphQueue = useCreateGraphQueue({
+    identity,
+    factory: factoryAddress,
+    graph,
+    confirm: actionTx.confirmPlan,
+    retryRefresh: actionTx.retryRefresh,
+    client: publicClient,
+    rebuild: async (tx, nextIdentity) => {
+      if (tx.kind !== "graph-step") throw new Error("Borrow queue accepts graph steps only");
+      if (tx.semanticId === GRAPH_STEP_SET_APPROVAL) {
+        if (!lending || !selectedStream) throw new Error("NFT approval rebuild is missing the stream");
+        return {
+          status: "ready",
+          plan: buildAuthStepPlan({
+            identity: nextIdentity,
+            semanticId: GRAPH_STEP_SET_APPROVAL,
+            actionType: "borrow",
+            token: lockup,
+            spender: lending,
+            amount: selectedStream.streamId,
+            contract: "sablier",
+          }),
+        };
+      }
+      if (tx.semanticId !== GRAPH_STEP_BORROW) throw new Error("Unsupported borrow graph step");
+      if (!lending || !market || !selectedStream || !frozen || selectedAprBps === null) {
+        throw new Error("Borrow rebuild inputs are missing");
+      }
+      const rebuildRead = assertBorrowRebuildInputs({
+        routedDepth: depth,
+        eligibility: selectedStream.borrowRouteEligible ? "eligible" : "ineligible",
+        router: routerAddress,
+        request: "none",
+      });
+      if (rebuildRead.status === "invalid") {
+        throw new Error(`Borrow rebuild used a placeholder (${rebuildRead.reason})`);
+      }
+      return {
+        status: "ready",
+        plan: buildCallStepPlan({
+          identity: nextIdentity,
+          actionType: "borrow",
+          semanticId: GRAPH_STEP_BORROW,
+          target: lending,
+          contract: "lending",
+          functionName: "borrow",
+          callArgs: [
+            market.market,
+            selectedAprBps,
+            frozen.actualBorrow,
+            selectedStream.streamId,
+            frozen.minAcceptable,
+            nextIdentity.account,
+          ],
+        }),
+      };
+    },
+  });
   const checkpoint = deriveCheckpoint({
     stage,
     ackReady: ack.ready,
     acknowledged: ack.acknowledged,
     streamApproved,
-    isSigning: actionTx.isSigning,
+    isSigning: actionTx.isSigning || graphQueue.running,
     isConfirming: actionTx.isConfirming,
     isConfirmed: actionTx.isConfirmed,
+    unknown: graphQueue.unknown,
   });
 
   const belowMinContext = {
@@ -359,6 +456,23 @@ export function BorrowFlow() {
       : null;
 
   const ackTrace = useAcknowledgeRiskTrace(borrowTrace(checkpoint, streamApproved, true));
+
+  useEffect(() => {
+    if (!graph || !account) {
+      setRecoveryCopy(null);
+      return;
+    }
+    const stored = listStepEvidence(factoryAddress, chainId, account);
+    const confirmed = confirmedStepIds(graph, stored);
+    const remaining = graph.steps
+      .map((step) => step.stepId)
+      .filter((stepId) => !confirmed.includes(stepId));
+    if (confirmed.length === 0 && remaining.length === 0) {
+      setRecoveryCopy(null);
+      return;
+    }
+    setRecoveryCopy(defaultRecoveryCopy({ confirmed, remaining }));
+  }, [account, graph, graphQueue.rows]);
 
   useEffect(() => {
     if (actionTx.isConfirmed) {
@@ -405,7 +519,7 @@ export function BorrowFlow() {
   function onReview() {
     if (!quote || emptyTick || amountError || preview.isStale || quote.fill <= 0n) return;
     setFrozen(snapshotQuote(quote));
-    const attempt = acceptCreateAttempt({
+    const intent = compileCreateIntent({
       positionType: "loan",
       disclosure,
       context: createContext,
@@ -414,7 +528,67 @@ export function BorrowFlow() {
       amount: amountRaw,
       aprBps: selectedAprBps ?? undefined,
     });
-    setAttemptId(attempt.graphId);
+    const kind = intent.type === "deposit" ? "deposit-plus-borrow" : "borrow";
+    const storedAttempt = account
+      ? readCurrentAttempt(factoryAddress, chainId, account, kind)
+      : null;
+    const storedRows = account ? listStepEvidence(factoryAddress, chainId, account) : [];
+    const storedComplete = storedRows.some(
+      (row) => row.graphId === storedAttempt?.graphId && row.graphComplete,
+    );
+    if (kind === "deposit-plus-borrow") {
+      const gate = depositPlusBorrowLiquidityGate({
+        borrowExecutable: depth >= quote.fill,
+        cs3Available: cs3ContinuationAvailable(),
+      });
+      if (gate.status === "blocked") {
+        setLiquidityBlocked(true);
+        return;
+      }
+    }
+    setLiquidityBlocked(false);
+    const compiled = compileActionGraph({
+      graphId: storedAttempt?.graphId ?? "pending",
+      chainId,
+      kind,
+      token: market?.underlying ?? selectedStream?.asset ?? ZERO_ADDRESS,
+      amount: quote.fill.toString(),
+      allowance: null,
+      nftApproval:
+        selectedStream && lending
+          ? {
+              token: lockup,
+              spender: lending,
+              tokenId: selectedStream.streamId.toString(),
+              needed: !streamApproved,
+            }
+          : undefined,
+      borrowExecutable: depth >= quote.fill,
+      cs3Available: cs3ContinuationAvailable(),
+    });
+    if (compiled.status === "blocked") {
+      setLiquidityBlocked(true);
+      return;
+    }
+    const graphId = reuseOrAllocateGraphId({
+      storedGraphId: storedAttempt?.accepted ? storedAttempt.graphId : null,
+      storedKind: storedAttempt?.kind,
+      requestedKind: kind,
+      storedComplete,
+      sameEconomics: sameStepEconomics(storedAttempt?.graph?.steps, compiled.graph.steps),
+      allocate: allocateGraphId,
+    });
+    const nextGraph = withGraphId(compiled.graph, graphId);
+    setGraph(nextGraph);
+    setAttemptId(graphId);
+    if (account) {
+      writeCurrentAttempt(factoryAddress, chainId, account, {
+        graphId,
+        kind,
+        accepted: true,
+        graph: nextGraph,
+      });
+    }
     setStage("review");
   }
 
@@ -426,6 +600,11 @@ export function BorrowFlow() {
 
   function onApprove() {
     if (!lending || !selectedStream || chainGuard.wrongChain || !signingAllowed) return;
+    if (graphQueue.unknown) return;
+    if (graph) {
+      graphQueue.startRemaining();
+      return;
+    }
     approveTx.writeContract({
       address: lockup,
       abi: sablierLockupAbi,
@@ -436,6 +615,11 @@ export function BorrowFlow() {
 
   function onBorrow() {
     if (!lending || !market || !selectedStream || !quote || !frozen || drifted || preview.isStale || chainGuard.wrongChain || !signingAllowed) return;
+    if (graphQueue.unknown) return;
+    if (graph) {
+      graphQueue.startRemaining();
+      return;
+    }
     actionTx.writeContract({
       address: lending,
       abi: ovrfloLendingAbi,
@@ -474,6 +658,8 @@ export function BorrowFlow() {
   if (preview.isStale || stale.staleRecovery) signingBlocked = "QUOTE UPDATED — REVIEW AGAIN";
   if (!signingAllowed) signingBlocked = "EVENTS STALE — SIGNING DISABLED";
   if (chainGuard.wrongChain) signingBlocked = "SWITCH NETWORK";
+  if (graphQueue.unknown) signingBlocked = "A TRANSACTION MAY ALREADY BE IN PROGRESS";
+  if (liquidityBlocked) signingBlocked = "NO DEPTH FOR THIS LOAN";
 
   const usdUnavailable =
     usd.status === "unavailable" || (usd.status === "ready" && usd.data.status === "unavailable");
@@ -669,9 +855,20 @@ export function BorrowFlow() {
                     acknowledged={ack.acknowledged}
                     streamApproved={streamApproved}
                     signingBlockedReason={signingBlocked}
-                    approveBusy={approveTx.isSigning || approveTx.isConfirming || approveTx.isInFlight}
-                    borrowBusy={actionTx.isSigning || actionTx.isConfirming || actionTx.isInFlight}
+                    approveBusy={
+                      graphQueue.running ||
+                      approveTx.isSigning ||
+                      approveTx.isConfirming ||
+                      approveTx.isInFlight
+                    }
+                    borrowBusy={
+                      graphQueue.running ||
+                      actionTx.isSigning ||
+                      actionTx.isConfirming ||
+                      actionTx.isInFlight
+                    }
                     txHash={actionTx.hash ? String(actionTx.hash) : undefined}
+                    recoveryCopy={recoveryCopy}
                     loanId={receipt?.loanId}
                     actualNet={receipt?.net}
                     actualObligation={receipt?.obligation}
@@ -914,9 +1111,11 @@ function deriveCheckpoint(input: {
   isSigning: boolean;
   isConfirming: boolean;
   isConfirmed: boolean;
+  unknown?: boolean;
 }): BorrowCheckpoint {
   if (input.stage !== "review") return "review";
   if (input.isConfirmed) return "confirmed";
+  if (input.unknown) return "pending";
   if (input.isConfirming) return "pending";
   if (input.isSigning) return "sign";
   if (!input.ackReady) return "review";

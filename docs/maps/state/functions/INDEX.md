@@ -23,11 +23,11 @@ on-chain contract state. This index does not cover, replace, or summarise it.
 | | Count |
 |---|---|
 | Key files | 6 |
-| Keys | 66 |
-| Modules | 105 |
+| Keys | 68 |
+| Modules | 109 |
 | `on-chain` keys | 23 |
 | `projection` keys | 2 |
-| `pure-client` keys | 41 |
+| `pure-client` keys | 43 |
 
 ## Trust-domain exposure by module
 
@@ -47,7 +47,7 @@ a `projection` count is a module where a fail-closed mistake can happen.
 | `web/components/assets/ConverterFlow.tsx` | 1 | 0 | 0 |
 | `web/components/assets/StreamSelectMarket.tsx` | 1 | 0 | 1 |
 | `web/components/borrow/AmountStep.tsx` | 2 | 0 | 1 |
-| `web/components/borrow/BorrowFlow.tsx` | 1 | 0 | 4 |
+| `web/components/borrow/BorrowFlow.tsx` | 1 | 0 | 5 |
 | `web/components/borrow/PoolBand.tsx` | 1 | 0 | 0 |
 | `web/components/borrow/RateStep.tsx` | 0 | 0 | 2 |
 | `web/components/borrow/ReviewHandoff.tsx` | 1 | 0 | 0 |
@@ -78,7 +78,7 @@ a `projection` count is a module where a fail-closed mistake can happen.
 | `web/components/supply/QueueBand.tsx` | 1 | 0 | 0 |
 | `web/components/supply/RateStep.tsx` | 0 | 0 | 2 |
 | `web/components/supply/SelectMarket.tsx` | 1 | 0 | 1 |
-| `web/components/supply/SupplyFlow.tsx` | 0 | 0 | 4 |
+| `web/components/supply/SupplyFlow.tsx` | 0 | 0 | 5 |
 | `web/components/WalletRuntime.tsx` | 1 | 0 | 0 |
 | `web/components/watch/BorrowedDetail.tsx` | 1 | 0 | 6 |
 | `web/components/watch/ClosedLoanDetail.tsx` | 1 | 0 | 1 |
@@ -95,6 +95,7 @@ a `projection` count is a module where a fail-closed mistake can happen.
 | `web/hooks/useClearOnConfirm.ts` | 0 | 0 | 1 |
 | `web/hooks/useClock.ts` | 1 | 0 | 2 |
 | `web/hooks/useCompleteStreams.ts` | 1 | 0 | 0 |
+| `web/hooks/useCreateGraphQueue.ts` | 0 | 0 | 1 |
 | `web/hooks/useEnumerationPin.ts` | 1 | 0 | 0 |
 | `web/hooks/useFlowDecisionHistory.ts` | 0 | 0 | 1 |
 | `web/hooks/useFreshness.ts` | 0 | 0 | 1 |
@@ -109,7 +110,7 @@ a `projection` count is a module where a fail-closed mistake can happen.
 | `web/hooks/useStaleRecovery.ts` | 0 | 0 | 2 |
 | `web/hooks/useStreams.ts` | 3 | 0 | 0 |
 | `web/hooks/useTransactionExecutor.ts` | 0 | 0 | 4 |
-| `web/hooks/useTxQueue.ts` | 0 | 0 | 3 |
+| `web/hooks/useTxQueue.ts` | 0 | 0 | 4 |
 | `web/hooks/useUsdPrice.ts` | 3 | 0 | 0 |
 | `web/hooks/useWalletChangeReset.ts` | 1 | 0 | 1 |
 | `web/hooks/useWatchBalances.ts` | 1 | 0 | 0 |
@@ -118,6 +119,7 @@ a `projection` count is a module where a fail-closed mistake can happen.
 | `web/lib/actions/borrow.ts` | 0 | 0 | 1 |
 | `web/lib/actions/claim.ts` | 1 | 0 | 1 |
 | `web/lib/claim-all.ts` | 1 | 0 | 0 |
+| `web/lib/composite-recovery.ts` | 0 | 0 | 1 |
 | `web/lib/disclosure.ts` | 0 | 0 | 1 |
 | `web/lib/discovery/portfolio-log-candidates.ts` | 0 | 2 | 0 |
 | `web/lib/flow-history.ts` | 0 | 0 | 1 |
@@ -136,6 +138,8 @@ a `projection` count is a module where a fail-closed mistake can happen.
 | `web/lib/query-resource-registry.ts` | 1 | 0 | 0 |
 | `web/lib/receipts.ts` | 0 | 0 | 1 |
 | `web/lib/refetch-notice.ts` | 0 | 0 | 1 |
+| `web/lib/resume-contract.ts` | 0 | 0 | 2 |
+| `web/lib/step-evidence.ts` | 0 | 0 | 2 |
 | `web/lib/storage.ts` | 0 | 0 | 1 |
 | `web/lib/stream-book.ts` | 1 | 0 | 0 |
 | `web/lib/surface-state.ts` | 0 | 0 | 1 |
@@ -181,7 +185,7 @@ a `projection` count is a module where a fail-closed mistake can happen.
 
 | Direction | Key | Trust domain | Role |
 |---|---|---|---|
-| reads | `persist.acknowledgment` | `pure-client` | landing U11: does not fork the SETTLEMENT step |
+| reads | `persist.acknowledgment` | `pure-client` | does not fork the SETTLEMENT step |
 
 ### `web/app/supply/page.tsx`
 
@@ -228,10 +232,12 @@ a `projection` count is a module where a fail-closed mistake can happen.
 
 | Direction | Key | Trust domain | Role |
 |---|---|---|---|
+| writes | `persist.attempt` | `pure-client` | persist on review accept |
 | writes | `persist.receipts` | `pure-client` | landing U12: persist on pending / confirmed borrow |
 | reads | `action.flow-step` | `pure-client` | landing U12: Back moves one decision |
 | reads | `chain.stream-truth` | `on-chain` | complete-set eligibility, not the wall pager |
 | reads | `chrome.surface-state` | `pure-client` | landing U12: borrow topology |
+| reads | `persist.attempt` | `pure-client` | restore on remount; do not auto-confirm |
 | reads | `persist.drafts` | `pure-client` | landing U12: restore selections on return |
 
 ### `web/components/borrow/PoolBand.tsx`
@@ -289,7 +295,7 @@ a `projection` count is a module where a fail-closed mistake can happen.
 
 | Direction | Key | Trust domain | Role |
 |---|---|---|---|
-| reads | `persist.acknowledgment` | `pure-client` | landing U12: prepends ACKNOWLEDGE RISK on the first write |
+| reads | `persist.acknowledgment` | `pure-client` | prepends the gate on create review |
 
 ### `web/components/kit/ActionButton.tsx`
 
@@ -461,9 +467,11 @@ a `projection` count is a module where a fail-closed mistake can happen.
 
 | Direction | Key | Trust domain | Role |
 |---|---|---|---|
+| writes | `persist.attempt` | `pure-client` | persist on review accept |
 | writes | `persist.receipts` | `pure-client` | landing U12: persist on pending / confirmed supply |
 | reads | `action.flow-step` | `pure-client` | landing U12: Back moves one decision |
 | reads | `chrome.surface-state` | `pure-client` | landing U12: supply topology |
+| reads | `persist.attempt` | `pure-client` | restore on remount; do not auto-confirm |
 | reads | `persist.drafts` | `pure-client` | landing U12: restore selections on return |
 
 ### `web/components/WalletRuntime.tsx`
@@ -555,7 +563,7 @@ a `projection` count is a module where a fail-closed mistake can happen.
 
 | Direction | Key | Trust domain | Role |
 |---|---|---|---|
-| writes | `persist.acknowledgment` | `pure-client` | landing U6: one-time per address |
+| writes | `persist.acknowledgment` | `pure-client` | versioned, factory-scoped write |
 
 ### `web/hooks/useAllMarkets.ts`
 
@@ -612,6 +620,12 @@ a `projection` count is a module where a fail-closed mistake can happen.
 | Direction | Key | Trust domain | Role |
 |---|---|---|---|
 | writes | `chain.stream-truth` | `on-chain` | complete held-stream set at the same pin |
+
+### `web/hooks/useCreateGraphQueue.ts`
+
+| Direction | Key | Trust domain | Role |
+|---|---|---|---|
+| reads | `queue.rows` | `pure-client` | starts remaining graph steps |
 
 ### `web/hooks/useEnumerationPin.ts`
 
@@ -719,10 +733,11 @@ a `projection` count is a module where a fail-closed mistake can happen.
 
 | Direction | Key | Trust domain | Role |
 |---|---|---|---|
+| writes | `persist.step-evidence` | `pure-client` | writes `unknown` immediately after submit, then `confirmed` after a successful receipt |
 | writes | `queue.rows` | `pure-client` | `start`, `resume`, and per-row status updates |
 | writes | `queue.running` | `pure-client` | set by `start` / `resume`, cleared on every non-advancing outcome |
 | writes | `tx.replaced` | `pure-client` | records replaced as a first-class lifecycle state |
-| reads | `queue.rows` | `pure-client` | derives `done`, `outcome`, `needsReview`, `failed` |
+| reads | `queue.rows` | `pure-client` | derives `done`, `outcome`, `needsReview`, `failed`, `unknown` |
 | reads | `queue.running` | `pure-client` | exposed as `running` and `inFlight` |
 
 ### `web/hooks/useUsdPrice.ts`
@@ -787,6 +802,12 @@ a `projection` count is a module where a fail-closed mistake can happen.
 | Direction | Key | Trust domain | Role |
 |---|---|---|---|
 | reads | `chain.stream-truth` | `on-chain` | complete-set stream claims |
+
+### `web/lib/composite-recovery.ts`
+
+| Direction | Key | Trust domain | Role |
+|---|---|---|---|
+| reads | `persist.step-evidence` | `pure-client` | resume, transfer-with-reallocation, unknown vs recoverable |
 
 ### `web/lib/disclosure.ts`
 
@@ -922,6 +943,20 @@ a `projection` count is a module where a fail-closed mistake can happen.
 |---|---|---|---|
 | writes | `chrome.refetch-notice` | `pure-client` | landing U12: module store; one flag for the whole app |
 
+### `web/lib/resume-contract.ts`
+
+| Direction | Key | Trust domain | Role |
+|---|---|---|---|
+| reads | `persist.attempt` | `pure-client` | modal close keeps the graph ID |
+| reads | `persist.step-evidence` | `pure-client` | route reset, modal remount, and unmount share one resume walk |
+
+### `web/lib/step-evidence.ts`
+
+| Direction | Key | Trust domain | Role |
+|---|---|---|---|
+| writes | `persist.attempt` | `pure-client` | `ovrflo:attempt:<factory>:<chainId>:<account>:<kind>` |
+| writes | `persist.step-evidence` | `pure-client` | throw-tolerant `ovrflo:step:<factory>:<chainId>:<account>:<graphId>:<stepId>` |
+
 ### `web/lib/storage.ts`
 
 | Direction | Key | Trust domain | Role |
@@ -997,15 +1032,17 @@ full entry, including fail-closed guidance on `projection` keys.
 | `executor.status` | `pure-client` | `web/hooks/useTransactionExecutor.ts` | `web/hooks/useWriteFlow.ts`<br>`web/components/kit/ActionButton.tsx`<br>`web/hooks/useApprovalWriteFlows.ts` | `docs/maps/state/keys/execution-state.md` |
 | `first-run.dismissed` | `pure-client` | `web/components/first-run/Surface.tsx` | `web/app/page.tsx`<br>`web/components/first-run/Chooser.tsx` | `docs/maps/state/keys/view-state.md` |
 | `persist.acknowledgment` | `pure-client` | `web/hooks/useAcknowledgment.ts` | `web/components/first-run/useAcknowledgeRiskTrace.ts`<br>`web/app/risk/page.tsx` | `docs/maps/state/keys/view-state.md` |
+| `persist.attempt` | `pure-client` | `web/lib/step-evidence.ts`<br>`web/components/borrow/BorrowFlow.tsx`<br>`web/components/supply/SupplyFlow.tsx` | `web/lib/resume-contract.ts`<br>`web/components/borrow/BorrowFlow.tsx`<br>`web/components/supply/SupplyFlow.tsx` | `docs/maps/state/keys/execution-state.md` |
 | `persist.drafts` | `pure-client` | `web/lib/storage.ts`<br>`web/lib/parse.ts` | `web/components/supply/SupplyFlow.tsx`<br>`web/components/borrow/BorrowFlow.tsx` | `docs/maps/state/keys/form-state.md` |
 | `persist.receipts` | `pure-client` | `web/lib/receipts.ts`<br>`web/components/supply/SupplyFlow.tsx`<br>`web/components/borrow/BorrowFlow.tsx` | `web/lib/receipts.ts`<br>`web/hooks/useStaleBalanceGuard.ts` | `docs/maps/state/keys/execution-state.md` |
+| `persist.step-evidence` | `pure-client` | `web/lib/step-evidence.ts`<br>`web/hooks/useTxQueue.ts` | `web/lib/composite-recovery.ts`<br>`web/lib/resume-contract.ts` | `docs/maps/state/keys/execution-state.md` |
 | `projection.activity` | `projection` | `web/lib/discovery/portfolio-log-candidates.ts`<br>`web/hooks/usePortfolioActivity.ts` | `web/app/activity/page.tsx` | `docs/maps/state/keys/projection.md` |
 | `projection.portfolio-candidates` | `projection` | `web/lib/discovery/portfolio-log-candidates.ts` | `web/hooks/usePortfolioActivity.ts`<br>`web/components/watch/WatchApp.tsx` | `docs/maps/state/keys/projection.md` |
 | `query.books.borrower` | `on-chain` | `web/lib/query-keys.ts` | `web/hooks/useBorrowerBook.ts`<br>`web/lib/invalidate.ts` | `docs/maps/state/keys/chain-reads.md` |
 | `query.books.lender` | `on-chain` | `web/lib/query-keys.ts` | `web/hooks/useLenderBook.ts`<br>`web/lib/invalidate.ts` | `docs/maps/state/keys/chain-reads.md` |
 | `query.ladder` | `on-chain` | `web/lib/query-keys.ts` | `web/hooks/useLadder.ts`<br>`web/lib/invalidate.ts` | `docs/maps/state/keys/chain-reads.md` |
 | `query.usd.price` | `on-chain` | `web/lib/query-keys.ts` | `web/hooks/useUsdPrice.ts` | `docs/maps/state/keys/chain-reads.md` |
-| `queue.rows` | `pure-client` | `web/hooks/useTxQueue.ts` | `web/hooks/useTxQueue.ts`<br>`web/lib/actions/claim.ts` | `docs/maps/state/keys/execution-state.md` |
+| `queue.rows` | `pure-client` | `web/hooks/useTxQueue.ts` | `web/hooks/useTxQueue.ts`<br>`web/hooks/useCreateGraphQueue.ts`<br>`web/lib/actions/claim.ts` | `docs/maps/state/keys/execution-state.md` |
 | `queue.running` | `pure-client` | `web/hooks/useTxQueue.ts` | `web/hooks/useTxQueue.ts`<br>`web/components/kit/ActionButton.tsx` | `docs/maps/state/keys/execution-state.md` |
 | `rates.workspace-open` | `pure-client` | `web/components/borrow/RateStep.tsx`<br>`web/components/supply/RateStep.tsx`<br>`web/components/rates/Workspace.tsx` | `web/components/rates/Workspace.tsx` | `docs/maps/state/keys/view-state.md` |
 | `review.reload-key` | `pure-client` | `web/components/kit/SettlementTrace.tsx` | `web/components/kit/SettlementTrace.tsx` | `docs/maps/state/keys/view-state.md` |

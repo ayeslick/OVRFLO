@@ -194,13 +194,15 @@ Whether this wallet has completed `UI-REVIEW-ACKNOWLEDGE-RISK`.
 
 - **trust_domain:** `pure-client`
 - **writers:**
-  - `web/hooks/useAcknowledgment.ts` — landing U6: one-time per address
+  - `web/hooks/useAcknowledgment.ts` — versioned, factory-scoped write
 - **readers:**
-  - `web/components/first-run/useAcknowledgeRiskTrace.ts` — landing U12: prepends ACKNOWLEDGE RISK on the first write
-  - `web/app/risk/page.tsx` — landing U11: does not fork the SETTLEMENT step
-- **notes:** Reads are never gated by acknowledgment — only the first write
-  (`UI-FIRST-RUN-RISK` rule 5). Throw-tolerant storage. Never a safety score.
-  Live SETTLEMENT traces compose this key; the executor is not rewritten.
+  - `web/components/first-run/useAcknowledgeRiskTrace.ts` — prepends the gate on create review
+  - `web/app/risk/page.tsx` — does not fork the SETTLEMENT step
+- **notes:** Key is `ovrflo:ack:<chainId>:<factory>:<account>:<version>`.
+  `RISK_DISCLOSURE_VERSION` lives in the policy module. An older version or
+  another factory re-requires the gate. Shown after position-type selection
+  and before the first wallet prompt. Never on hub, collection, or detail.
+  Reads are never gated. Throw-tolerant storage. Never a safety score.
 
 ### `chrome.refetch-notice`
 

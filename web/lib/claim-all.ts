@@ -1,4 +1,5 @@
 import type { Address } from "viem";
+import type { EconomicIdentity, GraphSemanticId } from "./action-graph";
 import type { ActionIdentity } from "./actions/types";
 import type { BlockIdentity } from "./discovery/types";
 import { isFreshReady, type ReadOutcome } from "./read-outcome";
@@ -31,6 +32,12 @@ export type QueuedTx =
       streamId: bigint;
       withdrawable: bigint;
       asset: Address;
+    }
+  | {
+      kind: "graph-step";
+      stepId: GraphSemanticId;
+      semanticId: GraphSemanticId;
+      economicIdentity: EconomicIdentity;
     };
 
 export type ClaimAllInput = {

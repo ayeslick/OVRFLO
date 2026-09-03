@@ -69,11 +69,10 @@ describe("inventory — D first-run, E risk, F acknowledgment", () => {
     expect(screen.queryByText(/your funds are safe/i)).not.toBeInTheDocument();
   });
 
-  it("F ACKNOWLEDGE RISK step copy points at /risk and never gates reads", () => {
+  it("F risk gate copy points at /risk/ and never gates reads", () => {
     render(<AcknowledgeRiskStep />);
-    expect(screen.getByRole("button", { name: "ACKNOWLEDGE RISK" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "/risk" })).toHaveAttribute("href", "/risk");
-    expect(screen.getByText(/Reads stay open/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "I UNDERSTAND" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "VIEW FULL RISKS" })).toHaveAttribute("href", "/risk/");
     expect(screen.queryByText(/I accept liquidation/i)).not.toBeInTheDocument();
   });
 });

@@ -513,7 +513,7 @@ describe.each(TRANSACTING_WIDTHS)("inventory — claim / unwrap / wrap / repay /
     expect(writeFx.writeContract).toHaveBeenCalledOnce();
   });
 
-  it("F acknowledgment step — ACKNOWLEDGE RISK before first write; /risk link; no liquidation copy", () => {
+  it("F risk gate is never shown on detail writes", () => {
     writeFx.acknowledged = false;
     render(
       <WatchWrite
@@ -527,14 +527,11 @@ describe.each(TRANSACTING_WIDTHS)("inventory — claim / unwrap / wrap / repay /
         onClose={noop}
       />,
     );
-    expect(screen.getByRole("button", { name: "ACKNOWLEDGE RISK" })).toBeInTheDocument();
-    expect(document.querySelector("[data-ui='UI-REVIEW-ACKNOWLEDGE-RISK']")).toHaveAttribute(
-      "data-state",
-      "required",
-    );
-    expect(screen.getByRole("link", { name: "/risk" })).toHaveAttribute("href", "/risk");
+    expect(screen.queryByRole("button", { name: "ACKNOWLEDGE RISK" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "I UNDERSTAND" })).not.toBeInTheDocument();
+    expect(document.querySelector("[data-ui='UI-REVIEW-ACKNOWLEDGE-RISK']")).not.toBeInTheDocument();
     expect(screen.queryByText(/liquidation risk/i)).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /CLAIM / })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /CLAIM / })).toBeInTheDocument();
   });
 });
 

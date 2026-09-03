@@ -179,6 +179,7 @@ export function useTransactionExecutor(runtime: ActionExecutionRuntime) {
       status === "refreshing",
     isConfirmed: status === "success",
     isReverted: status === "reverted",
+    isUnknown: status === "unknown",
     refreshFailed: status === "refresh_failed",
     needsReview: status === "needs_review",
     hasFailed:

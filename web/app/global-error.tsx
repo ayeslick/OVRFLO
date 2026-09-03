@@ -1,5 +1,7 @@
 "use client";
 
+import { globalResetCopy } from "@/lib/resume-contract";
+
 export default function GlobalError({
   reset,
 }: {
@@ -12,9 +14,7 @@ export default function GlobalError({
         <main className="container" role="alert">
           <div className="form-grid">
             <h1 className="mono">OVRFLO UNAVAILABLE</h1>
-            <p className="label mono status-negative">
-              The application could not recover this view. No transaction was submitted.
-            </p>
+            <p className="label mono status-negative">{globalResetCopy()}</p>
             <button className="button mono" type="button" onClick={reset}>
               RELOAD APPLICATION
             </button>

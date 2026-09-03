@@ -363,4 +363,21 @@ describe("runActionExecution", () => {
     expect(rt.submit).toHaveBeenCalledTimes(1);
     expect(rt.waitForReceipt).toHaveBeenCalledTimes(1);
   });
+
+  it("persists the hash immediately after submit and reports unknown when wait throws", async () => {
+    const persistPending = vi.fn();
+    const rt = runtime({
+      persistPending,
+      waitForReceipt: vi.fn().mockRejectedValue(new Error("RPC dropped after submit")),
+    });
+
+    const result = await runActionExecution(plan(), rt);
+
+    expect(persistPending).toHaveBeenCalledExactlyOnceWith(hash);
+    expect(vi.mocked(persistPending).mock.invocationCallOrder[0]!).toBeLessThan(
+      vi.mocked(rt.waitForReceipt).mock.invocationCallOrder[0]!,
+    );
+    expect(result).toEqual({ status: "unknown", hash, error: new Error("RPC dropped after submit") });
+    expect(rt.refresh).not.toHaveBeenCalled();
+  });
 });

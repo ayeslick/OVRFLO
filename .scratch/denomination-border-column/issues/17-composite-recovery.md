@@ -4,7 +4,7 @@
 
 **Blocked by:** 16
 
-**Status:** ready-for-agent
+**Status:** resolved
 **Labels:** ready-for-agent
 
 ## Session prompt (paste into a new chat)
@@ -46,24 +46,53 @@ After local verification, mark ticket checkboxes done and set Status: resolved.
 
 ## Acceptance criteria
 
-- [ ] Scratch intent capsule exists before the first state-touching edit
-- [ ] Deposit confirms and borrow is rejected: resume revalidates borrow only and does not replay deposit
-- [ ] A confirmed step followed by account, chain, allowance, liquidity, deadline, or router change blocks or rebuilds only the pending step
-- [ ] A first-mined receipt is pending; a confirmed hash with a failed receipt is not complete; confirmations equal `RECEIPT_CONFIRMATIONS` (currently 2)
-- [ ] Default recovery copy identifies completed and remaining user outcomes without protocol or approval mechanics
-- [ ] Clear-to-zero and set-allowance keep distinct stable step IDs; each next prompt follows receipt persistence, wallet reacquisition, rebuild, and simulation
-- [ ] Receipt storage keys include factory, chain, account, graph ID, and step ID; throwing storage does not erase runtime progress
-- [ ] Missing or ambiguous `Deposited.streamId` blocks the borrow continuation
-- [ ] Borrow rebuild uses real routed depth, authoritative eligibility, and current router/request reads — no placeholders
-- [ ] Without CS3, no-liquidity deposit-plus-borrow blocks before deposit; with immediate executable borrow, the composition may proceed
-- [ ] Completion, settlement, close, and repayment labels require both finality and a fresh authoritative state read
-- [ ] A wallet submit that returns unconfirmed persists the pending hash and step identity; resume reconciles that hash before rebuild or prompt; submission stays suppressed while the outcome is unresolved
-- [ ] Transfer-with-reallocation: a new attempt allocates a fresh graph ID; resume keys only on that ID; prior confirmed-step evidence stays read-only audit evidence
-- [ ] Confirmed-step status transfers across graph-ID reallocation by economic identity; resume never double-prompts an economically identical confirmed step
-- [ ] Closing the modal unmounts the body and keeps the pending plan and graph ID; a reopened body resumes or reallocates and never auto-confirms a latched plan the user did not accept
-- [ ] Route-level error reset, modal TRY AGAIN remount, and flow unmount cleanup converge on the same resume contract
-- [ ] Risk acknowledgment gate (KD17 owner pin 2026-09-01): `RISK_DISCLOSURE_VERSION` in the policy module; key `ovrflo:ack:<chainId>:<factory>:<account>:<version>`; shown after position-type selection and before the first wallet prompt; never on hub, collection, or detail; older version or other factory re-requires it; `Advanced` shares it; Fixed Return path adds the matched-capital sentence; `VIEW FULL RISKS` links to `/risk/`
+- [x] Scratch intent capsule exists before the first state-touching edit
+- [x] Deposit confirms and borrow is rejected: resume revalidates borrow only and does not replay deposit
+- [x] A confirmed step followed by account, chain, allowance, liquidity, deadline, or router change blocks or rebuilds only the pending step
+- [x] A first-mined receipt is pending; a confirmed hash with a failed receipt is not complete; confirmations equal `RECEIPT_CONFIRMATIONS` (currently 2)
+- [x] Default recovery copy identifies completed and remaining user outcomes without protocol or approval mechanics
+- [x] Clear-to-zero and set-allowance keep distinct stable step IDs; each next prompt follows receipt persistence, wallet reacquisition, rebuild, and simulation
+- [x] Receipt storage keys include factory, chain, account, graph ID, and step ID; throwing storage does not erase runtime progress
+- [x] Missing or ambiguous `Deposited.streamId` blocks the borrow continuation
+- [x] Borrow rebuild uses real routed depth, authoritative eligibility, and current router/request reads — no placeholders
+- [x] Without CS3, no-liquidity deposit-plus-borrow blocks before deposit; with immediate executable borrow, the composition may proceed
+- [x] Completion, settlement, close, and repayment labels require both finality and a fresh authoritative state read
+- [x] A wallet submit that returns unconfirmed persists the pending hash and step identity; resume reconciles that hash before rebuild or prompt; submission stays suppressed while the outcome is unresolved
+- [x] Transfer-with-reallocation: a new attempt allocates a fresh graph ID; resume keys only on that ID; prior confirmed-step evidence stays read-only audit evidence
+- [x] Confirmed-step status transfers across graph-ID reallocation by economic identity; resume never double-prompts an economically identical confirmed step
+- [x] Closing the modal unmounts the body and keeps the pending plan and graph ID; a reopened body resumes or reallocates and never auto-confirms a latched plan the user did not accept
+- [x] Route-level error reset, modal TRY AGAIN remount, and flow unmount cleanup converge on the same resume contract
+- [x] Risk acknowledgment gate (KD17 owner pin 2026-09-01): `RISK_DISCLOSURE_VERSION` in the policy module; key `ovrflo:ack:<chainId>:<factory>:<account>:<version>`; shown after position-type selection and before the first wallet prompt; never on hub, collection, or detail; older version or other factory re-requires it; `Advanced` shares it; Fixed Return path adds the matched-capital sentence; `VIEW FULL RISKS` links to `/risk/`
 
 ## Plan unit
 
 CS4-U4 recovery slice in `docs/plans/2026-08-22-001-refactor-denomination-switch-border-column-plan.md`
+
+## Deviation log (ticket/17, 2026-09-03)
+
+- Loan create still lists existing streams only. Ticket 16 did not add a
+  fresh-capital source. Deposit-plus-borrow recovery lives in the graph
+  library and the no-liquidity gate. This ticket does not add a deposit
+  create UI.
+- `createLiveExecutionPlan` still builds an empty borrow route snapshot.
+  Graph borrow steps submit the reviewed call after
+  `assertBorrowRebuildInputs`. That empty snapshot is pre-existing.
+- Assets Converter still shows an ACKNOWLEDGE RISK label. That control is
+  a different region. This ticket removes the gate from hub, collection,
+  and detail only.
+- `immediateTotal` and `positionLabelAllowed` stay library helpers.
+  Ticket 19 owns named surface-state labels.
+
+## Reviewer findings applied
+
+Read-only review (`gpt-5.6-sol-medium`) reported three acceptance gaps.
+This chat applied all three:
+
+1. Resume reconciles a persisted unknown hash before rebuild or prompt.
+2. A successful receipt writes confirmed step evidence even when the
+   later critical refresh fails.
+3. Graph-ID reuse requires the same kind and the same step economics.
+
+Residual from the first review pass: live borrow snapshot empty-route
+gap; no fresh deposit-plus-borrow create UI; first-mined is not a
+separate stored status.

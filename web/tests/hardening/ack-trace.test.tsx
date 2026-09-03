@@ -4,7 +4,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Address } from "viem";
 import { useAcknowledgeRiskTrace } from "@/components/first-run/useAcknowledgeRiskTrace";
 import { ACKNOWLEDGE_RISK_STEP_ID, withAcknowledgeRiskStep } from "@/components/first-run/ackTrace";
-import { chainId } from "@/lib/config";
+import { chainId, factoryAddress } from "@/lib/config";
+import { RISK_DISCLOSURE_VERSION } from "@/lib/default/policy";
 import { acknowledgmentKey } from "@/lib/storage";
 import type { TraceStep } from "@/components/kit/SettlementTrace";
 
@@ -26,7 +27,9 @@ const BASE: TraceStep[] = [
 describe("live SETTLEMENT ack wiring", () => {
   afterEach(() => {
     try {
-      window.localStorage.removeItem(acknowledgmentKey(chainId, ACCOUNT));
+      window.localStorage.removeItem(
+        acknowledgmentKey(chainId, factoryAddress, ACCOUNT, RISK_DISCLOSURE_VERSION),
+      );
     } catch {
       // ignore
     }

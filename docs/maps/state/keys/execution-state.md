@@ -111,14 +111,18 @@ The sequential write run: one row per queued transaction, with its status and an
 - **writers:**
   - `web/hooks/useTxQueue.ts` — `start`, `resume`, and per-row status updates
 - **readers:**
-  - `web/hooks/useTxQueue.ts` — derives `done`, `outcome`, `needsReview`, `failed`
+  - `web/hooks/useTxQueue.ts` — derives `done`, `outcome`, `needsReview`, `failed`, `unknown`
+  - `web/hooks/useCreateGraphQueue.ts` — starts remaining graph steps
   - `web/lib/actions/claim.ts` — landing U6: "claim remaining" continuation when the pair cap splits a position
 - **notes:** Not Claim-All. Row statuses are `pending` · `preparing` ·
-  `confirmed` · `skipped` · `needs-review` · `failed` · `replaced` ·
-  `refresh-failed`. A row becomes `confirmed` only when the injected executor
-  resolves `success` — after its receipt and its critical refresh. Every unsent
-  row is rebuilt immediately before the executor may prompt the wallet. A
-  `confirmed` row is never rewritten.
+  `mined` · `confirmed` · `skipped` · `needs-review` · `failed` · `replaced` ·
+  `refresh-failed` · `unknown`. A row becomes `confirmed` only when the injected
+  executor resolves `success` — after its receipt and its critical refresh.
+  `unknown` means a hash was persisted and the receipt is not observed yet.
+  Submission stays suppressed while that row is unresolved. Every unsent row is
+  rebuilt immediately before the executor may prompt the wallet. A `confirmed`
+  row is never rewritten. Graph steps share this queue; they do not add a
+  second executor.
 
 ### `persist.receipts`
 
@@ -138,6 +142,38 @@ A recoverable tx-hash receipt kept until chain reads reflect the created entity.
   Matching live balances against the pre-tx snapshot suppresses those numbers
   and keeps last-known post-tx. Drop the local receipt once the entity is
   present in reads.
+
+### `persist.step-evidence`
+
+Per-step recovery evidence for a composite graph.
+
+- **trust_domain:** `pure-client`
+- **writers:**
+  - `web/lib/step-evidence.ts` — throw-tolerant `ovrflo:step:<factory>:<chainId>:<account>:<graphId>:<stepId>`
+  - `web/hooks/useTxQueue.ts` — writes `unknown` immediately after submit, then `confirmed` after a successful receipt
+- **readers:**
+  - `web/lib/composite-recovery.ts` — resume, transfer-with-reallocation, unknown vs recoverable
+  - `web/lib/resume-contract.ts` — route reset, modal remount, and unmount share one resume walk
+- **notes:** Keys include factory, chain, account, graph ID, and step ID. A
+  throwing store must not erase in-memory progress. Resume keys only the
+  current graph ID. Prior confirmed rows stay audit evidence and may transfer
+  status by economic identity when the prior graph is incomplete.
+
+### `persist.attempt`
+
+The current accepted create attempt and its graph ID.
+
+- **trust_domain:** `pure-client`
+- **writers:**
+  - `web/lib/step-evidence.ts` — `ovrflo:attempt:<factory>:<chainId>:<account>:<kind>`
+  - `web/components/borrow/BorrowFlow.tsx` — persist on review accept
+  - `web/components/supply/SupplyFlow.tsx` — persist on review accept
+- **readers:**
+  - `web/lib/resume-contract.ts` — modal close keeps the graph ID
+  - `web/components/borrow/BorrowFlow.tsx` — restore on remount; do not auto-confirm
+  - `web/components/supply/SupplyFlow.tsx` — restore on remount; do not auto-confirm
+- **notes:** Closing the review body keeps this row. A reopened body resumes or
+  reallocates. `accepted: false` must not auto-confirm.
 
 ### `queue.running`
 

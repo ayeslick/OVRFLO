@@ -6,8 +6,6 @@ import { ActionButton } from "@/components/kit/ActionButton";
 import { AmountField } from "@/components/kit/AmountField";
 import { Receipt } from "@/components/kit/Receipt";
 import { SettlementTrace, type TraceStep } from "@/components/kit/SettlementTrace";
-import { AcknowledgeRiskStep } from "@/components/first-run/AcknowledgeRiskStep";
-import { useAcknowledgeRiskTrace } from "@/components/first-run/useAcknowledgeRiskTrace";
 import { useApprovalWriteFlows } from "@/hooks/useApprovalWriteFlows";
 import { useChainGuard } from "@/hooks/useChainGuard";
 import { useWatchBalances, type WatchBalances } from "@/hooks/useWatchBalances";
@@ -85,7 +83,7 @@ export function WatchWrite({
   const allowancePending =
     kind === "repay" && repayAmount > 0n && !tokenApproved && !allowanceReady;
   const needsApprove = kind === "repay" && repayAmount > 0n && !tokenApproved && allowanceReady;
-  const ackTrace = useAcknowledgeRiskTrace(traceSteps(kind, flow, true, needsApprove));
+  const writeTrace = traceSteps(kind, flow, needsApprove);
 
   useEffect(() => {
     if (kind !== "repay" || loanId === undefined) return;
@@ -197,8 +195,7 @@ export function WatchWrite({
 
   return (
     <div className="watch-write" data-ui="UI-WATCH-WRITE" data-write={kind}>
-      <SettlementTrace steps={ackTrace.steps} />
-      {ackTrace.needsAcknowledgment ? <AcknowledgeRiskStep /> : null}
+      <SettlementTrace steps={writeTrace} />
       {kind === "repay" && !flow.isConfirmed ? (
         <AmountField
           label="REPAY AMOUNT"
@@ -276,7 +273,7 @@ export function WatchWrite({
         />
       ) : null}
       <div className="watch-actions">
-        {ackTrace.needsAcknowledgment || flow.isConfirmed ? null : stale ? (
+        {flow.isConfirmed ? null : stale ? (
           <ActionButton disabled disabledReason="EVENTS STALE — SIGNING DISABLED">
             {actionLabel(kind, symbol, claimable)}
           </ActionButton>
@@ -427,7 +424,6 @@ function actionLabel(kind: WatchWriteKind, symbol: string, claimable: bigint | u
 function traceSteps(
   kind: WatchWriteKind,
   flow: { isSigning: boolean; isConfirming: boolean; isConfirmed: boolean; isReverted: boolean },
-  acknowledged: boolean,
   repayApprove: boolean,
 ): TraceStep[] {
   const actionState: TraceStep["state"] = flow.isConfirmed
@@ -436,28 +432,22 @@ function traceSteps(
       ? "error"
       : flow.isSigning || flow.isConfirming
         ? "active"
-        : acknowledged
-          ? "active"
-          : "pending";
+        : "active";
   const settled: TraceStep["state"] = flow.isConfirmed ? "done" : "pending";
-  const ack: TraceStep[] = acknowledged
-    ? []
-    : [{ id: "ack", label: "ACKNOWLEDGE RISK", state: "active" }];
   if (kind === "claim") {
-    return [...ack, { id: "claim", label: "CLAIM", state: actionState }, { id: "settled", label: "SETTLED", state: settled }];
+    return [{ id: "claim", label: "CLAIM", state: actionState }, { id: "settled", label: "SETTLED", state: settled }];
   }
   if (kind === "withdraw") {
-    return [...ack, { id: "withdraw", label: "WITHDRAW", state: actionState }, { id: "settled", label: "SETTLED", state: settled }];
+    return [{ id: "withdraw", label: "WITHDRAW", state: actionState }, { id: "settled", label: "SETTLED", state: settled }];
   }
   if (kind === "close") {
-    return [...ack, { id: "close", label: "CLOSE", state: actionState }, { id: "settled", label: "SETTLED", state: settled }];
+    return [{ id: "close", label: "CLOSE", state: actionState }, { id: "settled", label: "SETTLED", state: settled }];
   }
   const approve: TraceStep[] = repayApprove
     ? [{ id: "approve", label: "APPROVE", state: "active" }]
     : [];
   return [
-    ...ack,
-    { id: "amount", label: "AMOUNT", state: acknowledged ? "done" : "pending" },
+    { id: "amount", label: "AMOUNT", state: "done" },
     ...approve,
     { id: "repay", label: "REPAY", state: actionState },
     { id: "settled", label: "SETTLED", state: settled },

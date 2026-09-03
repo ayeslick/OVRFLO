@@ -52,6 +52,7 @@ export type ActionExecutionRuntime = {
     identity: ActionIdentity,
   ) => Promise<{ request: ExactSimulationRequest }>;
   submit: (request: ExactSimulationRequest) => Promise<Hash>;
+  persistPending?: (hash: Hash) => void | Promise<void>;
   waitForReceipt: (hash: Hash) => Promise<ExecutionReceipt>;
   refresh: (
     resources: readonly TouchedResource[],
@@ -77,6 +78,7 @@ export type ActionExecutionResult =
   | { status: "simulation_failed"; error: unknown }
   | { status: "rejected"; error: unknown }
   | { status: "transport_failed"; error: unknown }
+  | { status: "unknown"; hash: Hash; error: unknown }
   | { status: "reverted"; hash: Hash; receipt: ExecutionReceipt };
 
 export type ExecutionPhase =
@@ -289,12 +291,18 @@ export async function runActionExecution(
       : { status: "transport_failed", error };
   }
 
+  try {
+    await runtime.persistPending?.(hash);
+  } catch {
+    // Throw-tolerant persist. A later wait throw still reports unknown.
+  }
+
   let receipt: ExecutionReceipt;
   onPhase?.("confirming");
   try {
     receipt = await runtime.waitForReceipt(hash);
   } catch (error) {
-    return { status: "transport_failed", error };
+    return { status: "unknown", hash, error };
   }
   if (receipt.status !== "success") return { status: "reverted", hash, receipt };
 

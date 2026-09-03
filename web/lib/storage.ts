@@ -43,8 +43,13 @@ export function storageRemove(key: string): boolean {
   }
 }
 
-export function acknowledgmentKey(chainId: number, account: string): string {
-  return `ovrflo:ack:${chainId}:${account.toLowerCase()}`;
+export function acknowledgmentKey(
+  chainId: number,
+  factory: string,
+  account: string,
+  version: number,
+): string {
+  return `ovrflo:ack:${chainId}:${factory.toLowerCase()}:${account.toLowerCase()}:${version}`;
 }
 
 export function usdModeKey(chainId: number, account: string): string {

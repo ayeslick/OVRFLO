@@ -1,0 +1,115 @@
+# Scratch decision record — schema: docs/maps/SCHEMAS.md §4
+summary_ref: "docs/plans/2026-08-22-001-refactor-denomination-switch-border-column-plan.md#cs4-u4"
+
+goal: >
+  CS4-U4 recovery only. One mode-neutral action graph runs through the
+  existing transaction queue. Confirmed-step evidence persists by factory,
+  chain, account, graph ID, and step ID. Resume starts at the first
+  unconfirmed step. Unknown outcome stays distinct from recoverable.
+  Hosted Convert and USD stay ticket 18.
+
+state_keys_touched:
+  - queue.rows
+  - queue.running
+  - persist.receipts
+  - persist.step-evidence
+  - persist.attempt
+  - executor.status
+  - executor.result
+  - first-run.acknowledgment
+  - view-state.flow.step
+  - form-state.borrow.draft
+  - form-state.supply.draft
+
+writers_readers:
+  - writes: web/lib/action-graph.ts
+  - writes: web/lib/step-evidence.ts
+  - writes: web/lib/composite-recovery.ts
+  - writes: web/lib/deposit-output.ts
+  - writes: web/lib/recovery-copy.ts
+  - writes: web/lib/no-liquidity-gate.ts
+  - writes: web/lib/resume-contract.ts
+  - writes: web/lib/default/policy.ts
+  - writes: web/lib/storage.ts
+  - writes: web/lib/action-runtime.ts
+  - writes: web/hooks/useTxQueue.ts
+  - writes: web/hooks/useAcknowledgment.ts
+  - writes: web/hooks/useWriteFlow.ts
+  - writes: web/components/first-run/AcknowledgeRiskStep.tsx
+  - writes: web/components/borrow/BorrowFlow.tsx
+  - writes: web/components/supply/SupplyFlow.tsx
+  - writes: web/app/error.tsx
+  - writes: web/app/global-error.tsx
+  - reads: web/lib/claim-all.ts
+  - reads: web/lib/actions/borrow.ts
+  - reads: web/lib/actions/convert.ts
+  - reads: web/lib/graph-id.ts
+  - reads: web/lib/receipts.ts
+  - reads: web/lib/create-intent.ts
+
+trust_domains:
+  - fact: confirmed-step receipt and decoded Deposited.streamId
+    domain: on-chain
+    moved_from: null
+  - fact: pending hash before a receipt is observed
+    domain: pure-client
+    moved_from: null
+  - fact: routed depth, stream eligibility, router, and request reads
+    domain: on-chain
+    moved_from: null
+  - fact: risk acknowledgment version and factory
+    domain: pure-client
+    moved_from: null
+  - fact: graph ID and current attempt
+    domain: pure-client
+    moved_from: null
+
+rejected_alternatives:
+  - option: Add a second composite executor beside useTxQueue
+    why_not: KD17. Generalize the existing queue. One runner owns the graph.
+  - option: Keep clear-to-zero and set-allowance inside one authorize() call
+    why_not: AS5. They are separate stable steps with persist and rebuild between prompts.
+  - option: Fold unknown outcome into recoverable reset
+    why_not: A persisted hash with no receipt is not a clean failure. Reset is forbidden until reconcile.
+  - option: Key evidence by hash alone
+    why_not: KD17 keys factory, chain, account, graph ID, and step ID.
+  - option: Implement Hosted Convert or the USD resolver here
+    why_not: Ticket 18 owns those. This ticket owns the gate and the recovery runtime.
+
+invariants_held:
+  - invariant: Resume never replays a confirmed step.
+    how: Resume walks ordered steps and skips any step confirmed by receipt or transferred economic identity.
+  - invariant: A new attempt allocates a new graph ID and does not resume-key old evidence.
+    how: acceptCreateAttempt allocates. Resume loads only the current graph ID. Prior rows stay audit-only.
+  - invariant: Submission stays suppressed while a step outcome is unknown.
+    how: Persist the hash before waitForReceipt. Unknown status blocks start and reset.
+  - invariant: Without CS3, no-liquidity deposit-plus-borrow never starts deposit.
+    how: The gate runs before the first prompt. Immediate executable borrow may proceed.
+  - invariant: Completion labels need finality and a fresh authoritative read.
+    how: First-mined stays pending. RECEIPT_CONFIRMATIONS is 2. Labels wait for a later read.
+  - invariant: Default recovery copy names user outcomes only.
+    how: recovery-copy.ts forbids protocol, approval, calldata, router, and PT words.
+
+risks:
+  - risk: Claim-all coverage keys and graph step IDs share one queue row type.
+    residual: Graph steps use a distinct kind. Claim-all planner output stays unchanged.
+  - risk: Existing writeContract approve/borrow path remains for a transition.
+    residual: Composite deposit-plus-borrow and resume run only through the queue.
+  - risk: CS3 request actions are not in the web registry.
+    residual: The gate treats continuation as unavailable and blocks no-liquidity compositions.
+
+diff_hints:
+  - path: web/lib/action-graph.ts
+    why: Stable graph ID, semantic step IDs, dependencies, economic identity.
+  - path: web/lib/step-evidence.ts
+    why: Throw-tolerant keys include factory, chain, account, graph ID, and step ID.
+  - path: web/lib/composite-recovery.ts
+    why: Resume, unknown vs recoverable, transfer-with-reallocation.
+  - path: web/lib/action-runtime.ts
+    why: Persist the hash immediately after submit. A wait throw becomes unknown.
+  - path: web/hooks/useTxQueue.ts
+    why: One queue runs claim-all rows and graph steps.
+  - path: web/lib/default/policy.ts
+    why: RISK_DISCLOSURE_VERSION. Slippage constants stay ticket 18.
+  - path: web/app/error.tsx
+    why: Reset is resume. Do not claim no transaction when a hash is persisted.

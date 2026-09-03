@@ -3,11 +3,11 @@
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
-import { useConnection, useReadContracts } from "wagmi";
+import { useConnection, usePublicClient, useReadContracts } from "wagmi";
 import { isAddressEqual, parseEventLogs, type Address, type Log } from "viem";
 import { WalletButton } from "wallet-runtime";
 import { CreateStageFrame } from "@/components/create/CreateStageFrame";
-import { acceptCreateAttempt } from "@/lib/create-intent";
+import { compileCreateIntent } from "@/lib/create-intent";
 import {
   autoFillChoices,
   previousVisibleStage,
@@ -26,6 +26,8 @@ import { ModalErrorBoundary } from "@/components/ModalErrorBoundary";
 import { SurfaceState } from "@/components/kit/SurfaceState";
 import { useAcknowledgeRiskTrace } from "@/components/first-run/useAcknowledgeRiskTrace";
 import { useAcknowledgment } from "@/hooks/useAcknowledgment";
+import { useCreateGraphQueue } from "@/hooks/useCreateGraphQueue";
+import { useProtocolBootstrap } from "@/hooks/useProtocolBootstrap";
 import { useAllMarkets } from "@/hooks/useAllMarkets";
 import { useApprovalWriteFlows } from "@/hooks/useApprovalWriteFlows";
 import { useChainGuard } from "@/hooks/useChainGuard";
@@ -41,7 +43,21 @@ import { useStaleRecovery } from "@/hooks/useStaleRecovery";
 import { useUsdPrice } from "@/hooks/useUsdPrice";
 import { useWalletChangeReset } from "@/hooks/useWalletChangeReset";
 import { erc20Abi, ovrfloLendingAbi } from "@/lib/abis";
+import {
+  compileActionGraph,
+  GRAPH_STEP_CLEAR_TO_ZERO,
+  GRAPH_STEP_SET_ALLOWANCE,
+  GRAPH_STEP_SUPPLY,
+  sameStepEconomics,
+  withGraphId,
+  type ActionGraph,
+} from "@/lib/action-graph";
 import { chainId, factoryAddress } from "@/lib/config";
+import { confirmedStepIds } from "@/lib/composite-recovery";
+import { allocateGraphId } from "@/lib/graph-id";
+import { buildAuthStepPlan, rebuildProtocolGraphStep, reuseOrAllocateGraphId } from "@/lib/graph-step-plan";
+import { defaultRecoveryCopy, type RecoveryCopy } from "@/lib/recovery-copy";
+import { listStepEvidence, readCurrentAttempt, writeCurrentAttempt } from "@/lib/step-evidence";
 import { decodeContractError, isUserRejection } from "@/lib/errors";
 import { formatUsd } from "@/lib/format";
 import { stepWindow, tickWindow, type LadderModel } from "@/lib/ladder";
@@ -97,8 +113,16 @@ export function SupplyFlow() {
   const [allRatesOpen, setAllRatesOpen] = useState(false);
   const [frozen, setFrozen] = useState<SupplySnapshot | null>(null);
   const [attemptId, setAttemptId] = useState<string | null>(null);
+  const [graph, setGraph] = useState<ActionGraph | null>(null);
+  const [recoveryCopy, setRecoveryCopy] = useState<RecoveryCopy | null>(null);
   const [draftReady, setDraftReady] = useState(false);
   const [bodyKey, setBodyKey] = useState(0);
+  const bootstrap = useProtocolBootstrap();
+  const publicClient = usePublicClient({ chainId });
+  const identity =
+    account && connection.chainId !== undefined
+      ? { account, chainId: connection.chainId }
+      : null;
   const [approvedAmount, setApprovedAmount] = useState(0n);
   const [approveSubmitting, setApproveSubmitting] = useState(false);
   const [approveCooldown, setApproveCooldown] = useState(false);
@@ -200,6 +224,11 @@ export function SupplyFlow() {
       setAmountRaw(stored.amountRaw);
       setSelectedAprBps(stored.selectedAprBps);
       if (stored.selectedMarket) setSelectedMarket(stored.selectedMarket);
+    }
+    const storedAttempt = readCurrentAttempt(factoryAddress, chainId, account, "supply");
+    if (storedAttempt?.accepted) {
+      setAttemptId(storedAttempt.graphId);
+      if (storedAttempt.graph) setGraph(storedAttempt.graph);
     }
     setDraftReady(true);
   }, [account]);
@@ -315,14 +344,56 @@ export function SupplyFlow() {
     parsedAmount.ok &&
     amountWei > 0n &&
     (allowance >= amountWei || approvedAmount >= amountWei);
+  const graphQueue = useCreateGraphQueue({
+    identity,
+    factory: factoryAddress,
+    graph,
+    confirm: actionTx.confirmPlan,
+    retryRefresh: actionTx.retryRefresh,
+    client: publicClient,
+    rebuild: async (tx, nextIdentity) => {
+      if (tx.kind !== "graph-step") throw new Error("Supply queue accepts graph steps only");
+      if (!lending || !market || !frozen) throw new Error("Supply rebuild inputs are missing");
+      if (tx.semanticId === GRAPH_STEP_CLEAR_TO_ZERO || tx.semanticId === GRAPH_STEP_SET_ALLOWANCE) {
+        return {
+          status: "ready",
+          plan: buildAuthStepPlan({
+            identity: nextIdentity,
+            semanticId: tx.semanticId,
+            actionType: "supply",
+            token: market.ovrfloToken,
+            spender: lending,
+            amount: tx.semanticId === GRAPH_STEP_CLEAR_TO_ZERO ? 0n : frozen.amount,
+            contract: "erc20",
+          }),
+        };
+      }
+      if (tx.semanticId !== GRAPH_STEP_SUPPLY) throw new Error("Unsupported supply graph step");
+      if (!publicClient || bootstrap.status !== "ready") {
+        throw new Error("Supply rebuild cannot run without a ready protocol client");
+      }
+      return rebuildProtocolGraphStep({
+        raw: {
+          address: lending,
+          functionName: "supply",
+          args: [market.market, frozen.aprBps, frozen.amount],
+        },
+        identity: nextIdentity,
+        scope: { ...market, sablier: bootstrap.stream },
+        client: publicClient,
+        bootstrap,
+      });
+    },
+  });
   const checkpoint = deriveCheckpoint({
     stage,
     ackReady: ack.ready,
     acknowledged: ack.acknowledged,
     tokenApproved,
-    isSigning: actionTx.isSigning,
+    isSigning: actionTx.isSigning || graphQueue.running,
     isConfirming: actionTx.isConfirming,
     isConfirmed: actionTx.isConfirmed,
+    unknown: graphQueue.unknown,
   });
 
   const decoded = actionTx.error
@@ -339,6 +410,19 @@ export function SupplyFlow() {
       checkpoint,
     }),
   );
+
+  useEffect(() => {
+    if (!graph || !account) {
+      setRecoveryCopy(null);
+      return;
+    }
+    const stored = listStepEvidence(factoryAddress, chainId, account);
+    const confirmed = confirmedStepIds(graph, stored);
+    const remaining = graph.steps
+      .map((step) => step.stepId)
+      .filter((stepId) => !confirmed.includes(stepId));
+    setRecoveryCopy(defaultRecoveryCopy({ confirmed, remaining }));
+  }, [account, graph, graphQueue.rows]);
 
   const liveBalances =
     walletBalance !== null && market
@@ -487,6 +571,7 @@ export function SupplyFlow() {
   if (!signingAllowed) signingBlocked = "EVENTS STALE — SIGNING DISABLED";
   if (chainGuard.wrongChain) signingBlocked = "SWITCH NETWORK";
   if (stale.staleRecovery) signingBlocked = "ACTION INPUTS CHANGED — REVIEW AND CONFIRM AGAIN";
+  if (graphQueue.unknown) signingBlocked = "A TRANSACTION MAY ALREADY BE IN PROGRESS";
 
   const usdUnavailable =
     usd.status === "unavailable" || (usd.status === "ready" && usd.data.status === "unavailable");
@@ -510,9 +595,14 @@ export function SupplyFlow() {
   }
 
   function onReview() {
-    if (!liveSnapshot || amountError || !canContinue) return;
+    if (!liveSnapshot || amountError || !canContinue || !market || !lending) return;
     setFrozen(snapshotSupply(liveSnapshot));
-    const attempt = acceptCreateAttempt({
+    const storedAttempt = account ? readCurrentAttempt(factoryAddress, chainId, account, "supply") : null;
+    const storedRows = account ? listStepEvidence(factoryAddress, chainId, account) : [];
+    const storedComplete = storedRows.some(
+      (row) => row.graphId === storedAttempt?.graphId && row.graphComplete,
+    );
+    const intent = compileCreateIntent({
       positionType: "fixed",
       disclosure,
       context: createContext,
@@ -520,7 +610,42 @@ export function SupplyFlow() {
       amount: amountRaw,
       aprBps: selectedAprBps ?? undefined,
     });
-    setAttemptId(attempt.graphId);
+    if (intent.type !== "supply") return;
+    const compiled = compileActionGraph({
+      graphId: storedAttempt?.graphId ?? "pending",
+      chainId,
+      kind: "supply",
+      token: market.ovrfloToken,
+      amount: liveSnapshot.amount.toString(),
+      allowance: {
+        token: market.ovrfloToken,
+        spender: lending,
+        current: allowance,
+        required: liveSnapshot.amount,
+      },
+      borrowExecutable: false,
+      cs3Available: false,
+    });
+    if (compiled.status !== "ready") return;
+    const graphId = reuseOrAllocateGraphId({
+      storedGraphId: storedAttempt?.accepted ? storedAttempt.graphId : null,
+      storedKind: storedAttempt?.kind,
+      requestedKind: "supply",
+      storedComplete,
+      sameEconomics: sameStepEconomics(storedAttempt?.graph?.steps, compiled.graph.steps),
+      allocate: allocateGraphId,
+    });
+    const nextGraph = withGraphId(compiled.graph, graphId);
+    setGraph(nextGraph);
+    setAttemptId(graphId);
+    if (account) {
+      writeCurrentAttempt(factoryAddress, chainId, account, {
+        graphId,
+        kind: "supply",
+        accepted: true,
+        graph: nextGraph,
+      });
+    }
     setStage("review");
   }
 
@@ -532,13 +657,25 @@ export function SupplyFlow() {
 
   function onApprove() {
     if (!lending || !market || !frozen || chainGuard.wrongChain || !signingAllowed) return;
+    if (graphQueue.unknown) return;
+    if (graph) {
+      setApproveSubmitting(true);
+      graphQueue.startRemaining();
+      return;
+    }
     setApproveSubmitting(true);
     zeroFirst.submit(market.ovrfloToken, lending, frozen.amount, allowance);
   }
 
   function onSupply() {
     if (!lending || !market || !frozen || drifted || chainGuard.wrongChain || !signingAllowed) return;
+    if (graphQueue.unknown) return;
     setPreTxBalance(walletBalance);
+    if (graph) {
+      setActionSubmitting(true);
+      graphQueue.startRemaining();
+      return;
+    }
     setActionSubmitting(true);
     actionTx.writeContract({
       address: lending,
@@ -777,10 +914,23 @@ export function SupplyFlow() {
                 tokenApproved={tokenApproved}
                 acknowledged={ack.acknowledged}
                 signingBlockedReason={signingBlocked}
-                approveBusy={approveSubmitting || approveTx.isSigning || approveTx.isConfirming || approveTx.isInFlight}
+                approveBusy={
+                  graphQueue.running ||
+                  approveSubmitting ||
+                  approveTx.isSigning ||
+                  approveTx.isConfirming ||
+                  approveTx.isInFlight
+                }
                 approveCooldown={approveCooldown}
                 clearing={zeroFirst.clearing}
-                supplyBusy={actionSubmitting || actionTx.isSigning || actionTx.isInFlight || actionTx.isConfirming}
+                supplyBusy={
+                  graphQueue.running ||
+                  actionSubmitting ||
+                  actionTx.isSigning ||
+                  actionTx.isInFlight ||
+                  actionTx.isConfirming
+                }
+                recoveryCopy={recoveryCopy}
                 txHash={actionTx.hash ? String(actionTx.hash) : undefined}
                 positionId={receipt?.positionId}
                 errorCopy={
@@ -853,9 +1003,11 @@ function deriveCheckpoint(input: {
   isSigning: boolean;
   isConfirming: boolean;
   isConfirmed: boolean;
+  unknown?: boolean;
 }): SupplyCheckpoint {
   if (input.stage !== "review") return "review";
   if (input.isConfirmed) return "confirmed";
+  if (input.unknown) return "pending";
   if (input.isConfirming) return "pending";
   if (input.isSigning) return "sign";
   if (!input.ackReady) return "review";

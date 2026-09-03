@@ -1,5 +1,7 @@
 "use client";
 
+import { routeResetCopy } from "@/lib/resume-contract";
+
 export default function RouteError({
   reset,
 }: {
@@ -10,9 +12,7 @@ export default function RouteError({
     <main className="container" role="alert">
       <div className="form-grid">
         <h1 className="mono">MARKET VIEW UNAVAILABLE</h1>
-        <p className="label mono status-negative">
-          A client-side error interrupted this route. No transaction was submitted.
-        </p>
+        <p className="label mono status-negative">{routeResetCopy()}</p>
         <button className="button mono" type="button" onClick={reset}>
           TRY AGAIN
         </button>

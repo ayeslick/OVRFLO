@@ -1,5 +1,5 @@
 import { act, renderHook } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Address, Hash } from "viem";
 import type {
   ActionExecutionDraft,
@@ -8,9 +8,11 @@ import type {
 } from "@/lib/action-runtime";
 import type { ActionIdentity, ReadyAction } from "@/lib/actions/types";
 import type { QueuedTx } from "@/lib/claim-all";
+import { readStepEvidence } from "@/lib/step-evidence";
 import {
   useTxQueue,
   type ClaimAllRowBuild,
+  type GraphQueueContext,
   type QueueInvariant,
 } from "@/hooks/useTxQueue";
 
@@ -301,4 +303,114 @@ describe("useTxQueue executor orchestration", () => {
       expect(executor.confirm).toHaveBeenCalledTimes(1);
     },
   );
+});
+
+describe("useTxQueue graph-step recovery", () => {
+  afterEach(() => {
+    window.localStorage.clear();
+  });
+
+  const token = "0x00000000000000000000000000000000000000aa" as Address;
+  const depositStep: QueuedTx = {
+    kind: "graph-step",
+    stepId: "deposit",
+    semanticId: "deposit",
+    economicIdentity: { kind: "deposit", chainId: 1, token, amount: "10" },
+  };
+  const borrowStep: QueuedTx = {
+    kind: "graph-step",
+    stepId: "borrow",
+    semanticId: "borrow",
+    economicIdentity: { kind: "borrow", chainId: 1, token, amount: "10" },
+  };
+
+  it("skips a confirmed deposit and rebuilds borrow only", async () => {
+    const { result, rebuild, executor } = setup();
+    executor.confirm
+      .mockImplementationOnce(async (plan) => success(plan))
+      .mockImplementationOnce(async () => ({
+        status: "rejected",
+        error: new Error("user rejected borrow"),
+      }));
+    act(() => result.current.start([depositStep, borrowStep]));
+    await vi.waitFor(() => expect(result.current.failed).toBe(true));
+    expect(result.current.rows[0]!.status).toBe("confirmed");
+    expect(result.current.rows[1]!.status).toBe("failed");
+    executor.confirm.mockClear();
+    rebuild.mockClear();
+    executor.confirm.mockImplementation(async (plan) => success(plan));
+    act(() => result.current.resume([depositStep, borrowStep]));
+    await vi.waitFor(() => expect(result.current.done).toBe(true));
+    expect(rebuild.mock.calls.map(([tx]) => tx)).toEqual([borrowStep]);
+    expect(executor.confirm).toHaveBeenCalledTimes(1);
+  });
+
+  it("persists unknown and does not advance or re-prompt that step", async () => {
+    const { result, executor } = setup();
+    executor.confirm.mockImplementationOnce(async () => ({
+      status: "unknown",
+      hash,
+      error: new Error("wait threw"),
+    }));
+    act(() => result.current.start([depositStep, borrowStep]));
+    await vi.waitFor(() => expect(result.current.unknown).toBe(true));
+    expect(result.current.rows[0]!.status).toBe("unknown");
+    expect(result.current.rows[1]!.status).toBe("pending");
+    expect(executor.confirm).toHaveBeenCalledTimes(1);
+    act(() => result.current.resume([depositStep, borrowStep]));
+    expect(result.current.rows[0]!.status).toBe("unknown");
+    expect(executor.confirm).toHaveBeenCalledTimes(1);
+  });
+
+  it("persists confirmed receipt evidence when post-receipt refresh fails", async () => {
+    const factory = "0x00000000000000000000000000000000000000f1";
+    const graph: GraphQueueContext = {
+      factory,
+      graphId: "g-1",
+      economicIdentityOf: (stepId) => ({
+        kind: stepId as "deposit",
+        chainId: 1,
+        token,
+        amount: "10",
+      }),
+    };
+    const rebuild = vi.fn(async (
+      tx: QueuedTx,
+      identity: ActionIdentity,
+    ): Promise<ClaimAllRowBuild> => ({
+      status: "ready" as const,
+      plan: executionPlan(tx, identity),
+    }));
+    const executor = {
+      confirm: vi.fn(async (plan: ExecutionPlan): Promise<ActionExecutionResult> => ({
+        status: "refresh_failed",
+        hash,
+        receipt: { transactionHash: hash, status: "success", blockNumber: 100n },
+        draft: plan.accepted,
+        identity: plan.accepted.action.identity,
+        error: new Error("hydration failed"),
+      })),
+      retryRefresh: vi.fn(async (): Promise<ActionExecutionResult | null> => null),
+    };
+    const { result } = renderHook(() =>
+      useTxQueue({
+        identity: { account: userA, chainId: 1 },
+        invariants: () => ({ ready: true }),
+        rebuild,
+        executor,
+        graph,
+      }),
+    );
+    act(() => result.current.start([depositStep]));
+    await vi.waitFor(() => expect(result.current.rows[0]!.status).toBe("refresh-failed"));
+    expect(
+      readStepEvidence({
+        factory,
+        chainId: 1,
+        account: userA,
+        graphId: "g-1",
+        stepId: "deposit",
+      })?.status,
+    ).toBe("confirmed");
+  });
 });

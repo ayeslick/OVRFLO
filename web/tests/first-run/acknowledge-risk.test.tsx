@@ -9,6 +9,8 @@ import {
   needsAcknowledgeRisk,
   withAcknowledgeRiskStep,
 } from "@/components/first-run/ackTrace";
+import { factoryAddress } from "@/lib/config";
+import { RISK_DISCLOSURE_VERSION } from "@/lib/default/policy";
 import { acknowledgmentKey } from "@/lib/storage";
 import type { TraceStep } from "@/components/kit/SettlementTrace";
 
@@ -30,7 +32,9 @@ const BASE: TraceStep[] = [
 describe("acknowledge-risk helper (one-shot, writes only)", () => {
   afterEach(() => {
     try {
-      window.localStorage.removeItem(acknowledgmentKey(1, ACCOUNT));
+      window.localStorage.removeItem(
+        acknowledgmentKey(1, factoryAddress, ACCOUNT, RISK_DISCLOSURE_VERSION),
+      );
     } catch {
       // ignore
     }
@@ -59,13 +63,17 @@ describe("acknowledge-risk helper (one-shot, writes only)", () => {
 
   it("records once via the U6 store and never re-prompts", async () => {
     render(<AcknowledgeRiskStep />);
-    const button = await screen.findByRole("button", { name: "ACKNOWLEDGE RISK" });
-    expect(screen.getByRole("link", { name: "/risk" })).toHaveAttribute("href", "/risk");
+    const button = await screen.findByRole("button", { name: "I UNDERSTAND" });
+    expect(screen.getByRole("link", { name: "VIEW FULL RISKS" })).toHaveAttribute("href", "/risk/");
     fireEvent.click(button);
     await waitFor(() => {
-      expect(screen.queryByRole("button", { name: "ACKNOWLEDGE RISK" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "I UNDERSTAND" })).not.toBeInTheDocument();
     });
-    expect(window.localStorage.getItem(acknowledgmentKey(1, ACCOUNT))).toBe("1");
+    expect(
+      window.localStorage.getItem(
+        acknowledgmentKey(1, factoryAddress, ACCOUNT, RISK_DISCLOSURE_VERSION),
+      ),
+    ).toBe("1");
 
     const { result } = renderHook(() => useAcknowledgeRiskTrace(BASE));
     await waitFor(() => expect(result.current.needsAcknowledgment).toBe(false));

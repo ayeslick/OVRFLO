@@ -7,6 +7,7 @@ import { Receipt, type ReceiptLine, type ReceiptState } from "@/components/kit/R
 import { SettlementTrace, type TraceStep, type TraceStepState } from "@/components/kit/SettlementTrace";
 import { AcknowledgeRiskStep } from "@/components/first-run/AcknowledgeRiskStep";
 import { formatAddress, formatAprBps, formatCoverDate, formatId, formatTokenAmount } from "@/lib/format";
+import type { RecoveryCopy } from "@/lib/recovery-copy";
 import type { CoverDate } from "@/lib/payoff";
 import { BorrowFacts, coverLabel } from "./Facts";
 import type { BorrowQuote, BorrowQuoteSnapshot } from "./quote";
@@ -45,6 +46,7 @@ export function ReviewHandoff({
   actualObligation,
   confirmedCover,
   errorCopy,
+  recoveryCopy,
   recoveryLabel,
   onApprove,
   onBorrow,
@@ -76,6 +78,7 @@ export function ReviewHandoff({
   actualObligation?: bigint;
   confirmedCover?: CoverDate;
   errorCopy?: string;
+  recoveryCopy?: RecoveryCopy | null;
   recoveryLabel?: string;
   onAcknowledge: () => void;
   onApprove: () => void;
@@ -174,6 +177,11 @@ export function ReviewHandoff({
           }
           note={confirmed ? "ALWAYS TOKEN-EXACT" : undefined}
         />
+        {recoveryCopy ? (
+          <p className="borrow-status" data-ui="UI-REVIEW-RECOVERY">
+            {recoveryCopy.completed} {recoveryCopy.remaining} {recoveryCopy.next}
+          </p>
+        ) : null}
         {errorCopy ? (
           <p className="borrow-error" role="alert" data-ui="UI-REVIEW-TX-STATE">
             {errorCopy}

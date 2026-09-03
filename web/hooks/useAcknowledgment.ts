@@ -2,12 +2,13 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useConnection } from "wagmi";
-import { chainId } from "@/lib/config";
+import { chainId, factoryAddress } from "@/lib/config";
+import { RISK_DISCLOSURE_VERSION } from "@/lib/default/policy";
 import { acknowledgmentKey, storageGet, storageSet } from "@/lib/storage";
 
 /**
- * One-time risk acknowledgment per wallet. Applied in an effect after first
- * paint — never a render-read of localStorage (W6 / B9).
+ * Versioned, factory-scoped risk acknowledgment. Applied in an effect after
+ * first paint — never a render-read of localStorage (W6 / B9).
  */
 export function useAcknowledgment(): {
   acknowledged: boolean;
@@ -25,14 +26,19 @@ export function useAcknowledgment(): {
       setReady(true);
       return;
     }
-    const stored = storageGet(acknowledgmentKey(chainId, account));
+    const stored = storageGet(
+      acknowledgmentKey(chainId, factoryAddress, account, RISK_DISCLOSURE_VERSION),
+    );
     setAcknowledged(stored === "1");
     setReady(true);
   }, [account]);
 
   const acknowledge = useCallback(() => {
     if (!account) return;
-    storageSet(acknowledgmentKey(chainId, account), "1");
+    storageSet(
+      acknowledgmentKey(chainId, factoryAddress, account, RISK_DISCLOSURE_VERSION),
+      "1",
+    );
     setAcknowledged(true);
   }, [account]);
 

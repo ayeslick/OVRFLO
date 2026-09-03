@@ -11,6 +11,16 @@ import {
   type ClaimAllRowReconciliation,
   type QueuedTx,
 } from "@/lib/claim-all";
+import type { EconomicIdentity, GraphSemanticId } from "@/lib/action-graph";
+import { decodeDepositedStreamId } from "@/lib/deposit-output";
+import {
+  clearPersistLatch,
+  latchPersistContext,
+  listStepEvidence,
+  persistPendingHash,
+  writeStepEvidence,
+  type StepEvidenceKey,
+} from "@/lib/step-evidence";
 
 export type QueuePauseReason =
   | "completeness"
@@ -26,12 +36,14 @@ export type QueueInvariant =
 export type QueueRowStatus =
   | "pending"
   | "preparing"
+  | "mined"
   | "confirmed"
   | "skipped"
   | "needs-review"
   | "paused"
   | "refresh-failed"
-  | "failed";
+  | "failed"
+  | "unknown";
 
 export type QueueRow = {
   tx: QueuedTx;
@@ -55,6 +67,12 @@ export type ClaimAllQueueExecutor = {
   retryRefresh: () => Promise<ActionExecutionResult | null>;
 };
 
+export type GraphQueueContext = {
+  factory: string;
+  graphId: string;
+  economicIdentityOf: (stepId: string) => EconomicIdentity;
+};
+
 export type UseTxQueueOptions = {
   identity: ActionIdentity | null;
   invariants: () => QueueInvariant;
@@ -63,26 +81,32 @@ export type UseTxQueueOptions = {
     identity: ActionIdentity,
   ) => Promise<ClaimAllRowBuild>;
   executor: ClaimAllQueueExecutor;
+  graph?: GraphQueueContext;
 };
 
 function txGroupKey(tx: QueuedTx): string {
-  return tx.kind === "pool-claims"
-    ? `pool:${tx.lending.toLowerCase()}`
-    : `stream:${tx.streamId}`;
+  if (tx.kind === "pool-claims") return `pool:${tx.lending.toLowerCase()}`;
+  if (tx.kind === "stream-claim") return `stream:${tx.streamId}`;
+  return `graph:${tx.stepId}`;
 }
 
 function txCoverageKeys(tx: QueuedTx): string[] {
-  return tx.kind === "pool-claims"
-    ? tx.claims.map(
-        (claim) => `pool:${tx.lending.toLowerCase()}:${claim.loanId}`,
-      )
-    : [`stream:${tx.streamId}`];
+  if (tx.kind === "pool-claims") {
+    return tx.claims.map(
+      (claim) => `pool:${tx.lending.toLowerCase()}:${claim.loanId}`,
+    );
+  }
+  if (tx.kind === "stream-claim") return [`stream:${tx.streamId}`];
+  return [`graph:${tx.stepId}`];
 }
 
 function withoutCompleted(
   tx: QueuedTx,
   completed: ReadonlySet<string>,
 ): QueuedTx | null {
+  if (tx.kind === "graph-step") {
+    return completed.has(`graph:${tx.stepId}`) ? null : tx;
+  }
   if (tx.kind === "stream-claim") {
     const coverageKey = txCoverageKeys(tx)[0];
     if (coverageKey === undefined) return tx;
@@ -93,6 +117,70 @@ function withoutCompleted(
       !completed.has(`pool:${tx.lending.toLowerCase()}:${claim.loanId}`),
   );
   return claims.length === 0 ? null : { ...tx, claims };
+}
+
+function graphEvidenceKey(
+  graph: GraphQueueContext,
+  identity: ActionIdentity,
+  stepId: GraphSemanticId,
+): StepEvidenceKey {
+  return {
+    factory: graph.factory,
+    chainId: identity.chainId,
+    account: identity.account,
+    graphId: graph.graphId,
+    stepId,
+  };
+}
+
+function persistConfirmedGraphStep(args: {
+  graph: GraphQueueContext;
+  identity: ActionIdentity;
+  tx: Extract<QueuedTx, { kind: "graph-step" }>;
+  hash: `0x${string}`;
+  receipt: { status: "success" | "reverted"; logs?: unknown };
+  last: boolean;
+}): { depositBlocked: boolean } {
+  let decoded: Record<string, string> | null = null;
+  let depositBlocked = false;
+  if (args.tx.semanticId === "deposit") {
+    const output = decodeDepositedStreamId(
+      args.receipt.logs as
+        | readonly { data?: `0x${string}`; topics?: readonly `0x${string}`[] }[]
+        | undefined,
+    );
+    if (output.status === "ready") {
+      decoded = { streamId: output.streamId.toString() };
+    } else {
+      decoded = { blocked: output.reason };
+      depositBlocked = true;
+    }
+  }
+  writeStepEvidence({
+    factory: args.graph.factory,
+    chainId: args.identity.chainId,
+    account: args.identity.account,
+    graphId: args.graph.graphId,
+    stepId: args.tx.stepId,
+    status: "confirmed",
+    hash: args.hash,
+    receiptStatus: args.receipt.status,
+    confirmations: 2,
+    decoded,
+    economicIdentity: args.graph.economicIdentityOf(args.tx.stepId),
+    graphComplete: args.last && !depositBlocked,
+  });
+  if (args.last && !depositBlocked) {
+    for (const prior of listStepEvidence(
+      args.graph.factory,
+      args.identity.chainId,
+      args.identity.account,
+    )) {
+      if (prior.graphId !== args.graph.graphId || prior.graphComplete) continue;
+      writeStepEvidence({ ...prior, graphComplete: true });
+    }
+  }
+  return { depositBlocked };
 }
 
 /**
@@ -189,6 +277,10 @@ export function useTxQueue(options: UseTxQueueOptions) {
         await processAtRef.current?.(index + 1, run);
         return;
       }
+      if (row.status === "unknown") {
+        setRunning(false);
+        return;
+      }
       const beforeRebuild = invariantNow();
       if (!beforeRebuild.ready) {
         pauseAt(index, beforeRebuild.reason);
@@ -231,24 +323,73 @@ export function useTxQueue(options: UseTxQueueOptions) {
         return;
       }
 
+      const graph = optionsRef.current.graph;
+      if (graph && row.tx.kind === "graph-step") {
+        latchPersistContext(
+          graphEvidenceKey(graph, identity, row.tx.stepId),
+          graph.economicIdentityOf(row.tx.stepId),
+        );
+      }
+
       let result: ActionExecutionResult;
       try {
         result = await optionsRef.current.executor.confirm(rebuilt.plan);
       } catch (nextError) {
+        clearPersistLatch();
         if (generation.current !== run) return;
         setError(nextError);
         updateRow(index, "failed");
         setRunning(false);
         return;
       }
+      clearPersistLatch();
       if (generation.current !== run) return;
 
+      if (result.status === "unknown") {
+        if (graph && row.tx.kind === "graph-step" && result.hash) {
+          persistPendingHash(
+            graphEvidenceKey(graph, identity, row.tx.stepId),
+            result.hash,
+            graph.economicIdentityOf(row.tx.stepId),
+          );
+        }
+        updateRow(index, "unknown");
+        setRunning(false);
+        return;
+      }
+
       if (result.status === "success") {
-        updateRow(index, "confirmed");
+        if (graph && row.tx.kind === "graph-step") {
+          const { depositBlocked } = persistConfirmedGraphStep({
+            graph,
+            identity,
+            tx: row.tx,
+            hash: result.hash,
+            receipt: result.receipt,
+            last: index === rowsRef.current.length - 1,
+          });
+          updateRow(index, "confirmed");
+          if (depositBlocked) {
+            setRunning(false);
+            return;
+          }
+        } else {
+          updateRow(index, "confirmed");
+        }
         await processAtRef.current?.(index + 1, run);
         return;
       }
       if (result.status === "refresh_failed") {
+        if (graph && row.tx.kind === "graph-step") {
+          persistConfirmedGraphStep({
+            graph,
+            identity,
+            tx: row.tx,
+            hash: result.hash,
+            receipt: result.receipt,
+            last: index === rowsRef.current.length - 1,
+          });
+        }
         refreshFailure.current = { index, result };
         setError(result.error);
         updateRow(index, "refresh-failed");
@@ -338,6 +479,19 @@ export function useTxQueue(options: UseTxQueueOptions) {
           }
           if (generation.current !== run) return;
           if (result?.status === "success") {
+            const graph = optionsRef.current.graph;
+            const row = rowsRef.current[retainedRefresh.index];
+            const current = identityRef.current;
+            if (graph && row?.tx.kind === "graph-step" && current && result.hash) {
+              persistConfirmedGraphStep({
+                graph,
+                identity: current,
+                tx: row.tx,
+                hash: result.hash,
+                receipt: result.receipt,
+                last: retainedRefresh.index === rowsRef.current.length - 1,
+              });
+            }
             refreshFailure.current = null;
             updateRow(retainedRefresh.index, "confirmed");
             await processAtRef.current?.(retainedRefresh.index + 1, run);
@@ -374,6 +528,10 @@ export function useTxQueue(options: UseTxQueueOptions) {
 
       for (const row of rowsRef.current) {
         if (row.status === "confirmed" || row.status === "skipped") continue;
+        if (row.status === "unknown") {
+          unresolved.push({ tx: row.tx, status: "unknown" });
+          continue;
+        }
         const reviewed = withoutCompleted(row.tx, completed);
         if (!reviewed) continue;
         const group = txGroupKey(reviewed);
@@ -442,6 +600,7 @@ export function useTxQueue(options: UseTxQueueOptions) {
   useEffect(
     () => () => {
       generation.current += 1;
+      clearPersistLatch();
     },
     [],
   );
@@ -465,6 +624,7 @@ export function useTxQueue(options: UseTxQueueOptions) {
                 "needs-review",
                 "refresh-failed",
                 "failed",
+                "unknown",
               ].includes(row.status),
             )
           ? "partial_completion"
@@ -483,6 +643,7 @@ export function useTxQueue(options: UseTxQueueOptions) {
     failed: rows.some(
       (row) => row.status === "failed" || row.status === "refresh-failed",
     ),
+    unknown: rows.some((row) => row.status === "unknown"),
     error,
     inFlight: running,
     done,

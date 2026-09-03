@@ -5,6 +5,7 @@ import { Receipt, type ReceiptLine, type ReceiptState } from "@/components/kit/R
 import { SettlementTrace, type TraceStep } from "@/components/kit/SettlementTrace";
 import { AcknowledgeRiskStep } from "@/components/first-run/AcknowledgeRiskStep";
 import { formatAddress, formatAprBps, formatId, formatMaturityDate, formatTokenAmount } from "@/lib/format";
+import type { RecoveryCopy } from "@/lib/recovery-copy";
 import { SupplyFacts } from "./Facts";
 import {
   supplyTrace,
@@ -32,6 +33,7 @@ export function ReviewHandoff({
   txHash,
   positionId,
   errorCopy,
+  recoveryCopy,
   recoveryLabel,
   onApprove,
   onSupply,
@@ -57,6 +59,7 @@ export function ReviewHandoff({
   txHash?: string;
   positionId?: bigint;
   errorCopy?: string;
+  recoveryCopy?: RecoveryCopy | null;
   recoveryLabel?: string;
   onAcknowledge: () => void;
   onApprove: () => void;
@@ -114,7 +117,7 @@ export function ReviewHandoff({
       </div>
       <div>
         <SettlementTrace steps={trace} />
-        {ackRequired ? <AcknowledgeRiskStep /> : null}
+        {ackRequired ? <AcknowledgeRiskStep path="fixed" /> : null}
         {!tokenApproved ? (
           <Receipt kind="permission" state={permissionState} lines={permissionLines(frozen.amount, operator, underlyingSymbol)} />
         ) : null}
@@ -144,6 +147,11 @@ export function ReviewHandoff({
         />
         {clearing ? (
           <p className="supply-notice">THIS TOKEN REQUIRES CLEARING ITS ALLOWANCE FIRST — APPROVE TWICE</p>
+        ) : null}
+        {recoveryCopy ? (
+          <p className="supply-status" data-ui="UI-REVIEW-RECOVERY">
+            {recoveryCopy.completed} {recoveryCopy.remaining} {recoveryCopy.next}
+          </p>
         ) : null}
         {errorCopy ? (
           <p className="supply-error" role="alert" data-ui="UI-REVIEW-TX-STATE">

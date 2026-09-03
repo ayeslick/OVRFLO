@@ -107,6 +107,11 @@ When("I click the {string} button if it is shown", async ({ page }, label: strin
 });
 
 When("I acknowledge risk if prompted", async ({ page }) => {
+  const understand = page.getByRole("button", { name: "I UNDERSTAND", exact: true });
+  if (await understand.count()) {
+    await understand.click();
+    return;
+  }
   const ack = page.getByRole("button", { name: "ACKNOWLEDGE RISK", exact: true });
   if (await ack.count()) await ack.click();
 });
