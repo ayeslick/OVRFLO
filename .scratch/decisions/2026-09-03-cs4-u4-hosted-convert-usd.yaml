@@ -1,0 +1,120 @@
+# Scratch decision record — schema: docs/maps/SCHEMAS.md §4
+summary_ref: "docs/plans/2026-08-22-001-refactor-denomination-switch-border-column-plan.md#cs4-u4"
+
+goal: >
+  CS4-U4 hosted conversion and USD only. Pendle Hosted Convert is a
+  dedicated canonical action. createLiveActionDraft re-decodes it.
+  Hosted responses stay untrusted. USD lookup is keyed by column
+  underlying. Execution-grade USD uses a separate integer resolver.
+  Recovery runtime stays ticket 17.
+
+state_keys_touched:
+  - usd.price
+  - usd.staleness
+  - usd.mode
+  - query.usd.price
+  - form-state.borrow.draft
+  - form-state.supply.draft
+  - executor.status
+  - persist.attempt
+
+writers_readers:
+  - writes: web/lib/usd-recipes.ts
+  - writes: web/lib/usd.ts
+  - writes: web/lib/usd-execution.ts
+  - writes: web/lib/hosted-convert.ts
+  - writes: web/lib/actions/hosted-convert.ts
+  - writes: web/lib/default/policy.ts
+  - writes: web/lib/modal-logic.ts
+  - writes: web/lib/actions/types.ts
+  - writes: web/lib/actions/registry.ts
+  - writes: web/lib/types.ts
+  - writes: web/lib/live-action-plan.ts
+  - writes: web/hooks/useUsdPrice.ts
+  - writes: web/hooks/useWriteFlow.ts
+  - writes: web/scripts/build-csp.mjs
+  - writes: web/lib/query-keys.ts
+  - writes: web/components/assets/HostedConvertPanel.tsx
+  - writes: web/components/borrow/BorrowFlow.tsx
+  - writes: web/components/supply/SupplyFlow.tsx
+  - writes: web/components/watch/WatchApp.tsx
+  - reads: web/lib/create-intent.ts
+  - reads: web/lib/units.ts
+  - reads: web/lib/lending-math.ts
+  - reads: web/lib/action-runtime.ts
+  - reads: web/lib/disclosure.ts
+  - reads: web/lib/config.ts
+
+trust_domains:
+  - fact: Chainlink round and share-rate for a recipe row
+    domain: on-chain
+    moved_from: null
+  - fact: USD recipe table keyed by underlying
+    domain: pure-client
+    moved_from: null
+  - fact: Hosted Convert JSON body and routes[0]
+    domain: projection
+    moved_from: null
+  - fact: Validated Router V4 target, calldata, and token-native bounds
+    domain: on-chain
+    moved_from: projection
+  - fact: Token versus USD display mode
+    domain: pure-client
+    moved_from: null
+  - fact: Canonical action amount and calldata
+    domain: on-chain
+    moved_from: null
+
+rejected_alternatives:
+  - option: Hardcode wstETH as the only USD path
+    why_not: Sweep rule 11 and KD17. Lookup keys vault.underlying(). A missing row fails closed.
+  - option: Reuse useUsdPrice inside the execution resolver
+    why_not: KD17. Execution re-reads the recipe row and bypasses the display cache.
+  - option: Proxy Hosted Convert through an app server
+    why_not: Stop condition (g). Browser POST to the pinned origin. No app server.
+  - option: Derive the router allowlist from the hosted response
+    why_not: KD17. Only 0x888888888889758F76e7103c6CbF23ABbF58F946.
+  - option: Fall through Hosted Convert to the legacy raw-call adapter
+    why_not: KD17. Dedicated kind. createLiveActionDraft re-decodes it.
+  - option: Add NEXT_PUBLIC_PENDLE_API_URL
+    why_not: KD17. Origin is pinned in CSP connect-src.
+  - option: Reopen composite recovery
+    why_not: Ticket 17 owns recovery. This ticket owns hosted and USD.
+
+invariants_held:
+  - invariant: Canonical actions, calldata, and committed receipts contain no USD.
+    how: create-intent already forbids usd keys. Resolver returns token-native min and max only.
+  - invariant: useUsdPrice(A) never returns the quote for underlying B.
+    how: Hook and resolver look up the recipe for the given underlying. No default to wstETH.
+  - invariant: A missing, stale, or incomplete recipe blocks USD submit and still allows token-native submit.
+    how: Resolver fail-closed. TokenUsdSwitch shows USD UNAVAILABLE. Amount stays token-native.
+  - invariant: Hosted Convert never enters legacy raw-call.
+    how: New action type and pendle_router contract kind. Unparsed router writes are invalid.
+  - invariant: Default slippage is 50 bps. Impact above 100 bps is rejected before review.
+    how: Policy module owns both numbers. Default has no control. Advanced shows impact and does not block.
+  - invariant: Local fork does not call the hosted origin.
+    how: runtimeProfile local returns the named unavailable state before fetch.
+  - invariant: tx.to and approval spenders equal Router V4.
+    how: Allowlist is a pinned constant. Response to/spender must match.
+
+risks:
+  - risk: Hosted calldata shapes vary by Pendle action.
+    residual: Unknown selector or failed decode rejects the response. Allowed methods are pinned.
+  - risk: Watch still has one page-level USD switch.
+    residual: The hook takes the selected column underlying. Mixed unlike units are not summed.
+  - risk: simulateContract cannot take raw hosted calldata.
+    residual: pendle_router requests use call plus sendTransaction, not writeContract.
+
+diff_hints:
+  - path: web/lib/hosted-convert.ts
+    why: Untrusted response parse, Router V4 allowlist, selector decode, policy gate.
+  - path: web/lib/live-action-plan.ts
+    why: createLiveActionDraft re-decodes hosted_convert. Approve spender allows the router.
+  - path: web/lib/usd-execution.ts
+    why: Integer enclosing interval. Never imports useUsdPrice.
+  - path: web/lib/usd-recipes.ts
+    why: Per-underlying table. Launch row is wstETH only.
+  - path: web/lib/default/policy.ts
+    why: PENDLE_SLIPPAGE_BPS and MAX_PENDLE_PRICE_IMPACT_BPS live here.
+  - path: web/scripts/build-csp.mjs
+    why: connect-src includes https://api-v2.pendle.finance.

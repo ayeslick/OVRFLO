@@ -1,6 +1,7 @@
 import { borrowDefinition } from "./borrow";
 import { claimPositionDefinition, maturedClaimDefinition, streamClaimDefinition } from "./claim";
 import { depositDefinition, unwrapDefinition, wrapDefinition } from "./convert";
+import { hostedConvertDefinition } from "./hosted-convert";
 import { adjustRateDefinition, closeDefinition } from "./positions";
 import { repayDefinition } from "./repay";
 import { claimShareDefinition, supplyDefinition, withdrawDefinition } from "./supply";
@@ -29,6 +30,7 @@ export const ACTION_TYPES = [
   "adjust_rate",
   "repay",
   "close",
+  "hosted_convert",
 ] as const;
 
 export const actionRegistry = {
@@ -45,6 +47,7 @@ export const actionRegistry = {
   adjust_rate: adjustRateDefinition,
   repay: repayDefinition,
   close: closeDefinition,
+  hosted_convert: hostedConvertDefinition,
 } satisfies ActionRegistry;
 
 export function buildAction(

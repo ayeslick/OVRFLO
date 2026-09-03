@@ -140,8 +140,8 @@ export const streamBookKeys = {
 
 export const usdKeys = {
   all: ["usd"] as const,
-  price: (chainId: number, feed?: Address | null, wsteth?: Address | null) =>
-    [...usdKeys.all, "price", chainId, addr(feed), addr(wsteth)] as const,
+  price: (chainId: number, underlying?: Address | null, feed?: Address | null) =>
+    [...usdKeys.all, "price", chainId, addr(underlying), addr(feed)] as const,
 };
 
 export const freshnessKeys = {

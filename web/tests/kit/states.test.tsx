@@ -62,6 +62,22 @@ describe("kit labels, roles, and state classes", () => {
     expect(screen.getByRole("status")).not.toHaveTextContent("SCHEDULES TICK LIVE");
   });
 
+  it("TokenUsdSwitch only reports display mode", () => {
+    const seen: string[] = [];
+    render(
+      <TokenUsdSwitch
+        mode="token"
+        tokenLabel="wstETH"
+        usdAvailable
+        onChange={(mode) => {
+          seen.push(mode);
+        }}
+      />,
+    );
+    screen.getByRole("button", { name: "Token or USD display" }).click();
+    expect(seen).toEqual(["usd"]);
+  });
+
   it("TokenUsdSwitch disables with USD UNAVAILABLE", () => {
     render(<TokenUsdSwitch mode="usd" tokenLabel="wstETH" usdAvailable={false} onChange={() => undefined} />);
     expect(screen.getByRole("button", { name: "USD UNAVAILABLE" })).toBeDisabled();

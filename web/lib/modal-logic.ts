@@ -1,8 +1,9 @@
 import { isAddressEqual } from "viem";
+import { PENDLE_SLIPPAGE_BPS } from "./default/policy";
 import { loanOutstanding } from "./lending-math";
 import type { HeldStream, Loan, MarketInfo } from "./types";
 
-const DEFAULT_SLIPPAGE_BPS = 50n;
+const DEFAULT_SLIPPAGE_BPS = PENDLE_SLIPPAGE_BPS;
 
 export function repayMax(loan: Pick<Loan, "obligation" | "drawn" | "repaid">, walletBalance: bigint) {
   const outstanding = loanOutstanding(loan);

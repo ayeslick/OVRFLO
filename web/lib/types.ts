@@ -65,7 +65,8 @@ export type ActionType =
   | "claim_stream"
   | "adjust_rate"
   | "repay"
-  | "close";
+  | "close"
+  | "hosted_convert";
 
 export type ActiveAction = {
   type: ActionType;

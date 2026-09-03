@@ -111,7 +111,6 @@ export function BorrowFlow() {
   const ovrflos = useOvrflos();
   const marketsResult = useAllMarkets();
   const symbols = useMarketSymbols(marketsResult.markets);
-  const usd = useUsdPrice();
   const [usdMode, setUsdMode] = useState<"token" | "usd">("token");
   const [selectedStreamId, setSelectedStreamId] = useState<bigint | null>(null);
   const [amountRaw, setAmountRaw] = useState("");
@@ -153,6 +152,7 @@ export function BorrowFlow() {
         : null,
     [marketsResult.markets, selectedStream],
   );
+  const usd = useUsdPrice(market?.underlying);
   const lending = market?.lending ?? null;
   const ladderOutcome = useLadder(lending, market?.market);
   const { approveTx, actionTx } = useApprovalWriteFlows(account, market ?? []);

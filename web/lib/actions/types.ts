@@ -1,4 +1,5 @@
 import { encodeFunctionData, parseUnits, type Address, type Hex } from "viem";
+import type { DisclosureLevel } from "../disclosure";
 import { erc20Abi } from "../abis";
 import type { ReadOutcome } from "../read-outcome";
 import type { ActionType, LiquidityPosition, Loan } from "../types";
@@ -40,6 +41,12 @@ export type AdjustRateIntent = BaseIntent<"adjust_rate"> & {
 };
 export type RepayIntent = AmountIntent<"repay"> & { loanId: bigint };
 export type CloseIntent = BaseIntent<"close"> & { loanId: bigint };
+export type HostedConvertIntent = AmountIntent<"hosted_convert"> & {
+  inputToken: Address;
+  outputToken: Address;
+  slippageBps: number;
+  enableAggregator: boolean;
+};
 
 export type ActionIntent =
   | SupplyIntent
@@ -54,7 +61,8 @@ export type ActionIntent =
   | StreamClaimIntent
   | AdjustRateIntent
   | RepayIntent
-  | CloseIntent;
+  | CloseIntent
+  | HostedConvertIntent;
 
 type BaseSnapshot<T extends ActionType> = {
   type: T;
@@ -207,6 +215,16 @@ export type CloseSnapshot = StateSnapshot<
   { loan: Loan | null; withdrawable: bigint }
 >;
 
+export type HostedConvertState = {
+  response: unknown;
+  now: bigint;
+  walletBalance: bigint;
+  allowance: bigint;
+  disclosure: DisclosureLevel;
+};
+
+export type HostedConvertSnapshot = StateSnapshot<"hosted_convert", HostedConvertState>;
+
 export type ActionSnapshot =
   | SupplySnapshot
   | WithdrawSnapshot
@@ -220,7 +238,8 @@ export type ActionSnapshot =
   | StreamClaimSnapshot
   | AdjustRateSnapshot
   | RepaySnapshot
-  | CloseSnapshot;
+  | CloseSnapshot
+  | HostedConvertSnapshot;
 
 export type IntentByType = {
   [T in ActionType]: Extract<ActionIntent, { type: T }>;
@@ -256,7 +275,16 @@ export type ActionErrorCode =
   | "routing-incomplete"
   | "routing-insufficient"
   | "quote-invalid"
-  | "unregistered-target";
+  | "unregistered-target"
+  | "hosted-unavailable"
+  | "hosted-chain-mismatch"
+  | "hosted-token-mismatch"
+  | "hosted-router-mismatch"
+  | "hosted-semantics"
+  | "hosted-bounds"
+  | "hosted-deadline"
+  | "hosted-impact"
+  | "hosted-response";
 
 export type ActionError = {
   code: ActionErrorCode;
@@ -284,7 +312,7 @@ export type Erc721Authorization = {
 
 export type Authorization = Erc20Authorization | Erc721Authorization;
 
-export type ContractKind = "erc20" | "ovrflo" | "lending" | "sablier" | "reserve";
+export type ContractKind = "erc20" | "ovrflo" | "lending" | "sablier" | "reserve" | "pendle_router";
 
 export type FinalCall = {
   target: Address;
@@ -293,6 +321,7 @@ export type FinalCall = {
   args: readonly unknown[];
   value: bigint;
   calls?: readonly FinalCall[];
+  data?: Hex;
 };
 
 export type TouchedResource =

@@ -41,6 +41,7 @@ export function buildSecurityHeaders(environment = process.env) {
   const connectSrc = [
     "'self'",
     ...new Set([...rpcOrigins, historicalOrigin]),
+    "https://api-v2.pendle.finance",
     ...WALLET_ORIGINS_HTTP,
     ...WALLET_ORIGINS_WSS,
   ];

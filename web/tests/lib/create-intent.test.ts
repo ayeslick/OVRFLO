@@ -90,4 +90,18 @@ describe("create intent compiler", () => {
     expect(second.graphId).toBe("graph-b");
     expect(first.intent).toEqual(second.intent);
   });
+
+  it("keeps the token-native amount when USD display mode stays off the intent", () => {
+    const intent = compileCreateIntent({
+      positionType: "loan",
+      disclosure: "default",
+      context: loanContext,
+      choices: { ...emptyChoices(), sourceId: "stream-1", outcomeId: "500" },
+      streamId: 44n,
+      amount: "12.5",
+      aprBps: 500,
+    });
+    expect(intent).toEqual({ type: "borrow", amount: "12.5", streamId: 44n });
+    expect(intentHasForbiddenFields({ ...intent, usdMode: "usd" } as never)).toBe(true);
+  });
 });

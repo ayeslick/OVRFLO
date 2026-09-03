@@ -14,6 +14,8 @@ import {
 } from "@/lib/actions/registry";
 import { CLAIM_PAIRS_PER_TX, maturedClaimCapacity, maturedClaimMax } from "@/lib/actions/claim";
 import { permissionCalldata } from "@/lib/actions/types";
+import { PENDLE_ROUTER_V4 } from "@/lib/hosted-convert";
+import { hostedConvertResponse } from "./hosted-convert.fixture";
 import type {
   ActionIntent,
   ActionSnapshot,
@@ -253,6 +255,34 @@ const cases: Array<{ intent: ActionIntent; snapshot: ActionSnapshot }> = [
       state: fresh({ loan, withdrawable: 70n * WAD }),
     },
   },
+  {
+    intent: {
+      type: "hosted_convert",
+      amount: "10",
+      inputToken: underlying,
+      outputToken: ptToken,
+      slippageBps: 50,
+      enableAggregator: false,
+    },
+    snapshot: {
+      type: "hosted_convert",
+      identity,
+      market,
+      state: fresh({
+        response: hostedConvertResponse({
+          account,
+          inputToken: underlying,
+          outputToken: ptToken,
+          pendleMarket: marketAddress,
+          amount: 10n * WAD,
+        }),
+        now: 1_700_000_000n,
+        walletBalance: 20n * WAD,
+        allowance: 0n,
+        disclosure: "default",
+      }),
+    },
+  },
 ];
 
 function expectReady(intent: ActionIntent, snapshot: ActionSnapshot): ReadyAction {
@@ -263,7 +293,7 @@ function expectReady(intent: ActionIntent, snapshot: ActionSnapshot): ReadyActio
 }
 
 describe("pure action registry", () => {
-  it("resolves all thirteen ActionType values exactly once", () => {
+  it("resolves all fourteen ActionType values exactly once", () => {
     expect(ACTION_TYPES).toEqual([
       "supply",
       "withdraw",
@@ -278,13 +308,23 @@ describe("pure action registry", () => {
       "adjust_rate",
       "repay",
       "close",
+      "hosted_convert",
     ]);
     expect(Object.keys(actionRegistry).sort()).toEqual([...ACTION_TYPES].sort());
-    expect(new Set(Object.values(actionRegistry).map((definition) => definition.type)).size).toBe(13);
+    expect(new Set(Object.values(actionRegistry).map((definition) => definition.type)).size).toBe(14);
   });
 
   it("builds one ready pure action for every existing action type", () => {
     expect(cases.map(({ intent, snapshot }) => expectReady(intent, snapshot).type)).toEqual(ACTION_TYPES);
+  });
+
+  it("builds Hosted Convert as a Router V4 call with decoded calldata", () => {
+    const hosted = cases.find(({ intent }) => intent.type === "hosted_convert")!;
+    const action = expectReady(hosted.intent, hosted.snapshot);
+    expect(action.call.contract).toBe("pendle_router");
+    expect(action.call.target).toBe(PENDLE_ROUTER_V4);
+    expect(action.call.data).toMatch(/^0x/);
+    expect(action.call.functionName).toBe("hostedConvert");
   });
 });
 

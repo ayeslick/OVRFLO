@@ -105,7 +105,6 @@ export function SupplyFlow() {
   const now = useNowSeconds(true);
   const marketsResult = useAllMarkets();
   const symbols = useMarketSymbols(marketsResult.markets);
-  const usd = useUsdPrice();
   const [usdMode, setUsdMode] = useState<"token" | "usd">("token");
   const [selectedMarket, setSelectedMarket] = useState<Address | null>(null);
   const [amountRaw, setAmountRaw] = useState("");
@@ -137,6 +136,7 @@ export function SupplyFlow() {
     () => marketsResult.markets.find((row) => selectedMarket && isAddressEqual(row.market, selectedMarket)) ?? null,
     [marketsResult.markets, selectedMarket],
   );
+  const usd = useUsdPrice(market?.underlying);
   const lending = market?.lending ?? null;
   const lendingReads = useLending(lending);
   const ladderOutcome = useLadder(lending, market?.market);

@@ -17,6 +17,7 @@ import { useMarketSymbols, symbolFor } from "@/hooks/useMarketSymbols";
 import { classifySurfaceState } from "@/lib/surface-state";
 import { parseAddressParam } from "@/lib/parse";
 import { ConverterFlow } from "./ConverterFlow";
+import { HostedConvertPanel } from "./HostedConvertPanel";
 import { StreamCreateFlow } from "./StreamCreateFlow";
 import { asOfClock } from "./helpers";
 import "./assets.css";
@@ -172,6 +173,10 @@ export function AssetsPage() {
             underlyingSymbol={underlyingSymbol}
             ovrfloSymbol={ovrfloSymbol}
             repayHref={repayHref}
+            signingAllowed={freshness.signingAllowed && !chain.wrongChain}
+          />
+          <HostedConvertPanel
+            market={selected}
             signingAllowed={freshness.signingAllowed && !chain.wrongChain}
           />
           </RegionErrorBoundary>

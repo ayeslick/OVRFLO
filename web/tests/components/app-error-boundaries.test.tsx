@@ -9,7 +9,7 @@ describe("static-export error boundaries", () => {
   it("renders route recovery and retries without exposing diagnostics", () => {
     const reset = vi.fn();
     render(<RouteError error={new Error("secret rpc url https://key.example")} reset={reset} />);
-    expect(screen.getByRole("alert")).toHaveTextContent(/no transaction was submitted/i);
+    expect(screen.getByRole("alert")).toHaveTextContent(/client-side error interrupted this route/i);
     expect(screen.queryByText(/secret rpc url/i)).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /try again/i }));
     expect(reset).toHaveBeenCalledOnce();

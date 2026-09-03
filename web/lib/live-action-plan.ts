@@ -7,6 +7,8 @@ import {
   type PublicClient,
 } from "viem";
 import { erc20Abi, ovrfloAbi, ovrfloLendingAbi, ovrfloReserveAbi, sablierLockupAbi } from "./abis";
+import type { DisclosureLevel } from "./disclosure";
+import { PENDLE_ROUTER_V4 } from "./hosted-convert";
 import {
   actionResultToDraft,
   type ActionExecutionDraft,
@@ -50,6 +52,9 @@ export type LiveWriteArgs = {
   functionName?: string;
   args?: readonly unknown[];
   value?: bigint;
+  data?: Hex;
+  hostedResponse?: unknown;
+  disclosure?: DisclosureLevel;
 };
 
 export type LiveClient = Pick<PublicClient, "getBlock" | "readContract" | "simulateContract">;
@@ -231,6 +236,24 @@ function parseAction(raw: LiveWriteArgs): ParsedAction | null {
         },
         raw,
       };
+    case "hostedConvert": {
+      const inputToken = args[0];
+      const outputToken = args[1];
+      if (typeof inputToken !== "string" || typeof outputToken !== "string") {
+        throw new Error("Hosted Convert tokens are missing");
+      }
+      return {
+        intent: {
+          type: "hosted_convert",
+          inputToken: inputToken as Address,
+          outputToken: outputToken as Address,
+          amount: amount(requireBigint(args[2], "hosted convert amount")),
+          slippageBps: requireNumber(args[3], "hosted convert slippage"),
+          enableAggregator: args[4] === true,
+        },
+        raw,
+      };
+    }
     default:
       return null;
   }
@@ -403,6 +426,7 @@ function verifyApproveSpender(
   if (registered.lending) allowed.push(registered.lending);
   if (scope.lending) allowed.push(scope.lending);
   if (scope.reserve) allowed.push(scope.reserve);
+  allowed.push(PENDLE_ROUTER_V4);
   if (!allowed.some((address) => isAddressEqual(address, spenderAddress))) {
     return actionError(
       "unregistered-target",
@@ -859,10 +883,51 @@ async function loadSnapshot(
         state: readyOutcome({ loan, withdrawable }, metadata),
       };
     }
+    case "hosted_convert": {
+      const inputToken = parsed.intent.inputToken;
+      const [walletBalance, allowance] = await Promise.all([
+        read<bigint>(client, blockNumber, {
+          address: inputToken,
+          abi: erc20Abi,
+          functionName: "balanceOf",
+          args: [identity.account],
+        }),
+        read<bigint>(client, blockNumber, {
+          address: inputToken,
+          abi: erc20Abi,
+          functionName: "allowance",
+          args: [identity.account, PENDLE_ROUTER_V4],
+        }),
+      ]);
+      return {
+        type: "hosted_convert",
+        identity,
+        market,
+        state: readyOutcome(
+          {
+            response: parsed.raw.hostedResponse,
+            now: block.timestamp,
+            walletBalance,
+            allowance,
+            disclosure: parsed.raw.disclosure ?? "default",
+          },
+          metadata,
+        ),
+      };
+    }
   }
 }
 
 function requestForAction(action: ReadyAction): ExactSimulationRequest {
+  if (action.call.contract === "pendle_router") {
+    return {
+      address: action.call.target,
+      to: action.call.target,
+      data: action.call.data,
+      value: action.call.value,
+      hostedConvert: true,
+    };
+  }
   const abi =
     action.call.contract === "lending"
       ? ovrfloLendingAbi

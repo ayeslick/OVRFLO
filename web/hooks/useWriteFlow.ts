@@ -9,7 +9,7 @@ import {
   useWriteContract,
 } from "wagmi";
 import { getWalletClient } from "wagmi/actions";
-import { decodeFunctionData, isAddressEqual, type Address, type Log } from "viem";
+import { decodeFunctionData, isAddressEqual, type Address, type Hex, type Log } from "viem";
 import { useTransactionExecutor } from "./useTransactionExecutor";
 import {
   type ActionExecutionDraft,
@@ -169,6 +169,17 @@ export function useWriteFlow(
       },
       simulate: async (request, identity) => {
         if (!publicClient) throw new Error("Public client is unavailable");
+        if (isHostedConvertRequest(request)) {
+          const to = hostedConvertTo(request);
+          const data = hostedConvertData(request);
+          await publicClient.call({
+            account: identity.account,
+            to,
+            data,
+            value: hostedConvertValue(request),
+          });
+          return { request };
+        }
         const simulated = await publicClient.simulateContract({
           ...(request as Record<string, unknown>),
           account: identity.account,
@@ -179,6 +190,13 @@ export function useWriteFlow(
       submit: async (request) => {
         const walletClient = await getWalletClient(config, { chainId: configuredChainId });
         if (!walletClient) throw new Error("Wallet client is unavailable");
+        if (isHostedConvertRequest(request)) {
+          return walletClient.sendTransaction({
+            to: hostedConvertTo(request),
+            data: hostedConvertData(request),
+            value: hostedConvertValue(request),
+          } as never);
+        }
         return walletClient.writeContract(request as never);
       },
       persistPending: (hash) => {
@@ -546,6 +564,8 @@ function actionTypeFor(functionName: string): ActionType {
       return "repay";
     case "close":
       return "close";
+    case "hostedConvert":
+      return "hosted_convert";
     default:
       // ERC-20/ERC-721 approval requests use the same executor transport but
       // are not themselves a reviewed domain action.
@@ -558,6 +578,7 @@ function contractKindFor(functionName: string): ContractKind {
   if (functionName === "withdrawMax") return "sablier";
   if (["wrap", "unwrap"].includes(functionName)) return "reserve";
   if (["deposit", "claim"].includes(functionName)) return "ovrflo";
+  if (functionName === "hostedConvert") return "pendle_router";
   return "lending";
 }
 
@@ -885,6 +906,28 @@ function isMarketScope(
     | "expiryCached"
   > {
   return !Array.isArray(scope);
+}
+
+function isHostedConvertRequest(request: ExactSimulationRequest): boolean {
+  return request.hostedConvert === true;
+}
+
+function hostedConvertTo(request: ExactSimulationRequest): Address {
+  const to = request.to ?? request.address;
+  if (typeof to !== "string") throw new Error("Hosted Convert target is missing");
+  return to as Address;
+}
+
+function hostedConvertData(request: ExactSimulationRequest): Hex {
+  if (typeof request.data !== "string") throw new Error("Hosted Convert calldata is missing");
+  return request.data as Hex;
+}
+
+function hostedConvertValue(request: ExactSimulationRequest): bigint {
+  const value = request.value;
+  if (typeof value === "bigint") return value;
+  if (value === undefined) return 0n;
+  throw new Error("Hosted Convert value is not an integer");
 }
 
 const EMPTY: readonly Address[] = [];

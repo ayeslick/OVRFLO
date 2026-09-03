@@ -31,6 +31,7 @@ describe("CSP generation", () => {
     expect(csp).toContain("https://eth-mainnet.g.alchemy.com");
     expect(csp).toContain("https://fallback.example.com");
     expect(csp).toContain("https://history.example.com");
+    expect(csp).toContain("https://api-v2.pendle.finance");
     expect(csp).not.toContain("ponder");
     expect(csp).not.toMatch(/localhost|127\.0\.0\.1/);
   });

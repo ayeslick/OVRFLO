@@ -143,7 +143,6 @@ export function WatchApp() {
     streamBook.complete && streamBook.status !== "loading" && streamBook.status !== "unavailable";
   const portfolioComplete = connected && registryComplete && booksComplete && streamsComplete;
 
-  const usd = useUsdPrice();
   const streamsFreshness = useFreshness([sourceFromOutcome(streams)]);
   const borrowedFreshness = useFreshness([sourceFromOutcome(borrower)]);
   const suppliedFreshness = useFreshness([sourceFromOutcome(lender)]);
@@ -203,9 +202,6 @@ export function WatchApp() {
     resolvedLens === "streams" && streams.metadata.blockTimestamp !== undefined
       ? streams.metadata.blockTimestamp
       : (surfaceFreshness.freshness.asOf ?? nowSeconds);
-  const usdQuote: Usd8 | null =
-    usd.status === "ready" && usd.data.status === "available" ? usd.data.usd8 : null;
-  const usdAvailable = usdQuote !== null;
   const tokenLabel = markets.markets[0]
     ? symbolFor(symbols, markets.markets[0].underlying)
     : "TOKEN";
@@ -266,6 +262,14 @@ export function WatchApp() {
   const selectedLoanMarket = selectedLoan
     ? marketForLending(markets.markets, selectedLoan.lending, selectedLoan.market)
     : null;
+  const usd = useUsdPrice(
+    selectedPositionMarket?.underlying ??
+      selectedLoanMarket?.underlying ??
+      markets.markets[0]?.underlying,
+  );
+  const usdQuote: Usd8 | null =
+    usd.status === "ready" && usd.data.status === "available" ? usd.data.usd8 : null;
+  const usdAvailable = usdQuote !== null;
   const matchingOpenLoanId = matchingOpenLoan?.id;
   const matchingOpenLoanLending = matchingOpenLoan?.lending;
 
