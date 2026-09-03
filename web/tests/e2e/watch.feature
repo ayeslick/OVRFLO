@@ -87,3 +87,12 @@ Feature: Watch surface
     When I select the "STREAMS" lens
     Then I see a stream row for the tracked stream
     And each visible stream row matches lockup ownerOf
+
+  Scenario: Responsive access — desktop and mobile mode reachability
+    Given the viewport is 1280 by 800
+    Then Go to Advanced is reachable
+    And the page does not overflow horizontally
+    Given the viewport is 360 by 800
+    Then Go to Advanced is reachable
+    And the page does not overflow horizontally
+    And axe reports no serious violations

@@ -45,6 +45,7 @@ export function EntityRow({
       className="kit-entity-row"
       data-state={state}
       data-selected={selected ? "true" : "false"}
+      data-focus-key={identity}
       onClick={onSelect}
     >
       <div className="kit-entity-top">

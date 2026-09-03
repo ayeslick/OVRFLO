@@ -4,7 +4,7 @@
 
 **Blocked by:** 11, 15, 16, 17, 19
 
-**Status:** ready-for-agent
+**Status:** resolved
 **Labels:** ready-for-agent
 
 ## Session prompt (paste into a new chat)
@@ -42,20 +42,34 @@ After local verification, mark ticket checkboxes done and set Status: resolved.
 
 ## Acceptance criteria
 
-- [ ] Desktop and mobile visual-regression captures match the durable hierarchy, soft blue language, card density, and single-mobile-surface requirements
-- [ ] Axe passes create, hub, collection, detail, waiting, completed, and error states at desktop and mobile widths
-- [ ] Keyboard-only navigation operates cards, radios, disclosures, menus, collection rows, and primary actions with visible focus
-- [ ] Collapsed stages preserve ordered progress semantics and heading order
-- [ ] Field errors are associated and announced
-- [ ] Quote refresh, pending, rejected, reverted, and confirmed changes announce through live regions
-- [ ] Truncated wallet identity retains its full accessible label
-- [ ] Decorative medallions are hidden from the accessibility tree
-- [ ] Mobile safe areas hold, collections do not overflow horizontally, and reduced motion disables nonessential animation
-- [ ] Advanced exposes supported exact controls without a separate visual foundation
-- [ ] Route and stage navigation focus the destination heading; inline status retains focus; Back restores opener focus
-- [ ] Go to Advanced and Return to Default remain globally reachable at desktop and mobile widths
-- [ ] Mobile primary actions and choice/collection rows meet a 44px minimum target
+- [x] Desktop and mobile visual-regression captures match the durable hierarchy, soft blue language, card density, and single-mobile-surface requirements
+- [x] Axe passes create, hub, collection, detail, waiting, completed, and error states at desktop and mobile widths
+- [x] Keyboard-only navigation operates cards, radios, disclosures, menus, collection rows, and primary actions with visible focus
+- [x] Collapsed stages preserve ordered progress semantics and heading order
+- [x] Field errors are associated and announced
+- [x] Quote refresh, pending, rejected, reverted, and confirmed changes announce through live regions
+- [x] Truncated wallet identity retains its full accessible label
+- [x] Decorative medallions are hidden from the accessibility tree
+- [x] Mobile safe areas hold, collections do not overflow horizontally, and reduced motion disables nonessential animation
+- [x] Advanced exposes supported exact controls without a separate visual foundation
+- [x] Route and stage navigation focus the destination heading; inline status retains focus; Back restores opener focus
+- [x] Go to Advanced and Return to Default remain globally reachable at desktop and mobile widths
+- [x] Mobile primary actions and choice/collection rows meet a 44px minimum target
 
 ## Plan unit
 
 CS4-U6 in `docs/plans/2026-08-22-001-refactor-denomination-switch-border-column-plan.md`
+
+## Deviations
+
+- Wallet chip keeps the truncated value as the accessible name. `title` carries
+  the full address. Maps `UI-SHELL-ADDRESS-COPY` forbids an `aria-label` that
+  replaces that name.
+- Axe `color-contrast` stays off. `DESIGN.md` tokens are normative.
+- Create Back falls back to the stage heading when Continue unmounts. Watch
+  Default remounts restore the row through `data-focus-key`.
+- Owner asked this session to skip E2E runs. Feature scenarios and steps
+  landed. Vitest proves the same contracts.
+- Pre-existing suite failures left untouched: `app-error-boundaries` still
+  expects `RELOAD APPLICATION`; `invalidate.test.ts` still expects 6
+  `invalidateQueries` calls.

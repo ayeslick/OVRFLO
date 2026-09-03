@@ -126,10 +126,10 @@ export function Wall({
     >
       {collection ? (
         <div className="watch-collection-head">
-          <p className="watch-kicker">
+          <h2 tabIndex={-1} data-surface-heading className="watch-kicker kit-surface-heading">
             {collectionType === "loan" ? "Self-Repaying Loans" : "Fixed Returns"} ·{" "}
             {collectionType === "loan" ? loans.length + waitingRequests.length : positions.length}
-          </p>
+          </h2>
           {onSort ? (
             <label className="watch-collection-sort">
               Sort
@@ -146,7 +146,12 @@ export function Wall({
           {totals ? <CollectionTotals totals={totals} /> : null}
         </div>
       ) : (
-        <LensTabs tabs={tabs} selected={lens} onSelect={onSelectLens} />
+        <>
+          <h2 tabIndex={-1} data-surface-heading className="kit-surface-heading kit-vh">
+            Your OVRFLO
+          </h2>
+          <LensTabs tabs={tabs} selected={lens} onSelect={onSelectLens} />
+        </>
       )}
       <div
         role={collection ? "list" : "tabpanel"}

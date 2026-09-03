@@ -3,6 +3,7 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import type { CreateChoices, CreateStage, StageVisibility } from "@/lib/create-stages";
 import { blockingCopy, visibleDecisionStages } from "@/lib/create-stages";
+import { rememberOpener, restoreOpenerOrHeading } from "@/lib/surface-focus";
 import "./create-stage.css";
 
 const STAGE_TITLE: Record<CreateStage, string> = {
@@ -36,30 +37,32 @@ export function CreateStageFrame({
   const backPendingRef = useRef(false);
 
   useEffect(() => {
+    const heading = headingRef.current;
     if (backPendingRef.current) {
       backPendingRef.current = false;
-      restoreOpenerFocus(openerRef.current);
+      restoreOpenerOrHeading(openerRef.current, heading);
       return;
     }
-    openerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    headingRef.current?.focus();
+    heading?.focus();
   }, [stage]);
 
   const block = blockingCopy(stage, visibility);
-  const completed = visibleDecisionStages(visibility).filter((row) => row !== stage);
+  const progress = visibleProgress(visibility);
+  const completed = progress.filter((row) => row !== stage);
 
   return (
     <div className="create-stage" data-compact={compact ? "true" : "false"} data-stage={stage}>
-      {!compact ? (
-        <ol className="create-stage-summary" aria-label="Completed choices">
-          {completed.map((row) => (
-            <li key={row}>
-              <span>{STAGE_TITLE[row]}</span>
-              <strong>{summaryValue(row, choices, labels)}</strong>
-            </li>
-          ))}
-        </ol>
-      ) : null}
+      <ol
+        className={compact ? "create-stage-progress kit-vh" : "create-stage-summary"}
+        aria-label="Create progress"
+      >
+        {(compact ? progress : completed).map((row) => (
+          <li key={row} aria-current={row === stage ? "step" : undefined}>
+            <span>{STAGE_TITLE[row]}</span>
+            <strong>{row === stage ? "Current" : summaryValue(row, choices, labels)}</strong>
+          </li>
+        ))}
+      </ol>
       {onBack ? (
         <button
           type="button"
@@ -72,8 +75,18 @@ export function CreateStageFrame({
           Back
         </button>
       ) : null}
-      <section className="create-stage-decision">
-        <h2 ref={headingRef} tabIndex={-1} className="create-stage-heading">
+      <section
+        className="create-stage-decision"
+        onClick={() => {
+          openerRef.current = rememberOpener();
+        }}
+      >
+        <h2
+          ref={headingRef}
+          tabIndex={-1}
+          data-surface-heading
+          className="create-stage-heading kit-surface-heading"
+        >
           {STAGE_TITLE[stage]}
         </h2>
         {block ? (
@@ -89,7 +102,11 @@ export function CreateStageFrame({
 }
 
 export function restoreOpenerFocus(opener: HTMLElement | null) {
-  opener?.focus();
+  restoreOpenerOrHeading(opener, null);
+}
+
+function visibleProgress(visibility: StageVisibility): CreateStage[] {
+  return [...visibleDecisionStages(visibility), "review"];
 }
 
 function summaryValue(

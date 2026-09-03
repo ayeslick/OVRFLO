@@ -3,6 +3,7 @@
 import type { BorrowerLoanRow } from "@/hooks/useBorrowerBook";
 import { formatTruncatedDecimal } from "@/lib/format";
 import type { Freshness } from "@/lib/freshness";
+import { SurfaceHeading } from "@/components/kit/SurfaceHeading";
 import { freshnessCaption } from "./SuppliedDetail";
 import { RetiredMarketMarker } from "./PortfolioViews";
 import "./watch.css";
@@ -24,6 +25,7 @@ export function ClosedLoanDetail({
 }) {
   return (
     <article data-ui="UI-WATCH-CLOSED-DETAIL" data-region="settled-detail" data-state="settled">
+      <SurfaceHeading>Completed loan</SurfaceHeading>
       {retired ? <RetiredMarketMarker /> : null}
       <div className="kit-hero">
         <span className="kit-hero-kicker">SETTLED</span>

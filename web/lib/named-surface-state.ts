@@ -301,6 +301,23 @@ export function txNamedState(
   return "transaction-unknown";
 }
 
+export function reviewLiveCopy(args: {
+  drifted: boolean;
+  checkpoint: "pending" | "confirmed" | "rejected" | "reverted" | "unknown" | string;
+}): string | null {
+  if (args.drifted) return namedSurfaceSpec("quote-refreshing").copy;
+  if (
+    args.checkpoint === "pending" ||
+    args.checkpoint === "confirmed" ||
+    args.checkpoint === "rejected" ||
+    args.checkpoint === "reverted" ||
+    args.checkpoint === "unknown"
+  ) {
+    return namedSurfaceSpec(txNamedState(args.checkpoint)).copy;
+  }
+  return null;
+}
+
 export function suppressStaleSubmit(args: {
   refreshing: boolean;
   pending: boolean;

@@ -1,3 +1,4 @@
+import { createRequire } from "node:module";
 import { expect, type Locator, type Page } from "@playwright/test";
 import { formatUnits } from "viem";
 import { Given, Then, When } from "../fixtures/bdd";
@@ -9,6 +10,8 @@ import {
 } from "../fixtures/mock-wallet";
 import { erc20Abi } from "@/lib/abis";
 import { ui } from "./locators";
+
+const require = createRequire(import.meta.url);
 
 async function amountInput(page: Page): Promise<Locator> {
   const candidates = [
@@ -304,6 +307,56 @@ Then("the {string} button is enabled", async ({ page }, label: string) => {
 
 Given("the viewport is {int} by {int}", async ({ page }, width: number, height: number) => {
   await page.setViewportSize({ width, height });
+});
+
+Then("Go to Advanced is reachable", async ({ page }) => {
+  const account = page.locator('[data-ui="UI-SHELL-MODE"][data-location="account"]');
+  if (await account.isVisible()) {
+    await expect(account).toHaveText(/Go to Advanced|Return to Default/);
+    return;
+  }
+  const menu = page.locator('[data-ui="UI-SHELL-MENU"]');
+  await expect(menu).toBeVisible();
+  await menu.locator("summary").click();
+  await expect(menu.getByRole("button", { name: /Go to Advanced|Return to Default/ })).toBeVisible();
+});
+
+Then("the page does not overflow horizontally", async ({ page }) => {
+  const overflowed = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
+  expect(overflowed).toBe(false);
+});
+
+Then("the destination heading has focus", async ({ page }) => {
+  await expect(page.locator("[data-surface-heading]:focus")).toBeVisible({ timeout: 10_000 });
+});
+
+Then("the amount field error is associated", async ({ page }) => {
+  const input = page.locator("input[aria-invalid='true']").first();
+  await expect(input).toBeVisible();
+  const describedBy = await input.getAttribute("aria-describedby");
+  expect(describedBy).toBeTruthy();
+  await expect(page.locator(`#${describedBy}`)).toBeVisible();
+});
+
+Then("axe reports no serious violations", async ({ page }) => {
+  await page.addScriptTag({ path: require.resolve("axe-core") });
+  const violations = await page.evaluate(async () => {
+    const axe = (
+      window as unknown as {
+        axe: {
+          run: (
+            context: Document,
+            options: { rules: Record<string, { enabled: boolean }> },
+          ) => Promise<{ violations: { id: string; impact: string | null }[] }>;
+        };
+      }
+    ).axe;
+    const results = await axe.run(document, {
+      rules: { "color-contrast": { enabled: false } },
+    });
+    return results.violations.filter((row) => row.impact === "serious" || row.impact === "critical");
+  });
+  expect(violations, JSON.stringify(violations)).toEqual([]);
 });
 
 function escapeRegExp(value: string) {

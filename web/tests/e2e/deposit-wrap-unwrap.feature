@@ -71,3 +71,9 @@ Feature: Assets converter and stream creation
     And I fill the amount field with "1"
     When I reload the page
     Then the assets converter is open
+
+  Scenario: Responsive access — assets stay operable
+    Given the viewport is 360 by 800
+    Then Go to Advanced is reachable
+    And the page does not overflow horizontally
+    And axe reports no serious violations

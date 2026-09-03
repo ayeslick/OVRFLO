@@ -19,6 +19,7 @@ import {
   loanOutstanding,
 } from "@/lib/watch-rows";
 import { freshnessCaption } from "./SuppliedDetail";
+import { SurfaceHeading } from "@/components/kit/SurfaceHeading";
 import { RetiredMarketMarker } from "./PortfolioViews";
 import { WatchWrite } from "./WatchWrite";
 import "./watch.css";
@@ -82,6 +83,7 @@ export function BorrowedDetail({
 
   return (
     <article data-ui="UI-WATCH-BORROWED-DETAIL" data-region="borrowed-detail" data-state={state}>
+      <SurfaceHeading>Self-Repaying Loan</SurfaceHeading>
       {retired ? <RetiredMarketMarker /> : null}
       <div className="kit-hero">
         <span className="kit-hero-kicker">OUTSTANDING</span>

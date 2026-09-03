@@ -3,12 +3,14 @@
 import { isAddressEqual, type Address } from "viem";
 import { useConnection, useReadContract } from "wagmi";
 import { ActionButton } from "@/components/kit/ActionButton";
+import { SurfaceHeading } from "@/components/kit/SurfaceHeading";
 import { useApprovalWriteFlows } from "@/hooks/useApprovalWriteFlows";
 import { ovrfloLendingAbi, ovrfloRequestBookAbi } from "@/lib/abis";
 import type { DisclosureLevel } from "@/lib/disclosure";
 import { formatAprBps, formatTruncatedDecimal } from "@/lib/format";
 import {
   namedSurfaceSpec,
+  reviewLiveCopy,
   WAITING_FOR_LIQUIDITY_COPY,
 } from "@/lib/named-surface-state";
 import type { RestingRequestRow } from "@/lib/protocol/request-book";
@@ -52,6 +54,20 @@ export function WaitingRequestDetail({
   const pending = actionTx.isConfirming;
   const stale = !signingAllowed;
   const blocked = stale || pending || actionTx.isUnknown;
+  const liveCopy = reviewLiveCopy({
+    drifted: false,
+    checkpoint: pending
+      ? "pending"
+      : actionTx.isConfirmed
+        ? "confirmed"
+        : actionTx.isRejected
+          ? "rejected"
+          : actionTx.isReverted
+            ? "reverted"
+            : actionTx.isUnknown
+              ? "unknown"
+              : "review",
+  });
 
   function onCancel() {
     if (blocked) return;
@@ -79,6 +95,12 @@ export function WaitingRequestDetail({
       data-region="waiting-request"
       data-named-state={spec.id}
     >
+      <SurfaceHeading>Waiting</SurfaceHeading>
+      {liveCopy ? (
+        <p className="kit-vh" role="status" aria-live="polite" aria-atomic="true" data-ui="UI-WATCH-LIVE">
+          {liveCopy}
+        </p>
+      ) : null}
       <div className="kit-hero">
         <span className="kit-hero-kicker">{spec.label.toUpperCase()}</span>
         <p className="watch-hero-meta">STREAM #{request.streamId.toString()}</p>

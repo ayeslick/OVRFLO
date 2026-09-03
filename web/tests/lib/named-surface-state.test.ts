@@ -5,6 +5,7 @@ import {
   WAITING_FOR_LIQUIDITY_COPY,
   actionCardinality,
   namedSurfaceSpec,
+  reviewLiveCopy,
   suppressStaleSubmit,
   txNamedState,
 } from "@/lib/named-surface-state";
@@ -64,6 +65,25 @@ describe("named surface-state catalog", () => {
     expect(suppressStaleSubmit({ refreshing: false, pending: true, marketMoved: false })).toBe(
       true,
     );
+  });
+
+  it("announces quote refresh and each tx checkpoint through review live copy", () => {
+    expect(reviewLiveCopy({ drifted: true, checkpoint: "sign" })).toBe(
+      namedSurfaceSpec("quote-refreshing").copy,
+    );
+    expect(reviewLiveCopy({ drifted: false, checkpoint: "pending" })).toBe(
+      namedSurfaceSpec("transaction-pending").copy,
+    );
+    expect(reviewLiveCopy({ drifted: false, checkpoint: "rejected" })).toBe(
+      namedSurfaceSpec("transaction-rejected").copy,
+    );
+    expect(reviewLiveCopy({ drifted: false, checkpoint: "reverted" })).toBe(
+      namedSurfaceSpec("transaction-reverted").copy,
+    );
+    expect(reviewLiveCopy({ drifted: false, checkpoint: "confirmed" })).toBe(
+      namedSurfaceSpec("transaction-confirmed").copy,
+    );
+    expect(reviewLiveCopy({ drifted: false, checkpoint: "review" })).toBeNull();
   });
 
   it("keeps rejected, reverted, pending, confirmed, and unknown distinct", () => {

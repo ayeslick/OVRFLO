@@ -29,6 +29,7 @@ Feature: Supply liquidity
     And I click the "CONTINUE" button
     And I fill the amount field with a value exceeding my wstETH balance
     Then I see a field error
+    And the amount field error is associated
 
   Scenario: Identity churn — disconnect on review asks to re-enter
     When I select the first supply market
@@ -62,3 +63,8 @@ Feature: Supply liquidity
   @UI-SUPPLY-SELECT-MARKET
   Scenario: Degraded reads — registry copy is distinct from an empty list
     Then the supply market picker is showing a non-loading state
+
+  Scenario: Responsive access — heading focus and global mode
+    Then the destination heading has focus
+    And Go to Advanced is reachable
+    And axe reports no serious violations

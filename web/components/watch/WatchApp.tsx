@@ -34,6 +34,12 @@ import {
 import { groupTotalsByUnderlying, type CollectionSort } from "@/lib/portfolio-status";
 import type { ReadOutcome } from "@/lib/read-outcome";
 import { queryClient } from "@/lib/query-client";
+import {
+  currentSurfaceHeading,
+  openerFocusKey,
+  rememberOpener,
+  restoreOpenerOrHeading,
+} from "@/lib/surface-focus";
 import { classifySurfaceState } from "@/lib/surface-state";
 import { lensKey, storageGet, storageSet, usdModeKey } from "@/lib/storage";
 import { tokenUsd8 } from "@/lib/usd";
@@ -76,7 +82,9 @@ export function WatchApp() {
   const clock = useClockHydrationSafe();
   const nowSeconds = clock?.adjustedNow ?? 0n;
   const nowMs = clock ? Number(clock.adjustedNow) * 1000 : Date.now();
-  const watchBackRef = useRef<HTMLButtonElement>(null);
+  const openerRef = useRef<HTMLElement | null>(null);
+  const openerKeyRef = useRef<string | null>(null);
+  const backPendingRef = useRef(false);
   const disclosure = useSyncExternalStore(subscribeDisclosure, getDisclosure, getDisclosure);
   const isAdvanced = disclosure === "advanced";
   const [sort, setSort] = useState<CollectionSort>("id");
@@ -241,10 +249,16 @@ export function WatchApp() {
   }
 
   function onSelect(selection: WatchSelection) {
+    const opener = rememberOpener();
+    openerRef.current = opener;
+    openerKeyRef.current = openerFocusKey(opener);
     writeWatchSearch({ selection }, "push");
   }
 
   function onOpenCollection(type: PortfolioType) {
+    const opener = rememberOpener();
+    openerRef.current = opener;
+    openerKeyRef.current = openerFocusKey(opener);
     writeWatchSearch({ type, selection: { kind: "none" } }, "push");
   }
 
@@ -360,10 +374,22 @@ export function WatchApp() {
     );
   }, [matchingOpenLoanId, matchingOpenLoanLending, selectedStreamId]);
 
+  const surfaceKey = [
+    surface.kind,
+    surface.kind === "collection" ? surface.type : "",
+    url.selection.kind,
+    url.selection.kind === "none" ? "" : String(url.selection.id),
+  ].join(":");
+
   useEffect(() => {
-    if (!narrow || !detailOpen || !canLeaveDetail) return;
-    watchBackRef.current?.focus();
-  }, [narrow, detailOpen, canLeaveDetail, url.selection]);
+    const heading = currentSurfaceHeading();
+    if (backPendingRef.current) {
+      backPendingRef.current = false;
+      restoreOpenerOrHeading(openerRef.current, heading, openerKeyRef.current);
+      return;
+    }
+    heading?.focus();
+  }, [surfaceKey]);
 
   const loanTotals = groupTotalsByUnderlying(
     loans.map((loan) => {
@@ -647,11 +673,13 @@ export function WatchApp() {
         >
           {showBack ? (
             <button
-              ref={watchBackRef}
               type="button"
               className="watch-back"
               aria-label={`Back to ${resolvedLens}`}
-              onClick={() => url.deselect()}
+              onClick={() => {
+                backPendingRef.current = true;
+                url.deselect();
+              }}
             >
               ←
             </button>
@@ -682,11 +710,13 @@ export function WatchApp() {
         <div className="watch-split" data-region="watch" data-narrow-detail={narrow && detailOpen ? "true" : "false"}>
           {narrow && detailOpen ? (
             <button
-              ref={watchBackRef}
               type="button"
               className="watch-back"
               aria-label={`Back to ${resolvedLens}`}
-              onClick={() => url.deselect()}
+              onClick={() => {
+                backPendingRef.current = true;
+                url.deselect();
+              }}
             >
               ←
             </button>

@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { SurfaceHeading } from "@/components/kit/SurfaceHeading";
 import type { PortfolioType } from "@/lib/parse";
 import { formatTruncatedDecimal } from "@/lib/format";
 import { KD7_RETIRED_MARKET_COPY } from "@/lib/named-surface-state";
@@ -10,7 +11,7 @@ export function PortfolioEmpty() {
   return (
     <section className="default-hub" data-ui="UI-WATCH-EMPTY">
       <header className="default-hub-welcome">
-        <h2>Your OVRFLO</h2>
+        <SurfaceHeading>Your OVRFLO</SurfaceHeading>
       </header>
       <p>No positions yet. Create a Self-Repaying Loan or a Fixed Return.</p>
       <a className="kit-card kit-type-card" href="/create/" data-ui="UI-WATCH-EMPTY-CREATE">
@@ -31,7 +32,7 @@ export function PortfolioIncomplete({
   return (
     <section className="watch-portfolio" data-ui="UI-WATCH-INCOMPLETE">
       <header className="default-hub-welcome">
-        <h2>Your OVRFLO</h2>
+        <SurfaceHeading>Your OVRFLO</SurfaceHeading>
       </header>
       <p className="watch-kicker">INCOMPLETE</p>
       <p>Discovery is still running. Confirmed cards stay visible. This count is not a route.</p>
@@ -53,13 +54,14 @@ export function PortfolioHub({
   return (
     <section className="default-hub" data-ui="UI-WATCH-HUB">
       <header className="default-hub-welcome">
-        <h2>Your OVRFLO</h2>
+        <SurfaceHeading>Your OVRFLO</SurfaceHeading>
       </header>
       <div className="default-hub-types">
         <button
           type="button"
           className="kit-card kit-type-card"
           data-type="loan"
+          data-focus-key="hub-loan"
           onClick={() => onOpenCollection("loan")}
         >
           <span className="kit-medallion" data-identity="loan" aria-hidden="true" />
@@ -71,6 +73,7 @@ export function PortfolioHub({
           type="button"
           className="kit-card kit-type-card"
           data-type="fixed"
+          data-focus-key="hub-fixed"
           onClick={() => onOpenCollection("fixed")}
         >
           <span className="kit-medallion" data-identity="fixed" aria-hidden="true" />

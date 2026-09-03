@@ -3,8 +3,13 @@
   gap: var(--space-lg, 24px);
 }
 
-.create-stage[data-compact="true"] .create-stage-summary {
-  display: none;
+.create-stage-progress {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
 .create-stage-summary {

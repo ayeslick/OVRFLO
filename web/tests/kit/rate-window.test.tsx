@@ -1,5 +1,5 @@
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 import { RateWindow } from "@/components/kit/RateWindow";
 
 const TICKS = [
@@ -38,5 +38,26 @@ describe("RateWindow", () => {
     expect(screen.getByText("NO LIQUIDITY POSTED AT ANY RATE")).toHaveAttribute("data-state", "empty");
     rerender(<RateWindow state="unavailable" ticks={[]} atMin={false} atMax={false} />);
     expect(screen.getByText("RATES UNAVAILABLE")).toHaveAttribute("data-state", "unavailable");
+  });
+
+  it("moves the selected radio with arrows, Home, and End", () => {
+    const onSelect = vi.fn();
+    render(
+      <RateWindow
+        state="ready"
+        ticks={TICKS}
+        selectedId="mid"
+        atMin={false}
+        atMax={false}
+        onSelect={onSelect}
+      />,
+    );
+    const group = screen.getByRole("radiogroup", { name: "APR term" });
+    fireEvent.keyDown(group, { key: "ArrowRight" });
+    expect(onSelect).toHaveBeenCalledWith("max");
+    fireEvent.keyDown(group, { key: "Home" });
+    expect(onSelect).toHaveBeenCalledWith("min");
+    fireEvent.keyDown(group, { key: "End" });
+    expect(onSelect).toHaveBeenCalledWith("max");
   });
 });

@@ -8,6 +8,7 @@ import { SettlementTrace, type TraceStep, type TraceStepState } from "@/componen
 import { AcknowledgeRiskStep } from "@/components/first-run/AcknowledgeRiskStep";
 import { formatAddress, formatAprBps, formatCoverDate, formatId, formatTokenAmount } from "@/lib/format";
 import type { RecoveryCopy } from "@/lib/recovery-copy";
+import { reviewLiveCopy } from "@/lib/named-surface-state";
 import type { CoverDate } from "@/lib/payoff";
 import { BorrowFacts, coverLabel } from "./Facts";
 import type { BorrowQuote, BorrowQuoteSnapshot } from "./quote";
@@ -106,9 +107,15 @@ export function ReviewHandoff({
     checkpoint === "approve" ? "current" : streamApproved ? "skipped" : "ghosted";
   const actionState = actionReceiptState(checkpoint);
   const confirmed = checkpoint === "confirmed";
+  const liveCopy = reviewLiveCopy({ drifted, checkpoint });
 
   return (
     <div className="borrow-split" data-ui="UI-REVIEW-SPLIT" data-state={checkpoint}>
+      {liveCopy ? (
+        <p className="kit-vh" role="status" aria-live="polite" aria-atomic="true" data-ui="UI-REVIEW-LIVE">
+          {liveCopy}
+        </p>
+      ) : null}
       <div>
         <p className="borrow-kicker">{mode === "post" ? "REVIEW REQUEST" : "REVIEW BORROW"}</p>
         {mode === "post" && waitingCopy ? <p className="borrow-lede">{waitingCopy}</p> : null}

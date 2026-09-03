@@ -10,6 +10,7 @@ import type { Freshness } from "@/lib/freshness";
 import { buildLedgerCardSnapshot } from "@/lib/ledger-card";
 import { interpolateStreamed } from "@/lib/payoff";
 import { streamRowState } from "@/lib/watch-rows";
+import { SurfaceHeading } from "@/components/kit/SurfaceHeading";
 import { StreamLedgerCard } from "./StreamLedgerCard";
 import { freshnessCaption } from "./SuppliedDetail";
 import "./watch.css";
@@ -63,6 +64,7 @@ export function StreamDetail({
       data-state={state}
       aria-label={`Stream ${stream.streamId.toString()} ${snapshot.statusLabel}`}
     >
+      <SurfaceHeading>Stream</SurfaceHeading>
       <div className="kit-hero">
         <span className="kit-hero-kicker">VESTED</span>
         <RollingNumber
@@ -150,6 +152,7 @@ export function StreamClosedDetail({ streamId }: { streamId: bigint }) {
       data-state="closed"
       aria-label={`Stream ${streamId.toString()} closed`}
     >
+      <SurfaceHeading>Stream</SurfaceHeading>
       <p className="watch-kicker">STREAM CLOSED</p>
       <p className="watch-degraded">
         Stream #{streamId.toString()} is no longer held. The NFT was burned or left this wallet.

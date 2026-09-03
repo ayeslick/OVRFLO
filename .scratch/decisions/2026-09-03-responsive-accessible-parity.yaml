@@ -1,0 +1,75 @@
+# Scratch decision record — schema: docs/maps/SCHEMAS.md §4
+summary_ref: "docs/plans/2026-08-22-001-refactor-denomination-switch-border-column-plan.md#cs4-u6"
+
+goal: >
+  Prove CS4-U6 responsive and accessible behavior on the shared visual
+  system. Fill heading, live-region, focus, safe-area, overflow, and
+  44px gaps. Do not add a second Advanced theme. Do not wait on ticket 18.
+
+state_keys_touched:
+  - chrome.disclosure
+
+writers_readers:
+  - reads: web/lib/disclosure.ts
+  - reads: web/components/kit/Shell.tsx
+  - writes: web/components/create/CreateStageFrame.tsx
+  - writes: web/components/watch/WatchApp.tsx
+  - writes: web/components/kit/kit.css
+  - writes: web/app/globals.css
+  - writes: web/components/borrow/ReviewHandoff.tsx
+  - writes: web/components/supply/ReviewHandoff.tsx
+  - writes: web/components/kit/RateWindow.tsx
+  - writes: web/components/kit/AmountField.tsx
+  - writes: web/lib/named-surface-state.ts
+  - writes: web/lib/surface-focus.ts
+  - writes: web/tests/kit/responsive-access.test.tsx
+  - writes: web/tests/create/stage-frame.test.tsx
+  - writes: web/tests/e2e/borrow.feature
+  - writes: web/tests/e2e/supply.feature
+  - writes: web/tests/e2e/deposit-wrap-unwrap.feature
+  - writes: web/tests/e2e/watch.feature
+
+trust_domains:
+  - fact: Default vs Advanced disclosure
+    domain: pure-client
+    moved_from: null
+  - fact: Route and stage heading focus
+    domain: pure-client
+    moved_from: null
+  - fact: Back opener restore
+    domain: pure-client
+    moved_from: null
+
+rejected_alternatives:
+  - option: Second Advanced theme or denser token set
+    why_not: KD16 and the spec ban two visual systems.
+  - option: aria-label on truncated wallet copy that replaces the visible name
+    why_not: >
+      docs/maps/ui/shell.md UI-SHELL-ADDRESS-COPY keeps the accessible
+      name as the truncated value. title carries the full label.
+  - option: New persisted focus key in docs/maps/state/keys
+    why_not: Opener focus is a ref. It dies with the surface.
+
+invariants_held:
+  - invariant: Advanced writes no path and no query.
+    how: Shell still toggles chrome.disclosure only.
+  - invariant: Inline status does not move focus.
+    how: Live regions use role=status. Surface key ignores quote and tx text.
+  - invariant: Token-native submit and USD bounds stay ticket 18.
+    how: This ticket does not edit usd-execution or hosted convert.
+
+risks:
+  - risk: jsdom axe cannot prove color-contrast.
+    residual: DESIGN.md tokens stay. Axe in tests drops color-contrast.
+  - risk: E2E axe needs the seeded fork.
+    residual: Feature scenarios land. Vitest proves the same contracts.
+
+diff_hints:
+  - path: web/components/create/CreateStageFrame.tsx
+    why: Compact progress stays in the tree. Heading and Back focus.
+  - path: web/components/watch/WatchApp.tsx
+    why: Route heading focus. Back restores the opener.
+  - path: web/components/borrow/ReviewHandoff.tsx
+    why: Quote and tx states announce without moving focus.
+  - path: web/tests/kit/responsive-access.test.tsx
+    why: CS4-U6 successor Responsive access.

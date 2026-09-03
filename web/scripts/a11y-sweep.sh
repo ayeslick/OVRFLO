@@ -27,6 +27,10 @@ AXE_TAGS="wcag2a,wcag2aa,best-practice"
 
 ROUTES=(
   "$BASE_URL"
+  "$BASE_URL/create/"
+  "$BASE_URL/borrow/"
+  "$BASE_URL/supply/"
+  "$BASE_URL/assets/"
 )
 
 # Optional: boot the dev server if nothing is listening on the port.

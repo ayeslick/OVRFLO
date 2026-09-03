@@ -6,6 +6,7 @@ import { SettlementTrace, type TraceStep } from "@/components/kit/SettlementTrac
 import { AcknowledgeRiskStep } from "@/components/first-run/AcknowledgeRiskStep";
 import { formatAddress, formatAprBps, formatId, formatMaturityDate, formatTokenAmount } from "@/lib/format";
 import type { RecoveryCopy } from "@/lib/recovery-copy";
+import { reviewLiveCopy } from "@/lib/named-surface-state";
 import { SupplyFacts } from "./Facts";
 import {
   supplyTrace,
@@ -83,9 +84,15 @@ export function ReviewHandoff({
   const actionState = actionReceiptState(checkpoint);
   const confirmed = checkpoint === "confirmed";
   const approveLocked = approveBusy || approveCooldown;
+  const liveCopy = reviewLiveCopy({ drifted, checkpoint });
 
   return (
     <div className="supply-split" data-ui="UI-REVIEW-SPLIT" data-state={checkpoint}>
+      {liveCopy ? (
+        <p className="kit-vh" role="status" aria-live="polite" aria-atomic="true" data-ui="UI-REVIEW-LIVE">
+          {liveCopy}
+        </p>
+      ) : null}
       <div>
         <p className="supply-kicker">REVIEW SUPPLY</p>
         <SupplyFacts

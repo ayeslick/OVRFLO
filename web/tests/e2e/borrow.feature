@@ -71,3 +71,8 @@ Feature: Borrow against a stream
     And I click the "CONTINUE" button
     When I reload the page
     Then the borrow outcome step is open
+
+  Scenario: Responsive access — heading focus and global mode
+    Then the destination heading has focus
+    And Go to Advanced is reachable
+    And axe reports no serious violations

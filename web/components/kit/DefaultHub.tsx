@@ -2,6 +2,7 @@
 
 import { useSyncExternalStore } from "react";
 import { getDisclosure, subscribeDisclosure, toggleDisclosure } from "@/lib/disclosure";
+import { SurfaceHeading } from "./SurfaceHeading";
 import "./kit.css";
 
 export function DefaultHub({
@@ -16,7 +17,7 @@ export function DefaultHub({
   return (
     <section className="default-hub" data-ui="UI-SHELL-HUB">
       <header className="default-hub-welcome">
-        <h2>{welcome}</h2>
+        <SurfaceHeading>{welcome}</SurfaceHeading>
       </header>
       <div className="default-hub-types">
         <a className="kit-card kit-type-card" href="/borrow/" data-type="loan">
