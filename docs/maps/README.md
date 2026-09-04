@@ -52,7 +52,7 @@ There are eight, and only eight. This set replaced the six-region pass-1 topolog
 
 | # | Region | Incumbent code |
 |---|---|---|
-| 1 | Shell | `web/app/layout.tsx` · `web/app/page.tsx` · `web/components/MarketsApp.tsx` · `web/components/WalletRuntime.tsx` · `web/components/CopyValue.tsx` · `web/components/Providers.tsx` · `web/app/{loading,error,global-error}.tsx` · `web/components/{ModalErrorBoundary,TruncationNotice,Footer}.tsx`. Wallet control is `WalletButton` from `wallet-runtime`. |
+| 1 | Shell | `web/app/layout.tsx` · `web/app/page.tsx` · `web/components/WalletRuntime.tsx` · `web/components/CopyValue.tsx` · `web/components/Providers.tsx` · `web/app/{loading,error,global-error}.tsx` · `web/components/{ModalErrorBoundary,Footer}.tsx`. Wallet control is `WalletButton` from `wallet-runtime`. |
 | 2 | Watch surface | `web/components/watch/{Wall,SuppliedDetail,BorrowedDetail,StreamDetail,ClosedLoanDetail}.tsx`. Entry gate lives in `web/app/page.tsx`. |
 | 3 | Borrow flow | `web/app/borrow/page.tsx` · `web/components/borrow/*`. |
 | 4 | Supply flow | `web/app/supply/page.tsx` · `web/components/supply/*`. |

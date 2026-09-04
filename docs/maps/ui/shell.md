@@ -3,10 +3,10 @@
 **Slug:** `SHELL` · **Control ID prefix:** `UI-SHELL-` (`../SCHEMAS.md` §1)
 
 **Incumbent code:** `web/app/layout.tsx` · `web/app/page.tsx` ·
-`web/components/MarketsApp.tsx` (interim masthead) · `web/components/WalletRuntime.tsx` ·
+`web/components/WalletRuntime.tsx` ·
 `web/components/CopyValue.tsx` · `web/components/Providers.tsx` ·
 `web/app/{loading,error,global-error}.tsx` ·
-`web/components/{ModalErrorBoundary,TruncationNotice}.tsx`.
+`web/components/ModalErrorBoundary.tsx`.
 U7 lands `Footer`. Wallet connect/disconnect is `WalletButton` from `wallet-runtime` (`web/components/WalletRuntime.tsx`).
 
 **Purpose of the region.** Identify the application, connect a wallet, navigate

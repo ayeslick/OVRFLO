@@ -20,7 +20,7 @@ is retired. Owner-approved replacement: `docs/adr/0001-watch-surface-region-set.
 
 | Region | Slug | Brief | Incumbent / landing code |
 |---|---|---|---|
-| Shell | `SHELL` | [`shell.md`](shell.md) | `web/app/layout.tsx` · `web/app/page.tsx` · `web/components/MarketsApp.tsx` · `web/components/WalletRuntime.tsx` · `web/components/CopyValue.tsx` · `web/components/Providers.tsx` · `web/app/{loading,error,global-error}.tsx` · `web/components/{ModalErrorBoundary,TruncationNotice,Footer}.tsx`. Wallet control is `WalletButton` from `wallet-runtime`. |
+| Shell | `SHELL` | [`shell.md`](shell.md) | `web/app/layout.tsx` · `web/app/page.tsx` · `web/components/WalletRuntime.tsx` · `web/components/CopyValue.tsx` · `web/components/Providers.tsx` · `web/app/{loading,error,global-error}.tsx` · `web/components/{ModalErrorBoundary,Footer}.tsx`. Wallet control is `WalletButton` from `wallet-runtime`. |
 | Watch surface | `WATCH` | [`watch.md`](watch.md) | `web/components/watch/{Wall,SuppliedDetail,BorrowedDetail,StreamDetail,ClosedLoanDetail}.tsx`. Entry gate: `web/app/page.tsx`. |
 | Borrow flow | `BORROW` | [`borrow.md`](borrow.md) | `web/app/borrow/page.tsx`, `web/components/borrow/*`. |
 | Supply flow | `SUPPLY` | [`supply.md`](supply.md) | `web/app/supply/page.tsx`, `web/components/supply/*`. |
