@@ -1,8 +1,0 @@
-#!/bin/sh
-# Fail closed if an attribution trailer survived prepare-commit-msg.
-MSG_FILE="$1"
-if grep -qiE '^(Co-authored-by:|Co-Authored-By:|Made-with:|Made with Cursor)' "$MSG_FILE"; then
-  echo "commit-msg: refusing AI/agent attribution trailer in commit message" >&2
-  exit 1
-fi
-exit 0
