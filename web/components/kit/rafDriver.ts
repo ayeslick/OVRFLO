@@ -40,10 +40,6 @@ export function rafListenerCount() {
   return listeners.size;
 }
 
-export function rafIsRunning() {
-  return rafId !== null;
-}
-
 /** Test seam: deliver one frame without waiting on the browser clock. */
 export function emitRafForTests(frameTime = 0) {
   for (const listener of listeners) listener(frameTime);

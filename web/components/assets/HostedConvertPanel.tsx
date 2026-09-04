@@ -16,7 +16,6 @@ import {
   PENDLE_ROUTER_V4,
   evaluateHostedPolicy,
   hostedConvertEnabled,
-  priceImpactToBps,
   isHostedReject,
   requestHostedConvert,
   resolveHostedSlippageBps,
@@ -182,9 +181,4 @@ export function HostedConvertPanel({
       {message && !rejectedImpact ? <p role="status">{message}</p> : null}
     </section>
   );
-}
-
-export function hostedImpactPreview(impactRaw: unknown, disclosure: "default" | "advanced") {
-  const impactBps = priceImpactToBps(impactRaw) ?? 0n;
-  return evaluateHostedPolicy(disclosure, impactBps < 0n ? -impactBps : impactBps);
 }

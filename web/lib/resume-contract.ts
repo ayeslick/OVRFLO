@@ -4,18 +4,12 @@ import {
   classifyStepOutcome,
   evidenceOutcome,
   reconcilePersistedHash,
-  resumeGraph,
   statusFromOutcome,
   suppressSubmit,
   type ResumeDecision,
 } from "./composite-recovery";
 import { decodeDepositedStreamId } from "./deposit-output";
-import {
-  anyUnresolvedHash,
-  listStepEvidence,
-  readCurrentAttempt,
-  writeStepEvidence,
-} from "./step-evidence";
+import { anyUnresolvedHash, listStepEvidence, writeStepEvidence } from "./step-evidence";
 
 export type ReconcileReceipt = {
   status: "success" | "reverted";
@@ -104,35 +98,8 @@ export type ResumeSource = "route-reset" | "modal-try-again" | "flow-unmount" | 
  * reconcile persisted evidence first, resume at the first unconfirmed step,
  * never replay a confirmed step, never re-prompt an unresolved outcome.
  */
-export function applyResumeContract(args: {
-  graph: ActionGraph;
-  factory: Address | string;
-  chainId: number;
-  account: Address | string;
-  source: ResumeSource;
-}): ResumeDecision {
-  void args.source;
-  const stored = listStepEvidence(args.factory, args.chainId, args.account);
-  return resumeGraph({ graph: args.graph, stored });
-}
-
 export function resumeMayPrompt(decision: ResumeDecision): boolean {
   return !suppressSubmit(decision) && decision.status === "resume";
-}
-
-export function keepAttemptOnModalClose(args: {
-  factory: Address | string;
-  chainId: number;
-  account: Address | string;
-  kind: string;
-}): { graphId: string } | null {
-  const attempt = readCurrentAttempt(args.factory, args.chainId, args.account, args.kind);
-  if (!attempt) return null;
-  return { graphId: attempt.graphId };
-}
-
-export function autoConfirmLatchedPlan(attemptAccepted: boolean): boolean {
-  return attemptAccepted;
 }
 
 export function routeResetCopy(): string {

@@ -195,21 +195,6 @@ export function readPendingHash(key: StepEvidenceKey): Hash | null {
   return readStepEvidence(key)?.hash ?? null;
 }
 
-export function anyPersistedHash(): boolean {
-  if (typeof window === "undefined") return false;
-  try {
-    for (let index = 0; index < window.localStorage.length; index += 1) {
-      const key = window.localStorage.key(index);
-      if (!key?.startsWith("ovrflo:step:")) continue;
-      const row = parseJsonStorage(window.localStorage.getItem(key), isStepEvidence);
-      if (row?.hash) return true;
-    }
-  } catch {
-    return false;
-  }
-  return false;
-}
-
 export function anyUnresolvedHash(): boolean {
   if (typeof window === "undefined") return false;
   try {

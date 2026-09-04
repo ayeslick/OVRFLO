@@ -1,7 +1,7 @@
 import type { Address } from "viem";
-import { aprChoices, loanOutstanding, upfrontBps } from "./lending-math";
+import { loanOutstanding, upfrontBps } from "./lending-math";
 import { classifyBorrowError, resolveSelectedTick, type BorrowErrorKind } from "./borrow";
-import { buildLadder, type TickDepth } from "./router";
+import type { TickDepth } from "./router";
 import type { Loan, LiquidityPosition } from "./types";
 
 // Pure card-state logic. Old-ABI receipt/pool branches were purged in U1.
@@ -53,40 +53,6 @@ export function borrowTeaserBps(ladder: TickDepth[], ttmSeconds: bigint, feeBps:
   const best = resolveSelectedTick(ladder, null);
   if (best === null) return null;
   return upfrontBps(best, ttmSeconds, feeBps);
-}
-
-export function marketBorrowTeaserBps({
-  liquidity,
-  market,
-  aprMinBps,
-  aprMaxBps,
-  feeBps,
-  ttmSeconds,
-  matured,
-  self,
-}: {
-  liquidity: LiquidityPosition[];
-  market: Address;
-  aprMinBps: number;
-  aprMaxBps: number;
-  feeBps: number;
-  ttmSeconds: bigint;
-  matured: boolean;
-  self?: Address;
-}): bigint | null {
-  if (matured) return null;
-  const ticks = [
-    ...new Set([
-      ...(aprMaxBps > 0 ? aprChoices(aprMinBps, aprMaxBps) : []),
-      ...liquidity
-        .filter(
-          (position) =>
-            position.market.toLowerCase() === market.toLowerCase(),
-        )
-        .map((position) => position.aprBps),
-    ]),
-  ].sort((left, right) => left - right);
-  return borrowTeaserBps(buildLadder(liquidity, market, ticks, self), ttmSeconds, feeBps);
 }
 
 const ADJUST_STALE_PATTERNS = [

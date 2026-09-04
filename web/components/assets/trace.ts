@@ -13,7 +13,6 @@ export type StreamStage =
   | "deposit"
   | "pending"
   | "confirmed";
-export type ClaimStage = "amount" | "ack" | "claim" | "pending" | "confirmed";
 
 function step(id: string, label: string, state: TraceStep["state"]): TraceStep {
   return { id, label, state };
@@ -141,32 +140,6 @@ export function streamTrace({
       : [step("approve-fee", "APPROVE FEE", "skipped")]),
     step("deposit", "DEPOSIT", mark("deposit", resolvedActive, done)),
     step("settled", "SETTLED", mark("settled", resolvedActive, done)),
-  ];
-}
-
-export function claimTrace({
-  ackRequired,
-  stage,
-}: {
-  ackRequired: boolean;
-  stage: ClaimStage;
-}): TraceStep[] {
-  const active =
-    stage === "pending" ? "claim" : stage === "confirmed" ? "settled" : stage === "amount" ? "claim" : stage;
-  const order = [
-    ...(ackRequired ? (["ack"] as const) : []),
-    "claim",
-    "settled",
-  ];
-  const activeIndex = order.indexOf(active);
-  const done = new Set(order.filter((_, index) => index < activeIndex || stage === "confirmed"));
-  if (stage === "confirmed") done.add("settled");
-  return [
-    ...(ackRequired
-      ? [step("ack", "ACKNOWLEDGE RISK", mark("ack", active, done))]
-      : []),
-    step("claim", "CLAIM PT", mark("claim", active, done)),
-    step("settled", "SETTLED", mark("settled", active, done)),
   ];
 }
 

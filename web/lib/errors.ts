@@ -240,10 +240,6 @@ export type DecodedContractError = {
   recovery: RecoveryAction;
 };
 
-export function specFor(name: ContractErrorName): ErrorSpec {
-  return errorCatalog[name];
-}
-
 export function decodeContractError(error: unknown, context?: BelowMinimumContext): DecodedContractError {
   const reverted = findRevert(error);
   const errorName = reverted?.data?.errorName;

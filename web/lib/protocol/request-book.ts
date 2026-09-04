@@ -1,7 +1,6 @@
 import { isAddressEqual, type Address, type PublicClient } from "viem";
 import { ovrfloFactoryAbi, ovrfloLendingAbi, ovrfloRequestBookAbi } from "@/lib/abis";
 import { ZERO_ADDRESS } from "@/lib/config";
-import { STREAM_PAGE_SIZE } from "@/lib/lending-math";
 import {
   partialOutcome,
   readFailure,
@@ -10,7 +9,7 @@ import {
   type ReadFailure,
   type ReadOutcome,
 } from "@/lib/read-outcome";
-import { nextPageParam, windowStop } from "@/lib/stream-book";
+import { windowStop } from "@/lib/stream-book";
 import { callPin, type BlockPin, type PinMode } from "./pin";
 
 export type RequestBookReadClient = Pick<PublicClient, "readContract" | "getCode">;
@@ -403,8 +402,4 @@ export async function loadFactoryRequestBookPage(
     return partialOutcome(merged, windowFailures);
   }
   return readyOutcome(merged);
-}
-
-export function requestBookNextPageParam(lastPageParam: bigint, sourceCount: bigint): bigint | undefined {
-  return nextPageParam(lastPageParam, sourceCount, STREAM_PAGE_SIZE);
 }

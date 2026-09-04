@@ -101,10 +101,6 @@ export function CreateStageFrame({
   );
 }
 
-export function restoreOpenerFocus(opener: HTMLElement | null) {
-  restoreOpenerOrHeading(opener, null);
-}
-
 function visibleProgress(visibility: StageVisibility): CreateStage[] {
   return [...visibleDecisionStages(visibility), "review"];
 }

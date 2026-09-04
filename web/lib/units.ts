@@ -26,9 +26,7 @@ export type Bps = Amount<"bps">;
 export type TickBps = number & { readonly [tickBrand]: "tick-bps" };
 
 export const MAX_UINT128 = (1n << 128n) - 1n;
-export const MAX_UINT256 = (1n << 256n) - 1n;
 export const WAD = 10n ** 18n;
-export const BPS_DENOMINATOR = 10_000n;
 
 function mint<B extends string>(value: bigint, _brand: B): Amount<B> {
   if (value < 0n) {

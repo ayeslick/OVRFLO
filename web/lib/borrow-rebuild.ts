@@ -1,5 +1,4 @@
 import type { Address } from "viem";
-import { ZERO_ADDRESS } from "./config";
 
 /**
  * Borrow rebuild must load real routed depth, authoritative eligibility,
@@ -25,12 +24,4 @@ export function assertBorrowRebuildInputs(input: BorrowRebuildInput): BorrowRebu
   if (input.router === null) return { status: "invalid", reason: "placeholder-router" };
   if (input.request === "unread") return { status: "invalid", reason: "placeholder-request" };
   return { status: "ok" };
-}
-
-export function routerReadIsReal(router: Address | null): boolean {
-  return router !== null;
-}
-
-export function zeroRouterIsValidRead(router: Address): boolean {
-  return router.toLowerCase() === ZERO_ADDRESS.toLowerCase() || router !== ZERO_ADDRESS;
 }

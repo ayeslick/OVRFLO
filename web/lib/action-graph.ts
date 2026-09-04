@@ -1,7 +1,5 @@
 import type { Address } from "viem";
 import type { QueuedTx } from "./claim-all";
-import type { ActionIntent, DepositIntent } from "./actions/types";
-
 export const GRAPH_STEP_CLEAR_TO_ZERO = "auth-clear-to-zero";
 export const GRAPH_STEP_SET_ALLOWANCE = "auth-set-allowance";
 export const GRAPH_STEP_SET_APPROVAL = "auth-set-approval";
@@ -236,10 +234,6 @@ export function withGraphId(graph: ActionGraph, graphId: string): ActionGraph {
   return graph.graphId === graphId ? graph : { ...graph, graphId };
 }
 
-export function graphStepIds(graph: ActionGraph): readonly GraphSemanticId[] {
-  return graph.steps.map((row) => row.stepId);
-}
-
 /** Immediate total is shown only when deposit mint and borrow are both executable. */
 export function immediateTotal(args: {
   depositNet: bigint | null;
@@ -249,14 +243,6 @@ export function immediateTotal(args: {
   if (!args.borrowExecutable) return null;
   if (args.depositNet === null || args.borrowNet === null) return null;
   return args.depositNet + args.borrowNet;
-}
-
-export function depositIntentFromGraphAmount(amount: string): DepositIntent {
-  return { type: "deposit", amount };
-}
-
-export function isCompositeDepositIntent(intent: ActionIntent): intent is DepositIntent {
-  return intent.type === "deposit";
 }
 
 export function graphToQueuedTx(graph: ActionGraph): Extract<QueuedTx, { kind: "graph-step" }>[] {

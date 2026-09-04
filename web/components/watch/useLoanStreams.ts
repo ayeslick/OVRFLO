@@ -2,7 +2,6 @@
 
 import { useMemo, useRef } from "react";
 import { useReadContracts } from "wagmi";
-import type { Address } from "viem";
 import { sablierLockupAbi } from "@/lib/abis";
 import { ZERO_ADDRESS } from "@/lib/config";
 import { readQuery } from "@/lib/query-keys";
@@ -93,8 +92,4 @@ export function useLoanStreams(streamIds: readonly bigint[]): ReadonlyMap<string
     lastKnown.current = next;
     return next;
   }, [reads.data, unique]);
-}
-
-export function pledgedOwnerIsLending(owner: Address | undefined, lending: Address | null | undefined) {
-  return Boolean(owner && lending && owner.toLowerCase() === lending.toLowerCase());
 }

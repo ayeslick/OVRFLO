@@ -27,17 +27,6 @@ export const chainlinkAggregatorAbi = [
   },
 ] as const;
 
-/** Lido wstETH rate. Used with the stETH/USD feed; never a write gate. */
-export const wstethAbi = [
-  {
-    type: "function",
-    name: "stEthPerToken",
-    stateMutability: "view",
-    inputs: [],
-    outputs: [{ name: "", type: "uint256" }],
-  },
-] as const;
-
 export const erc20Abi = [
   {
     type: "function",

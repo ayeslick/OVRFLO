@@ -171,7 +171,6 @@ export const protocolBootstrapKeys = {
 };
 
 export const DISCOVERY_SCHEMA_VERSION = 1;
-export const DISCOVERY_GC_TIME_MS = 10 * 60 * 1000;
 
 export type ProjectionScopeKey = {
   chainId: number;

@@ -1,21 +1,9 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type { Hash } from "viem";
 import { compileActionGraph } from "@/lib/action-graph";
-import {
-  applyResumeContract,
-  autoConfirmLatchedPlan,
-  globalResetCopy,
-  keepAttemptOnModalClose,
-  reconcileUnknownSteps,
-  resumeMayPrompt,
-  routeResetCopy,
-} from "@/lib/resume-contract";
-import {
-  persistPendingHash,
-  readStepEvidence,
-  writeCurrentAttempt,
-  writeStepEvidence,
-} from "@/lib/step-evidence";
+import { resumeGraph } from "@/lib/composite-recovery";
+import { globalResetCopy, reconcileUnknownSteps, resumeMayPrompt, routeResetCopy } from "@/lib/resume-contract";
+import { persistPendingHash, readStepEvidence, writeStepEvidence } from "@/lib/step-evidence";
 
 const factory = "0x00000000000000000000000000000000000000f1";
 const account = "0x00000000000000000000000000000000000000a1";
@@ -58,19 +46,27 @@ describe("resume contract", () => {
       economicIdentity: { kind: "deposit", chainId: 1, token, amount: "10" },
       graphComplete: false,
     });
-    for (const source of ["route-reset", "modal-try-again", "flow-unmount"] as const) {
-      const decision = applyResumeContract({
-        graph,
+    const stored = [
+      {
         factory,
         chainId: 1,
         account,
-        source,
-      });
-      expect(decision.status).toBe("resume");
-      if (decision.status !== "resume") throw new Error("expected resume");
-      expect(decision.step.stepId).toBe("borrow");
-      expect(resumeMayPrompt(decision)).toBe(true);
-    }
+        graphId: "g-1",
+        stepId: "deposit" as const,
+        status: "confirmed" as const,
+        hash,
+        receiptStatus: "success" as const,
+        confirmations: 2,
+        decoded: { streamId: "9" },
+        economicIdentity: { kind: "deposit" as const, chainId: 1, token, amount: "10" },
+        graphComplete: false,
+      },
+    ];
+    const decision = resumeGraph({ graph, stored });
+    expect(decision.status).toBe("resume");
+    if (decision.status !== "resume") throw new Error("expected resume");
+    expect(decision.step.stepId).toBe("borrow");
+    expect(resumeMayPrompt(decision)).toBe(true);
   });
 
   it("does not claim no transaction was submitted when a hash is persisted", () => {
@@ -82,24 +78,6 @@ describe("resume contract", () => {
     expect(routeResetCopy()).not.toMatch(/no transaction was submitted/i);
     expect(globalResetCopy()).not.toMatch(/no transaction was submitted/i);
     expect(routeResetCopy()).toMatch(/already be in progress/i);
-  });
-
-  it("keeps the graph ID on modal close and never auto-confirms an unaccepted plan", () => {
-    writeCurrentAttempt(factory, 1, account, {
-      graphId: "g-keep",
-      kind: "deposit-plus-borrow",
-      accepted: false,
-    });
-    expect(
-      keepAttemptOnModalClose({
-        factory,
-        chainId: 1,
-        account,
-        kind: "deposit-plus-borrow",
-      }),
-    ).toEqual({ graphId: "g-keep" });
-    expect(autoConfirmLatchedPlan(false)).toBe(false);
-    expect(autoConfirmLatchedPlan(true)).toBe(true);
   });
 
   it("reconciles a persisted unknown hash to confirmed before resume", async () => {
@@ -124,12 +102,9 @@ describe("resume contract", () => {
       stepId: "deposit",
     });
     expect(stored?.status).toBe("confirmed");
-    const decision = applyResumeContract({
+    const decision = resumeGraph({
       graph,
-      factory,
-      chainId: 1,
-      account,
-      source: "route-reset",
+      stored: stored ? [stored] : [],
     });
     expect(decision.status).toBe("resume");
     if (decision.status !== "resume") throw new Error("expected resume");

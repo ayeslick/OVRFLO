@@ -150,23 +150,6 @@ export function positionLabelAllowed(args: {
   return args.outcome === "confirmed" && args.authoritativeMatch;
 }
 
-export function pendingChangeFor(args: {
-  accountChanged: boolean;
-  chainChanged: boolean;
-  allowanceChanged: boolean;
-  liquidityChanged: boolean;
-  deadlineChanged: boolean;
-  routerChanged: boolean;
-}): PendingChange | null {
-  if (args.accountChanged) return "account";
-  if (args.chainChanged) return "chain";
-  if (args.allowanceChanged) return "allowance";
-  if (args.liquidityChanged) return "liquidity";
-  if (args.deadlineChanged) return "deadline";
-  if (args.routerChanged) return "router";
-  return null;
-}
-
 export function statusFromOutcome(outcome: StepOutcome): StepEvidenceStatus {
   if (outcome === "unknown") return "unknown";
   if (outcome === "pending") return "pending";

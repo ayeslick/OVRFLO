@@ -10,7 +10,6 @@ import type { TickDepth } from "./router";
 
 export const SLIPPAGE_MIN_BPS = 10n;
 export const SLIPPAGE_MAX_BPS = 500n;
-export const SLIPPAGE_DEFAULT_PCT = "0.5";
 
 // Keeps the user's tick while it still has borrowable (non-self) depth,
 // otherwise falls back to the lowest liquid tick — the ladder's "best" default.

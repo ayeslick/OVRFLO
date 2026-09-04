@@ -1,4 +1,3 @@
-import type { Address } from "viem";
 import type { MarketInfo } from "@/lib/types";
 import {
   type CreateChoiceOption,
@@ -95,8 +94,4 @@ export function marketByTerm(
 ): MarketInfo | undefined {
   if (!termId) return undefined;
   return markets.find((market) => market.market.toLowerCase() === termId);
-}
-
-export function underlyingIdOf(address: Address | null | undefined): string | null {
-  return address ? address.toLowerCase() : null;
 }

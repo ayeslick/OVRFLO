@@ -1,14 +1,6 @@
 import type { Address } from "viem";
 import { MAX_UINT128 } from "./units";
 
-export type TokenFieldKind = "wsteth" | "ovrflo-1-1" | "ovrflo-pt-claim" | "pt" | "never-usd";
-
-export type UsdFieldBasis =
-  | { show: false }
-  | { show: true; label: null }
-  | { show: true; label: "AT 1:1 UNWRAP BASIS" }
-  | { show: true; label: "AT MATURITY BASIS" };
-
 const formatterCache = new Map<string, Intl.NumberFormat>();
 
 function formatter(locale: string, options: Intl.NumberFormatOptions): Intl.NumberFormat {
@@ -45,20 +37,6 @@ export function formatTruncatedDecimal(
   const fracScale = 10n ** BigInt(decimals - displayDecimals);
   const fracTrunc = fraction / fracScale;
   return `${negative ? "-" : ""}${formatWhole(whole, locale)}.${fracTrunc.toString().padStart(displayDecimals, "0")}`;
-}
-
-export function usdFieldMap(kind: TokenFieldKind): UsdFieldBasis {
-  switch (kind) {
-    case "wsteth":
-      return { show: true, label: null };
-    case "ovrflo-1-1":
-      return { show: true, label: "AT 1:1 UNWRAP BASIS" };
-    case "pt":
-      return { show: true, label: "AT MATURITY BASIS" };
-    case "ovrflo-pt-claim":
-    case "never-usd":
-      return { show: false };
-  }
 }
 
 export function formatAddress(address?: Address | null) {

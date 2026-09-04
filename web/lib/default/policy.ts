@@ -4,8 +4,6 @@
  * Ticket 18 owns Hosted Convert slippage constants in this same file.
  */
 
-export const POLICY_MODULE_VERSION = 1;
-
 /** Bump when risk copy or the acknowledgment contract changes. */
 export const RISK_DISCLOSURE_VERSION = 1;
 

@@ -10,7 +10,6 @@ import {
   formatMaturityId,
   formatTokenAmount,
   formatUsd,
-  usdFieldMap,
 } from "@/lib/format";
 import { MAX_UINT128 } from "@/lib/units";
 import { formatBpsPct } from "@/lib/lending-math";
@@ -65,14 +64,6 @@ describe("formatBpsPct", () => {
 });
 
 describe("USD field map and formatting", () => {
-  it("shows USD beside wstETH and 1:1 ovrflo, never beside post-maturity PT claims", () => {
-    expect(usdFieldMap("wsteth")).toEqual({ show: true, label: null });
-    expect(usdFieldMap("ovrflo-1-1")).toEqual({ show: true, label: "AT 1:1 UNWRAP BASIS" });
-    expect(usdFieldMap("pt")).toEqual({ show: true, label: "AT MATURITY BASIS" });
-    expect(usdFieldMap("ovrflo-pt-claim")).toEqual({ show: false });
-    expect(usdFieldMap("never-usd")).toEqual({ show: false });
-  });
-
   it("formats USD to cents below $1000 and whole dollars at or above", () => {
     expect(formatUsd(123_000_000n)).toBe("$1.23");
     expect(formatUsd(999_990_000_00n)).toBe("$999.99");

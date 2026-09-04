@@ -16,7 +16,7 @@ export function symbolFor(symbols: SymbolMap, address: Address): string {
 }
 
 // One batched symbol() read for every market's ovrfloToken and underlying (deduped),
-// called once in MarketsApp and threaded down as a prop (plan KTD7). PT symbols are
+// called once at the watch root and threaded down as a prop (plan KTD7). PT symbols are
 // deliberately not read — PT rows already render with underlying context.
 export function useMarketSymbols(markets: MarketInfo[]): SymbolMap {
   const addresses = useMemo(() => {

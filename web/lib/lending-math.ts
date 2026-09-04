@@ -1,6 +1,6 @@
 import { ZERO_ADDRESS } from "./config";
 import type { LiquidityPosition, Loan } from "./types";
-import { MAX_UINT128, mulDiv as mulDivAmount, type OvrfloWei, wei, type Wei } from "./units";
+import { MAX_UINT128, wei, type Wei } from "./units";
 
 export const WAD = 10n ** 18n;
 export const BPS = 10_000n;
@@ -126,18 +126,10 @@ export function unitsToWei(availableUnits: bigint, unit: bigint = UNIT): bigint 
   return availableUnits * unit;
 }
 
-export function weiToUnits(amount: bigint, unit: bigint = UNIT): bigint {
-  return amount / unit;
-}
-
 /** Ratio in bps, bigint mulDiv — never `Number` on the token amount. */
 export function ratioBps(numerator: bigint, denominator: bigint): bigint {
   if (denominator <= 0n) return 0n;
   return mulDiv(numerator, BPS, denominator);
-}
-
-export function scaleOvrflo(amount: OvrfloWei, num: bigint, den: bigint): OvrfloWei {
-  return mulDivAmount(amount, num, den);
 }
 
 export function liquidityExists(position: Pick<LiquidityPosition, "lender">) {

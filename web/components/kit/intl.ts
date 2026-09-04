@@ -29,8 +29,3 @@ export function formatGroupedInteger(value: bigint, locale: string): string {
   }
   return value.toString();
 }
-
-/** Test seam: cache size, to prove we reuse formatters. */
-export function numberFormatCacheSize() {
-  return numberFormats.size;
-}

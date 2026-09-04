@@ -246,19 +246,6 @@ export function sameClaimAllCandidates(
   );
 }
 
-export function claimAllInputCandidates(
-  input: ClaimAllInput,
-): ClaimAllCandidateId[] {
-  return normalizedCandidates([
-    ...input.pools
-      .filter((pool) => pool.claimable > 0n)
-      .map((pool) => claimAllPoolCandidate(pool.lending, pool.loanId)),
-    ...input.streams
-      .filter((stream) => stream.withdrawable > 0n)
-      .map((stream) => claimAllStreamCandidate(stream.streamId)),
-  ]);
-}
-
 function sourceMatchesTarget(
   outcome: ReadOutcome<readonly ClaimAllCandidateId[]>,
   target: BlockIdentity,
@@ -410,19 +397,6 @@ function stableTx(tx: QueuedTx): string {
   return JSON.stringify(tx, (_key, value) =>
     typeof value === "bigint" ? `${value}n` : value,
   ).toLowerCase();
-}
-
-export function sameClaimAllPlan(
-  left: readonly QueuedTx[],
-  right: readonly QueuedTx[],
-): boolean {
-  return (
-    left.length === right.length &&
-    left.every((tx, index) => {
-      const other = right[index];
-      return other !== undefined && stableTx(tx) === stableTx(other);
-    })
-  );
 }
 
 export function reconcileQueuedTx(

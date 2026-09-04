@@ -32,10 +32,6 @@ export function isFlowCheckpoint(value: string | null | undefined): value is Flo
   return typeof value === "string" && CHECKPOINT_SET.has(value);
 }
 
-export function isFlowDecision(value: string | null | undefined): value is FlowDecision {
-  return typeof value === "string" && DECISION_SET.has(value);
-}
-
 /**
  * Map a URL / history token onto a decision. Checkpoint names are never
  * enterable: they fall back to review.

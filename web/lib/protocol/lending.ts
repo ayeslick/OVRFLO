@@ -1,7 +1,6 @@
 import { isAddressEqual, type Address, type PublicClient } from "viem";
 import { ovrfloLendingAbi } from "@/lib/abis";
-import { STREAM_PAGE_SIZE } from "@/lib/lending-math";
-import { nextPageParam, windowStop } from "@/lib/stream-book";
+import { windowStop } from "@/lib/stream-book";
 import {
   partialOutcome,
   readFailure,
@@ -523,8 +522,4 @@ async function loadFactoryWindow<T extends { sourceCount: bigint }>(input: {
     return partialOutcome(merged, windowFailures);
   }
   return readyOutcome(merged);
-}
-
-export function lendingNextPageParam(lastPageParam: bigint, sourceCount: bigint): bigint | undefined {
-  return nextPageParam(lastPageParam, sourceCount, STREAM_PAGE_SIZE);
 }
