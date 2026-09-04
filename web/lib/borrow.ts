@@ -2,46 +2,12 @@ import { parseEventLogs, type Address, type Log } from "viem";
 import { eligibilityErrorNames, REBUILD_STALE_REASONS, STALE_LIQUIDITY_REASONS } from "./errors";
 import { ovrfloLendingAbi } from "./generated";
 import { BPS } from "./lending-math";
-import type { TickDepth } from "./router";
 
-// Pure logic for the BORROW form (ticket 06). Selection and fill planning are
-// price-blind like lib/router.ts — the form clamps the fill to the on-chain
-// grossPrice from quote() before submitting.
+// Pure logic for the BORROW form (ticket 06). Price-blind like lib/router.ts —
+// the form clamps the fill to the on-chain grossPrice from quote() before submitting.
 
 export const SLIPPAGE_MIN_BPS = 10n;
 export const SLIPPAGE_MAX_BPS = 500n;
-
-// Keeps the user's tick while it still has borrowable (non-self) depth,
-// otherwise falls back to the lowest liquid tick — the ladder's "best" default.
-export function resolveSelectedTick(ladder: TickDepth[], selectedAprBps: number | null): number | null {
-  const liquid = ladder.filter((t) => t.total > 0n).sort((a, b) => a.aprBps - b.aprBps);
-  if (selectedAprBps !== null && liquid.some((t) => t.aprBps === selectedAprBps)) return selectedAprBps;
-  return liquid[0]?.aprBps ?? null;
-}
-
-export type SelectedBorrowPlan = {
-  fill: bigint;
-  partial: boolean;
-  // Lowest tick that fully covers the target — offered only behind an explicit
-  // "show other options" click, and only when the selected tick cannot cover.
-  alternativeAprBps: number | null;
-};
-
-export function planSelectedBorrow(
-  ladder: TickDepth[],
-  selectedAprBps: number,
-  target: bigint,
-): SelectedBorrowPlan {
-  const selected = ladder.find((t) => t.aprBps === selectedAprBps);
-  const depth = selected?.total ?? 0n;
-  const fill = target < depth ? target : depth;
-  if (fill >= target) return { fill, partial: false, alternativeAprBps: null };
-
-  const covering = [...ladder]
-    .filter((t) => t.aprBps !== selectedAprBps && t.total >= target && t.total > 0n)
-    .sort((a, b) => a.aprBps - b.aprBps)[0];
-  return { fill, partial: true, alternativeAprBps: covering?.aprBps ?? null };
-}
 
 // Percent string -> bps, up to two decimals, bounded to [SLIPPAGE_MIN_BPS, SLIPPAGE_MAX_BPS].
 export function parseSlippageBps(raw: string): bigint | null {

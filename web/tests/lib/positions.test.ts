@@ -1,14 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { Address } from "viem";
 import {
-  borrowTeaserBps,
   classifyAdjustError,
   loanCardState,
   obligationPct,
   selectLiquidityForLender,
   streamedPct,
 } from "@/lib/positions";
-import type { TickDepth } from "@/lib/router";
 import type { LiquidityPosition } from "@/lib/types";
 
 function testAddress(id: number): Address {
@@ -46,27 +44,6 @@ describe("streamedPct", () => {
 
   it("returns 0 for an empty deposit instead of dividing by zero", () => {
     expect(streamedPct({ deposited: 0n, withdrawn: 0n, withdrawable: 0n })).toBe(0);
-  });
-});
-
-// --- borrowTeaserBps ---
-
-function tick(aprBps: number, total: bigint): TickDepth {
-  return { aprBps, total, own: 0n, positions: [] };
-}
-
-describe("borrowTeaserBps", () => {
-  const YEAR = 31_536_000n;
-
-  it("prices the teaser at the lowest tick with real liquidity", () => {
-    // 10% APR over a full year, zero fee: upfront = 10000/1.1 ≈ 90.9%
-    const bps = borrowTeaserBps([tick(1200, 50n), tick(1000, 10n)], YEAR, 0);
-    expect(bps).toBe(9090n);
-  });
-
-  it("returns null when no tick has liquidity", () => {
-    expect(borrowTeaserBps([tick(1000, 0n)], YEAR, 0)).toBeNull();
-    expect(borrowTeaserBps([], YEAR, 0)).toBeNull();
   });
 });
 

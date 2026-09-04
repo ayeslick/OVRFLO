@@ -1,7 +1,6 @@
 import type { Address } from "viem";
-import { loanOutstanding, upfrontBps } from "./lending-math";
-import { classifyBorrowError, resolveSelectedTick, type BorrowErrorKind } from "./borrow";
-import type { TickDepth } from "./router";
+import { loanOutstanding } from "./lending-math";
+import { classifyBorrowError, type BorrowErrorKind } from "./borrow";
 import type { Loan, LiquidityPosition } from "./types";
 
 // Pure card-state logic. Old-ABI receipt/pool branches were purged in U1.
@@ -47,12 +46,6 @@ export function selectLiquidityForLender(
       Boolean(normalizedUser) &&
       position.lender.toLowerCase() === normalizedUser,
   );
-}
-
-export function borrowTeaserBps(ladder: TickDepth[], ttmSeconds: bigint, feeBps: number): bigint | null {
-  const best = resolveSelectedTick(ladder, null);
-  if (best === null) return null;
-  return upfrontBps(best, ttmSeconds, feeBps);
 }
 
 const ADJUST_STALE_PATTERNS = [
