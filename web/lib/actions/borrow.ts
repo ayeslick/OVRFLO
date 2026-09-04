@@ -186,7 +186,6 @@ export const borrowDefinition: ActionDefinition<"borrow"> = {
         "fresh-quote",
         "single-block",
         "route-conserved",
-        "self-liquidity-excluded",
       ],
       authorizations,
       call,

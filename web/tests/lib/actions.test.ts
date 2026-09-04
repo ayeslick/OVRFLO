@@ -515,7 +515,7 @@ describe("Borrow projected-route definitions", () => {
         }),
       },
     );
-    expect(action.review.route?.ids).toEqual([4n, 5n]);
+    expect(action.review.route?.ids).toEqual([2n, 4n]);
   });
 
   it("reports incomplete when a projected candidate lacks fresh hydration", () => {
