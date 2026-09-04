@@ -24,6 +24,7 @@ contract FlashMintReceiver is IERC3156FlashBorrower {
         WrapThenUnwrap,
         UnwrapThenWrap,
         WrapOnly,
+        UnwrapOnly,
         RecordMax,
         Deposit
     }
@@ -84,6 +85,9 @@ contract FlashMintReceiver is IERC3156FlashBorrower {
             uint256 x = wrapAmount;
             underlying.approve(address(reserve), x);
             reserve.wrap(x);
+        } else if (mode == Mode.UnwrapOnly) {
+            uint256 x = wrapAmount;
+            reserve.unwrap(x);
         } else if (mode == Mode.Deposit) {
             reserve.unwrap(amount);
             pt.approve(address(vault), ptAmount);
@@ -299,6 +303,30 @@ contract OVRFLOReserveFlashMintTest is VaultMockHelpers {
         assertEq(ovrfloToken.totalSupply(), supplyBefore + extra);
         assertEq(reserve.wrappedUnderlying(), extra);
         assertEq(ovrfloToken.balanceOf(address(receiver)), extra);
+    }
+
+    function test_FlashLoan_UnwrapOnlyInCallbackShrinksSupplyByUnwrapped() public {
+        uint256 amount = 10 ether;
+        uint256 unwrapped = 1 ether;
+        _enableMint(amount);
+        uint256 fee = reserve.flashFee(address(ovrfloToken), amount);
+        _wrap(address(receiver), unwrapped + fee + 1 ether);
+        receiver.setWrapAmount(unwrapped);
+
+        uint256 supplyBefore = ovrfloToken.totalSupply();
+        uint256 reserveUnderlyingBefore = underlying.balanceOf(address(reserve));
+        uint256 borrowerUnderlyingBefore = underlying.balanceOf(address(receiver));
+
+        bool ok = _flash(FlashMintReceiver.Mode.UnwrapOnly, amount);
+
+        assertTrue(ok);
+        assertEq(ovrfloToken.totalSupply(), supplyBefore - unwrapped);
+        assertEq(underlying.balanceOf(address(reserve)), reserveUnderlyingBefore - unwrapped);
+        assertEq(underlying.balanceOf(address(receiver)), borrowerUnderlyingBefore + unwrapped);
+        if (fee > 0) {
+            assertEq(ovrfloToken.balanceOf(TREASURY), fee);
+            assertEq(ovrfloToken.balanceOf(address(reserve)), 0);
+        }
     }
 
     /// @notice Flash mint, unwrap the flashed tokens, deposit PT, repay from the deposit.
