@@ -363,6 +363,7 @@ export function WatchApp() {
   }, [connected, hydration, url]);
 
   useEffect(() => {
+    if (!portfolioComplete) return;
     if (matchingOpenLoanId === undefined || !matchingOpenLoanLending || selectedStreamId === null) {
       return;
     }
@@ -372,7 +373,7 @@ export function WatchApp() {
       },
       "replace",
     );
-  }, [matchingOpenLoanId, matchingOpenLoanLending, selectedStreamId]);
+  }, [matchingOpenLoanId, matchingOpenLoanLending, selectedStreamId, portfolioComplete]);
 
   const surfaceKey = [
     surface.kind,

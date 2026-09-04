@@ -535,6 +535,32 @@ describe("watch shell + entry", () => {
     expect(screen.getByRole("article")).toHaveAttribute("data-region", "borrowed-detail");
   });
 
+  it("does not rewrite stream= to loan= before portfolio hydration completes", async () => {
+    fx.connected = true;
+    fx.streamStatus = "loading";
+    fx.loans = [
+      {
+        id: 12n,
+        lending: LENDING,
+        market: MARKET,
+        borrower: ACCOUNT,
+        streamId: 5n,
+        obligation: SCALE,
+        drawn: 0n,
+        repaid: 0n,
+        closed: false,
+        outstanding: SCALE,
+      },
+    ];
+    writeWatchSearch({ lens: "streams", selection: { kind: "stream", id: 5n } }, "replace");
+    render(<WatchApp />);
+    await waitFor(() => {
+      expect(document.querySelector("[data-ui='UI-WATCH-INCOMPLETE']")).not.toBeNull();
+    });
+    expect(window.location.search).toMatch(/stream=5/);
+    expect(window.location.search).not.toMatch(/loan=/);
+  });
+
   it("paints STREAM CLOSED for a missing stream with no open loan", () => {
     fx.connected = true;
     fx.positions = [
