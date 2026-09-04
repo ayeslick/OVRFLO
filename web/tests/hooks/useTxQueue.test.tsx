@@ -8,7 +8,11 @@ import type {
 } from "@/lib/action-runtime";
 import type { ActionIdentity, ReadyAction } from "@/lib/actions/types";
 import type { QueuedTx } from "@/lib/claim-all";
-import { readStepEvidence } from "@/lib/step-evidence";
+import {
+  readPendingHash,
+  readStepEvidence,
+  type PersistPendingContext,
+} from "@/lib/step-evidence";
 import {
   useTxQueue,
   type ClaimAllRowBuild,
@@ -412,5 +416,66 @@ describe("useTxQueue graph-step recovery", () => {
         stepId: "deposit",
       })?.status,
     ).toBe("confirmed");
+  });
+
+  it("persists the hash after unmount during submit", async () => {
+    const factory = "0x00000000000000000000000000000000000000f1";
+    const graph: GraphQueueContext = {
+      factory,
+      graphId: "g-unmount",
+      economicIdentityOf: (stepId) => ({
+        kind: stepId as "deposit",
+        chainId: 1,
+        token,
+        amount: "10",
+      }),
+    };
+    const evidenceKey = {
+      factory,
+      chainId: 1,
+      account: userA,
+      graphId: "g-unmount",
+      stepId: "deposit" as const,
+    };
+    let release!: () => void;
+    const rebuild = vi.fn(async (
+      tx: QueuedTx,
+      identity: ActionIdentity,
+    ): Promise<ClaimAllRowBuild> => ({
+      status: "ready" as const,
+      plan: executionPlan(tx, identity),
+    }));
+    const executor = {
+      confirm: vi.fn((_plan: ExecutionPlan, _persist?: PersistPendingContext) => {
+        return new Promise<ActionExecutionResult>((resolve) => {
+          release = () => {
+            resolve({
+              status: "unknown",
+              hash,
+              error: new Error("receipt wait after unmount"),
+            });
+          };
+        });
+      }),
+      retryRefresh: vi.fn(async (): Promise<ActionExecutionResult | null> => null),
+    };
+    const { result, unmount } = renderHook(() =>
+      useTxQueue({
+        identity: { account: userA, chainId: 1 },
+        invariants: () => ({ ready: true }),
+        rebuild,
+        executor,
+        graph,
+      }),
+    );
+    act(() => result.current.start([depositStep]));
+    await vi.waitFor(() => expect(executor.confirm).toHaveBeenCalledTimes(1));
+    expect(executor.confirm.mock.calls[0]?.[1]).toMatchObject({
+      key: evidenceKey,
+    });
+    unmount();
+    await act(async () => release());
+    expect(readPendingHash(evidenceKey)).toBe(hash);
+    expect(readStepEvidence(evidenceKey)?.hash).toBe(hash);
   });
 });

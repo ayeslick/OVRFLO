@@ -4,6 +4,7 @@ import { useCallback, useEffect } from "react";
 import type { Hash } from "viem";
 import type { ActionIdentity } from "@/lib/actions/types";
 import type { ActionExecutionResult, ExecutionPlan } from "@/lib/action-runtime";
+import type { PersistPendingContext } from "@/lib/step-evidence";
 import type { ActionGraph } from "@/lib/action-graph";
 import { remainingQueuedTx } from "@/lib/graph-step-plan";
 import { resumeGraph, suppressSubmit } from "@/lib/composite-recovery";
@@ -18,7 +19,10 @@ export function useCreateGraphQueue(args: {
   identity: ActionIdentity | null;
   factory: string;
   graph: ActionGraph | null;
-  confirm: (plan: ExecutionPlan) => Promise<ActionExecutionResult>;
+  confirm: (
+    plan: ExecutionPlan,
+    persist?: PersistPendingContext,
+  ) => Promise<ActionExecutionResult>;
   retryRefresh: () => Promise<ActionExecutionResult | null>;
   rebuild: (tx: QueuedTx, identity: ActionIdentity) => Promise<ClaimAllRowBuild>;
   client?: ReceiptClient | null;

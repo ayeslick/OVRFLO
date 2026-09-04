@@ -14,11 +14,10 @@ import {
 import type { EconomicIdentity, GraphSemanticId } from "@/lib/action-graph";
 import { decodeDepositedStreamId } from "@/lib/deposit-output";
 import {
-  clearPersistLatch,
-  latchPersistContext,
   listStepEvidence,
   persistPendingHash,
   writeStepEvidence,
+  type PersistPendingContext,
   type StepEvidenceKey,
 } from "@/lib/step-evidence";
 
@@ -63,7 +62,10 @@ export type ClaimAllRowBuild =
   | Extract<ClaimAllRowReconciliation, { status: "needs-review" | "skipped" }>;
 
 export type ClaimAllQueueExecutor = {
-  confirm: (plan: ExecutionPlan) => Promise<ActionExecutionResult>;
+  confirm: (
+    plan: ExecutionPlan,
+    persist?: PersistPendingContext,
+  ) => Promise<ActionExecutionResult>;
   retryRefresh: () => Promise<ActionExecutionResult | null>;
 };
 
@@ -324,39 +326,35 @@ export function useTxQueue(options: UseTxQueueOptions) {
       }
 
       const graph = optionsRef.current.graph;
-      if (graph && row.tx.kind === "graph-step") {
-        latchPersistContext(
-          graphEvidenceKey(graph, identity, row.tx.stepId),
-          graph.economicIdentityOf(row.tx.stepId),
-        );
-      }
+      const persist: PersistPendingContext | undefined =
+        graph && row.tx.kind === "graph-step"
+          ? {
+              key: graphEvidenceKey(graph, identity, row.tx.stepId),
+              identity: graph.economicIdentityOf(row.tx.stepId),
+            }
+          : undefined;
 
       let result: ActionExecutionResult;
       try {
-        result = await optionsRef.current.executor.confirm(rebuilt.plan);
+        result = await optionsRef.current.executor.confirm(rebuilt.plan, persist);
       } catch (nextError) {
-        clearPersistLatch();
         if (generation.current !== run) return;
         setError(nextError);
         updateRow(index, "failed");
         setRunning(false);
         return;
       }
-      clearPersistLatch();
-      if (generation.current !== run) return;
 
       if (result.status === "unknown") {
-        if (graph && row.tx.kind === "graph-step" && result.hash) {
-          persistPendingHash(
-            graphEvidenceKey(graph, identity, row.tx.stepId),
-            result.hash,
-            graph.economicIdentityOf(row.tx.stepId),
-          );
+        if (persist && result.hash) {
+          persistPendingHash(persist.key, result.hash, persist.identity);
         }
+        if (generation.current !== run) return;
         updateRow(index, "unknown");
         setRunning(false);
         return;
       }
+      if (generation.current !== run) return;
 
       if (result.status === "success") {
         if (graph && row.tx.kind === "graph-step") {
@@ -600,7 +598,6 @@ export function useTxQueue(options: UseTxQueueOptions) {
   useEffect(
     () => () => {
       generation.current += 1;
-      clearPersistLatch();
     },
     [],
   );

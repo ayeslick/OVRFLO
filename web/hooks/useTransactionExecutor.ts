@@ -10,6 +10,7 @@ import {
   type ExecutionPhase,
   type ExecutionPlan,
 } from "@/lib/action-runtime";
+import { persistPendingHash, type PersistPendingContext } from "@/lib/step-evidence";
 
 type ExecutorStatus = "idle" | ExecutionPhase | ActionExecutionResult["status"];
 
@@ -66,7 +67,7 @@ export function useTransactionExecutor(runtime: ActionExecutionRuntime) {
   const retryPromise = useRef<ReturnType<typeof retryCriticalRefresh> | null>(null);
 
   const confirm = useCallback(
-    async (plan: ExecutionPlan) => {
+    async (plan: ExecutionPlan, persist?: PersistPendingContext) => {
       const key = executionIdentity(plan);
       const pending = activeKey.current
         ? executionRegistry.get(activeKey.current)
@@ -80,7 +81,15 @@ export function useTransactionExecutor(runtime: ActionExecutionRuntime) {
       }
       activeKey.current = key;
       setStatus("revalidating");
-      const next = await executeOnce(key, plan, runtime, setStatus);
+      const runtimeForCall: ActionExecutionRuntime = persist
+        ? {
+            ...runtime,
+            persistPending: (hash) => {
+              persistPendingHash(persist.key, hash, persist.identity);
+            },
+          }
+        : runtime;
+      const next = await executeOnce(key, plan, runtimeForCall, setStatus);
       if (activeKey.current !== key) return next;
       setResult(next);
       setStatus(next.status);

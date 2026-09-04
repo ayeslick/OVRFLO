@@ -1,5 +1,5 @@
 import { act, renderHook } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Address, Hash } from "viem";
 import {
   clearTransactionExecutionRegistryForTests,
@@ -10,6 +10,7 @@ import type {
   ActionExecutionRuntime,
   ExecutionPlan,
 } from "@/lib/action-runtime";
+import { readPendingHash } from "@/lib/step-evidence";
 
 const account = "0x00000000000000000000000000000000000000a1" as Address;
 const target = "0x00000000000000000000000000000000000000b2" as Address;
@@ -82,6 +83,9 @@ function fixture(): { plan: ExecutionPlan; runtime: ActionExecutionRuntime } {
 
 describe("useTransactionExecutor", () => {
   beforeEach(() => clearTransactionExecutionRegistryForTests());
+  afterEach(() => {
+    window.localStorage.clear();
+  });
 
   it("coalesces duplicate confirmation and remounted callers for one in-flight identity", async () => {
     const { plan, runtime } = fixture();
@@ -227,5 +231,40 @@ describe("useTransactionExecutor", () => {
 
     expect(runtime.simulate).toHaveBeenCalledTimes(2);
     expect(runtime.submit).toHaveBeenCalledTimes(2);
+  });
+
+  it("persists a pending hash from the confirm persist context after unmount", async () => {
+    const { plan, runtime } = fixture();
+    let releaseSubmit!: (next: Hash) => void;
+    vi.mocked(runtime.submit).mockImplementation(
+      () =>
+        new Promise<Hash>((resolve) => {
+          releaseSubmit = resolve;
+        }),
+    );
+    vi.mocked(runtime.waitForReceipt).mockRejectedValue(new Error("unmounted"));
+    (runtime as ActionExecutionRuntime & { releaseSimulation: () => void }).releaseSimulation();
+    const hook = renderHook(() => useTransactionExecutor(runtime));
+    const persist = {
+      key: {
+        factory: "0x00000000000000000000000000000000000000f1",
+        chainId: 1,
+        account,
+        graphId: "g-1",
+        stepId: "deposit" as const,
+      },
+      identity: { kind: "deposit" as const, chainId: 1, token: target, amount: "1" },
+    };
+    let confirmation!: Promise<unknown>;
+    act(() => {
+      confirmation = hook.result.current.confirm(plan, persist);
+    });
+    await vi.waitFor(() => expect(runtime.submit).toHaveBeenCalledTimes(1));
+    hook.unmount();
+    await act(async () => {
+      releaseSubmit(hash);
+      await confirmation;
+    });
+    expect(readPendingHash(persist.key)).toBe(hash);
   });
 });

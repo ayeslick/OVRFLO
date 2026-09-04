@@ -31,7 +31,6 @@ import { buildRefreshPlan, refreshQueryResources } from "@/lib/query-resource-re
 import { invalidateTouchedResources, marketContracts } from "@/lib/invalidate";
 import { isRevertFailure, userFacingError } from "@/lib/errors";
 import { RECEIPT_CONFIRMATIONS } from "@/lib/receipts";
-import { persistLatchedPending } from "@/lib/step-evidence";
 import type { ActionType, MarketInfo } from "@/lib/types";
 import {
   createLiveExecutionPlan,
@@ -198,9 +197,6 @@ export function useWriteFlow(
           } as never);
         }
         return walletClient.writeContract(request as never);
-      },
-      persistPending: (hash) => {
-        persistLatchedPending(hash);
       },
       waitForReceipt: async (hash) => {
         if (!publicClient) throw new Error("Public client is unavailable");

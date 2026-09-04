@@ -3,12 +3,10 @@ import type { Hash } from "viem";
 import {
   anyUnresolvedHash,
   attemptKey,
-  latchPersistContext,
-  latchedPersistContext,
   listStepEvidence,
-  persistLatchedPending,
   persistPendingHash,
   readCurrentAttempt,
+  readPendingHash,
   readStepEvidence,
   stepEvidenceKey,
   writeCurrentAttempt,
@@ -48,6 +46,7 @@ describe("step evidence storage", () => {
     expect(stored?.status).toBe("unknown");
     expect(stored?.graphId).toBe("g-1");
     expect(stored?.stepId).toBe("deposit");
+    expect(readPendingHash(key)).toBe(hash);
     expect(anyUnresolvedHash()).toBe(true);
   });
 
@@ -108,18 +107,5 @@ describe("step evidence storage", () => {
     expect(attemptKey(factory, 1, account, "deposit-plus-borrow")).toBe(
       `ovrflo:attempt:${factory}:1:${account}:deposit-plus-borrow`,
     );
-  });
-
-  it("clears the persist latch so a later hash cannot attach to a prior step", () => {
-    latchPersistContext(key, {
-      kind: "deposit",
-      chainId: 1,
-      token: "0xpt",
-      amount: "10",
-    });
-    persistLatchedPending(hash);
-    expect(latchedPersistContext()).toBeNull();
-    persistLatchedPending(`0x${"ef".repeat(32)}` as Hash);
-    expect(readStepEvidence(key)?.hash).toBe(hash);
   });
 });

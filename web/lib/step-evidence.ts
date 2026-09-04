@@ -164,6 +164,11 @@ export function readCurrentAttempt(
   return parseJsonStorage(storageGet(attemptKey(factory, chainId, account, kind)), isCurrentAttempt);
 }
 
+export type PersistPendingContext = {
+  key: StepEvidenceKey;
+  identity: EconomicIdentity;
+};
+
 export function persistPendingHash(
   key: StepEvidenceKey,
   hash: Hash,
@@ -186,28 +191,8 @@ export function persistPendingHash(
   });
 }
 
-let latchedKey: StepEvidenceKey | null = null;
-let latchedIdentity: EconomicIdentity | null = null;
-
-export function latchPersistContext(key: StepEvidenceKey, identity: EconomicIdentity): void {
-  latchedKey = key;
-  latchedIdentity = identity;
-}
-
-export function clearPersistLatch(): void {
-  latchedKey = null;
-  latchedIdentity = null;
-}
-
-/** Called immediately after wallet submit returns a hash. */
-export function persistLatchedPending(hash: Hash): void {
-  if (!latchedKey || !latchedIdentity) return;
-  persistPendingHash(latchedKey, hash, latchedIdentity);
-  clearPersistLatch();
-}
-
-export function latchedPersistContext(): StepEvidenceKey | null {
-  return latchedKey;
+export function readPendingHash(key: StepEvidenceKey): Hash | null {
+  return readStepEvidence(key)?.hash ?? null;
 }
 
 export function anyPersistedHash(): boolean {

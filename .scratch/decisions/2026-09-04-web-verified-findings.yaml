@@ -1,0 +1,83 @@
+# Scratch decision record — schema: docs/maps/SCHEMAS.md §4
+summary_ref: "docs/plans/2026-08-22-001-refactor-denomination-switch-border-column-plan.md#kd17"
+
+goal: >
+  Fix five verified web findings on main. Persist a graph-step hash
+  without a module latch. Hosted Convert accepts swapExactTokenForPt
+  only and rejects JavaScript numbers. Borrow and post rebuild through
+  the live plan. A stream deep link stays until portfolio hydration
+  completes.
+
+state_keys_touched:
+  - persist.step-evidence
+  - queue.rows
+  - queue.running
+  - executor.status
+  - view-state.watch.url
+
+writers_readers:
+  - writes: web/lib/step-evidence.ts
+  - writes: web/hooks/useTxQueue.ts
+  - writes: web/hooks/useTransactionExecutor.ts
+  - writes: web/hooks/useWriteFlow.ts
+  - writes: web/hooks/useCreateGraphQueue.ts
+  - writes: web/lib/hosted-convert.ts
+  - writes: web/lib/live-action-plan.ts
+  - writes: web/lib/graph-step-plan.ts
+  - writes: web/components/borrow/BorrowFlow.tsx
+  - writes: web/components/watch/WatchApp.tsx
+  - reads: web/lib/action-runtime.ts
+  - reads: web/lib/actions/borrow.ts
+  - reads: web/lib/portfolio-matrix.ts
+
+trust_domains:
+  - fact: pending transaction hash for a graph step
+    domain: pure-client
+    moved_from: null
+  - fact: Hosted Convert calldata method, YT, and numeric amounts
+    domain: projection
+    moved_from: null
+  - fact: borrow routing, stream eligibility, router, and ownership
+    domain: on-chain
+    moved_from: null
+  - fact: Watch ?stream= versus ?loan= rewrite
+    domain: projection
+    moved_from: null
+
+rejected_alternatives:
+  - option: Keep a module-level persist latch and skip clear on unmount
+    why_not: Unmount still races the latch. Bind the evidence key in the confirm call.
+  - option: Keep mintPyFromToken and add a YT equality check
+    why_not: Token to PT is swapExactTokenForPt only. A mint body is hostile.
+  - option: Keep buildCallStepPlan for borrow and post
+    why_not: Rebuild must re-read routing, eligibility, router, and ownership.
+  - option: Accept JavaScript Number for hosted amounts
+    why_not: Number loses integers above 2^53. Hosted bodies must stay strings.
+
+invariants_held:
+  - invariant: Resume never replays a confirmed step after a hash is known.
+    how: persistPending writes the hash with a closure-bound key. Unmount does not clear it.
+  - invariant: Hosted Convert mints no other market PY.
+    how: mintPyFromToken is not an allowed method. Swap calldata still binds the market.
+  - invariant: A borrow or post rebuild uses a fresh live draft.
+    how: BorrowFlow calls rebuildProtocolGraphStep. loadSnapshot fills projection and eligibility.
+  - invariant: Incomplete scan does not confirm a stream-to-loan route.
+    how: The stream-to-loan rewrite returns while portfolioComplete is false.
+
+risks:
+  - risk: A borrow live draft fails routing-incomplete when no projection loader runs.
+    residual: Tests pin that failure. Production passes loadLiveBorrowProjection.
+  - risk: Confirm signature gains an optional persist context.
+    residual: Existing one-argument confirm callers stay valid.
+
+diff_hints:
+  - path: web/hooks/useTxQueue.ts
+    why: Bind evidence key before confirm. Persist unknown before the generation check.
+  - path: web/lib/step-evidence.ts
+    why: Module latch is gone. persistPendingHash is the only pending writer.
+  - path: web/lib/hosted-convert.ts
+    why: mint-py removed. parseTx is the only tx.to check. Numbers rejected.
+  - path: web/lib/live-action-plan.ts
+    why: Borrow and post snapshots stop stubbing eligible true and empty routes.
+  - path: web/components/watch/WatchApp.tsx
+    why: Stream-to-loan rewrite waits for portfolioComplete.
