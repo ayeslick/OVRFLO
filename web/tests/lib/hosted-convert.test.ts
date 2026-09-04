@@ -12,7 +12,7 @@ import {
   validateHostedResponse,
   type HostedConvertIntentInput,
 } from "@/lib/hosted-convert";
-import { hostedConvertResponse } from "./hosted-convert.fixture";
+import { encodeHostedMintPy, hostedConvertResponse } from "./hosted-convert.fixture";
 
 const ACCOUNT = "0x00000000000000000000000000000000000000a1" as Address;
 const INPUT = "0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0" as Address;
@@ -113,6 +113,26 @@ describe("Hosted Convert hostility", () => {
     expect(validateHostedResponse(hostedResponse({ priceImpact: null }), intent)).toMatchObject({
       status: "reject",
       code: "hosted-response",
+    });
+    expect(
+      validateHostedResponse(
+        hostedResponse({
+          data: encodeHostedMintPy({
+            account: ACCOUNT,
+            inputToken: INPUT,
+            yt: OTHER_ROUTER,
+            amount: AMOUNT,
+          }),
+        }),
+        intent,
+      ),
+    ).toMatchObject({
+      status: "reject",
+      code: "hosted-semantics",
+    });
+    expect(validateHostedResponse(hostedResponse({ action: "mint-py" }), intent)).toMatchObject({
+      status: "reject",
+      code: "hosted-semantics",
     });
   });
 

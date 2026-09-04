@@ -78,41 +78,10 @@ export const PENDLE_ROUTER_CONVERT_ABI = [
       { name: "netSyFee", type: "uint256" },
     ],
   },
-  {
-    type: "function",
-    name: "mintPyFromToken",
-    stateMutability: "payable",
-    inputs: [
-      { name: "receiver", type: "address" },
-      { name: "YT", type: "address" },
-      { name: "minPyOut", type: "uint256" },
-      {
-        name: "input",
-        type: "tuple",
-        components: [
-          { name: "tokenIn", type: "address" },
-          { name: "netTokenIn", type: "uint256" },
-          { name: "tokenMintSy", type: "address" },
-          { name: "pendleSwap", type: "address" },
-          {
-            name: "swapData",
-            type: "tuple",
-            components: [
-              { name: "swapType", type: "uint8" },
-              { name: "extRouter", type: "address" },
-              { name: "extCalldata", type: "bytes" },
-              { name: "needScale", type: "bool" },
-            ],
-          },
-        ],
-      },
-    ],
-    outputs: [{ name: "netPyOut", type: "uint256" }],
-  },
 ] as const;
 
-const ALLOWED_METHODS = new Set(["swapExactTokenForPt", "mintPyFromToken"]);
-const ALLOWED_ACTIONS = new Set(["swap", "mint-py", "pendle-swap"]);
+const ALLOWED_METHODS = new Set(["swapExactTokenForPt"]);
+const ALLOWED_ACTIONS = new Set(["swap", "pendle-swap"]);
 
 export type HostedConvertIntentInput = {
   chainId: number;
@@ -344,20 +313,13 @@ export function validateHostedResponse(
 
   for (const approval of approvals) {
     const spender = approval.spender ?? tx.to;
-    if (!isAddressEqual(spender, PENDLE_ROUTER_V4) || !isAddressEqual(tx.to, PENDLE_ROUTER_V4)) {
+    if (!isAddressEqual(spender, PENDLE_ROUTER_V4)) {
       return {
         status: "reject",
         code: "hosted-router-mismatch",
         message: "Hosted Convert spender is not Pendle Router V4",
       };
     }
-  }
-  if (approvals.length === 0 && !isAddressEqual(tx.to, PENDLE_ROUTER_V4)) {
-    return {
-      status: "reject",
-      code: "hosted-router-mismatch",
-      message: "Hosted Convert target is not Pendle Router V4",
-    };
   }
 
   const decoded = decodeHostedCalldata(tx.data, intent);
@@ -499,42 +461,18 @@ function decodeHostedCalldata(
     if (typeof receiver !== "string" || !isAddressEqual(receiver, intent.account)) {
       return rejectSemantics("Hosted Convert receiver is not the connected account");
     }
-    if (decoded.functionName === "swapExactTokenForPt") {
-      const market = decoded.args[1];
-      const minPtOut = decoded.args[2];
-      const input = decoded.args[4];
-      if (typeof market !== "string" || !isAddressEqual(market, intent.pendleMarket)) {
-        return {
-          status: "reject",
-          code: "hosted-token-mismatch",
-          message: "Hosted Convert calldata market does not match the selected term",
-        };
-      }
-      if (typeof minPtOut !== "bigint" || !input || typeof input !== "object") {
-        return rejectSemantics("Hosted Convert swap args are incomplete");
-      }
-      const tokenIn = "tokenIn" in input ? input.tokenIn : undefined;
-      const netTokenIn = "netTokenIn" in input ? input.netTokenIn : undefined;
-      if (typeof tokenIn !== "string" || !isAddressEqual(tokenIn, intent.inputToken)) {
-        return {
-          status: "reject",
-          code: "hosted-token-mismatch",
-          message: "Hosted Convert calldata tokenIn does not match",
-        };
-      }
-      if (typeof netTokenIn !== "bigint" || netTokenIn !== intent.amountIn) {
-        return {
-          status: "reject",
-          code: "hosted-bounds",
-          message: "Hosted Convert calldata amount does not match",
-        };
-      }
-      return { method: decoded.functionName, minOut: minPtOut };
+    const market = decoded.args[1];
+    const minPtOut = decoded.args[2];
+    const input = decoded.args[4];
+    if (typeof market !== "string" || !isAddressEqual(market, intent.pendleMarket)) {
+      return {
+        status: "reject",
+        code: "hosted-token-mismatch",
+        message: "Hosted Convert calldata market does not match the selected term",
+      };
     }
-    const minPyOut = decoded.args[2];
-    const input = decoded.args[3];
-    if (typeof minPyOut !== "bigint" || !input || typeof input !== "object") {
-      return rejectSemantics("Hosted Convert mint args are incomplete");
+    if (typeof minPtOut !== "bigint" || !input || typeof input !== "object") {
+      return rejectSemantics("Hosted Convert swap args are incomplete");
     }
     const tokenIn = "tokenIn" in input ? input.tokenIn : undefined;
     const netTokenIn = "netTokenIn" in input ? input.netTokenIn : undefined;
@@ -552,7 +490,7 @@ function decodeHostedCalldata(
         message: "Hosted Convert calldata amount does not match",
       };
     }
-    return { method: decoded.functionName, minOut: minPyOut };
+    return { method: decoded.functionName, minOut: minPtOut };
   } catch {
     return rejectSemantics("Hosted Convert calldata does not decode as an allowed method");
   }

@@ -86,5 +86,8 @@ This chat applied:
 3. Missing price impact fails. String impact `0.01009` is 101 bps.
 4. Review economics use the decoded `minOut`.
 
-Residual: no USD submit path; no hosted re-fetch on rebuild; mint-py
-does not check YT.
+Residual: no USD submit path; no hosted re-fetch on rebuild.
+
+2026-09-04: mint-py / `mintPyFromToken` was removed. Token-to-PT is
+`swapExactTokenForPt` only. A mint body now rejects with
+`hosted-semantics`.
