@@ -34,6 +34,7 @@ import type {
 import { actionError } from "./actions/types";
 import { applySlippageDown } from "./modal-logic";
 import { ZERO_ADDRESS } from "./config";
+import { MAX_ENUMERATION_IDS, MIN_STREAM_AMOUNT } from "./lending-math";
 import { readPreviewBorrow } from "@/components/borrow/quote";
 import type { ReadyProtocolBootstrap } from "./protocol-bootstrap";
 import { readyOutcome } from "./read-outcome";
@@ -72,6 +73,8 @@ export type LiveBlockSnapshot = {
   hash: Hex;
   timestamp: bigint;
 };
+export const LIVE_BORROW_MAX_ROUTE_IDS = 128;
+
 export type LiveBorrowProjectionLoader = (input: {
   lending: Address;
   market: Address;
@@ -81,6 +84,16 @@ export type LiveBorrowProjectionLoader = (input: {
   positions: readonly LiquidityPosition[];
   aggregateDepth: bigint;
 }>;
+
+type LockupLinearStream = {
+  sender: Address;
+  startTime: number | bigint;
+  cliffTime: number | bigint;
+  isCancelable: boolean;
+  asset: Address;
+  endTime: number | bigint;
+  amounts: { deposited: bigint; withdrawn: bigint; refunded: bigint };
+};
 type LiveSnapshotOptions = {
   pinnedBlock?: LiveBlockSnapshot;
   loadBorrowProjection?: LiveBorrowProjectionLoader;
@@ -303,6 +316,58 @@ async function read<T>(
   return client.readContract({ ...request, blockNumber } as never) as Promise<T>;
 }
 
+export function createLiveBorrowProjectionLoader(client: LiveClient): LiveBorrowProjectionLoader {
+  return async (input) => {
+    const nextId = await read<bigint>(client, input.block.number, {
+      address: input.lending,
+      abi: ovrfloLendingAbi,
+      functionName: "nextPositionId",
+    });
+    const last = nextId > 1n ? nextId - 1n : 0n;
+    const cap = last < MAX_ENUMERATION_IDS ? last : MAX_ENUMERATION_IDS;
+    const positions: LiquidityPosition[] = [];
+    for (let id = 1n; id <= cap; id += 1n) {
+      const position = await positionAt(client, input.lending, id, input.block.number);
+      if (
+        position &&
+        isAddressEqual(position.market, input.market) &&
+        position.aprBps === input.aprBps
+      ) {
+        positions.push(position);
+      }
+    }
+    return {
+      positions,
+      aggregateDepth: positions.reduce((sum, row) => sum + row.availableLiquidity, 0n),
+    };
+  };
+}
+
+async function readStreamEligible(
+  client: LiveClient,
+  scope: LiveMarketScope,
+  market: MarketActionContext,
+  streamId: bigint,
+  blockNumber: bigint,
+): Promise<boolean> {
+  const stream = await read<LockupLinearStream>(client, blockNumber, {
+    address: market.sablier,
+    abi: sablierLockupAbi,
+    functionName: "getStream",
+    args: [streamId],
+  });
+  const remaining = stream.amounts.deposited - stream.amounts.withdrawn - stream.amounts.refunded;
+  return (
+    isAddressEqual(stream.sender, scope.vault) &&
+    isAddressEqual(stream.asset, scope.ovrfloToken) &&
+    BigInt(stream.endTime) === scope.expiryCached &&
+    BigInt(stream.cliffTime) === BigInt(stream.startTime) &&
+    !stream.isCancelable &&
+    remaining >= MIN_STREAM_AMOUNT &&
+    market.now < scope.expiryCached
+  );
+}
+
 async function positionAt(
   client: LiveClient,
   lending: Address,
@@ -503,6 +568,7 @@ async function loadSnapshot(
   client: LiveClient,
   {
     pinnedBlock,
+    loadBorrowProjection,
   }: Pick<LiveSnapshotOptions, "pinnedBlock" | "loadBorrowProjection"> = {},
 ): Promise<ActionSnapshot> {
   const block = pinnedBlock ?? await client.getBlock({ blockTag: "latest" });
@@ -774,7 +840,7 @@ async function loadSnapshot(
       const aprBps = requireNumber(parsed.raw.args?.[1], "APR");
       const target = requireBigint(parsed.raw.args?.[2], "borrow amount");
       const reviewedMin = requireBigint(parsed.raw.args?.[4], "minimum received");
-      const [recipient, approved, approvedForAll] = await Promise.all([
+      const [recipient, approved, approvedForAll, eligible, projection, preview] = await Promise.all([
         read<Address>(client, blockNumber, {
           address: market.sablier,
           abi: sablierLockupAbi,
@@ -793,6 +859,24 @@ async function loadSnapshot(
           functionName: "isApprovedForAll",
           args: [identity.account, lending],
         }),
+        readStreamEligible(client, scope, market, streamId, blockNumber),
+        loadBorrowProjection
+          ? loadBorrowProjection({
+              lending,
+              market: scope.market,
+              aprBps,
+              block: { number: block.number, hash: blockHash, timestamp: block.timestamp },
+            })
+          : Promise.resolve({ positions: [] as const, aggregateDepth: 0n }),
+        readPreviewBorrow({
+          client,
+          lending,
+          market: scope.market,
+          aprBps,
+          targetBorrow: target,
+          streamId,
+          blockNumber,
+        }),
       ]);
       return {
         type: "borrow",
@@ -804,7 +888,7 @@ async function loadSnapshot(
             recipient,
             approved: isAddressEqual(approved, ZERO_ADDRESS) ? null : approved,
             approvedForAll,
-            eligible: true,
+            eligible,
           },
           metadata,
         ),
@@ -812,37 +896,26 @@ async function loadSnapshot(
           {
             market: scope.market,
             aprBps,
-            candidateIds: [],
-            aggregateDepth: 0n,
-            maxRouteIds: 0,
+            candidateIds: projection.positions.map((row) => row.id),
+            aggregateDepth: projection.aggregateDepth,
+            maxRouteIds: projection.positions.length === 0 ? 0 : LIVE_BORROW_MAX_ROUTE_IDS,
           },
           metadata,
         ),
-        hydration: readyOutcome({ positions: [] }, metadata),
+        hydration: readyOutcome({ positions: [...projection.positions] }, metadata),
         quote: readyOutcome(
-          await (async () => {
-            const preview = await readPreviewBorrow({
-              client,
-              lending,
-              market: scope.market,
-              aprBps,
-              targetBorrow: target,
-              streamId,
-              blockNumber,
-            });
-            return {
-              market: scope.market,
-              streamId,
-              aprBps,
-              amount: target,
-              actualBorrow: preview.actualBorrow,
-              feeAmount: preview.feeAmount,
-              obligation: preview.obligation,
-              // snapshot-derived: ticket 11 streamsByIds is not in this worktree
-              residual: 0n,
-              minAcceptable: reviewedMin,
-            };
-          })(),
+          {
+            market: scope.market,
+            streamId,
+            aprBps,
+            amount: target,
+            actualBorrow: preview.actualBorrow,
+            feeAmount: preview.feeAmount,
+            obligation: preview.obligation,
+            // snapshot-derived: ticket 11 streamsByIds is not in this worktree
+            residual: 0n,
+            minAcceptable: reviewedMin,
+          },
           metadata,
         ),
       };
@@ -948,7 +1021,7 @@ async function loadSnapshot(
       const book = scope.requestBook;
       if (!book) throw new Error("Request book is not configured");
       const streamId = parsed.intent.streamId;
-      const [recipient, approved, approvedForAll, router] = await Promise.all([
+      const [recipient, approved, approvedForAll, router, eligible] = await Promise.all([
         read<Address>(client, blockNumber, {
           address: market.sablier,
           abi: sablierLockupAbi,
@@ -972,6 +1045,7 @@ async function loadSnapshot(
           abi: ovrfloLendingAbi,
           functionName: "router",
         }),
+        readStreamEligible(client, scope, market, streamId, blockNumber),
       ]);
       return {
         type: "post_request",
@@ -983,7 +1057,7 @@ async function loadSnapshot(
             recipient,
             approved: isAddressEqual(approved, ZERO_ADDRESS) ? null : approved,
             approvedForAll,
-            eligible: true,
+            eligible,
           },
           metadata,
         ),

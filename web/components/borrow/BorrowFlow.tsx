@@ -57,11 +57,10 @@ import {
 import { WAITING_FOR_LIQUIDITY_COPY } from "@/lib/named-surface-state";
 import { suppressStaleSubmit } from "@/lib/named-surface-state";
 import { classifyBorrowError } from "@/lib/borrow";
-import { assertBorrowRebuildInputs } from "@/lib/borrow-rebuild";
 import { chainId, factoryAddress, ZERO_ADDRESS } from "@/lib/config";
 import { confirmedStepIds } from "@/lib/composite-recovery";
 import { allocateGraphId } from "@/lib/graph-id";
-import { buildAuthStepPlan, buildCallStepPlan, reuseOrAllocateGraphId } from "@/lib/graph-step-plan";
+import { buildAuthStepPlan, rebuildProtocolGraphStep, reuseOrAllocateGraphId } from "@/lib/graph-step-plan";
 import { cs3ContinuationAvailable, depositPlusBorrowLiquidityGate } from "@/lib/no-liquidity-gate";
 import { defaultRecoveryCopy, type RecoveryCopy } from "@/lib/recovery-copy";
 import { listStepEvidence, readCurrentAttempt, writeCurrentAttempt } from "@/lib/step-evidence";
@@ -452,57 +451,39 @@ export function BorrowFlow() {
         if (!routerAddress || !market || !selectedStream || !frozen || selectedAprBps === null) {
           throw new Error("Request post rebuild inputs are missing");
         }
-        const rebuildRead = assertBorrowRebuildInputs({
-          routedDepth: depth,
-          eligibility: selectedStream.borrowRouteEligible ? "eligible" : "ineligible",
-          router: routerAddress,
-          request: { book: routerAddress },
-        });
-        if (rebuildRead.status === "invalid") {
-          throw new Error(`Borrow rebuild used a placeholder (${rebuildRead.reason})`);
+        if (!publicClient || bootstrap.status !== "ready") {
+          throw new Error("Post rebuild cannot run without a ready protocol client");
         }
-        return {
-          status: "ready",
-          plan: buildCallStepPlan({
-            identity: nextIdentity,
-            actionType: "post_request",
-            semanticId: GRAPH_STEP_POST,
-            target: routerAddress,
-            contract: "request_book",
+        return rebuildProtocolGraphStep({
+          raw: {
+            address: routerAddress,
             functionName: "post",
-            callArgs: [
+            args: [
               selectedStream.streamId,
               market.market,
               selectedAprBps,
               frozen.target,
               frozen.minAcceptable,
             ],
-          }),
-        };
+          },
+          identity: nextIdentity,
+          scope: { ...market, sablier: bootstrap.stream, requestBook: routerAddress },
+          client: publicClient,
+          bootstrap,
+        });
       }
       if (tx.semanticId !== GRAPH_STEP_BORROW) throw new Error("Unsupported borrow graph step");
       if (!lending || !market || !selectedStream || !frozen || selectedAprBps === null) {
         throw new Error("Borrow rebuild inputs are missing");
       }
-      const rebuildRead = assertBorrowRebuildInputs({
-        routedDepth: depth,
-        eligibility: selectedStream.borrowRouteEligible ? "eligible" : "ineligible",
-        router: routerAddress,
-        request: "none",
-      });
-      if (rebuildRead.status === "invalid") {
-        throw new Error(`Borrow rebuild used a placeholder (${rebuildRead.reason})`);
+      if (!publicClient || bootstrap.status !== "ready") {
+        throw new Error("Borrow rebuild cannot run without a ready protocol client");
       }
-      return {
-        status: "ready",
-        plan: buildCallStepPlan({
-          identity: nextIdentity,
-          actionType: "borrow",
-          semanticId: GRAPH_STEP_BORROW,
-          target: lending,
-          contract: "lending",
+      return rebuildProtocolGraphStep({
+        raw: {
+          address: lending,
           functionName: "borrow",
-          callArgs: [
+          args: [
             market.market,
             selectedAprBps,
             frozen.actualBorrow,
@@ -510,8 +491,12 @@ export function BorrowFlow() {
             frozen.minAcceptable,
             nextIdentity.account,
           ],
-        }),
-      };
+        },
+        identity: nextIdentity,
+        scope: { ...market, sablier: bootstrap.stream, requestBook: routerAddress },
+        client: publicClient,
+        bootstrap,
+      });
     },
   });
   const checkpoint = deriveCheckpoint({

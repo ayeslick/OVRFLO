@@ -1,5 +1,5 @@
 import type { Address } from "viem";
-import { erc20Abi, ovrfloAbi, ovrfloLendingAbi, ovrfloRequestBookAbi, sablierLockupAbi } from "./abis";
+import { erc20Abi, sablierLockupAbi } from "./abis";
 import type { ActionGraph, GraphSemanticId } from "./action-graph";
 import { graphToQueuedTx } from "./action-graph";
 import type { ActionExecutionDraft, ExecutionPlan } from "./action-runtime";
@@ -7,7 +7,14 @@ import type { ActionIdentity, ReadyAction } from "./actions/types";
 import type { ActionType } from "./types";
 import type { QueuedTx } from "./claim-all";
 import { confirmedStepIds } from "./composite-recovery";
-import { createLiveExecutionPlan, type LiveClient, type LiveMarketScope, type LiveWriteArgs } from "./live-action-plan";
+import {
+  createLiveBorrowProjectionLoader,
+  createLiveExecutionPlan,
+  type LiveBorrowProjectionLoader,
+  type LiveClient,
+  type LiveMarketScope,
+  type LiveWriteArgs,
+} from "./live-action-plan";
 import type { ReadyProtocolBootstrap } from "./protocol-bootstrap";
 import type { StepEvidence } from "./step-evidence";
 
@@ -111,80 +118,18 @@ export function buildAuthStepPlan(args: {
   };
 }
 
-export function buildCallStepPlan(args: {
-  identity: ActionIdentity;
-  actionType: ActionType;
-  semanticId: GraphSemanticId;
-  target: Address;
-  contract: "lending" | "ovrflo" | "request_book";
-  functionName: string;
-  callArgs: readonly unknown[];
-}): ExecutionPlan {
-  const call = {
-    target: args.target,
-    contract: args.contract,
-    functionName: args.functionName,
-    args: args.callArgs,
-    value: 0n,
-  };
-  const action: ReadyAction = {
-    type: args.actionType,
-    identity: args.identity,
-    preconditions: ["graph-call-step"],
-    authorizations: [],
-    call,
-    touchedResources:
-      args.contract === "request_book"
-        ? [{ kind: "request", book: args.target, id: 0n }]
-        : args.contract === "lending"
-          ? [{ kind: "market-depth", lending: args.target, market: args.target }]
-          : [{ kind: "market", vault: args.target, market: args.target }],
-    review: {
-      actionType: args.actionType,
-      title: args.semanticId,
-      identity: args.identity,
-      call,
-      authorizations: [],
-      economics: {},
-    },
-    receiptSummary: {
-      source: args.target,
-      eventName: null,
-      label: args.semanticId.toUpperCase(),
-      expectedIds: [],
-      expectedAmounts: {},
-    },
-  };
-  const accepted: ActionExecutionDraft = {
-    action,
-    request: {
-      address: call.target,
-      abi:
-        args.contract === "request_book"
-          ? ovrfloRequestBookAbi
-          : args.contract === "lending"
-            ? ovrfloLendingAbi
-            : ovrfloAbi,
-      functionName: call.functionName,
-      args: call.args,
-    },
-  };
-  return {
-    flowId: `graph-step:${args.semanticId}`,
-    accepted,
-    rebuild: async () => ({ status: "ready", draft: accepted }),
-  };
-}
-
 export async function rebuildProtocolGraphStep(args: {
   raw: LiveWriteArgs;
   identity: ActionIdentity;
   scope: LiveMarketScope;
   client: LiveClient;
   bootstrap: ReadyProtocolBootstrap;
+  loadBorrowProjection?: LiveBorrowProjectionLoader;
 }): Promise<{ status: "ready"; plan: ExecutionPlan }> {
   const result = await createLiveExecutionPlan(args.raw, args.identity, args.scope, args.client, {
     bootstrap: args.bootstrap,
+    loadBorrowProjection:
+      args.loadBorrowProjection ?? createLiveBorrowProjectionLoader(args.client),
   });
   if (!result) {
     throw new Error("Graph step is not a supported protocol call");

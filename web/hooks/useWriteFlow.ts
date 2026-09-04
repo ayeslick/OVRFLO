@@ -33,6 +33,7 @@ import { isRevertFailure, userFacingError } from "@/lib/errors";
 import { RECEIPT_CONFIRMATIONS } from "@/lib/receipts";
 import type { ActionType, MarketInfo } from "@/lib/types";
 import {
+  createLiveBorrowProjectionLoader,
   createLiveExecutionPlan,
   type LiveMarketScope,
 } from "@/lib/live-action-plan";
@@ -418,7 +419,10 @@ export function useWriteFlow(
               identity,
               marketScope,
               publicClient,
-              { bootstrap },
+              {
+                bootstrap,
+                loadBorrowProjection: createLiveBorrowProjectionLoader(publicClient),
+              },
             );
             if (!isCurrentPreparation()) {
               handled = true;
