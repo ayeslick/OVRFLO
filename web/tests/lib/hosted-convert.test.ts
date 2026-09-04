@@ -136,6 +136,30 @@ describe("Hosted Convert hostility", () => {
     });
   });
 
+  it("rejects JavaScript numbers for tx.value and token amounts", () => {
+    expect(validateHostedResponse(hostedResponse({ value: 0 }), intent)).toMatchObject({
+      status: "reject",
+      code: "hosted-semantics",
+    });
+    expect(validateHostedResponse(hostedResponse({ value: "0x0" }), intent)).toMatchObject({
+      status: "ok",
+    });
+    const numberedInput = hostedResponse();
+    (numberedInput.inputs as { amount: unknown }[])[0]!.amount = 1;
+    expect(validateHostedResponse(numberedInput, intent)).toMatchObject({
+      status: "reject",
+      code: "hosted-semantics",
+    });
+    const numberedOutput = hostedResponse();
+    (
+      (numberedOutput.routes as { outputs: { amount: unknown }[] }[])[0]!
+    ).outputs[0]!.amount = 1;
+    expect(validateHostedResponse(numberedOutput, intent)).toMatchObject({
+      status: "reject",
+      code: "hosted-semantics",
+    });
+  });
+
   it("rejects Default impact above 100 bps and posts only to the v3 convert path", () => {
     expect(validateHostedResponse(hostedResponse({ priceImpact: 0.0101 }), intent)).toMatchObject({
       status: "reject",

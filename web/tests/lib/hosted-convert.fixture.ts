@@ -103,9 +103,9 @@ export function hostedConvertResponse(args: {
   priceImpact?: number | string | null;
   deadline?: unknown;
   to?: Address;
-  value?: string;
+  value?: string | number;
   action?: string;
-  inputAmount?: bigint;
+  inputAmount?: bigint | number;
   data?: Hex;
 }): Record<string, unknown> {
   const data = args.data ?? encodeHostedSwap(args);

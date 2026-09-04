@@ -409,8 +409,14 @@ function parseTx(
   if (typeof raw.data !== "string" || !isHex(raw.data) || raw.data.length < 10) {
     return rejectSemantics("Hosted Convert calldata is missing");
   }
+  if (typeof raw.value === "number") {
+    return rejectSemantics("Hosted Convert tx.value must be a string");
+  }
   let value = 0n;
-  if (typeof raw.value === "string" || typeof raw.value === "number") {
+  if (raw.value !== undefined && raw.value !== null) {
+    if (typeof raw.value !== "string") {
+      return rejectSemantics("Hosted Convert tx.value must be a string");
+    }
     try {
       value = BigInt(raw.value);
     } catch {
@@ -432,7 +438,10 @@ function parseTokenAmounts(
     if (!isRecord(item) || typeof item.token !== "string" || !isAddress(item.token)) {
       return rejectResponse(`Hosted Convert ${label} token is invalid`);
     }
-    if (typeof item.amount !== "string" && typeof item.amount !== "number") {
+    if (typeof item.amount === "number") {
+      return rejectSemantics(`Hosted Convert ${label} amount must be a string`);
+    }
+    if (typeof item.amount !== "string") {
       return rejectResponse(`Hosted Convert ${label} amount is invalid`);
     }
     let amount: bigint;
