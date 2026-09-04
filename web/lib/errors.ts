@@ -275,7 +275,6 @@ const legacyRevertCopy: Record<string, string> = {
   "OVRFLOLending: insufficient availableLiquidity": "This liquidity position cannot fill the quote.",
   "OVRFLOLending: duplicate or unsorted ids": "Liquidity IDs must be strictly increasing.",
   "OVRFLOLending: slippage": "Price moved outside your limit.",
-  "OVRFLOLending: self-match": "You cannot borrow from your own liquidity.",
 };
 
 export function userFacingError(error: unknown, context?: BelowMinimumContext) {

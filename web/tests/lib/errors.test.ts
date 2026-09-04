@@ -35,12 +35,6 @@ describe("userFacingError", () => {
     expect(userFacingError(reverted)).toBe("Cancelable streams are not eligible.");
   });
 
-  it("maps a matched revert reason string", () => {
-    expect(userFacingError(new Error("execution reverted: OVRFLOLending: self-match"))).toBe(
-      "You cannot borrow from your own liquidity.",
-    );
-  });
-
   it("falls back to a generic message for unknown failures", () => {
     expect(userFacingError(new Error("boom"))).toBe(
       "The transaction failed. Check the entered values and try again.",

@@ -78,7 +78,7 @@ describe("classifyAdjustError", () => {
 
   it("defers to the borrow classification otherwise", () => {
     expect(classifyAdjustError(new Error("reverted: OVRFLOLending: liquidity inactive"))).toBe("stale");
-    expect(classifyAdjustError(new Error("reverted: OVRFLOLending: self-match"))).toBe("terminal");
+    expect(classifyAdjustError(new Error("reverted: OVRFLOLending: borrow above price"))).toBe("terminal");
     expect(classifyAdjustError(new Error("User rejected the request."))).toBe("retryable");
   });
 });

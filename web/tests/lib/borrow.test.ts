@@ -144,7 +144,6 @@ describe("classifyBorrowError", () => {
   });
 
   it("classifies other contract reverts as terminal", () => {
-    expect(classifyBorrowError(new Error("reverted: OVRFLOLending: self-match"))).toBe("terminal");
     expect(classifyBorrowError(new Error("reverted: OVRFLOLending: borrow above price"))).toBe("terminal");
     expect(classifyBorrowError(new Error("WrongSender()"))).toBe("terminal");
     expect(classifyBorrowError(new Error("SeriesMatured()"))).toBe("terminal");

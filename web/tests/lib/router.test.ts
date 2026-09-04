@@ -75,12 +75,11 @@ describe("buildLadder", () => {
 });
 
 describe("selectHydratedRoute", () => {
-  it("conserves the public book before applying self-exclusion", () => {
+  it("conserves projected depth against the aggregate before ranking", () => {
     const positions = [pos(1n, 1000, 100n, self), pos(2n, 1000, 50n)];
     expect(
       selectHydratedRoute({
         positions,
-        borrower: self,
         target: 50n,
         aggregateDepth: 140n,
         maxRouteIds: 128,
@@ -88,12 +87,11 @@ describe("selectHydratedRoute", () => {
     ).toMatchObject({ status: "conservation-failed", projectedDepth: 150n, aggregateDepth: 140n });
   });
 
-  it("reports public and borrower-usable depth independently after conservation", () => {
+  it("includes the connected account's own position in the fill route", () => {
     const positions = [pos(1n, 1000, 100n, self), pos(2n, 1000, 50n)];
     expect(
       selectHydratedRoute({
         positions,
-        borrower: self,
         target: 50n,
         aggregateDepth: 150n,
         maxRouteIds: 128,
@@ -101,9 +99,9 @@ describe("selectHydratedRoute", () => {
     ).toMatchObject({
       status: "ready",
       publicDepth: 150n,
-      executableDepth: 50n,
-      selfExcludedDepth: 100n,
-      selectedIds: [2n],
+      executableDepth: 150n,
+      selectedDepth: 100n,
+      selectedIds: [1n],
     });
   });
 

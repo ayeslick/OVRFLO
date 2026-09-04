@@ -10,7 +10,6 @@ const result = selectHydratedRoute({
     id: BigInt(position.id),
     availableLiquidity: BigInt(position.availableLiquidity),
   })),
-  borrower: input.borrower,
   target: BigInt(input.target),
   aggregateDepth: BigInt(input.aggregateDepth),
   maxRouteIds: input.maxRouteIds,

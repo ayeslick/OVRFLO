@@ -110,7 +110,6 @@ export const borrowDefinition: ActionDefinition<"borrow"> = {
 
     const selected = selectHydratedRoute({
       positions: projectedPositions,
-      borrower: snapshot.identity.account,
       target: parsed.amount,
       aggregateDepth: routing.aggregateDepth,
       maxRouteIds: routing.maxRouteIds,

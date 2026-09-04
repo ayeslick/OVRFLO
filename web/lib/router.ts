@@ -51,20 +51,17 @@ export type HydratedRouteResult =
       publicDepth: bigint;
       executableDepth: bigint;
       fragmentedDepth: bigint;
-      selfExcludedDepth: bigint;
       selectedDepth: bigint;
       selectedIds: bigint[];
     };
 
 export function selectHydratedRoute({
   positions,
-  borrower,
   target,
   aggregateDepth,
   maxRouteIds,
 }: {
   positions: readonly LiquidityPosition[];
-  borrower?: Address;
   target: bigint;
   aggregateDepth: bigint;
   maxRouteIds: number;
@@ -77,15 +74,8 @@ export function selectHydratedRoute({
     return { status: "conservation-failed", projectedDepth, aggregateDepth };
   }
 
-  const selfExcludedDepth = positions
-    .filter((position) => borrower && isAddressEqual(position.lender, borrower))
-    .reduce((sum, position) => sum + position.availableLiquidity, 0n);
   const ranked = positions
-    .filter(
-      (position) =>
-        position.availableLiquidity > 0n &&
-        (!borrower || !isAddressEqual(position.lender, borrower)),
-    )
+    .filter((position) => position.availableLiquidity > 0n)
     .sort(
       (left, right) =>
         (left.availableLiquidity > right.availableLiquidity
@@ -121,7 +111,6 @@ export function selectHydratedRoute({
     publicDepth: aggregateDepth,
     executableDepth,
     fragmentedDepth,
-    selfExcludedDepth,
     selectedDepth,
     selectedIds,
   };
