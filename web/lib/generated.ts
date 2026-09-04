@@ -2568,7 +2568,6 @@ export const ovrfloReserveAbi = [
   { type: 'error', inputs: [], name: 'FlashExceedsMax' },
   { type: 'error', inputs: [], name: 'FlashFeeTooHigh' },
   { type: 'error', inputs: [], name: 'FlashMintMaxTooHigh' },
-  { type: 'error', inputs: [], name: 'FlashSupplyChanged' },
   { type: 'error', inputs: [], name: 'InsufficientReserve' },
   { type: 'error', inputs: [], name: 'NoExcess' },
   { type: 'error', inputs: [], name: 'NotAdmin' },

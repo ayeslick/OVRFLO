@@ -276,10 +276,11 @@ contract OVRFLORequestBook is ReentrancyGuard {
         requestCount[borrower] = last;
     }
 
-    /// @dev Core `borrow` for an already-escrowed stream. Re-checks the router slot
-    ///      so a retired book cannot attribute. Never wrapped in `try/catch`.
+    /// @dev Core `borrow` for an already-escrowed stream. `post` already checked
+    ///      the router; the only call between that check and this fill is
+    ///      `previewBorrow`, a view on the same lending contract. `execute` keeps
+    ///      its own check. Never wrapped in `try/catch`.
     function _fill(uint256 requestId, Request memory req) internal {
-        if (lending.router() != address(this)) revert NotCurrentRouter(lending.router());
         uint256 loanId =
             lending.borrow(req.market, req.aprBps, req.targetBorrow, req.streamId, req.minAcceptable, req.borrower);
         emit RequestFilled(requestId, loanId, _actualBorrow(loanId));

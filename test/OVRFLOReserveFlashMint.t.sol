@@ -12,6 +12,7 @@ import {OVRFLOToken} from "../src/OVRFLOToken.sol";
 import {TestERC20} from "./mocks/TestERC20.sol";
 import {MockOvrfloAdmin} from "./mocks/MockOvrfloAdmin.sol";
 import {FactoryStreamBind} from "./helpers/FactoryStreamBind.sol";
+import {VaultMockHelpers} from "./helpers/VaultMockHelpers.sol";
 
 /// @dev Callback actor for ERC-3156 tests. Modes are encoded in `data`.
 contract FlashMintReceiver is IERC3156FlashBorrower {
@@ -23,11 +24,16 @@ contract FlashMintReceiver is IERC3156FlashBorrower {
         WrapThenUnwrap,
         UnwrapThenWrap,
         WrapOnly,
-        RecordMax
+        RecordMax,
+        Deposit
     }
 
     OVRFLOReserve public immutable reserve;
     IERC20 public immutable underlying;
+    OVRFLO public vault;
+    IERC20 public pt;
+    address public market;
+    uint256 public ptAmount;
     bool public approveRepay = true;
     bytes32 public returnValue = CALLBACK_SUCCESS;
     uint256 public maxWhileEntered;
@@ -48,6 +54,13 @@ contract FlashMintReceiver is IERC3156FlashBorrower {
 
     function setWrapAmount(uint256 wrapAmount_) external {
         wrapAmount = wrapAmount_;
+    }
+
+    function setDeposit(OVRFLO vault_, IERC20 pt_, address market_, uint256 ptAmount_) external {
+        vault = vault_;
+        pt = pt_;
+        market = market_;
+        ptAmount = ptAmount_;
     }
 
     function onFlashLoan(address, address token, uint256 amount, uint256 fee, bytes calldata data)
@@ -71,6 +84,10 @@ contract FlashMintReceiver is IERC3156FlashBorrower {
             uint256 x = wrapAmount;
             underlying.approve(address(reserve), x);
             reserve.wrap(x);
+        } else if (mode == Mode.Deposit) {
+            reserve.unwrap(amount);
+            pt.approve(address(vault), ptAmount);
+            vault.deposit(market, ptAmount, 0);
         } else if (mode == Mode.RecordMax) {
             maxWhileEntered = reserve.maxFlashLoan(token);
         }
@@ -83,9 +100,10 @@ contract FlashMintReceiver is IERC3156FlashBorrower {
 }
 
 /// @title ERC-3156 flash mint of ovrfloToken on OVRFLOReserve (CS2-U1)
-contract OVRFLOReserveFlashMintTest is Test {
+contract OVRFLOReserveFlashMintTest is VaultMockHelpers {
     address internal constant TREASURY = address(0xBEEF);
-    address internal constant DUMMY_ORACLE = address(0x0AAC);
+    address internal constant MARKET = address(0x1001);
+    uint16 internal constant SERIES_FEE_BPS = 100;
 
     uint256 internal constant CEILING = 100_000_000_000 * 10 ** 18;
 
@@ -101,14 +119,9 @@ contract OVRFLOReserveFlashMintTest is Test {
         user = makeAddr("user");
         underlying = new TestERC20("Underlying", "UND");
         admin = new MockOvrfloAdmin(TREASURY, address(underlying), address(0));
+        _stubLockup();
         ovrflo = new OVRFLO(
-            address(admin),
-            TREASURY,
-            address(underlying),
-            "OVRFLO Underlying",
-            "ovrfloUND",
-            DUMMY_ORACLE,
-            address(admin)
+            address(admin), TREASURY, address(underlying), "OVRFLO Underlying", "ovrfloUND", PENDLE_ORACLE, SABLIER_LL
         );
         reserve = OVRFLOReserve(ovrflo.reserve());
         ovrfloToken = OVRFLOToken(ovrflo.ovrfloToken());
@@ -274,16 +287,62 @@ contract OVRFLOReserveFlashMintTest is Test {
         assertEq(ovrfloToken.totalSupply(), supplyBefore);
     }
 
-    function test_FlashLoan_WrapOnlyInCallbackRevertsSupplyChanged() public {
+    function test_FlashLoan_WrapOnlyInCallbackGrowsSupplyByWrapped() public {
         uint256 amount = 10 ether;
         uint256 extra = 1 ether;
         _enableMint(amount);
         underlying.mint(address(receiver), extra);
         receiver.setWrapAmount(extra);
         uint256 supplyBefore = ovrfloToken.totalSupply();
-        vm.expectRevert(OVRFLOReserve.FlashSupplyChanged.selector);
-        _flash(FlashMintReceiver.Mode.WrapOnly, amount);
-        assertEq(ovrfloToken.totalSupply(), supplyBefore);
+        bool ok = _flash(FlashMintReceiver.Mode.WrapOnly, amount);
+        assertTrue(ok);
+        assertEq(ovrfloToken.totalSupply(), supplyBefore + extra);
+        assertEq(reserve.wrappedUnderlying(), extra);
+        assertEq(ovrfloToken.balanceOf(address(receiver)), extra);
+    }
+
+    /// @notice Flash mint, unwrap the flashed tokens, deposit PT, repay from the deposit.
+    ///         Wrap `amount` first so unwrap has reserve. Flash mint/burn and that wrap
+    ///         cancel; only the deposit split stays in supply.
+    function test_FlashLoan_DepositInCallbackMintsAgainstPt() public {
+        uint256 amount = 5 ether;
+        uint256 ptAmount = 10 ether;
+        uint256 rateE18 = 0.8e18;
+        uint256 expiry = block.timestamp + 30 days;
+        // 10e18 * 0.8e18 / 1e18 = 8e18 immediate; 100 bps fee = 8e16; stream = 2e18.
+        uint256 expectedToUser = 7.92 ether;
+        uint256 expectedToStream = 2 ether;
+        uint256 expectedFeeAmount = 0.08 ether;
+
+        TestERC20 pt = new TestERC20("PT One", "PT1");
+        vm.prank(address(admin));
+        ovrflo.setSeriesApproved(MARKET, address(pt), TWAP_DURATION, expiry, SERIES_FEE_BPS);
+        _mockRate(MARKET, rateE18);
+
+        (uint256 toUser, uint256 toStream, uint256 feeAmount, uint256 rate) = ovrflo.previewDeposit(MARKET, ptAmount);
+        assertEq(rate, rateE18);
+        assertEq(toUser, expectedToUser);
+        assertEq(toStream, expectedToStream);
+        assertEq(feeAmount, expectedFeeAmount);
+
+        _mockSablierCreate(
+            address(ovrflo), address(ovrfloToken), address(receiver), uint128(toStream), expiry - block.timestamp, 77
+        );
+
+        pt.mint(address(receiver), ptAmount);
+        receiver.setDeposit(ovrflo, IERC20(address(pt)), MARKET, ptAmount);
+        _wrap(address(receiver), amount);
+        _enableMint(amount);
+
+        uint256 supplyBefore = ovrfloToken.totalSupply() - amount;
+        uint256 depositedBefore = ovrflo.marketTotalDeposited(MARKET);
+
+        bool ok = _flash(FlashMintReceiver.Mode.Deposit, amount);
+
+        assertTrue(ok);
+        assertEq(ovrfloToken.balanceOf(address(receiver)), toUser);
+        assertEq(ovrfloToken.totalSupply(), supplyBefore + toUser + toStream + feeAmount);
+        assertEq(ovrflo.marketTotalDeposited(MARKET), depositedBefore + ptAmount);
     }
 
     function test_SetFlashMintMax_CeilingAndNonAdmin() public {

@@ -87,10 +87,6 @@ export const errorCatalog = {
   FlashExceedsMax: { copy: "This flash mint exceeds the current cap.", recovery: changeAmount },
   FlashFeeTooHigh: { copy: "Flash-mint fee is above the protocol limit.", recovery: none },
   FlashMintMaxTooHigh: { copy: "Flash-mint cap is above the protocol ceiling.", recovery: none },
-  FlashSupplyChanged: {
-    copy: "Flash mint did not restore token supply. Nothing was changed.",
-    recovery: refresh,
-  },
   InsufficientDeposited: { copy: "Not enough PT has been deposited for this claim.", recovery: changeAmount },
   InsufficientReserve: { copy: "The wrap reserve cannot cover this unwrap.", recovery: changeAmount },
   InvalidTick: { copy: "This APR is outside the market bounds or not on a supported step.", recovery: changeTick },

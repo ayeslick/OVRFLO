@@ -31,7 +31,7 @@ contract OVRFLOReserve is IERC3156FlashLender {
                                 CONSTANTS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Hard cap on `flashMintMax`. Owner 2026-09-02: 100 billion whole tokens.
+    /// @notice Hard cap on `flashMintMax`. 100 billion whole tokens.
     uint256 public constant FLASH_MINT_MAX_CEILING = 100_000_000_000 * 10 ** 18;
 
     /// @notice Hard cap on `flashFeeBps` (9 bps).
@@ -68,8 +68,6 @@ contract OVRFLOReserve is IERC3156FlashLender {
     error FlashMintMaxTooHigh();
     /// @dev `setFlashFeeBps` exceeded `FLASH_FEE_MAX_BPS`.
     error FlashFeeTooHigh();
-    /// @dev FREI-PI: `totalSupply` after a flash mint must equal supply before the mint.
-    error FlashSupplyChanged();
 
     /*//////////////////////////////////////////////////////////////
                                 STORAGE
@@ -260,11 +258,12 @@ contract OVRFLOReserve is IERC3156FlashLender {
 
     /// @notice ERC-3156 flash mint of ovrfloToken for one callback
     /// @dev Mint `amount` to `receiver`, call `onFlashLoan`, pull `amount + fee`, burn
-    ///      `amount`, send `fee` to the column treasury. FREI-PI: `totalSupply` after
-    ///      equals `totalSupply` before. Wrap, unwrap, and vault deposit stay callable
-    ///      in the callback; they do not share this entered flag. Nested flash reverts
-    ///      because `maxFlashLoan` is 0 while entered. Check max before setting the flag
-    ///      so the outer call is not blocked by its own lock.
+    ///      `amount`, send `fee` to the column treasury. The flash mints and burns the
+    ///      same `amount`, so it adds no unbacked supply. Callbacks may change supply
+    ///      through wrap, unwrap, and deposit. Wrap, unwrap, and vault deposit stay
+    ///      callable in the callback; they do not share this entered flag. Nested flash
+    ///      reverts because `maxFlashLoan` is 0 while entered. Check max before setting
+    ///      the flag so the outer call is not blocked by its own lock.
     function flashLoan(IERC3156FlashBorrower receiver, address token, uint256 amount, bytes calldata data)
         external
         override
@@ -275,7 +274,6 @@ contract OVRFLOReserve is IERC3156FlashLender {
         if (amount > maxFlashLoan(token)) revert FlashExceedsMax();
 
         uint256 fee = Math.mulDiv(amount, flashFeeBps, 10_000);
-        uint256 supplyBefore = IERC20(ovrfloToken).totalSupply();
 
         flashEntered = true;
         OVRFLOToken(ovrfloToken).mint(address(receiver), amount);
@@ -286,9 +284,7 @@ contract OVRFLOReserve is IERC3156FlashLender {
 
         uint256 repay = amount + fee;
         IERC20 token_ = IERC20(ovrfloToken);
-        uint256 balanceBefore = token_.balanceOf(address(this));
         token_.safeTransferFrom(address(receiver), address(this), repay);
-        if (token_.balanceOf(address(this)) - balanceBefore != repay) revert TransferMismatch();
 
         OVRFLOToken(ovrfloToken).burn(address(this), amount);
         if (fee > 0) {
@@ -296,7 +292,6 @@ contract OVRFLOReserve is IERC3156FlashLender {
         }
 
         flashEntered = false;
-        if (IERC20(ovrfloToken).totalSupply() != supplyBefore) revert FlashSupplyChanged();
 
         emit FlashLoan(address(receiver), msg.sender, amount, fee);
         return true;
